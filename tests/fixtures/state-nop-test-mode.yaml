@@ -1,0 +1,7 @@
+id: state.test.nop.test-mode
+command: [state, test.nop, --name, example, --test, -o, json]
+exit: 0
+json:
+  name: example
+  result: true
+  changes: {}

@@ -1,0 +1,5 @@
+id: state.file.absent.already-gone
+command: [state, file.absent, --name, /definitely/missing/path]
+exit: 0
+contains:
+  - "result: true"

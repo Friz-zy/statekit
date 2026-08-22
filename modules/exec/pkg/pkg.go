@@ -12,14 +12,14 @@ import (
 	pkgprovider "github.com/friz-zy/statekit/providers/pkg"
 )
 
-type refreshDbArgs struct {
+type RefreshDbArgs struct {
 	CacheValidTime int `statekit:"name=cache_valid_time"`
 }
 
 type refreshDBFunc struct{}
 
 func (refreshDBFunc) Name() string { return "pkg.refresh_db" }
-func (refreshDBFunc) Args() any    { return refreshDbArgs{} }
+func (refreshDBFunc) Args() any    { return RefreshDbArgs{} }
 func (refreshDBFunc) Execute(ctx context.Context, rt *runtime.Runtime, _ any) (any, error) {
 	provider, err := pkgprovider.Resolve(rt)
 	if err != nil {
@@ -31,16 +31,16 @@ func (refreshDBFunc) Execute(ctx context.Context, rt *runtime.Runtime, _ any) (a
 	return true, nil
 }
 
-type versionArgs struct {
+type VersionArgs struct {
 	Name string `statekit:"required"`
 }
 
 type versionFunc struct{}
 
 func (versionFunc) Name() string { return "pkg.version" }
-func (versionFunc) Args() any    { return versionArgs{} }
+func (versionFunc) Args() any    { return VersionArgs{} }
 func (versionFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*versionArgs)
+	a := args.(*VersionArgs)
 	provider, err := pkgprovider.Resolve(rt)
 	if err != nil {
 		return nil, err
@@ -48,12 +48,12 @@ func (versionFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (
 	return provider.Version(ctx, rt, a.Name)
 }
 
-type listPkgsArgs struct{}
+type ListPkgsArgs struct{}
 
 type listFunc struct{}
 
 func (listFunc) Name() string { return "pkg.list_pkgs" }
-func (listFunc) Args() any    { return listPkgsArgs{} }
+func (listFunc) Args() any    { return ListPkgsArgs{} }
 func (listFunc) Execute(ctx context.Context, rt *runtime.Runtime, _ any) (any, error) {
 	provider, err := pkgprovider.Resolve(rt)
 	if err != nil {
@@ -62,19 +62,18 @@ func (listFunc) Execute(ctx context.Context, rt *runtime.Runtime, _ any) (any, e
 	return provider.List(ctx, rt)
 }
 
-type installArgs struct {
-	Name      string `statekit:"required"`
-	Version   string `statekit:"name=version"`
-	Refresh   bool   `statekit:"name=refresh"`
-	LatestVer bool
+type InstallArgs struct {
+	Name    string `statekit:"required"`
+	Version string `statekit:"name=version"`
+	Refresh bool   `statekit:"name=refresh"`
 }
 
 type installFunc struct{}
 
 func (installFunc) Name() string { return "pkg.install" }
-func (installFunc) Args() any    { return installArgs{} }
+func (installFunc) Args() any    { return InstallArgs{} }
 func (installFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*installArgs)
+	a := args.(*InstallArgs)
 	provider, err := pkgprovider.Resolve(rt)
 	if err != nil {
 		return nil, err
@@ -96,7 +95,7 @@ func (installFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (
 	return changes, nil
 }
 
-type removeArgs struct {
+type RemoveArgs struct {
 	Name    string `statekit:"required"`
 	Refresh bool   `statekit:"name=refresh"`
 }
@@ -104,9 +103,9 @@ type removeArgs struct {
 type removeFunc struct{}
 
 func (removeFunc) Name() string { return "pkg.remove" }
-func (removeFunc) Args() any    { return removeArgs{} }
+func (removeFunc) Args() any    { return RemoveArgs{} }
 func (removeFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*removeArgs)
+	a := args.(*RemoveArgs)
 	provider, err := pkgprovider.Resolve(rt)
 	if err != nil {
 		return nil, err
@@ -123,7 +122,7 @@ func (removeFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (a
 	return changes, nil
 }
 
-type latestVersionArgs struct {
+type LatestVersionArgs struct {
 	Name    string `statekit:"required"`
 	Refresh bool   `statekit:"name=refresh"`
 }
@@ -131,9 +130,9 @@ type latestVersionArgs struct {
 type latestVersionFunc struct{}
 
 func (latestVersionFunc) Name() string { return "pkg.latest_version" }
-func (latestVersionFunc) Args() any    { return latestVersionArgs{} }
+func (latestVersionFunc) Args() any    { return LatestVersionArgs{} }
 func (latestVersionFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*latestVersionArgs)
+	a := args.(*LatestVersionArgs)
 	provider, err := pkgprovider.Resolve(rt)
 	if err != nil {
 		return nil, err

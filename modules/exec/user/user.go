@@ -47,16 +47,16 @@ func groupsOfUser(rt *runtime.Runtime, name string) []string {
 	return groups
 }
 
-type infoArgs struct {
+type InfoArgs struct {
 	Name string `statekit:"required"`
 }
 
 type infoFunc struct{}
 
 func (infoFunc) Name() string { return "user.info" }
-func (infoFunc) Args() any    { return infoArgs{} }
+func (infoFunc) Args() any    { return InfoArgs{} }
 func (infoFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*infoArgs)
+	a := args.(*InfoArgs)
 	for _, entry := range readPasswd(rt) {
 		if entry.Name != a.Name {
 			continue
@@ -74,12 +74,12 @@ func (infoFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, 
 	return nil, fmt.Errorf("user %q does not exist", a.Name)
 }
 
-type listUsersArgs struct{}
+type ListUsersArgs struct{}
 
 type listUsersFunc struct{}
 
 func (listUsersFunc) Name() string { return "user.list_users" }
-func (listUsersFunc) Args() any    { return listUsersArgs{} }
+func (listUsersFunc) Args() any    { return ListUsersArgs{} }
 func (listUsersFunc) Execute(_ context.Context, rt *runtime.Runtime, _ any) (any, error) {
 	names := []string{}
 	for _, entry := range readPasswd(rt) {
@@ -106,7 +106,7 @@ func done(err error) (any, error) {
 	return true, nil
 }
 
-type addArgs struct {
+type AddArgs struct {
 	Name   string `statekit:"required"`
 	UID    string `statekit:"name=uid"`
 	GID    string `statekit:"name=gid"`
@@ -118,9 +118,9 @@ type addArgs struct {
 type addFunc struct{}
 
 func (addFunc) Name() string { return "user.add" }
-func (addFunc) Args() any    { return addArgs{} }
+func (addFunc) Args() any    { return AddArgs{} }
 func (addFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*addArgs)
+	a := args.(*AddArgs)
 	argv := []string{"useradd"}
 	if a.UID != "" {
 		argv = append(argv, "-u", a.UID)
@@ -143,7 +143,7 @@ func (addFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any,
 	return done(run(ctx, rt, argv...))
 }
 
-type deleteArgs struct {
+type DeleteArgs struct {
 	Name   string `statekit:"required"`
 	Remove bool   `statekit:"name=remove"`
 	Force  bool   `statekit:"name=force"`
@@ -152,9 +152,9 @@ type deleteArgs struct {
 type deleteFunc struct{}
 
 func (deleteFunc) Name() string { return "user.delete" }
-func (deleteFunc) Args() any    { return deleteArgs{} }
+func (deleteFunc) Args() any    { return DeleteArgs{} }
 func (deleteFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*deleteArgs)
+	a := args.(*DeleteArgs)
 	argv := []string{"userdel"}
 	if a.Remove {
 		argv = append(argv, "-r")
@@ -166,7 +166,7 @@ func (deleteFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (a
 	return done(run(ctx, rt, argv...))
 }
 
-type chUIDArgs struct {
+type ChUIDArgs struct {
 	Name string `statekit:"required"`
 	UID  string `statekit:"required,name=uid"`
 }
@@ -174,13 +174,13 @@ type chUIDArgs struct {
 type chUIDFunc struct{}
 
 func (chUIDFunc) Name() string { return "user.chuid" }
-func (chUIDFunc) Args() any    { return chUIDArgs{} }
+func (chUIDFunc) Args() any    { return ChUIDArgs{} }
 func (chUIDFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*chUIDArgs)
+	a := args.(*ChUIDArgs)
 	return done(run(ctx, rt, "usermod", "-u", a.UID, a.Name))
 }
 
-type chGIDArgs struct {
+type ChGIDArgs struct {
 	Name string `statekit:"required"`
 	GID  string `statekit:"required,name=gid"`
 }
@@ -188,13 +188,13 @@ type chGIDArgs struct {
 type chGIDFunc struct{}
 
 func (chGIDFunc) Name() string { return "user.chgid" }
-func (chGIDFunc) Args() any    { return chGIDArgs{} }
+func (chGIDFunc) Args() any    { return ChGIDArgs{} }
 func (chGIDFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*chGIDArgs)
+	a := args.(*ChGIDArgs)
 	return done(run(ctx, rt, "usermod", "-g", a.GID, a.Name))
 }
 
-type chShellArgs struct {
+type ChShellArgs struct {
 	Name  string `statekit:"required"`
 	Shell string `statekit:"required,name=shell"`
 }
@@ -202,13 +202,13 @@ type chShellArgs struct {
 type chShellFunc struct{}
 
 func (chShellFunc) Name() string { return "user.chshell" }
-func (chShellFunc) Args() any    { return chShellArgs{} }
+func (chShellFunc) Args() any    { return ChShellArgs{} }
 func (chShellFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*chShellArgs)
+	a := args.(*ChShellArgs)
 	return done(run(ctx, rt, "usermod", "-s", a.Shell, a.Name))
 }
 
-type chHomeArgs struct {
+type ChHomeArgs struct {
 	Name string `statekit:"required"`
 	Home string `statekit:"required,name=home"`
 	Move bool   `statekit:"name=move_current"`
@@ -217,9 +217,9 @@ type chHomeArgs struct {
 type chHomeFunc struct{}
 
 func (chHomeFunc) Name() string { return "user.chhome" }
-func (chHomeFunc) Args() any    { return chHomeArgs{} }
+func (chHomeFunc) Args() any    { return ChHomeArgs{} }
 func (chHomeFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*chHomeArgs)
+	a := args.(*ChHomeArgs)
 	argv := []string{"usermod"}
 	if a.Move {
 		argv = append(argv, "-m")

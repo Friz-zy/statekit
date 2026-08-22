@@ -1,0 +1,6 @@
+id: state.file.symlink.create
+command: [state, file.symlink, --name, __TMPDIR__/link, --target, __TMPDIR__/target, -o, json]
+tmpdir: true
+exit: 0
+json:
+  result: true

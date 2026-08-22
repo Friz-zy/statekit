@@ -12,7 +12,7 @@ import (
 	serviceprovider "github.com/friz-zy/statekit/providers/service"
 )
 
-type nameArgs struct {
+type NameArgs struct {
 	Name string `statekit:"required"`
 }
 
@@ -23,9 +23,9 @@ func resolve(rt *runtime.Runtime) (serviceprovider.Provider, error) {
 type startFunc struct{}
 
 func (startFunc) Name() string { return "service.start" }
-func (startFunc) Args() any    { return nameArgs{} }
+func (startFunc) Args() any    { return NameArgs{} }
 func (startFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*nameArgs)
+	a := args.(*NameArgs)
 	provider, err := resolve(rt)
 	if err != nil {
 		return nil, err
@@ -39,9 +39,9 @@ func (startFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (an
 type stopFunc struct{}
 
 func (stopFunc) Name() string { return "service.stop" }
-func (stopFunc) Args() any    { return nameArgs{} }
+func (stopFunc) Args() any    { return NameArgs{} }
 func (stopFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*nameArgs)
+	a := args.(*NameArgs)
 	provider, err := resolve(rt)
 	if err != nil {
 		return nil, err
@@ -55,9 +55,9 @@ func (stopFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any
 type restartFunc struct{}
 
 func (restartFunc) Name() string { return "service.restart" }
-func (restartFunc) Args() any    { return nameArgs{} }
+func (restartFunc) Args() any    { return NameArgs{} }
 func (restartFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*nameArgs)
+	a := args.(*NameArgs)
 	provider, err := resolve(rt)
 	if err != nil {
 		return nil, err
@@ -68,7 +68,7 @@ func (restartFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (
 	return true, nil
 }
 
-type statusArgs struct {
+type StatusArgs struct {
 	Name string `statekit:"required"`
 	Sig  string `statekit:"name=sig"` // accepted for Salt compatibility; unused
 }
@@ -76,9 +76,9 @@ type statusArgs struct {
 type statusFunc struct{}
 
 func (statusFunc) Name() string { return "service.status" }
-func (statusFunc) Args() any    { return statusArgs{} }
+func (statusFunc) Args() any    { return StatusArgs{} }
 func (statusFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*statusArgs)
+	a := args.(*StatusArgs)
 	provider, err := resolve(rt)
 	if err != nil {
 		return nil, err
@@ -96,9 +96,9 @@ func (statusFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (a
 type reloadFunc struct{}
 
 func (reloadFunc) Name() string { return "service.reload" }
-func (reloadFunc) Args() any    { return nameArgs{} }
+func (reloadFunc) Args() any    { return NameArgs{} }
 func (reloadFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*nameArgs)
+	a := args.(*NameArgs)
 	res := rt.Runner.Run(ctx, runtime.Command("systemctl", "reload", a.Name))
 	if res.Err != nil {
 		return nil, res.Err
@@ -112,9 +112,9 @@ func (reloadFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (a
 type enableFunc struct{}
 
 func (enableFunc) Name() string { return "service.enable" }
-func (enableFunc) Args() any    { return nameArgs{} }
+func (enableFunc) Args() any    { return NameArgs{} }
 func (enableFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*nameArgs)
+	a := args.(*NameArgs)
 	provider, err := resolve(rt)
 	if err != nil {
 		return nil, err
@@ -128,9 +128,9 @@ func (enableFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (a
 type disableFunc struct{}
 
 func (disableFunc) Name() string { return "service.disable" }
-func (disableFunc) Args() any    { return nameArgs{} }
+func (disableFunc) Args() any    { return NameArgs{} }
 func (disableFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*nameArgs)
+	a := args.(*NameArgs)
 	provider, err := resolve(rt)
 	if err != nil {
 		return nil, err
@@ -141,16 +141,16 @@ func (disableFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (
 	return true, nil
 }
 
-type enabledArgs struct {
+type EnabledArgs struct {
 	Name string `statekit:"required"`
 }
 
 type enabledFunc struct{}
 
 func (enabledFunc) Name() string { return "service.enabled" }
-func (enabledFunc) Args() any    { return enabledArgs{} }
+func (enabledFunc) Args() any    { return EnabledArgs{} }
 func (enabledFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*enabledArgs)
+	a := args.(*EnabledArgs)
 	provider, err := resolve(rt)
 	if err != nil {
 		return nil, err

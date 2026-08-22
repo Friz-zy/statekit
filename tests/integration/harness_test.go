@@ -60,6 +60,7 @@ type fixture struct {
 	Contains       []string       `yaml:"contains"`
 	StderrContains []string       `yaml:"stderr-contains"`
 	JSON           map[string]any `yaml:"json"`
+	Tmpdir         bool           `yaml:"tmpdir"`
 }
 
 func loadFixtures(t *testing.T) []string {
@@ -95,7 +96,25 @@ func TestFixtures(t *testing.T) {
 
 func runFixture(t *testing.T, bin string, f fixture) {
 	t.Helper()
-	cmd := exec.Command(bin, f.Command...)
+	command := f.Command
+	if f.Tmpdir {
+		dir := t.TempDir()
+		for i, arg := range command {
+			command[i] = strings.ReplaceAll(arg, "__TMPDIR__", dir)
+		}
+		if len(f.JSON) > 0 {
+			raw, err := json.Marshal(f.JSON)
+			if err != nil {
+				t.Fatalf("marshal expectations: %v", err)
+			}
+			var substituted map[string]any
+			if err := json.Unmarshal([]byte(strings.ReplaceAll(string(raw), "__TMPDIR__", dir)), &substituted); err != nil {
+				t.Fatalf("unmarshal expectations: %v", err)
+			}
+			f.JSON = substituted
+		}
+	}
+	cmd := exec.Command(bin, command...)
 	cmd.Stdin = strings.NewReader(f.Stdin)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -136,6 +155,61 @@ func runFixture(t *testing.T, bin string, f fixture) {
 		if problems := subsetMatch(f.JSON, actual); len(problems) > 0 {
 			t.Fatalf("json mismatch (%s)\ngot:\n%s", strings.Join(problems, "; "), stdout.String())
 		}
+	}
+}
+
+// TestFileManagedLifecycle drives create -> idempotent re-run ->
+// test-mode no-mutation -> absent against the real binary in one temp dir.
+func TestFileManagedLifecycle(t *testing.T) {
+	bin := buildBinary(t)
+	dir := t.TempDir()
+	path := dir + "/app.conf"
+
+	run := func(args ...string) (string, string, int) {
+		var stdout, stderr bytes.Buffer
+		cmd := exec.Command(bin, args...)
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		code := 0
+		if err != nil {
+			var exitErr *exec.ExitError
+			if !errors.As(err, &exitErr) {
+				t.Fatalf("run: %v", err)
+			}
+			code = exitErr.ExitCode()
+		}
+		return stdout.String(), stderr.String(), code
+	}
+
+	out, _, code := run("state", "file.managed", "--name", path,
+		"--contents", "v1", "-o", "json")
+	if code != 0 || !strings.Contains(out, `"newfile"`) {
+		t.Fatalf("create step wrong: rc=%d out=%s", code, out)
+	}
+
+	out, _, _ = run("state", "file.managed", "--name", path,
+		"--contents", "v1", "-o", "json")
+	if !strings.Contains(out, `"result": true`) || strings.Contains(out, "changes") && strings.Contains(out, "newfile") {
+		t.Fatalf("idempotent rerun wrong: %s", out)
+	}
+
+	out, _, _ = run("state", "file.managed", "--name", path,
+		"--contents", "v2", "--test", "-o", "json")
+	if !strings.Contains(out, `"result": null`) {
+		t.Fatalf("test mode must be pending: %s", out)
+	}
+	data, _ := os.ReadFile(path)
+	if string(data) != "v1" {
+		t.Fatalf("test mode mutated file: %q", data)
+	}
+
+	out, _, _ = run("state", "file.absent", "--name", path, "-o", "json")
+	if !strings.Contains(out, `"removed"`) {
+		t.Fatalf("absent step wrong: %s", out)
+	}
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Fatal("file must be gone after absent")
 	}
 }
 

@@ -40,16 +40,16 @@ func done(err error) (any, error) {
 	return true, nil
 }
 
-type infoArgs struct {
+type InfoArgs struct {
 	Name string `statekit:"required"`
 }
 
 type infoFunc struct{}
 
 func (infoFunc) Name() string { return "group.info" }
-func (infoFunc) Args() any    { return infoArgs{} }
+func (infoFunc) Args() any    { return InfoArgs{} }
 func (infoFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*infoArgs)
+	a := args.(*InfoArgs)
 	for _, entry := range readGroups(rt) {
 		if entry.Name == a.Name {
 			return map[string]any{
@@ -62,12 +62,12 @@ func (infoFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, 
 	return nil, fmt.Errorf("group %q does not exist", a.Name)
 }
 
-type listGroupsArgs struct{}
+type ListGroupsArgs struct{}
 
 type listGroupsFunc struct{}
 
 func (listGroupsFunc) Name() string { return "group.list_groups" }
-func (listGroupsFunc) Args() any    { return listGroupsArgs{} }
+func (listGroupsFunc) Args() any    { return ListGroupsArgs{} }
 func (listGroupsFunc) Execute(_ context.Context, rt *runtime.Runtime, _ any) (any, error) {
 	names := []string{}
 	for _, entry := range readGroups(rt) {
@@ -76,7 +76,7 @@ func (listGroupsFunc) Execute(_ context.Context, rt *runtime.Runtime, _ any) (an
 	return names, nil
 }
 
-type addArgs struct {
+type AddArgs struct {
 	Name string `statekit:"required"`
 	GID  string `statekit:"name=gid"`
 }
@@ -84,9 +84,9 @@ type addArgs struct {
 type addFunc struct{}
 
 func (addFunc) Name() string { return "group.add" }
-func (addFunc) Args() any    { return addArgs{} }
+func (addFunc) Args() any    { return AddArgs{} }
 func (addFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*addArgs)
+	a := args.(*AddArgs)
 	argv := []string{"groupadd"}
 	if a.GID != "" {
 		argv = append(argv, "-g", a.GID)
@@ -95,20 +95,20 @@ func (addFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any,
 	return done(run(ctx, rt, argv...))
 }
 
-type deleteArgs struct {
+type DeleteArgs struct {
 	Name string `statekit:"required"`
 }
 
 type deleteFunc struct{}
 
 func (deleteFunc) Name() string { return "group.delete" }
-func (deleteFunc) Args() any    { return deleteArgs{} }
+func (deleteFunc) Args() any    { return DeleteArgs{} }
 func (deleteFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*deleteArgs)
+	a := args.(*DeleteArgs)
 	return done(run(ctx, rt, "groupdel", a.Name))
 }
 
-type chGIDArgs struct {
+type ChGIDArgs struct {
 	Name string `statekit:"required"`
 	GID  string `statekit:"required,name=gid"`
 }
@@ -116,9 +116,9 @@ type chGIDArgs struct {
 type chGIDFunc struct{}
 
 func (chGIDFunc) Name() string { return "group.chgid" }
-func (chGIDFunc) Args() any    { return chGIDArgs{} }
+func (chGIDFunc) Args() any    { return ChGIDArgs{} }
 func (chGIDFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*chGIDArgs)
+	a := args.(*ChGIDArgs)
 	return done(run(ctx, rt, "groupmod", "-g", a.GID, a.Name))
 }
 
