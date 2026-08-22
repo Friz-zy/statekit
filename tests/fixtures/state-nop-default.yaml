@@ -1,0 +1,8 @@
+id: state.test.nop.default
+command: [state, test.nop, --name, example]
+exit: 0
+contains:
+  - "name: example"
+  - "result: true"
+  - "comment: Success!"
+  - "changes: {}"

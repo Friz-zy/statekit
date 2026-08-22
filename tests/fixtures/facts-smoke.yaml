@@ -1,0 +1,6 @@
+id: cli.facts.smoke
+command: [facts, -o, json]
+exit: 0
+contains:
+  - '"os"'
+  - '"kernel"'

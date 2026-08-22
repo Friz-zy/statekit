@@ -1,0 +1,5 @@
+id: cli.state.list
+command: [state, --list]
+exit: 0
+contains:
+  - "test.nop"

@@ -1,0 +1,5 @@
+id: cli.errors.unknown-flag
+command: [exec, test.echo, --bogus, x]
+exit: 2
+stderr-contains:
+  - "flag provided but not defined"

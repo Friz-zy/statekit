@@ -1,0 +1,4 @@
+id: exec.test.echo.config-json
+command: [exec, test.echo, '--config', '{"text":"hi from json"}']
+exit: 0
+stdout: "hi from json\n"

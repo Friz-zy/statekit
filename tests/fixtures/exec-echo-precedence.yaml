@@ -1,0 +1,4 @@
+id: exec.test.echo.flags-beat-config
+command: [exec, test.echo, '--config', '{"text":"from-config"}', --text, from-flag]
+exit: 0
+stdout: "from-flag\n"

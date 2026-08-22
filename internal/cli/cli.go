@@ -1,0 +1,474 @@
+// Package cli implements the statekit command-line interface.
+//
+// Canonical forms (plan section 5):
+//
+//	statekit exec  <module>.<function> [args]
+//	statekit state <module>.<function> [args]
+//
+// plus version and facts commands. Exit codes follow plan section 40:
+// 0 success, 1 operation/state failed, 2 invalid invocation/input,
+// 3 unsupported function/provider, 4 runtime/internal failure.
+package cli
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"os/signal"
+	"reflect"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/friz-zy/statekit/internal/config"
+	"github.com/friz-zy/statekit/internal/output"
+	"github.com/friz-zy/statekit/internal/result"
+	"github.com/friz-zy/statekit/internal/runtime"
+)
+
+// CLI exit codes (plan section 40).
+const (
+	ExitOK           = 0
+	ExitFailed       = 1
+	ExitInvalidInput = 2
+	ExitUnsupported  = 3
+	ExitInternal     = 4
+)
+
+const usageText = `statekit — portable local SaltStack-compatible execution and states
+
+Usage:
+  statekit exec <module>.<function> [args] [-o json|yaml|text]
+  statekit state <module>.<function> [args] [-o json|yaml|text]
+
+Commands:
+  exec <mod>.<fun>   run an execution function
+  state <mod>.<fun>  apply a single state function
+  facts              show detected system facts
+  version            show the StateKit version
+
+Common options:
+  --list             list available functions (optionally module.<prefix>)
+  -o, --output FMT   output format: json, yaml, text
+  --config YAMLJSON  inline structured arguments (YAML or JSON object)
+  --file PATH        read structured arguments from a YAML/JSON file
+  --stdin | -        read structured arguments from stdin
+
+Structured input precedence: defaults < file/stdin/config < CLI flags.
+`
+
+// globalFlagNames are injected into every function flag set; templates must
+// not declare colliding argument names.
+var globalFlagNames = map[string]bool{"output": true, "o": true, "config": true, "file": true, "stdin": true}
+
+// App wires the CLI to a runtime factory so tests can inject fakes.
+type App struct {
+	Version      string
+	BuildRuntime func() (*runtime.Runtime, error)
+}
+
+// NewApp creates a CLI application bound to the given runtime factory.
+func NewApp(version string, build func() (*runtime.Runtime, error)) *App {
+	return &App{Version: version, BuildRuntime: build}
+}
+
+// Run executes argv (without the program name) and returns the exit code.
+func (a *App) Run(argv []string) int {
+	code := ExitInternal
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Fprintf(os.Stderr, "statekit: internal failure: %v\n", r)
+				code = ExitInternal
+			}
+		}()
+		code = a.dispatch(argv)
+	}()
+	return code
+}
+
+func (a *App) dispatch(argv []string) int {
+	if len(argv) == 0 {
+		usage(os.Stderr)
+		return ExitInvalidInput
+	}
+	switch argv[0] {
+	case "version":
+		return a.cmdVersion(argv[1:])
+	case "facts":
+		return a.cmdFacts(argv[1:])
+	case "exec":
+		return a.cmdFunction("exec", argv[1:])
+	case "state":
+		return a.cmdFunction("state", argv[1:])
+	case "-h", "--help", "help":
+		usage(os.Stdout)
+		return ExitOK
+	default:
+		fmt.Fprintf(os.Stderr, "statekit: unknown command %q\n\n", argv[0])
+		usage(os.Stderr)
+		return ExitInvalidInput
+	}
+}
+
+func usage(w io.Writer) {
+	fmt.Fprint(w, usageText)
+}
+
+func newNamespaceFlagSet(name string) (*flag.FlagSet, *bool) {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	addOutputFlags(fs)
+	addChannelFlags(fs)
+	list := fs.Bool("list", false, "list available functions")
+	return fs, list
+}
+
+func addOutputFlags(fs *flag.FlagSet) {
+	fs.String("output", string(output.FormatText), "output format: json, yaml, text")
+	fs.String("o", "", "short form of --output")
+}
+
+func formatFrom(fs *flag.FlagSet) (output.Format, error) {
+	format := ""
+	if out := fs.Lookup("output"); out != nil {
+		format = out.Value.String()
+	}
+	if short := fs.Lookup("o"); short != nil && short.Value.String() != "" {
+		format = short.Value.String()
+	}
+	return output.ParseFormat(format)
+}
+
+func encodeOr(w io.Writer, format output.Format, v any) int {
+	if err := output.Encode(w, format, v); err != nil {
+		fmt.Fprintf(os.Stderr, "statekit: %v\n", err)
+		return ExitInternal
+	}
+	return ExitOK
+}
+
+func failf(code int, format string, args ...any) int {
+	fmt.Fprintf(os.Stderr, "statekit: "+format+"\n", args...)
+	return code
+}
+
+func (a *App) buildRuntime() (*runtime.Runtime, int) {
+	rt, err := a.BuildRuntime()
+	if err != nil {
+		return nil, failf(ExitInternal, "%v", err)
+	}
+	return rt, ExitOK
+}
+
+func (a *App) cmdVersion(argv []string) int {
+	fs := flag.NewFlagSet("version", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	addOutputFlags(fs)
+	if !parseOr(fs, argv) {
+		return ExitInvalidInput
+	}
+	format, err := formatFrom(fs)
+	if err != nil {
+		return failf(ExitInvalidInput, "%v", err)
+	}
+	payload := struct {
+		Version string `json:"version" yaml:"version"`
+	}{Version: a.Version}
+	return encodeOr(os.Stdout, format, payload)
+}
+
+func (a *App) cmdFacts(argv []string) int {
+	fs := flag.NewFlagSet("facts", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	addOutputFlags(fs)
+	if !parseOr(fs, argv) {
+		return ExitInvalidInput
+	}
+	format, err := formatFrom(fs)
+	if err != nil {
+		return failf(ExitInvalidInput, "%v", err)
+	}
+	rt, code := a.buildRuntime()
+	if rt == nil {
+		return code
+	}
+	return encodeOr(os.Stdout, format, rt.Facts)
+}
+
+func splitTarget(token string) (module, function string, ok bool) {
+	module, function, found := strings.Cut(token, ".")
+	return module, function, found && module != "" && function != "" &&
+		!strings.Contains(function, ".")
+}
+
+func (a *App) cmdFunction(kind string, argv []string) int {
+	namespaceFS, list := newNamespaceFlagSet(kind)
+	if !parseOr(namespaceFS, argv) {
+		return ExitInvalidInput
+	}
+	rest := namespaceFS.Args()
+
+	if *list {
+		target := ""
+		switch len(rest) {
+		case 0:
+		case 1:
+			target = strings.TrimSuffix(rest[0], ".")
+		default:
+			return failf(ExitInvalidInput, "--list accepts at most one module prefix")
+		}
+		format, err := formatFrom(namespaceFS)
+		if err != nil {
+			return failf(ExitInvalidInput, "%v", err)
+		}
+		return a.cmdList(kind, target, format)
+	}
+
+	if len(rest) < 1 || strings.HasPrefix(rest[0], "-") {
+		usage(os.Stderr)
+		return ExitInvalidInput
+	}
+	module, function, ok := splitTarget(rest[0])
+	if !ok {
+		return failf(ExitInvalidInput, "function must be <module>.<function>, got %q", rest[0])
+	}
+
+	format, err := formatFrom(namespaceFS)
+	if err != nil {
+		return failf(ExitInvalidInput, "%v", err)
+	}
+
+	rt, code := a.buildRuntime()
+	if rt == nil {
+		return code
+	}
+
+	fullName := module + "." + function
+
+	template, code := resolveTemplate(kind, rt, fullName)
+	if template == nil {
+		return code
+	}
+
+	argsPtr, explicit, code := decodeArgs(fullName, template, rest[1:], channels(namespaceFS))
+	if argsPtr == nil {
+		return code
+	}
+	if explicit != "" {
+		format, err = output.ParseFormat(explicit)
+		if err != nil {
+			return failf(ExitInvalidInput, "%v", err)
+		}
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	started := time.Now()
+	if kind == "exec" {
+		value, err := rt.Exec.Call(ctx, rt, fullName, argsPtr)
+		if err != nil {
+			return execFailure(err)
+		}
+		return encodeOr(os.Stdout, format, value)
+	}
+
+	res, err := rt.States.Apply(ctx, rt, fullName, argsPtr)
+	if err != nil {
+		return execFailure(err)
+	}
+	res = res.Normalized()
+	res.Meta = &result.ResultMeta{
+		Type:       "state",
+		Module:     module,
+		Function:   function,
+		DurationMS: time.Since(started).Milliseconds(),
+	}
+
+	exitCode := ExitOK
+	if res.Result != nil && !*res.Result {
+		exitCode = ExitFailed
+	}
+	rendered := encodeOr(os.Stdout, format, res)
+	if rendered != ExitOK {
+		return rendered
+	}
+	return exitCode
+}
+
+func resolveTemplate(kind string, rt *runtime.Runtime, fullName string) (any, int) {
+	if kind == "exec" {
+		fn, ok := rt.Exec.Get(fullName)
+		if !ok {
+			return nil, failf(ExitUnsupported, "unsupported function %q", fullName)
+		}
+		return fn.Args(), ExitOK
+	}
+	fn, ok := rt.States.Get(fullName)
+	if !ok {
+		return nil, failf(ExitUnsupported, "unsupported state %q", fullName)
+	}
+	return fn.Args(), ExitOK
+}
+
+func execFailure(err error) int {
+	var unsupported *runtime.UnsupportedError
+	if errors.As(err, &unsupported) {
+		return failf(ExitUnsupported, "%v", err)
+	}
+	return failf(ExitFailed, "%v", err)
+}
+
+func (a *App) cmdList(kind, target string, format output.Format) int {
+	rt, code := a.buildRuntime()
+	if rt == nil {
+		return code
+	}
+	names := rt.Exec.Names()
+	if kind == "state" {
+		names = rt.States.Names()
+	}
+	if target != "" {
+		prefix := target + "."
+		filtered := make([]string, 0, len(names))
+		for _, name := range names {
+			if strings.HasPrefix(name, prefix) {
+				filtered = append(filtered, name)
+			}
+		}
+		names = filtered
+	}
+	if format == output.FormatText {
+		for _, name := range names {
+			fmt.Println(name)
+		}
+		return ExitOK
+	}
+	return encodeOr(os.Stdout, format, names)
+}
+
+// parseOr parses argv and reports failures with a visible message.
+func parseOr(fs *flag.FlagSet, argv []string) bool {
+	if err := fs.Parse(argv); err != nil {
+		failf(ExitInvalidInput, "%v", err)
+		return false
+	}
+	return true
+}
+
+// decodeArgs parses function-level flags against the template's generated
+// flag set, merges namespace-level channel defaults, and decodes every input
+// channel into a fresh args pointer. It returns the args pointer, the
+// explicitly requested output format (empty when none), and an exit code.
+func decodeArgs(fullName string, template any, argv []string, base config.Channels) (any, string, int) {
+	names, err := config.ArgumentNames(template)
+	if err != nil {
+		return nil, "", failf(ExitInternal, "%v", err)
+	}
+	for _, name := range names {
+		if globalFlagNames[name] {
+			return nil, "", failf(ExitInternal,
+				"function %s declares reserved argument name %q", fullName, name)
+		}
+	}
+
+	normalized, err := config.NormalizeBoolArgs(argv, template)
+	if err != nil {
+		return nil, "", failf(ExitInvalidInput, "%v", err)
+	}
+
+	fnFS, err := config.NewFlagSet(fullName, template)
+	if err != nil {
+		return nil, "", failf(ExitInternal, "%v", err)
+	}
+	addOutputFlags(fnFS)
+	addChannelFlags(fnFS)
+	if !parseOr(fnFS, normalized) {
+		return nil, "", ExitInvalidInput
+	}
+	for _, leftover := range fnFS.Args() {
+		if leftover != "-" {
+			return nil, "", failf(ExitInvalidInput, "unexpected positional argument %q", leftover)
+		}
+	}
+
+	explicit := ""
+	short := ""
+	fsOutput := ""
+	fnFS.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "output":
+			fsOutput = f.Value.String()
+		case "o":
+			short = f.Value.String()
+		}
+	})
+	switch {
+	case short != "":
+		explicit = short
+	case fsOutput != "":
+		explicit = fsOutput
+	}
+
+	ch := mergeChannels(base, fnFS)
+
+	structured, err := ch.Load()
+	if err != nil {
+		return nil, "", failf(ExitInvalidInput, "%v", err)
+	}
+
+	argsPtr := reflect.New(reflect.TypeOf(template)).Interface()
+	provided := config.ProvidedValues(fnFS)
+	for name := range globalFlagNames {
+		delete(provided, name)
+	}
+	if err := config.Decode(argsPtr, structured, provided); err != nil {
+		return nil, "", failf(ExitInvalidInput, "%v", err)
+	}
+	return argsPtr, explicit, ExitOK
+}
+
+// mergeChannels layers function-level channel values over namespace-level
+// defaults; stdin markers combine from both positions.
+func mergeChannels(base config.Channels, fnFS *flag.FlagSet) config.Channels {
+	fnCh := channels(fnFS)
+	merged := base
+	if fnCh.Config != "" {
+		merged.Config = fnCh.Config
+	}
+	if fnCh.File != "" {
+		merged.File = fnCh.File
+	}
+	merged.Stdin = merged.Stdin || fnCh.Stdin
+	merged.Dash = merged.Dash || fnCh.Dash
+	return merged
+}
+
+func addChannelFlags(fs *flag.FlagSet) {
+	fs.String("config", "", "inline structured arguments (YAML or JSON object)")
+	fs.String("file", "", "read structured arguments from a YAML/JSON file")
+	fs.Bool("stdin", false, "read structured arguments from stdin")
+}
+
+func channels(fnFS *flag.FlagSet) config.Channels {
+	ch := config.Channels{}
+	if f := fnFS.Lookup("config"); f != nil {
+		ch.Config = f.Value.String()
+	}
+	if f := fnFS.Lookup("file"); f != nil {
+		ch.File = f.Value.String()
+	}
+	if f := fnFS.Lookup("stdin"); f != nil {
+		ch.Stdin = f.Value.String() == "true"
+	}
+	for _, leftover := range fnFS.Args() {
+		if leftover == "-" {
+			ch.Dash = true
+		}
+	}
+	return ch
+}

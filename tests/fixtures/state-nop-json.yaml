@@ -1,0 +1,8 @@
+id: state.test.nop.json-shape
+command: [state, test.nop, --name, example, -o, json]
+exit: 0
+json:
+  name: example
+  result: true
+  changes: {}
+  comment: Success!

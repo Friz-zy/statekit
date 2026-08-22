@@ -1,0 +1,5 @@
+id: cli.version
+command: [version, -o, json]
+exit: 0
+contains:
+  - "version"

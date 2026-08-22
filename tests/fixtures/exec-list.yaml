@@ -1,0 +1,6 @@
+id: cli.exec.list
+command: [exec, --list]
+exit: 0
+contains:
+  - "test.echo"
+  - "test.ping"

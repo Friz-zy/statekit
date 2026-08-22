@@ -1,0 +1,4 @@
+id: exec.test.echo.flag
+command: [exec, test.echo, --text, hello world]
+exit: 0
+stdout: "hello world\n"

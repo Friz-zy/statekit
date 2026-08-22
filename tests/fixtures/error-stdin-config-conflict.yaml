@@ -1,0 +1,5 @@
+id: cli.errors.stdin-config-conflict
+command: [exec, test.echo, --stdin, '--config', '{"text":"x"}']
+exit: 2
+stderr-contains:
+  - "cannot be combined"

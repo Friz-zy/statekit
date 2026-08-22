@@ -1,0 +1,5 @@
+id: exec.test.echo.stdin-dash
+command: [exec, test.echo, -]
+stdin: "text: piped via stdin\n"
+exit: 0
+stdout: "piped via stdin\n"
