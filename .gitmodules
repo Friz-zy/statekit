@@ -1,0 +1,3 @@
+[submodule "saltstack"]
+	path = saltstack
+	url = https://github.com/saltstack/salt.git
