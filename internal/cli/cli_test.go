@@ -114,7 +114,7 @@ func TestExecEchoChannels(t *testing.T) {
 }
 
 func TestExecUnknownFunctionExitThree(t *testing.T) {
-	code, _, errS := runApp(t, "exec", "pkg.version", "--name", "curl")
+	code, _, errS := runApp(t, "exec", "nosuchmod.nofun", "--name", "curl")
 	if code != ExitUnsupported || !strings.Contains(errS, "unsupported") {
 		t.Fatalf("unknown function: code=%d err=%q", code, errS)
 	}

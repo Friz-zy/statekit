@@ -208,6 +208,14 @@ type RuntimeOptions struct {
 	Test bool
 }
 
+// Command builds a shell-free argv command for the central Runner.
+func Command(argv ...string) process.Command {
+	if len(argv) == 0 {
+		return process.Command{}
+	}
+	return process.Command{Name: argv[0], Args: append([]string{}, argv[1:]...)}
+}
+
 // Runtime is the explicit dependency object handed to every function,
 // replacing Salt's dynamic dunder dictionaries.
 type Runtime struct {

@@ -89,7 +89,15 @@ var familyAliases = map[string]string{
 	"solaris_sysctl": "sysctl",
 }
 
-var implementedNameRe = regexp.MustCompile(`(?s)func\s+\([^)]*\)\s+Name\(\)\s+string\s*\{\s*return\s+"([a-z0-9_]+\.[a-z0-9_]+)"`)
+// nameMethodRe matches the opening line of a Name() method declaration.
+var nameMethodRe = regexp.MustCompile(`^func\s+\([^)]*\)\s+Name\(\)\s+string\s*\{$`)
+
+// nameOneLineRe matches a one-line Name() method returning a literal.
+var nameOneLineRe = regexp.MustCompile(
+	`^func\s+\([^)]*\)\s+Name\(\)\s+string\s*\{\s*return\s+"([a-z0-9_]+\.[a-z0-9_]+)"`)
+
+// returnNameRe matches a bare literal return inside Name().
+var returnNameRe = regexp.MustCompile(`^\s*return\s+"([a-z0-9_]+\.[a-z0-9_]+)"\s*$`)
 
 // scanSaltTree walks salt/modules and salt/states producing ModuleDocs.
 func scanSaltTree(saltDir string) ([]ModuleDoc, []ModuleDoc, error) {
@@ -167,6 +175,29 @@ func isRelevant(doc ModuleDoc) bool {
 	return corePrefixes[publicModuleName(doc)]
 }
 
+// scanImplementedNames extracts registered function names from Go source by
+// locating Name() methods and their literal returns.
+func scanImplementedNames(src string) []string {
+	var names []string
+	lines := strings.Split(src, "\n")
+	for i := 0; i < len(lines); i++ {
+		if m := nameOneLineRe.FindStringSubmatch(lines[i]); m != nil {
+			names = append(names, m[1])
+			continue
+		}
+		if !nameMethodRe.MatchString(lines[i]) {
+			continue
+		}
+		for j := i + 1; j < len(lines) && j <= i+3; j++ {
+			if rm := returnNameRe.FindStringSubmatch(lines[j]); rm != nil {
+				names = append(names, rm[1])
+				break
+			}
+		}
+	}
+	return names
+}
+
 // detectImplemented scans Go module sources for registered function names.
 func detectImplemented(srcRoot string) (Implemented, error) {
 	out := Implemented{}
@@ -187,8 +218,8 @@ func detectImplemented(srcRoot string) (Implemented, error) {
 			if err != nil {
 				return err
 			}
-			for _, m := range implementedNameRe.FindAllStringSubmatch(string(data), -1) {
-				*sink = append(*sink, m[1])
+			for _, name := range scanImplementedNames(string(data)) {
+				*sink = append(*sink, name)
 			}
 			return nil
 		})
@@ -215,6 +246,7 @@ func familyCoverage(docs []ModuleDoc, implemented []string) FamilyCoverage {
 	for _, name := range implemented {
 		set[name] = true
 	}
+	matched := map[string]bool{}
 	for _, doc := range docs {
 		fc.SaltModules++
 		fc.SaltFunctions += len(doc.Functions)
@@ -223,7 +255,11 @@ func familyCoverage(docs []ModuleDoc, implemented []string) FamilyCoverage {
 			if isRelevant(doc) {
 				fc.RelevantFunctions++
 			}
-			if set[module+"."+fn.Function] {
+			full := module + "." + fn.Function
+			if set[full] && !matched[full] {
+				// Platform-split docs redefine the same virtual function;
+				// count each distinct Salt function once.
+				matched[full] = true
 				fc.Implemented++
 			}
 		}

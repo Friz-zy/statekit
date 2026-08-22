@@ -9,7 +9,7 @@ A portable, standalone **Go** binary that implements the useful *local* function
 > ssh host sudo /tmp/statekit state pkg.installed --name curl
 > ```
 
-**Status:** Phase 0 core architecture implemented (`version`, `facts`, `exec`/`state` registries with `test.echo` / `test.ping` / `test.nop`, four input channels with precedence, JSON/YAML/text outputters, exit codes, Runtime, Runner, minimal Facts, provider registry, fixture-driven integration harness). The authoritative specification is [`plans/init.md`](plans/init.md).
+**Status:** Phases 0-2 implemented: core architecture (`version`, `facts`, `exec`/`state` registries, four input channels with precedence, JSON/YAML/text outputters, exit codes, Runtime, Runner, minimal Facts, provider registry, fixture-driven integration harness) plus Salt reference tooling (`tools/salt-reference`, pinned `references/salt.lock`, generated catalog under `docs/catalog/`) and the core execution module families (test, cmd, file, status, system, user, group, shadow, pkg, service, sysctl, mount, disk, archive, cron, hosts, timezone, locale) with APT/DNF/YUM/Zypper/Pacman/APK and systemd/OpenRC providers. The authoritative specification is [`plans/init.md`](plans/init.md).
 
 SaltStack is the primary behavioral reference for available modules, functions, arguments, defaults, return values, state results, platform-specific behavior, edge cases, tests, provider selection, and system detection. StateKit copies **observable Salt behavior**, not Salt's internal architecture.
 

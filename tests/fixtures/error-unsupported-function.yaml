@@ -1,5 +1,5 @@
 id: cli.errors.unsupported-function
-command: [exec, pkg.version, --name, curl]
+command: [exec, nosuchmod.nofun, --name, curl]
 exit: 3
 stderr-contains:
   - "unsupported"
