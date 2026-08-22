@@ -36,3 +36,6 @@ go.work.sum
 
 # stray tool binaries
 /salt-reference
+
+# test artifact from relative-path experiments
+/tests/integration/relative/
