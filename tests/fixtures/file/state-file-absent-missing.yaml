@@ -3,3 +3,6 @@ command: [state, file.absent, --name, /definitely/missing/path]
 exit: 0
 contains:
   - "result: true"
+salt:
+  source: salt/states/file.py
+  symbol: absent

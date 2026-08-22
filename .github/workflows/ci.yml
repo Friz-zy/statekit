@@ -1,0 +1,179 @@
+name: CI
+
+# PR gate per plans/testing.md: lint + unit + build + fixture schema +
+# catalog golden check + smoke tier (debian + alpine). Target: < 10 minutes.
+
+on:
+  push:
+    branches-ignore:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  static-checks:
+    name: static checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l . | grep -v '^saltstack/' || true)
+          if [ -n "$unformatted" ]; then
+            echo "Unformatted files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          args: --timeout=5m
+
+      - name: yamllint
+        run: |
+          python3 -m pip install --quiet yamllint==1.35.1
+          yamllint .
+
+      - name: shellcheck
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          find . -name '*.sh' -not -path './saltstack/*' -print0 |
+            xargs -0 shellcheck --severity=warning
+
+      - name: validate fixtures against schema.json
+        run: |
+          python3 -m pip install --quiet jsonschema==4.23.0 pyyaml==6.0.2
+          python3 tests/validate-fixtures.py
+
+  unit-tests:
+    name: unit tests (race, coverage)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+
+      - name: go test
+        run: go test ./... -race -count=1 -coverprofile=coverage.out -covermode=atomic
+
+      - name: coverage summary
+        run: go tool cover -func=coverage.out | tail -1 | tee coverage-summary.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: |
+            coverage.out
+            coverage-summary.txt
+
+  catalog-golden:
+    name: catalog determinism
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+
+      - name: regenerate catalog and fail on drift
+        run: |
+          go build -o /tmp/salt-reference ./tools/salt-reference
+          rm -rf /tmp/catalog-golden && mkdir -p /tmp/catalog-golden
+          cp references/salt.lock /tmp/catalog-golden/salt.lock
+          /tmp/salt-reference \
+            -salt "$PWD/saltstack" \
+            -out /tmp/catalog-golden/docs/catalog \
+            -lock /tmp/catalog-golden/references-salt.lock \
+            -src "$PWD"
+          diff -ru docs/catalog /tmp/catalog-golden/docs/catalog
+          diff -u references/salt.lock /tmp/catalog-golden/references-salt.lock
+
+  smoke-debian:
+    name: smoke — debian 12
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [static-checks]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-statekit
+        with:
+          artifact-name: statekit-bin-smoke
+
+      - name: run cli suite in debian container
+        run: |
+          source tests/images/digests.env
+          mkdir -p .junit
+          docker run --rm \
+            -v "$PWD/dist/statekit:/usr/local/bin/statekit:ro" \
+            -v "$PWD/dist/fixture-runner:/usr/local/bin/fixture-runner:ro" \
+            -v "$PWD/tests/fixtures:/fixtures:ro" \
+            -v "$PWD/tests/run-fixtures.sh:/tests/run-fixtures.sh:ro" \
+            -v "$PWD/.junit:/junit" \
+            "$DEBIAN_IMAGE" /bin/sh /tests/run-fixtures.sh --suite cli
+
+      - name: publish test report
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: smoke-debian
+          path: .junit/results.xml
+          reporter: java-junit
+
+  smoke-alpine:
+    name: smoke — alpine 3
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [static-checks]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-statekit
+        with:
+          artifact-name: statekit-bin-smoke
+
+      - name: run cli suite in alpine container
+        run: |
+          source tests/images/digests.env
+          mkdir -p .junit
+          docker run --rm \
+            -v "$PWD/dist/statekit:/usr/local/bin/statekit:ro" \
+            -v "$PWD/dist/fixture-runner:/usr/local/bin/fixture-runner:ro" \
+            -v "$PWD/tests/fixtures:/fixtures:ro" \
+            -v "$PWD/tests/run-fixtures.sh:/tests/run-fixtures.sh:ro" \
+            -v "$PWD/.junit:/junit" \
+            "$ALPINE_IMAGE" /bin/sh /tests/run-fixtures.sh --suite cli
+
+      - name: publish test report
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: smoke-alpine
+          path: .junit/results.xml
+          reporter: java-junit

@@ -39,3 +39,9 @@ go.work.sum
 
 # test artifact from relative-path experiments
 /tests/integration/relative/
+
+# CI local run artifacts
+dist/
+.junit/
+__pycache__/
+*.pyc

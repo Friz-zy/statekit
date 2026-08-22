@@ -1,0 +1,39 @@
+# Differential scenarios (plans/testing.md, init.md section 26).
+#
+# Each scenario runs identically against `salt-call --local` (container A)
+# and `statekit` (container B) on the same distro base. __T__ is substituted
+# with a fresh per-side temporary directory. Only scalar string args are
+# supported by the runner; extend deliberately.
+#
+# compare fields:
+#   result         - final result value parity (true/false/null)
+#   changed_parity - len(changes) > 0 agrees on both sides
+#   comment_class  - both comments are either empty or non-empty
+#   output_equal   - raw normalized payloads equal (strict; exec scenarios)
+
+scenarios:
+  - id: file.managed.create
+    kind: state
+    fun: file.managed
+    args: {name: "__T__/app.conf", contents: "alpha"}
+    compare: [result, changed_parity, comment_class]
+
+  - id: file.managed.idempotent-rerun
+    kind: state
+    fun: file.managed
+    args: {name: "__T__/app.conf", contents: "alpha"}
+    prerun:
+      - {kind: state, fun: file.managed, args: {name: "__T__/app.conf", contents: "alpha"}}
+    compare: [result, changed_parity]
+
+  - id: user.present.create-and-noop
+    kind: state
+    fun: user.present
+    args: {name: sk-diff-user, shell: /bin/bash}
+    compare: [result, changed_parity]
+
+  - id: pkg.version.readonly-parity
+    kind: exec
+    fun: pkg.version
+    args: {name: bash}
+    compare: [output_equal]

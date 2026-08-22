@@ -1,0 +1,9 @@
+id: user.info.root
+command: [exec, user.info, --name, root, -o, json]
+exit: 0
+json:
+  name: root
+  uid: "0"
+salt:
+  source: salt/modules/useradd.py
+  symbol: info

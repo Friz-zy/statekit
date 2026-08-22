@@ -1,0 +1,46 @@
+name: vm-nightly
+
+# QEMU suite bootstrap (plans/testing.md, Phase 4+). Non-blocking until the
+# Packer recipes under tests/images/vm/ exist and stabilize, then promoted
+# to a blocking gate by removing continue-on-error.
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: vm-nightly
+  cancel-in-progress: false
+
+jobs:
+  vm-suite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: check for VM recipes
+        id: prereq
+        run: |
+          count=$(find tests/images/vm -name '*.pkr.hcl' -o -name '*.pkr.json' 2>/dev/null | wc -l)
+          if [ "$count" -eq 0 ]; then
+            echo "::notice::no Packer recipes under tests/images/vm yet — VM suite is a no-op bootstrap"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: build cloud images (placeholder)
+        if: steps.prereq.outputs.ready == 'true'
+        run: |
+          echo "::error::Packer build not implemented yet; add tests/images/vm recipes"
+          exit 1
+
+      - name: boot and probe (placeholder)
+        if: steps.prereq.outputs.ready == 'true'
+        run: |
+          echo "Runs the vm-required fixture subset: persistent sysctl, mounts,
+          firewall stacks, SELinux/AppArmor probes, reboot persistence."
+          exit 1

@@ -1,0 +1,11 @@
+[Unit]
+Description=StateKit differential/integration test service
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/bin/sleep infinity
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

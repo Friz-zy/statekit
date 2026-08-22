@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -65,13 +66,24 @@ type fixture struct {
 
 func loadFixtures(t *testing.T) []string {
 	t.Helper()
-	matches, err := filepath.Glob(filepath.Join(repoRoot, "tests", "fixtures", "*.yaml"))
+	var matches []string
+	root := filepath.Join(repoRoot, "tests", "fixtures")
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && strings.HasSuffix(path, ".yaml") {
+			matches = append(matches, path)
+		}
+		return nil
+	})
 	if err != nil {
-		t.Fatalf("glob fixtures: %v", err)
+		t.Fatalf("walk fixtures: %v", err)
 	}
 	if len(matches) == 0 {
 		t.Fatal("no fixtures found under tests/fixtures")
 	}
+	sort.Strings(matches)
 	return matches
 }
 
@@ -88,6 +100,11 @@ func TestFixtures(t *testing.T) {
 			var f fixture
 			if err := yaml.Unmarshal(data, &f); err != nil {
 				t.Fatalf("parse fixture: %v", err)
+			}
+			// Tier 2 suites need a real init system; they execute through
+			// tests/run-fixtures.sh inside systemd containers instead.
+			if suiteOf(path) == "service" {
+				t.Skip("tier 2: requires a systemd container (tests/run-fixtures.sh)")
 			}
 			runFixture(t, bin, f)
 		})
@@ -325,4 +342,17 @@ func TestApplyEndToEnd(t *testing.T) {
 	if code == 0 {
 		t.Fatal("failing apply must exit non-zero")
 	}
+}
+
+// suiteOf returns the fixtures family directory ("" for root-level files).
+func suiteOf(path string) string {
+	rel, err := filepath.Rel(filepath.Join(repoRoot, "tests", "fixtures"), path)
+	if err != nil {
+		return ""
+	}
+	parts := strings.SplitN(filepath.ToSlash(rel), "/", 2)
+	if len(parts) < 2 {
+		return ""
+	}
+	return parts[0]
 }

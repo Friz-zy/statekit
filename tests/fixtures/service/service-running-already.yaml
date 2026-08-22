@@ -1,0 +1,10 @@
+id: service.running.already-running
+command: [state, service.running, --name, statekit-test, -o, json]
+exit: 0
+json:
+  result: true
+  changes: {}
+  comment: "The service statekit-test is already running"
+salt:
+  source: salt/states/service.py
+  symbol: running

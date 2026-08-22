@@ -1,3 +1,6 @@
 id: exec.pkg.version.smoke
 command: [exec, pkg.version, --name, curl]
 exit: 0
+salt:
+  source: salt/modules/aptpkg.py
+  symbol: version

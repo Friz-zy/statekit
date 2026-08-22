@@ -1,0 +1,8 @@
+id: group.list-groups.nonempty
+command: [exec, group.list_groups]
+exit: 0
+contains:
+  - "root"
+salt:
+  source: salt/modules/groupadd.py
+  symbol: list_groups

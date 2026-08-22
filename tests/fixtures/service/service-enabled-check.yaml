@@ -1,0 +1,7 @@
+id: service.enabled.statekit-test
+command: [exec, service.enabled, --name, statekit-test]
+exit: 0
+stdout: "true\n"
+salt:
+  source: salt/modules/systemd_service.py
+  symbol: enabled

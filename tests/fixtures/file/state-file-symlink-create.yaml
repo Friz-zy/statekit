@@ -4,3 +4,6 @@ tmpdir: true
 exit: 0
 json:
   result: true
+salt:
+  source: salt/states/file.py
+  symbol: symlink

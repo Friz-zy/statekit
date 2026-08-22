@@ -1,0 +1,190 @@
+name: integration
+
+# Full distro matrix per plans/testing.md: one job per distro x suite group;
+# Tier 2 (systemd) only where the suite needs it. Reusable via workflow_call.
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "cmd/**"
+      - "internal/**"
+      - "modules/**"
+      - "providers/**"
+      - "tests/fixtures/**"
+      - "tests/run-fixtures.sh"
+      - "tests/images/**"
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+env:
+  SUITE_GROUPS: |
+    {
+      "include": [
+        {"suite_group": "cli-contract",   "suites": "--suite cli"},
+        {"suite_group": "file-pkg",       "suites": "--suite file --suite pkg"},
+        {"suite_group": "host-services",  "suites": "--suite user-group --suite hosts --suite timezone"}
+      ]
+    }
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-statekit
+        with:
+          artifact-name: statekit-bin
+
+  tier1:
+    name: ${{ matrix.distro }} / ${{ matrix.suite_group }}
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [debian, ubuntu, fedora, opensuse, arch, alpine]
+        suite_group: [cli-contract, file-pkg, host-services]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: statekit-bin
+          path: dist
+
+      - name: resolve image digest
+        id: image
+        run: |
+          source tests/images/digests.env
+          case "${{ matrix.distro }}" in
+            debian)  echo "ref=$DEBIAN_IMAGE" ;;
+            ubuntu)  echo "ref=$UBUNTU_IMAGE" ;;
+            fedora)  echo "ref=$FEDORA_IMAGE" ;;
+            opensuse) echo "ref=$OPENSUSE_IMAGE" ;;
+            arch)    echo "ref=$ARCH_IMAGE" ;;
+            alpine)  echo "ref=$ALPINE_IMAGE" ;;
+            *) echo "::error::unknown distro"; exit 1 ;;
+          esac >> "$GITHUB_OUTPUT"
+
+      - name: chmod binaries (artifact loses exec bits)
+        run: chmod +x dist/statekit dist/fixture-runner tests/run-fixtures.sh
+
+      - name: run fixtures in ${{ matrix.distro }}
+        env:
+          MATRIX_SUITE_GROUP: ${{ matrix.suite_group }}
+        run: |
+          suites=$(SUITE_GROUPS="$SUITE_GROUPS" python3 -c "
+          import json, os
+          groups = json.loads(os.environ['SUITE_GROUPS'])
+          for g in groups['include']:
+              if g['suite_group'] == os.environ['MATRIX_SUITE_GROUP']:
+                  print(g['suites'])
+          ")
+          mkdir -p .junit
+          docker run --rm \
+            -v "$PWD/dist/statekit:/usr/local/bin/statekit:ro" \
+            -v "$PWD/dist/fixture-runner:/usr/local/bin/fixture-runner:ro" \
+            -v "$PWD/tests/fixtures:/fixtures:ro" \
+            -v "$PWD/tests/run-fixtures.sh:/tests/run-fixtures.sh:ro" \
+            -v "$PWD/.junit:/junit" \
+            "${{ steps.image.outputs.ref }}" \
+            /bin/sh /tests/run-fixtures.sh $suites
+
+      - name: publish test report
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: tier1-${{ matrix.distro }}-${{ matrix.suite_group }}
+          path: .junit/results.xml
+          reporter: java-junit
+
+  tier2-service:
+    name: systemd-debian / service
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: statekit-bin
+          path: dist
+
+      - name: build systemd image from pinned base
+        run: docker build -t statekit-systemd-debian tests/images/systemd/debian
+
+      - name: boot container with systemd
+        run: |
+          chmod +x dist/statekit dist/fixture-runner tests/run-fixtures.sh
+          mkdir -p .junit
+          docker run -d --privileged --cgroupns=host \
+            --name sk-service \
+            -v "$PWD/dist/statekit:/usr/local/bin/statekit:ro" \
+            -v "$PWD/dist/fixture-runner:/usr/local/bin/fixture-runner:ro" \
+            -v "$PWD/tests/fixtures:/fixtures:ro" \
+            -v "$PWD/tests/run-fixtures.sh:/tests/run-fixtures.sh:ro" \
+            -v "$PWD/.junit:/junit" \
+            statekit-systemd-debian
+
+      - name: wait for systemd to settle
+        run: |
+          for i in $(seq 1 45); do
+            state=$(docker exec sk-service systemctl is-system-running 2>/dev/null || true)
+            case "$state" in
+              running|degraded) echo "systemd state: $state"; exit 0 ;;
+            esac
+            sleep 2
+          done
+          echo "::error::systemd did not become operational in time"
+          docker logs sk-service || true
+          exit 1
+
+      - name: run service suite
+        run: docker exec sk-service /bin/sh /tests/run-fixtures.sh --suite service
+
+      - name: teardown
+        if: always()
+        run: docker rm -f sk-service || true
+
+      - name: publish test report
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: tier2-systemd-debian-service
+          path: .junit/results.xml
+          reporter: java-junit
+
+  summary:
+    name: matrix summary
+    needs: [tier1, tier2-service]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: write summary
+        env:
+          TIER1: ${{ toJSON(needs.tier1) }}
+          TIER2_RESULT: ${{ needs.tier2-service.result }}
+        run: |
+          {
+            echo "## Integration matrix"
+            echo ""
+            echo "| Job | Result |"
+            echo "|---|---|"
+            echo "$TIER1" | jq -r 'to_entries[] | "| \(.key) | \(.value.result) |"'
+            echo "| systemd-debian / service | $TIER2_RESULT |"
+          } >> "$GITHUB_STEP_SUMMARY"

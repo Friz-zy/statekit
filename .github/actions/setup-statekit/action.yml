@@ -1,0 +1,32 @@
+name: setup-statekit
+description: Build static statekit binaries (statekit + fixture-runner) and upload them as an artifact.
+
+inputs:
+  go-version:
+    description: Go toolchain version for actions/setup-go.
+    required: false
+    default: "1.26.x"
+  artifact-name:
+    description: Uploaded artifact name.
+    required: false
+    default: statekit-bin
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@v5
+      with:
+        go-version: ${{ inputs.go-version }}
+
+    - name: Build static binaries
+      shell: bash
+      run: |
+        mkdir -p dist
+        CGO_ENABLED=0 go build -trimpath -o dist/statekit ./cmd/statekit
+        CGO_ENABLED=0 go build -trimpath -o dist/fixture-runner ./tools/fixture-runner
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: dist/
+        retention-days: 7

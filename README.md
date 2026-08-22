@@ -1,5 +1,7 @@
 # StateKit
 
+[![CI](https://github.com/Friz-zy/statekit/actions/workflows/ci.yml/badge.svg)](https://github.com/Friz-zy/statekit/actions/workflows/ci.yml)
+
 A portable, standalone **Go** binary that implements the useful *local* functionality of [SaltStack](https://github.com/saltstack/salt) — essentially portable `salt-call --local` plus `state.single` — without a master, minion daemon, Python runtime, or any configuration-management server.
 
 > Copy one binary to any machine and manage it:

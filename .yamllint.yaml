@@ -1,0 +1,14 @@
+---
+extends: default
+
+rules:
+  line-length: disable
+  truthy:
+    check-keys: false
+  comments-indentation: disable
+  document-start: disable
+
+ignore: |
+  .build/
+  saltstack/
+  docs/catalog/

@@ -1,0 +1,10 @@
+[Unit]
+Description=StateKit test service started on demand
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/bin/sleep infinity
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,7 @@
+id: hosts.has-pair.loopback-localhost
+command: [exec, hosts.has_pair, --ip, 127.0.0.1, --alias, localhost]
+exit: 0
+stdout: "true\n"
+salt:
+  source: salt/modules/hosts.py
+  symbol: has_pair

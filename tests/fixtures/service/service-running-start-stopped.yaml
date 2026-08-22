@@ -1,0 +1,8 @@
+id: service.running.starts-stopped-unit
+command: [state, service.running, --name, statekit-test-second, -o, json]
+exit: 0
+json:
+  result: true
+salt:
+  source: salt/states/service.py
+  symbol: running

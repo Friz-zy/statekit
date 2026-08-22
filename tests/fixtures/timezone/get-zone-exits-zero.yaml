@@ -1,0 +1,6 @@
+id: timezone.get-zone.smoke
+command: [exec, timezone.get_zone, -o, json]
+exit: 0
+salt:
+  source: salt/modules/timezone.py
+  symbol: get_zone

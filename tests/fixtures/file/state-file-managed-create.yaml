@@ -6,3 +6,6 @@ json:
   result: true
   changes:
     newfile: __TMPDIR__/app.conf
+salt:
+  source: salt/states/file.py
+  symbol: managed
