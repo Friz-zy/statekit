@@ -1,0 +1,33 @@
+kind: exec
+module: shadow
+source_module: aix_shadow
+virtual: true
+path: salt/modules/aix_shadow.py
+functions:
+    - function: login_failures
+      source:
+        path: salt/modules/aix_shadow.py
+        symbol: login_failures
+      summary: Query for all accounts which have 3 or more login failures.
+      parameters:
+        - name: user
+      execution_dependencies:
+        - cmd.run_all
+    - function: locked
+      source:
+        path: salt/modules/aix_shadow.py
+        symbol: locked
+      summary: Query for all accounts which are flagged as locked.
+      parameters:
+        - name: user
+      execution_dependencies:
+        - cmd.run_all
+    - function: unlock
+      source:
+        path: salt/modules/aix_shadow.py
+        symbol: unlock
+      summary: Unlock user for locked account
+      parameters:
+        - name: user
+      execution_dependencies:
+        - cmd.run_all

@@ -1,0 +1,427 @@
+kind: state
+module: x509
+source_module: x509_v2
+virtual: true
+path: salt/states/x509_v2.py
+platform_markers:
+    - is_windows
+functions:
+    - function: certificate_managed
+      source:
+        path: salt/states/x509_v2.py
+        symbol: certificate_managed
+      summary: Ensure an X.509 certificate is present as specified.
+      parameters:
+        - name: name
+        - name: days_remaining
+          default: None
+        - name: ca_server
+          default: None
+        - name: signing_policy
+          default: None
+        - name: encoding
+          default: '"pem"'
+        - name: append_certs
+          default: None
+        - name: digest
+          default: '"sha256"'
+        - name: signing_private_key
+          default: None
+        - name: signing_private_key_passphrase
+          default: None
+        - name: signing_cert
+          default: None
+        - name: public_key
+          default: None
+        - name: private_key
+          default: None
+        - name: private_key_passphrase
+          default: None
+        - name: csr
+          default: None
+        - name: subject
+          default: None
+        - name: serial_number
+          default: None
+        - name: not_before
+          default: None
+        - name: not_after
+          default: None
+        - name: days_valid
+          default: None
+        - name: pkcs12_passphrase
+          default: None
+        - name: pkcs12_encryption_compat
+          default: "False"
+        - name: pkcs12_friendlyname
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.backup_mode
+        - file.file_exists
+        - file.is_link
+        - file.remove
+        - x509.create_certificate
+        - x509.encode_certificate
+        - x509.get_signing_policy
+    - function: crl_managed
+      source:
+        path: salt/states/x509_v2.py
+        symbol: crl_managed
+      summary: Ensure a certificate revocation list is present as specified.
+      parameters:
+        - name: name
+        - name: signing_private_key
+        - name: revoked
+        - name: days_remaining
+          default: None
+        - name: signing_cert
+          default: None
+        - name: signing_private_key_passphrase
+          default: None
+        - name: include_expired
+          default: "False"
+        - name: days_valid
+          default: None
+        - name: digest
+          default: '"sha256"'
+        - name: encoding
+          default: '"pem"'
+        - name: extensions
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.backup_mode
+        - file.file_exists
+        - file.is_link
+        - file.remove
+        - x509.create_certificate
+        - x509.create_crl
+        - x509.encode_certificate
+        - x509.encode_crl
+        - x509.get_signing_policy
+    - function: csr_managed
+      source:
+        path: salt/states/x509_v2.py
+        symbol: csr_managed
+      summary: Ensure a certificate signing request is present as specified.
+      parameters:
+        - name: name
+        - name: private_key
+        - name: private_key_passphrase
+          default: None
+        - name: digest
+          default: '"sha256"'
+        - name: encoding
+          default: '"pem"'
+        - name: subject
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.backup_mode
+        - file.file_exists
+        - file.is_link
+        - file.remove
+        - x509.create_certificate
+        - x509.create_crl
+        - x509.create_csr
+        - x509.encode_certificate
+        - x509.encode_crl
+        - x509.encode_csr
+        - x509.get_signing_policy
+    - function: pem_managed
+      source:
+        path: salt/states/x509_v2.py
+        symbol: pem_managed
+      summary: Manage the contents of a PEM file directly with the content in text,
+      parameters:
+        - name: name
+        - name: text
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.backup_mode
+        - file.file_exists
+        - file.is_link
+        - file.remove
+        - x509.create_certificate
+        - x509.create_crl
+        - x509.create_csr
+        - x509.encode_certificate
+        - x509.encode_crl
+        - x509.encode_csr
+        - x509.get_pem_entry
+        - x509.get_signing_policy
+    - function: private_key_managed
+      source:
+        path: salt/states/x509_v2.py
+        symbol: private_key_managed
+      summary: Ensure a private key is present as specified.
+      parameters:
+        - name: name
+        - name: algo
+          default: '"rsa"'
+        - name: keysize
+          default: None
+        - name: passphrase
+          default: None
+        - name: encoding
+          default: '"pem"'
+        - name: new
+          default: "False"
+        - name: overwrite
+          default: "False"
+        - name: pkcs12_encryption_compat
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.backup_mode
+        - file.file_exists
+        - file.is_link
+        - file.remove
+        - x509.create_certificate
+        - x509.create_crl
+        - x509.create_csr
+        - x509.create_private_key
+        - x509.encode_certificate
+        - x509.encode_crl
+        - x509.encode_csr
+        - x509.encode_private_key
+        - x509.get_pem_entry
+        - x509.get_signing_policy
+    - function: certificate_managed_ssh
+      source:
+        path: salt/states/x509_v2.py
+        symbol: certificate_managed_ssh
+      summary: Helper for the SSH wrapper module.
+      parameters:
+        - name: name
+        - name: result
+        - name: comment
+        - name: changes
+        - name: encoding
+          default: None
+        - name: contents
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.backup_mode
+        - file.file_exists
+        - file.is_link
+        - file.remove
+        - x509.create_certificate
+        - x509.create_crl
+        - x509.create_csr
+        - x509.create_private_key
+        - x509.encode_certificate
+        - x509.encode_crl
+        - x509.encode_csr
+        - x509.encode_private_key
+        - x509.get_pem_entry
+        - x509.get_signing_policy
+    - function: private_key_managed_ssh
+      source:
+        path: salt/states/x509_v2.py
+        symbol: private_key_managed_ssh
+      summary: Helper for the SSH wrapper module to report the correct return and
+      parameters:
+        - name: name
+        - name: result
+        - name: comment
+        - name: changes
+        - name: tempfile
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.backup_mode
+        - file.file_exists
+        - file.is_link
+        - file.move
+        - file.remove
+        - x509.create_certificate
+        - x509.create_crl
+        - x509.create_csr
+        - x509.create_private_key
+        - x509.encode_certificate
+        - x509.encode_crl
+        - x509.encode_csr
+        - x509.encode_private_key
+        - x509.get_pem_entry
+        - x509.get_signing_policy
+    - function: _filter_state_internal_kwargs
+      source:
+        path: salt/states/x509_v2.py
+        symbol: _filter_state_internal_kwargs
+      parameters:
+        - name: kwargs
+      execution_dependencies:
+        - config.backup_mode
+        - file.file_exists
+        - file.is_link
+        - file.move
+        - file.remove
+        - x509.create_certificate
+        - x509.create_crl
+        - x509.create_csr
+        - x509.create_private_key
+        - x509.encode_certificate
+        - x509.encode_crl
+        - x509.encode_csr
+        - x509.encode_private_key
+        - x509.get_pem_entry
+        - x509.get_signing_policy
+    - function: _add_sub_state_run
+      source:
+        path: salt/states/x509_v2.py
+        symbol: _add_sub_state_run
+      parameters:
+        - name: ret
+        - name: sub
+      execution_dependencies:
+        - config.backup_mode
+        - file.file_exists
+        - file.is_link
+        - file.move
+        - file.remove
+        - x509.create_certificate
+        - x509.create_crl
+        - x509.create_csr
+        - x509.create_private_key
+        - x509.encode_certificate
+        - x509.encode_crl
+        - x509.encode_csr
+        - x509.encode_private_key
+        - x509.get_pem_entry
+        - x509.get_signing_policy
+    - function: _file_managed
+      source:
+        path: salt/states/x509_v2.py
+        symbol: _file_managed
+      parameters:
+        - name: name
+        - name: test
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.backup_mode
+        - file.file_exists
+        - file.is_link
+        - file.move
+        - file.remove
+        - state.single
+        - x509.create_certificate
+        - x509.create_crl
+        - x509.create_csr
+        - x509.create_private_key
+        - x509.encode_certificate
+        - x509.encode_crl
+        - x509.encode_csr
+        - x509.encode_private_key
+        - x509.get_pem_entry
+        - x509.get_signing_policy
+    - function: _check_file_ret
+      source:
+        path: salt/states/x509_v2.py
+        symbol: _check_file_ret
+      parameters:
+        - name: fret
+        - name: ret
+        - name: current
+      execution_dependencies:
+        - config.backup_mode
+        - file.file_exists
+        - file.is_link
+        - file.move
+        - file.remove
+        - state.single
+        - x509.create_certificate
+        - x509.create_crl
+        - x509.create_csr
+        - x509.create_private_key
+        - x509.encode_certificate
+        - x509.encode_crl
+        - x509.encode_csr
+        - x509.encode_private_key
+        - x509.get_pem_entry
+        - x509.get_signing_policy
+    - function: _compare_csr
+      source:
+        path: salt/states/x509_v2.py
+        symbol: _compare_csr
+      parameters:
+        - name: current
+        - name: builder
+      execution_dependencies:
+        - config.backup_mode
+        - file.file_exists
+        - file.is_link
+        - file.move
+        - file.remove
+        - state.single
+        - x509.create_certificate
+        - x509.create_crl
+        - x509.create_csr
+        - x509.create_private_key
+        - x509.encode_certificate
+        - x509.encode_crl
+        - x509.encode_csr
+        - x509.encode_private_key
+        - x509.get_pem_entry
+        - x509.get_signing_policy
+    - function: _compare_crl
+      source:
+        path: salt/states/x509_v2.py
+        symbol: _compare_crl
+      parameters:
+        - name: current
+        - name: builder
+        - name: sig_pubkey
+      execution_dependencies:
+        - config.backup_mode
+        - file.file_exists
+        - file.is_link
+        - file.move
+        - file.remove
+        - state.single
+        - x509.create_certificate
+        - x509.create_crl
+        - x509.create_csr
+        - x509.create_private_key
+        - x509.encode_certificate
+        - x509.encode_crl
+        - x509.encode_csr
+        - x509.encode_private_key
+        - x509.get_pem_entry
+        - x509.get_signing_policy
+    - function: _compareattr_safe
+      source:
+        path: salt/states/x509_v2.py
+        symbol: _compareattr_safe
+      parameters:
+        - name: obj
+        - name: attr
+        - name: comp
+      execution_dependencies:
+        - config.backup_mode
+        - file.file_exists
+        - file.is_link
+        - file.move
+        - file.remove
+        - state.single
+        - x509.create_certificate
+        - x509.create_crl
+        - x509.create_csr
+        - x509.create_private_key
+        - x509.encode_certificate
+        - x509.encode_crl
+        - x509.encode_csr
+        - x509.encode_private_key
+        - x509.get_pem_entry
+        - x509.get_signing_policy

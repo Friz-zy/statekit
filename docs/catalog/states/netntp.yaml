@@ -1,0 +1,146 @@
+kind: state
+module: netntp
+source_module: netntp
+virtual: true
+path: salt/states/netntp.py
+functions:
+    - function: _default_ret
+      source:
+        path: salt/states/netntp.py
+        symbol: _default_ret
+      parameters:
+        - name: name
+    - function: _retrieve_ntp_peers
+      source:
+        path: salt/states/netntp.py
+        symbol: _retrieve_ntp_peers
+      summary: Retrieves configured NTP peers
+      execution_dependencies:
+        - ntp.peers
+    - function: _retrieve_ntp_servers
+      source:
+        path: salt/states/netntp.py
+        symbol: _retrieve_ntp_servers
+      summary: Retrieves configured NTP servers
+      execution_dependencies:
+        - ntp.peers
+        - ntp.servers
+    - function: _check
+      source:
+        path: salt/states/netntp.py
+        symbol: _check
+      summary: Checks whether the input is a valid list of peers and transforms domain names into IP Addresses
+      parameters:
+        - name: peers
+      execution_dependencies:
+        - ntp.peers
+        - ntp.servers
+    - function: _clean
+      source:
+        path: salt/states/netntp.py
+        symbol: _clean
+      parameters:
+        - name: lst
+      execution_dependencies:
+        - ntp.peers
+        - ntp.servers
+    - function: _set_ntp_peers
+      source:
+        path: salt/states/netntp.py
+        symbol: _set_ntp_peers
+      summary: Calls ntp.set_peers.
+      parameters:
+        - name: peers
+      execution_dependencies:
+        - ntp.peers
+        - ntp.servers
+        - ntp.set_peers
+    - function: _set_ntp_servers
+      source:
+        path: salt/states/netntp.py
+        symbol: _set_ntp_servers
+      summary: Calls ntp.set_servers.
+      parameters:
+        - name: servers
+      execution_dependencies:
+        - ntp.peers
+        - ntp.servers
+        - ntp.set_peers
+        - ntp.set_servers
+    - function: _delete_ntp_peers
+      source:
+        path: salt/states/netntp.py
+        symbol: _delete_ntp_peers
+      summary: Calls ntp.delete_peers.
+      parameters:
+        - name: peers
+      execution_dependencies:
+        - ntp.delete_peers
+        - ntp.peers
+        - ntp.servers
+        - ntp.set_peers
+        - ntp.set_servers
+    - function: _delete_ntp_servers
+      source:
+        path: salt/states/netntp.py
+        symbol: _delete_ntp_servers
+      summary: Calls ntp.delete_servers.
+      parameters:
+        - name: servers
+      execution_dependencies:
+        - ntp.delete_peers
+        - ntp.delete_servers
+        - ntp.peers
+        - ntp.servers
+        - ntp.set_peers
+        - ntp.set_servers
+    - function: _exec_fun
+      source:
+        path: salt/states/netntp.py
+        symbol: _exec_fun
+      parameters:
+        - name: name
+        - name: kargs
+          kind: '*'
+      execution_dependencies:
+        - ntp.delete_peers
+        - ntp.delete_servers
+        - ntp.peers
+        - ntp.servers
+        - ntp.set_peers
+        - ntp.set_servers
+    - function: _check_diff_and_configure
+      source:
+        path: salt/states/netntp.py
+        symbol: _check_diff_and_configure
+      parameters:
+        - name: fun_name
+        - name: peers_servers
+        - name: name
+          default: '"peers"'
+      execution_dependencies:
+        - ntp.delete_peers
+        - ntp.delete_servers
+        - ntp.peers
+        - ntp.servers
+        - ntp.set_peers
+        - ntp.set_servers
+    - function: managed
+      source:
+        path: salt/states/netntp.py
+        symbol: managed
+      summary: Manages the configuration of NTP peers and servers on the device, as specified in the state SLS file.
+      parameters:
+        - name: name
+        - name: peers
+          default: None
+        - name: servers
+          default: None
+      execution_dependencies:
+        - net.config_control
+        - ntp.delete_peers
+        - ntp.delete_servers
+        - ntp.peers
+        - ntp.servers
+        - ntp.set_peers
+        - ntp.set_servers

@@ -1,0 +1,1084 @@
+kind: exec
+module: state
+source_module: state
+virtual: true
+path: salt/modules/state.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _filter_running
+      source:
+        path: salt/modules/state.py
+        symbol: _filter_running
+      summary: 'Filter out the result: True + no changes data'
+      parameters:
+        - name: runnings
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: _set_retcode
+      source:
+        path: salt/modules/state.py
+        symbol: _set_retcode
+      summary: Set the return code based on the data back from the state system
+      parameters:
+        - name: ret
+        - name: highstate
+          default: None
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: _get_pillar_errors
+      source:
+        path: salt/modules/state.py
+        symbol: _get_pillar_errors
+      summary: Check pillar for errors.
+      parameters:
+        - name: kwargs
+        - name: pillar
+          default: None
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: _wait
+      source:
+        path: salt/modules/state.py
+        symbol: _wait
+      summary: Wait for all previously started state jobs to finish running
+      parameters:
+        - name: jid
+        - name: max_queue
+          default: "0"
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: _snapper_pre
+      source:
+        path: salt/modules/state.py
+        symbol: _snapper_pre
+      summary: Create a snapper pre snapshot
+      parameters:
+        - name: opts
+        - name: jid
+      execution_dependencies:
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: _snapper_post
+      source:
+        path: salt/modules/state.py
+        symbol: _snapper_post
+      summary: Create the post states snapshot
+      parameters:
+        - name: opts
+        - name: jid
+        - name: pre_num
+      execution_dependencies:
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: _get_pause
+      source:
+        path: salt/modules/state.py
+        symbol: _get_pause
+      summary: Return the pause information for a given jid
+      parameters:
+        - name: jid
+        - name: state_id
+          default: None
+      execution_dependencies:
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: get_pauses
+      source:
+        path: salt/modules/state.py
+        symbol: get_pauses
+      summary: Get a report on all of the currently paused state runs and pause
+      parameters:
+        - name: jid
+          default: None
+      execution_dependencies:
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: soft_kill
+      source:
+        path: salt/modules/state.py
+        symbol: soft_kill
+      summary: Set up a state run to die before executing the given state id,
+      parameters:
+        - name: jid
+        - name: state_id
+          default: None
+      execution_dependencies:
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: pause
+      source:
+        path: salt/modules/state.py
+        symbol: pause
+      summary: Set up a state id pause, this instructs a running state to pause at a given
+      parameters:
+        - name: jid
+        - name: state_id
+          default: None
+        - name: duration
+          default: None
+      execution_dependencies:
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: resume
+      source:
+        path: salt/modules/state.py
+        symbol: resume
+      summary: Remove a pause from a jid, allowing it to continue. If the state_id is
+      parameters:
+        - name: jid
+        - name: state_id
+          default: None
+      execution_dependencies:
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: orchestrate
+      source:
+        path: salt/modules/state.py
+        symbol: orchestrate
+      summary: '.. versionadded:: 2016.11.0'
+      parameters:
+        - name: mods
+        - name: saltenv
+          default: '"base"'
+        - name: test
+          default: None
+        - name: exclude
+          default: None
+        - name: pillar
+          default: None
+        - name: pillarenv
+          default: None
+      execution_dependencies:
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: running
+      source:
+        path: salt/modules/state.py
+        symbol: running
+      summary: Return a list of strings that contain state return data if a state function
+      parameters:
+        - name: concurrent
+          default: "False"
+      execution_dependencies:
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: _acquire_queue_lock
+      source:
+        path: salt/modules/state.py
+        symbol: _acquire_queue_lock
+      summary: Acquire the state queue lock
+      execution_dependencies:
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: _set_queue_flag
+      source:
+        path: salt/modules/state.py
+        symbol: _set_queue_flag
+      summary: Set a flag to indicate that the state run is checking the queue
+      parameters:
+        - name: jid
+      execution_dependencies:
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: _clear_queue_flag
+      source:
+        path: salt/modules/state.py
+        symbol: _clear_queue_flag
+      summary: Clear the queue flag
+      parameters:
+        - name: jid
+      execution_dependencies:
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: _prior_running_states
+      source:
+        path: salt/modules/state.py
+        symbol: _prior_running_states
+      summary: Return a list of dicts of prior calls to state functions.  This function is
+      parameters:
+        - name: jid
+      execution_dependencies:
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: _check_queue
+      source:
+        path: salt/modules/state.py
+        symbol: _check_queue
+      summary: Utility function to queue the state run if requested
+      parameters:
+        - name: queue
+        - name: kwargs
+      execution_dependencies:
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: _get_initial_pillar
+      source:
+        path: salt/modules/state.py
+        symbol: _get_initial_pillar
+      parameters:
+        - name: opts
+      execution_dependencies:
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: low
+      source:
+        path: salt/modules/state.py
+        symbol: low
+      summary: Execute a single low data call
+      parameters:
+        - name: data
+        - name: queue
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: _get_test_value
+      source:
+        path: salt/modules/state.py
+        symbol: _get_test_value
+      summary: Determine the correct value for the test flag.
+      parameters:
+        - name: test
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: high
+      source:
+        path: salt/modules/state.py
+        symbol: high
+      summary: Execute the compound calls stored in a single set of high data
+      parameters:
+        - name: data
+        - name: test
+          default: None
+        - name: queue
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: template
+      source:
+        path: salt/modules/state.py
+        symbol: template
+      summary: Execute the information stored in a template file on the minion.
+      parameters:
+        - name: tem
+        - name: queue
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: template_str
+      source:
+        path: salt/modules/state.py
+        symbol: template_str
+      summary: Execute the information stored in a string from an sls template
+      parameters:
+        - name: tem
+        - name: queue
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: apply_
+      source:
+        path: salt/modules/state.py
+        symbol: apply_
+      summary: '.. versionadded:: 2015.5.0'
+      parameters:
+        - name: mods
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: test
+      source:
+        path: salt/modules/state.py
+        symbol: test
+      summary: '.. versionadded:: 3001'
+      parameters:
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: request
+      source:
+        path: salt/modules/state.py
+        symbol: request
+      summary: '.. versionadded:: 2015.5.0'
+      parameters:
+        - name: mods
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: check_request
+      source:
+        path: salt/modules/state.py
+        symbol: check_request
+      summary: '.. versionadded:: 2015.5.0'
+      parameters:
+        - name: name
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: clear_request
+      source:
+        path: salt/modules/state.py
+        symbol: clear_request
+      summary: '.. versionadded:: 2015.5.0'
+      parameters:
+        - name: name
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: run_request
+      source:
+        path: salt/modules/state.py
+        symbol: run_request
+      summary: '.. versionadded:: 2015.5.0'
+      parameters:
+        - name: name
+          default: '"default"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: highstate
+      source:
+        path: salt/modules/state.py
+        symbol: highstate
+      summary: Retrieve the state data from the salt master for this minion and execute it
+      parameters:
+        - name: test
+          default: None
+        - name: queue
+          default: None
+        - name: state_events
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: sls
+      source:
+        path: salt/modules/state.py
+        symbol: sls
+      summary: Execute the states in one or more SLS files
+      parameters:
+        - name: mods
+        - name: test
+          default: None
+        - name: exclude
+          default: None
+        - name: queue
+          default: None
+        - name: sync_mods
+          default: None
+        - name: state_events
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: top
+      source:
+        path: salt/modules/state.py
+        symbol: top
+      summary: Execute a specific top file instead of the default. This is useful to apply
+      parameters:
+        - name: topfn
+        - name: test
+          default: None
+        - name: queue
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: show_highstate
+      source:
+        path: salt/modules/state.py
+        symbol: show_highstate
+      summary: Retrieve the highstate data from the salt master and display it
+      parameters:
+        - name: queue
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: graph_highstate
+      source:
+        path: salt/modules/state.py
+        symbol: graph_highstate
+      summary: Retrieve the highstate data from the salt master and display it as a
+      parameters:
+        - name: queue
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: show_lowstate
+      source:
+        path: salt/modules/state.py
+        symbol: show_lowstate
+      summary: List out the low data that will be applied to this minion
+      parameters:
+        - name: queue
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: show_state_usage
+      source:
+        path: salt/modules/state.py
+        symbol: show_state_usage
+      summary: Retrieve the highstate data from the salt master to analyse used and unused states
+      parameters:
+        - name: queue
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: show_states
+      source:
+        path: salt/modules/state.py
+        symbol: show_states
+      summary: Returns the list of states that will be applied on highstate.
+      parameters:
+        - name: queue
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: sls_id
+      source:
+        path: salt/modules/state.py
+        symbol: sls_id
+      summary: Call a single ID from the named module(s) and handle all requisites
+      parameters:
+        - name: id_
+        - name: mods
+        - name: test
+          default: None
+        - name: queue
+          default: None
+        - name: state_events
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: show_low_sls
+      source:
+        path: salt/modules/state.py
+        symbol: show_low_sls
+      summary: Display the low data from a specific sls. The default environment is
+      parameters:
+        - name: mods
+        - name: test
+          default: None
+        - name: queue
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: show_sls
+      source:
+        path: salt/modules/state.py
+        symbol: show_sls
+      summary: Display the state data from a specific sls or list of sls files on the
+      parameters:
+        - name: mods
+        - name: test
+          default: None
+        - name: queue
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: graph
+      source:
+        path: salt/modules/state.py
+        symbol: graph
+      summary: Display the dependency graph from a specific sls or list of sls files on the
+      parameters:
+        - name: mods
+        - name: test
+          default: None
+        - name: queue
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: sls_exists
+      source:
+        path: salt/modules/state.py
+        symbol: sls_exists
+      summary: Tests for the existence of a specific SLS or list of SLS files on the
+      parameters:
+        - name: mods
+        - name: test
+          default: None
+        - name: queue
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: id_exists
+      source:
+        path: salt/modules/state.py
+        symbol: id_exists
+      summary: Tests for the existence of a specific ID or list of IDs within the
+      parameters:
+        - name: ids
+        - name: mods
+        - name: test
+          default: None
+        - name: queue
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: show_top
+      source:
+        path: salt/modules/state.py
+        symbol: show_top
+      summary: Return the top data that the minion will use for a highstate
+      parameters:
+        - name: queue
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: single
+      source:
+        path: salt/modules/state.py
+        symbol: single
+      summary: Execute a single state function with the named kwargs, returns False if
+      parameters:
+        - name: fun
+        - name: name
+        - name: test
+          default: None
+        - name: queue
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: clear_cache
+      source:
+        path: salt/modules/state.py
+        symbol: clear_cache
+      summary: Clear out cached state files, forcing even cache runs to refresh the cache
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: pkg
+      source:
+        path: salt/modules/state.py
+        symbol: pkg
+      summary: Execute a packaged state run, the packaged state run will exist in a
+      parameters:
+        - name: pkg_path
+        - name: pkg_sum
+        - name: hash_type
+        - name: test
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - saltutil.is_running
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: disable
+      source:
+        path: salt/modules/state.py
+        symbol: disable
+      summary: Disable state runs.
+      parameters:
+        - name: states
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - grains.get
+        - grains.setval
+        - saltutil.is_running
+        - saltutil.refresh_modules
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: enable
+      source:
+        path: salt/modules/state.py
+        symbol: enable
+      summary: Enable state function or sls run
+      parameters:
+        - name: states
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - grains.get
+        - grains.setval
+        - saltutil.is_running
+        - saltutil.refresh_modules
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: list_disabled
+      source:
+        path: salt/modules/state.py
+        symbol: list_disabled
+      summary: List the states which are currently disabled
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - grains.get
+        - grains.setval
+        - saltutil.is_running
+        - saltutil.refresh_modules
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: _disabled
+      source:
+        path: salt/modules/state.py
+        symbol: _disabled
+      summary: Return messages for disabled states
+      parameters:
+        - name: funs
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - grains.get
+        - grains.setval
+        - saltutil.is_running
+        - saltutil.refresh_modules
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: _json_safe
+      source:
+        path: salt/modules/state.py
+        symbol: _json_safe
+      summary: JSON ``default`` fallback for objects that ``json.dumps`` cannot natively
+      parameters:
+        - name: obj
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - grains.get
+        - grains.setval
+        - saltutil.is_running
+        - saltutil.refresh_modules
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8
+    - function: event
+      source:
+        path: salt/modules/state.py
+        symbol: event
+      parameters:
+        - name: tagmatch
+          default: '"*"'
+        - name: count
+          default: "-1"
+        - name: quiet
+          default: "False"
+        - name: sock_dir
+          default: None
+        - name: pretty
+          default: "False"
+        - name: node
+          default: '"minion"'
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - config.option
+        - grains.get
+        - grains.setval
+        - saltutil.is_running
+        - saltutil.refresh_modules
+        - snapper.create_snapshot
+      utility_dependencies:
+        - state.check_result
+      tests:
+        - path: tests/pytests/unit/modules/test_state.py
+          functions: 8

@@ -1,0 +1,673 @@
+kind: exec
+module: x509
+source_module: x509
+virtual: true
+path: salt/modules/x509.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _fix_ctx
+      source:
+        path: salt/modules/x509.py
+        symbol: _fix_ctx
+      summary: This is part of an ugly hack to fix an ancient bug in M2Crypto
+      parameters:
+        - name: m2_ctx
+        - name: issuer
+          default: None
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: _new_extension
+      source:
+        path: salt/modules/x509.py
+        symbol: _new_extension
+      summary: Create new X509_Extension, this is required because M2Crypto
+      parameters:
+        - name: name
+        - name: value
+        - name: critical
+          default: "0"
+        - name: issuer
+          default: None
+        - name: _pyfree
+          default: "1"
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: _parse_openssl_req
+      source:
+        path: salt/modules/x509.py
+        symbol: _parse_openssl_req
+      summary: Parses openssl command line output, this is a workaround for M2Crypto's
+      parameters:
+        - name: csr_filename
+      execution_dependencies:
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: _get_csr_extensions
+      source:
+        path: salt/modules/x509.py
+        symbol: _get_csr_extensions
+      summary: Returns a list of dicts containing the name, value and critical value of
+      parameters:
+        - name: csr
+      execution_dependencies:
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: _parse_openssl_crl
+      source:
+        path: salt/modules/x509.py
+        symbol: _parse_openssl_crl
+      summary: Parses openssl command line output, this is a workaround for M2Crypto's
+      parameters:
+        - name: crl_filename
+      execution_dependencies:
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: _get_signing_policy
+      source:
+        path: salt/modules/x509.py
+        symbol: _get_signing_policy
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - pillar.get
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: _pretty_hex
+      source:
+        path: salt/modules/x509.py
+        symbol: _pretty_hex
+      summary: Nicely formats hex strings
+      parameters:
+        - name: hex_str
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - pillar.get
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: _dec2hex
+      source:
+        path: salt/modules/x509.py
+        symbol: _dec2hex
+      summary: Converts decimal values to nicely formatted hex strings
+      parameters:
+        - name: decval
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - pillar.get
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: _isfile
+      source:
+        path: salt/modules/x509.py
+        symbol: _isfile
+      summary: A wrapper around os.path.isfile that ignores ValueError exceptions which
+      parameters:
+        - name: path
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - pillar.get
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: _text_or_file
+      source:
+        path: salt/modules/x509.py
+        symbol: _text_or_file
+      summary: Determines if input is a path to a file, or a string with the
+      parameters:
+        - name: input_
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - pillar.get
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: _parse_subject
+      source:
+        path: salt/modules/x509.py
+        symbol: _parse_subject
+      summary: Returns a dict containing all values in an X509 Subject
+      parameters:
+        - name: subject
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - pillar.get
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: _get_certificate_obj
+      source:
+        path: salt/modules/x509.py
+        symbol: _get_certificate_obj
+      summary: Returns a certificate object based on PEM text.
+      parameters:
+        - name: cert
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - pillar.get
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: _get_private_key_obj
+      source:
+        path: salt/modules/x509.py
+        symbol: _get_private_key_obj
+      summary: Returns a private key object based on PEM text.
+      parameters:
+        - name: private_key
+        - name: passphrase
+          default: None
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - pillar.get
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: _passphrase_callback
+      source:
+        path: salt/modules/x509.py
+        symbol: _passphrase_callback
+      summary: Returns a callback function used to supply a passphrase for private keys
+      parameters:
+        - name: passphrase
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - pillar.get
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: _get_request_obj
+      source:
+        path: salt/modules/x509.py
+        symbol: _get_request_obj
+      summary: Returns a CSR object based on PEM text.
+      parameters:
+        - name: csr
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - pillar.get
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: _get_pubkey_hash
+      source:
+        path: salt/modules/x509.py
+        symbol: _get_pubkey_hash
+      summary: Returns the sha1 hash of the modulus of a public key in a cert
+      parameters:
+        - name: cert
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - pillar.get
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: _keygen_callback
+      source:
+        path: salt/modules/x509.py
+        symbol: _keygen_callback
+      summary: Replacement keygen callback function which silences the output
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - pillar.get
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: _make_regex
+      source:
+        path: salt/modules/x509.py
+        symbol: _make_regex
+      summary: Dynamically generate a regex to match pem_type
+      parameters:
+        - name: pem_type
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - pillar.get
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: _valid_pem
+      source:
+        path: salt/modules/x509.py
+        symbol: _valid_pem
+      parameters:
+        - name: pem
+        - name: pem_type
+          default: None
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - pillar.get
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: _match_minions
+      source:
+        path: salt/modules/x509.py
+        symbol: _match_minions
+      parameters:
+        - name: test
+        - name: minion
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - match.glob
+        - pillar.get
+        - publish.publish
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: get_pem_entry
+      source:
+        path: salt/modules/x509.py
+        symbol: get_pem_entry
+      summary: Returns a properly formatted PEM string from the input text fixing
+      parameters:
+        - name: text
+        - name: pem_type
+          default: None
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - match.glob
+        - pillar.get
+        - publish.publish
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: get_pem_entries
+      source:
+        path: salt/modules/x509.py
+        symbol: get_pem_entries
+      summary: Returns a dict containing PEM entries in files matching a glob
+      parameters:
+        - name: glob_path
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - match.glob
+        - pillar.get
+        - publish.publish
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: read_certificate
+      source:
+        path: salt/modules/x509.py
+        symbol: read_certificate
+      summary: Returns a dict containing details of a certificate. Input can be a PEM
+      parameters:
+        - name: certificate
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - match.glob
+        - pillar.get
+        - publish.publish
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: read_certificates
+      source:
+        path: salt/modules/x509.py
+        symbol: read_certificates
+      summary: Returns a dict containing details of all certificates matching a glob
+      parameters:
+        - name: glob_path
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - match.glob
+        - pillar.get
+        - publish.publish
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: read_csr
+      source:
+        path: salt/modules/x509.py
+        symbol: read_csr
+      summary: Returns a dict containing details of a certificate request.
+      parameters:
+        - name: csr
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - match.glob
+        - pillar.get
+        - publish.publish
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: read_crl
+      source:
+        path: salt/modules/x509.py
+        symbol: read_crl
+      summary: Returns a dict containing details of a certificate revocation list.
+      parameters:
+        - name: crl
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - match.glob
+        - pillar.get
+        - publish.publish
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: get_public_key
+      source:
+        path: salt/modules/x509.py
+        symbol: get_public_key
+      summary: Returns a string containing the public key in PEM format.
+      parameters:
+        - name: key
+        - name: passphrase
+          default: None
+        - name: asObj
+          default: "False"
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - match.glob
+        - pillar.get
+        - publish.publish
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: get_private_key_size
+      source:
+        path: salt/modules/x509.py
+        symbol: get_private_key_size
+      summary: Returns the bit length of a private key in PEM format.
+      parameters:
+        - name: private_key
+        - name: passphrase
+          default: None
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - match.glob
+        - pillar.get
+        - publish.publish
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: write_pem
+      source:
+        path: salt/modules/x509.py
+        symbol: write_pem
+      summary: Writes out a PEM string fixing any formatting or whitespace
+      parameters:
+        - name: text
+        - name: path
+        - name: overwrite
+          default: "True"
+        - name: pem_type
+          default: None
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - match.glob
+        - pillar.get
+        - publish.publish
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: create_private_key
+      source:
+        path: salt/modules/x509.py
+        symbol: create_private_key
+      summary: Creates a private key in PEM format.
+      parameters:
+        - name: path
+          default: None
+        - name: text
+          default: "False"
+        - name: bits
+          default: "2048"
+        - name: passphrase
+          default: None
+        - name: cipher
+          default: '"aes_128_cbc"'
+        - name: verbose
+          default: "True"
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - match.glob
+        - pillar.get
+        - publish.publish
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: create_crl
+      source:
+        path: salt/modules/x509.py
+        symbol: create_crl
+      parameters:
+        - name: path
+          default: None
+        - name: text
+          default: "False"
+        - name: signing_private_key
+          default: None
+        - name: signing_private_key_passphrase
+          default: None
+        - name: signing_cert
+          default: None
+        - name: revoked
+          default: None
+        - name: include_expired
+          default: "False"
+        - name: days_valid
+          default: "100"
+        - name: digest
+          default: '""'
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - match.glob
+        - pillar.get
+        - publish.publish
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: sign_remote_certificate
+      source:
+        path: salt/modules/x509.py
+        symbol: sign_remote_certificate
+      summary: Request a certificate to be remotely signed according to a signing policy.
+      parameters:
+        - name: argdic
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - match.glob
+        - pillar.get
+        - publish.publish
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: get_signing_policy
+      source:
+        path: salt/modules/x509.py
+        symbol: get_signing_policy
+      summary: Returns the details of a names signing policy, including the text of
+      parameters:
+        - name: signing_policy_name
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - match.glob
+        - pillar.get
+        - publish.publish
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: create_certificate
+      source:
+        path: salt/modules/x509.py
+        symbol: create_certificate
+      summary: Create an X509 certificate.
+      parameters:
+        - name: path
+          default: None
+        - name: text
+          default: "False"
+        - name: overwrite
+          default: "True"
+        - name: ca_server
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - match.glob
+        - pillar.get
+        - publish.publish
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: create_csr
+      source:
+        path: salt/modules/x509.py
+        symbol: create_csr
+      summary: Create a certificate signing request.
+      parameters:
+        - name: path
+          default: None
+        - name: text
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - match.glob
+        - pillar.get
+        - publish.publish
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: verify_private_key
+      source:
+        path: salt/modules/x509.py
+        symbol: verify_private_key
+      summary: Verify that 'private_key' matches 'public_key'
+      parameters:
+        - name: private_key
+        - name: public_key
+        - name: passphrase
+          default: None
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - match.glob
+        - pillar.get
+        - publish.publish
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: verify_signature
+      source:
+        path: salt/modules/x509.py
+        symbol: verify_signature
+      summary: Verify that ``certificate`` has been signed by ``signing_pub_key``
+      parameters:
+        - name: certificate
+        - name: signing_pub_key
+          default: None
+        - name: signing_pub_key_passphrase
+          default: None
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - match.glob
+        - pillar.get
+        - publish.publish
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: verify_crl
+      source:
+        path: salt/modules/x509.py
+        symbol: verify_crl
+      summary: Validate a CRL against a certificate.
+      parameters:
+        - name: crl
+        - name: cert
+      execution_dependencies:
+        - cmd.run_stderr
+        - cmd.run_stdout
+        - config.get
+        - match.glob
+        - pillar.get
+        - publish.publish
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: expired
+      source:
+        path: salt/modules/x509.py
+        symbol: expired
+      summary: Returns a dict containing limited details of a
+      parameters:
+        - name: certificate
+      execution_dependencies:
+        - cmd.run_stderr
+        - cmd.run_stdout
+        - config.get
+        - match.glob
+        - pillar.get
+        - publish.publish
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0
+    - function: will_expire
+      source:
+        path: salt/modules/x509.py
+        symbol: will_expire
+      summary: Returns a dict containing details of a certificate and whether
+      parameters:
+        - name: certificate
+        - name: days
+      execution_dependencies:
+        - cmd.run_stderr
+        - cmd.run_stdout
+        - config.get
+        - match.glob
+        - pillar.get
+        - publish.publish
+      tests:
+        - path: tests/unit/modules/test_x509.py
+          functions: 0

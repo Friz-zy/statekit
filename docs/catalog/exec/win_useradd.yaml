@@ -1,0 +1,282 @@
+kind: exec
+module: user
+source_module: win_useradd
+virtual: true
+path: salt/modules/win_useradd.py
+platform_markers:
+    - is_windows
+functions:
+    - function: add
+      source:
+        path: salt/modules/win_useradd.py
+        symbol: add
+      summary: Add a user to the minion.
+      parameters:
+        - name: name
+        - name: password
+          default: None
+        - name: fullname
+          default: None
+        - name: description
+          default: None
+        - name: groups
+          default: None
+        - name: home
+          default: None
+        - name: homedrive
+          default: None
+        - name: profile
+          default: None
+        - name: logonscript
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_win_useradd.py
+          functions: 4
+    - function: update
+      source:
+        path: salt/modules/win_useradd.py
+        symbol: update
+      parameters:
+        - name: name
+        - name: password
+          default: None
+        - name: fullname
+          default: None
+        - name: description
+          default: None
+        - name: home
+          default: None
+        - name: homedrive
+          default: None
+        - name: logonscript
+          default: None
+        - name: profile
+          default: None
+        - name: expiration_date
+          default: None
+        - name: expired
+          default: None
+        - name: account_disabled
+          default: None
+        - name: unlock_account
+          default: None
+        - name: password_never_expires
+          default: None
+        - name: disallow_change_password
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_win_useradd.py
+          functions: 4
+    - function: delete
+      source:
+        path: salt/modules/win_useradd.py
+        symbol: delete
+      summary: Remove a user from the minion
+      parameters:
+        - name: name
+        - name: purge
+          default: "False"
+        - name: force
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_useradd.py
+          functions: 4
+    - function: getUserSid
+      source:
+        path: salt/modules/win_useradd.py
+        symbol: getUserSid
+      summary: Deprecated function. Please use get_user_sid instead
+      parameters:
+        - name: username
+      tests:
+        - path: tests/pytests/unit/modules/test_win_useradd.py
+          functions: 4
+    - function: get_user_sid
+      source:
+        path: salt/modules/win_useradd.py
+        symbol: get_user_sid
+      summary: Get the Security ID for the user
+      parameters:
+        - name: username
+      tests:
+        - path: tests/pytests/unit/modules/test_win_useradd.py
+          functions: 4
+    - function: setpassword
+      source:
+        path: salt/modules/win_useradd.py
+        symbol: setpassword
+      summary: Set the user's password
+      parameters:
+        - name: name
+        - name: password
+      tests:
+        - path: tests/pytests/unit/modules/test_win_useradd.py
+          functions: 4
+    - function: addgroup
+      source:
+        path: salt/modules/win_useradd.py
+        symbol: addgroup
+      summary: Add user to a group
+      parameters:
+        - name: name
+        - name: group
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_useradd.py
+          functions: 4
+    - function: removegroup
+      source:
+        path: salt/modules/win_useradd.py
+        symbol: removegroup
+      summary: Remove user from a group
+      parameters:
+        - name: name
+        - name: group
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_useradd.py
+          functions: 4
+    - function: chhome
+      source:
+        path: salt/modules/win_useradd.py
+        symbol: chhome
+      summary: Change the home directory of the user, pass ``True`` for persist to move
+      parameters:
+        - name: name
+        - name: home
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_useradd.py
+          functions: 4
+    - function: chprofile
+      source:
+        path: salt/modules/win_useradd.py
+        symbol: chprofile
+      summary: Change the profile directory of the user
+      parameters:
+        - name: name
+        - name: profile
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_useradd.py
+          functions: 4
+    - function: chfullname
+      source:
+        path: salt/modules/win_useradd.py
+        symbol: chfullname
+      summary: Change the full name of the user
+      parameters:
+        - name: name
+        - name: fullname
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_useradd.py
+          functions: 4
+    - function: chgroups
+      source:
+        path: salt/modules/win_useradd.py
+        symbol: chgroups
+      summary: Change the groups this user belongs to, add append=False to make the user a
+      parameters:
+        - name: name
+        - name: groups
+        - name: append
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_useradd.py
+          functions: 4
+    - function: info
+      source:
+        path: salt/modules/win_useradd.py
+        symbol: info
+      summary: Return user information
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_useradd.py
+          functions: 4
+    - function: _get_userprofile_from_registry
+      source:
+        path: salt/modules/win_useradd.py
+        symbol: _get_userprofile_from_registry
+      summary: In case net user doesn't return the userprofile we can get it from the
+      parameters:
+        - name: user
+        - name: sid
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_useradd.py
+          functions: 4
+    - function: list_groups
+      source:
+        path: salt/modules/win_useradd.py
+        symbol: list_groups
+      summary: Return a list of groups the named user belongs to
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_useradd.py
+          functions: 4
+    - function: getent
+      source:
+        path: salt/modules/win_useradd.py
+        symbol: getent
+      summary: Return the list of all info for all users
+      parameters:
+        - name: refresh
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_useradd.py
+          functions: 4
+    - function: list_users
+      source:
+        path: salt/modules/win_useradd.py
+        symbol: list_users
+      summary: Return a list of all users on Windows
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_useradd.py
+          functions: 4
+    - function: rename
+      source:
+        path: salt/modules/win_useradd.py
+        symbol: rename
+      summary: Change the username for a named user
+      parameters:
+        - name: name
+        - name: new_name
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_useradd.py
+          functions: 4
+    - function: current
+      source:
+        path: salt/modules/win_useradd.py
+        symbol: current
+      summary: Get the username that salt-minion is running under. If salt-minion is
+      parameters:
+        - name: sam
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_useradd.py
+          functions: 4

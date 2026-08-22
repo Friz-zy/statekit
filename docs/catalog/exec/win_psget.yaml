@@ -1,0 +1,158 @@
+kind: exec
+module: psget
+source_module: win_psget
+virtual: true
+path: salt/modules/win_psget.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _ps_xml_to_dict
+      source:
+        path: salt/modules/win_psget.py
+        symbol: _ps_xml_to_dict
+      summary: Formats powershell Xml to a dict.
+      parameters:
+        - name: parent
+        - name: dic
+          default: None
+      execution_dependencies:
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_psget.py
+          functions: 2
+    - function: _pshell
+      source:
+        path: salt/modules/win_psget.py
+        symbol: _pshell
+      summary: Execute the desired powershell command and ensure that it returns data
+      parameters:
+        - name: cmd
+        - name: cwd
+          default: None
+        - name: depth
+          default: "2"
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_psget.py
+          functions: 2
+    - function: bootstrap
+      source:
+        path: salt/modules/win_psget.py
+        symbol: bootstrap
+      summary: Make sure that nuget-anycpu.exe is installed.
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_psget.py
+          functions: 2
+    - function: avail_modules
+      source:
+        path: salt/modules/win_psget.py
+        symbol: avail_modules
+      summary: List available modules in registered Powershell module repositories.
+      parameters:
+        - name: desc
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_psget.py
+          functions: 2
+    - function: list_modules
+      source:
+        path: salt/modules/win_psget.py
+        symbol: list_modules
+      summary: List currently installed PSGet Modules on the system.
+      parameters:
+        - name: desc
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_psget.py
+          functions: 2
+    - function: install
+      source:
+        path: salt/modules/win_psget.py
+        symbol: install
+      summary: Install a Powershell module from powershell gallery on the system.
+      parameters:
+        - name: name
+        - name: minimum_version
+          default: None
+        - name: required_version
+          default: None
+        - name: scope
+          default: None
+        - name: repository
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_psget.py
+          functions: 2
+    - function: update
+      source:
+        path: salt/modules/win_psget.py
+        symbol: update
+      summary: Update a PowerShell module to a specific version, or the newest
+      parameters:
+        - name: name
+        - name: maximum_version
+          default: None
+        - name: required_version
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_psget.py
+          functions: 2
+    - function: remove
+      source:
+        path: salt/modules/win_psget.py
+        symbol: remove
+      summary: Remove a Powershell DSC module from the system.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_psget.py
+          functions: 2
+    - function: register_repository
+      source:
+        path: salt/modules/win_psget.py
+        symbol: register_repository
+      summary: Register a PSGet repository on the local machine
+      parameters:
+        - name: name
+        - name: location
+        - name: installation_policy
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_psget.py
+          functions: 2
+    - function: get_repository
+      source:
+        path: salt/modules/win_psget.py
+        symbol: get_repository
+      summary: Get the details of a local PSGet repository
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_psget.py
+          functions: 2

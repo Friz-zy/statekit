@@ -1,0 +1,175 @@
+kind: exec
+module: apache
+source_module: apache
+path: salt/modules/apache.py
+functions:
+    - function: _detect_os
+      source:
+        path: salt/modules/apache.py
+        symbol: _detect_os
+      summary: Apache commands and paths differ depending on packaging
+      tests:
+        - path: tests/pytests/unit/modules/test_apache.py
+          functions: 15
+    - function: version
+      source:
+        path: salt/modules/apache.py
+        symbol: version
+      summary: Return server version (``apachectl -v``)
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_apache.py
+          functions: 15
+    - function: fullversion
+      source:
+        path: salt/modules/apache.py
+        symbol: fullversion
+      summary: Return server version (``apachectl -V``)
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_apache.py
+          functions: 15
+    - function: modules
+      source:
+        path: salt/modules/apache.py
+        symbol: modules
+      summary: Return list of static and shared modules (``apachectl -M``)
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_apache.py
+          functions: 15
+    - function: servermods
+      source:
+        path: salt/modules/apache.py
+        symbol: servermods
+      summary: Return list of modules compiled into the server (``apachectl -l``)
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_apache.py
+          functions: 15
+    - function: directives
+      source:
+        path: salt/modules/apache.py
+        symbol: directives
+      summary: Return list of directives together with expected arguments
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_apache.py
+          functions: 15
+    - function: vhosts
+      source:
+        path: salt/modules/apache.py
+        symbol: vhosts
+      summary: Show the settings as parsed from the config file (currently
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_apache.py
+          functions: 15
+    - function: signal
+      source:
+        path: salt/modules/apache.py
+        symbol: signal
+      summary: Signals httpd to start, restart, or stop.
+      parameters:
+        - name: signal
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_apache.py
+          functions: 15
+    - function: useradd
+      source:
+        path: salt/modules/apache.py
+        symbol: useradd
+      summary: Add HTTP user using the ``htpasswd`` command. If the ``htpasswd`` file does not
+      parameters:
+        - name: pwfile
+        - name: user
+        - name: password
+        - name: opts
+          default: '""'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - webutil.useradd
+      tests:
+        - path: tests/pytests/unit/modules/test_apache.py
+          functions: 15
+    - function: userdel
+      source:
+        path: salt/modules/apache.py
+        symbol: userdel
+      summary: Delete HTTP user from the specified ``htpasswd`` file.
+      parameters:
+        - name: pwfile
+        - name: user
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - webutil.useradd
+        - webutil.userdel
+      tests:
+        - path: tests/pytests/unit/modules/test_apache.py
+          functions: 15
+    - function: server_status
+      source:
+        path: salt/modules/apache.py
+        symbol: server_status
+      summary: Get Information from the Apache server-status handler
+      parameters:
+        - name: profile
+          default: '"default"'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - webutil.useradd
+        - webutil.userdel
+      tests:
+        - path: tests/pytests/unit/modules/test_apache.py
+          functions: 15
+    - function: _parse_config
+      source:
+        path: salt/modules/apache.py
+        symbol: _parse_config
+      summary: Recursively goes through config structure and builds final Apache configuration
+      parameters:
+        - name: conf
+        - name: slot
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - webutil.useradd
+        - webutil.userdel
+      tests:
+        - path: tests/pytests/unit/modules/test_apache.py
+          functions: 15
+    - function: config
+      source:
+        path: salt/modules/apache.py
+        symbol: config
+      summary: Create VirtualHost configuration files
+      parameters:
+        - name: name
+        - name: config
+        - name: edit
+          default: "True"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - webutil.useradd
+        - webutil.userdel
+      tests:
+        - path: tests/pytests/unit/modules/test_apache.py
+          functions: 15

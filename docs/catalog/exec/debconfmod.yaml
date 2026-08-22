@@ -1,0 +1,108 @@
+kind: exec
+module: debconf
+source_module: debconfmod
+virtual: true
+path: salt/modules/debconfmod.py
+functions:
+    - function: _unpack_lines
+      source:
+        path: salt/modules/debconfmod.py
+        symbol: _unpack_lines
+      summary: Unpack the debconf lines
+      parameters:
+        - name: out
+      tests:
+        - path: tests/pytests/unit/modules/test_debconfmod.py
+          functions: 5
+    - function: get_selections
+      source:
+        path: salt/modules/debconfmod.py
+        symbol: get_selections
+      summary: 'Answers to debconf questions for all packages in the following format::'
+      parameters:
+        - name: fetchempty
+          default: "True"
+      execution_dependencies:
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_debconfmod.py
+          functions: 5
+    - function: show
+      source:
+        path: salt/modules/debconfmod.py
+        symbol: show
+      summary: 'Answers to debconf questions for a package in the following format::'
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_debconfmod.py
+          functions: 5
+    - function: _set_file
+      source:
+        path: salt/modules/debconfmod.py
+        symbol: _set_file
+      summary: Execute the set selections command for debconf
+      parameters:
+        - name: path
+      execution_dependencies:
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_debconfmod.py
+          functions: 5
+    - function: set_
+      source:
+        path: salt/modules/debconfmod.py
+        symbol: set_
+      summary: Set answers to debconf questions for a package.
+      parameters:
+        - name: package
+        - name: question
+        - name: type
+        - name: value
+        - name: extra
+          kind: '*'
+      execution_dependencies:
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_debconfmod.py
+          functions: 5
+    - function: set_template
+      source:
+        path: salt/modules/debconfmod.py
+        symbol: set_template
+      summary: Set answers to debconf questions from a template.
+      parameters:
+        - name: path
+        - name: template
+        - name: context
+        - name: defaults
+        - name: saltenv
+          default: '"base"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_stdout
+        - cp.get_template
+      tests:
+        - path: tests/pytests/unit/modules/test_debconfmod.py
+          functions: 5
+    - function: set_file
+      source:
+        path: salt/modules/debconfmod.py
+        symbol: set_file
+      summary: Set answers to debconf questions from a file.
+      parameters:
+        - name: path
+        - name: saltenv
+          default: '"base"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_stdout
+        - cp.cache_file
+        - cp.get_template
+      tests:
+        - path: tests/pytests/unit/modules/test_debconfmod.py
+          functions: 5

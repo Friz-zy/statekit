@@ -1,0 +1,50 @@
+kind: state
+module: win_servermanager
+source_module: win_servermanager
+path: salt/states/win_servermanager.py
+functions:
+    - function: installed
+      source:
+        path: salt/states/win_servermanager.py
+        symbol: installed
+      summary: Install the windows feature. To install a single feature, use the ``name``
+      parameters:
+        - name: name
+        - name: features
+          default: None
+        - name: recurse
+          default: "False"
+        - name: restart
+          default: "False"
+        - name: source
+          default: None
+        - name: exclude
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - win_servermanager.install
+        - win_servermanager.list_installed
+      tests:
+        - path: tests/pytests/unit/states/test_win_servermanager.py
+          functions: 2
+    - function: removed
+      source:
+        path: salt/states/win_servermanager.py
+        symbol: removed
+      summary: Remove the windows feature To remove a single feature, use the ``name``
+      parameters:
+        - name: name
+        - name: features
+          default: None
+        - name: remove_payload
+          default: "False"
+        - name: restart
+          default: "False"
+      execution_dependencies:
+        - win_servermanager.install
+        - win_servermanager.list_installed
+        - win_servermanager.remove
+      tests:
+        - path: tests/pytests/unit/states/test_win_servermanager.py
+          functions: 2

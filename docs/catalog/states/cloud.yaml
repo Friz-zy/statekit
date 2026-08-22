@@ -1,0 +1,216 @@
+kind: state
+module: cloud
+source_module: cloud
+path: salt/states/cloud.py
+functions:
+    - function: _check_name
+      source:
+        path: salt/states/cloud.py
+        symbol: _check_name
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cloud.profile
+      tests:
+        - path: tests/pytests/unit/states/test_cloud.py
+          functions: 7
+    - function: _valid
+      source:
+        path: salt/states/cloud.py
+        symbol: _valid
+      parameters:
+        - name: name
+        - name: comment
+          default: '""'
+        - name: changes
+          default: None
+      execution_dependencies:
+        - cloud.profile
+      tests:
+        - path: tests/pytests/unit/states/test_cloud.py
+          functions: 7
+    - function: _get_instance
+      source:
+        path: salt/states/cloud.py
+        symbol: _get_instance
+      parameters:
+        - name: names
+      execution_dependencies:
+        - cloud.action
+        - cloud.profile
+      tests:
+        - path: tests/pytests/unit/states/test_cloud.py
+          functions: 7
+    - function: present
+      source:
+        path: salt/states/cloud.py
+        symbol: present
+      summary: Spin up a single instance on a cloud provider, using salt-cloud. This state
+      parameters:
+        - name: name
+        - name: cloud_provider
+        - name: onlyif
+          default: None
+        - name: unless
+          default: None
+        - name: opts
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cloud.action
+        - cloud.create
+        - cloud.has_instance
+        - cloud.profile
+        - cmd.retcode
+      tests:
+        - path: tests/pytests/unit/states/test_cloud.py
+          functions: 7
+    - function: absent
+      source:
+        path: salt/states/cloud.py
+        symbol: absent
+      summary: Ensure that no instances with the specified names exist.
+      parameters:
+        - name: name
+        - name: onlyif
+          default: None
+        - name: unless
+          default: None
+      execution_dependencies:
+        - cloud.action
+        - cloud.create
+        - cloud.destroy
+        - cloud.has_instance
+        - cloud.profile
+        - cmd.retcode
+      tests:
+        - path: tests/pytests/unit/states/test_cloud.py
+          functions: 7
+    - function: profile
+      source:
+        path: salt/states/cloud.py
+        symbol: profile
+      summary: Create a single instance on a cloud provider, using a salt-cloud profile.
+      parameters:
+        - name: name
+        - name: profile
+        - name: onlyif
+          default: None
+        - name: unless
+          default: None
+        - name: opts
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cloud.action
+        - cloud.create
+        - cloud.destroy
+        - cloud.has_instance
+        - cloud.profile
+        - cmd.retcode
+      tests:
+        - path: tests/pytests/unit/states/test_cloud.py
+          functions: 7
+    - function: volume_present
+      source:
+        path: salt/states/cloud.py
+        symbol: volume_present
+      summary: Check that a block volume exists.
+      parameters:
+        - name: name
+        - name: provider
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cloud.action
+        - cloud.create
+        - cloud.destroy
+        - cloud.has_instance
+        - cloud.profile
+        - cloud.volume_create
+        - cloud.volume_list
+        - cmd.retcode
+      tests:
+        - path: tests/pytests/unit/states/test_cloud.py
+          functions: 7
+    - function: volume_absent
+      source:
+        path: salt/states/cloud.py
+        symbol: volume_absent
+      summary: Check that a block volume exists.
+      parameters:
+        - name: name
+        - name: provider
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cloud.action
+        - cloud.create
+        - cloud.destroy
+        - cloud.has_instance
+        - cloud.profile
+        - cloud.volume_create
+        - cloud.volume_delete
+        - cloud.volume_list
+        - cmd.retcode
+      tests:
+        - path: tests/pytests/unit/states/test_cloud.py
+          functions: 7
+    - function: volume_attached
+      source:
+        path: salt/states/cloud.py
+        symbol: volume_attached
+      summary: Check if a block volume is attached.
+      parameters:
+        - name: name
+        - name: server_name
+        - name: provider
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cloud.action
+        - cloud.create
+        - cloud.destroy
+        - cloud.has_instance
+        - cloud.profile
+        - cloud.volume_attach
+        - cloud.volume_create
+        - cloud.volume_delete
+        - cloud.volume_list
+        - cmd.retcode
+      tests:
+        - path: tests/pytests/unit/states/test_cloud.py
+          functions: 7
+    - function: volume_detached
+      source:
+        path: salt/states/cloud.py
+        symbol: volume_detached
+      summary: Check if a block volume is attached.
+      parameters:
+        - name: name
+        - name: server_name
+          default: None
+        - name: provider
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cloud.action
+        - cloud.create
+        - cloud.destroy
+        - cloud.has_instance
+        - cloud.profile
+        - cloud.volume_attach
+        - cloud.volume_create
+        - cloud.volume_delete
+        - cloud.volume_detach
+        - cloud.volume_list
+        - cmd.retcode
+      tests:
+        - path: tests/pytests/unit/states/test_cloud.py
+          functions: 7

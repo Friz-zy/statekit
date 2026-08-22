@@ -1,0 +1,67 @@
+kind: state
+module: macdefaults
+source_module: macdefaults
+virtual: true
+path: salt/states/macdefaults.py
+platform_markers:
+    - is_darwin
+functions:
+    - function: write
+      source:
+        path: salt/states/macdefaults.py
+        symbol: write
+      summary: Write a default to the system
+      parameters:
+        - name: name
+        - name: domain
+        - name: value
+        - name: vtype
+          default: None
+        - name: name_separator
+          default: None
+        - name: user
+          default: None
+      execution_dependencies:
+        - macdefaults.cast_value_to_vtype
+        - macdefaults.read
+        - macdefaults.write
+      tests:
+        - path: tests/pytests/unit/states/test_macdefaults.py
+          functions: 19
+    - function: absent
+      source:
+        path: salt/states/macdefaults.py
+        symbol: absent
+      summary: Make sure the defaults value is absent
+      parameters:
+        - name: name
+        - name: domain
+        - name: user
+          default: None
+        - name: name_separator
+          default: None
+      execution_dependencies:
+        - macdefaults.cast_value_to_vtype
+        - macdefaults.delete
+        - macdefaults.read
+        - macdefaults.write
+      tests:
+        - path: tests/pytests/unit/states/test_macdefaults.py
+          functions: 19
+    - function: _compare_values
+      source:
+        path: salt/states/macdefaults.py
+        symbol: _compare_values
+      summary: Compare two values based on their type
+      parameters:
+        - name: new
+        - name: current
+        - name: vtype
+      execution_dependencies:
+        - macdefaults.cast_value_to_vtype
+        - macdefaults.delete
+        - macdefaults.read
+        - macdefaults.write
+      tests:
+        - path: tests/pytests/unit/states/test_macdefaults.py
+          functions: 19

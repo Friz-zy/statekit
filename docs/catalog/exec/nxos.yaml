@@ -1,0 +1,391 @@
+kind: exec
+module: nxos
+source_module: nxos
+virtual: true
+path: salt/modules/nxos.py
+functions:
+    - function: ping
+      source:
+        path: salt/modules/nxos.py
+        symbol: ping
+      summary: Ping the device on the other end of the connection.
+      parameters:
+        - name: kwargs
+          kind: '**'
+      utility_dependencies:
+        - nxos.ping
+      tests:
+        - path: tests/unit/modules/test_nxos.py
+          functions: 0
+    - function: check_password
+      source:
+        path: salt/modules/nxos.py
+        symbol: check_password
+      summary: Verify user password.
+      parameters:
+        - name: username
+        - name: password
+        - name: encrypted
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      utility_dependencies:
+        - nxos.ping
+      tests:
+        - path: tests/unit/modules/test_nxos.py
+          functions: 0
+    - function: check_role
+      source:
+        path: salt/modules/nxos.py
+        symbol: check_role
+      summary: Verify role assignment for user.
+      parameters:
+        - name: username
+        - name: role
+        - name: kwargs
+          kind: '**'
+      utility_dependencies:
+        - nxos.ping
+      tests:
+        - path: tests/unit/modules/test_nxos.py
+          functions: 0
+    - function: find
+      source:
+        path: salt/modules/nxos.py
+        symbol: find
+      summary: Find all instances where the pattern is in the running configuration.
+      parameters:
+        - name: pattern
+        - name: kwargs
+          kind: '**'
+      utility_dependencies:
+        - nxos.ping
+      tests:
+        - path: tests/unit/modules/test_nxos.py
+          functions: 0
+    - function: get_roles
+      source:
+        path: salt/modules/nxos.py
+        symbol: get_roles
+      summary: Get roles assigned to a username.
+      parameters:
+        - name: username
+        - name: kwargs
+          kind: '**'
+      utility_dependencies:
+        - nxos.ping
+      tests:
+        - path: tests/unit/modules/test_nxos.py
+          functions: 0
+    - function: get_user
+      source:
+        path: salt/modules/nxos.py
+        symbol: get_user
+      summary: Get username line from switch.
+      parameters:
+        - name: username
+        - name: kwargs
+          kind: '**'
+      utility_dependencies:
+        - nxos.ping
+      tests:
+        - path: tests/unit/modules/test_nxos.py
+          functions: 0
+    - function: grains
+      source:
+        path: salt/modules/nxos.py
+        symbol: grains
+      summary: Get grains for minion.
+      parameters:
+        - name: kwargs
+          kind: '**'
+      utility_dependencies:
+        - nxos.ping
+      tests:
+        - path: tests/unit/modules/test_nxos.py
+          functions: 0
+    - function: grains_refresh
+      source:
+        path: salt/modules/nxos.py
+        symbol: grains_refresh
+      summary: Refresh the grains for the NX-OS device.
+      parameters:
+        - name: kwargs
+          kind: '**'
+      utility_dependencies:
+        - nxos.ping
+      tests:
+        - path: tests/unit/modules/test_nxos.py
+          functions: 0
+    - function: sendline
+      source:
+        path: salt/modules/nxos.py
+        symbol: sendline
+      summary: Send arbitrary commands to the NX-OS device.
+      parameters:
+        - name: command
+        - name: method
+          default: '"cli_show_ascii"'
+        - name: kwargs
+          kind: '**'
+      utility_dependencies:
+        - nxos.ping
+      tests:
+        - path: tests/unit/modules/test_nxos.py
+          functions: 0
+    - function: show_ver
+      source:
+        path: salt/modules/nxos.py
+        symbol: show_ver
+      summary: Shortcut to run `show version` on the NX-OS device.
+      parameters:
+        - name: kwargs
+          kind: '**'
+      utility_dependencies:
+        - nxos.ping
+      tests:
+        - path: tests/unit/modules/test_nxos.py
+          functions: 0
+    - function: show_run
+      source:
+        path: salt/modules/nxos.py
+        symbol: show_run
+      summary: Shortcut to run `show running-config` on the NX-OS device.
+      parameters:
+        - name: kwargs
+          kind: '**'
+      utility_dependencies:
+        - nxos.ping
+      tests:
+        - path: tests/unit/modules/test_nxos.py
+          functions: 0
+    - function: config
+      source:
+        path: salt/modules/nxos.py
+        symbol: config
+      summary: Configures the Nexus switch with the specified commands.
+      parameters:
+        - name: commands
+          default: None
+        - name: config_file
+          default: None
+        - name: template_engine
+          default: '"jinja"'
+        - name: context
+          default: None
+        - name: defaults
+          default: None
+        - name: saltenv
+          default: '"base"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_file_str
+        - file.apply_template_on_contents
+      utility_dependencies:
+        - nxos.ping
+      tests:
+        - path: tests/unit/modules/test_nxos.py
+          functions: 0
+    - function: _parse_config_result
+      source:
+        path: salt/modules/nxos.py
+        symbol: _parse_config_result
+      parameters:
+        - name: data
+      execution_dependencies:
+        - cp.get_file_str
+        - file.apply_template_on_contents
+      utility_dependencies:
+        - nxos.ping
+      tests:
+        - path: tests/unit/modules/test_nxos.py
+          functions: 0
+    - function: delete_config
+      source:
+        path: salt/modules/nxos.py
+        symbol: delete_config
+      summary: Delete one or more config lines to the switch running config.
+      parameters:
+        - name: lines
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_file_str
+        - file.apply_template_on_contents
+      utility_dependencies:
+        - nxos.ping
+      tests:
+        - path: tests/unit/modules/test_nxos.py
+          functions: 0
+    - function: remove_user
+      source:
+        path: salt/modules/nxos.py
+        symbol: remove_user
+      summary: Remove user from switch.
+      parameters:
+        - name: username
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_file_str
+        - file.apply_template_on_contents
+      utility_dependencies:
+        - nxos.ping
+      tests:
+        - path: tests/unit/modules/test_nxos.py
+          functions: 0
+    - function: replace
+      source:
+        path: salt/modules/nxos.py
+        symbol: replace
+      summary: Replace string or full line matches in switch's running config.
+      parameters:
+        - name: old_value
+        - name: new_value
+        - name: full_match
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_file_str
+        - file.apply_template_on_contents
+      utility_dependencies:
+        - nxos.ping
+      tests:
+        - path: tests/unit/modules/test_nxos.py
+          functions: 0
+    - function: save_running_config
+      source:
+        path: salt/modules/nxos.py
+        symbol: save_running_config
+      summary: Save the running configuration to startup configuration.
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_file_str
+        - file.apply_template_on_contents
+      utility_dependencies:
+        - nxos.ping
+      tests:
+        - path: tests/unit/modules/test_nxos.py
+          functions: 0
+    - function: set_password
+      source:
+        path: salt/modules/nxos.py
+        symbol: set_password
+      summary: Set users password on switch.
+      parameters:
+        - name: username
+        - name: password
+        - name: encrypted
+          default: "False"
+        - name: role
+          default: None
+        - name: crypt_salt
+          default: None
+        - name: algorithm
+          default: '"sha256"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_file_str
+        - file.apply_template_on_contents
+      utility_dependencies:
+        - nxos.ping
+      tests:
+        - path: tests/unit/modules/test_nxos.py
+          functions: 0
+    - function: set_role
+      source:
+        path: salt/modules/nxos.py
+        symbol: set_role
+      summary: Assign role to username.
+      parameters:
+        - name: username
+        - name: role
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_file_str
+        - file.apply_template_on_contents
+      utility_dependencies:
+        - nxos.ping
+      tests:
+        - path: tests/unit/modules/test_nxos.py
+          functions: 0
+    - function: unset_role
+      source:
+        path: salt/modules/nxos.py
+        symbol: unset_role
+      summary: Remove role from username.
+      parameters:
+        - name: username
+        - name: role
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_file_str
+        - file.apply_template_on_contents
+      utility_dependencies:
+        - nxos.ping
+      tests:
+        - path: tests/unit/modules/test_nxos.py
+          functions: 0
+    - function: _configure_device
+      source:
+        path: salt/modules/nxos.py
+        symbol: _configure_device
+      summary: Helper function to send configuration commands to the device over a
+      parameters:
+        - name: commands
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_file_str
+        - file.apply_template_on_contents
+      utility_dependencies:
+        - nxos.ping
+      tests:
+        - path: tests/unit/modules/test_nxos.py
+          functions: 0
+    - function: _nxapi_config
+      source:
+        path: salt/modules/nxos.py
+        symbol: _nxapi_config
+      summary: Helper function to send configuration commands using NX-API.
+      parameters:
+        - name: commands
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - cp.get_file_str
+        - file.apply_template_on_contents
+      utility_dependencies:
+        - nxos.ping
+      tests:
+        - path: tests/unit/modules/test_nxos.py
+          functions: 0
+    - function: _nxapi_request
+      source:
+        path: salt/modules/nxos.py
+        symbol: _nxapi_request
+      summary: Helper function to send exec and config requests over NX-API.
+      parameters:
+        - name: commands
+        - name: method
+          default: '"cli_conf"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - cp.get_file_str
+        - file.apply_template_on_contents
+      utility_dependencies:
+        - nxos.nxapi_request
+        - nxos.ping
+      tests:
+        - path: tests/unit/modules/test_nxos.py
+          functions: 0

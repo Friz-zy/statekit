@@ -1,0 +1,47 @@
+kind: state
+module: raid
+source_module: mdadm_raid
+virtual: true
+path: salt/states/mdadm_raid.py
+functions:
+    - function: present
+      source:
+        path: salt/states/mdadm_raid.py
+        symbol: present
+      summary: Verify that the raid is present
+      parameters:
+        - name: name
+        - name: level
+        - name: devices
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - file.access
+        - raid.add
+        - raid.assemble
+        - raid.create
+        - raid.examine
+        - raid.list
+        - raid.save_config
+      tests:
+        - path: tests/pytests/unit/states/test_mdadm_raid.py
+          functions: 2
+    - function: absent
+      source:
+        path: salt/states/mdadm_raid.py
+        symbol: absent
+      summary: Verify that the raid is absent
+      parameters:
+        - name: name
+      execution_dependencies:
+        - file.access
+        - raid.add
+        - raid.assemble
+        - raid.create
+        - raid.destroy
+        - raid.examine
+        - raid.list
+        - raid.save_config
+      tests:
+        - path: tests/pytests/unit/states/test_mdadm_raid.py
+          functions: 2

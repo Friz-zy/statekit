@@ -1,0 +1,32 @@
+kind: state
+module: rabbitmq_plugin
+source_module: rabbitmq_plugin
+path: salt/states/rabbitmq_plugin.py
+functions:
+    - function: enabled
+      source:
+        path: salt/states/rabbitmq_plugin.py
+        symbol: enabled
+      summary: Ensure the RabbitMQ plugin is enabled.
+      parameters:
+        - name: name
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.has_exec
+        - rabbitmq.enable_plugin
+        - rabbitmq.plugin_is_enabled
+    - function: disabled
+      source:
+        path: salt/states/rabbitmq_plugin.py
+        symbol: disabled
+      summary: Ensure the RabbitMQ plugin is disabled.
+      parameters:
+        - name: name
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.has_exec
+        - rabbitmq.disable_plugin
+        - rabbitmq.enable_plugin
+        - rabbitmq.plugin_is_enabled

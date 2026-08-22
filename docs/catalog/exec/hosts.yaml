@@ -1,0 +1,137 @@
+kind: exec
+module: hosts
+source_module: hosts
+path: salt/modules/hosts.py
+functions:
+    - function: _get_or_create_hostfile
+      source:
+        path: salt/modules/hosts.py
+        symbol: _get_or_create_hostfile
+      summary: Wrapper of __get_hosts_filename but create host file if it
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/unit/modules/test_hosts.py
+          functions: 0
+    - function: _list_hosts
+      source:
+        path: salt/modules/hosts.py
+        symbol: _list_hosts
+      summary: Return the hosts found in the hosts file in as an OrderedDict
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/unit/modules/test_hosts.py
+          functions: 0
+    - function: list_hosts
+      source:
+        path: salt/modules/hosts.py
+        symbol: list_hosts
+      summary: 'Return the hosts found in the hosts file in this format::'
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/unit/modules/test_hosts.py
+          functions: 0
+    - function: get_ip
+      source:
+        path: salt/modules/hosts.py
+        symbol: get_ip
+      summary: Return the ip associated with the named host
+      parameters:
+        - name: host
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/unit/modules/test_hosts.py
+          functions: 0
+    - function: get_alias
+      source:
+        path: salt/modules/hosts.py
+        symbol: get_alias
+      summary: Return the list of aliases associated with an ip
+      parameters:
+        - name: ip
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/unit/modules/test_hosts.py
+          functions: 0
+    - function: has_pair
+      source:
+        path: salt/modules/hosts.py
+        symbol: has_pair
+      summary: Return true if the alias is set
+      parameters:
+        - name: ip
+        - name: alias
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/unit/modules/test_hosts.py
+          functions: 0
+    - function: set_host
+      source:
+        path: salt/modules/hosts.py
+        symbol: set_host
+      summary: Set the host entry in the hosts file for the given ip, this will overwrite
+      parameters:
+        - name: ip
+        - name: alias
+        - name: comment
+          default: None
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/unit/modules/test_hosts.py
+          functions: 0
+    - function: rm_host
+      source:
+        path: salt/modules/hosts.py
+        symbol: rm_host
+      summary: Remove a host entry from the hosts file
+      parameters:
+        - name: ip
+        - name: alias
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/unit/modules/test_hosts.py
+          functions: 0
+    - function: add_host
+      source:
+        path: salt/modules/hosts.py
+        symbol: add_host
+      summary: Add a host to an existing entry, if the entry is not in place then create
+      parameters:
+        - name: ip
+        - name: alias
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/unit/modules/test_hosts.py
+          functions: 0
+    - function: set_comment
+      source:
+        path: salt/modules/hosts.py
+        symbol: set_comment
+      summary: Set the comment for a host to an existing entry,
+      parameters:
+        - name: ip
+        - name: comment
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/unit/modules/test_hosts.py
+          functions: 0
+    - function: _write_hosts
+      source:
+        path: salt/modules/hosts.py
+        symbol: _write_hosts
+      parameters:
+        - name: hosts
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/unit/modules/test_hosts.py
+          functions: 0

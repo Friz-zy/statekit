@@ -1,0 +1,165 @@
+kind: state
+module: test
+source_module: test
+path: salt/states/test.py
+functions:
+    - function: nop
+      source:
+        path: salt/states/test.py
+        symbol: nop
+      summary: '.. versionadded:: 2015.8.1'
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/states/test_test.py
+          functions: 13
+    - function: succeed_without_changes
+      source:
+        path: salt/states/test.py
+        symbol: succeed_without_changes
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/states/test_test.py
+          functions: 13
+    - function: fail_without_changes
+      source:
+        path: salt/states/test.py
+        symbol: fail_without_changes
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/states/test_test.py
+          functions: 13
+    - function: succeed_with_changes
+      source:
+        path: salt/states/test.py
+        symbol: succeed_with_changes
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/states/test_test.py
+          functions: 13
+    - function: fail_with_changes
+      source:
+        path: salt/states/test.py
+        symbol: fail_with_changes
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/states/test_test.py
+          functions: 13
+    - function: configurable_test_state
+      source:
+        path: salt/states/test.py
+        symbol: configurable_test_state
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+        - name: changes
+          default: "True"
+        - name: result
+          default: "True"
+        - name: comment
+          default: '""'
+        - name: warnings
+          default: None
+        - name: allow_test_mode_failure
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/states/test_test.py
+          functions: 13
+    - function: show_notification
+      source:
+        path: salt/states/test.py
+        symbol: show_notification
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: name
+        - name: text
+          default: None
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/states/test_test.py
+          functions: 13
+    - function: mod_watch
+      source:
+        path: salt/states/test.py
+        symbol: mod_watch
+      summary: Call this function via a watch statement
+      parameters:
+        - name: name
+        - name: sfun
+          default: None
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/states/test_test.py
+          functions: 13
+    - function: _check_key_type
+      source:
+        path: salt/states/test.py
+        symbol: _check_key_type
+      summary: Helper function to get pillar[key_str] and
+      parameters:
+        - name: key_str
+        - name: key_type
+          default: None
+      execution_dependencies:
+        - pillar.get
+      tests:
+        - path: tests/pytests/unit/states/test_test.py
+          functions: 13
+    - function: _if_str_then_list
+      source:
+        path: salt/states/test.py
+        symbol: _if_str_then_list
+      summary: Checks if its argument is a list or a str.
+      parameters:
+        - name: listing
+      execution_dependencies:
+        - pillar.get
+      tests:
+        - path: tests/pytests/unit/states/test_test.py
+          functions: 13
+    - function: check_pillar
+      source:
+        path: salt/states/test.py
+        symbol: check_pillar
+      summary: Checks the presence and, optionally, the type of given keys in Pillar
+      parameters:
+        - name: name
+        - name: present
+          default: None
+        - name: boolean
+          default: None
+        - name: integer
+          default: None
+        - name: string
+          default: None
+        - name: listing
+          default: None
+        - name: dictionary
+          default: None
+        - name: verbose
+          default: "False"
+      execution_dependencies:
+        - pillar.get
+      tests:
+        - path: tests/pytests/unit/states/test_test.py
+          functions: 13

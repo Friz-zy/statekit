@@ -1,0 +1,122 @@
+kind: exec
+module: pyeapi
+source_module: arista_pyeapi
+virtual: true
+path: salt/modules/arista_pyeapi.py
+functions:
+    - function: _prepare_connection
+      source:
+        path: salt/modules/arista_pyeapi.py
+        symbol: _prepare_connection
+      summary: Prepare the connection with the remote network device, and clean up the key
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+      utility_dependencies:
+        - args.prepare_kwargs
+    - function: get_connection
+      source:
+        path: salt/modules/arista_pyeapi.py
+        symbol: get_connection
+      summary: Return the connection object to the pyeapi Node.
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+      utility_dependencies:
+        - args.prepare_kwargs
+    - function: call
+      source:
+        path: salt/modules/arista_pyeapi.py
+        symbol: call
+      summary: Invoke an arbitrary pyeapi method.
+      parameters:
+        - name: method
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+      utility_dependencies:
+        - args.prepare_kwargs
+    - function: run_commands
+      source:
+        path: salt/modules/arista_pyeapi.py
+        symbol: run_commands
+      summary: Sends the commands over the transport to the device.
+      parameters:
+        - name: commands
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+      utility_dependencies:
+        - args.prepare_kwargs
+    - function: config
+      source:
+        path: salt/modules/arista_pyeapi.py
+        symbol: config
+      summary: Configures the node with the specified commands.
+      parameters:
+        - name: commands
+          default: None
+        - name: config_file
+          default: None
+        - name: template_engine
+          default: '"jinja"'
+        - name: context
+          default: None
+        - name: defaults
+          default: None
+        - name: saltenv
+          default: '"base"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - cp.get_file_str
+        - file.apply_template_on_contents
+      utility_dependencies:
+        - args.prepare_kwargs
+    - function: get_config
+      source:
+        path: salt/modules/arista_pyeapi.py
+        symbol: get_config
+      summary: Retrieves the config from the device.
+      parameters:
+        - name: config
+          default: '"running-config"'
+        - name: params
+          default: None
+        - name: as_string
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - cp.get_file_str
+        - file.apply_template_on_contents
+      utility_dependencies:
+        - args.prepare_kwargs
+    - function: section
+      source:
+        path: salt/modules/arista_pyeapi.py
+        symbol: section
+      summary: Return a section of the config.
+      parameters:
+        - name: regex
+        - name: config
+          default: '"running-config"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - cp.get_file_str
+        - file.apply_template_on_contents
+      utility_dependencies:
+        - args.prepare_kwargs

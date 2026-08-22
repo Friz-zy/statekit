@@ -1,0 +1,14 @@
+kind: state
+module: stateconf
+source_module: stateconf
+path: salt/states/stateconf.py
+functions:
+    - function: _no_op
+      source:
+        path: salt/states/stateconf.py
+        symbol: _no_op
+      summary: No-op state to support state config via the stateconf renderer.
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'

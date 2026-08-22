@@ -1,0 +1,215 @@
+kind: exec
+module: lowpkg
+source_module: rpm_lowpkg
+virtual: true
+path: salt/modules/rpm_lowpkg.py
+functions:
+    - function: bin_pkg_info
+      source:
+        path: salt/modules/rpm_lowpkg.py
+        symbol: bin_pkg_info
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: path
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.valid_fileproto
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_rpm_lowpkg.py
+          functions: 24
+    - function: list_pkgs
+      source:
+        path: salt/modules/rpm_lowpkg.py
+        symbol: list_pkgs
+      summary: 'List the packages currently installed in a dict::'
+      parameters:
+        - name: packages
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+        - config.valid_fileproto
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_rpm_lowpkg.py
+          functions: 24
+    - function: verify
+      source:
+        path: salt/modules/rpm_lowpkg.py
+        symbol: verify
+      summary: Runs an rpm -Va on a system, and returns the results in a dict
+      parameters:
+        - name: packages
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.valid_fileproto
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_rpm_lowpkg.py
+          functions: 24
+    - function: modified
+      source:
+        path: salt/modules/rpm_lowpkg.py
+        symbol: modified
+      summary: List the modified files that belong to a package. Not specifying any packages
+      parameters:
+        - name: packages
+          kind: '*'
+        - name: flags
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.valid_fileproto
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_rpm_lowpkg.py
+          functions: 24
+    - function: file_list
+      source:
+        path: salt/modules/rpm_lowpkg.py
+        symbol: file_list
+      summary: List the files that belong to a package. Not specifying any packages will
+      parameters:
+        - name: packages
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.valid_fileproto
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_rpm_lowpkg.py
+          functions: 24
+    - function: file_dict
+      source:
+        path: salt/modules/rpm_lowpkg.py
+        symbol: file_dict
+      summary: List the files that belong to a package, sorted by group. Not specifying
+      parameters:
+        - name: packages
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.valid_fileproto
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_rpm_lowpkg.py
+          functions: 24
+    - function: owner
+      source:
+        path: salt/modules/rpm_lowpkg.py
+        symbol: owner
+      summary: Return the name of the package that owns the file. Multiple file paths can
+      parameters:
+        - name: paths
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.valid_fileproto
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_rpm_lowpkg.py
+          functions: 24
+    - function: diff
+      source:
+        path: salt/modules/rpm_lowpkg.py
+        symbol: diff
+      summary: Return a formatted diff between current file and original in a package.
+      parameters:
+        - name: package_path
+        - name: path
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - cmd.shell
+        - config.valid_fileproto
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_rpm_lowpkg.py
+          functions: 24
+    - function: info
+      source:
+        path: salt/modules/rpm_lowpkg.py
+        symbol: info
+      summary: Return a detailed package(s) summary information.
+      parameters:
+        - name: packages
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - cmd.shell
+        - config.valid_fileproto
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_rpm_lowpkg.py
+          functions: 24
+    - function: version_cmp
+      source:
+        path: salt/modules/rpm_lowpkg.py
+        symbol: version_cmp
+      summary: '.. versionadded:: 2015.8.9'
+      parameters:
+        - name: ver1
+        - name: ver2
+        - name: ignore_epoch
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - cmd.shell
+        - config.valid_fileproto
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_rpm_lowpkg.py
+          functions: 24
+    - function: checksum
+      source:
+        path: salt/modules/rpm_lowpkg.py
+        symbol: checksum
+      summary: Return if the signature of a RPM file is valid.
+      parameters:
+        - name: paths
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - cmd.shell
+        - config.valid_fileproto
+        - cp.cache_file
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_rpm_lowpkg.py
+          functions: 24

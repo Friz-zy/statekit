@@ -1,0 +1,587 @@
+kind: exec
+module: syslog_ng
+source_module: syslog_ng
+path: salt/modules/syslog_ng.py
+functions:
+    - function: _increase_indent
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _increase_indent
+      summary: Increases the indentation level.
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _decrease_indent
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _decrease_indent
+      summary: Decreases the indentation level.
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _indent
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _indent
+      summary: Returns the indented parameter.
+      parameters:
+        - name: value
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _indentln
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _indentln
+      summary: Return the indented parameter with newline.
+      parameters:
+        - name: string
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _is_statement_unnamed
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _is_statement_unnamed
+      summary: Returns True, if the given statement is an unnamed statement, like log or
+      parameters:
+        - name: statement
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _is_simple_type
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _is_simple_type
+      summary: Returns True, if the given parameter value is an instance of either
+      parameters:
+        - name: value
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _get_type_id_options
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _get_type_id_options
+      summary: Returns the type, id and option of a configuration object.
+      parameters:
+        - name: name
+        - name: configuration
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _expand_one_key_dictionary
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _expand_one_key_dictionary
+      summary: Returns the only one key and its value from a dictionary.
+      parameters:
+        - name: _dict
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _parse_typed_parameter_typed_value
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _parse_typed_parameter_typed_value
+      summary: Creates Arguments in a TypedParametervalue.
+      parameters:
+        - name: values
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _parse_typed_parameter
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _parse_typed_parameter
+      summary: Parses a TypedParameter and fills it with values.
+      parameters:
+        - name: param
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _create_and_add_parameters
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _create_and_add_parameters
+      summary: Parses the configuration and creates Parameter instances.
+      parameters:
+        - name: params
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _create_and_add_option
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _create_and_add_option
+      summary: Parses the configuration and creates an Option instance.
+      parameters:
+        - name: option
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _parse_statement
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _parse_statement
+      summary: Parses the configuration and creates options the statement.
+      parameters:
+        - name: options
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _is_reference
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _is_reference
+      summary: Return True, if arg is a reference to a previously defined statement.
+      parameters:
+        - name: arg
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _is_junction
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _is_junction
+      summary: Return True, if arg is a junction statement.
+      parameters:
+        - name: arg
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _add_reference
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _add_reference
+      summary: Adds a reference to statement.
+      parameters:
+        - name: reference
+        - name: statement
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _is_inline_definition
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _is_inline_definition
+      summary: Returns True, if arg is an inline definition of a statement.
+      parameters:
+        - name: arg
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _add_inline_definition
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _add_inline_definition
+      summary: Adds an inline definition to statement.
+      parameters:
+        - name: item
+        - name: statement
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _add_junction
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _add_junction
+      summary: Adds a junction to the _current_statement.
+      parameters:
+        - name: item
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _parse_log_statement
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _parse_log_statement
+      summary: Parses a log path.
+      parameters:
+        - name: options
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _build_config_tree
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _build_config_tree
+      summary: Build the configuration tree.
+      parameters:
+        - name: name
+        - name: configuration
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _render_configuration
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _render_configuration
+      summary: Renders the configuration tree into syslog-ng's configuration syntax.
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: config
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: config
+      summary: Builds syslog-ng configuration. This function is intended to be used from
+      parameters:
+        - name: name
+        - name: config
+        - name: write
+          default: "True"
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: set_binary_path
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: set_binary_path
+      summary: Sets the path, where the syslog-ng binary can be found. This function is
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: set_config_file
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: set_config_file
+      summary: Sets the configuration's name. This function is intended to be used from
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: get_config_file
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: get_config_file
+      summary: Returns the configuration directory, which contains syslog-ng.conf.
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _run_command
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _run_command
+      summary: Runs the command cmd with options as its CLI parameters and returns the
+      parameters:
+        - name: cmd
+        - name: options
+          default: ()
+        - name: env
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _determine_config_version
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _determine_config_version
+      parameters:
+        - name: syslog_ng_sbin_dir
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: set_parameters
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: set_parameters
+      summary: Sets variables.
+      parameters:
+        - name: version
+          default: None
+        - name: binary_path
+          default: None
+        - name: config_file
+          default: None
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _run_command_in_extended_path
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _run_command_in_extended_path
+      summary: Runs the specified command with the syslog_ng_sbin_dir in the PATH
+      parameters:
+        - name: syslog_ng_sbin_dir
+        - name: command
+        - name: params
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _format_return_data
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _format_return_data
+      summary: Creates a dictionary from the parameters, which can be used to return data
+      parameters:
+        - name: retcode
+        - name: stdout
+          default: None
+        - name: stderr
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: config_test
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: config_test
+      summary: Runs syntax check against cfgfile. If syslog_ng_sbin_dir is specified, it
+      parameters:
+        - name: syslog_ng_sbin_dir
+          default: None
+        - name: cfgfile
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: version
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: version
+      summary: Returns the version of the installed syslog-ng. If syslog_ng_sbin_dir is
+      parameters:
+        - name: syslog_ng_sbin_dir
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: modules
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: modules
+      summary: Returns the available modules. If syslog_ng_sbin_dir is specified, it
+      parameters:
+        - name: syslog_ng_sbin_dir
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: stats
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: stats
+      summary: Returns statistics from the running syslog-ng instance. If
+      parameters:
+        - name: syslog_ng_sbin_dir
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _format_changes
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _format_changes
+      parameters:
+        - name: old
+          default: '""'
+        - name: new
+          default: '""'
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _format_state_result
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _format_state_result
+      summary: Creates the state result dictionary.
+      parameters:
+        - name: name
+        - name: result
+        - name: changes
+          default: None
+        - name: comment
+          default: '""'
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _add_cli_param
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _add_cli_param
+      summary: Adds key and value as a command line parameter to params.
+      parameters:
+        - name: params
+        - name: key
+        - name: value
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _add_boolean_cli_param
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _add_boolean_cli_param
+      summary: Adds key as a command line parameter to params.
+      parameters:
+        - name: params
+        - name: key
+        - name: value
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: stop
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: stop
+      summary: Kills syslog-ng. This function is intended to be used from the state module.
+      parameters:
+        - name: name
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - ps.pgrep
+        - ps.pkill
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: start
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: start
+      summary: Ensures, that syslog-ng is started via the given parameters. This function
+      parameters:
+        - name: name
+          default: None
+        - name: user
+          default: None
+        - name: group
+          default: None
+        - name: chroot
+          default: None
+        - name: caps
+          default: None
+        - name: no_caps
+          default: "False"
+        - name: pidfile
+          default: None
+        - name: enable_core
+          default: "False"
+        - name: fd_limit
+          default: None
+        - name: verbose
+          default: "False"
+        - name: debug
+          default: "False"
+        - name: trace
+          default: "False"
+        - name: yydebug
+          default: "False"
+        - name: persist_file
+          default: None
+        - name: control
+          default: None
+        - name: worker_threads
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - ps.pgrep
+        - ps.pkill
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: reload_
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: reload_
+      summary: Reloads syslog-ng. This function is intended to be used from states.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - ps.pgrep
+        - ps.pkill
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _format_generated_config_header
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _format_generated_config_header
+      summary: Formats a header, which is prepended to all appended config.
+      execution_dependencies:
+        - cmd.run_all
+        - ps.pgrep
+        - ps.pkill
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: write_config
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: write_config
+      summary: Writes the given parameter config into the config file. This function is
+      parameters:
+        - name: config
+        - name: newlines
+          default: "2"
+      execution_dependencies:
+        - cmd.run_all
+        - ps.pgrep
+        - ps.pkill
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: _write_config
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: _write_config
+      summary: Writes the given parameter config into the config file.
+      parameters:
+        - name: config
+        - name: newlines
+          default: "2"
+      execution_dependencies:
+        - cmd.run_all
+        - ps.pgrep
+        - ps.pkill
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11
+    - function: write_version
+      source:
+        path: salt/modules/syslog_ng.py
+        symbol: write_version
+      summary: Removes the previous configuration file, then creates a new one and writes
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - ps.pgrep
+        - ps.pkill
+      tests:
+        - path: tests/pytests/unit/modules/test_syslog_ng.py
+          functions: 11

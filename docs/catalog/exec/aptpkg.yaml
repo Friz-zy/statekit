@@ -1,0 +1,1207 @@
+kind: exec
+module: pkg
+source_module: aptpkg
+virtual: true
+path: salt/modules/aptpkg.py
+functions:
+    - function: _get_ppa_info_from_launchpad
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: _get_ppa_info_from_launchpad
+      summary: Idea from softwareproperties.ppa.
+      parameters:
+        - name: owner_name
+        - name: ppa_name
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: _call_apt
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: _call_apt
+      summary: Call apt* utilities.
+      parameters:
+        - name: args
+        - name: scope
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: normalize_name
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: normalize_name
+      summary: Strips the architecture from the specified package name, if necessary.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: parse_arch
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: parse_arch
+      summary: Parse name and architecture from the specified package name.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: latest_version
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: latest_version
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: version
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: version
+      summary: Returns a string representing the package version or an empty string if not
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: refresh_db
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: refresh_db
+      summary: Updates the APT database to latest packages based upon repositories
+      parameters:
+        - name: cache_valid_time
+          default: "0"
+        - name: failhard
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: install
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: install
+      summary: '.. versionchanged:: 2015.8.12,2016.3.3,2016.11.0'
+      parameters:
+        - name: name
+          default: None
+        - name: refresh
+          default: "False"
+        - name: fromrepo
+          default: None
+        - name: skip_verify
+          default: "False"
+        - name: debconf
+          default: None
+        - name: pkgs
+          default: None
+        - name: sources
+          default: None
+        - name: reinstall
+          default: "False"
+        - name: downloadonly
+          default: "False"
+        - name: ignore_epoch
+          default: "False"
+        - name: normalize
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: _uninstall
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: _uninstall
+      summary: remove and purge do identical things but with different apt-get commands,
+      parameters:
+        - name: action
+          default: '"remove"'
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: autoremove
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: autoremove
+      summary: '.. versionadded:: 2015.5.0'
+      parameters:
+        - name: list_only
+          default: "False"
+        - name: purge
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: remove
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: remove
+      summary: '.. versionchanged:: 2015.8.12,2016.3.3,2016.11.0'
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: purge
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: purge
+      summary: '.. versionchanged:: 2015.8.12,2016.3.3,2016.11.0'
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: upgrade
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: upgrade
+      summary: '.. versionchanged:: 2015.8.12,2016.3.3,2016.11.0'
+      parameters:
+        - name: refresh
+          default: "True"
+        - name: dist_upgrade
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: hold
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: hold
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: sources
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: unhold
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: unhold
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: sources
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: _list_pkgs_from_context
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: _list_pkgs_from_context
+      summary: Use pkg list from __context__
+      parameters:
+        - name: versions_as_list
+        - name: removed
+        - name: purge_desired
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.parse_targets
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: list_pkgs
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: list_pkgs
+      summary: 'List the packages currently installed in a dict::'
+      parameters:
+        - name: versions_as_list
+          default: "False"
+        - name: removed
+          default: "False"
+        - name: purge_desired
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: _get_upgradable
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: _get_upgradable
+      summary: Utility function to get upgradable packages
+      parameters:
+        - name: dist_upgrade
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: list_upgrades
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: list_upgrades
+      summary: List all available package upgrades.
+      parameters:
+        - name: refresh
+          default: "True"
+        - name: dist_upgrade
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: upgrade_available
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: upgrade_available
+      summary: Check whether or not an upgrade is available for a given package
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: version_cmp
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: version_cmp
+      summary: Do a cmp-style comparison on two packages. Return -1 if pkg1 < pkg2, 0 if
+      parameters:
+        - name: pkg1
+        - name: pkg2
+        - name: ignore_epoch
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: _split_repo_str
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: _split_repo_str
+      summary: Return APT source entry as a dictionary
+      parameters:
+        - name: repo
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: _consolidate_repo_sources
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: _consolidate_repo_sources
+      summary: Consolidate APT sources.
+      parameters:
+        - name: sources
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: list_repo_pkgs
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: list_repo_pkgs
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: _skip_source
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: _skip_source
+      summary: Decide to skip source or not.
+      parameters:
+        - name: source
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: list_repos
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: list_repos
+      summary: Lists all repos in the sources.list (and sources.lists.d) files
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: get_repo
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: get_repo
+      summary: Display a repo from the sources.list / sources.list.d
+      parameters:
+        - name: repo
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: del_repo
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: del_repo
+      summary: Delete a repo from the sources.list / sources.list.d
+      parameters:
+        - name: repo
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: _convert_if_int
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: _convert_if_int
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: value
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: _parse_repo_keys_output
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: _parse_repo_keys_output
+      summary: ret = dict()
+      parameters:
+        - name: cmd_ret
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: get_repo_keys
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: get_repo_keys
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: aptkey
+          default: "True"
+        - name: keydir
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: _decrypt_key
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: _decrypt_key
+      summary: Check if the key needs to be decrypted. If it needs
+      parameters:
+        - name: key
+        - name: keyfile
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: add_repo_key
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: add_repo_key
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: path
+          default: None
+        - name: text
+          default: None
+        - name: keyserver
+          default: None
+        - name: keyid
+          default: None
+        - name: saltenv
+          default: '"base"'
+        - name: aptkey
+          default: "True"
+        - name: keydir
+          default: None
+        - name: keyfile
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - cp.cache_file
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: _get_key_from_id
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: _get_key_from_id
+      summary: Find and return the key file from the keyid.
+      parameters:
+        - name: keydir
+        - name: keyid
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - cp.cache_file
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: del_repo_key
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: del_repo_key
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: name
+          default: None
+        - name: aptkey
+          default: "True"
+        - name: keydir
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - cp.cache_file
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: mod_repo
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: mod_repo
+      summary: Modify one or more values for a repo.  If the repo does not exist, it will
+      parameters:
+        - name: repo
+        - name: saltenv
+          default: '"base"'
+        - name: aptkey
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - cp.cache_file
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: file_list
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: file_list
+      summary: List the files that belong to a package. Not specifying any packages will
+      parameters:
+        - name: packages
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - cp.cache_file
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.file_list
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: file_dict
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: file_dict
+      summary: List the files that belong to a package, grouped by package. Not
+      parameters:
+        - name: packages
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - cp.cache_file
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: _expand_repo_def
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: _expand_repo_def
+      summary: Take a repository definition and expand it to the full pkg repository dict
+      parameters:
+        - name: os_name
+        - name: os_codename
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - cp.cache_file
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: _parse_selections
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: _parse_selections
+      summary: Parses the format from ``dpkg --get-selections`` and return a format that
+      parameters:
+        - name: dpkgselection
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - cp.cache_file
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: get_selections
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: get_selections
+      summary: View package state from the dpkg database.
+      parameters:
+        - name: pattern
+          default: None
+        - name: state
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - cp.cache_file
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: set_selections
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: set_selections
+      summary: Change package state in the dpkg database.
+      parameters:
+        - name: path
+          default: None
+        - name: selection
+          default: None
+        - name: clear
+          default: "False"
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - cp.cache_file
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: owner
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: owner
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: paths
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - cp.cache_file
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: show
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: show
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - cp.cache_file
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: info_installed
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: info_installed
+      summary: Return the information of the named package(s) installed on the system.
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - cp.cache_file
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: _get_http_proxy_url
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: _get_http_proxy_url
+      summary: Returns the http_proxy_url if proxy_username, proxy_password, proxy_host, and proxy_port
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - cp.cache_file
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: list_downloaded
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: list_downloaded
+      summary: '.. versionadded:: 3000'
+      parameters:
+        - name: root
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - cp.cache_file
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: services_need_restart
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: services_need_restart
+      summary: '.. versionadded:: 3003'
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - cp.cache_file
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95
+    - function: which
+      source:
+        path: salt/modules/aptpkg.py
+        symbol: which
+      summary: Displays which package installed a specific file
+      parameters:
+        - name: path
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - cp.cache_file
+        - debconf.set_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_aptpkg.py
+          functions: 95

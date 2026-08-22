@@ -1,0 +1,74 @@
+kind: exec
+module: win_dns_client
+source_module: win_dns_client
+path: salt/modules/win_dns_client.py
+platform_markers:
+    - is_windows
+functions:
+    - function: get_dns_servers
+      source:
+        path: salt/modules/win_dns_client.py
+        symbol: get_dns_servers
+      summary: Return a list of the configured DNS servers of the specified interface
+      parameters:
+        - name: interface
+          default: '"Local Area Connection"'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dns_client.py
+          functions: 8
+    - function: rm_dns
+      source:
+        path: salt/modules/win_dns_client.py
+        symbol: rm_dns
+      summary: Remove the DNS server from the network interface
+      parameters:
+        - name: ip
+        - name: interface
+          default: '"Local Area Connection"'
+      execution_dependencies:
+        - cmd.retcode
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dns_client.py
+          functions: 8
+    - function: add_dns
+      source:
+        path: salt/modules/win_dns_client.py
+        symbol: add_dns
+      summary: Add the DNS server to the network interface (index starts from 1)
+      parameters:
+        - name: ip
+        - name: interface
+          default: '"Local Area Connection"'
+        - name: index
+          default: "1"
+      execution_dependencies:
+        - cmd.retcode
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dns_client.py
+          functions: 8
+    - function: dns_dhcp
+      source:
+        path: salt/modules/win_dns_client.py
+        symbol: dns_dhcp
+      summary: Configure the interface to get its DNS servers from the DHCP server
+      parameters:
+        - name: interface
+          default: '"Local Area Connection"'
+      execution_dependencies:
+        - cmd.retcode
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dns_client.py
+          functions: 8
+    - function: get_dns_config
+      source:
+        path: salt/modules/win_dns_client.py
+        symbol: get_dns_config
+      summary: Get the type of DNS configuration (dhcp / static).
+      parameters:
+        - name: interface
+          default: '"Local Area Connection"'
+      execution_dependencies:
+        - cmd.retcode
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dns_client.py
+          functions: 8

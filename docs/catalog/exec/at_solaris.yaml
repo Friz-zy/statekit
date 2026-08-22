@@ -1,0 +1,75 @@
+kind: exec
+module: at
+source_module: at_solaris
+virtual: true
+path: salt/modules/at_solaris.py
+platform_markers:
+    - is_sunos
+functions:
+    - function: atq
+      source:
+        path: salt/modules/at_solaris.py
+        symbol: atq
+      summary: List all queued and running jobs or only those with
+      parameters:
+        - name: tag
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - file.file_exists
+    - function: atrm
+      source:
+        path: salt/modules/at_solaris.py
+        symbol: atrm
+      summary: Remove jobs from the queue.
+      parameters:
+        - name: args
+          kind: '*'
+      execution_dependencies:
+        - cmd.run_all
+        - file.file_exists
+    - function: at
+      source:
+        path: salt/modules/at_solaris.py
+        symbol: at
+      summary: Add a job to the queue.
+      parameters:
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - file.file_exists
+    - function: atc
+      source:
+        path: salt/modules/at_solaris.py
+        symbol: atc
+      summary: Print the at(1) script that will run for the passed job
+      parameters:
+        - name: jobid
+      execution_dependencies:
+        - cmd.run_all
+        - file.file_exists
+    - function: _atq
+      source:
+        path: salt/modules/at_solaris.py
+        symbol: _atq
+      summary: Return match jobs list
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - file.file_exists
+    - function: jobcheck
+      source:
+        path: salt/modules/at_solaris.py
+        symbol: jobcheck
+      summary: Check the job from queue.
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - file.file_exists

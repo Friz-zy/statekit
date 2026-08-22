@@ -1,0 +1,226 @@
+kind: exec
+module: pkg_resource
+source_module: pkg_resource
+path: salt/modules/pkg_resource.py
+functions:
+    - function: _repack_pkgs
+      source:
+        path: salt/modules/pkg_resource.py
+        symbol: _repack_pkgs
+      summary: Repack packages specified using "pkgs" argument to pkg states into a single
+      parameters:
+        - name: pkgs
+        - name: normalize
+          default: "True"
+      execution_dependencies:
+        - pkg.normalize_name
+      tests:
+        - path: tests/pytests/unit/modules/test_pkg_resource.py
+          functions: 12
+    - function: pack_sources
+      source:
+        path: salt/modules/pkg_resource.py
+        symbol: pack_sources
+      summary: Accepts list of dicts (or a string representing a list of dicts) and packs
+      parameters:
+        - name: sources
+        - name: normalize
+          default: "True"
+      execution_dependencies:
+        - pkg.normalize_name
+      tests:
+        - path: tests/pytests/unit/modules/test_pkg_resource.py
+          functions: 12
+    - function: parse_targets
+      source:
+        path: salt/modules/pkg_resource.py
+        symbol: parse_targets
+      summary: Parses the input to pkg.install and returns back the package(s) to be
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: sources
+          default: None
+        - name: saltenv
+          default: '"base"'
+        - name: normalize
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.valid_fileproto
+        - cp.cache_file
+        - pkg.normalize_name
+      tests:
+        - path: tests/pytests/unit/modules/test_pkg_resource.py
+          functions: 12
+    - function: version
+      source:
+        path: salt/modules/pkg_resource.py
+        symbol: version
+      summary: Common interface for obtaining the version of installed packages.
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.valid_fileproto
+        - cp.cache_file
+        - pkg.list_pkgs
+        - pkg.normalize_name
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_pkg_resource.py
+          functions: 12
+    - function: add_pkg
+      source:
+        path: salt/modules/pkg_resource.py
+        symbol: add_pkg
+      summary: Add a package to a dict of installed packages.
+      parameters:
+        - name: pkgs
+        - name: name
+        - name: pkgver
+      execution_dependencies:
+        - config.valid_fileproto
+        - cp.cache_file
+        - pkg.list_pkgs
+        - pkg.normalize_name
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_pkg_resource.py
+          functions: 12
+    - function: sort_pkglist
+      source:
+        path: salt/modules/pkg_resource.py
+        symbol: sort_pkglist
+      summary: Accepts a dict obtained from pkg.list_pkgs() and sorts in place the list of
+      parameters:
+        - name: pkgs
+      execution_dependencies:
+        - config.valid_fileproto
+        - cp.cache_file
+        - pkg.list_pkgs
+        - pkg.normalize_name
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_pkg_resource.py
+          functions: 12
+    - function: stringify
+      source:
+        path: salt/modules/pkg_resource.py
+        symbol: stringify
+      summary: Takes a dict of package name/version information and joins each list of
+      parameters:
+        - name: pkgs
+      execution_dependencies:
+        - config.valid_fileproto
+        - cp.cache_file
+        - pkg.list_pkgs
+        - pkg.normalize_name
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_pkg_resource.py
+          functions: 12
+    - function: version_clean
+      source:
+        path: salt/modules/pkg_resource.py
+        symbol: version_clean
+      summary: Clean the version string removing extra data.
+      parameters:
+        - name: verstr
+      execution_dependencies:
+        - config.valid_fileproto
+        - cp.cache_file
+        - pkg.list_pkgs
+        - pkg.normalize_name
+        - pkg.version_clean
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_pkg_resource.py
+          functions: 12
+    - function: version_compare
+      source:
+        path: salt/modules/pkg_resource.py
+        symbol: version_compare
+      summary: '.. versionadded:: 3001'
+      parameters:
+        - name: ver1
+        - name: oper
+        - name: ver2
+        - name: ignore_epoch
+          default: "False"
+      execution_dependencies:
+        - config.valid_fileproto
+        - cp.cache_file
+        - pkg.list_pkgs
+        - pkg.normalize_name
+        - pkg.version_clean
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_pkg_resource.py
+          functions: 12
+    - function: check_extra_requirements
+      source:
+        path: salt/modules/pkg_resource.py
+        symbol: check_extra_requirements
+      summary: Check if the installed package already has the given requirements.
+      parameters:
+        - name: pkgname
+        - name: pkgver
+      execution_dependencies:
+        - config.valid_fileproto
+        - cp.cache_file
+        - pkg.check_extra_requirements
+        - pkg.list_pkgs
+        - pkg.normalize_name
+        - pkg.version_clean
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_pkg_resource.py
+          functions: 12
+    - function: format_pkg_list
+      source:
+        path: salt/modules/pkg_resource.py
+        symbol: format_pkg_list
+      summary: Formats packages according to parameters for list_pkgs.
+      parameters:
+        - name: packages
+        - name: versions_as_list
+        - name: attr
+      execution_dependencies:
+        - config.valid_fileproto
+        - cp.cache_file
+        - pkg.check_extra_requirements
+        - pkg.list_pkgs
+        - pkg.normalize_name
+        - pkg.parse_arch
+        - pkg.version_clean
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_pkg_resource.py
+          functions: 12
+    - function: format_version
+      source:
+        path: salt/modules/pkg_resource.py
+        symbol: format_version
+      summary: Formats a version string for list_pkgs.
+      parameters:
+        - name: epoch
+        - name: version
+        - name: release
+      execution_dependencies:
+        - config.valid_fileproto
+        - cp.cache_file
+        - pkg.check_extra_requirements
+        - pkg.list_pkgs
+        - pkg.normalize_name
+        - pkg.parse_arch
+        - pkg.version_clean
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_pkg_resource.py
+          functions: 12

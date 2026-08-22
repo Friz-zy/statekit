@@ -1,0 +1,1105 @@
+kind: exec
+module: osquery
+source_module: osquery
+virtual: true
+path: salt/modules/osquery.py
+platform_markers:
+    - is_darwin
+functions:
+    - function: _table_attrs
+      source:
+        path: salt/modules/osquery.py
+        symbol: _table_attrs
+      summary: Helper function to find valid table attributes
+      parameters:
+        - name: table
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: _osquery
+      source:
+        path: salt/modules/osquery.py
+        symbol: _osquery
+      summary: Helper function to run raw osquery queries
+      parameters:
+        - name: sql
+        - name: format
+          default: '"json"'
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: _osquery_cmd
+      source:
+        path: salt/modules/osquery.py
+        symbol: _osquery_cmd
+      summary: Helper function to run osquery queries
+      parameters:
+        - name: table
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+        - name: format
+          default: '"json"'
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: version
+      source:
+        path: salt/modules/osquery.py
+        symbol: version
+      summary: Return version of osquery
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: rpm_packages
+      source:
+        path: salt/modules/osquery.py
+        symbol: rpm_packages
+      summary: Return cpuid information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: kernel_integrity
+      source:
+        path: salt/modules/osquery.py
+        symbol: kernel_integrity
+      summary: Return kernel_integrity information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: kernel_modules
+      source:
+        path: salt/modules/osquery.py
+        symbol: kernel_modules
+      summary: Return kernel_modules information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: memory_map
+      source:
+        path: salt/modules/osquery.py
+        symbol: memory_map
+      summary: Return memory_map information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: process_memory_map
+      source:
+        path: salt/modules/osquery.py
+        symbol: process_memory_map
+      summary: Return process_memory_map information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: shared_memory
+      source:
+        path: salt/modules/osquery.py
+        symbol: shared_memory
+      summary: Return shared_memory information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: apt_sources
+      source:
+        path: salt/modules/osquery.py
+        symbol: apt_sources
+      summary: Return apt_sources information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: deb_packages
+      source:
+        path: salt/modules/osquery.py
+        symbol: deb_packages
+      summary: Return deb_packages information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: acpi_tables
+      source:
+        path: salt/modules/osquery.py
+        symbol: acpi_tables
+      summary: Return acpi_tables information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: arp_cache
+      source:
+        path: salt/modules/osquery.py
+        symbol: arp_cache
+      summary: Return arp_cache information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: block_devices
+      source:
+        path: salt/modules/osquery.py
+        symbol: block_devices
+      summary: Return block_devices information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: cpuid
+      source:
+        path: salt/modules/osquery.py
+        symbol: cpuid
+      summary: Return cpuid information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: crontab
+      source:
+        path: salt/modules/osquery.py
+        symbol: crontab
+      summary: Return crontab information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: etc_hosts
+      source:
+        path: salt/modules/osquery.py
+        symbol: etc_hosts
+      summary: Return etc_hosts information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: etc_services
+      source:
+        path: salt/modules/osquery.py
+        symbol: etc_services
+      summary: Return etc_services information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: file_changes
+      source:
+        path: salt/modules/osquery.py
+        symbol: file_changes
+      summary: Return file_changes information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: groups
+      source:
+        path: salt/modules/osquery.py
+        symbol: groups
+      summary: Return groups information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: hardware_events
+      source:
+        path: salt/modules/osquery.py
+        symbol: hardware_events
+      summary: Return hardware_events information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: interface_addresses
+      source:
+        path: salt/modules/osquery.py
+        symbol: interface_addresses
+      summary: Return interface_addresses information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: interface_details
+      source:
+        path: salt/modules/osquery.py
+        symbol: interface_details
+      summary: Return interface_details information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: kernel_info
+      source:
+        path: salt/modules/osquery.py
+        symbol: kernel_info
+      summary: Return kernel_info information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: last
+      source:
+        path: salt/modules/osquery.py
+        symbol: last
+      summary: Return last information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: listening_ports
+      source:
+        path: salt/modules/osquery.py
+        symbol: listening_ports
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: logged_in_users
+      source:
+        path: salt/modules/osquery.py
+        symbol: logged_in_users
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: mounts
+      source:
+        path: salt/modules/osquery.py
+        symbol: mounts
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: os_version
+      source:
+        path: salt/modules/osquery.py
+        symbol: os_version
+      summary: Return os_version information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: passwd_changes
+      source:
+        path: salt/modules/osquery.py
+        symbol: passwd_changes
+      summary: Return passwd_changes information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: pci_devices
+      source:
+        path: salt/modules/osquery.py
+        symbol: pci_devices
+      summary: Return pci_devices information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: process_envs
+      source:
+        path: salt/modules/osquery.py
+        symbol: process_envs
+      summary: Return process_envs information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: process_open_files
+      source:
+        path: salt/modules/osquery.py
+        symbol: process_open_files
+      summary: Return process_open_files information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: process_open_sockets
+      source:
+        path: salt/modules/osquery.py
+        symbol: process_open_sockets
+      summary: Return process_open_sockets information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: processes
+      source:
+        path: salt/modules/osquery.py
+        symbol: processes
+      summary: Return processes information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: routes
+      source:
+        path: salt/modules/osquery.py
+        symbol: routes
+      summary: Return routes information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: shell_history
+      source:
+        path: salt/modules/osquery.py
+        symbol: shell_history
+      summary: Return shell_history information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: smbios_tables
+      source:
+        path: salt/modules/osquery.py
+        symbol: smbios_tables
+      summary: Return smbios_tables information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: suid_bin
+      source:
+        path: salt/modules/osquery.py
+        symbol: suid_bin
+      summary: Return suid_bin information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: system_controls
+      source:
+        path: salt/modules/osquery.py
+        symbol: system_controls
+      summary: Return system_controls information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: usb_devices
+      source:
+        path: salt/modules/osquery.py
+        symbol: usb_devices
+      summary: Return usb_devices information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: users
+      source:
+        path: salt/modules/osquery.py
+        symbol: users
+      summary: Return users information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: alf
+      source:
+        path: salt/modules/osquery.py
+        symbol: alf
+      summary: Return alf information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: alf_exceptions
+      source:
+        path: salt/modules/osquery.py
+        symbol: alf_exceptions
+      summary: Return alf_exceptions information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: alf_explicit_auths
+      source:
+        path: salt/modules/osquery.py
+        symbol: alf_explicit_auths
+      summary: Return alf_explicit_auths information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: alf_services
+      source:
+        path: salt/modules/osquery.py
+        symbol: alf_services
+      summary: Return alf_services information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: apps
+      source:
+        path: salt/modules/osquery.py
+        symbol: apps
+      summary: Return apps information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: certificates
+      source:
+        path: salt/modules/osquery.py
+        symbol: certificates
+      summary: Return certificates information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: chrome_extensions
+      source:
+        path: salt/modules/osquery.py
+        symbol: chrome_extensions
+      summary: Return chrome_extensions information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: firefox_addons
+      source:
+        path: salt/modules/osquery.py
+        symbol: firefox_addons
+      summary: Return firefox_addons information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: homebrew_packages
+      source:
+        path: salt/modules/osquery.py
+        symbol: homebrew_packages
+      summary: Return homebrew_packages information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: iokit_devicetree
+      source:
+        path: salt/modules/osquery.py
+        symbol: iokit_devicetree
+      summary: Return iokit_devicetree information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: iokit_registry
+      source:
+        path: salt/modules/osquery.py
+        symbol: iokit_registry
+      summary: Return iokit_registry information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: kernel_extensions
+      source:
+        path: salt/modules/osquery.py
+        symbol: kernel_extensions
+      summary: Return kernel_extensions information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: keychain_items
+      source:
+        path: salt/modules/osquery.py
+        symbol: keychain_items
+      summary: Return keychain_items information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: launchd
+      source:
+        path: salt/modules/osquery.py
+        symbol: launchd
+      summary: Return launchd information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: nfs_shares
+      source:
+        path: salt/modules/osquery.py
+        symbol: nfs_shares
+      summary: Return nfs_shares information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: nvram
+      source:
+        path: salt/modules/osquery.py
+        symbol: nvram
+      summary: Return nvram information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: preferences
+      source:
+        path: salt/modules/osquery.py
+        symbol: preferences
+      summary: Return preferences information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: quarantine
+      source:
+        path: salt/modules/osquery.py
+        symbol: quarantine
+      summary: Return quarantine information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: safari_extensions
+      source:
+        path: salt/modules/osquery.py
+        symbol: safari_extensions
+      summary: Return safari_extensions information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: startup_items
+      source:
+        path: salt/modules/osquery.py
+        symbol: startup_items
+      summary: Return startup_items information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: xattr_where_from
+      source:
+        path: salt/modules/osquery.py
+        symbol: xattr_where_from
+      summary: Return xattr_where_from information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: xprotect_entries
+      source:
+        path: salt/modules/osquery.py
+        symbol: xprotect_entries
+      summary: Return xprotect_entries information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: xprotect_reports
+      source:
+        path: salt/modules/osquery.py
+        symbol: xprotect_reports
+      summary: Return xprotect_reports information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: file_
+      source:
+        path: salt/modules/osquery.py
+        symbol: file_
+      summary: Return file information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: hash_
+      source:
+        path: salt/modules/osquery.py
+        symbol: hash_
+      summary: Return hash information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: osquery_extensions
+      source:
+        path: salt/modules/osquery.py
+        symbol: osquery_extensions
+      summary: Return osquery_extensions information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: osquery_flags
+      source:
+        path: salt/modules/osquery.py
+        symbol: osquery_flags
+      summary: Return osquery_flags information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: osquery_info
+      source:
+        path: salt/modules/osquery.py
+        symbol: osquery_info
+      summary: Return osquery_info information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: osquery_registry
+      source:
+        path: salt/modules/osquery.py
+        symbol: osquery_registry
+      summary: Return osquery_registry information from osquery
+      parameters:
+        - name: attrs
+          default: None
+        - name: where
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: time_
+      source:
+        path: salt/modules/osquery.py
+        symbol: time_
+      summary: Return time information from osquery
+      parameters:
+        - name: attrs
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7
+    - function: query
+      source:
+        path: salt/modules/osquery.py
+        symbol: query
+      summary: Return time information from osquery
+      parameters:
+        - name: sql
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_osquery.py
+          functions: 7

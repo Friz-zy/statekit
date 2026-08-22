@@ -1,0 +1,31 @@
+kind: state
+module: postgres_initdb
+source_module: postgres_initdb
+path: salt/states/postgres_initdb.py
+functions:
+    - function: present
+      source:
+        path: salt/states/postgres_initdb.py
+        symbol: present
+      summary: Initialize the PostgreSQL data directory
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: auth
+          default: '"password"'
+        - name: encoding
+          default: '"UTF8"'
+        - name: locale
+          default: None
+        - name: runas
+          default: None
+        - name: waldir
+          default: None
+        - name: checksums
+          default: "False"
+      execution_dependencies:
+        - postgres.datadir_exists
+        - postgres.datadir_init

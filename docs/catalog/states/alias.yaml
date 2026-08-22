@@ -1,0 +1,34 @@
+kind: state
+module: alias
+source_module: alias
+path: salt/states/alias.py
+functions:
+    - function: present
+      source:
+        path: salt/states/alias.py
+        symbol: present
+      summary: Ensures that the named alias is present with the given target or list of
+      parameters:
+        - name: name
+        - name: target
+      execution_dependencies:
+        - aliases.has_target
+        - aliases.set_target
+      tests:
+        - path: tests/pytests/unit/states/test_alias.py
+          functions: 8
+    - function: absent
+      source:
+        path: salt/states/alias.py
+        symbol: absent
+      summary: Ensure that the named alias is absent
+      parameters:
+        - name: name
+      execution_dependencies:
+        - aliases.get_target
+        - aliases.has_target
+        - aliases.rm_alias
+        - aliases.set_target
+      tests:
+        - path: tests/pytests/unit/states/test_alias.py
+          functions: 8

@@ -1,0 +1,1639 @@
+kind: exec
+module: git
+source_module: git
+path: salt/modules/git.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _check_worktree_support
+      source:
+        path: salt/modules/git.py
+        symbol: _check_worktree_support
+      summary: Ensure that we don't try to operate on worktrees in git < 2.5.0.
+      parameters:
+        - name: failhard
+          default: "True"
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: _config_getter
+      source:
+        path: salt/modules/git.py
+        symbol: _config_getter
+      summary: Common code for config.get_* functions, builds and runs the git CLI command
+      parameters:
+        - name: get_opt
+        - name: key
+        - name: value_regex
+          default: None
+        - name: cwd
+          default: None
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: _expand_path
+      source:
+        path: salt/modules/git.py
+        symbol: _expand_path
+      summary: Expand home directory
+      parameters:
+        - name: cwd
+        - name: user
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: _path_is_executable_others
+      source:
+        path: salt/modules/git.py
+        symbol: _path_is_executable_others
+      summary: Check every part of path for executable permission
+      parameters:
+        - name: path
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: _format_opts
+      source:
+        path: salt/modules/git.py
+        symbol: _format_opts
+      summary: Common code to inspect opts and split them if necessary
+      parameters:
+        - name: opts
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: _format_git_opts
+      source:
+        path: salt/modules/git.py
+        symbol: _format_git_opts
+      summary: Do a version check and make sure that the installed version of git can
+      parameters:
+        - name: opts
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: _find_ssh_exe
+      source:
+        path: salt/modules/git.py
+        symbol: _find_ssh_exe
+      summary: 'Windows only: search for Git''s bundled ssh.exe in known locations'
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: _git_run
+      source:
+        path: salt/modules/git.py
+        symbol: _git_run
+      summary: simple, throw an exception with the error message on an error return code.
+      parameters:
+        - name: command
+        - name: cwd
+          default: None
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: identity
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: failhard
+          default: "True"
+        - name: redirect_stderr
+          default: "False"
+        - name: saltenv
+          default: '"base"'
+        - name: output_encoding
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: _get_toplevel
+      source:
+        path: salt/modules/git.py
+        symbol: _get_toplevel
+      summary: Use git rev-parse to return the top level of a repo
+      parameters:
+        - name: path
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: _git_config
+      source:
+        path: salt/modules/git.py
+        symbol: _git_config
+      summary: Helper to retrieve git config options
+      parameters:
+        - name: cwd
+        - name: user
+        - name: password
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: _which_git_config
+      source:
+        path: salt/modules/git.py
+        symbol: _which_git_config
+      summary: Based on whether global or local config is desired, return a list of CLI
+      parameters:
+        - name: global_
+        - name: cwd
+        - name: user
+        - name: password
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: add
+      source:
+        path: salt/modules/git.py
+        symbol: add
+      summary: '.. versionchanged:: 2015.8.0'
+      parameters:
+        - name: cwd
+        - name: filename
+        - name: opts
+          default: '""'
+        - name: git_opts
+          default: '""'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: archive
+      source:
+        path: salt/modules/git.py
+        symbol: archive
+      summary: '.. versionchanged:: 2015.8.0'
+      parameters:
+        - name: cwd
+        - name: output
+        - name: rev
+          default: '"HEAD"'
+        - name: prefix
+          default: None
+        - name: git_opts
+          default: '""'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: branch
+      source:
+        path: salt/modules/git.py
+        symbol: branch
+      summary: Interface to `git-branch(1)`_
+      parameters:
+        - name: cwd
+        - name: name
+          default: None
+        - name: opts
+          default: '""'
+        - name: git_opts
+          default: '""'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: checkout
+      source:
+        path: salt/modules/git.py
+        symbol: checkout
+      summary: Interface to `git-checkout(1)`_
+      parameters:
+        - name: cwd
+        - name: rev
+          default: None
+        - name: force
+          default: "False"
+        - name: opts
+          default: '""'
+        - name: git_opts
+          default: '""'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: clone
+      source:
+        path: salt/modules/git.py
+        symbol: clone
+      summary: Interface to `git-clone(1)`_
+      parameters:
+        - name: cwd
+        - name: url
+          default: None
+        - name: |-
+            # Remove default value once 'repository' arg is removed
+                name
+          default: None
+        - name: opts
+          default: '""'
+        - name: git_opts
+          default: '""'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: identity
+          default: None
+        - name: https_user
+          default: None
+        - name: https_pass
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: saltenv
+          default: '"base"'
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: commit
+      source:
+        path: salt/modules/git.py
+        symbol: commit
+      summary: Interface to `git-commit(1)`_
+      parameters:
+        - name: cwd
+        - name: message
+        - name: opts
+          default: '""'
+        - name: git_opts
+          default: '""'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: filename
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: config_get
+      source:
+        path: salt/modules/git.py
+        symbol: config_get
+      summary: Get the value of a key in the git configuration file
+      parameters:
+        - name: key
+        - name: cwd
+          default: None
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: config_get_regexp
+      source:
+        path: salt/modules/git.py
+        symbol: config_get_regexp
+      parameters:
+        - name: key
+        - name: value_regex
+          default: None
+        - name: cwd
+          default: None
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: config_set
+      source:
+        path: salt/modules/git.py
+        symbol: config_set
+      summary: '.. versionchanged:: 2015.8.0'
+      parameters:
+        - name: key
+        - name: value
+          default: None
+        - name: multivar
+          default: None
+        - name: cwd
+          default: None
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: config_unset
+      source:
+        path: salt/modules/git.py
+        symbol: config_unset
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: key
+        - name: value_regex
+          default: None
+        - name: cwd
+          default: None
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: current_branch
+      source:
+        path: salt/modules/git.py
+        symbol: current_branch
+      summary: Returns the current branch name of a local checkout. If HEAD is detached,
+      parameters:
+        - name: cwd
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: describe
+      source:
+        path: salt/modules/git.py
+        symbol: describe
+      summary: Returns the `git-describe(1)`_ string (or the SHA1 hash if there are no
+      parameters:
+        - name: cwd
+        - name: rev
+          default: '"HEAD"'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: diff
+      source:
+        path: salt/modules/git.py
+        symbol: diff
+      summary: '.. versionadded:: 2015.8.12,2016.3.3,2016.11.0'
+      parameters:
+        - name: cwd
+        - name: item1
+          default: None
+        - name: item2
+          default: None
+        - name: opts
+          default: '""'
+        - name: git_opts
+          default: '""'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: no_index
+          default: "False"
+        - name: cached
+          default: "False"
+        - name: paths
+          default: None
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: discard_local_changes
+      source:
+        path: salt/modules/git.py
+        symbol: discard_local_changes
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: cwd
+        - name: path
+          default: '"."'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: fetch
+      source:
+        path: salt/modules/git.py
+        symbol: fetch
+      summary: '.. versionchanged:: 2015.8.2'
+      parameters:
+        - name: cwd
+        - name: remote
+          default: None
+        - name: force
+          default: "False"
+        - name: refspecs
+          default: None
+        - name: opts
+          default: '""'
+        - name: git_opts
+          default: '""'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: identity
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: saltenv
+          default: '"base"'
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: init
+      source:
+        path: salt/modules/git.py
+        symbol: init
+      summary: Interface to `git-init(1)`_
+      parameters:
+        - name: cwd
+        - name: bare
+          default: "False"
+        - name: template
+          default: None
+        - name: separate_git_dir
+          default: None
+        - name: shared
+          default: None
+        - name: opts
+          default: '""'
+        - name: git_opts
+          default: '""'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: is_worktree
+      source:
+        path: salt/modules/git.py
+        symbol: is_worktree
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: cwd
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: list_branches
+      source:
+        path: salt/modules/git.py
+        symbol: list_branches
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: cwd
+        - name: remote
+          default: "False"
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: list_tags
+      source:
+        path: salt/modules/git.py
+        symbol: list_tags
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: cwd
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: list_worktrees
+      source:
+        path: salt/modules/git.py
+        symbol: list_worktrees
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: cwd
+        - name: stale
+          default: "False"
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: output_encoding
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: ls_remote
+      source:
+        path: salt/modules/git.py
+        symbol: ls_remote
+      summary: Interface to `git-ls-remote(1)`_. Returns the upstream hash for a remote
+      parameters:
+        - name: cwd
+          default: None
+        - name: remote
+          default: '"origin"'
+        - name: ref
+          default: None
+        - name: opts
+          default: '""'
+        - name: git_opts
+          default: '""'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: identity
+          default: None
+        - name: https_user
+          default: None
+        - name: https_pass
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: merge
+      source:
+        path: salt/modules/git.py
+        symbol: merge
+      summary: Interface to `git-merge(1)`_
+      parameters:
+        - name: cwd
+        - name: rev
+          default: None
+        - name: opts
+          default: '""'
+        - name: git_opts
+          default: '""'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: identity
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: merge_base
+      source:
+        path: salt/modules/git.py
+        symbol: merge_base
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: cwd
+        - name: refs
+          default: None
+        - name: octopus
+          default: "False"
+        - name: is_ancestor
+          default: "False"
+        - name: independent
+          default: "False"
+        - name: fork_point
+          default: None
+        - name: opts
+          default: '""'
+        - name: git_opts
+          default: '""'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: merge_tree
+      source:
+        path: salt/modules/git.py
+        symbol: merge_tree
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: cwd
+        - name: ref1
+        - name: ref2
+        - name: base
+          default: None
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: pull
+      source:
+        path: salt/modules/git.py
+        symbol: pull
+      summary: Interface to `git-pull(1)`_
+      parameters:
+        - name: cwd
+        - name: opts
+          default: '""'
+        - name: git_opts
+          default: '""'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: identity
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: saltenv
+          default: '"base"'
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: push
+      source:
+        path: salt/modules/git.py
+        symbol: push
+      summary: Interface to `git-push(1)`_
+      parameters:
+        - name: cwd
+        - name: remote
+          default: None
+        - name: ref
+          default: None
+        - name: opts
+          default: '""'
+        - name: git_opts
+          default: '""'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: identity
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: saltenv
+          default: '"base"'
+        - name: output_encoding
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: rebase
+      source:
+        path: salt/modules/git.py
+        symbol: rebase
+      summary: Interface to `git-rebase(1)`_
+      parameters:
+        - name: cwd
+        - name: rev
+          default: '"master"'
+        - name: opts
+          default: '""'
+        - name: git_opts
+          default: '""'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: remote_get
+      source:
+        path: salt/modules/git.py
+        symbol: remote_get
+      summary: Get the fetch and push URL for a specific remote
+      parameters:
+        - name: cwd
+        - name: remote
+          default: '"origin"'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: redact_auth
+          default: "True"
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: remote_refs
+      source:
+        path: salt/modules/git.py
+        symbol: remote_refs
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: url
+        - name: heads
+          default: "False"
+        - name: tags
+          default: "False"
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: identity
+          default: None
+        - name: https_user
+          default: None
+        - name: https_pass
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+        - name: saltenv
+          default: '"base"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: remote_set
+      source:
+        path: salt/modules/git.py
+        symbol: remote_set
+      summary: cwd
+      parameters:
+        - name: cwd
+        - name: url
+        - name: remote
+          default: '"origin"'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: https_user
+          default: None
+        - name: https_pass
+          default: None
+        - name: push_url
+          default: None
+        - name: push_https_user
+          default: None
+        - name: push_https_pass
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: remotes
+      source:
+        path: salt/modules/git.py
+        symbol: remotes
+      summary: Get fetch and push URLs for each remote in a git checkout
+      parameters:
+        - name: cwd
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: redact_auth
+          default: "True"
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: reset
+      source:
+        path: salt/modules/git.py
+        symbol: reset
+      summary: Interface to `git-reset(1)`_, returns the stdout from the git command
+      parameters:
+        - name: cwd
+        - name: opts
+          default: '""'
+        - name: git_opts
+          default: '""'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: identity
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: rev_parse
+      source:
+        path: salt/modules/git.py
+        symbol: rev_parse
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: cwd
+        - name: rev
+          default: None
+        - name: opts
+          default: '""'
+        - name: git_opts
+          default: '""'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: revision
+      source:
+        path: salt/modules/git.py
+        symbol: revision
+      summary: Returns the SHA1 hash of a given identifier (hash, branch, tag, HEAD, etc.)
+      parameters:
+        - name: cwd
+        - name: rev
+          default: '"HEAD"'
+        - name: short
+          default: "False"
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: rm_
+      source:
+        path: salt/modules/git.py
+        symbol: rm_
+      summary: Interface to `git-rm(1)`_
+      parameters:
+        - name: cwd
+        - name: filename
+        - name: opts
+          default: '""'
+        - name: git_opts
+          default: '""'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: stash
+      source:
+        path: salt/modules/git.py
+        symbol: stash
+      summary: Interface to `git-stash(1)`_, returns the stdout from the git command
+      parameters:
+        - name: cwd
+        - name: action
+          default: '"save"'
+        - name: opts
+          default: '""'
+        - name: git_opts
+          default: '""'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: status
+      source:
+        path: salt/modules/git.py
+        symbol: status
+      summary: '.. versionchanged:: 2015.8.0'
+      parameters:
+        - name: cwd
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: submodule
+      source:
+        path: salt/modules/git.py
+        symbol: submodule
+      summary: '.. versionchanged:: 2015.8.0'
+      parameters:
+        - name: cwd
+        - name: command
+        - name: opts
+          default: '""'
+        - name: git_opts
+          default: '""'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: identity
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: saltenv
+          default: '"base"'
+        - name: output_encoding
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: symbolic_ref
+      source:
+        path: salt/modules/git.py
+        symbol: symbolic_ref
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: cwd
+        - name: ref
+        - name: value
+          default: None
+        - name: opts
+          default: '""'
+        - name: git_opts
+          default: '""'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: tag
+      source:
+        path: salt/modules/git.py
+        symbol: tag
+      summary: '.. versionadded:: 2018.3.4'
+      parameters:
+        - name: cwd
+        - name: name
+        - name: ref
+          default: '"HEAD"'
+        - name: message
+          default: None
+        - name: opts
+          default: '""'
+        - name: git_opts
+          default: '""'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: version
+      source:
+        path: salt/modules/git.py
+        symbol: version
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: versioninfo
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: worktree_add
+      source:
+        path: salt/modules/git.py
+        symbol: worktree_add
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: cwd
+        - name: worktree_path
+        - name: ref
+          default: None
+        - name: reset_branch
+          default: None
+        - name: force
+          default: None
+        - name: detach
+          default: "False"
+        - name: opts
+          default: '""'
+        - name: git_opts
+          default: '""'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: worktree_prune
+      source:
+        path: salt/modules/git.py
+        symbol: worktree_prune
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: cwd
+        - name: dry_run
+          default: "False"
+        - name: verbose
+          default: "True"
+        - name: expire
+          default: None
+        - name: opts
+          default: '""'
+        - name: git_opts
+          default: '""'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: ignore_retcode
+          default: "False"
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5
+    - function: worktree_rm
+      source:
+        path: salt/modules/git.py
+        symbol: worktree_rm
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: cwd
+        - name: user
+          default: None
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_file
+        - file.file_exists
+        - file.remove
+        - file.user_to_uid
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/pytests/unit/modules/test_git.py
+          functions: 5

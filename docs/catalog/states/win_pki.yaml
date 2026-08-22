@@ -1,0 +1,53 @@
+kind: state
+module: win_pki
+source_module: win_pki
+path: salt/states/win_pki.py
+functions:
+    - function: import_cert
+      source:
+        path: salt/states/win_pki.py
+        symbol: import_cert
+      summary: Import the certificate file into the given certificate store.
+      parameters:
+        - name: name
+        - name: cert_format
+          default: _DEFAULT_FORMAT
+        - name: context
+          default: _DEFAULT_CONTEXT
+        - name: store
+          default: _DEFAULT_STORE
+        - name: exportable
+          default: "True"
+        - name: password
+          default: '""'
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cp.cache_file
+        - win_pki.get_cert_file
+        - win_pki.get_certs
+        - win_pki.import_cert
+      tests:
+        - path: tests/pytests/unit/states/test_win_pki.py
+          functions: 2
+    - function: remove_cert
+      source:
+        path: salt/states/win_pki.py
+        symbol: remove_cert
+      summary: Remove the certificate from the given certificate store.
+      parameters:
+        - name: name
+        - name: thumbprint
+        - name: context
+          default: _DEFAULT_CONTEXT
+        - name: store
+          default: _DEFAULT_STORE
+      execution_dependencies:
+        - cp.cache_file
+        - win_pki.get_cert_file
+        - win_pki.get_certs
+        - win_pki.import_cert
+        - win_pki.remove_cert
+      tests:
+        - path: tests/pytests/unit/states/test_win_pki.py
+          functions: 2

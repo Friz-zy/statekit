@@ -1,0 +1,130 @@
+kind: state
+module: netacl
+source_module: netacl
+virtual: true
+path: salt/states/netacl.py
+functions:
+    - function: term
+      source:
+        path: salt/states/netacl.py
+        symbol: term
+      summary: Manage the configuration of a specific policy term.
+      parameters:
+        - name: name
+        - name: filter_name
+        - name: term_name
+        - name: filter_options
+          default: None
+        - name: pillar_key
+          default: '"acl"'
+        - name: pillarenv
+          default: None
+        - name: saltenv
+          default: None
+        - name: merge_pillar
+          default: "False"
+        - name: revision_id
+          default: None
+        - name: revision_no
+          default: None
+        - name: revision_date
+          default: "True"
+        - name: revision_date_format
+          default: '"%Y/%m/%d"'
+        - name: test
+          default: "False"
+        - name: commit
+          default: "True"
+        - name: debug
+          default: "False"
+        - name: source_service
+          default: None
+        - name: destination_service
+          default: None
+        - name: term_fields
+          kind: '**'
+      execution_dependencies:
+        - netacl.load_term_config
+    - function: filter
+      source:
+        path: salt/states/netacl.py
+        symbol: filter
+      summary: Generate and load the configuration of a policy filter.
+      parameters:
+        - name: name
+        - name: '# pylint: disable'
+          default: |-
+            redefined-builtin
+                filter_name
+        - name: filter_options
+          default: None
+        - name: terms
+          default: None
+        - name: prepend
+          default: "True"
+        - name: pillar_key
+          default: '"acl"'
+        - name: pillarenv
+          default: None
+        - name: saltenv
+          default: None
+        - name: merge_pillar
+          default: "False"
+        - name: only_lower_merge
+          default: "False"
+        - name: revision_id
+          default: None
+        - name: revision_no
+          default: None
+        - name: revision_date
+          default: "True"
+        - name: revision_date_format
+          default: '"%Y/%m/%d"'
+        - name: test
+          default: "False"
+        - name: commit
+          default: "True"
+        - name: debug
+          default: "False"
+      execution_dependencies:
+        - netacl.load_filter_config
+        - netacl.load_term_config
+    - function: managed
+      source:
+        path: salt/states/netacl.py
+        symbol: managed
+      summary: Manage the whole firewall configuration.
+      parameters:
+        - name: name
+        - name: filters
+          default: None
+        - name: prepend
+          default: "True"
+        - name: pillar_key
+          default: '"acl"'
+        - name: pillarenv
+          default: None
+        - name: saltenv
+          default: None
+        - name: merge_pillar
+          default: "False"
+        - name: only_lower_merge
+          default: "False"
+        - name: revision_id
+          default: None
+        - name: revision_no
+          default: None
+        - name: revision_date
+          default: "True"
+        - name: revision_date_format
+          default: '"%Y/%m/%d"'
+        - name: test
+          default: "False"
+        - name: commit
+          default: "True"
+        - name: debug
+          default: "False"
+      execution_dependencies:
+        - netacl.load_filter_config
+        - netacl.load_policy_config
+        - netacl.load_term_config

@@ -1,0 +1,57 @@
+kind: exec
+module: pkgutil
+source_module: mac_pkgutil
+virtual: true
+path: salt/modules/mac_pkgutil.py
+platform_markers:
+    - is_darwin
+functions:
+    - function: list_
+      source:
+        path: salt/modules/mac_pkgutil.py
+        symbol: list_
+      summary: List the installed packages.
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_pkgutil.py
+          functions: 2
+    - function: is_installed
+      source:
+        path: salt/modules/mac_pkgutil.py
+        symbol: is_installed
+      summary: Returns whether a given package id is installed.
+      parameters:
+        - name: package_id
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_pkgutil.py
+          functions: 2
+    - function: _install_from_path
+      source:
+        path: salt/modules/mac_pkgutil.py
+        symbol: _install_from_path
+      summary: Internal function to install a package from the given path
+      parameters:
+        - name: path
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_pkgutil.py
+          functions: 2
+    - function: install
+      source:
+        path: salt/modules/mac_pkgutil.py
+        symbol: install
+      summary: Install a .pkg from an URI or an absolute path.
+      parameters:
+        - name: source
+        - name: package_id
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_pkgutil.py
+          functions: 2
+    - function: forget
+      source:
+        path: salt/modules/mac_pkgutil.py
+        symbol: forget
+      summary: '.. versionadded:: 2016.3.0'
+      parameters:
+        - name: package_id
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_pkgutil.py
+          functions: 2

@@ -1,0 +1,53 @@
+kind: exec
+module: xml
+source_module: xml
+virtual: true
+path: salt/modules/xml.py
+functions:
+    - function: get_value
+      source:
+        path: salt/modules/xml.py
+        symbol: get_value
+      summary: Returns the value of the matched xpath element
+      parameters:
+        - name: file
+        - name: element
+      tests:
+        - path: tests/pytests/unit/modules/test_xml.py
+          functions: 4
+    - function: set_value
+      source:
+        path: salt/modules/xml.py
+        symbol: set_value
+      summary: Sets the value of the matched xpath element
+      parameters:
+        - name: file
+        - name: element
+        - name: value
+      tests:
+        - path: tests/pytests/unit/modules/test_xml.py
+          functions: 4
+    - function: get_attribute
+      source:
+        path: salt/modules/xml.py
+        symbol: get_attribute
+      summary: Return the attributes of the matched xpath element.
+      parameters:
+        - name: file
+        - name: element
+      tests:
+        - path: tests/pytests/unit/modules/test_xml.py
+          functions: 4
+    - function: set_attribute
+      source:
+        path: salt/modules/xml.py
+        symbol: set_attribute
+      summary: Set the requested attribute key and value for matched xpath element.
+      parameters:
+        - name: file
+        - name: element
+        - name: key
+        - name: value
+      tests:
+        - path: tests/pytests/unit/modules/test_xml.py
+          functions: 4

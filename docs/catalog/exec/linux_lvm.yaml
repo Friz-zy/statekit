@@ -1,0 +1,268 @@
+kind: exec
+module: lvm
+source_module: linux_lvm
+virtual: true
+path: salt/modules/linux_lvm.py
+functions:
+    - function: version
+      source:
+        path: salt/modules/linux_lvm.py
+        symbol: version
+      summary: Return LVM version from lvm version
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_lvm.py
+          functions: 21
+    - function: fullversion
+      source:
+        path: salt/modules/linux_lvm.py
+        symbol: fullversion
+      summary: Return all version info from lvm version
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_lvm.py
+          functions: 21
+    - function: pvdisplay
+      source:
+        path: salt/modules/linux_lvm.py
+        symbol: pvdisplay
+      summary: Return information about the physical volume(s)
+      parameters:
+        - name: pvname
+          default: '""'
+        - name: real
+          default: "False"
+        - name: quiet
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_lvm.py
+          functions: 21
+    - function: vgdisplay
+      source:
+        path: salt/modules/linux_lvm.py
+        symbol: vgdisplay
+      summary: Return information about the volume group(s)
+      parameters:
+        - name: vgname
+          default: '""'
+        - name: quiet
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_lvm.py
+          functions: 21
+    - function: lvdisplay
+      source:
+        path: salt/modules/linux_lvm.py
+        symbol: lvdisplay
+      summary: Return information about the logical volume(s)
+      parameters:
+        - name: lvname
+          default: '""'
+        - name: quiet
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_lvm.py
+          functions: 21
+    - function: pvcreate
+      source:
+        path: salt/modules/linux_lvm.py
+        symbol: pvcreate
+      summary: Set a physical device to be used as an LVM physical volume
+      parameters:
+        - name: devices
+        - name: override
+          default: "True"
+        - name: force
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_lvm.py
+          functions: 21
+    - function: pvremove
+      source:
+        path: salt/modules/linux_lvm.py
+        symbol: pvremove
+      summary: Remove a physical device being used as an LVM physical volume
+      parameters:
+        - name: devices
+        - name: override
+          default: "True"
+        - name: force
+          default: "True"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_lvm.py
+          functions: 21
+    - function: vgcreate
+      source:
+        path: salt/modules/linux_lvm.py
+        symbol: vgcreate
+      summary: Create an LVM volume group
+      parameters:
+        - name: vgname
+        - name: devices
+        - name: force
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_lvm.py
+          functions: 21
+    - function: vgextend
+      source:
+        path: salt/modules/linux_lvm.py
+        symbol: vgextend
+      summary: Add physical volumes to an LVM volume group
+      parameters:
+        - name: vgname
+        - name: devices
+        - name: force
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_lvm.py
+          functions: 21
+    - function: lvcreate
+      source:
+        path: salt/modules/linux_lvm.py
+        symbol: lvcreate
+      summary: Create a new logical volume, with option for which physical volume to be used
+      parameters:
+        - name: lvname
+        - name: vgname
+        - name: size
+          default: None
+        - name: extents
+          default: None
+        - name: snapshot
+          default: None
+        - name: pv
+          default: None
+        - name: thinvolume
+          default: "False"
+        - name: thinpool
+          default: "False"
+        - name: force
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_lvm.py
+          functions: 21
+    - function: vgremove
+      source:
+        path: salt/modules/linux_lvm.py
+        symbol: vgremove
+      summary: Remove an LVM volume group
+      parameters:
+        - name: vgname
+        - name: force
+          default: "True"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_lvm.py
+          functions: 21
+    - function: lvremove
+      source:
+        path: salt/modules/linux_lvm.py
+        symbol: lvremove
+      summary: Remove a given existing logical volume from a named existing volume group
+      parameters:
+        - name: lvname
+        - name: vgname
+        - name: force
+          default: "True"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_lvm.py
+          functions: 21
+    - function: lvresize
+      source:
+        path: salt/modules/linux_lvm.py
+        symbol: lvresize
+      summary: Resize a logical volume to specific size.
+      parameters:
+        - name: size
+          default: None
+        - name: lvpath
+          default: None
+        - name: extents
+          default: None
+        - name: force
+          default: "False"
+        - name: resizefs
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_lvm.py
+          functions: 21
+    - function: lvextend
+      source:
+        path: salt/modules/linux_lvm.py
+        symbol: lvextend
+      summary: Increase a logical volume to specific size.
+      parameters:
+        - name: size
+          default: None
+        - name: lvpath
+          default: None
+        - name: extents
+          default: None
+        - name: force
+          default: "False"
+        - name: resizefs
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_lvm.py
+          functions: 21
+    - function: pvresize
+      source:
+        path: salt/modules/linux_lvm.py
+        symbol: pvresize
+      summary: Resize a LVM physical volume to the physical device size
+      parameters:
+        - name: devices
+        - name: override
+          default: "True"
+        - name: force
+          default: "True"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_lvm.py
+          functions: 21

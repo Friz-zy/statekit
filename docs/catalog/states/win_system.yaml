@@ -1,0 +1,172 @@
+kind: state
+module: system
+source_module: win_system
+virtual: true
+path: salt/states/win_system.py
+platform_markers:
+    - is_windows
+functions:
+    - function: computer_desc
+      source:
+        path: salt/states/win_system.py
+        symbol: computer_desc
+      summary: Manage the computer's description field
+      parameters:
+        - name: name
+      execution_dependencies:
+        - system.get_computer_desc
+        - system.set_computer_desc
+      tests:
+        - path: tests/pytests/unit/states/test_win_system.py
+          functions: 4
+    - function: computer_name
+      source:
+        path: salt/states/win_system.py
+        symbol: computer_name
+      summary: Manage the computer's name
+      parameters:
+        - name: name
+      execution_dependencies:
+        - system.get_computer_desc
+        - system.get_computer_name
+        - system.get_pending_computer_name
+        - system.set_computer_desc
+        - system.set_computer_name
+      tests:
+        - path: tests/pytests/unit/states/test_win_system.py
+          functions: 4
+    - function: hostname
+      source:
+        path: salt/states/win_system.py
+        symbol: hostname
+      summary: '.. versionadded:: 2016.3.0'
+      parameters:
+        - name: name
+      execution_dependencies:
+        - system.get_computer_desc
+        - system.get_computer_name
+        - system.get_hostname
+        - system.get_pending_computer_name
+        - system.set_computer_desc
+        - system.set_computer_name
+        - system.set_hostname
+      tests:
+        - path: tests/pytests/unit/states/test_win_system.py
+          functions: 4
+    - function: workgroup
+      source:
+        path: salt/states/win_system.py
+        symbol: workgroup
+      summary: '.. versionadded:: 3001'
+      parameters:
+        - name: name
+      execution_dependencies:
+        - system.get_computer_desc
+        - system.get_computer_name
+        - system.get_domain_workgroup
+        - system.get_hostname
+        - system.get_pending_computer_name
+        - system.set_computer_desc
+        - system.set_computer_name
+        - system.set_domain_workgroup
+        - system.set_hostname
+      tests:
+        - path: tests/pytests/unit/states/test_win_system.py
+          functions: 4
+    - function: join_domain
+      source:
+        path: salt/states/win_system.py
+        symbol: join_domain
+      summary: Checks if a computer is joined to the Domain. If the computer is not in the
+      parameters:
+        - name: name
+        - name: username
+          default: None
+        - name: password
+          default: None
+        - name: account_ou
+          default: None
+        - name: account_exists
+          default: "False"
+        - name: restart
+          default: "False"
+      execution_dependencies:
+        - system.get_computer_desc
+        - system.get_computer_name
+        - system.get_domain_workgroup
+        - system.get_hostname
+        - system.get_pending_computer_name
+        - system.join_domain
+        - system.set_computer_desc
+        - system.set_computer_name
+        - system.set_domain_workgroup
+        - system.set_hostname
+      tests:
+        - path: tests/pytests/unit/states/test_win_system.py
+          functions: 4
+    - function: reboot
+      source:
+        path: salt/states/win_system.py
+        symbol: reboot
+      summary: Reboot the computer
+      parameters:
+        - name: name
+        - name: message
+          default: None
+        - name: timeout
+          default: "5"
+        - name: force_close
+          default: "True"
+        - name: in_seconds
+          default: "False"
+        - name: only_on_pending_reboot
+          default: "True"
+      execution_dependencies:
+        - system.get_computer_desc
+        - system.get_computer_name
+        - system.get_domain_workgroup
+        - system.get_hostname
+        - system.get_pending_computer_name
+        - system.join_domain
+        - system.set_computer_desc
+        - system.set_computer_name
+        - system.set_domain_workgroup
+        - system.set_hostname
+      tests:
+        - path: tests/pytests/unit/states/test_win_system.py
+          functions: 4
+    - function: shutdown
+      source:
+        path: salt/states/win_system.py
+        symbol: shutdown
+      summary: Shutdown the computer
+      parameters:
+        - name: name
+        - name: message
+          default: None
+        - name: timeout
+          default: "5"
+        - name: force_close
+          default: "True"
+        - name: reboot
+          default: "False"
+        - name: in_seconds
+          default: "False"
+        - name: only_on_pending_reboot
+          default: "False"
+      execution_dependencies:
+        - system.get_computer_desc
+        - system.get_computer_name
+        - system.get_domain_workgroup
+        - system.get_hostname
+        - system.get_pending_computer_name
+        - system.get_pending_reboot
+        - system.join_domain
+        - system.set_computer_desc
+        - system.set_computer_name
+        - system.set_domain_workgroup
+        - system.set_hostname
+        - system.shutdown
+      tests:
+        - path: tests/pytests/unit/states/test_win_system.py
+          functions: 4

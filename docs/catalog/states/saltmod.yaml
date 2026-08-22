@@ -1,0 +1,193 @@
+kind: state
+module: salt
+source_module: saltmod
+virtual: true
+path: salt/states/saltmod.py
+functions:
+    - function: _fire_args
+      source:
+        path: salt/states/saltmod.py
+        symbol: _fire_args
+      parameters:
+        - name: tag_data
+    - function: _parallel_map
+      source:
+        path: salt/states/saltmod.py
+        symbol: _parallel_map
+      summary: Applies a function to each element of a list, returning the resulting list.
+      parameters:
+        - name: func
+        - name: inputs
+    - function: _format_failure_detail
+      source:
+        path: salt/states/saltmod.py
+        symbol: _format_failure_detail
+      summary: Build a one-line human-readable detail string explaining a
+      parameters:
+        - name: minion
+        - name: m_ret
+        - name: m_no_return
+    - function: state
+      source:
+        path: salt/states/saltmod.py
+        symbol: state
+      summary: Invoke a state run on a given target
+      parameters:
+        - name: name
+        - name: tgt
+        - name: ssh
+          default: "False"
+        - name: tgt_type
+          default: '"glob"'
+        - name: ret
+          default: '""'
+        - name: ret_config
+          default: None
+        - name: ret_kwargs
+          default: None
+        - name: highstate
+          default: None
+        - name: sls
+          default: None
+        - name: top
+          default: None
+        - name: saltenv
+          default: None
+        - name: test
+          default: None
+        - name: pillar
+          default: None
+        - name: pillarenv
+          default: None
+        - name: expect_minions
+          default: "True"
+        - name: exclude
+          default: None
+        - name: fail_minions
+          default: None
+        - name: allow_fail
+          default: "0"
+        - name: concurrent
+          default: "False"
+        - name: timeout
+          default: None
+        - name: batch
+          default: None
+        - name: queue
+          default: "False"
+        - name: subset
+          default: None
+        - name: orchestration_jid
+          default: None
+        - name: failhard
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.cmd
+      utility_dependencies:
+        - state.check_result
+    - function: function
+      source:
+        path: salt/states/saltmod.py
+        symbol: function
+      summary: Execute a single module function on a remote minion via salt or salt-ssh
+      parameters:
+        - name: name
+        - name: tgt
+        - name: ssh
+          default: "False"
+        - name: tgt_type
+          default: '"glob"'
+        - name: ret
+          default: '""'
+        - name: ret_config
+          default: None
+        - name: ret_kwargs
+          default: None
+        - name: expect_minions
+          default: "False"
+        - name: fail_minions
+          default: None
+        - name: fail_function
+          default: None
+        - name: arg
+          default: None
+        - name: kwarg
+          default: None
+        - name: timeout
+          default: None
+        - name: batch
+          default: None
+        - name: subset
+          default: None
+        - name: failhard
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.cmd
+      utility_dependencies:
+        - state.check_result
+    - function: wait_for_event
+      source:
+        path: salt/states/saltmod.py
+        symbol: wait_for_event
+      summary: Watch Salt's event bus and block until a condition is met
+      parameters:
+        - name: name
+        - name: id_list
+        - name: event_id
+          default: '"id"'
+        - name: timeout
+          default: "300"
+        - name: node
+          default: '"master"'
+      execution_dependencies:
+        - saltutil.cmd
+      utility_dependencies:
+        - state.check_result
+    - function: runner
+      source:
+        path: salt/states/saltmod.py
+        symbol: runner
+      summary: Execute a runner module on the master
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.cmd
+        - saltutil.runner
+      utility_dependencies:
+        - state.check_result
+    - function: parallel_runners
+      source:
+        path: salt/states/saltmod.py
+        symbol: parallel_runners
+      summary: Executes multiple runner modules on the master in parallel.
+      parameters:
+        - name: name
+        - name: runners
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.cmd
+        - saltutil.runner
+      utility_dependencies:
+        - state.check_result
+    - function: wheel
+      source:
+        path: salt/states/saltmod.py
+        symbol: wheel
+      summary: Execute a wheel module on the master
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.cmd
+        - saltutil.runner
+        - saltutil.wheel
+      utility_dependencies:
+        - state.check_result

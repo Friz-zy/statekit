@@ -1,0 +1,59 @@
+kind: exec
+module: group
+source_module: solaris_group
+virtual: true
+path: salt/modules/solaris_group.py
+functions:
+    - function: add
+      source:
+        path: salt/modules/solaris_group.py
+        symbol: add
+      summary: Add the specified group
+      parameters:
+        - name: name
+        - name: gid
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+    - function: delete
+      source:
+        path: salt/modules/solaris_group.py
+        symbol: delete
+      summary: Remove the named group
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+    - function: info
+      source:
+        path: salt/modules/solaris_group.py
+        symbol: info
+      summary: Return information about a group
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+    - function: getent
+      source:
+        path: salt/modules/solaris_group.py
+        symbol: getent
+      summary: Return info on all groups
+      parameters:
+        - name: refresh
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+    - function: chgid
+      source:
+        path: salt/modules/solaris_group.py
+        symbol: chgid
+      summary: Change the gid for a named group
+      parameters:
+        - name: name
+        - name: gid
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.group_to_gid

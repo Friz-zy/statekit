@@ -1,0 +1,205 @@
+kind: exec
+module: reg
+source_module: reg
+virtual: true
+path: salt/modules/reg.py
+platform_markers:
+    - is_windows
+functions:
+    - function: key_exists
+      source:
+        path: salt/modules/reg.py
+        symbol: key_exists
+      parameters:
+        - name: hive
+        - name: key
+        - name: use_32bit_registry
+          default: "False"
+      utility_dependencies:
+        - reg.key_exists
+        - reg.read_value
+      tests:
+        - path: tests/pytests/unit/modules/test_reg.py
+          functions: 52
+    - function: value_exists
+      source:
+        path: salt/modules/reg.py
+        symbol: value_exists
+      parameters:
+        - name: hive
+        - name: key
+        - name: vname
+        - name: use_32bit_registry
+          default: "False"
+      utility_dependencies:
+        - reg.key_exists
+        - reg.read_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_reg.py
+          functions: 52
+    - function: broadcast_change
+      source:
+        path: salt/modules/reg.py
+        symbol: broadcast_change
+      summary: Refresh the Windows environment.
+      utility_dependencies:
+        - reg.key_exists
+        - reg.read_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_reg.py
+          functions: 52
+    - function: list_keys
+      source:
+        path: salt/modules/reg.py
+        symbol: list_keys
+      summary: Enumerates the subkeys in a registry key or hive.
+      parameters:
+        - name: hive
+        - name: key
+          default: None
+        - name: use_32bit_registry
+          default: "False"
+      utility_dependencies:
+        - reg.key_exists
+        - reg.list_keys
+        - reg.read_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_reg.py
+          functions: 52
+    - function: list_values
+      source:
+        path: salt/modules/reg.py
+        symbol: list_values
+      parameters:
+        - name: hive
+        - name: key
+          default: None
+        - name: use_32bit_registry
+          default: "False"
+      utility_dependencies:
+        - reg.key_exists
+        - reg.list_keys
+        - reg.list_values
+        - reg.read_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_reg.py
+          functions: 52
+    - function: read_value
+      source:
+        path: salt/modules/reg.py
+        symbol: read_value
+      parameters:
+        - name: hive
+        - name: key
+        - name: vname
+          default: None
+        - name: use_32bit_registry
+          default: "False"
+      utility_dependencies:
+        - reg.key_exists
+        - reg.list_keys
+        - reg.list_values
+        - reg.read_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_reg.py
+          functions: 52
+    - function: set_value
+      source:
+        path: salt/modules/reg.py
+        symbol: set_value
+      summary: Sets a value in the registry. If ``vname`` is passed, it will be the value
+      parameters:
+        - name: hive
+        - name: key
+        - name: vname
+          default: None
+        - name: vdata
+          default: None
+        - name: vtype
+          default: '"REG_SZ"'
+        - name: use_32bit_registry
+          default: "False"
+        - name: volatile
+          default: "False"
+      utility_dependencies:
+        - reg.key_exists
+        - reg.list_keys
+        - reg.list_values
+        - reg.read_value
+        - reg.set_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_reg.py
+          functions: 52
+    - function: delete_key_recursive
+      source:
+        path: salt/modules/reg.py
+        symbol: delete_key_recursive
+      parameters:
+        - name: hive
+        - name: key
+        - name: use_32bit_registry
+          default: "False"
+      utility_dependencies:
+        - reg.delete_key_recursive
+        - reg.key_exists
+        - reg.list_keys
+        - reg.list_values
+        - reg.read_value
+        - reg.set_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_reg.py
+          functions: 52
+    - function: delete_value
+      source:
+        path: salt/modules/reg.py
+        symbol: delete_value
+      parameters:
+        - name: hive
+        - name: key
+        - name: vname
+          default: None
+        - name: use_32bit_registry
+          default: "False"
+      utility_dependencies:
+        - reg.delete_key_recursive
+        - reg.delete_value
+        - reg.key_exists
+        - reg.list_keys
+        - reg.list_values
+        - reg.read_value
+        - reg.set_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_reg.py
+          functions: 52
+    - function: import_file
+      source:
+        path: salt/modules/reg.py
+        symbol: import_file
+      summary: Import registry settings from a Windows ``REG`` file by invoking ``REG.EXE``.
+      parameters:
+        - name: source
+        - name: use_32bit_registry
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+        - cp.cache_file
+      utility_dependencies:
+        - reg.delete_key_recursive
+        - reg.delete_value
+        - reg.key_exists
+        - reg.list_keys
+        - reg.list_values
+        - reg.read_value
+        - reg.set_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_reg.py
+          functions: 52

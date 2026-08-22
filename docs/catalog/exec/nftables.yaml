@@ -1,0 +1,393 @@
+kind: exec
+module: nftables
+source_module: nftables
+path: salt/modules/nftables.py
+functions:
+    - function: _nftables_cmd
+      source:
+        path: salt/modules/nftables.py
+        symbol: _nftables_cmd
+      summary: Return correct command
+      tests:
+        - path: tests/pytests/unit/modules/test_nftables.py
+          functions: 28
+    - function: _conf
+      source:
+        path: salt/modules/nftables.py
+        symbol: _conf
+      summary: Use the same file for rules for now.
+      parameters:
+        - name: family
+          default: '"ip"'
+      tests:
+        - path: tests/pytests/unit/modules/test_nftables.py
+          functions: 28
+    - function: version
+      source:
+        path: salt/modules/nftables.py
+        symbol: version
+      summary: Return version from nftables --version
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_nftables.py
+          functions: 28
+    - function: build_rule
+      source:
+        path: salt/modules/nftables.py
+        symbol: build_rule
+      summary: Build a well-formatted nftables rule based on kwargs.
+      parameters:
+        - name: table
+          default: None
+        - name: chain
+          default: None
+        - name: command
+          default: None
+        - name: position
+          default: '""'
+        - name: full
+          default: None
+        - name: family
+          default: '"ipv4"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_nftables.py
+          functions: 28
+    - function: get_saved_rules
+      source:
+        path: salt/modules/nftables.py
+        symbol: get_saved_rules
+      summary: Return a data structure of the rules in the conf file
+      parameters:
+        - name: conf_file
+          default: None
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_nftables.py
+          functions: 28
+    - function: list_tables
+      source:
+        path: salt/modules/nftables.py
+        symbol: list_tables
+      summary: Return a data structure of the current, in-memory tables
+      parameters:
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_nftables.py
+          functions: 28
+    - function: get_rules
+      source:
+        path: salt/modules/nftables.py
+        symbol: get_rules
+      summary: Return a data structure of the current, in-memory rules
+      parameters:
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_nftables.py
+          functions: 28
+    - function: get_rules_json
+      source:
+        path: salt/modules/nftables.py
+        symbol: get_rules_json
+      summary: '.. versionadded:: 3002'
+      parameters:
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_nftables.py
+          functions: 28
+    - function: save
+      source:
+        path: salt/modules/nftables.py
+        symbol: save
+      summary: '.. versionchanged:: 3002'
+      parameters:
+        - name: filename
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+        - file.directory_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_nftables.py
+          functions: 28
+    - function: get_rule_handle
+      source:
+        path: salt/modules/nftables.py
+        symbol: get_rule_handle
+      summary: Get the handle for a particular rule
+      parameters:
+        - name: table
+          default: '"filter"'
+        - name: chain
+          default: None
+        - name: rule
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+        - file.directory_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_nftables.py
+          functions: 28
+    - function: check
+      source:
+        path: salt/modules/nftables.py
+        symbol: check
+      summary: Check for the existence of a rule in the table and chain
+      parameters:
+        - name: table
+          default: '"filter"'
+        - name: chain
+          default: None
+        - name: rule
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+        - file.directory_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_nftables.py
+          functions: 28
+    - function: check_chain
+      source:
+        path: salt/modules/nftables.py
+        symbol: check_chain
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: table
+          default: '"filter"'
+        - name: chain
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+        - file.directory_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_nftables.py
+          functions: 28
+    - function: check_table
+      source:
+        path: salt/modules/nftables.py
+        symbol: check_table
+      summary: Check for the existence of a table
+      parameters:
+        - name: table
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+        - file.directory_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_nftables.py
+          functions: 28
+    - function: new_table
+      source:
+        path: salt/modules/nftables.py
+        symbol: new_table
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: table
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+        - file.directory_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_nftables.py
+          functions: 28
+    - function: delete_table
+      source:
+        path: salt/modules/nftables.py
+        symbol: delete_table
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: table
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+        - file.directory_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_nftables.py
+          functions: 28
+    - function: new_chain
+      source:
+        path: salt/modules/nftables.py
+        symbol: new_chain
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: table
+          default: '"filter"'
+        - name: chain
+          default: None
+        - name: table_type
+          default: None
+        - name: hook
+          default: None
+        - name: priority
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+        - file.directory_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_nftables.py
+          functions: 28
+    - function: delete_chain
+      source:
+        path: salt/modules/nftables.py
+        symbol: delete_chain
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: table
+          default: '"filter"'
+        - name: chain
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+        - file.directory_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_nftables.py
+          functions: 28
+    - function: append
+      source:
+        path: salt/modules/nftables.py
+        symbol: append
+      summary: Append a rule to the specified table & chain.
+      parameters:
+        - name: table
+          default: '"filter"'
+        - name: chain
+          default: None
+        - name: rule
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+        - file.directory_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_nftables.py
+          functions: 28
+    - function: insert
+      source:
+        path: salt/modules/nftables.py
+        symbol: insert
+      summary: Insert a rule into the specified table & chain, at the specified position.
+      parameters:
+        - name: table
+          default: '"filter"'
+        - name: chain
+          default: None
+        - name: position
+          default: None
+        - name: rule
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+        - file.directory_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_nftables.py
+          functions: 28
+    - function: delete
+      source:
+        path: salt/modules/nftables.py
+        symbol: delete
+      summary: Delete a rule from the specified table & chain, specifying either the rule
+      parameters:
+        - name: table
+        - name: chain
+          default: None
+        - name: position
+          default: None
+        - name: rule
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+        - file.directory_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_nftables.py
+          functions: 28
+    - function: flush
+      source:
+        path: salt/modules/nftables.py
+        symbol: flush
+      summary: Flush the chain in the specified table, flush all chains in the specified
+      parameters:
+        - name: table
+          default: '"filter"'
+        - name: chain
+          default: '""'
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+        - file.directory_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_nftables.py
+          functions: 28
+    - function: get_policy
+      source:
+        path: salt/modules/nftables.py
+        symbol: get_policy
+      summary: '.. versionadded:: 3002'
+      parameters:
+        - name: table
+          default: '"filter"'
+        - name: chain
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+        - file.directory_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_nftables.py
+          functions: 28
+    - function: set_policy
+      source:
+        path: salt/modules/nftables.py
+        symbol: set_policy
+      summary: '.. versionadded:: 3002'
+      parameters:
+        - name: table
+          default: '"filter"'
+        - name: chain
+          default: None
+        - name: policy
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.directory_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_nftables.py
+          functions: 28

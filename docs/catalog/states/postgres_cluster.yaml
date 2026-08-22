@@ -1,0 +1,44 @@
+kind: state
+module: postgres_cluster
+source_module: postgres_cluster
+path: salt/states/postgres_cluster.py
+functions:
+    - function: present
+      source:
+        path: salt/states/postgres_cluster.py
+        symbol: present
+      summary: Ensure that the named cluster is present with the specified properties.
+      parameters:
+        - name: version
+        - name: name
+        - name: port
+          default: None
+        - name: encoding
+          default: None
+        - name: locale
+          default: None
+        - name: datadir
+          default: None
+        - name: allow_group_access
+          default: None
+        - name: data_checksums
+          default: None
+        - name: wal_segsize
+          default: None
+      execution_dependencies:
+        - postgres.cluster_create
+        - postgres.cluster_exists
+        - postgres.cluster_list
+    - function: absent
+      source:
+        path: salt/states/postgres_cluster.py
+        symbol: absent
+      summary: Ensure that the named cluster is absent
+      parameters:
+        - name: version
+        - name: name
+      execution_dependencies:
+        - postgres.cluster_create
+        - postgres.cluster_exists
+        - postgres.cluster_list
+        - postgres.cluster_remove

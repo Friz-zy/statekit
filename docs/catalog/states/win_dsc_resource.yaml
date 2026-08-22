@@ -1,0 +1,27 @@
+kind: state
+module: dsc_resource
+source_module: win_dsc_resource
+virtual: true
+path: salt/states/win_dsc_resource.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _normalize_str_values
+      source:
+        path: salt/states/win_dsc_resource.py
+        symbol: _normalize_str_values
+      summary: Recursively lowercase all string keys and values in a dict.
+      parameters:
+        - name: data
+    - function: managed
+      source:
+        path: salt/states/win_dsc_resource.py
+        symbol: managed
+      parameters:
+        - name: name
+        - name: module_name
+        - name: properties
+      execution_dependencies:
+        - dsc_resource.get
+        - dsc_resource.set
+        - dsc_resource.test

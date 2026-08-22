@@ -1,0 +1,59 @@
+kind: exec
+module: salt_proxy
+source_module: salt_proxy
+path: salt/modules/salt_proxy.py
+functions:
+    - function: _write_proxy_conf
+      source:
+        path: salt/modules/salt_proxy.py
+        symbol: _write_proxy_conf
+      summary: write to file
+      parameters:
+        - name: proxyfile
+    - function: _proxy_conf_file
+      source:
+        path: salt/modules/salt_proxy.py
+        symbol: _proxy_conf_file
+      summary: Check if proxy conf exists and update
+      parameters:
+        - name: proxyfile
+        - name: test
+    - function: _is_proxy_running
+      source:
+        path: salt/modules/salt_proxy.py
+        symbol: _is_proxy_running
+      summary: Check if proxy for this name is running
+      parameters:
+        - name: proxyname
+      execution_dependencies:
+        - cmd.run_all
+    - function: _proxy_process
+      source:
+        path: salt/modules/salt_proxy.py
+        symbol: _proxy_process
+      summary: Check and execute proxy process
+      parameters:
+        - name: proxyname
+        - name: test
+      execution_dependencies:
+        - cmd.run_all
+    - function: configure_proxy
+      source:
+        path: salt/modules/salt_proxy.py
+        symbol: configure_proxy
+      summary: Create the salt proxy file and start the proxy process
+      parameters:
+        - name: proxyname
+        - name: start
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+    - function: is_running
+      source:
+        path: salt/modules/salt_proxy.py
+        symbol: is_running
+      summary: Check if the salt-proxy process associated
+      parameters:
+        - name: proxyname
+      execution_dependencies:
+        - cmd.run_all

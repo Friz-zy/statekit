@@ -1,0 +1,38 @@
+kind: state
+module: wusa
+source_module: win_wusa
+virtual: true
+path: salt/states/win_wusa.py
+platform_markers:
+    - is_windows
+functions:
+    - function: installed
+      source:
+        path: salt/states/win_wusa.py
+        symbol: installed
+      summary: Ensure an update is installed on the minion
+      parameters:
+        - name: name
+        - name: source
+      execution_dependencies:
+        - cp.cache_file
+        - wusa.install
+        - wusa.is_installed
+      tests:
+        - path: tests/pytests/unit/states/test_win_wusa.py
+          functions: 10
+    - function: uninstalled
+      source:
+        path: salt/states/win_wusa.py
+        symbol: uninstalled
+      summary: Ensure an update is uninstalled from the minion
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cp.cache_file
+        - wusa.install
+        - wusa.is_installed
+        - wusa.uninstall
+      tests:
+        - path: tests/pytests/unit/states/test_win_wusa.py
+          functions: 10

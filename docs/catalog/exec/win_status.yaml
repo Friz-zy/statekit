@@ -1,0 +1,175 @@
+kind: exec
+module: status
+source_module: win_status
+virtual: true
+path: salt/modules/win_status.py
+platform_markers:
+    - is_windows
+functions:
+    - function: cpustats
+      source:
+        path: salt/modules/win_status.py
+        symbol: cpustats
+      summary: Return information about the CPU.
+      tests:
+        - path: tests/unit/modules/test_win_status.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_status.py
+          functions: 1
+    - function: meminfo
+      source:
+        path: salt/modules/win_status.py
+        symbol: meminfo
+      summary: Return information about physical and virtual memory on the system.
+      tests:
+        - path: tests/unit/modules/test_win_status.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_status.py
+          functions: 1
+    - function: vmstats
+      source:
+        path: salt/modules/win_status.py
+        symbol: vmstats
+      summary: Return information about the virtual memory on the machine.
+      tests:
+        - path: tests/unit/modules/test_win_status.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_status.py
+          functions: 1
+    - function: loadavg
+      source:
+        path: salt/modules/win_status.py
+        symbol: loadavg
+      summary: Returns counter information related to the load of the machine.
+      tests:
+        - path: tests/unit/modules/test_win_status.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_status.py
+          functions: 1
+    - function: cpuload
+      source:
+        path: salt/modules/win_status.py
+        symbol: cpuload
+      summary: '.. versionadded:: 2015.8.0'
+      tests:
+        - path: tests/unit/modules/test_win_status.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_status.py
+          functions: 1
+    - function: diskusage
+      source:
+        path: salt/modules/win_status.py
+        symbol: diskusage
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: human_readable
+          default: "False"
+        - name: path
+          default: None
+      tests:
+        - path: tests/unit/modules/test_win_status.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_status.py
+          functions: 1
+    - function: procs
+      source:
+        path: salt/modules/win_status.py
+        symbol: procs
+      summary: Return the process data.
+      parameters:
+        - name: count
+          default: "False"
+      tests:
+        - path: tests/unit/modules/test_win_status.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_status.py
+          functions: 1
+    - function: saltmem
+      source:
+        path: salt/modules/win_status.py
+        symbol: saltmem
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: human_readable
+          default: "False"
+      tests:
+        - path: tests/unit/modules/test_win_status.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_status.py
+          functions: 1
+    - function: uptime
+      source:
+        path: salt/modules/win_status.py
+        symbol: uptime
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: human_readable
+          default: "False"
+      tests:
+        - path: tests/unit/modules/test_win_status.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_status.py
+          functions: 1
+    - function: _get_process_info
+      source:
+        path: salt/modules/win_status.py
+        symbol: _get_process_info
+      summary: Return  process information
+      parameters:
+        - name: proc
+      tests:
+        - path: tests/unit/modules/test_win_status.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_status.py
+          functions: 1
+    - function: _get_process_owner
+      source:
+        path: salt/modules/win_status.py
+        symbol: _get_process_owner
+      parameters:
+        - name: process
+      tests:
+        - path: tests/unit/modules/test_win_status.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_status.py
+          functions: 1
+    - function: _byte_calc
+      source:
+        path: salt/modules/win_status.py
+        symbol: _byte_calc
+      parameters:
+        - name: val
+      tests:
+        - path: tests/unit/modules/test_win_status.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_status.py
+          functions: 1
+    - function: _get_connected_ips
+      source:
+        path: salt/modules/win_status.py
+        symbol: _get_connected_ips
+      summary: List all connections on the system that have an established connection on
+      parameters:
+        - name: port
+      tests:
+        - path: tests/unit/modules/test_win_status.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_status.py
+          functions: 1
+    - function: master
+      source:
+        path: salt/modules/win_status.py
+        symbol: master
+      summary: '.. versionadded:: 2015.5.0'
+      parameters:
+        - name: master
+          default: None
+        - name: connected
+          default: "True"
+      execution_dependencies:
+        - config.get
+      tests:
+        - path: tests/unit/modules/test_win_status.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_status.py
+          functions: 1

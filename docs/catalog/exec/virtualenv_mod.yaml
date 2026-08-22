@@ -1,0 +1,177 @@
+kind: exec
+module: virtualenv
+source_module: virtualenv_mod
+virtual: true
+path: salt/modules/virtualenv_mod.py
+platform_markers:
+    - is_windows
+functions:
+    - function: virtualenv_ver
+      source:
+        path: salt/modules/virtualenv_mod.py
+        symbol: virtualenv_ver
+      summary: return virtualenv version if exists
+      parameters:
+        - name: venv_bin
+        - name: user
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/unit/modules/test_virtualenv_mod.py
+          functions: 0
+    - function: create
+      source:
+        path: salt/modules/virtualenv_mod.py
+        symbol: create
+      summary: Create a virtualenv
+      parameters:
+        - name: path
+        - name: venv_bin
+          default: None
+        - name: system_site_packages
+          default: "False"
+        - name: distribute
+          default: "False"
+        - name: clear
+          default: "False"
+        - name: python
+          default: None
+        - name: extra_search_dir
+          default: None
+        - name: never_download
+          default: None
+        - name: prompt
+          default: None
+        - name: pip
+          default: "False"
+        - name: symlinks
+          default: None
+        - name: upgrade
+          default: None
+        - name: user
+          default: None
+        - name: use_vt
+          default: "False"
+        - name: saltenv
+          default: '"base"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/unit/modules/test_virtualenv_mod.py
+          functions: 0
+    - function: get_site_packages
+      source:
+        path: salt/modules/virtualenv_mod.py
+        symbol: get_site_packages
+      summary: Return the path to the site-packages directory of a virtualenv
+      parameters:
+        - name: venv
+      execution_dependencies:
+        - cmd.exec_code_all
+        - cmd.run_all
+      tests:
+        - path: tests/unit/modules/test_virtualenv_mod.py
+          functions: 0
+    - function: get_distribution_path
+      source:
+        path: salt/modules/virtualenv_mod.py
+        symbol: get_distribution_path
+      summary: Return the path to a distribution installed inside a virtualenv
+      parameters:
+        - name: venv
+        - name: distribution
+      execution_dependencies:
+        - cmd.exec_code_all
+        - cmd.run_all
+      tests:
+        - path: tests/unit/modules/test_virtualenv_mod.py
+          functions: 0
+    - function: get_resource_path
+      source:
+        path: salt/modules/virtualenv_mod.py
+        symbol: get_resource_path
+      summary: Return the path to a package resource installed inside a virtualenv
+      parameters:
+        - name: venv
+        - name: package
+          default: None
+        - name: resource
+          default: None
+      execution_dependencies:
+        - cmd.exec_code_all
+        - cmd.run_all
+      tests:
+        - path: tests/unit/modules/test_virtualenv_mod.py
+          functions: 0
+    - function: get_resource_content
+      source:
+        path: salt/modules/virtualenv_mod.py
+        symbol: get_resource_content
+      summary: Return the content of a package resource installed inside a virtualenv
+      parameters:
+        - name: venv
+        - name: package
+          default: None
+        - name: resource
+          default: None
+      execution_dependencies:
+        - cmd.exec_code_all
+        - cmd.run_all
+      tests:
+        - path: tests/unit/modules/test_virtualenv_mod.py
+          functions: 0
+    - function: _install_script
+      source:
+        path: salt/modules/virtualenv_mod.py
+        symbol: _install_script
+      parameters:
+        - name: source
+        - name: cwd
+        - name: python
+        - name: user
+        - name: saltenv
+          default: '"base"'
+        - name: use_vt
+          default: "False"
+      execution_dependencies:
+        - cmd.exec_code_all
+        - cmd.run_all
+        - cp.cache_file
+        - file.user_to_uid
+      tests:
+        - path: tests/unit/modules/test_virtualenv_mod.py
+          functions: 0
+    - function: _verify_safe_py_code
+      source:
+        path: salt/modules/virtualenv_mod.py
+        symbol: _verify_safe_py_code
+      parameters:
+        - name: args
+          kind: '*'
+      execution_dependencies:
+        - cmd.exec_code_all
+        - cmd.run_all
+        - cp.cache_file
+        - file.user_to_uid
+      tests:
+        - path: tests/unit/modules/test_virtualenv_mod.py
+          functions: 0
+    - function: _verify_virtualenv
+      source:
+        path: salt/modules/virtualenv_mod.py
+        symbol: _verify_virtualenv
+      parameters:
+        - name: venv_path
+      execution_dependencies:
+        - cmd.exec_code_all
+        - cmd.run_all
+        - cp.cache_file
+        - file.user_to_uid
+      tests:
+        - path: tests/unit/modules/test_virtualenv_mod.py
+          functions: 0

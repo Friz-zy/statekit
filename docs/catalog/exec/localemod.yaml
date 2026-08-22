@@ -1,0 +1,126 @@
+kind: exec
+module: locale
+source_module: localemod
+virtual: true
+path: salt/modules/localemod.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _parse_dbus_locale
+      source:
+        path: salt/modules/localemod.py
+        symbol: _parse_dbus_locale
+      summary: Get the 'System Locale' parameters from dbus
+      tests:
+        - path: tests/unit/modules/test_localemod.py
+          functions: 0
+    - function: _localectl_status
+      source:
+        path: salt/modules/localemod.py
+        symbol: _localectl_status
+      summary: Parse localectl status into a dict.
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_localemod.py
+          functions: 0
+    - function: _localectl_set
+      source:
+        path: salt/modules/localemod.py
+        symbol: _localectl_set
+      summary: Use systemd's localectl command to set the LANG locale parameter, making
+      parameters:
+        - name: locale
+          default: '""'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.file_exists
+        - file.replace
+        - file.touch
+      tests:
+        - path: tests/unit/modules/test_localemod.py
+          functions: 0
+    - function: list_avail
+      source:
+        path: salt/modules/localemod.py
+        symbol: list_avail
+      summary: Lists available (compiled) locales
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.file_exists
+        - file.replace
+        - file.touch
+      tests:
+        - path: tests/unit/modules/test_localemod.py
+          functions: 0
+    - function: get_locale
+      source:
+        path: salt/modules/localemod.py
+        symbol: get_locale
+      summary: Get the current system locale
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.file_exists
+        - file.replace
+        - file.touch
+      tests:
+        - path: tests/unit/modules/test_localemod.py
+          functions: 0
+    - function: set_locale
+      source:
+        path: salt/modules/localemod.py
+        symbol: set_locale
+      summary: Sets the current system locale
+      parameters:
+        - name: locale
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.file_exists
+        - file.replace
+        - file.touch
+        - locale.list_avail
+      tests:
+        - path: tests/unit/modules/test_localemod.py
+          functions: 0
+    - function: avail
+      source:
+        path: salt/modules/localemod.py
+        symbol: avail
+      summary: Check if a locale is available.
+      parameters:
+        - name: locale
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.file_exists
+        - file.replace
+        - file.touch
+        - locale.list_avail
+      tests:
+        - path: tests/unit/modules/test_localemod.py
+          functions: 0
+    - function: gen_locale
+      source:
+        path: salt/modules/localemod.py
+        symbol: gen_locale
+      summary: 'Generate a locale. Options:'
+      parameters:
+        - name: locale
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - file.file_exists
+        - file.replace
+        - file.search
+        - file.touch
+        - locale.list_avail
+      tests:
+        - path: tests/unit/modules/test_localemod.py
+          functions: 0

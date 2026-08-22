@@ -1,0 +1,131 @@
+kind: exec
+module: devinfo
+source_module: devinfo
+path: salt/modules/devinfo.py
+functions:
+    - function: _udev
+      source:
+        path: salt/modules/devinfo.py
+        symbol: _udev
+      summary: Return the value for a udev key.
+      parameters:
+        - name: udev_info
+        - name: key
+      tests:
+        - path: tests/pytests/unit/modules/test_devinfo.py
+          functions: 19
+    - function: _match
+      source:
+        path: salt/modules/devinfo.py
+        symbol: _match
+      summary: Check if `udev_info` match the information from `match_info`.
+      parameters:
+        - name: udev_info
+        - name: match_info
+      tests:
+        - path: tests/pytests/unit/modules/test_devinfo.py
+          functions: 19
+    - function: filter_
+      source:
+        path: salt/modules/devinfo.py
+        symbol: filter_
+      summary: Returns a list of devices, filtered under udev keys.
+      parameters:
+        - name: udev_in
+          default: None
+        - name: udev_ex
+          default: None
+      execution_dependencies:
+        - udev.info
+      tests:
+        - path: tests/pytests/unit/modules/test_devinfo.py
+          functions: 19
+    - function: _hwinfo_parse_short
+      source:
+        path: salt/modules/devinfo.py
+        symbol: _hwinfo_parse_short
+      summary: Parse the output of hwinfo and return a dictionary
+      parameters:
+        - name: report
+      execution_dependencies:
+        - udev.info
+      tests:
+        - path: tests/pytests/unit/modules/test_devinfo.py
+          functions: 19
+    - function: _hwinfo_parse_full
+      source:
+        path: salt/modules/devinfo.py
+        symbol: _hwinfo_parse_full
+      summary: Parse the output of hwinfo and return a dictionary
+      parameters:
+        - name: report
+      execution_dependencies:
+        - udev.info
+      tests:
+        - path: tests/pytests/unit/modules/test_devinfo.py
+          functions: 19
+    - function: _hwinfo_parse
+      source:
+        path: salt/modules/devinfo.py
+        symbol: _hwinfo_parse
+      summary: Parse the output of hwinfo and return a dictionary
+      parameters:
+        - name: report
+        - name: short
+      execution_dependencies:
+        - udev.info
+      tests:
+        - path: tests/pytests/unit/modules/test_devinfo.py
+          functions: 19
+    - function: _hwinfo_efi
+      source:
+        path: salt/modules/devinfo.py
+        symbol: _hwinfo_efi
+      summary: Return information about EFI
+      execution_dependencies:
+        - udev.info
+      tests:
+        - path: tests/pytests/unit/modules/test_devinfo.py
+          functions: 19
+    - function: _hwinfo_memory
+      source:
+        path: salt/modules/devinfo.py
+        symbol: _hwinfo_memory
+      summary: Return information about the memory
+      execution_dependencies:
+        - udev.info
+      tests:
+        - path: tests/pytests/unit/modules/test_devinfo.py
+          functions: 19
+    - function: _hwinfo_network
+      source:
+        path: salt/modules/devinfo.py
+        symbol: _hwinfo_network
+      summary: Return network information
+      parameters:
+        - name: short
+      execution_dependencies:
+        - udev.info
+      tests:
+        - path: tests/pytests/unit/modules/test_devinfo.py
+          functions: 19
+    - function: hwinfo
+      source:
+        path: salt/modules/devinfo.py
+        symbol: hwinfo
+      summary: Probe for hardware
+      parameters:
+        - name: items
+          default: None
+        - name: short
+          default: "True"
+        - name: listmd
+          default: "False"
+        - name: devices
+          default: None
+      execution_dependencies:
+        - cmd.run_stdout
+        - udev.info
+      tests:
+        - path: tests/pytests/unit/modules/test_devinfo.py
+          functions: 19

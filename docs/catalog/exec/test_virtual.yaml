@@ -1,0 +1,9 @@
+kind: exec
+module: test_virtual
+source_module: test_virtual
+path: salt/modules/test_virtual.py
+functions:
+    - function: ping
+      source:
+        path: salt/modules/test_virtual.py
+        symbol: ping

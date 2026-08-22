@@ -1,0 +1,175 @@
+kind: exec
+module: firewall
+source_module: win_firewall
+virtual: true
+path: salt/modules/win_firewall.py
+platform_markers:
+    - is_windows
+functions:
+    - function: get_config
+      source:
+        path: salt/modules/win_firewall.py
+        symbol: get_config
+      summary: Get the status of all the firewall profiles
+      execution_dependencies:
+        - cmd.run_all
+    - function: disable
+      source:
+        path: salt/modules/win_firewall.py
+        symbol: disable
+      summary: Disable firewall profile
+      parameters:
+        - name: profile
+          default: '"allprofiles"'
+      execution_dependencies:
+        - cmd.run_all
+    - function: enable
+      source:
+        path: salt/modules/win_firewall.py
+        symbol: enable
+      summary: '.. versionadded:: 2015.5.0'
+      parameters:
+        - name: profile
+          default: '"allprofiles"'
+      execution_dependencies:
+        - cmd.run_all
+    - function: get_rule
+      source:
+        path: salt/modules/win_firewall.py
+        symbol: get_rule
+      summary: '.. versionadded:: 2015.5.0'
+      parameters:
+        - name: name
+          default: '"all"'
+      execution_dependencies:
+        - cmd.run_all
+    - function: add_rule
+      source:
+        path: salt/modules/win_firewall.py
+        symbol: add_rule
+      summary: '.. versionadded:: 2015.5.0'
+      parameters:
+        - name: name
+        - name: localport
+        - name: protocol
+          default: '"tcp"'
+        - name: action
+          default: '"allow"'
+        - name: dir
+          default: '"in"'
+        - name: remoteip
+          default: '"any"'
+      execution_dependencies:
+        - cmd.run_all
+    - function: delete_rule
+      source:
+        path: salt/modules/win_firewall.py
+        symbol: delete_rule
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: name
+          default: None
+        - name: localport
+          default: None
+        - name: protocol
+          default: None
+        - name: dir
+          default: None
+        - name: remoteip
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+    - function: rule_exists
+      source:
+        path: salt/modules/win_firewall.py
+        symbol: rule_exists
+      summary: '.. versionadded:: 2016.11.6'
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+    - function: get_settings
+      source:
+        path: salt/modules/win_firewall.py
+        symbol: get_settings
+      summary: Get the firewall property from the specified profile in the specified store
+      parameters:
+        - name: profile
+        - name: section
+        - name: store
+          default: '"local"'
+      execution_dependencies:
+        - cmd.run_all
+    - function: get_all_settings
+      source:
+        path: salt/modules/win_firewall.py
+        symbol: get_all_settings
+      summary: Gets all the properties for the specified profile in the specified store
+      parameters:
+        - name: domain
+        - name: store
+          default: '"local"'
+      execution_dependencies:
+        - cmd.run_all
+    - function: get_all_profiles
+      source:
+        path: salt/modules/win_firewall.py
+        symbol: get_all_profiles
+      summary: Gets all properties for all profiles in the specified store
+      parameters:
+        - name: store
+          default: '"local"'
+      execution_dependencies:
+        - cmd.run_all
+    - function: set_firewall_settings
+      source:
+        path: salt/modules/win_firewall.py
+        symbol: set_firewall_settings
+      summary: Set the firewall inbound/outbound settings for the specified profile and
+      parameters:
+        - name: profile
+        - name: inbound
+          default: None
+        - name: outbound
+          default: None
+        - name: store
+          default: '"local"'
+      execution_dependencies:
+        - cmd.run_all
+    - function: set_logging_settings
+      source:
+        path: salt/modules/win_firewall.py
+        symbol: set_logging_settings
+      parameters:
+        - name: profile
+        - name: setting
+        - name: value
+        - name: store
+          default: '"local"'
+      execution_dependencies:
+        - cmd.run_all
+    - function: set_settings
+      source:
+        path: salt/modules/win_firewall.py
+        symbol: set_settings
+      summary: Configure firewall settings.
+      parameters:
+        - name: profile
+        - name: setting
+        - name: value
+        - name: store
+          default: '"local"'
+      execution_dependencies:
+        - cmd.run_all
+    - function: set_state
+      source:
+        path: salt/modules/win_firewall.py
+        symbol: set_state
+      summary: Configure the firewall state.
+      parameters:
+        - name: profile
+        - name: state
+        - name: store
+          default: '"local"'
+      execution_dependencies:
+        - cmd.run_all

@@ -1,0 +1,182 @@
+kind: exec
+module: match
+source_module: match
+path: salt/modules/match.py
+functions:
+    - function: _load_matchers
+      source:
+        path: salt/modules/match.py
+        symbol: _load_matchers
+      summary: Store matchers in __context__ so they're only loaded once
+      tests:
+        - path: tests/pytests/unit/modules/test_match.py
+          functions: 16
+    - function: compound
+      source:
+        path: salt/modules/match.py
+        symbol: compound
+      summary: Return True if the minion ID matches the given compound target
+      parameters:
+        - name: tgt
+        - name: minion_id
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_match.py
+          functions: 16
+    - function: ipcidr
+      source:
+        path: salt/modules/match.py
+        symbol: ipcidr
+      summary: Return True if the minion matches the given ipcidr target
+      parameters:
+        - name: tgt
+      tests:
+        - path: tests/pytests/unit/modules/test_match.py
+          functions: 16
+    - function: pillar_pcre
+      source:
+        path: salt/modules/match.py
+        symbol: pillar_pcre
+      summary: Return True if the minion matches the given pillar_pcre target. The
+      parameters:
+        - name: tgt
+        - name: delimiter
+          default: DEFAULT_TARGET_DELIM
+      tests:
+        - path: tests/pytests/unit/modules/test_match.py
+          functions: 16
+    - function: pillar
+      source:
+        path: salt/modules/match.py
+        symbol: pillar
+      summary: Return True if the minion matches the given pillar target. The
+      parameters:
+        - name: tgt
+        - name: delimiter
+          default: DEFAULT_TARGET_DELIM
+      tests:
+        - path: tests/pytests/unit/modules/test_match.py
+          functions: 16
+    - function: data
+      source:
+        path: salt/modules/match.py
+        symbol: data
+      summary: Return True if the minion matches the given data target
+      parameters:
+        - name: tgt
+      tests:
+        - path: tests/pytests/unit/modules/test_match.py
+          functions: 16
+    - function: grain_pcre
+      source:
+        path: salt/modules/match.py
+        symbol: grain_pcre
+      summary: Return True if the minion matches the given grain_pcre target. The
+      parameters:
+        - name: tgt
+        - name: delimiter
+          default: DEFAULT_TARGET_DELIM
+      tests:
+        - path: tests/pytests/unit/modules/test_match.py
+          functions: 16
+    - function: grain
+      source:
+        path: salt/modules/match.py
+        symbol: grain
+      summary: Return True if the minion matches the given grain target. The ``delimiter``
+      parameters:
+        - name: tgt
+        - name: delimiter
+          default: DEFAULT_TARGET_DELIM
+      tests:
+        - path: tests/pytests/unit/modules/test_match.py
+          functions: 16
+    - function: list_
+      source:
+        path: salt/modules/match.py
+        symbol: list_
+      summary: Return True if the minion ID matches the given list target
+      parameters:
+        - name: tgt
+        - name: minion_id
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_match.py
+          functions: 16
+    - function: pcre
+      source:
+        path: salt/modules/match.py
+        symbol: pcre
+      summary: Return True if the minion ID matches the given pcre target
+      parameters:
+        - name: tgt
+        - name: minion_id
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_match.py
+          functions: 16
+    - function: glob
+      source:
+        path: salt/modules/match.py
+        symbol: glob
+      summary: Return True if the minion ID matches the given glob target
+      parameters:
+        - name: tgt
+        - name: minion_id
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_match.py
+          functions: 16
+    - function: filter_by
+      source:
+        path: salt/modules/match.py
+        symbol: filter_by
+      summary: Return the first match in a dictionary of target patterns
+      parameters:
+        - name: lookup
+        - name: tgt_type
+          default: '"compound"'
+        - name: minion_id
+          default: None
+        - name: merge
+          default: None
+        - name: merge_lists
+          default: "False"
+        - name: default
+          default: '"default"'
+      tests:
+        - path: tests/pytests/unit/modules/test_match.py
+          functions: 16
+    - function: search_by
+      source:
+        path: salt/modules/match.py
+        symbol: search_by
+      summary: Search a dictionary of target strings for matching targets
+      parameters:
+        - name: lookup
+        - name: tgt_type
+          default: '"compound"'
+        - name: minion_id
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_match.py
+          functions: 16
+    - function: ifelse
+      source:
+        path: salt/modules/match.py
+        symbol: ifelse
+      summary: '.. versionadded:: 3006.0'
+      parameters:
+        - name: args
+          kind: '*'
+        - name: tgt_type
+          default: '"compound"'
+        - name: minion_id
+          default: None
+        - name: merge
+          default: None
+        - name: merge_lists
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_match.py
+          functions: 16

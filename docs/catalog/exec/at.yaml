@@ -1,0 +1,106 @@
+kind: exec
+module: at
+source_module: at
+virtual: true
+path: salt/modules/at.py
+platform_markers:
+    - is_sunos
+    - is_windows
+functions:
+    - function: _cmd
+      source:
+        path: salt/modules/at.py
+        symbol: _cmd
+      summary: Wrapper to run at(1) or return None.
+      parameters:
+        - name: binary
+        - name: args
+          kind: '*'
+      execution_dependencies:
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_at.py
+          functions: 7
+    - function: atq
+      source:
+        path: salt/modules/at.py
+        symbol: atq
+      summary: List all queued and running jobs or only those with
+      parameters:
+        - name: tag
+          default: None
+      execution_dependencies:
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_at.py
+          functions: 7
+    - function: atrm
+      source:
+        path: salt/modules/at.py
+        symbol: atrm
+      summary: Remove jobs from the queue.
+      parameters:
+        - name: args
+          kind: '*'
+      execution_dependencies:
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_at.py
+          functions: 7
+    - function: at
+      source:
+        path: salt/modules/at.py
+        symbol: at
+      summary: Add a job to the queue.
+      parameters:
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_at.py
+          functions: 7
+    - function: atc
+      source:
+        path: salt/modules/at.py
+        symbol: atc
+      summary: Print the at(1) script that will run for the passed job
+      parameters:
+        - name: jobid
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_at.py
+          functions: 7
+    - function: _atq
+      source:
+        path: salt/modules/at.py
+        symbol: _atq
+      summary: Return match jobs list
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_at.py
+          functions: 7
+    - function: jobcheck
+      source:
+        path: salt/modules/at.py
+        symbol: jobcheck
+      summary: Check the job from queue.
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_at.py
+          functions: 7

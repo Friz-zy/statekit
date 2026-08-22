@@ -1,0 +1,28 @@
+kind: exec
+module: yaml
+source_module: yaml
+virtual: true
+path: salt/modules/yaml.py
+functions:
+    - function: lint
+      source:
+        path: salt/modules/yaml.py
+        symbol: lint
+      summary: lint the output after detecting a sucsessful render.
+      parameters:
+        - name: source
+        - name: saltenv
+          default: None
+        - name: pre_render
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - cp.cache_file
+        - slsutil.renderer
+      utility_dependencies:
+        - files.fopen
+      tests:
+        - path: tests/pytests/unit/modules/test_yaml.py
+          functions: 3

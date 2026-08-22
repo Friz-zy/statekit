@@ -1,0 +1,49 @@
+kind: state
+module: loop
+source_module: loop
+virtual: true
+path: salt/states/loop.py
+functions:
+    - function: until
+      source:
+        path: salt/states/loop.py
+        symbol: until
+      summary: Loop over an execution module until a condition is met.
+      parameters:
+        - name: name
+        - name: m_args
+          default: None
+        - name: m_kwargs
+          default: None
+        - name: condition
+          default: None
+        - name: period
+          default: "1"
+        - name: timeout
+          default: "60"
+      tests:
+        - path: tests/unit/states/test_loop.py
+          functions: 0
+    - function: until_no_eval
+      source:
+        path: salt/states/loop.py
+        symbol: until_no_eval
+      summary: Generic waiter state that waits for a specific salt function to produce an
+      parameters:
+        - name: name
+        - name: expected
+        - name: compare_operator
+          default: '"eq"'
+        - name: timeout
+          default: "60"
+        - name: period
+          default: "1"
+        - name: init_wait
+          default: "0"
+        - name: args
+          default: None
+        - name: kwargs
+          default: None
+      tests:
+        - path: tests/unit/states/test_loop.py
+          functions: 0

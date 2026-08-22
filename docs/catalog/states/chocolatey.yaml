@@ -1,0 +1,166 @@
+kind: state
+module: chocolatey
+source_module: chocolatey
+path: salt/states/chocolatey.py
+functions:
+    - function: installed
+      source:
+        path: salt/states/chocolatey.py
+        symbol: installed
+      summary: Installs a package if not already installed
+      parameters:
+        - name: name
+        - name: version
+          default: None
+        - name: source
+          default: None
+        - name: force
+          default: "False"
+        - name: pre_versions
+          default: "False"
+        - name: install_args
+          default: None
+        - name: override_args
+          default: "False"
+        - name: force_x86
+          default: "False"
+        - name: package_args
+          default: None
+        - name: allow_multiple
+          default: "False"
+        - name: execution_timeout
+          default: None
+        - name: virus_check
+          default: None
+      execution_dependencies:
+        - chocolatey.install
+        - chocolatey.list
+      tests:
+        - path: tests/pytests/unit/states/test_chocolatey.py
+          functions: 1
+    - function: uninstalled
+      source:
+        path: salt/states/chocolatey.py
+        symbol: uninstalled
+      summary: Uninstalls a chocolatey package
+      parameters:
+        - name: name
+        - name: version
+          default: None
+        - name: uninstall_args
+          default: None
+        - name: override_args
+          default: "False"
+      execution_dependencies:
+        - chocolatey.install
+        - chocolatey.list
+        - chocolatey.uninstall
+      tests:
+        - path: tests/pytests/unit/states/test_chocolatey.py
+          functions: 1
+    - function: upgraded
+      source:
+        path: salt/states/chocolatey.py
+        symbol: upgraded
+      summary: Upgrades a chocolatey package. Will install the package if not installed.
+      parameters:
+        - name: name
+        - name: version
+          default: None
+        - name: source
+          default: None
+        - name: force
+          default: "False"
+        - name: pre_versions
+          default: "False"
+        - name: install_args
+          default: None
+        - name: override_args
+          default: "False"
+        - name: force_x86
+          default: "False"
+        - name: package_args
+          default: None
+      execution_dependencies:
+        - chocolatey.install
+        - chocolatey.list
+        - chocolatey.uninstall
+        - chocolatey.upgrade
+        - chocolatey.version
+      tests:
+        - path: tests/pytests/unit/states/test_chocolatey.py
+          functions: 1
+    - function: source_present
+      source:
+        path: salt/states/chocolatey.py
+        symbol: source_present
+      summary: Adds a Chocolatey source if not already present.
+      parameters:
+        - name: name
+        - name: source_location
+        - name: username
+          default: None
+        - name: password
+          default: None
+        - name: force
+          default: "False"
+        - name: priority
+          default: None
+      execution_dependencies:
+        - chocolatey.add_source
+        - chocolatey.install
+        - chocolatey.list
+        - chocolatey.list_sources
+        - chocolatey.uninstall
+        - chocolatey.upgrade
+        - chocolatey.version
+      tests:
+        - path: tests/pytests/unit/states/test_chocolatey.py
+          functions: 1
+    - function: bootstrapped
+      source:
+        path: salt/states/chocolatey.py
+        symbol: bootstrapped
+      summary: '.. versionadded:: 3007.1'
+      parameters:
+        - name: name
+        - name: force
+          default: "False"
+        - name: source
+          default: None
+        - name: version
+          default: None
+      execution_dependencies:
+        - chocolatey.add_source
+        - chocolatey.bootstrap
+        - chocolatey.chocolatey_version
+        - chocolatey.install
+        - chocolatey.list
+        - chocolatey.list_sources
+        - chocolatey.uninstall
+        - chocolatey.upgrade
+        - chocolatey.version
+      tests:
+        - path: tests/pytests/unit/states/test_chocolatey.py
+          functions: 1
+    - function: unbootstrapped
+      source:
+        path: salt/states/chocolatey.py
+        symbol: unbootstrapped
+      summary: '.. versionadded:: 3007.1'
+      parameters:
+        - name: name
+      execution_dependencies:
+        - chocolatey.add_source
+        - chocolatey.bootstrap
+        - chocolatey.chocolatey_version
+        - chocolatey.install
+        - chocolatey.list
+        - chocolatey.list_sources
+        - chocolatey.unbootstrap
+        - chocolatey.uninstall
+        - chocolatey.upgrade
+        - chocolatey.version
+      tests:
+        - path: tests/pytests/unit/states/test_chocolatey.py
+          functions: 1

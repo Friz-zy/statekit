@@ -1,0 +1,98 @@
+kind: state
+module: netusers
+source_module: netusers
+virtual: true
+path: salt/states/netusers.py
+functions:
+    - function: _retrieve_users
+      source:
+        path: salt/states/netusers.py
+        symbol: _retrieve_users
+      summary: Retrieves configured users
+      execution_dependencies:
+        - users.config
+    - function: _ordered_dict_to_dict
+      source:
+        path: salt/states/netusers.py
+        symbol: _ordered_dict_to_dict
+      summary: .
+      parameters:
+        - name: probes
+      execution_dependencies:
+        - users.config
+    - function: _expand_users
+      source:
+        path: salt/states/netusers.py
+        symbol: _expand_users
+      summary: Creates a longer list of accepted users on the device.
+      parameters:
+        - name: device_users
+        - name: common_users
+      execution_dependencies:
+        - users.config
+    - function: _check_users
+      source:
+        path: salt/states/netusers.py
+        symbol: _check_users
+      summary: Checks if the input dictionary of users is valid.
+      parameters:
+        - name: users
+      execution_dependencies:
+        - users.config
+    - function: _compute_diff
+      source:
+        path: salt/states/netusers.py
+        symbol: _compute_diff
+      summary: Computes the differences between the actual config and the expected config
+      parameters:
+        - name: configured
+        - name: expected
+      execution_dependencies:
+        - users.config
+    - function: _set_users
+      source:
+        path: salt/states/netusers.py
+        symbol: _set_users
+      summary: Calls users.set_users.
+      parameters:
+        - name: users
+      execution_dependencies:
+        - users.config
+        - users.set_users
+    - function: _update_users
+      source:
+        path: salt/states/netusers.py
+        symbol: _update_users
+      summary: Calls users.set_users.
+      parameters:
+        - name: users
+      execution_dependencies:
+        - users.config
+        - users.set_users
+    - function: _delete_users
+      source:
+        path: salt/states/netusers.py
+        symbol: _delete_users
+      summary: Calls users.delete_users.
+      parameters:
+        - name: users
+      execution_dependencies:
+        - users.config
+        - users.delete_users
+        - users.set_users
+    - function: managed
+      source:
+        path: salt/states/netusers.py
+        symbol: managed
+      summary: Manages the configuration of the users on the device, as specified in the state SLS file. Users not defined in that
+      parameters:
+        - name: name
+        - name: users
+          default: None
+        - name: defaults
+          default: None
+      execution_dependencies:
+        - net.config_control
+        - users.config
+        - users.delete_users
+        - users.set_users

@@ -1,0 +1,48 @@
+kind: exec
+module: http
+source_module: http
+path: salt/modules/http.py
+functions:
+    - function: query
+      source:
+        path: salt/modules/http.py
+        symbol: query
+      summary: '.. versionadded:: 2015.5.0'
+      parameters:
+        - name: url
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_http.py
+          functions: 3
+    - function: wait_for_successful_query
+      source:
+        path: salt/modules/http.py
+        symbol: wait_for_successful_query
+      summary: Query a resource until a successful response, and decode the return data
+      parameters:
+        - name: url
+        - name: wait_for
+          default: "300"
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_http.py
+          functions: 3
+    - function: update_ca_bundle
+      source:
+        path: salt/modules/http.py
+        symbol: update_ca_bundle
+      summary: Update the local CA bundle file from a URL
+      parameters:
+        - name: target
+          default: None
+        - name: source
+          default: None
+        - name: merge_files
+          default: None
+      execution_dependencies:
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_http.py
+          functions: 3

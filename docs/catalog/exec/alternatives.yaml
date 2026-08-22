@@ -1,0 +1,163 @@
+kind: exec
+module: alternatives
+source_module: alternatives
+path: salt/modules/alternatives.py
+functions:
+    - function: _get_cmd
+      source:
+        path: salt/modules/alternatives.py
+        symbol: _get_cmd
+      summary: Alteratives commands and differ across distributions
+      tests:
+        - path: tests/pytests/unit/modules/test_alternatives.py
+          functions: 8
+    - function: display
+      source:
+        path: salt/modules/alternatives.py
+        symbol: display
+      summary: Display alternatives settings for defined command name
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_alternatives.py
+          functions: 8
+    - function: _read_alternative_link_directly
+      source:
+        path: salt/modules/alternatives.py
+        symbol: _read_alternative_link_directly
+      parameters:
+        - name: name
+        - name: path
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_alternatives.py
+          functions: 8
+    - function: _read_alternative_link_with_command
+      source:
+        path: salt/modules/alternatives.py
+        symbol: _read_alternative_link_with_command
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_alternatives.py
+          functions: 8
+    - function: show_link
+      source:
+        path: salt/modules/alternatives.py
+        symbol: show_link
+      summary: Display master link for the alternative
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_alternatives.py
+          functions: 8
+    - function: show_current
+      source:
+        path: salt/modules/alternatives.py
+        symbol: show_current
+      summary: Display the current highest-priority alternative for a given alternatives
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_alternatives.py
+          functions: 8
+    - function: check_exists
+      source:
+        path: salt/modules/alternatives.py
+        symbol: check_exists
+      summary: Check if the given path is an alternative for a name.
+      parameters:
+        - name: name
+        - name: path
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_alternatives.py
+          functions: 8
+    - function: check_installed
+      source:
+        path: salt/modules/alternatives.py
+        symbol: check_installed
+      summary: Check if the current highest-priority match for a given alternatives link
+      parameters:
+        - name: name
+        - name: path
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_alternatives.py
+          functions: 8
+    - function: install
+      source:
+        path: salt/modules/alternatives.py
+        symbol: install
+      summary: Install symbolic links determining default commands
+      parameters:
+        - name: name
+        - name: link
+        - name: path
+        - name: priority
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_alternatives.py
+          functions: 8
+    - function: remove
+      source:
+        path: salt/modules/alternatives.py
+        symbol: remove
+      summary: Remove symbolic links determining the default commands.
+      parameters:
+        - name: name
+        - name: path
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_alternatives.py
+          functions: 8
+    - function: auto
+      source:
+        path: salt/modules/alternatives.py
+        symbol: auto
+      summary: Trigger alternatives to set the path for <name> as
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_alternatives.py
+          functions: 8
+    - function: set_
+      source:
+        path: salt/modules/alternatives.py
+        symbol: set_
+      summary: Manually set the alternative <path> for <name>.
+      parameters:
+        - name: name
+        - name: path
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_alternatives.py
+          functions: 8
+    - function: _read_link
+      source:
+        path: salt/modules/alternatives.py
+        symbol: _read_link
+      summary: Read the link from /etc/alternatives
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_alternatives.py
+          functions: 8

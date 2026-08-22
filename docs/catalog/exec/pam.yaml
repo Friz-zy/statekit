@@ -1,0 +1,29 @@
+kind: exec
+module: pam
+source_module: pam
+virtual: true
+path: salt/modules/pam.py
+functions:
+    - function: _parse
+      source:
+        path: salt/modules/pam.py
+        symbol: _parse
+      summary: Parse a standard pam config file
+      parameters:
+        - name: contents
+          default: None
+        - name: file_name
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_pam.py
+          functions: 1
+    - function: read_file
+      source:
+        path: salt/modules/pam.py
+        symbol: read_file
+      summary: This is just a test function, to make sure parsing works
+      parameters:
+        - name: file_name
+      tests:
+        - path: tests/pytests/unit/modules/test_pam.py
+          functions: 1

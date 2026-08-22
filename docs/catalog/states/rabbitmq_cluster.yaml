@@ -1,0 +1,22 @@
+kind: state
+module: rabbitmq_cluster
+source_module: rabbitmq_cluster
+path: salt/states/rabbitmq_cluster.py
+functions:
+    - function: joined
+      source:
+        path: salt/states/rabbitmq_cluster.py
+        symbol: joined
+      summary: Ensure the current node joined to a cluster with node user@host
+      parameters:
+        - name: name
+        - name: host
+        - name: user
+          default: '"rabbit"'
+        - name: ram_node
+          default: None
+        - name: runas
+          default: '"root"'
+      execution_dependencies:
+        - rabbitmq.cluster_status
+        - rabbitmq.join_cluster

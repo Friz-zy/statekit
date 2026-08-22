@@ -1,0 +1,208 @@
+kind: state
+module: dism
+source_module: win_dism
+virtual: true
+path: salt/states/win_dism.py
+platform_markers:
+    - is_windows
+functions:
+    - function: capability_installed
+      source:
+        path: salt/states/win_dism.py
+        symbol: capability_installed
+      summary: Install a DISM capability
+      parameters:
+        - name: name
+        - name: source
+          default: None
+        - name: limit_access
+          default: "False"
+        - name: image
+          default: None
+        - name: restart
+          default: "False"
+      execution_dependencies:
+        - dism.add_capability
+        - dism.installed_capabilities
+      tests:
+        - path: tests/pytests/unit/states/test_win_dism.py
+          functions: 22
+    - function: capability_removed
+      source:
+        path: salt/states/win_dism.py
+        symbol: capability_removed
+      summary: Uninstall a DISM capability
+      parameters:
+        - name: name
+        - name: image
+          default: None
+        - name: restart
+          default: "False"
+      execution_dependencies:
+        - dism.add_capability
+        - dism.installed_capabilities
+        - dism.remove_capability
+      tests:
+        - path: tests/pytests/unit/states/test_win_dism.py
+          functions: 22
+    - function: feature_installed
+      source:
+        path: salt/states/win_dism.py
+        symbol: feature_installed
+      summary: Install a DISM feature
+      parameters:
+        - name: name
+        - name: package
+          default: None
+        - name: source
+          default: None
+        - name: limit_access
+          default: "False"
+        - name: enable_parent
+          default: "False"
+        - name: image
+          default: None
+        - name: restart
+          default: "False"
+      execution_dependencies:
+        - dism.add_capability
+        - dism.add_feature
+        - dism.installed_capabilities
+        - dism.installed_features
+        - dism.remove_capability
+      tests:
+        - path: tests/pytests/unit/states/test_win_dism.py
+          functions: 22
+    - function: feature_removed
+      source:
+        path: salt/states/win_dism.py
+        symbol: feature_removed
+      summary: Disables a feature.
+      parameters:
+        - name: name
+        - name: remove_payload
+          default: "False"
+        - name: image
+          default: None
+        - name: restart
+          default: "False"
+      execution_dependencies:
+        - dism.add_capability
+        - dism.add_feature
+        - dism.installed_capabilities
+        - dism.installed_features
+        - dism.remove_capability
+        - dism.remove_feature
+      tests:
+        - path: tests/pytests/unit/states/test_win_dism.py
+          functions: 22
+    - function: package_installed
+      source:
+        path: salt/states/win_dism.py
+        symbol: package_installed
+      summary: Install a package.
+      parameters:
+        - name: name
+        - name: ignore_check
+          default: "False"
+        - name: prevent_pending
+          default: "False"
+        - name: image
+          default: None
+        - name: restart
+          default: "False"
+      execution_dependencies:
+        - dism.add_capability
+        - dism.add_feature
+        - dism.add_package
+        - dism.installed_capabilities
+        - dism.installed_features
+        - dism.installed_packages
+        - dism.package_info
+        - dism.remove_capability
+        - dism.remove_feature
+      tests:
+        - path: tests/pytests/unit/states/test_win_dism.py
+          functions: 22
+    - function: provisioned_package_installed
+      source:
+        path: salt/states/win_dism.py
+        symbol: provisioned_package_installed
+      summary: Provision a package on a Windows image.
+      parameters:
+        - name: name
+        - name: image
+          default: None
+        - name: restart
+          default: "False"
+      execution_dependencies:
+        - dism.add_capability
+        - dism.add_feature
+        - dism.add_package
+        - dism.add_provisioned_package
+        - dism.installed_capabilities
+        - dism.installed_features
+        - dism.installed_packages
+        - dism.package_info
+        - dism.provisioned_packages
+        - dism.remove_capability
+        - dism.remove_feature
+      tests:
+        - path: tests/pytests/unit/states/test_win_dism.py
+          functions: 22
+    - function: package_removed
+      source:
+        path: salt/states/win_dism.py
+        symbol: package_removed
+      summary: Uninstall a package
+      parameters:
+        - name: name
+        - name: image
+          default: None
+        - name: restart
+          default: "False"
+      execution_dependencies:
+        - dism.add_capability
+        - dism.add_feature
+        - dism.add_package
+        - dism.add_provisioned_package
+        - dism.installed_capabilities
+        - dism.installed_features
+        - dism.installed_packages
+        - dism.package_info
+        - dism.provisioned_packages
+        - dism.remove_capability
+        - dism.remove_feature
+        - dism.remove_package
+      tests:
+        - path: tests/pytests/unit/states/test_win_dism.py
+          functions: 22
+    - function: kb_removed
+      source:
+        path: salt/states/win_dism.py
+        symbol: kb_removed
+      summary: Uninstall a KB package
+      parameters:
+        - name: name
+        - name: image
+          default: None
+        - name: restart
+          default: "False"
+      execution_dependencies:
+        - dism.add_capability
+        - dism.add_feature
+        - dism.add_package
+        - dism.add_provisioned_package
+        - dism.get_kb_package_name
+        - dism.installed_capabilities
+        - dism.installed_features
+        - dism.installed_packages
+        - dism.package_info
+        - dism.provisioned_packages
+        - dism.remove_capability
+        - dism.remove_feature
+        - dism.remove_kb
+        - dism.remove_package
+      tests:
+        - path: tests/pytests/unit/states/test_win_dism.py
+          functions: 22

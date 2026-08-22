@@ -1,0 +1,258 @@
+kind: exec
+module: proxy
+source_module: proxy
+virtual: true
+path: salt/modules/proxy.py
+platform_markers:
+    - is_darwin
+    - is_windows
+functions:
+    - function: _get_proxy_osx
+      source:
+        path: salt/modules/proxy.py
+        symbol: _get_proxy_osx
+      parameters:
+        - name: cmd_function
+        - name: network_service
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_proxy.py
+          functions: 18
+    - function: _set_proxy_osx
+      source:
+        path: salt/modules/proxy.py
+        symbol: _set_proxy_osx
+      parameters:
+        - name: cmd_function
+        - name: server
+        - name: port
+        - name: user
+        - name: password
+        - name: network_service
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_proxy.py
+          functions: 18
+    - function: _get_proxy_windows
+      source:
+        path: salt/modules/proxy.py
+        symbol: _get_proxy_windows
+      parameters:
+        - name: types
+          default: None
+      execution_dependencies:
+        - cmd.run
+      utility_dependencies:
+        - reg.read_value
+      tests:
+        - path: tests/pytests/unit/modules/test_proxy.py
+          functions: 18
+    - function: _set_proxy_windows
+      source:
+        path: salt/modules/proxy.py
+        symbol: _set_proxy_windows
+      parameters:
+        - name: server
+        - name: port
+        - name: types
+          default: None
+        - name: bypass_hosts
+          default: None
+        - name: import_winhttp
+          default: "True"
+      execution_dependencies:
+        - cmd.run
+      utility_dependencies:
+        - reg.read_value
+        - reg.set_value
+      tests:
+        - path: tests/pytests/unit/modules/test_proxy.py
+          functions: 18
+    - function: get_http_proxy
+      source:
+        path: salt/modules/proxy.py
+        symbol: get_http_proxy
+      summary: Returns the current http proxy settings
+      parameters:
+        - name: network_service
+          default: '"Ethernet"'
+      execution_dependencies:
+        - cmd.run
+      utility_dependencies:
+        - reg.read_value
+        - reg.set_value
+      tests:
+        - path: tests/pytests/unit/modules/test_proxy.py
+          functions: 18
+    - function: set_http_proxy
+      source:
+        path: salt/modules/proxy.py
+        symbol: set_http_proxy
+      summary: 'Sets the http proxy settings. Note: On Windows this will override any other'
+      parameters:
+        - name: server
+        - name: port
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: network_service
+          default: '"Ethernet"'
+        - name: bypass_hosts
+          default: None
+      execution_dependencies:
+        - cmd.run
+      utility_dependencies:
+        - reg.read_value
+        - reg.set_value
+      tests:
+        - path: tests/pytests/unit/modules/test_proxy.py
+          functions: 18
+    - function: get_https_proxy
+      source:
+        path: salt/modules/proxy.py
+        symbol: get_https_proxy
+      summary: Returns the current https proxy settings
+      parameters:
+        - name: network_service
+          default: '"Ethernet"'
+      execution_dependencies:
+        - cmd.run
+      utility_dependencies:
+        - reg.read_value
+        - reg.set_value
+      tests:
+        - path: tests/pytests/unit/modules/test_proxy.py
+          functions: 18
+    - function: set_https_proxy
+      source:
+        path: salt/modules/proxy.py
+        symbol: set_https_proxy
+      summary: 'Sets the https proxy settings. Note: On Windows this will override any other'
+      parameters:
+        - name: server
+        - name: port
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: network_service
+          default: '"Ethernet"'
+        - name: bypass_hosts
+          default: None
+      execution_dependencies:
+        - cmd.run
+      utility_dependencies:
+        - reg.read_value
+        - reg.set_value
+      tests:
+        - path: tests/pytests/unit/modules/test_proxy.py
+          functions: 18
+    - function: get_ftp_proxy
+      source:
+        path: salt/modules/proxy.py
+        symbol: get_ftp_proxy
+      summary: Returns the current ftp proxy settings
+      parameters:
+        - name: network_service
+          default: '"Ethernet"'
+      execution_dependencies:
+        - cmd.run
+      utility_dependencies:
+        - reg.read_value
+        - reg.set_value
+      tests:
+        - path: tests/pytests/unit/modules/test_proxy.py
+          functions: 18
+    - function: set_ftp_proxy
+      source:
+        path: salt/modules/proxy.py
+        symbol: set_ftp_proxy
+      summary: Sets the ftp proxy settings
+      parameters:
+        - name: server
+        - name: port
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: network_service
+          default: '"Ethernet"'
+        - name: bypass_hosts
+          default: None
+      execution_dependencies:
+        - cmd.run
+      utility_dependencies:
+        - reg.read_value
+        - reg.set_value
+      tests:
+        - path: tests/pytests/unit/modules/test_proxy.py
+          functions: 18
+    - function: get_proxy_bypass
+      source:
+        path: salt/modules/proxy.py
+        symbol: get_proxy_bypass
+      summary: Returns the current domains that can bypass the proxy
+      parameters:
+        - name: network_service
+          default: '"Ethernet"'
+      execution_dependencies:
+        - cmd.run
+      utility_dependencies:
+        - reg.read_value
+        - reg.set_value
+      tests:
+        - path: tests/pytests/unit/modules/test_proxy.py
+          functions: 18
+    - function: set_proxy_bypass
+      source:
+        path: salt/modules/proxy.py
+        symbol: set_proxy_bypass
+      summary: Sets the domains that can bypass the proxy
+      parameters:
+        - name: domains
+        - name: network_service
+          default: '"Ethernet"'
+      execution_dependencies:
+        - cmd.run
+      utility_dependencies:
+        - reg.read_value
+        - reg.set_value
+      tests:
+        - path: tests/pytests/unit/modules/test_proxy.py
+          functions: 18
+    - function: set_proxy_win
+      source:
+        path: salt/modules/proxy.py
+        symbol: set_proxy_win
+      summary: Sets the http proxy settings, only works with Windows.
+      parameters:
+        - name: server
+        - name: port
+        - name: types
+          default: None
+        - name: bypass_hosts
+          default: None
+      execution_dependencies:
+        - cmd.run
+      utility_dependencies:
+        - reg.read_value
+        - reg.set_value
+      tests:
+        - path: tests/pytests/unit/modules/test_proxy.py
+          functions: 18
+    - function: get_proxy_win
+      source:
+        path: salt/modules/proxy.py
+        symbol: get_proxy_win
+      summary: Gets all of the proxy settings in one call, only available on Windows
+      execution_dependencies:
+        - cmd.run
+      utility_dependencies:
+        - reg.read_value
+        - reg.set_value
+      tests:
+        - path: tests/pytests/unit/modules/test_proxy.py
+          functions: 18

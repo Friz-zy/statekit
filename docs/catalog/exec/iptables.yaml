@@ -1,0 +1,430 @@
+kind: exec
+module: iptables
+source_module: iptables
+path: salt/modules/iptables.py
+functions:
+    - function: _iptables_cmd
+      source:
+        path: salt/modules/iptables.py
+        symbol: _iptables_cmd
+      summary: Return correct command based on the family, e.g. ipv4 or ipv6
+      parameters:
+        - name: family
+          default: '"ipv4"'
+      tests:
+        - path: tests/pytests/unit/modules/test_iptables.py
+          functions: 17
+    - function: _has_option
+      source:
+        path: salt/modules/iptables.py
+        symbol: _has_option
+      summary: 'Return truth of whether iptables has `option`.  For example:'
+      parameters:
+        - name: option
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_iptables.py
+          functions: 17
+    - function: _conf
+      source:
+        path: salt/modules/iptables.py
+        symbol: _conf
+      summary: Some distros have a specific location for config files
+      parameters:
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_iptables.py
+          functions: 17
+    - function: _conf_save_filters
+      source:
+        path: salt/modules/iptables.py
+        symbol: _conf_save_filters
+      summary: Return array of strings from `save_filters` in config.
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_iptables.py
+          functions: 17
+    - function: _regex_iptables_save
+      source:
+        path: salt/modules/iptables.py
+        symbol: _regex_iptables_save
+      summary: 'Return string with `save_filter` regex entries removed.  For example:'
+      parameters:
+        - name: cmd_output
+        - name: filters
+          default: None
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_iptables.py
+          functions: 17
+    - function: version
+      source:
+        path: salt/modules/iptables.py
+        symbol: version
+      summary: Return version from iptables --version
+      parameters:
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_iptables.py
+          functions: 17
+    - function: build_rule
+      source:
+        path: salt/modules/iptables.py
+        symbol: build_rule
+      summary: Build a well-formatted iptables rule based on kwargs. A `table` and `chain`
+      parameters:
+        - name: table
+          default: '"filter"'
+        - name: chain
+          default: None
+        - name: command
+          default: None
+        - name: position
+          default: '""'
+        - name: full
+          default: None
+        - name: family
+          default: '"ipv4"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_iptables.py
+          functions: 17
+    - function: get_saved_rules
+      source:
+        path: salt/modules/iptables.py
+        symbol: get_saved_rules
+      summary: Return a data structure of the rules in the conf file
+      parameters:
+        - name: conf_file
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_iptables.py
+          functions: 17
+    - function: get_rules
+      source:
+        path: salt/modules/iptables.py
+        symbol: get_rules
+      summary: Return a data structure of the current, in-memory rules
+      parameters:
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_iptables.py
+          functions: 17
+    - function: get_saved_policy
+      source:
+        path: salt/modules/iptables.py
+        symbol: get_saved_policy
+      summary: Return the current policy for the specified table/chain
+      parameters:
+        - name: table
+          default: '"filter"'
+        - name: chain
+          default: None
+        - name: conf_file
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_iptables.py
+          functions: 17
+    - function: get_policy
+      source:
+        path: salt/modules/iptables.py
+        symbol: get_policy
+      summary: Return the current policy for the specified table/chain
+      parameters:
+        - name: table
+          default: '"filter"'
+        - name: chain
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_iptables.py
+          functions: 17
+    - function: set_policy
+      source:
+        path: salt/modules/iptables.py
+        symbol: set_policy
+      summary: Set the current policy for the specified table/chain
+      parameters:
+        - name: table
+          default: '"filter"'
+        - name: chain
+          default: None
+        - name: policy
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run_stderr
+        - cmd.run_stdout
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_iptables.py
+          functions: 17
+    - function: save
+      source:
+        path: salt/modules/iptables.py
+        symbol: save
+      summary: Save the current in-memory rules to disk
+      parameters:
+        - name: filename
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run_stderr
+        - cmd.run_stdout
+        - config.option
+        - file.write
+      tests:
+        - path: tests/pytests/unit/modules/test_iptables.py
+          functions: 17
+    - function: check
+      source:
+        path: salt/modules/iptables.py
+        symbol: check
+      summary: Check for the existence of a rule in the table and chain
+      parameters:
+        - name: table
+          default: '"filter"'
+        - name: chain
+          default: None
+        - name: rule
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stderr
+        - cmd.run_stdout
+        - config.option
+        - file.write
+      tests:
+        - path: tests/pytests/unit/modules/test_iptables.py
+          functions: 17
+    - function: check_chain
+      source:
+        path: salt/modules/iptables.py
+        symbol: check_chain
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: table
+          default: '"filter"'
+        - name: chain
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stderr
+        - cmd.run_stdout
+        - config.option
+        - file.write
+      tests:
+        - path: tests/pytests/unit/modules/test_iptables.py
+          functions: 17
+    - function: new_chain
+      source:
+        path: salt/modules/iptables.py
+        symbol: new_chain
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: table
+          default: '"filter"'
+        - name: chain
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stderr
+        - cmd.run_stdout
+        - config.option
+        - file.write
+      tests:
+        - path: tests/pytests/unit/modules/test_iptables.py
+          functions: 17
+    - function: delete_chain
+      source:
+        path: salt/modules/iptables.py
+        symbol: delete_chain
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: table
+          default: '"filter"'
+        - name: chain
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stderr
+        - cmd.run_stdout
+        - config.option
+        - file.write
+      tests:
+        - path: tests/pytests/unit/modules/test_iptables.py
+          functions: 17
+    - function: append
+      source:
+        path: salt/modules/iptables.py
+        symbol: append
+      summary: Append a rule to the specified table/chain.
+      parameters:
+        - name: table
+          default: '"filter"'
+        - name: chain
+          default: None
+        - name: rule
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stderr
+        - cmd.run_stdout
+        - config.option
+        - file.write
+      tests:
+        - path: tests/pytests/unit/modules/test_iptables.py
+          functions: 17
+    - function: insert
+      source:
+        path: salt/modules/iptables.py
+        symbol: insert
+      summary: Insert a rule into the specified table/chain, at the specified position.
+      parameters:
+        - name: table
+          default: '"filter"'
+        - name: chain
+          default: None
+        - name: position
+          default: None
+        - name: rule
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stderr
+        - cmd.run_stdout
+        - config.option
+        - file.write
+      tests:
+        - path: tests/pytests/unit/modules/test_iptables.py
+          functions: 17
+    - function: delete
+      source:
+        path: salt/modules/iptables.py
+        symbol: delete
+      summary: Delete a rule from the specified table/chain, specifying either the rule
+      parameters:
+        - name: table
+        - name: chain
+          default: None
+        - name: position
+          default: None
+        - name: rule
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stderr
+        - cmd.run_stdout
+        - config.option
+        - file.write
+      tests:
+        - path: tests/pytests/unit/modules/test_iptables.py
+          functions: 17
+    - function: flush
+      source:
+        path: salt/modules/iptables.py
+        symbol: flush
+      summary: Flush the chain in the specified table, flush all chains in the specified
+      parameters:
+        - name: table
+          default: '"filter"'
+        - name: chain
+          default: '""'
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stderr
+        - cmd.run_stdout
+        - config.option
+        - file.write
+      tests:
+        - path: tests/pytests/unit/modules/test_iptables.py
+          functions: 17
+    - function: _parse_conf
+      source:
+        path: salt/modules/iptables.py
+        symbol: _parse_conf
+      summary: If a file is not passed in, and the correct one for this OS is not
+      parameters:
+        - name: conf_file
+          default: None
+        - name: in_mem
+          default: "False"
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stderr
+        - cmd.run_stdout
+        - config.option
+        - file.write
+      tests:
+        - path: tests/pytests/unit/modules/test_iptables.py
+          functions: 17
+    - function: _parser
+      source:
+        path: salt/modules/iptables.py
+        symbol: _parser
+      summary: This function attempts to list all the options documented in the
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stderr
+        - cmd.run_stdout
+        - config.option
+        - file.write
+      tests:
+        - path: tests/pytests/unit/modules/test_iptables.py
+          functions: 17

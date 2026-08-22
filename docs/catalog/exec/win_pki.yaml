@@ -1,0 +1,184 @@
+kind: exec
+module: win_pki
+source_module: win_pki
+virtual: true
+path: salt/modules/win_pki.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _cmd_run
+      source:
+        path: salt/modules/win_pki.py
+        symbol: _cmd_run
+      summary: Ensure that the Pki module is loaded, and convert to and extract data from
+      parameters:
+        - name: cmd
+        - name: as_json
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pki.py
+          functions: 11
+    - function: _validate_cert_path
+      source:
+        path: salt/modules/win_pki.py
+        symbol: _validate_cert_path
+      summary: Ensure that the certificate path, as determind from user input, is valid.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pki.py
+          functions: 11
+    - function: _validate_cert_format
+      source:
+        path: salt/modules/win_pki.py
+        symbol: _validate_cert_format
+      summary: Ensure that the certificate format, as determind from user input, is valid.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pki.py
+          functions: 11
+    - function: get_stores
+      source:
+        path: salt/modules/win_pki.py
+        symbol: get_stores
+      summary: Get the certificate location contexts and their corresponding stores.
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pki.py
+          functions: 11
+    - function: get_certs
+      source:
+        path: salt/modules/win_pki.py
+        symbol: get_certs
+      summary: Get the available certificates in the given store.
+      parameters:
+        - name: context
+          default: _DEFAULT_CONTEXT
+        - name: store
+          default: _DEFAULT_STORE
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pki.py
+          functions: 11
+    - function: get_cert_file
+      source:
+        path: salt/modules/win_pki.py
+        symbol: get_cert_file
+      summary: Get the details of the certificate file.
+      parameters:
+        - name: name
+        - name: cert_format
+          default: _DEFAULT_FORMAT
+        - name: password
+          default: '""'
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pki.py
+          functions: 11
+    - function: import_cert
+      source:
+        path: salt/modules/win_pki.py
+        symbol: import_cert
+      summary: Import the certificate file into the given certificate store.
+      parameters:
+        - name: name
+        - name: cert_format
+          default: _DEFAULT_FORMAT
+        - name: context
+          default: _DEFAULT_CONTEXT
+        - name: store
+          default: _DEFAULT_STORE
+        - name: exportable
+          default: "True"
+        - name: password
+          default: '""'
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pki.py
+          functions: 11
+    - function: export_cert
+      source:
+        path: salt/modules/win_pki.py
+        symbol: export_cert
+      summary: Export the certificate to a file from the given certificate store.
+      parameters:
+        - name: name
+        - name: thumbprint
+        - name: cert_format
+          default: _DEFAULT_FORMAT
+        - name: context
+          default: _DEFAULT_CONTEXT
+        - name: store
+          default: _DEFAULT_STORE
+        - name: password
+          default: '""'
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pki.py
+          functions: 11
+    - function: test_cert
+      source:
+        path: salt/modules/win_pki.py
+        symbol: test_cert
+      summary: Check the certificate for validity.
+      parameters:
+        - name: thumbprint
+        - name: context
+          default: _DEFAULT_CONTEXT
+        - name: store
+          default: _DEFAULT_STORE
+        - name: untrusted_root
+          default: "False"
+        - name: dns_name
+          default: '""'
+        - name: eku
+          default: '""'
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pki.py
+          functions: 11
+    - function: remove_cert
+      source:
+        path: salt/modules/win_pki.py
+        symbol: remove_cert
+      summary: Remove the certificate from the given certificate store.
+      parameters:
+        - name: thumbprint
+        - name: context
+          default: _DEFAULT_CONTEXT
+        - name: store
+          default: _DEFAULT_STORE
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pki.py
+          functions: 11

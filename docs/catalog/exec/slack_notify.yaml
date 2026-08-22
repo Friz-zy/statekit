@@ -1,0 +1,102 @@
+kind: exec
+module: slack
+source_module: slack_notify
+virtual: true
+path: salt/modules/slack_notify.py
+functions:
+    - function: _get_api_key
+      source:
+        path: salt/modules/slack_notify.py
+        symbol: _get_api_key
+      execution_dependencies:
+        - config.get
+    - function: _get_hook_id
+      source:
+        path: salt/modules/slack_notify.py
+        symbol: _get_hook_id
+      execution_dependencies:
+        - config.get
+    - function: list_rooms
+      source:
+        path: salt/modules/slack_notify.py
+        symbol: list_rooms
+      summary: List all Slack rooms.
+      parameters:
+        - name: api_key
+          default: None
+      execution_dependencies:
+        - config.get
+    - function: list_users
+      source:
+        path: salt/modules/slack_notify.py
+        symbol: list_users
+      summary: List all Slack users.
+      parameters:
+        - name: api_key
+          default: None
+      execution_dependencies:
+        - config.get
+    - function: find_room
+      source:
+        path: salt/modules/slack_notify.py
+        symbol: find_room
+      summary: Find a room by name and return it.
+      parameters:
+        - name: name
+        - name: api_key
+          default: None
+      execution_dependencies:
+        - config.get
+    - function: find_user
+      source:
+        path: salt/modules/slack_notify.py
+        symbol: find_user
+      summary: Find a user by name and return it.
+      parameters:
+        - name: name
+        - name: api_key
+          default: None
+      execution_dependencies:
+        - config.get
+    - function: post_message
+      source:
+        path: salt/modules/slack_notify.py
+        symbol: post_message
+      summary: Send a message to a Slack channel.
+      parameters:
+        - name: channel
+        - name: message
+        - name: from_name
+        - name: api_key
+          default: None
+        - name: icon
+          default: None
+        - name: attachments
+          default: None
+        - name: blocks
+          default: None
+      execution_dependencies:
+        - config.get
+    - function: call_hook
+      source:
+        path: salt/modules/slack_notify.py
+        symbol: call_hook
+      summary: Send message to Slack incoming webhook.
+      parameters:
+        - name: message
+        - name: attachment
+          default: None
+        - name: color
+          default: '"good"'
+        - name: short
+          default: "False"
+        - name: identifier
+          default: None
+        - name: channel
+          default: None
+        - name: username
+          default: None
+        - name: icon_emoji
+          default: None
+      execution_dependencies:
+        - config.get

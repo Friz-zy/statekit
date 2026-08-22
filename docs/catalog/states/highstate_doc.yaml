@@ -1,0 +1,19 @@
+kind: state
+module: highstate_doc
+source_module: highstate_doc
+virtual: true
+path: salt/states/highstate_doc.py
+functions:
+    - function: note
+      source:
+        path: salt/states/highstate_doc.py
+        symbol: note
+      summary: Add content to a document generated using `highstate_doc.render`.
+      parameters:
+        - name: name
+        - name: source
+          default: None
+        - name: contents
+          default: None
+        - name: kwargs
+          kind: '**'

@@ -1,0 +1,357 @@
+kind: state
+module: selinux
+source_module: selinux
+path: salt/states/selinux.py
+functions:
+    - function: _refine_mode
+      source:
+        path: salt/states/selinux.py
+        symbol: _refine_mode
+      summary: Return a mode value that is predictable
+      parameters:
+        - name: mode
+      execution_dependencies:
+        - selinux.getenforce
+      tests:
+        - path: tests/pytests/unit/states/test_selinux.py
+          functions: 11
+    - function: _refine_value
+      source:
+        path: salt/states/selinux.py
+        symbol: _refine_value
+      summary: Return a yes/no value, or None if the input is invalid
+      parameters:
+        - name: value
+      execution_dependencies:
+        - selinux.getenforce
+      tests:
+        - path: tests/pytests/unit/states/test_selinux.py
+          functions: 11
+    - function: _refine_module_state
+      source:
+        path: salt/states/selinux.py
+        symbol: _refine_module_state
+      summary: Return a predictable value, or allow us to error out
+      parameters:
+        - name: module_state
+      execution_dependencies:
+        - selinux.getenforce
+      tests:
+        - path: tests/pytests/unit/states/test_selinux.py
+          functions: 11
+    - function: mode
+      source:
+        path: salt/states/selinux.py
+        symbol: mode
+      summary: Verifies the mode SELinux is running in, can be set to enforcing,
+      parameters:
+        - name: name
+      execution_dependencies:
+        - selinux.getconfig
+        - selinux.getenforce
+        - selinux.setenforce
+      tests:
+        - path: tests/pytests/unit/states/test_selinux.py
+          functions: 11
+    - function: boolean
+      source:
+        path: salt/states/selinux.py
+        symbol: boolean
+      summary: Set up an SELinux boolean
+      parameters:
+        - name: 'name: str'
+        - name: 'value: SeBool | None'
+          default: None
+        - name: 'booleans: Iterable[str | dict[str, SeBool]] | dict[str, SeBool] | None'
+          default: None
+        - name: persist
+          default: "False"
+      execution_dependencies:
+        - selinux.getconfig
+        - selinux.getenforce
+        - selinux.list_sebool
+        - selinux.setenforce
+        - selinux.setsebools
+      tests:
+        - path: tests/pytests/unit/states/test_selinux.py
+          functions: 11
+    - function: module
+      source:
+        path: salt/states/selinux.py
+        symbol: module
+      summary: Enable/Disable and optionally force a specific version for an SELinux module
+      parameters:
+        - name: name
+        - name: module_state
+          default: '"Enabled"'
+        - name: version
+          default: '"any"'
+        - name: opts
+          kind: '**'
+      execution_dependencies:
+        - selinux.getconfig
+        - selinux.getenforce
+        - selinux.list_sebool
+        - selinux.list_semod
+        - selinux.setenforce
+        - selinux.setsebools
+        - selinux.setsemod
+      tests:
+        - path: tests/pytests/unit/states/test_selinux.py
+          functions: 11
+    - function: module_install
+      source:
+        path: salt/states/selinux.py
+        symbol: module_install
+      summary: Installs custom SELinux module from given file
+      parameters:
+        - name: name
+      execution_dependencies:
+        - selinux.getconfig
+        - selinux.getenforce
+        - selinux.install_semod
+        - selinux.list_sebool
+        - selinux.list_semod
+        - selinux.setenforce
+        - selinux.setsebools
+        - selinux.setsemod
+      tests:
+        - path: tests/pytests/unit/states/test_selinux.py
+          functions: 11
+    - function: module_remove
+      source:
+        path: salt/states/selinux.py
+        symbol: module_remove
+      summary: Removes SELinux module
+      parameters:
+        - name: name
+      execution_dependencies:
+        - selinux.getconfig
+        - selinux.getenforce
+        - selinux.install_semod
+        - selinux.list_sebool
+        - selinux.list_semod
+        - selinux.remove_semod
+        - selinux.setenforce
+        - selinux.setsebools
+        - selinux.setsemod
+      tests:
+        - path: tests/pytests/unit/states/test_selinux.py
+          functions: 11
+    - function: fcontext_policy_present
+      source:
+        path: salt/states/selinux.py
+        symbol: fcontext_policy_present
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: name
+        - name: sel_type
+        - name: filetype
+          default: '"a"'
+        - name: sel_user
+          default: None
+        - name: sel_level
+          default: None
+      execution_dependencies:
+        - selinux.fcontext_add_policy
+        - selinux.fcontext_get_policy
+        - selinux.filetype_id_to_string
+        - selinux.getconfig
+        - selinux.getenforce
+        - selinux.install_semod
+        - selinux.list_sebool
+        - selinux.list_semod
+        - selinux.remove_semod
+        - selinux.setenforce
+        - selinux.setsebools
+        - selinux.setsemod
+      tests:
+        - path: tests/pytests/unit/states/test_selinux.py
+          functions: 11
+    - function: fcontext_policy_absent
+      source:
+        path: salt/states/selinux.py
+        symbol: fcontext_policy_absent
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: name
+        - name: filetype
+          default: '"a"'
+        - name: sel_type
+          default: None
+        - name: sel_user
+          default: None
+        - name: sel_level
+          default: None
+      execution_dependencies:
+        - selinux.fcontext_add_policy
+        - selinux.fcontext_delete_policy
+        - selinux.fcontext_get_policy
+        - selinux.filetype_id_to_string
+        - selinux.getconfig
+        - selinux.getenforce
+        - selinux.install_semod
+        - selinux.list_sebool
+        - selinux.list_semod
+        - selinux.remove_semod
+        - selinux.setenforce
+        - selinux.setsebools
+        - selinux.setsemod
+      tests:
+        - path: tests/pytests/unit/states/test_selinux.py
+          functions: 11
+    - function: fcontext_policy_applied
+      source:
+        path: salt/states/selinux.py
+        symbol: fcontext_policy_applied
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: name
+        - name: recursive
+          default: "False"
+      execution_dependencies:
+        - selinux.fcontext_add_policy
+        - selinux.fcontext_apply_policy
+        - selinux.fcontext_delete_policy
+        - selinux.fcontext_get_policy
+        - selinux.fcontext_policy_is_applied
+        - selinux.filetype_id_to_string
+        - selinux.getconfig
+        - selinux.getenforce
+        - selinux.install_semod
+        - selinux.list_sebool
+        - selinux.list_semod
+        - selinux.remove_semod
+        - selinux.setenforce
+        - selinux.setsebools
+        - selinux.setsemod
+      tests:
+        - path: tests/pytests/unit/states/test_selinux.py
+          functions: 11
+    - function: port_policy_present
+      source:
+        path: salt/states/selinux.py
+        symbol: port_policy_present
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: name
+        - name: sel_type
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: sel_range
+          default: None
+      execution_dependencies:
+        - selinux.fcontext_add_policy
+        - selinux.fcontext_apply_policy
+        - selinux.fcontext_delete_policy
+        - selinux.fcontext_get_policy
+        - selinux.fcontext_policy_is_applied
+        - selinux.filetype_id_to_string
+        - selinux.getconfig
+        - selinux.getenforce
+        - selinux.install_semod
+        - selinux.list_sebool
+        - selinux.list_semod
+        - selinux.port_get_policy
+        - selinux.remove_semod
+        - selinux.setenforce
+        - selinux.setsebools
+        - selinux.setsemod
+      tests:
+        - path: tests/pytests/unit/states/test_selinux.py
+          functions: 11
+    - function: port_policy_absent
+      source:
+        path: salt/states/selinux.py
+        symbol: port_policy_absent
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: name
+        - name: sel_type
+          default: None
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+      execution_dependencies:
+        - selinux.fcontext_add_policy
+        - selinux.fcontext_apply_policy
+        - selinux.fcontext_delete_policy
+        - selinux.fcontext_get_policy
+        - selinux.fcontext_policy_is_applied
+        - selinux.filetype_id_to_string
+        - selinux.getconfig
+        - selinux.getenforce
+        - selinux.install_semod
+        - selinux.list_sebool
+        - selinux.list_semod
+        - selinux.port_delete_policy
+        - selinux.port_get_policy
+        - selinux.remove_semod
+        - selinux.setenforce
+        - selinux.setsebools
+        - selinux.setsemod
+      tests:
+        - path: tests/pytests/unit/states/test_selinux.py
+          functions: 11
+    - function: mod_aggregate
+      source:
+        path: salt/states/selinux.py
+        symbol: mod_aggregate
+      summary: The mod_aggregate function which looks up all selinux boolean in the available
+      parameters:
+        - name: 'low: LowChunk'
+        - name: 'chunks: Iterable[LowChunk]'
+        - name: 'running: dict'
+      execution_dependencies:
+        - selinux.fcontext_add_policy
+        - selinux.fcontext_apply_policy
+        - selinux.fcontext_delete_policy
+        - selinux.fcontext_get_policy
+        - selinux.fcontext_policy_is_applied
+        - selinux.filetype_id_to_string
+        - selinux.getconfig
+        - selinux.getenforce
+        - selinux.install_semod
+        - selinux.list_sebool
+        - selinux.list_semod
+        - selinux.port_delete_policy
+        - selinux.port_get_policy
+        - selinux.remove_semod
+        - selinux.setenforce
+        - selinux.setsebools
+        - selinux.setsemod
+      tests:
+        - path: tests/pytests/unit/states/test_selinux.py
+          functions: 11
+    - function: _combine_booleans
+      source:
+        path: salt/states/selinux.py
+        symbol: _combine_booleans
+      parameters:
+        - name: 'value: SeBool | None'
+        - name: 'bools_dict: dict[str, SeBool]'
+        - name: 'additional_bools: dict[str, SeBool] | list[str | dict[str, SeBool]]'
+      execution_dependencies:
+        - selinux.fcontext_add_policy
+        - selinux.fcontext_apply_policy
+        - selinux.fcontext_delete_policy
+        - selinux.fcontext_get_policy
+        - selinux.fcontext_policy_is_applied
+        - selinux.filetype_id_to_string
+        - selinux.getconfig
+        - selinux.getenforce
+        - selinux.install_semod
+        - selinux.list_sebool
+        - selinux.list_semod
+        - selinux.port_delete_policy
+        - selinux.port_get_policy
+        - selinux.remove_semod
+        - selinux.setenforce
+        - selinux.setsebools
+        - selinux.setsemod
+      tests:
+        - path: tests/pytests/unit/states/test_selinux.py
+          functions: 11

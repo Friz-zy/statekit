@@ -1,0 +1,112 @@
+kind: state
+module: task
+source_module: win_task
+virtual: true
+path: salt/states/win_task.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _valid_location
+      source:
+        path: salt/states/win_task.py
+        symbol: _valid_location
+      parameters:
+        - name: location
+      execution_dependencies:
+        - task.list_tasks
+      tests:
+        - path: tests/pytests/unit/states/test_win_task.py
+          functions: 13
+    - function: _get_task_state_data
+      source:
+        path: salt/states/win_task.py
+        symbol: _get_task_state_data
+      parameters:
+        - name: name
+        - name: location
+      execution_dependencies:
+        - task.info
+        - task.list_tasks
+      tests:
+        - path: tests/pytests/unit/states/test_win_task.py
+          functions: 13
+    - function: _get_arguments
+      source:
+        path: salt/states/win_task.py
+        symbol: _get_arguments
+      summary: Make sure all required arguments are passed
+      parameters:
+        - name: arguments_given
+        - name: key_arguments
+        - name: arguments_need_it
+        - name: optional_arguments
+      execution_dependencies:
+        - task.info
+        - task.list_tasks
+      tests:
+        - path: tests/pytests/unit/states/test_win_task.py
+          functions: 13
+    - function: _task_state_prediction_bandage
+      source:
+        path: salt/states/win_task.py
+        symbol: _task_state_prediction_bandage
+      parameters:
+        - name: state
+      execution_dependencies:
+        - task.info
+        - task.list_tasks
+      tests:
+        - path: tests/pytests/unit/states/test_win_task.py
+          functions: 13
+    - function: _get_task_state_prediction
+      source:
+        path: salt/states/win_task.py
+        symbol: _get_task_state_prediction
+      parameters:
+        - name: state
+        - name: new_task
+      execution_dependencies:
+        - task.info
+        - task.list_tasks
+      tests:
+        - path: tests/pytests/unit/states/test_win_task.py
+          functions: 13
+    - function: present
+      source:
+        path: salt/states/win_task.py
+        symbol: present
+      parameters:
+        - name: name
+        - name: location
+          default: '"\\"'
+        - name: user_name
+          default: '"System"'
+        - name: password
+          default: None
+        - name: force
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - task.create_task
+        - task.info
+        - task.list_tasks
+      tests:
+        - path: tests/pytests/unit/states/test_win_task.py
+          functions: 13
+    - function: absent
+      source:
+        path: salt/states/win_task.py
+        symbol: absent
+      parameters:
+        - name: name
+        - name: location
+          default: '"\\"'
+      execution_dependencies:
+        - task.create_task
+        - task.delete_task
+        - task.info
+        - task.list_tasks
+      tests:
+        - path: tests/pytests/unit/states/test_win_task.py
+          functions: 13

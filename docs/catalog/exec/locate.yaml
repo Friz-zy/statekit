@@ -1,0 +1,55 @@
+kind: exec
+module: locate
+source_module: locate
+path: salt/modules/locate.py
+platform_markers:
+    - is_windows
+functions:
+    - function: version
+      source:
+        path: salt/modules/locate.py
+        symbol: version
+      summary: Returns the version of locate
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_locate.py
+          functions: 4
+    - function: stats
+      source:
+        path: salt/modules/locate.py
+        symbol: stats
+      summary: Returns statistics about the locate database
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_locate.py
+          functions: 4
+    - function: updatedb
+      source:
+        path: salt/modules/locate.py
+        symbol: updatedb
+      summary: Updates the locate database
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_locate.py
+          functions: 4
+    - function: locate
+      source:
+        path: salt/modules/locate.py
+        symbol: locate
+      summary: 'Performs a file lookup. Valid options (and their defaults) are::'
+      parameters:
+        - name: pattern
+        - name: database
+          default: '""'
+        - name: limit
+          default: "0"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_locate.py
+          functions: 4

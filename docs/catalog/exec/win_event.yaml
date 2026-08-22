@@ -1,0 +1,189 @@
+kind: exec
+module: win_event
+source_module: win_event
+virtual: true
+path: salt/modules/win_event.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _to_bytes
+      source:
+        path: salt/modules/win_event.py
+        symbol: _to_bytes
+      summary: Convert string objects to byte objects.
+      parameters:
+        - name: data
+        - name: encoding
+          default: '"utf-8"'
+        - name: encode_keys
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_event.py
+          functions: 18
+    - function: _raw_time
+      source:
+        path: salt/modules/win_event.py
+        symbol: _raw_time
+      summary: Will make a pywintypes.datetime into a TimeTuple.
+      parameters:
+        - name: time
+      tests:
+        - path: tests/pytests/unit/modules/test_win_event.py
+          functions: 18
+    - function: _make_event_dict
+      source:
+        path: salt/modules/win_event.py
+        symbol: _make_event_dict
+      summary: Will make a PyEventLogRecord into a dictionary
+      parameters:
+        - name: event
+      tests:
+        - path: tests/pytests/unit/modules/test_win_event.py
+          functions: 18
+    - function: _get_handle
+      source:
+        path: salt/modules/win_event.py
+        symbol: _get_handle
+      summary: Will try to open a PyHANDLE to the Event System
+      parameters:
+        - name: log_name
+      tests:
+        - path: tests/pytests/unit/modules/test_win_event.py
+          functions: 18
+    - function: _close_handle
+      source:
+        path: salt/modules/win_event.py
+        symbol: _close_handle
+      summary: Will close the handle to the event log
+      parameters:
+        - name: handle
+      tests:
+        - path: tests/pytests/unit/modules/test_win_event.py
+          functions: 18
+    - function: _event_generator
+      source:
+        path: salt/modules/win_event.py
+        symbol: _event_generator
+      summary: Get all log events one by one. Events are not ordered
+      parameters:
+        - name: log_name
+      tests:
+        - path: tests/pytests/unit/modules/test_win_event.py
+          functions: 18
+    - function: _event_generator_with_time
+      source:
+        path: salt/modules/win_event.py
+        symbol: _event_generator_with_time
+      summary: Sorts the results of the event generator
+      parameters:
+        - name: log_name
+      tests:
+        - path: tests/pytests/unit/modules/test_win_event.py
+          functions: 18
+    - function: _event_generator_filter
+      source:
+        path: salt/modules/win_event.py
+        symbol: _event_generator_filter
+      summary: Will find events that meet the requirements in the filter. Can be any item
+      parameters:
+        - name: log_name
+        - name: all_requirements
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_event.py
+          functions: 18
+    - function: get
+      source:
+        path: salt/modules/win_event.py
+        symbol: get
+      summary: Get events from the specified log. Get a list of available logs using the
+      parameters:
+        - name: log_name
+      tests:
+        - path: tests/pytests/unit/modules/test_win_event.py
+          functions: 18
+    - function: query
+      source:
+        path: salt/modules/win_event.py
+        symbol: query
+      summary: Query a log for a specific event_id. Return the top number of records
+      parameters:
+        - name: log_name
+        - name: query_text
+          default: None
+        - name: records
+          default: "20"
+        - name: latest
+          default: "True"
+        - name: raw
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_event.py
+          functions: 18
+    - function: get_filtered
+      source:
+        path: salt/modules/win_event.py
+        symbol: get_filtered
+      summary: Will find events that match the fields and values specified in the kwargs.
+      parameters:
+        - name: log_name
+        - name: all_requirements
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_event.py
+          functions: 18
+    - function: get_log_names
+      source:
+        path: salt/modules/win_event.py
+        symbol: get_log_names
+      summary: Get a list of event logs available on the system
+      tests:
+        - path: tests/pytests/unit/modules/test_win_event.py
+          functions: 18
+    - function: add
+      source:
+        path: salt/modules/win_event.py
+        symbol: add
+      summary: Adds an event to the application event log.
+      parameters:
+        - name: log_name
+        - name: event_id
+        - name: event_category
+          default: "0"
+        - name: event_type
+          default: None
+        - name: event_strings
+          default: None
+        - name: event_data
+          default: None
+        - name: event_sid
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_win_event.py
+          functions: 18
+    - function: clear
+      source:
+        path: salt/modules/win_event.py
+        symbol: clear
+      summary: Clears the specified event log.
+      parameters:
+        - name: log_name
+        - name: backup
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_win_event.py
+          functions: 18
+    - function: count
+      source:
+        path: salt/modules/win_event.py
+        symbol: count
+      summary: Gets the number of events in the specified.
+      parameters:
+        - name: log_name
+      tests:
+        - path: tests/pytests/unit/modules/test_win_event.py
+          functions: 18

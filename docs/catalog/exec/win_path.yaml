@@ -1,0 +1,89 @@
+kind: exec
+module: win_path
+source_module: win_path
+path: salt/modules/win_path.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _normalize_dir
+      source:
+        path: salt/modules/win_path.py
+        symbol: _normalize_dir
+      summary: Normalize the directory to make comparison possible
+      parameters:
+        - name: string_
+      tests:
+        - path: tests/pytests/unit/modules/test_win_path.py
+          functions: 5
+    - function: rehash
+      source:
+        path: salt/modules/win_path.py
+        symbol: rehash
+      summary: Send a WM_SETTINGCHANGE Broadcast to Windows to refresh the Environment
+      tests:
+        - path: tests/pytests/unit/modules/test_win_path.py
+          functions: 5
+    - function: get_path
+      source:
+        path: salt/modules/win_path.py
+        symbol: get_path
+      summary: Returns a list of items in the SYSTEM path
+      utility_dependencies:
+        - reg.read_value
+      tests:
+        - path: tests/pytests/unit/modules/test_win_path.py
+          functions: 5
+    - function: exists
+      source:
+        path: salt/modules/win_path.py
+        symbol: exists
+      summary: Check if the directory is configured in the SYSTEM path
+      parameters:
+        - name: path
+      utility_dependencies:
+        - reg.read_value
+      tests:
+        - path: tests/pytests/unit/modules/test_win_path.py
+          functions: 5
+    - function: _update_local_path
+      source:
+        path: salt/modules/win_path.py
+        symbol: _update_local_path
+      parameters:
+        - name: local_path
+      utility_dependencies:
+        - reg.read_value
+      tests:
+        - path: tests/pytests/unit/modules/test_win_path.py
+          functions: 5
+    - function: add
+      source:
+        path: salt/modules/win_path.py
+        symbol: add
+      summary: Add the directory to the SYSTEM path in the index location.
+      parameters:
+        - name: path
+        - name: index
+          default: None
+        - name: kwargs
+          kind: '**'
+      utility_dependencies:
+        - reg.read_value
+        - reg.set_value
+      tests:
+        - path: tests/pytests/unit/modules/test_win_path.py
+          functions: 5
+    - function: remove
+      source:
+        path: salt/modules/win_path.py
+        symbol: remove
+      parameters:
+        - name: path
+        - name: kwargs
+          kind: '**'
+      utility_dependencies:
+        - reg.read_value
+        - reg.set_value
+      tests:
+        - path: tests/pytests/unit/modules/test_win_path.py
+          functions: 5

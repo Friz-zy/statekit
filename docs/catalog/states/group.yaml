@@ -1,0 +1,101 @@
+kind: state
+module: group
+source_module: group
+path: salt/states/group.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _get_root_args
+      source:
+        path: salt/states/group.py
+        symbol: _get_root_args
+      summary: Retrieve args to use for group.info calls depending on platform and the local flag
+      parameters:
+        - name: local
+      tests:
+        - path: tests/unit/states/test_group.py
+          functions: 0
+        - path: tests/pytests/unit/states/test_group.py
+          functions: 4
+    - function: _changes
+      source:
+        path: salt/states/group.py
+        symbol: _changes
+      summary: Return a dict of the changes required for a group if the group is present,
+      parameters:
+        - name: name
+        - name: gid
+          default: None
+        - name: addusers
+          default: None
+        - name: delusers
+          default: None
+        - name: members
+          default: None
+        - name: local
+          default: "False"
+      execution_dependencies:
+        - group.info
+      tests:
+        - path: tests/unit/states/test_group.py
+          functions: 0
+        - path: tests/pytests/unit/states/test_group.py
+          functions: 4
+    - function: present
+      source:
+        path: salt/states/group.py
+        symbol: present
+      parameters:
+        - name: name
+        - name: gid
+          default: None
+        - name: system
+          default: "False"
+        - name: addusers
+          default: None
+        - name: delusers
+          default: None
+        - name: members
+          default: None
+        - name: non_unique
+          default: "False"
+        - name: local
+          default: "False"
+      execution_dependencies:
+        - group.add
+        - group.adduser
+        - group.chgid
+        - group.deluser
+        - group.getent
+        - group.info
+        - group.members
+        - test.ping
+      tests:
+        - path: tests/unit/states/test_group.py
+          functions: 0
+        - path: tests/pytests/unit/states/test_group.py
+          functions: 4
+    - function: absent
+      source:
+        path: salt/states/group.py
+        symbol: absent
+      summary: Ensure that the named group is absent
+      parameters:
+        - name: name
+        - name: local
+          default: "False"
+      execution_dependencies:
+        - group.add
+        - group.adduser
+        - group.chgid
+        - group.delete
+        - group.deluser
+        - group.getent
+        - group.info
+        - group.members
+        - test.ping
+      tests:
+        - path: tests/unit/states/test_group.py
+          functions: 0
+        - path: tests/pytests/unit/states/test_group.py
+          functions: 4

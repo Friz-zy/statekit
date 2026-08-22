@@ -1,0 +1,362 @@
+kind: exec
+module: snapper
+source_module: snapper
+path: salt/modules/snapper.py
+functions:
+    - function: _snapshot_to_data
+      source:
+        path: salt/modules/snapper.py
+        symbol: _snapshot_to_data
+      summary: Returns snapshot data from a D-Bus response.
+      parameters:
+        - name: snapshot
+      tests:
+        - path: tests/unit/modules/test_snapper.py
+          functions: 0
+    - function: _dbus_exception_to_reason
+      source:
+        path: salt/modules/snapper.py
+        symbol: _dbus_exception_to_reason
+      summary: Returns a error message from a snapper DBusException
+      parameters:
+        - name: exc
+        - name: args
+      tests:
+        - path: tests/unit/modules/test_snapper.py
+          functions: 0
+    - function: list_snapshots
+      source:
+        path: salt/modules/snapper.py
+        symbol: list_snapshots
+      summary: List available snapshots
+      parameters:
+        - name: config
+          default: '"root"'
+      tests:
+        - path: tests/unit/modules/test_snapper.py
+          functions: 0
+    - function: get_snapshot
+      source:
+        path: salt/modules/snapper.py
+        symbol: get_snapshot
+      summary: Get detailed information about a given snapshot
+      parameters:
+        - name: number
+          default: "0"
+        - name: config
+          default: '"root"'
+      tests:
+        - path: tests/unit/modules/test_snapper.py
+          functions: 0
+    - function: list_configs
+      source:
+        path: salt/modules/snapper.py
+        symbol: list_configs
+      summary: List all available configs
+      tests:
+        - path: tests/unit/modules/test_snapper.py
+          functions: 0
+    - function: _config_filter
+      source:
+        path: salt/modules/snapper.py
+        symbol: _config_filter
+      parameters:
+        - name: value
+      tests:
+        - path: tests/unit/modules/test_snapper.py
+          functions: 0
+    - function: set_config
+      source:
+        path: salt/modules/snapper.py
+        symbol: set_config
+      summary: Set configuration values
+      parameters:
+        - name: name
+          default: '"root"'
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/unit/modules/test_snapper.py
+          functions: 0
+    - function: _get_last_snapshot
+      source:
+        path: salt/modules/snapper.py
+        symbol: _get_last_snapshot
+      summary: Returns the last existing created snapshot
+      parameters:
+        - name: config
+          default: '"root"'
+      tests:
+        - path: tests/unit/modules/test_snapper.py
+          functions: 0
+    - function: status_to_string
+      source:
+        path: salt/modules/snapper.py
+        symbol: status_to_string
+      summary: Converts a numeric dbus snapper status into a string
+      parameters:
+        - name: dbus_status
+      tests:
+        - path: tests/unit/modules/test_snapper.py
+          functions: 0
+    - function: get_config
+      source:
+        path: salt/modules/snapper.py
+        symbol: get_config
+      summary: Retrieves all values from a given configuration
+      parameters:
+        - name: name
+          default: '"root"'
+      tests:
+        - path: tests/unit/modules/test_snapper.py
+          functions: 0
+    - function: create_config
+      source:
+        path: salt/modules/snapper.py
+        symbol: create_config
+      summary: Creates a new Snapper configuration
+      parameters:
+        - name: name
+          default: None
+        - name: subvolume
+          default: None
+        - name: fstype
+          default: None
+        - name: template
+          default: None
+        - name: extra_opts
+          default: None
+      tests:
+        - path: tests/unit/modules/test_snapper.py
+          functions: 0
+    - function: create_snapshot
+      source:
+        path: salt/modules/snapper.py
+        symbol: create_snapshot
+      summary: Creates an snapshot
+      parameters:
+        - name: config
+          default: '"root"'
+        - name: snapshot_type
+          default: '"single"'
+        - name: pre_number
+          default: None
+        - name: description
+          default: None
+        - name: cleanup_algorithm
+          default: '"number"'
+        - name: userdata
+          default: None
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/unit/modules/test_snapper.py
+          functions: 0
+    - function: delete_snapshot
+      source:
+        path: salt/modules/snapper.py
+        symbol: delete_snapshot
+      summary: Deletes an snapshot
+      parameters:
+        - name: snapshots_ids
+          default: None
+        - name: config
+          default: '"root"'
+      tests:
+        - path: tests/unit/modules/test_snapper.py
+          functions: 0
+    - function: modify_snapshot
+      source:
+        path: salt/modules/snapper.py
+        symbol: modify_snapshot
+      summary: Modify attributes of an existing snapshot.
+      parameters:
+        - name: snapshot_id
+          default: None
+        - name: description
+          default: None
+        - name: userdata
+          default: None
+        - name: cleanup
+          default: None
+        - name: config
+          default: '"root"'
+      tests:
+        - path: tests/unit/modules/test_snapper.py
+          functions: 0
+    - function: _get_num_interval
+      source:
+        path: salt/modules/snapper.py
+        symbol: _get_num_interval
+      summary: Returns numerical interval based on optionals num_pre, num_post values
+      parameters:
+        - name: config
+        - name: num_pre
+        - name: num_post
+      tests:
+        - path: tests/unit/modules/test_snapper.py
+          functions: 0
+    - function: _is_text_file
+      source:
+        path: salt/modules/snapper.py
+        symbol: _is_text_file
+      summary: Checks if a file is a text file
+      parameters:
+        - name: filename
+      tests:
+        - path: tests/unit/modules/test_snapper.py
+          functions: 0
+    - function: run
+      source:
+        path: salt/modules/snapper.py
+        symbol: run
+      summary: Runs a function from an execution module creating pre and post snapshots
+      parameters:
+        - name: function
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - snapper.create_snapshot
+      tests:
+        - path: tests/unit/modules/test_snapper.py
+          functions: 0
+    - function: status
+      source:
+        path: salt/modules/snapper.py
+        symbol: status
+      summary: Returns a comparison between two snapshots
+      parameters:
+        - name: config
+          default: '"root"'
+        - name: num_pre
+          default: None
+        - name: num_post
+          default: None
+      execution_dependencies:
+        - snapper.create_snapshot
+      tests:
+        - path: tests/unit/modules/test_snapper.py
+          functions: 0
+    - function: changed_files
+      source:
+        path: salt/modules/snapper.py
+        symbol: changed_files
+      summary: Returns the files changed between two snapshots
+      parameters:
+        - name: config
+          default: '"root"'
+        - name: num_pre
+          default: None
+        - name: num_post
+          default: None
+      execution_dependencies:
+        - snapper.create_snapshot
+      tests:
+        - path: tests/unit/modules/test_snapper.py
+          functions: 0
+    - function: undo
+      source:
+        path: salt/modules/snapper.py
+        symbol: undo
+      summary: Undo all file changes that happened between num_pre and num_post, leaving
+      parameters:
+        - name: config
+          default: '"root"'
+        - name: files
+          default: None
+        - name: num_pre
+          default: None
+        - name: num_post
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - snapper.create_snapshot
+      tests:
+        - path: tests/unit/modules/test_snapper.py
+          functions: 0
+    - function: _get_jid_snapshots
+      source:
+        path: salt/modules/snapper.py
+        symbol: _get_jid_snapshots
+      summary: Returns pre/post snapshots made by a given Salt jid
+      parameters:
+        - name: jid
+        - name: config
+          default: '"root"'
+      execution_dependencies:
+        - cmd.run
+        - snapper.create_snapshot
+      tests:
+        - path: tests/unit/modules/test_snapper.py
+          functions: 0
+    - function: undo_jid
+      source:
+        path: salt/modules/snapper.py
+        symbol: undo_jid
+      summary: Undo the changes applied by a salt job
+      parameters:
+        - name: jid
+        - name: config
+          default: '"root"'
+      execution_dependencies:
+        - cmd.run
+        - snapper.create_snapshot
+      tests:
+        - path: tests/unit/modules/test_snapper.py
+          functions: 0
+    - function: diff
+      source:
+        path: salt/modules/snapper.py
+        symbol: diff
+      summary: Returns the differences between two snapshots
+      parameters:
+        - name: config
+          default: '"root"'
+        - name: filename
+          default: None
+        - name: num_pre
+          default: None
+        - name: num_post
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - hashutil.sha256_digest
+        - snapper.create_snapshot
+      tests:
+        - path: tests/unit/modules/test_snapper.py
+          functions: 0
+    - function: diff_jid
+      source:
+        path: salt/modules/snapper.py
+        symbol: diff_jid
+      summary: Returns the changes applied by a `jid`
+      parameters:
+        - name: jid
+        - name: config
+          default: '"root"'
+      execution_dependencies:
+        - cmd.run
+        - hashutil.sha256_digest
+        - snapper.create_snapshot
+      tests:
+        - path: tests/unit/modules/test_snapper.py
+          functions: 0
+    - function: create_baseline
+      source:
+        path: salt/modules/snapper.py
+        symbol: create_baseline
+      summary: Creates a snapshot marked as baseline
+      parameters:
+        - name: tag
+          default: '"baseline"'
+        - name: config
+          default: '"root"'
+      execution_dependencies:
+        - cmd.run
+        - hashutil.sha256_digest
+        - snapper.create_snapshot
+      tests:
+        - path: tests/unit/modules/test_snapper.py
+          functions: 0

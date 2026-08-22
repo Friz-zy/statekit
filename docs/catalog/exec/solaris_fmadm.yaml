@@ -1,0 +1,165 @@
+kind: exec
+module: fmadm
+source_module: solaris_fmadm
+virtual: true
+path: salt/modules/solaris_fmadm.py
+platform_markers:
+    - is_sunos
+functions:
+    - function: _check_fmadm
+      source:
+        path: salt/modules/solaris_fmadm.py
+        symbol: _check_fmadm
+      summary: Looks to see if fmadm is present on the system
+    - function: _check_fmdump
+      source:
+        path: salt/modules/solaris_fmadm.py
+        symbol: _check_fmdump
+      summary: Looks to see if fmdump is present on the system
+    - function: _parse_fmdump
+      source:
+        path: salt/modules/solaris_fmadm.py
+        symbol: _parse_fmdump
+      summary: Parses fmdump output
+      parameters:
+        - name: output
+    - function: _parse_fmdump_verbose
+      source:
+        path: salt/modules/solaris_fmadm.py
+        symbol: _parse_fmdump_verbose
+      summary: Parses fmdump verbose output
+      parameters:
+        - name: output
+    - function: _parse_fmadm_config
+      source:
+        path: salt/modules/solaris_fmadm.py
+        symbol: _parse_fmadm_config
+      summary: Parsbb fmdump/fmadm output
+      parameters:
+        - name: output
+    - function: _fmadm_action_fmri
+      source:
+        path: salt/modules/solaris_fmadm.py
+        symbol: _fmadm_action_fmri
+      summary: Internal function for fmadm.repqired, fmadm.replaced, fmadm.flush
+      parameters:
+        - name: action
+        - name: fmri
+      execution_dependencies:
+        - cmd.run_all
+    - function: _parse_fmadm_faulty
+      source:
+        path: salt/modules/solaris_fmadm.py
+        symbol: _parse_fmadm_faulty
+      summary: Parse fmadm faulty output
+      parameters:
+        - name: output
+      execution_dependencies:
+        - cmd.run_all
+    - function: list_records
+      source:
+        path: salt/modules/solaris_fmadm.py
+        symbol: list_records
+      summary: Display fault management logs
+      parameters:
+        - name: after
+          default: None
+        - name: before
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+    - function: show
+      source:
+        path: salt/modules/solaris_fmadm.py
+        symbol: show
+      summary: Display log details
+      parameters:
+        - name: uuid
+      execution_dependencies:
+        - cmd.run_all
+    - function: config
+      source:
+        path: salt/modules/solaris_fmadm.py
+        symbol: config
+      summary: Display fault manager configuration
+      execution_dependencies:
+        - cmd.run_all
+    - function: load
+      source:
+        path: salt/modules/solaris_fmadm.py
+        symbol: load
+      summary: Load specified fault manager module
+      parameters:
+        - name: path
+      execution_dependencies:
+        - cmd.run_all
+    - function: unload
+      source:
+        path: salt/modules/solaris_fmadm.py
+        symbol: unload
+      summary: Unload specified fault manager module
+      parameters:
+        - name: module
+      execution_dependencies:
+        - cmd.run_all
+    - function: reset
+      source:
+        path: salt/modules/solaris_fmadm.py
+        symbol: reset
+      summary: Reset module or sub-component
+      parameters:
+        - name: module
+        - name: serd
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+    - function: flush
+      source:
+        path: salt/modules/solaris_fmadm.py
+        symbol: flush
+      summary: Flush cached state for resource
+      parameters:
+        - name: fmri
+      execution_dependencies:
+        - cmd.run_all
+    - function: repaired
+      source:
+        path: salt/modules/solaris_fmadm.py
+        symbol: repaired
+      summary: Notify fault manager that resource has been repaired
+      parameters:
+        - name: fmri
+      execution_dependencies:
+        - cmd.run_all
+    - function: replaced
+      source:
+        path: salt/modules/solaris_fmadm.py
+        symbol: replaced
+      summary: Notify fault manager that resource has been replaced
+      parameters:
+        - name: fmri
+      execution_dependencies:
+        - cmd.run_all
+    - function: acquit
+      source:
+        path: salt/modules/solaris_fmadm.py
+        symbol: acquit
+      summary: Acquit resource or acquit case
+      parameters:
+        - name: fmri
+      execution_dependencies:
+        - cmd.run_all
+    - function: faulty
+      source:
+        path: salt/modules/solaris_fmadm.py
+        symbol: faulty
+      summary: Display list of faulty resources
+      execution_dependencies:
+        - cmd.run_all
+    - function: healthy
+      source:
+        path: salt/modules/solaris_fmadm.py
+        symbol: healthy
+      summary: Return whether fmadm is reporting faults
+      execution_dependencies:
+        - cmd.run_all

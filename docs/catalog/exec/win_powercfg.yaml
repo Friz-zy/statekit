@@ -1,0 +1,173 @@
+kind: exec
+module: powercfg
+source_module: win_powercfg
+virtual: true
+path: salt/modules/win_powercfg.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _get_current_scheme
+      source:
+        path: salt/modules/win_powercfg.py
+        symbol: _get_current_scheme
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_powercfg.py
+          functions: 11
+    - function: _get_powercfg_minute_values
+      source:
+        path: salt/modules/win_powercfg.py
+        symbol: _get_powercfg_minute_values
+      summary: Returns the AC/DC values in an dict for a guid and subguid for the given
+      parameters:
+        - name: scheme
+        - name: guid
+        - name: subguid
+        - name: safe_name
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_powercfg.py
+          functions: 11
+    - function: _set_powercfg_value
+      source:
+        path: salt/modules/win_powercfg.py
+        symbol: _set_powercfg_value
+      summary: Sets the AC/DC values of a setting with the given power for the given scheme
+      parameters:
+        - name: scheme
+        - name: sub_group
+        - name: setting_guid
+        - name: power
+        - name: value
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_powercfg.py
+          functions: 11
+    - function: set_monitor_timeout
+      source:
+        path: salt/modules/win_powercfg.py
+        symbol: set_monitor_timeout
+      summary: Set the monitor timeout in minutes for the given power scheme
+      parameters:
+        - name: timeout
+        - name: power
+          default: '"ac"'
+        - name: scheme
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_powercfg.py
+          functions: 11
+    - function: get_monitor_timeout
+      source:
+        path: salt/modules/win_powercfg.py
+        symbol: get_monitor_timeout
+      summary: Get the current monitor timeout of the given scheme
+      parameters:
+        - name: scheme
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_powercfg.py
+          functions: 11
+    - function: set_disk_timeout
+      source:
+        path: salt/modules/win_powercfg.py
+        symbol: set_disk_timeout
+      summary: Set the disk timeout in minutes for the given power scheme
+      parameters:
+        - name: timeout
+        - name: power
+          default: '"ac"'
+        - name: scheme
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_powercfg.py
+          functions: 11
+    - function: get_disk_timeout
+      source:
+        path: salt/modules/win_powercfg.py
+        symbol: get_disk_timeout
+      summary: Get the current disk timeout of the given scheme
+      parameters:
+        - name: scheme
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_powercfg.py
+          functions: 11
+    - function: set_standby_timeout
+      source:
+        path: salt/modules/win_powercfg.py
+        symbol: set_standby_timeout
+      summary: Set the standby timeout in minutes for the given power scheme
+      parameters:
+        - name: timeout
+        - name: power
+          default: '"ac"'
+        - name: scheme
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_powercfg.py
+          functions: 11
+    - function: get_standby_timeout
+      source:
+        path: salt/modules/win_powercfg.py
+        symbol: get_standby_timeout
+      summary: Get the current standby timeout of the given scheme
+      parameters:
+        - name: scheme
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_powercfg.py
+          functions: 11
+    - function: set_hibernate_timeout
+      source:
+        path: salt/modules/win_powercfg.py
+        symbol: set_hibernate_timeout
+      summary: Set the hibernate timeout in minutes for the given power scheme
+      parameters:
+        - name: timeout
+        - name: power
+          default: '"ac"'
+        - name: scheme
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_powercfg.py
+          functions: 11
+    - function: get_hibernate_timeout
+      source:
+        path: salt/modules/win_powercfg.py
+        symbol: get_hibernate_timeout
+      summary: Get the current hibernate timeout of the given scheme
+      parameters:
+        - name: scheme
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_powercfg.py
+          functions: 11

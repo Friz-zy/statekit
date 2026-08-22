@@ -1,0 +1,1458 @@
+kind: exec
+module: pkg
+source_module: zypperpkg
+virtual: true
+path: salt/modules/zypperpkg.py
+functions:
+    - function: _systemd_scope
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: _systemd_scope
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: _clean_cache
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: _clean_cache
+      summary: Clean cached results
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: list_upgrades
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: list_upgrades
+      summary: List all available package upgrades on this system
+      parameters:
+        - name: refresh
+          default: "True"
+        - name: root
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: info_installed
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: info_installed
+      summary: Return the information of the named package(s), installed on the system.
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: info_available
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: info_available
+      summary: Return the information of the named package available for the system.
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: parse_arch
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: parse_arch
+      summary: Parse name and architecture from the specified package name.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: latest_version
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: latest_version
+      summary: Return the latest version of the named package available for upgrade or
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: upgrade_available
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: upgrade_available
+      summary: Check whether or not an upgrade is available for a given package
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: version
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: version
+      summary: Returns a string representing the package version or an empty dict if not
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: version_cmp
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: version_cmp
+      summary: '.. versionadded:: 2015.5.4'
+      parameters:
+        - name: ver1
+        - name: ver2
+        - name: ignore_epoch
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: _list_pkgs_from_context
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: _list_pkgs_from_context
+      summary: Use pkg list from __context__
+      parameters:
+        - name: versions_as_list
+        - name: contextkey
+        - name: attr
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.format_pkg_list
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: list_pkgs
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: list_pkgs
+      summary: List the packages currently installed as a dict. By default, the dict
+      parameters:
+        - name: versions_as_list
+          default: "False"
+        - name: root
+          default: None
+        - name: includes
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: list_repo_pkgs
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: list_repo_pkgs
+      summary: '.. versionadded:: 2017.7.5,2018.3.1'
+      parameters:
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: _get_configured_repos
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: _get_configured_repos
+      summary: Get all the info about repositories from the configurations.
+      parameters:
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: _get_repo_info
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: _get_repo_info
+      summary: Get one repo meta-data.
+      parameters:
+        - name: alias
+        - name: repos_cfg
+          default: None
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: get_repo
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: get_repo
+      summary: Display a repo.
+      parameters:
+        - name: repo
+        - name: root
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: list_repos
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: list_repos
+      summary: Lists all repos.
+      parameters:
+        - name: root
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: del_repo
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: del_repo
+      summary: Delete a repo.
+      parameters:
+        - name: repo
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: mod_repo
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: mod_repo
+      summary: Modify one or more values for a repo. If the repo does not exist, it will
+      parameters:
+        - name: repo
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: refresh_db
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: refresh_db
+      summary: Trigger a repository refresh by calling ``zypper refresh``. Refresh will run
+      parameters:
+        - name: force
+          default: None
+        - name: root
+          default: None
+        - name: gpgautoimport
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: _find_types
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: _find_types
+      summary: Form a package names list, find prefixes of packages types.
+      parameters:
+        - name: pkgs
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: install
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: install
+      summary: '.. versionchanged:: 2015.8.12,2016.3.3,2016.11.0'
+      parameters:
+        - name: name
+          default: None
+        - name: refresh
+          default: "False"
+        - name: fromrepo
+          default: None
+        - name: pkgs
+          default: None
+        - name: sources
+          default: None
+        - name: downloadonly
+          default: None
+        - name: skip_verify
+          default: "False"
+        - name: version
+          default: None
+        - name: ignore_repo_failure
+          default: "False"
+        - name: no_recommends
+          default: "False"
+        - name: root
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: upgrade
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: upgrade
+      summary: '.. versionchanged:: 2015.8.12,2016.3.3,2016.11.0'
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: refresh
+          default: "True"
+        - name: dryrun
+          default: "False"
+        - name: dist_upgrade
+          default: "False"
+        - name: fromrepo
+          default: None
+        - name: novendorchange
+          default: "False"
+        - name: skip_verify
+          default: "False"
+        - name: no_recommends
+          default: "False"
+        - name: root
+          default: None
+        - name: diff_attr
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: _uninstall
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: _uninstall
+      summary: Remove and purge do identical things but with different Zypper commands,
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: normalize_name
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: normalize_name
+      summary: Strips the architecture from the specified package name, if necessary.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: remove
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: remove
+      summary: '.. versionchanged:: 2015.8.12,2016.3.3,2016.11.0'
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: root
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: purge
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: purge
+      summary: '.. versionchanged:: 2015.8.12,2016.3.3,2016.11.0'
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: root
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: list_holds
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: list_holds
+      summary: '.. versionadded:: 3005'
+      parameters:
+        - name: pattern
+          default: None
+        - name: full
+          default: "True"
+        - name: root
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: list_locks
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: list_locks
+      summary: List current package locks.
+      parameters:
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: clean_locks
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: clean_locks
+      summary: Remove unused locks that do not currently (with regard to repositories
+      parameters:
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: unhold
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: unhold
+      summary: '.. versionadded:: 3003'
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: root
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: hold
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: hold
+      summary: '.. versionadded:: 3003'
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: root
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: verify
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: verify
+      summary: Runs an rpm -Va on a system, and returns the results in a dict
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.info
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: file_list
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: file_list
+      summary: List the files that belong to a package. Not specifying any packages will
+      parameters:
+        - name: packages
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: file_dict
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: file_dict
+      summary: List the files that belong to a package, grouped by package. Not
+      parameters:
+        - name: packages
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: modified
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: modified
+      summary: List the modified files that belong to a package. Not specifying any packages
+      parameters:
+        - name: packages
+          kind: '*'
+        - name: flags
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.modified
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: owner
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: owner
+      summary: Return the name of the package that owns the file. Multiple file paths can
+      parameters:
+        - name: paths
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.modified
+        - lowpkg.owner
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: _get_visible_patterns
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: _get_visible_patterns
+      summary: Get all available patterns in the repo that are visible.
+      parameters:
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.modified
+        - lowpkg.owner
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: _find_ptf_packages
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: _find_ptf_packages
+      summary: Find ptf packages in "pkgs" and return them as list
+      parameters:
+        - name: pkgs
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.modified
+        - lowpkg.owner
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: _get_installed_patterns
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: _get_installed_patterns
+      summary: List all installed patterns.
+      parameters:
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.modified
+        - lowpkg.owner
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: list_patterns
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: list_patterns
+      summary: List all known patterns from available repos.
+      parameters:
+        - name: refresh
+          default: "False"
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.modified
+        - lowpkg.owner
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: list_installed_patterns
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: list_installed_patterns
+      summary: List installed patterns on the system.
+      parameters:
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.modified
+        - lowpkg.owner
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: search
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: search
+      summary: List known packages, available to the system.
+      parameters:
+        - name: criteria
+        - name: refresh
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.modified
+        - lowpkg.owner
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: _get_first_aggregate_text
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: _get_first_aggregate_text
+      summary: Extract text from the first occurred DOM aggregate.
+      parameters:
+        - name: node_list
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.modified
+        - lowpkg.owner
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: list_products
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: list_products
+      summary: List all available or installed SUSE products.
+      parameters:
+        - name: all
+          default: "False"
+        - name: refresh
+          default: "False"
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.modified
+        - lowpkg.owner
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: download
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: download
+      summary: Download packages to the local disk.
+      parameters:
+        - name: packages
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.checksum
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.modified
+        - lowpkg.owner
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: list_downloaded
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: list_downloaded
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: root
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.bin_pkg_info
+        - lowpkg.checksum
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.modified
+        - lowpkg.owner
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: diff
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: diff
+      summary: Return a formatted diff between current files and original in a package.
+      parameters:
+        - name: paths
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.bin_pkg_info
+        - lowpkg.checksum
+        - lowpkg.diff
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.modified
+        - lowpkg.owner
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg.download
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: _get_patches
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: _get_patches
+      summary: List all known patches in repos.
+      parameters:
+        - name: installed_only
+          default: "False"
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.bin_pkg_info
+        - lowpkg.checksum
+        - lowpkg.diff
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.modified
+        - lowpkg.owner
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg.download
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: list_patches
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: list_patches
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: refresh
+          default: "False"
+        - name: root
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.bin_pkg_info
+        - lowpkg.checksum
+        - lowpkg.diff
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.modified
+        - lowpkg.owner
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg.download
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: list_installed_patches
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: list_installed_patches
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: root
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.bin_pkg_info
+        - lowpkg.checksum
+        - lowpkg.diff
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.modified
+        - lowpkg.owner
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg.download
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: list_provides
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: list_provides
+      summary: '.. versionadded:: 2018.3.0'
+      parameters:
+        - name: root
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.bin_pkg_info
+        - lowpkg.checksum
+        - lowpkg.diff
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.modified
+        - lowpkg.owner
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg.download
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: resolve_capabilities
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: resolve_capabilities
+      summary: '.. versionadded:: 2018.3.0'
+      parameters:
+        - name: pkgs
+        - name: refresh
+          default: "False"
+        - name: root
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.bin_pkg_info
+        - lowpkg.checksum
+        - lowpkg.diff
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.modified
+        - lowpkg.owner
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg.download
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0
+    - function: services_need_restart
+      source:
+        path: salt/modules/zypperpkg.py
+        symbol: services_need_restart
+      summary: '.. versionadded:: 3003'
+      parameters:
+        - name: root
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - event.fire_master
+        - lowpkg.bin_pkg_info
+        - lowpkg.checksum
+        - lowpkg.diff
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.modified
+        - lowpkg.owner
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg.download
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+        - ps.proc_info
+      tests:
+        - path: tests/unit/modules/test_zypperpkg.py
+          functions: 0

@@ -1,0 +1,215 @@
+kind: state
+module: cron
+source_module: cron
+path: salt/states/cron.py
+functions:
+    - function: _check_cron
+      source:
+        path: salt/states/cron.py
+        symbol: _check_cron
+      summary: Return the changes
+      parameters:
+        - name: user
+        - name: cmd
+        - name: minute
+          default: None
+        - name: hour
+          default: None
+        - name: daymonth
+          default: None
+        - name: month
+          default: None
+        - name: dayweek
+          default: None
+        - name: comment
+          default: None
+        - name: commented
+          default: None
+        - name: identifier
+          default: None
+        - name: special
+          default: None
+      execution_dependencies:
+        - cron.list_tab
+      tests:
+        - path: tests/unit/states/test_cron.py
+          functions: 0
+    - function: _check_cron_env
+      source:
+        path: salt/states/cron.py
+        symbol: _check_cron_env
+      summary: Return the environment changes
+      parameters:
+        - name: user
+        - name: name
+        - name: value
+          default: None
+      execution_dependencies:
+        - cron.list_tab
+      tests:
+        - path: tests/unit/states/test_cron.py
+          functions: 0
+    - function: _get_cron_info
+      source:
+        path: salt/states/cron.py
+        symbol: _get_cron_info
+      summary: Returns the proper group owner and path to the cron directory
+      execution_dependencies:
+        - cron.list_tab
+      tests:
+        - path: tests/unit/states/test_cron.py
+          functions: 0
+    - function: present
+      source:
+        path: salt/states/cron.py
+        symbol: present
+      summary: Verifies that the specified cron job is present for the specified user.
+      parameters:
+        - name: name
+        - name: user
+          default: '"root"'
+        - name: minute
+          default: '"*"'
+        - name: hour
+          default: '"*"'
+        - name: daymonth
+          default: '"*"'
+        - name: month
+          default: '"*"'
+        - name: dayweek
+          default: '"*"'
+        - name: comment
+          default: None
+        - name: commented
+          default: "False"
+        - name: identifier
+          default: "False"
+        - name: special
+          default: None
+      execution_dependencies:
+        - cron.list_tab
+        - cron.set_job
+        - cron.set_special
+      tests:
+        - path: tests/unit/states/test_cron.py
+          functions: 0
+    - function: absent
+      source:
+        path: salt/states/cron.py
+        symbol: absent
+      summary: Verifies that the specified cron job is absent for the specified user.
+      parameters:
+        - name: name
+        - name: user
+          default: '"root"'
+        - name: identifier
+          default: "False"
+        - name: special
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cron.list_tab
+        - cron.rm_job
+        - cron.rm_special
+        - cron.set_job
+        - cron.set_special
+      tests:
+        - path: tests/unit/states/test_cron.py
+          functions: 0
+    - function: file
+      source:
+        path: salt/states/cron.py
+        symbol: file
+      summary: Provides file.managed-like functionality (templating, etc.) for a pre-made
+      parameters:
+        - name: name
+        - name: source_hash
+          default: '""'
+        - name: source_hash_name
+          default: None
+        - name: user
+          default: '"root"'
+        - name: template
+          default: None
+        - name: context
+          default: None
+        - name: replace
+          default: "True"
+        - name: defaults
+          default: None
+        - name: backup
+          default: '""'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cron.list_tab
+        - cron.raw_cron
+        - cron.rm_job
+        - cron.rm_special
+        - cron.set_job
+        - cron.set_special
+        - cron.write_cron_file_verbose
+        - file.check_managed
+        - file.get_managed
+        - file.manage_file
+        - file.source_list
+        - user.info
+      tests:
+        - path: tests/unit/states/test_cron.py
+          functions: 0
+    - function: env_present
+      source:
+        path: salt/states/cron.py
+        symbol: env_present
+      summary: Verifies that the specified environment variable is present in the crontab
+      parameters:
+        - name: name
+        - name: value
+          default: None
+        - name: user
+          default: '"root"'
+      execution_dependencies:
+        - cron.list_tab
+        - cron.raw_cron
+        - cron.rm_job
+        - cron.rm_special
+        - cron.set_env
+        - cron.set_job
+        - cron.set_special
+        - cron.write_cron_file_verbose
+        - file.check_managed
+        - file.get_managed
+        - file.manage_file
+        - file.source_list
+        - user.info
+      tests:
+        - path: tests/unit/states/test_cron.py
+          functions: 0
+    - function: env_absent
+      source:
+        path: salt/states/cron.py
+        symbol: env_absent
+      summary: Verifies that the specified environment variable is absent from the crontab
+      parameters:
+        - name: name
+        - name: user
+          default: '"root"'
+      execution_dependencies:
+        - cron.list_tab
+        - cron.raw_cron
+        - cron.rm_env
+        - cron.rm_job
+        - cron.rm_special
+        - cron.set_env
+        - cron.set_job
+        - cron.set_special
+        - cron.write_cron_file_verbose
+        - file.check_managed
+        - file.get_managed
+        - file.manage_file
+        - file.source_list
+        - user.info
+      tests:
+        - path: tests/unit/states/test_cron.py
+          functions: 0

@@ -1,0 +1,387 @@
+kind: exec
+module: task
+source_module: win_task
+virtual: true
+path: salt/modules/win_task.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _signed_to_unsigned_int32
+      source:
+        path: salt/modules/win_task.py
+        symbol: _signed_to_unsigned_int32
+      summary: Convert negative result and error codes from win32com
+      parameters:
+        - name: code
+      tests:
+        - path: tests/pytests/unit/modules/test_win_task.py
+          functions: 7
+    - function: _get_date_time_format
+      source:
+        path: salt/modules/win_task.py
+        symbol: _get_date_time_format
+      summary: Copied from win_system.py (_get_date_time_format)
+      parameters:
+        - name: dt_string
+      tests:
+        - path: tests/pytests/unit/modules/test_win_task.py
+          functions: 7
+    - function: _get_date_value
+      source:
+        path: salt/modules/win_task.py
+        symbol: _get_date_value
+      summary: 'Function for dealing with PyTime values with invalid dates. ie: 12/30/1899'
+      parameters:
+        - name: date
+      tests:
+        - path: tests/pytests/unit/modules/test_win_task.py
+          functions: 7
+    - function: _reverse_lookup
+      source:
+        path: salt/modules/win_task.py
+        symbol: _reverse_lookup
+      summary: Lookup the key in a dictionary by its value. Will return the first match.
+      parameters:
+        - name: dictionary
+        - name: value
+      tests:
+        - path: tests/pytests/unit/modules/test_win_task.py
+          functions: 7
+    - function: _lookup_first
+      source:
+        path: salt/modules/win_task.py
+        symbol: _lookup_first
+      summary: Lookup the first value given a key. Returns the first value if the key
+      parameters:
+        - name: dictionary
+        - name: key
+      tests:
+        - path: tests/pytests/unit/modules/test_win_task.py
+          functions: 7
+    - function: _save_task_definition
+      source:
+        path: salt/modules/win_task.py
+        symbol: _save_task_definition
+      summary: Internal function to save the task definition.
+      parameters:
+        - name: name
+        - name: task_folder
+        - name: task_definition
+        - name: user_name
+        - name: password
+        - name: logon_type
+      tests:
+        - path: tests/pytests/unit/modules/test_win_task.py
+          functions: 7
+    - function: list_tasks
+      source:
+        path: salt/modules/win_task.py
+        symbol: list_tasks
+      parameters:
+        - name: location
+          default: '"\\"'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_task.py
+          functions: 7
+    - function: list_folders
+      source:
+        path: salt/modules/win_task.py
+        symbol: list_folders
+      parameters:
+        - name: location
+          default: '"\\"'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_task.py
+          functions: 7
+    - function: list_triggers
+      source:
+        path: salt/modules/win_task.py
+        symbol: list_triggers
+      parameters:
+        - name: name
+        - name: location
+          default: '"\\"'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_task.py
+          functions: 7
+    - function: list_actions
+      source:
+        path: salt/modules/win_task.py
+        symbol: list_actions
+      parameters:
+        - name: name
+        - name: location
+          default: '"\\"'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_task.py
+          functions: 7
+    - function: create_task
+      source:
+        path: salt/modules/win_task.py
+        symbol: create_task
+      parameters:
+        - name: name
+        - name: location
+          default: '"\\"'
+        - name: user_name
+          default: '"System"'
+        - name: password
+          default: None
+        - name: force
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_task.py
+          functions: 7
+    - function: create_task_from_xml
+      source:
+        path: salt/modules/win_task.py
+        symbol: create_task_from_xml
+      parameters:
+        - name: name
+        - name: location
+          default: '"\\"'
+        - name: xml_text
+          default: None
+        - name: xml_path
+          default: None
+        - name: user_name
+          default: '"System"'
+        - name: password
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_win_task.py
+          functions: 7
+    - function: create_folder
+      source:
+        path: salt/modules/win_task.py
+        symbol: create_folder
+      parameters:
+        - name: name
+        - name: location
+          default: '"\\"'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_task.py
+          functions: 7
+    - function: edit_task
+      source:
+        path: salt/modules/win_task.py
+        symbol: edit_task
+      parameters:
+        - name: name
+          default: None
+        - name: location
+          default: '"\\"'
+        - name: |-
+            # General Tab
+                user_name
+          default: None
+        - name: password
+          default: None
+        - name: description
+          default: None
+        - name: enabled
+          default: None
+        - name: hidden
+          default: None
+        - name: |-
+            # Conditions Tab
+                run_if_idle
+          default: None
+        - name: idle_duration
+          default: None
+        - name: idle_wait_timeout
+          default: None
+        - name: idle_stop_on_end
+          default: None
+        - name: idle_restart
+          default: None
+        - name: ac_only
+          default: None
+        - name: stop_if_on_batteries
+          default: None
+        - name: wake_to_run
+          default: None
+        - name: run_if_network
+          default: None
+        - name: network_id
+          default: None
+        - name: network_name
+          default: None
+        - name: |-
+            # Settings Tab
+                allow_demand_start
+          default: None
+        - name: start_when_available
+          default: None
+        - name: restart_every
+          default: None
+        - name: restart_count
+          default: "3"
+        - name: execution_time_limit
+          default: None
+        - name: force_stop
+          default: None
+        - name: delete_after
+          default: None
+        - name: multiple_instances
+          default: None
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_task.py
+          functions: 7
+    - function: delete_task
+      source:
+        path: salt/modules/win_task.py
+        symbol: delete_task
+      parameters:
+        - name: name
+        - name: location
+          default: '"\\"'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_task.py
+          functions: 7
+    - function: delete_folder
+      source:
+        path: salt/modules/win_task.py
+        symbol: delete_folder
+      parameters:
+        - name: name
+        - name: location
+          default: '"\\"'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_task.py
+          functions: 7
+    - function: run
+      source:
+        path: salt/modules/win_task.py
+        symbol: run
+      parameters:
+        - name: name
+        - name: location
+          default: '"\\"'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_task.py
+          functions: 7
+    - function: run_wait
+      source:
+        path: salt/modules/win_task.py
+        symbol: run_wait
+      parameters:
+        - name: name
+        - name: location
+          default: '"\\"'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_task.py
+          functions: 7
+    - function: stop
+      source:
+        path: salt/modules/win_task.py
+        symbol: stop
+      parameters:
+        - name: name
+        - name: location
+          default: '"\\"'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_task.py
+          functions: 7
+    - function: status
+      source:
+        path: salt/modules/win_task.py
+        symbol: status
+      parameters:
+        - name: name
+        - name: location
+          default: '"\\"'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_task.py
+          functions: 7
+    - function: info
+      source:
+        path: salt/modules/win_task.py
+        symbol: info
+      parameters:
+        - name: name
+        - name: location
+          default: '"\\"'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_task.py
+          functions: 7
+    - function: add_action
+      source:
+        path: salt/modules/win_task.py
+        symbol: add_action
+      parameters:
+        - name: name
+          default: None
+        - name: location
+          default: '"\\"'
+        - name: action_type
+          default: '"Execute"'
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_task.py
+          functions: 7
+    - function: _clear_actions
+      source:
+        path: salt/modules/win_task.py
+        symbol: _clear_actions
+      parameters:
+        - name: name
+        - name: location
+          default: '"\\"'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_task.py
+          functions: 7
+    - function: add_trigger
+      source:
+        path: salt/modules/win_task.py
+        symbol: add_trigger
+      parameters:
+        - name: name
+          default: None
+        - name: location
+          default: '"\\"'
+        - name: trigger_type
+          default: None
+        - name: trigger_enabled
+          default: "True"
+        - name: start_date
+          default: None
+        - name: start_time
+          default: None
+        - name: end_date
+          default: None
+        - name: end_time
+          default: None
+        - name: random_delay
+          default: None
+        - name: repeat_interval
+          default: None
+        - name: repeat_duration
+          default: None
+        - name: repeat_stop_at_duration_end
+          default: "False"
+        - name: execution_time_limit
+          default: None
+        - name: delay
+          default: None
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_task.py
+          functions: 7
+    - function: clear_triggers
+      source:
+        path: salt/modules/win_task.py
+        symbol: clear_triggers
+      parameters:
+        - name: name
+        - name: location
+          default: '"\\"'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_task.py
+          functions: 7

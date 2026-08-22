@@ -1,0 +1,121 @@
+kind: exec
+module: timezone
+source_module: win_timezone
+virtual: true
+path: salt/modules/win_timezone.py
+platform_markers:
+    - is_windows
+functions:
+    - function: get_zone
+      source:
+        path: salt/modules/win_timezone.py
+        symbol: get_zone
+      summary: Get current timezone (i.e. America/Denver)
+      execution_dependencies:
+        - cmd.run_all
+      utility_dependencies:
+        - path.which
+        - platform.is_windows
+      tests:
+        - path: tests/pytests/unit/modules/test_win_timezone.py
+          functions: 15
+    - function: get_offset
+      source:
+        path: salt/modules/win_timezone.py
+        symbol: get_offset
+      summary: Get current numeric timezone offset from UTC (i.e. -0700)
+      execution_dependencies:
+        - cmd.run_all
+      utility_dependencies:
+        - path.which
+        - platform.is_windows
+      tests:
+        - path: tests/pytests/unit/modules/test_win_timezone.py
+          functions: 15
+    - function: get_zonecode
+      source:
+        path: salt/modules/win_timezone.py
+        symbol: get_zonecode
+      summary: Get current timezone (i.e. PST, MDT, etc)
+      execution_dependencies:
+        - cmd.run_all
+      utility_dependencies:
+        - path.which
+        - platform.is_windows
+      tests:
+        - path: tests/pytests/unit/modules/test_win_timezone.py
+          functions: 15
+    - function: set_zone
+      source:
+        path: salt/modules/win_timezone.py
+        symbol: set_zone
+      summary: Sets the timezone using the tzutil.
+      parameters:
+        - name: timezone
+      execution_dependencies:
+        - cmd.run_all
+      utility_dependencies:
+        - path.which
+        - platform.is_windows
+      tests:
+        - path: tests/pytests/unit/modules/test_win_timezone.py
+          functions: 15
+    - function: zone_compare
+      source:
+        path: salt/modules/win_timezone.py
+        symbol: zone_compare
+      summary: Compares the given timezone with the machine timezone. Mostly useful for
+      parameters:
+        - name: timezone
+      execution_dependencies:
+        - cmd.run_all
+      utility_dependencies:
+        - path.which
+        - platform.is_windows
+      tests:
+        - path: tests/pytests/unit/modules/test_win_timezone.py
+          functions: 15
+    - function: list
+      source:
+        path: salt/modules/win_timezone.py
+        symbol: list
+      summary: Return a list of Timezones that this module supports. These can be in either
+      parameters:
+        - name: unix_style
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      utility_dependencies:
+        - path.which
+        - platform.is_windows
+      tests:
+        - path: tests/pytests/unit/modules/test_win_timezone.py
+          functions: 15
+    - function: get_hwclock
+      source:
+        path: salt/modules/win_timezone.py
+        symbol: get_hwclock
+      summary: Get current hardware clock setting (UTC or localtime)
+      execution_dependencies:
+        - cmd.run_all
+      utility_dependencies:
+        - path.which
+        - platform.is_windows
+      tests:
+        - path: tests/pytests/unit/modules/test_win_timezone.py
+          functions: 15
+    - function: set_hwclock
+      source:
+        path: salt/modules/win_timezone.py
+        symbol: set_hwclock
+      summary: Sets the hardware clock to be either UTC or localtime
+      parameters:
+        - name: clock
+      execution_dependencies:
+        - cmd.run_all
+      utility_dependencies:
+        - path.which
+        - platform.is_windows
+      tests:
+        - path: tests/pytests/unit/modules/test_win_timezone.py
+          functions: 15

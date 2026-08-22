@@ -1,0 +1,4072 @@
+kind: exec
+module: vsphere
+source_module: vsphere
+virtual: true
+path: salt/modules/vsphere.py
+functions:
+    - function: _deprecation_message
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _deprecation_message
+      summary: Decorator wrapper to warn about azurearm deprecation
+      parameters:
+        - name: function
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: get_proxy_type
+      source:
+        path: salt/modules/vsphere.py
+        symbol: get_proxy_type
+      summary: Returns the proxy type retrieved either from the pillar of from the proxy
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_proxy_connection_details
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_proxy_connection_details
+      summary: 'Returns the connection details of the following proxies: esxi'
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _supports_proxies
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _supports_proxies
+      summary: Decorator to specify which proxy types are supported by a function
+      parameters:
+        - name: proxy_types
+          kind: '*'
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _gets_service_instance_via_proxy
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _gets_service_instance_via_proxy
+      summary: Decorator that connects to a target system (vCenter or ESXi host) using the
+      parameters:
+        - name: fn
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: get_service_instance_via_proxy
+      source:
+        path: salt/modules/vsphere.py
+        symbol: get_service_instance_via_proxy
+      summary: Returns a service instance to the proxied endpoint (vCenter/ESXi host).
+      parameters:
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: disconnect
+      source:
+        path: salt/modules/vsphere.py
+        symbol: disconnect
+      summary: Disconnects from a vCenter or ESXi host
+      parameters:
+        - name: service_instance
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: esxcli_cmd
+      source:
+        path: salt/modules/vsphere.py
+        symbol: esxcli_cmd
+      summary: Run an ESXCLI command directly on the host or list of hosts.
+      parameters:
+        - name: cmd_str
+        - name: host
+          default: None
+        - name: username
+          default: None
+        - name: password
+          default: None
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: esxi_hosts
+          default: None
+        - name: credstore
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: get_coredump_network_config
+      source:
+        path: salt/modules/vsphere.py
+        symbol: get_coredump_network_config
+      summary: Retrieve information on ESXi or vCenter network dump collection and
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: esxi_hosts
+          default: None
+        - name: credstore
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: coredump_network_enable
+      source:
+        path: salt/modules/vsphere.py
+        symbol: coredump_network_enable
+      summary: Enable or disable ESXi core dump collection. Returns ``True`` if coredump is enabled
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: enabled
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: esxi_hosts
+          default: None
+        - name: credstore
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: set_coredump_network_config
+      source:
+        path: salt/modules/vsphere.py
+        symbol: set_coredump_network_config
+      summary: Set the network parameters for a network coredump collection.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: dump_ip
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: host_vnic
+          default: '"vmk0"'
+        - name: dump_port
+          default: "6500"
+        - name: esxi_hosts
+          default: None
+        - name: credstore
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: get_firewall_status
+      source:
+        path: salt/modules/vsphere.py
+        symbol: get_firewall_status
+      summary: Show status of all firewall rule sets.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: esxi_hosts
+          default: None
+        - name: credstore
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: enable_firewall_ruleset
+      source:
+        path: salt/modules/vsphere.py
+        symbol: enable_firewall_ruleset
+      summary: Enable or disable an ESXi firewall rule set.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: ruleset_enable
+        - name: ruleset_name
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: esxi_hosts
+          default: None
+        - name: credstore
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: syslog_service_reload
+      source:
+        path: salt/modules/vsphere.py
+        symbol: syslog_service_reload
+      summary: Reload the syslog service so it will pick up any changes.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: esxi_hosts
+          default: None
+        - name: credstore
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: set_syslog_config
+      source:
+        path: salt/modules/vsphere.py
+        symbol: set_syslog_config
+      summary: Set the specified syslog configuration parameter. By default, this function will
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: syslog_config
+        - name: config_value
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: firewall
+          default: "True"
+        - name: reset_service
+          default: "True"
+        - name: esxi_hosts
+          default: None
+        - name: credstore
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: get_syslog_config
+      source:
+        path: salt/modules/vsphere.py
+        symbol: get_syslog_config
+      summary: Retrieve the syslog configuration.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: esxi_hosts
+          default: None
+        - name: credstore
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: reset_syslog_config
+      source:
+        path: salt/modules/vsphere.py
+        symbol: reset_syslog_config
+      summary: Reset the syslog service to its default settings.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: syslog_config
+          default: None
+        - name: esxi_hosts
+          default: None
+        - name: credstore
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: upload_ssh_key
+      source:
+        path: salt/modules/vsphere.py
+        symbol: upload_ssh_key
+      summary: Upload an ssh key for root to an ESXi host via http PUT.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: ssh_key
+          default: None
+        - name: ssh_key_file
+          default: None
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: certificate_verify
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: get_ssh_key
+      source:
+        path: salt/modules/vsphere.py
+        symbol: get_ssh_key
+      summary: Retrieve the authorized_keys entry for root.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: certificate_verify
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: get_host_datetime
+      source:
+        path: salt/modules/vsphere.py
+        symbol: get_host_datetime
+      summary: Get the date/time information for a given host or list of host_names.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: host_names
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: get_ntp_config
+      source:
+        path: salt/modules/vsphere.py
+        symbol: get_ntp_config
+      summary: Get the NTP configuration information for a given host or list of host_names.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: host_names
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: get_service_policy
+      source:
+        path: salt/modules/vsphere.py
+        symbol: get_service_policy
+      summary: Get the service name's policy for a given host or list of hosts.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: service_name
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: host_names
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: get_service_running
+      source:
+        path: salt/modules/vsphere.py
+        symbol: get_service_running
+      summary: Get the service name's running state for a given host or list of hosts.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: service_name
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: host_names
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: get_vmotion_enabled
+      source:
+        path: salt/modules/vsphere.py
+        symbol: get_vmotion_enabled
+      summary: Get the VMotion enabled status for a given host or a list of host_names. Returns ``True``
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: host_names
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: get_vsan_enabled
+      source:
+        path: salt/modules/vsphere.py
+        symbol: get_vsan_enabled
+      summary: Get the VSAN enabled status for a given host or a list of host_names. Returns ``True``
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: host_names
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: get_vsan_eligible_disks
+      source:
+        path: salt/modules/vsphere.py
+        symbol: get_vsan_eligible_disks
+      summary: Returns a list of VSAN-eligible disks for a given host or list of host_names.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: host_names
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: test_vcenter_connection
+      source:
+        path: salt/modules/vsphere.py
+        symbol: test_vcenter_connection
+      summary: Checks if a connection is to a vCenter
+      parameters:
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: system_info
+      source:
+        path: salt/modules/vsphere.py
+        symbol: system_info
+      summary: Return system information about a VMware environment.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_datacenters
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_datacenters
+      summary: Returns a list of datacenters for the specified host.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_clusters
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_clusters
+      summary: Returns a list of clusters for the specified host.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_datastore_clusters
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_datastore_clusters
+      summary: Returns a list of datastore clusters for the specified host.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_datastores
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_datastores
+      summary: Returns a list of datastores for the specified host.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_hosts
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_hosts
+      summary: Returns a list of hosts for the specified VMware environment.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_resourcepools
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_resourcepools
+      summary: Returns a list of resource pools for the specified host.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_networks
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_networks
+      summary: Returns a list of networks for the specified host.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_vms
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_vms
+      summary: Returns a list of VMs for the specified host.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_folders
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_folders
+      summary: Returns a list of folders for the specified host.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_dvs
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_dvs
+      summary: Returns a list of distributed virtual switches for the specified host.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_vapps
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_vapps
+      summary: Returns a list of vApps for the specified host.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_ssds
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_ssds
+      summary: Returns a list of SSDs for the given host or list of host_names.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: host_names
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_non_ssds
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_non_ssds
+      summary: Returns a list of Non-SSD disks for the given host or list of host_names.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: host_names
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: set_ntp_config
+      source:
+        path: salt/modules/vsphere.py
+        symbol: set_ntp_config
+      summary: Set NTP configuration for a given host of list of host_names.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: ntp_servers
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: host_names
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: service_start
+      source:
+        path: salt/modules/vsphere.py
+        symbol: service_start
+      summary: Start the named service for the given host or list of hosts.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: service_name
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: host_names
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: service_stop
+      source:
+        path: salt/modules/vsphere.py
+        symbol: service_stop
+      summary: Stop the named service for the given host or list of hosts.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: service_name
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: host_names
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: service_restart
+      source:
+        path: salt/modules/vsphere.py
+        symbol: service_restart
+      summary: Restart the named service for the given host or list of hosts.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: service_name
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: host_names
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: set_service_policy
+      source:
+        path: salt/modules/vsphere.py
+        symbol: set_service_policy
+      summary: Set the service name's policy for a given host or list of hosts.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: service_name
+        - name: service_policy
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: host_names
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: update_host_datetime
+      source:
+        path: salt/modules/vsphere.py
+        symbol: update_host_datetime
+      summary: Update the date/time on the given host or list of host_names. This function should be
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: host_names
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: update_host_password
+      source:
+        path: salt/modules/vsphere.py
+        symbol: update_host_password
+      summary: Update the password for a given host.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: new_password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: vmotion_disable
+      source:
+        path: salt/modules/vsphere.py
+        symbol: vmotion_disable
+      summary: Disable vMotion for a given host or list of host_names.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: host_names
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: vmotion_enable
+      source:
+        path: salt/modules/vsphere.py
+        symbol: vmotion_enable
+      summary: Enable vMotion for a given host or list of host_names.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: host_names
+          default: None
+        - name: device
+          default: '"vmk0"'
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: vsan_add_disks
+      source:
+        path: salt/modules/vsphere.py
+        symbol: vsan_add_disks
+      summary: Add any VSAN-eligible disks to the VSAN System for the given host or list of host_names.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: host_names
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: vsan_disable
+      source:
+        path: salt/modules/vsphere.py
+        symbol: vsan_disable
+      summary: Disable VSAN for a given host or list of host_names.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: host_names
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: vsan_enable
+      source:
+        path: salt/modules/vsphere.py
+        symbol: vsan_enable
+      summary: Enable VSAN for a given host or list of host_names.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: host_names
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_dvs_config_dict
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_dvs_config_dict
+      summary: Returns the dict representation of the DVS config
+      parameters:
+        - name: dvs_name
+        - name: dvs_config
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_dvs_link_discovery_protocol
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_dvs_link_discovery_protocol
+      summary: Returns the dict representation of the DVS link discovery protocol
+      parameters:
+        - name: dvs_name
+        - name: dvs_link_disc_protocol
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_dvs_product_info
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_dvs_product_info
+      summary: Returns the dict representation of the DVS product_info
+      parameters:
+        - name: dvs_name
+        - name: dvs_product_info
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_dvs_capability
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_dvs_capability
+      summary: Returns the dict representation of the DVS product_info
+      parameters:
+        - name: dvs_name
+        - name: dvs_capability
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_dvs_infrastructure_traffic_resources
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_dvs_infrastructure_traffic_resources
+      summary: Returns a list of dict representations of the DVS infrastructure traffic
+      parameters:
+        - name: dvs_name
+        - name: dvs_infra_traffic_ress
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_dvss
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_dvss
+      summary: Returns a list of distributed virtual switches (DVSs).
+      parameters:
+        - name: datacenter
+          default: None
+        - name: dvs_names
+          default: None
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _apply_dvs_config
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _apply_dvs_config
+      summary: Applies the values of the config dict dictionary to a config spec
+      parameters:
+        - name: config_spec
+        - name: config_dict
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _apply_dvs_link_discovery_protocol
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _apply_dvs_link_discovery_protocol
+      summary: Applies the values of the disc_prot_dict dictionary to a link discovery
+      parameters:
+        - name: disc_prot_config
+        - name: disc_prot_dict
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _apply_dvs_product_info
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _apply_dvs_product_info
+      summary: Applies the values of the product_info_dict dictionary to a product info
+      parameters:
+        - name: product_info_spec
+        - name: product_info_dict
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _apply_dvs_capability
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _apply_dvs_capability
+      summary: Applies the values of the capability_dict dictionary to a DVS capability
+      parameters:
+        - name: capability_spec
+        - name: capability_dict
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _apply_dvs_infrastructure_traffic_resources
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _apply_dvs_infrastructure_traffic_resources
+      summary: Applies the values of the resource dictionaries to infra traffic resources,
+      parameters:
+        - name: infra_traffic_resources
+        - name: resource_dicts
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _apply_dvs_network_resource_pools
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _apply_dvs_network_resource_pools
+      summary: Applies the values of the resource dictionaries to network resource pools,
+      parameters:
+        - name: network_resource_pools
+        - name: resource_dicts
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: create_dvs
+      source:
+        path: salt/modules/vsphere.py
+        symbol: create_dvs
+      summary: Creates a distributed virtual switch (DVS).
+      parameters:
+        - name: dvs_dict
+        - name: dvs_name
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: update_dvs
+      source:
+        path: salt/modules/vsphere.py
+        symbol: update_dvs
+      summary: Updates a distributed virtual switch (DVS).
+      parameters:
+        - name: dvs_dict
+        - name: dvs
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_dvportgroup_out_shaping
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_dvportgroup_out_shaping
+      summary: Returns the out shaping policy of a distributed virtual portgroup
+      parameters:
+        - name: pg_name
+        - name: pg_default_port_config
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_dvportgroup_security_policy
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_dvportgroup_security_policy
+      summary: Returns the security policy of a distributed virtual portgroup
+      parameters:
+        - name: pg_name
+        - name: pg_default_port_config
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_dvportgroup_teaming
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_dvportgroup_teaming
+      summary: Returns the teaming of a distributed virtual portgroup
+      parameters:
+        - name: pg_name
+        - name: pg_default_port_config
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_dvportgroup_dict
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_dvportgroup_dict
+      summary: Returns a dictionary with a distributed virtual portgroup data
+      parameters:
+        - name: pg_ref
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_dvportgroups
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_dvportgroups
+      summary: Returns a list of distributed virtual switch portgroups.
+      parameters:
+        - name: dvs
+          default: None
+        - name: portgroup_names
+          default: None
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_uplink_dvportgroup
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_uplink_dvportgroup
+      summary: Returns the uplink portgroup of a distributed virtual switch.
+      parameters:
+        - name: dvs
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _apply_dvportgroup_out_shaping
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _apply_dvportgroup_out_shaping
+      summary: Applies the values in out_shaping_conf to an out_shaping object
+      parameters:
+        - name: pg_name
+        - name: out_shaping
+        - name: out_shaping_conf
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _apply_dvportgroup_security_policy
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _apply_dvportgroup_security_policy
+      summary: Applies the values in sec_policy_conf to a security policy object
+      parameters:
+        - name: pg_name
+        - name: sec_policy
+        - name: sec_policy_conf
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _apply_dvportgroup_teaming
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _apply_dvportgroup_teaming
+      summary: Applies the values in teaming_conf to a teaming policy object
+      parameters:
+        - name: pg_name
+        - name: teaming
+        - name: teaming_conf
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _apply_dvportgroup_config
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _apply_dvportgroup_config
+      summary: Applies the values in conf to a distributed portgroup spec
+      parameters:
+        - name: pg_name
+        - name: pg_spec
+        - name: pg_conf
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: create_dvportgroup
+      source:
+        path: salt/modules/vsphere.py
+        symbol: create_dvportgroup
+      summary: Creates a distributed virtual portgroup.
+      parameters:
+        - name: portgroup_dict
+        - name: portgroup_name
+        - name: dvs
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: update_dvportgroup
+      source:
+        path: salt/modules/vsphere.py
+        symbol: update_dvportgroup
+      summary: Updates a distributed virtual portgroup.
+      parameters:
+        - name: portgroup_dict
+        - name: portgroup
+        - name: dvs
+        - name: service_instance
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: remove_dvportgroup
+      source:
+        path: salt/modules/vsphere.py
+        symbol: remove_dvportgroup
+      summary: Removes a distributed virtual portgroup.
+      parameters:
+        - name: portgroup
+        - name: dvs
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_policy_dict
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_policy_dict
+      summary: Returns a dictionary representation of a policy
+      parameters:
+        - name: policy
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_storage_policies
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_storage_policies
+      summary: Returns a list of storage policies.
+      parameters:
+        - name: policy_names
+          default: None
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_default_vsan_policy
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_default_vsan_policy
+      summary: Returns the default vsan storage policy.
+      parameters:
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_capability_definition_dict
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_capability_definition_dict
+      parameters:
+        - name: cap_metadata
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_capability_definitions
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_capability_definitions
+      summary: Returns a list of the metadata of all capabilities in the vCenter.
+      parameters:
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _apply_policy_config
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _apply_policy_config
+      summary: Applies a policy dictionary to a policy spec
+      parameters:
+        - name: policy_spec
+        - name: policy_dict
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: create_storage_policy
+      source:
+        path: salt/modules/vsphere.py
+        symbol: create_storage_policy
+      summary: Creates a storage policy.
+      parameters:
+        - name: policy_name
+        - name: policy_dict
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: update_storage_policy
+      source:
+        path: salt/modules/vsphere.py
+        symbol: update_storage_policy
+      summary: Updates a storage policy.
+      parameters:
+        - name: policy
+        - name: policy_dict
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_default_storage_policy_of_datastore
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_default_storage_policy_of_datastore
+      summary: Returns a list of datastores assign the storage policies.
+      parameters:
+        - name: datastore
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: assign_default_storage_policy_to_datastore
+      source:
+        path: salt/modules/vsphere.py
+        symbol: assign_default_storage_policy_to_datastore
+      summary: Assigns a storage policy as the default policy to a datastore.
+      parameters:
+        - name: policy
+        - name: datastore
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_datacenters_via_proxy
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_datacenters_via_proxy
+      summary: Returns a list of dict representations of VMware datacenters.
+      parameters:
+        - name: datacenter_names
+          default: None
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: create_datacenter
+      source:
+        path: salt/modules/vsphere.py
+        symbol: create_datacenter
+      summary: Creates a datacenter.
+      parameters:
+        - name: datacenter_name
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_cluster_dict
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_cluster_dict
+      summary: Returns a cluster dict representation from
+      parameters:
+        - name: cluster_name
+        - name: cluster_ref
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_cluster
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_cluster
+      summary: Returns a dict representation of an ESX cluster.
+      parameters:
+        - name: datacenter
+          default: None
+        - name: cluster
+          default: None
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _apply_cluster_dict
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _apply_cluster_dict
+      summary: Applies the values of cluster_dict dictionary to a cluster spec
+      parameters:
+        - name: cluster_spec
+        - name: cluster_dict
+        - name: vsan_spec
+          default: None
+        - name: vsan_61
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: create_cluster
+      source:
+        path: salt/modules/vsphere.py
+        symbol: create_cluster
+      summary: Creates a cluster.
+      parameters:
+        - name: cluster_dict
+        - name: datacenter
+          default: None
+        - name: cluster
+          default: None
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: update_cluster
+      source:
+        path: salt/modules/vsphere.py
+        symbol: update_cluster
+      summary: Updates a cluster.
+      parameters:
+        - name: cluster_dict
+        - name: datacenter
+          default: None
+        - name: cluster
+          default: None
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_datastores_via_proxy
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_datastores_via_proxy
+      summary: Returns a list of dict representations of the datastores visible to the
+      parameters:
+        - name: datastore_names
+          default: None
+        - name: backing_disk_ids
+          default: None
+        - name: backing_disk_scsi_addresses
+          default: None
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: create_vmfs_datastore
+      source:
+        path: salt/modules/vsphere.py
+        symbol: create_vmfs_datastore
+      summary: Creates a ESXi host disk group with the specified cache and capacity disks.
+      parameters:
+        - name: datastore_name
+        - name: disk_id
+        - name: vmfs_major_version
+        - name: safety_checks
+          default: "True"
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: rename_datastore
+      source:
+        path: salt/modules/vsphere.py
+        symbol: rename_datastore
+      summary: Renames a datastore. The datastore needs to be visible to the proxy.
+      parameters:
+        - name: datastore_name
+        - name: new_datastore_name
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: remove_datastore
+      source:
+        path: salt/modules/vsphere.py
+        symbol: remove_datastore
+      summary: Removes a datastore. If multiple datastores an error is raised.
+      parameters:
+        - name: datastore
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_licenses
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_licenses
+      summary: Lists all licenses on a vCenter.
+      parameters:
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: add_license
+      source:
+        path: salt/modules/vsphere.py
+        symbol: add_license
+      summary: Adds a license to the vCenter or ESXi host
+      parameters:
+        - name: key
+        - name: description
+        - name: safety_checks
+          default: "True"
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_entity
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_entity
+      summary: Returns the entity associated with the entity dict representation
+      parameters:
+        - name: service_instance
+        - name: entity
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _validate_entity
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _validate_entity
+      summary: Validates the entity dict representation
+      parameters:
+        - name: entity
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_assigned_licenses
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_assigned_licenses
+      summary: Lists the licenses assigned to an entity
+      parameters:
+        - name: entity
+        - name: entity_display_name
+        - name: license_keys
+          default: None
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: assign_license
+      source:
+        path: salt/modules/vsphere.py
+        symbol: assign_license
+      summary: Assigns a license to an entity
+      parameters:
+        - name: license_key
+        - name: license_name
+        - name: entity
+        - name: entity_display_name
+        - name: safety_checks
+          default: "True"
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_hosts_via_proxy
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_hosts_via_proxy
+      summary: Returns a list of hosts for the specified VMware environment. The list
+      parameters:
+        - name: hostnames
+          default: None
+        - name: datacenter
+          default: None
+        - name: cluster
+          default: None
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_disks
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_disks
+      summary: Returns a list of dict representations of the disks in an ESXi host.
+      parameters:
+        - name: disk_ids
+          default: None
+        - name: scsi_addresses
+          default: None
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: erase_disk_partitions
+      source:
+        path: salt/modules/vsphere.py
+        symbol: erase_disk_partitions
+      summary: Erases the partitions on a disk.
+      parameters:
+        - name: disk_id
+          default: None
+        - name: scsi_address
+          default: None
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_disk_partitions
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_disk_partitions
+      summary: Lists the partitions on a disk.
+      parameters:
+        - name: disk_id
+          default: None
+        - name: scsi_address
+          default: None
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_diskgroups
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_diskgroups
+      summary: Returns a list of disk group dict representation on an ESXi host.
+      parameters:
+        - name: cache_disk_ids
+          default: None
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: create_diskgroup
+      source:
+        path: salt/modules/vsphere.py
+        symbol: create_diskgroup
+      summary: Creates disk group on an ESXi host with the specified cache and
+      parameters:
+        - name: cache_disk_id
+        - name: capacity_disk_ids
+        - name: safety_checks
+          default: "True"
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: add_capacity_to_diskgroup
+      source:
+        path: salt/modules/vsphere.py
+        symbol: add_capacity_to_diskgroup
+      summary: Adds capacity disks to the disk group with the specified cache disk.
+      parameters:
+        - name: cache_disk_id
+        - name: capacity_disk_ids
+        - name: safety_checks
+          default: "True"
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: remove_capacity_from_diskgroup
+      source:
+        path: salt/modules/vsphere.py
+        symbol: remove_capacity_from_diskgroup
+      summary: Remove capacity disks from the disk group with the specified cache disk.
+      parameters:
+        - name: cache_disk_id
+        - name: capacity_disk_ids
+        - name: data_evacuation
+          default: "True"
+        - name: safety_checks
+          default: "True"
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: remove_diskgroup
+      source:
+        path: salt/modules/vsphere.py
+        symbol: remove_diskgroup
+      summary: Remove the diskgroup with the specified cache disk.
+      parameters:
+        - name: cache_disk_id
+        - name: data_accessibility
+          default: "True"
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: get_host_cache
+      source:
+        path: salt/modules/vsphere.py
+        symbol: get_host_cache
+      summary: Returns the host cache configuration on the proxy host.
+      parameters:
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: configure_host_cache
+      source:
+        path: salt/modules/vsphere.py
+        symbol: configure_host_cache
+      summary: Configures the host cache on the selected host.
+      parameters:
+        - name: enabled
+        - name: datastore
+          default: None
+        - name: swap_size_MiB
+          default: None
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _check_hosts
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _check_hosts
+      summary: Helper function that checks to see if the host provided is a vCenter Server or
+      parameters:
+        - name: service_instance
+        - name: host
+        - name: host_names
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _format_coredump_stdout
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _format_coredump_stdout
+      summary: Helper function to format the stdout from the get_coredump_network_config function.
+      parameters:
+        - name: cmd_ret
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _format_firewall_stdout
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _format_firewall_stdout
+      summary: Helper function to format the stdout from the get_firewall_status function.
+      parameters:
+        - name: cmd_ret
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _format_syslog_config
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _format_syslog_config
+      summary: Helper function to format the stdout from the get_syslog_config function.
+      parameters:
+        - name: cmd_ret
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_date_time_mgr
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_date_time_mgr
+      summary: Helper function that returns a dateTimeManager object
+      parameters:
+        - name: host_reference
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_host_ref
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_host_ref
+      summary: Helper function that returns a host object either from the host location or the host_name.
+      parameters:
+        - name: service_instance
+        - name: host
+        - name: host_name
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_host_ssds
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_host_ssds
+      summary: Helper function that returns a list of ssd objects for a given host.
+      parameters:
+        - name: host_reference
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_host_non_ssds
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_host_non_ssds
+      summary: Helper function that returns a list of Non-SSD objects for a given host.
+      parameters:
+        - name: host_reference
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_host_disks
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_host_disks
+      summary: Helper function that returns a dictionary containing a list of SSD and Non-SSD disks.
+      parameters:
+        - name: host_reference
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_service_manager
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_service_manager
+      summary: Helper function that returns a service manager object from a given host object.
+      parameters:
+        - name: host_reference
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_vsan_eligible_disks
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_vsan_eligible_disks
+      summary: Helper function that returns a dictionary of host_name keys with either a list of eligible
+      parameters:
+        - name: service_instance
+        - name: host
+        - name: host_names
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _reset_syslog_config_params
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _reset_syslog_config_params
+      summary: Helper function for reset_syslog_config that resets the config and populates the return dictionary.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: cmd
+        - name: resets
+        - name: valid_resets
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: esxi_host
+          default: None
+        - name: credstore
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _set_syslog_config_helper
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _set_syslog_config_helper
+      summary: Helper function for set_syslog_config that sets the config and populates the return dictionary.
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: syslog_config
+        - name: config_value
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: reset_service
+          default: None
+        - name: esxi_host
+          default: None
+        - name: credstore
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: add_host_to_dvs
+      source:
+        path: salt/modules/vsphere.py
+        symbol: add_host_to_dvs
+      summary: Adds an ESXi host to a vSphere Distributed Virtual Switch and migrates
+      parameters:
+        - name: host
+        - name: username
+        - name: password
+        - name: vmknic_name
+        - name: vmnic_name
+        - name: dvs_name
+        - name: target_portgroup_name
+        - name: uplink_portgroup_name
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: host_names
+          default: None
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_proxy_target
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_proxy_target
+      summary: Returns the target object of a proxy.
+      parameters:
+        - name: service_instance
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_esxdatacenter_proxy_details
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_esxdatacenter_proxy_details
+      summary: Returns the running esxdatacenter's proxy details
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_esxcluster_proxy_details
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_esxcluster_proxy_details
+      summary: Returns the running esxcluster's proxy details
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_esxi_proxy_details
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_esxi_proxy_details
+      summary: Returns the running esxi's proxy details
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: get_vm
+      source:
+        path: salt/modules/vsphere.py
+        symbol: get_vm
+      summary: Returns vm object properties.
+      parameters:
+        - name: name
+        - name: datacenter
+          default: None
+        - name: vm_properties
+          default: None
+        - name: traversal_spec
+          default: None
+        - name: parent_ref
+          default: None
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: get_vm_config_file
+      source:
+        path: salt/modules/vsphere.py
+        symbol: get_vm_config_file
+      summary: Queries the virtual machine config file and returns
+      parameters:
+        - name: name
+        - name: datacenter
+        - name: placement
+        - name: datastore
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _apply_hardware_version
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _apply_hardware_version
+      summary: Specifies vm container version or schedules upgrade,
+      parameters:
+        - name: hardware_version
+        - name: config_spec
+        - name: operation
+          default: '"add"'
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _apply_cpu_config
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _apply_cpu_config
+      summary: Sets CPU core count to the given value
+      parameters:
+        - name: config_spec
+        - name: cpu_props
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _apply_memory_config
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _apply_memory_config
+      summary: Sets memory size to the given value
+      parameters:
+        - name: config_spec
+        - name: memory
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: get_advanced_configs
+      source:
+        path: salt/modules/vsphere.py
+        symbol: get_advanced_configs
+      summary: Returns extra config parameters from a virtual machine advanced config list
+      parameters:
+        - name: vm_name
+        - name: datacenter
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _apply_advanced_config
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _apply_advanced_config
+      summary: Sets configuration parameters for the vm
+      parameters:
+        - name: config_spec
+        - name: advanced_config
+        - name: vm_extra_config
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: set_advanced_configs
+      source:
+        path: salt/modules/vsphere.py
+        symbol: set_advanced_configs
+      summary: Appends extra config parameters to a virtual machine advanced config list
+      parameters:
+        - name: vm_name
+        - name: datacenter
+        - name: advanced_configs
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _delete_advanced_config
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _delete_advanced_config
+      summary: Removes configuration parameters for the vm
+      parameters:
+        - name: config_spec
+        - name: advanced_config
+        - name: vm_extra_config
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: delete_advanced_configs
+      source:
+        path: salt/modules/vsphere.py
+        symbol: delete_advanced_configs
+      summary: Removes extra config parameters from a virtual machine
+      parameters:
+        - name: vm_name
+        - name: datacenter
+        - name: advanced_configs
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_scsi_controller_key
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_scsi_controller_key
+      summary: Returns key number of the SCSI controller keys
+      parameters:
+        - name: bus_number
+        - name: scsi_ctrls
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _apply_hard_disk
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _apply_hard_disk
+      summary: Returns a vim.vm.device.VirtualDeviceSpec object specifying to add/edit
+      parameters:
+        - name: unit_number
+        - name: key
+        - name: operation
+        - name: disk_label
+          default: None
+        - name: size
+          default: None
+        - name: unit
+          default: '"GB"'
+        - name: controller_key
+          default: None
+        - name: thin_provision
+          default: None
+        - name: eagerly_scrub
+          default: None
+        - name: datastore
+          default: None
+        - name: filename
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _create_adapter_type
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _create_adapter_type
+      summary: Returns a vim.vm.device.VirtualEthernetCard object specifying a virtual
+      parameters:
+        - name: network_adapter
+        - name: adapter_type
+        - name: network_adapter_label
+          default: '""'
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _create_network_backing
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _create_network_backing
+      summary: Returns a vim.vm.device.VirtualDevice.BackingInfo object specifying a
+      parameters:
+        - name: network_name
+        - name: switch_type
+        - name: parent_ref
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _apply_network_adapter_config
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _apply_network_adapter_config
+      summary: Returns a vim.vm.device.VirtualDeviceSpec object specifying to add/edit a
+      parameters:
+        - name: key
+        - name: network_name
+        - name: adapter_type
+        - name: switch_type
+        - name: network_adapter_label
+          default: None
+        - name: operation
+          default: '"add"'
+        - name: connectable
+          default: None
+        - name: mac
+          default: None
+        - name: parent
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _apply_scsi_controller
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _apply_scsi_controller
+      summary: Returns a vim.vm.device.VirtualDeviceSpec object specifying to
+      parameters:
+        - name: adapter
+        - name: adapter_type
+        - name: bus_sharing
+        - name: key
+        - name: bus_number
+        - name: operation
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _create_ide_controllers
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _create_ide_controllers
+      summary: Returns a list of vim.vm.device.VirtualDeviceSpec objects representing
+      parameters:
+        - name: ide_controllers
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _apply_ide_controller_config
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _apply_ide_controller_config
+      summary: Returns a vim.vm.device.VirtualDeviceSpec object specifying to add/edit an
+      parameters:
+        - name: ide_controller_label
+        - name: operation
+        - name: key
+        - name: bus_number
+          default: "0"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _create_sata_controllers
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _create_sata_controllers
+      summary: Returns a list of vim.vm.device.VirtualDeviceSpec objects representing
+      parameters:
+        - name: sata_controllers
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _apply_sata_controller_config
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _apply_sata_controller_config
+      summary: Returns a vim.vm.device.VirtualDeviceSpec object specifying to add/edit a
+      parameters:
+        - name: sata_controller_label
+        - name: operation
+        - name: key
+        - name: bus_number
+          default: "0"
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _apply_cd_drive
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _apply_cd_drive
+      summary: Returns a vim.vm.device.VirtualDeviceSpec object specifying to add/edit a
+      parameters:
+        - name: drive_label
+        - name: key
+        - name: device_type
+        - name: operation
+        - name: client_device
+          default: None
+        - name: datastore_iso_file
+          default: None
+        - name: connectable
+          default: None
+        - name: controller_key
+          default: "200"
+        - name: parent_ref
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _set_network_adapter_mapping
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _set_network_adapter_mapping
+      summary: Returns a vim.vm.customization.AdapterMapping object containing the IP
+      parameters:
+        - name: domain
+        - name: gateway
+        - name: ip_addr
+        - name: subnet_mask
+        - name: mac
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _apply_serial_port
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _apply_serial_port
+      summary: Returns a vim.vm.device.VirtualSerialPort representing a serial port
+      parameters:
+        - name: serial_device_spec
+        - name: key
+        - name: operation
+          default: '"add"'
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _create_disks
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _create_disks
+      summary: Returns a list of disk specs representing the disks to be created for a
+      parameters:
+        - name: service_instance
+        - name: disks
+        - name: scsi_controllers
+          default: None
+        - name: parent
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _create_scsi_devices
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _create_scsi_devices
+      summary: Returns a list of vim.vm.device.VirtualDeviceSpec objects representing
+      parameters:
+        - name: scsi_devices
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _create_network_adapters
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _create_network_adapters
+      summary: Returns a list of vim.vm.device.VirtualDeviceSpec objects representing
+      parameters:
+        - name: network_interfaces
+        - name: parent
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _create_serial_ports
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _create_serial_ports
+      summary: Returns a list of vim.vm.device.VirtualDeviceSpec objects representing the
+      parameters:
+        - name: serial_ports
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _create_cd_drives
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _create_cd_drives
+      summary: Returns a list of vim.vm.device.VirtualDeviceSpec objects representing the
+      parameters:
+        - name: cd_drives
+        - name: controllers
+          default: None
+        - name: parent_ref
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_device_by_key
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_device_by_key
+      summary: Returns the device with the given key, raises error if the device is
+      parameters:
+        - name: devices
+        - name: key
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_device_by_label
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_device_by_label
+      summary: Returns the device with the given label, raises error if the device is
+      parameters:
+        - name: devices
+        - name: label
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _convert_units
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _convert_units
+      summary: Updates the size and unit dictionary values with the new unit values
+      parameters:
+        - name: devices
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: compare_vm_configs
+      source:
+        path: salt/modules/vsphere.py
+        symbol: compare_vm_configs
+      summary: Compares virtual machine current and new configuration, the current is the
+      parameters:
+        - name: new_config
+        - name: current_config
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: get_vm_config
+      source:
+        path: salt/modules/vsphere.py
+        symbol: get_vm_config
+      summary: Queries and converts the virtual machine properties to the available format
+      parameters:
+        - name: name
+        - name: datacenter
+          default: None
+        - name: objects
+          default: "True"
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _update_disks
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _update_disks
+      summary: Changes the disk size and returns the config spec objects in a list.
+      parameters:
+        - name: disks_old_new
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _update_scsi_devices
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _update_scsi_devices
+      summary: Returns a list of vim.vm.device.VirtualDeviceSpec specifying  the scsi
+      parameters:
+        - name: scsis_old_new
+        - name: current_disks
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _update_network_adapters
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _update_network_adapters
+      summary: Returns a list of vim.vm.device.VirtualDeviceSpec specifying
+      parameters:
+        - name: interface_old_new
+        - name: parent
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _update_serial_ports
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _update_serial_ports
+      summary: Returns a list of vim.vm.device.VirtualDeviceSpec specifying to edit a
+      parameters:
+        - name: serial_old_new
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _update_cd_drives
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _update_cd_drives
+      summary: Returns a list of vim.vm.device.VirtualDeviceSpec specifying to edit a
+      parameters:
+        - name: drives_old_new
+        - name: controllers
+          default: None
+        - name: parent
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _delete_device
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _delete_device
+      summary: Returns a vim.vm.device.VirtualDeviceSpec specifying to remove a virtual
+      parameters:
+        - name: device
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _get_client
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _get_client
+      summary: Establish client through proxy or with user provided credentials.
+      parameters:
+        - name: server
+        - name: username
+        - name: password
+        - name: verify_ssl
+          default: None
+        - name: ca_bundle
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_tag_categories
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_tag_categories
+      summary: List existing categories a user has access to.
+      parameters:
+        - name: server
+          default: None
+        - name: username
+          default: None
+        - name: password
+          default: None
+        - name: service_instance
+          default: None
+        - name: verify_ssl
+          default: None
+        - name: ca_bundle
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_tags
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_tags
+      summary: List existing tags a user has access to.
+      parameters:
+        - name: server
+          default: None
+        - name: username
+          default: None
+        - name: password
+          default: None
+        - name: service_instance
+          default: None
+        - name: verify_ssl
+          default: None
+        - name: ca_bundle
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: attach_tag
+      source:
+        path: salt/modules/vsphere.py
+        symbol: attach_tag
+      summary: Attach an existing tag to an input object.
+      parameters:
+        - name: object_id
+        - name: tag_id
+        - name: managed_obj
+          default: '"ClusterComputeResource"'
+        - name: server
+          default: None
+        - name: username
+          default: None
+        - name: password
+          default: None
+        - name: service_instance
+          default: None
+        - name: verify_ssl
+          default: None
+        - name: ca_bundle
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: list_attached_tags
+      source:
+        path: salt/modules/vsphere.py
+        symbol: list_attached_tags
+      summary: List existing tags a user has access to.
+      parameters:
+        - name: object_id
+        - name: managed_obj
+          default: '"ClusterComputeResource"'
+        - name: server
+          default: None
+        - name: username
+          default: None
+        - name: password
+          default: None
+        - name: service_instance
+          default: None
+        - name: verify_ssl
+          default: None
+        - name: ca_bundle
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: create_tag_category
+      source:
+        path: salt/modules/vsphere.py
+        symbol: create_tag_category
+      summary: Create a category with given cardinality.
+      parameters:
+        - name: name
+        - name: description
+        - name: cardinality
+        - name: server
+          default: None
+        - name: username
+          default: None
+        - name: password
+          default: None
+        - name: service_instance
+          default: None
+        - name: verify_ssl
+          default: None
+        - name: ca_bundle
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: delete_tag_category
+      source:
+        path: salt/modules/vsphere.py
+        symbol: delete_tag_category
+      summary: Delete a category.
+      parameters:
+        - name: category_id
+        - name: server
+          default: None
+        - name: username
+          default: None
+        - name: password
+          default: None
+        - name: service_instance
+          default: None
+        - name: verify_ssl
+          default: None
+        - name: ca_bundle
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: create_tag
+      source:
+        path: salt/modules/vsphere.py
+        symbol: create_tag
+      summary: Create a tag under a category with given description.
+      parameters:
+        - name: name
+        - name: description
+        - name: category_id
+        - name: server
+          default: None
+        - name: username
+          default: None
+        - name: password
+          default: None
+        - name: service_instance
+          default: None
+        - name: verify_ssl
+          default: None
+        - name: ca_bundle
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: delete_tag
+      source:
+        path: salt/modules/vsphere.py
+        symbol: delete_tag
+      summary: Delete a tag.
+      parameters:
+        - name: tag_id
+        - name: server
+          default: None
+        - name: username
+          default: None
+        - name: password
+          default: None
+        - name: service_instance
+          default: None
+        - name: verify_ssl
+          default: None
+        - name: ca_bundle
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: create_vm
+      source:
+        path: salt/modules/vsphere.py
+        symbol: create_vm
+      summary: Creates a virtual machine container.
+      parameters:
+        - name: vm_name
+        - name: cpu
+        - name: memory
+        - name: image
+        - name: version
+        - name: datacenter
+        - name: datastore
+        - name: placement
+        - name: interfaces
+        - name: disks
+        - name: scsi_devices
+        - name: serial_ports
+          default: None
+        - name: ide_controllers
+          default: None
+        - name: sata_controllers
+          default: None
+        - name: cd_drives
+          default: None
+        - name: advanced_configs
+          default: None
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: update_vm
+      source:
+        path: salt/modules/vsphere.py
+        symbol: update_vm
+      summary: Updates the configuration of the virtual machine if the config differs
+      parameters:
+        - name: vm_name
+        - name: cpu
+          default: None
+        - name: memory
+          default: None
+        - name: image
+          default: None
+        - name: version
+          default: None
+        - name: interfaces
+          default: None
+        - name: disks
+          default: None
+        - name: scsi_devices
+          default: None
+        - name: serial_ports
+          default: None
+        - name: datacenter
+          default: None
+        - name: datastore
+          default: None
+        - name: cd_dvd_drives
+          default: None
+        - name: sata_controllers
+          default: None
+        - name: advanced_configs
+          default: None
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: register_vm
+      source:
+        path: salt/modules/vsphere.py
+        symbol: register_vm
+      summary: Registers a virtual machine to the inventory with the given vmx file.
+      parameters:
+        - name: name
+        - name: datacenter
+        - name: placement
+        - name: vmx_path
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: power_on_vm
+      source:
+        path: salt/modules/vsphere.py
+        symbol: power_on_vm
+      summary: Powers on a virtual machine specified by its name.
+      parameters:
+        - name: name
+        - name: datacenter
+          default: None
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: power_off_vm
+      source:
+        path: salt/modules/vsphere.py
+        symbol: power_off_vm
+      summary: Powers off a virtual machine specified by its name.
+      parameters:
+        - name: name
+        - name: datacenter
+          default: None
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: _remove_vm
+      source:
+        path: salt/modules/vsphere.py
+        symbol: _remove_vm
+      summary: Helper function to remove a virtual machine
+      parameters:
+        - name: name
+        - name: datacenter
+        - name: service_instance
+        - name: placement
+          default: None
+        - name: power_off
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: delete_vm
+      source:
+        path: salt/modules/vsphere.py
+        symbol: delete_vm
+      summary: Deletes a virtual machine defined by name and placement
+      parameters:
+        - name: name
+        - name: datacenter
+        - name: placement
+          default: None
+        - name: power_off
+          default: "False"
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0
+    - function: unregister_vm
+      source:
+        path: salt/modules/vsphere.py
+        symbol: unregister_vm
+      summary: Unregisters a virtual machine defined by name and placement
+      parameters:
+        - name: name
+        - name: datacenter
+        - name: placement
+          default: None
+        - name: power_off
+          default: "False"
+        - name: service_instance
+          default: None
+      execution_dependencies:
+        - esxcluster.get_details
+        - esxdatacenter.get_details
+        - esxi.get_details
+        - esxvm.get_details
+        - vcenter.get_details
+      tests:
+        - path: tests/unit/modules/test_vsphere.py
+          functions: 0

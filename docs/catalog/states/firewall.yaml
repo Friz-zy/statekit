@@ -1,0 +1,18 @@
+kind: state
+module: firewall
+source_module: firewall
+path: salt/states/firewall.py
+functions:
+    - function: check
+      source:
+        path: salt/states/firewall.py
+        symbol: check
+      summary: Checks if there is an open connection from the minion to the defined
+      parameters:
+        - name: name
+        - name: port
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - network.connect

@@ -1,0 +1,43 @@
+kind: exec
+module: pkg
+source_module: ssh_pkg
+virtual: true
+path: salt/modules/ssh_pkg.py
+functions:
+    - function: list_pkgs
+      source:
+        path: salt/modules/ssh_pkg.py
+        symbol: list_pkgs
+      parameters:
+        - name: versions_as_list
+          default: "False"
+        - name: kwargs
+          kind: '**'
+    - function: install
+      source:
+        path: salt/modules/ssh_pkg.py
+        symbol: install
+      parameters:
+        - name: name
+          default: None
+        - name: refresh
+          default: "False"
+        - name: fromrepo
+          default: None
+        - name: pkgs
+          default: None
+        - name: sources
+          default: None
+        - name: kwargs
+          kind: '**'
+    - function: remove
+      source:
+        path: salt/modules/ssh_pkg.py
+        symbol: remove
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'

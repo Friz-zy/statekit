@@ -1,0 +1,121 @@
+kind: exec
+module: nacl
+source_module: nacl
+virtual: true
+path: salt/modules/nacl.py
+functions:
+    - function: keygen
+      source:
+        path: salt/modules/nacl.py
+        symbol: keygen
+      summary: Use PyNaCl to generate a keypair.
+      parameters:
+        - name: sk_file
+          default: None
+        - name: pk_file
+          default: None
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_nacl.py
+          functions: 7
+    - function: enc
+      source:
+        path: salt/modules/nacl.py
+        symbol: enc
+      summary: Alias to `{box_type}_encrypt`
+      parameters:
+        - name: data
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_nacl.py
+          functions: 7
+    - function: enc_file
+      source:
+        path: salt/modules/nacl.py
+        symbol: enc_file
+      summary: This is a helper function to encrypt a file and return its contents.
+      parameters:
+        - name: name
+        - name: out
+          default: None
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_nacl.py
+          functions: 7
+    - function: dec
+      source:
+        path: salt/modules/nacl.py
+        symbol: dec
+      summary: Alias to `{box_type}_decrypt`
+      parameters:
+        - name: data
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_nacl.py
+          functions: 7
+    - function: dec_file
+      source:
+        path: salt/modules/nacl.py
+        symbol: dec_file
+      summary: This is a helper function to decrypt a file and return its contents.
+      parameters:
+        - name: name
+        - name: out
+          default: None
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_nacl.py
+          functions: 7
+    - function: sealedbox_encrypt
+      source:
+        path: salt/modules/nacl.py
+        symbol: sealedbox_encrypt
+      summary: Encrypt data using a public key generated from `nacl.keygen`.
+      parameters:
+        - name: data
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_nacl.py
+          functions: 7
+    - function: sealedbox_decrypt
+      source:
+        path: salt/modules/nacl.py
+        symbol: sealedbox_decrypt
+      summary: Decrypt data using a secret key that was encrypted using a public key with `nacl.sealedbox_encrypt`.
+      parameters:
+        - name: data
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_nacl.py
+          functions: 7
+    - function: secretbox_encrypt
+      source:
+        path: salt/modules/nacl.py
+        symbol: secretbox_encrypt
+      summary: Encrypt data using a secret key generated from `nacl.keygen`.
+      parameters:
+        - name: data
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_nacl.py
+          functions: 7
+    - function: secretbox_decrypt
+      source:
+        path: salt/modules/nacl.py
+        symbol: secretbox_decrypt
+      summary: Decrypt data that was encrypted using `nacl.secretbox_encrypt` using the secret key
+      parameters:
+        - name: data
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_nacl.py
+          functions: 7

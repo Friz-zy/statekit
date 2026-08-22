@@ -1,0 +1,49 @@
+kind: exec
+module: sysfs
+source_module: sysfs
+path: salt/modules/sysfs.py
+platform_markers:
+    - is_linux
+functions:
+    - function: attr
+      source:
+        path: salt/modules/sysfs.py
+        symbol: attr
+      summary: Access/write a SysFS attribute.
+      parameters:
+        - name: key
+        - name: value
+          default: None
+    - function: write
+      source:
+        path: salt/modules/sysfs.py
+        symbol: write
+      summary: Write a SysFS attribute/action
+      parameters:
+        - name: key
+        - name: value
+    - function: read
+      source:
+        path: salt/modules/sysfs.py
+        symbol: read
+      summary: Read from SysFS
+      parameters:
+        - name: key
+        - name: root
+          default: '""'
+    - function: target
+      source:
+        path: salt/modules/sysfs.py
+        symbol: target
+      summary: Return the basename of a SysFS key path
+      parameters:
+        - name: key
+        - name: full
+          default: "True"
+    - function: interfaces
+      source:
+        path: salt/modules/sysfs.py
+        symbol: interfaces
+      summary: Generate a dictionary with all available interfaces relative to root.
+      parameters:
+        - name: root

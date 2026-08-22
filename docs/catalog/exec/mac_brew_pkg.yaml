@@ -1,0 +1,485 @@
+kind: exec
+module: pkg
+source_module: mac_brew_pkg
+virtual: true
+path: salt/modules/mac_brew_pkg.py
+functions:
+    - function: _list_taps
+      source:
+        path: salt/modules/mac_brew_pkg.py
+        symbol: _list_taps
+      summary: List currently installed brew taps
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_brew_pkg.py
+          functions: 50
+    - function: _list_pinned
+      source:
+        path: salt/modules/mac_brew_pkg.py
+        symbol: _list_pinned
+      summary: List currently pinned formulas
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_brew_pkg.py
+          functions: 50
+    - function: _pin
+      source:
+        path: salt/modules/mac_brew_pkg.py
+        symbol: _pin
+      summary: Pin pkg
+      parameters:
+        - name: pkg
+        - name: runas
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_brew_pkg.py
+          functions: 50
+    - function: _unpin
+      source:
+        path: salt/modules/mac_brew_pkg.py
+        symbol: _unpin
+      summary: Pin pkg
+      parameters:
+        - name: pkg
+        - name: runas
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_brew_pkg.py
+          functions: 50
+    - function: _tap
+      source:
+        path: salt/modules/mac_brew_pkg.py
+        symbol: _tap
+      summary: Add unofficial GitHub repos to the list of formulas that brew tracks,
+      parameters:
+        - name: tap
+        - name: runas
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_brew_pkg.py
+          functions: 50
+    - function: _homebrew_os_bin
+      source:
+        path: salt/modules/mac_brew_pkg.py
+        symbol: _homebrew_os_bin
+      summary: 'Fetch PATH binary brew full path eg: /usr/local/bin/brew (symbolic link)'
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_brew_pkg.py
+          functions: 50
+    - function: _homebrew_bin
+      source:
+        path: salt/modules/mac_brew_pkg.py
+        symbol: _homebrew_bin
+      summary: Returns the full path to the homebrew binary in the homebrew installation folder
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_brew_pkg.py
+          functions: 50
+    - function: _call_brew
+      source:
+        path: salt/modules/mac_brew_pkg.py
+        symbol: _call_brew
+      summary: Calls the brew command with the user account of brew
+      parameters:
+        - name: cmd
+          kind: '*'
+        - name: failhard
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+        - file.get_user
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_brew_pkg.py
+          functions: 50
+    - function: _list_pkgs_from_context
+      source:
+        path: salt/modules/mac_brew_pkg.py
+        symbol: _list_pkgs_from_context
+      summary: Use pkg list from __context__
+      parameters:
+        - name: versions_as_list
+      execution_dependencies:
+        - cmd.run_all
+        - file.get_user
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_brew_pkg.py
+          functions: 50
+    - function: homebrew_prefix
+      source:
+        path: salt/modules/mac_brew_pkg.py
+        symbol: homebrew_prefix
+      summary: Returns the full path to the homebrew prefix.
+      execution_dependencies:
+        - cmd.run_all
+        - file.get_user
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_brew_pkg.py
+          functions: 50
+    - function: list_pkgs
+      source:
+        path: salt/modules/mac_brew_pkg.py
+        symbol: list_pkgs
+      summary: 'List the packages currently installed in a dict::'
+      parameters:
+        - name: versions_as_list
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - file.get_user
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_brew_pkg.py
+          functions: 50
+    - function: version
+      source:
+        path: salt/modules/mac_brew_pkg.py
+        symbol: version
+      summary: Returns a string representing the package version or an empty string if not
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - file.get_user
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_brew_pkg.py
+          functions: 50
+    - function: latest_version
+      source:
+        path: salt/modules/mac_brew_pkg.py
+        symbol: latest_version
+      summary: Return the latest version of the named package available for upgrade or
+      parameters:
+        - name: names
+          kind: '*'
+        - name: options
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - file.get_user
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_brew_pkg.py
+          functions: 50
+    - function: remove
+      source:
+        path: salt/modules/mac_brew_pkg.py
+        symbol: remove
+      summary: Removes packages with ``brew uninstall``.
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: options
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - file.get_user
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_brew_pkg.py
+          functions: 50
+    - function: refresh_db
+      source:
+        path: salt/modules/mac_brew_pkg.py
+        symbol: refresh_db
+      summary: Update the homebrew package repository.
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - file.get_user
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_brew_pkg.py
+          functions: 50
+    - function: _info
+      source:
+        path: salt/modules/mac_brew_pkg.py
+        symbol: _info
+      summary: Get all info brew can provide about a list of packages.
+      parameters:
+        - name: pkgs
+          kind: '*'
+        - name: options
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - file.get_user
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_brew_pkg.py
+          functions: 50
+    - function: install
+      source:
+        path: salt/modules/mac_brew_pkg.py
+        symbol: install
+      summary: Install the passed package(s) with ``brew install``
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: taps
+          default: None
+        - name: options
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - file.get_user
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_brew_pkg.py
+          functions: 50
+    - function: list_upgrades
+      source:
+        path: salt/modules/mac_brew_pkg.py
+        symbol: list_upgrades
+      summary: Check whether or not an upgrade is available for all packages
+      parameters:
+        - name: refresh
+          default: "True"
+        - name: include_casks
+          default: "False"
+        - name: options
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - file.get_user
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_brew_pkg.py
+          functions: 50
+    - function: upgrade_available
+      source:
+        path: salt/modules/mac_brew_pkg.py
+        symbol: upgrade_available
+      summary: Check whether or not an upgrade is available for a given package
+      parameters:
+        - name: pkg
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - file.get_user
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_brew_pkg.py
+          functions: 50
+    - function: upgrade
+      source:
+        path: salt/modules/mac_brew_pkg.py
+        symbol: upgrade
+      summary: Upgrade outdated, unpinned brews.
+      parameters:
+        - name: refresh
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - file.get_user
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_brew_pkg.py
+          functions: 50
+    - function: info_installed
+      source:
+        path: salt/modules/mac_brew_pkg.py
+        symbol: info_installed
+      summary: Return the information of the named package(s) installed on the system.
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - file.get_user
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_brew_pkg.py
+          functions: 50
+    - function: hold
+      source:
+        path: salt/modules/mac_brew_pkg.py
+        symbol: hold
+      summary: Set package in 'hold' state, meaning it will not be upgraded.
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: sources
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - file.get_user
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_brew_pkg.py
+          functions: 50
+    - function: unhold
+      source:
+        path: salt/modules/mac_brew_pkg.py
+        symbol: unhold
+      summary: Set package current in 'hold' state to install state,
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: sources
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - file.get_user
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_brew_pkg.py
+          functions: 50
+    - function: list_trusted
+      source:
+        path: salt/modules/mac_brew_pkg.py
+        symbol: list_trusted
+      summary: List trusted taps, formulae, casks and commands.
+      parameters:
+        - name: type
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - file.get_user
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_brew_pkg.py
+          functions: 50
+    - function: trust
+      source:
+        path: salt/modules/mac_brew_pkg.py
+        symbol: trust
+      summary: Trust a tap, formula, cask or command so Homebrew may load it when
+      parameters:
+        - name: name
+        - name: type
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - file.get_user
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_brew_pkg.py
+          functions: 50
+    - function: untrust
+      source:
+        path: salt/modules/mac_brew_pkg.py
+        symbol: untrust
+      summary: Stop trusting a tap, formula, cask or command.
+      parameters:
+        - name: name
+        - name: type
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - file.get_user
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_brew_pkg.py
+          functions: 50
+    - function: is_trusted
+      source:
+        path: salt/modules/mac_brew_pkg.py
+        symbol: is_trusted
+      summary: Check whether a tap, formula, cask or command is trusted.
+      parameters:
+        - name: name
+        - name: type
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - file.get_user
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_brew_pkg.py
+          functions: 50

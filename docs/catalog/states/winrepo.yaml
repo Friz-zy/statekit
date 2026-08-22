@@ -1,0 +1,19 @@
+kind: state
+module: winrepo
+source_module: winrepo
+path: salt/states/winrepo.py
+functions:
+    - function: genrepo
+      source:
+        path: salt/states/winrepo.py
+        symbol: genrepo
+      summary: Refresh the winrepo.p file of the repository (salt-run winrepo.genrepo)
+      parameters:
+        - name: name
+        - name: force
+          default: "False"
+        - name: allow_empty
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/states/test_winrepo.py
+          functions: 3

@@ -1,0 +1,127 @@
+kind: exec
+module: win_dacl
+source_module: win_dacl
+virtual: true
+path: salt/modules/win_dacl.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _get_user_sid
+      source:
+        path: salt/modules/win_dacl.py
+        symbol: _get_user_sid
+      summary: return a state error dictionary, with 'sid' as a field if it could be returned
+      parameters:
+        - name: user
+    - function: _get_dacl
+      source:
+        path: salt/modules/win_dacl.py
+        symbol: _get_dacl
+      summary: Gets the DACL of a path
+      parameters:
+        - name: path
+        - name: objectType
+    - function: get
+      source:
+        path: salt/modules/win_dacl.py
+        symbol: get
+      summary: Get the ACL of an object. Will filter by user if one is provided.
+      parameters:
+        - name: path
+        - name: objectType
+        - name: user
+          default: None
+    - function: add_ace
+      source:
+        path: salt/modules/win_dacl.py
+        symbol: add_ace
+      parameters:
+        - name: path
+        - name: objectType
+        - name: user
+        - name: permission
+        - name: acetype
+        - name: propagation
+    - function: rm_ace
+      source:
+        path: salt/modules/win_dacl.py
+        symbol: rm_ace
+      parameters:
+        - name: path
+        - name: objectType
+        - name: user
+        - name: permission
+          default: None
+        - name: acetype
+          default: None
+        - name: propagation
+          default: None
+    - function: _ace_to_text
+      source:
+        path: salt/modules/win_dacl.py
+        symbol: _ace_to_text
+      summary: helper function to convert an ace to a textual representation
+      parameters:
+        - name: ace
+        - name: objectType
+    - function: _set_dacl_inheritance
+      source:
+        path: salt/modules/win_dacl.py
+        symbol: _set_dacl_inheritance
+      summary: helper function to set the inheritance
+      parameters:
+        - name: path
+        - name: objectType
+        - name: inheritance
+          default: "True"
+        - name: copy
+          default: "True"
+        - name: clear
+          default: "False"
+    - function: enable_inheritance
+      source:
+        path: salt/modules/win_dacl.py
+        symbol: enable_inheritance
+      summary: Enable/disable inheritance on an object
+      parameters:
+        - name: path
+        - name: objectType
+        - name: clear
+          default: "False"
+    - function: disable_inheritance
+      source:
+        path: salt/modules/win_dacl.py
+        symbol: disable_inheritance
+      summary: Disable inheritance on an object
+      parameters:
+        - name: path
+        - name: objectType
+        - name: copy
+          default: "True"
+    - function: check_inheritance
+      source:
+        path: salt/modules/win_dacl.py
+        symbol: check_inheritance
+      summary: Check a specified path to verify if inheritance is enabled
+      parameters:
+        - name: path
+        - name: objectType
+        - name: user
+          default: None
+    - function: check_ace
+      source:
+        path: salt/modules/win_dacl.py
+        symbol: check_ace
+      summary: Checks a path to verify the ACE (access control entry) specified exists
+      parameters:
+        - name: path
+        - name: objectType
+        - name: user
+        - name: permission
+          default: None
+        - name: acetype
+          default: None
+        - name: propagation
+          default: None
+        - name: exactPermissionMatch
+          default: "False"

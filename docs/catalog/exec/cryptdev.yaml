@@ -1,0 +1,96 @@
+kind: exec
+module: cryptdev
+source_module: cryptdev
+virtual: true
+path: salt/modules/cryptdev.py
+platform_markers:
+    - is_windows
+functions:
+    - function: active
+      source:
+        path: salt/modules/cryptdev.py
+        symbol: active
+      summary: List existing device-mapper device details.
+      execution_dependencies:
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_cryptdev.py
+          functions: 1
+    - function: crypttab
+      source:
+        path: salt/modules/cryptdev.py
+        symbol: crypttab
+      summary: List the contents of the crypttab
+      parameters:
+        - name: config
+          default: '"/etc/crypttab"'
+      execution_dependencies:
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_cryptdev.py
+          functions: 1
+    - function: rm_crypttab
+      source:
+        path: salt/modules/cryptdev.py
+        symbol: rm_crypttab
+      summary: Remove the named mapping from the crypttab. If the described entry does not
+      parameters:
+        - name: name
+        - name: config
+          default: '"/etc/crypttab"'
+      execution_dependencies:
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_cryptdev.py
+          functions: 1
+    - function: set_crypttab
+      source:
+        path: salt/modules/cryptdev.py
+        symbol: set_crypttab
+      summary: Verify that this device is represented in the crypttab, change the device to
+      parameters:
+        - name: name
+        - name: device
+        - name: password
+          default: '"none"'
+        - name: options
+          default: '""'
+        - name: config
+          default: '"/etc/crypttab"'
+        - name: test
+          default: "False"
+        - name: match_on
+          default: '"name"'
+      execution_dependencies:
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_cryptdev.py
+          functions: 1
+    - function: open
+      source:
+        path: salt/modules/cryptdev.py
+        symbol: open
+      summary: Open a crypt device using ``cryptsetup``. The ``keyfile`` must not be
+      parameters:
+        - name: name
+        - name: device
+        - name: keyfile
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_cryptdev.py
+          functions: 1
+    - function: close
+      source:
+        path: salt/modules/cryptdev.py
+        symbol: close
+      summary: Close a crypt device using ``cryptsetup``.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_cryptdev.py
+          functions: 1

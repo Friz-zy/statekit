@@ -1,0 +1,145 @@
+kind: exec
+module: macdefaults
+source_module: macdefaults
+virtual: true
+path: salt/modules/macdefaults.py
+platform_markers:
+    - is_darwin
+functions:
+    - function: write
+      source:
+        path: salt/modules/macdefaults.py
+        symbol: write
+      summary: Write a default to the system
+      parameters:
+        - name: domain
+        - name: key
+        - name: value
+        - name: vtype
+          default: None
+        - name: user
+          default: None
+        - name: key_separator
+          default: None
+        - name: dict_merge
+          default: "False"
+        - name: array_add
+          default: "False"
+        - name: type
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_macdefaults.py
+          functions: 34
+    - function: read
+      source:
+        path: salt/modules/macdefaults.py
+        symbol: read
+      summary: Read a default from the system
+      parameters:
+        - name: domain
+        - name: key
+        - name: user
+          default: None
+        - name: key_separator
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_macdefaults.py
+          functions: 34
+    - function: delete
+      source:
+        path: salt/modules/macdefaults.py
+        symbol: delete
+      summary: Delete a default from the system
+      parameters:
+        - name: domain
+        - name: key
+        - name: user
+          default: None
+        - name: key_separator
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_macdefaults.py
+          functions: 34
+    - function: cast_value_to_vtype
+      source:
+        path: salt/modules/macdefaults.py
+        symbol: cast_value_to_vtype
+      summary: Convert the value to the specified vtype.
+      parameters:
+        - name: value
+        - name: vtype
+      tests:
+        - path: tests/pytests/unit/modules/test_macdefaults.py
+          functions: 34
+    - function: _load_plist
+      source:
+        path: salt/modules/macdefaults.py
+        symbol: _load_plist
+      summary: Load a plist from the system and return it as a dictionary
+      parameters:
+        - name: domain
+        - name: user
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_macdefaults.py
+          functions: 34
+    - function: _save_plist
+      source:
+        path: salt/modules/macdefaults.py
+        symbol: _save_plist
+      summary: Save a plist dictionary to the system
+      parameters:
+        - name: domain
+        - name: plist
+        - name: user
+          default: None
+      execution_dependencies:
+        - file.chown
+        - file.join
+      tests:
+        - path: tests/pytests/unit/modules/test_macdefaults.py
+          functions: 34
+    - function: _traverse_keys
+      source:
+        path: salt/modules/macdefaults.py
+        symbol: _traverse_keys
+      summary: Returns the value of the given keys in the plist
+      parameters:
+        - name: plist
+        - name: keys
+      execution_dependencies:
+        - file.chown
+        - file.join
+      tests:
+        - path: tests/pytests/unit/modules/test_macdefaults.py
+          functions: 34
+    - function: _run_defaults_cmd
+      source:
+        path: salt/modules/macdefaults.py
+        symbol: _run_defaults_cmd
+      summary: Run the 'defaults' command with the given action
+      parameters:
+        - name: action
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - file.chown
+        - file.join
+      tests:
+        - path: tests/pytests/unit/modules/test_macdefaults.py
+          functions: 34
+    - function: _remove_timestamp
+      source:
+        path: salt/modules/macdefaults.py
+        symbol: _remove_timestamp
+      summary: Remove the timestamp from the output of the defaults command if found
+      parameters:
+        - name: text
+      execution_dependencies:
+        - cmd.run_all
+        - file.chown
+        - file.join
+      tests:
+        - path: tests/pytests/unit/modules/test_macdefaults.py
+          functions: 34

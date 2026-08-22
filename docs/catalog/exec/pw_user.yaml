@@ -1,0 +1,338 @@
+kind: exec
+module: user
+source_module: pw_user
+virtual: true
+path: salt/modules/pw_user.py
+functions:
+    - function: _get_gecos
+      source:
+        path: salt/modules/pw_user.py
+        symbol: _get_gecos
+      summary: Retrieve GECOS field info and return it in dictionary form
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_pw_user.py
+          functions: 18
+    - function: _build_gecos
+      source:
+        path: salt/modules/pw_user.py
+        symbol: _build_gecos
+      summary: Accepts a dictionary entry containing GECOS field names and their values,
+      parameters:
+        - name: gecos_dict
+      tests:
+        - path: tests/pytests/unit/modules/test_pw_user.py
+          functions: 18
+    - function: _update_gecos
+      source:
+        path: salt/modules/pw_user.py
+        symbol: _update_gecos
+      summary: Common code to change a user's GECOS information
+      parameters:
+        - name: name
+        - name: key
+        - name: value
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_pw_user.py
+          functions: 18
+    - function: add
+      source:
+        path: salt/modules/pw_user.py
+        symbol: add
+      summary: Add a user to the minion
+      parameters:
+        - name: name
+        - name: uid
+          default: None
+        - name: gid
+          default: None
+        - name: groups
+          default: None
+        - name: home
+          default: None
+        - name: shell
+          default: None
+        - name: unique
+          default: "True"
+        - name: fullname
+          default: '""'
+        - name: roomnumber
+          default: '""'
+        - name: workphone
+          default: '""'
+        - name: homephone
+          default: '""'
+        - name: createhome
+          default: "True"
+        - name: loginclass
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_pw_user.py
+          functions: 18
+    - function: delete
+      source:
+        path: salt/modules/pw_user.py
+        symbol: delete
+      summary: Remove a user from the minion
+      parameters:
+        - name: name
+        - name: remove
+          default: "False"
+        - name: force
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_pw_user.py
+          functions: 18
+    - function: getent
+      source:
+        path: salt/modules/pw_user.py
+        symbol: getent
+      summary: Return the list of all info for all users
+      parameters:
+        - name: refresh
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_pw_user.py
+          functions: 18
+    - function: chuid
+      source:
+        path: salt/modules/pw_user.py
+        symbol: chuid
+      summary: Change the uid for a named user
+      parameters:
+        - name: name
+        - name: uid
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_pw_user.py
+          functions: 18
+    - function: chgid
+      source:
+        path: salt/modules/pw_user.py
+        symbol: chgid
+      summary: Change the default group of the user
+      parameters:
+        - name: name
+        - name: gid
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_pw_user.py
+          functions: 18
+    - function: chshell
+      source:
+        path: salt/modules/pw_user.py
+        symbol: chshell
+      summary: Change the default shell of the user
+      parameters:
+        - name: name
+        - name: shell
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_pw_user.py
+          functions: 18
+    - function: chhome
+      source:
+        path: salt/modules/pw_user.py
+        symbol: chhome
+      summary: Set a new home directory for an existing user
+      parameters:
+        - name: name
+        - name: home
+        - name: persist
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_pw_user.py
+          functions: 18
+    - function: chgroups
+      source:
+        path: salt/modules/pw_user.py
+        symbol: chgroups
+      summary: Change the groups to which a user belongs
+      parameters:
+        - name: name
+        - name: groups
+        - name: append
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_pw_user.py
+          functions: 18
+    - function: chfullname
+      source:
+        path: salt/modules/pw_user.py
+        symbol: chfullname
+      summary: Change the user's Full Name
+      parameters:
+        - name: name
+        - name: fullname
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_pw_user.py
+          functions: 18
+    - function: chroomnumber
+      source:
+        path: salt/modules/pw_user.py
+        symbol: chroomnumber
+      summary: Change the user's Room Number
+      parameters:
+        - name: name
+        - name: roomnumber
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_pw_user.py
+          functions: 18
+    - function: chworkphone
+      source:
+        path: salt/modules/pw_user.py
+        symbol: chworkphone
+      summary: Change the user's Work Phone
+      parameters:
+        - name: name
+        - name: workphone
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_pw_user.py
+          functions: 18
+    - function: chhomephone
+      source:
+        path: salt/modules/pw_user.py
+        symbol: chhomephone
+      summary: Change the user's Home Phone
+      parameters:
+        - name: name
+        - name: homephone
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_pw_user.py
+          functions: 18
+    - function: chloginclass
+      source:
+        path: salt/modules/pw_user.py
+        symbol: chloginclass
+      summary: Change the default login class of the user
+      parameters:
+        - name: name
+        - name: loginclass
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_pw_user.py
+          functions: 18
+    - function: info
+      source:
+        path: salt/modules/pw_user.py
+        symbol: info
+      summary: Return user information
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_pw_user.py
+          functions: 18
+    - function: get_loginclass
+      source:
+        path: salt/modules/pw_user.py
+        symbol: get_loginclass
+      summary: Get the login class of the user
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_pw_user.py
+          functions: 18
+    - function: list_groups
+      source:
+        path: salt/modules/pw_user.py
+        symbol: list_groups
+      summary: Return a list of groups the named user belongs to
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_pw_user.py
+          functions: 18
+    - function: list_users
+      source:
+        path: salt/modules/pw_user.py
+        symbol: list_users
+      summary: Return a list of all users
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_pw_user.py
+          functions: 18
+    - function: primary_group
+      source:
+        path: salt/modules/pw_user.py
+        symbol: primary_group
+      summary: Return the primary group of the named user
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_pw_user.py
+          functions: 18
+    - function: rename
+      source:
+        path: salt/modules/pw_user.py
+        symbol: rename
+      summary: Change the username for a named user
+      parameters:
+        - name: name
+        - name: new_name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_pw_user.py
+          functions: 18

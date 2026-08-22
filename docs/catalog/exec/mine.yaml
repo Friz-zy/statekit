@@ -1,0 +1,213 @@
+kind: exec
+module: mine
+source_module: mine
+path: salt/modules/mine.py
+functions:
+    - function: _auth
+      source:
+        path: salt/modules/mine.py
+        symbol: _auth
+      summary: Return the auth object
+      tests:
+        - path: tests/pytests/unit/modules/test_mine.py
+          functions: 18
+    - function: _mine_function_available
+      source:
+        path: salt/modules/mine.py
+        symbol: _mine_function_available
+      parameters:
+        - name: func
+      tests:
+        - path: tests/pytests/unit/modules/test_mine.py
+          functions: 18
+    - function: _mine_send
+      source:
+        path: salt/modules/mine.py
+        symbol: _mine_send
+      parameters:
+        - name: load
+        - name: opts
+      tests:
+        - path: tests/pytests/unit/modules/test_mine.py
+          functions: 18
+    - function: _mine_get
+      source:
+        path: salt/modules/mine.py
+        symbol: _mine_get
+      parameters:
+        - name: load
+        - name: opts
+      tests:
+        - path: tests/pytests/unit/modules/test_mine.py
+          functions: 18
+    - function: _mine_store
+      source:
+        path: salt/modules/mine.py
+        symbol: _mine_store
+      summary: Helper function to store the provided mine data.
+      parameters:
+        - name: mine_data
+        - name: clear
+          default: "False"
+      execution_dependencies:
+        - data.get
+        - data.update
+      tests:
+        - path: tests/pytests/unit/modules/test_mine.py
+          functions: 18
+    - function: update
+      source:
+        path: salt/modules/mine.py
+        symbol: update
+      summary: Call the configured functions and send the data back up to the master.
+      parameters:
+        - name: clear
+          default: "False"
+        - name: mine_functions
+          default: None
+      execution_dependencies:
+        - config.merge
+        - data.get
+        - data.update
+      tests:
+        - path: tests/pytests/unit/modules/test_mine.py
+          functions: 18
+    - function: send
+      source:
+        path: salt/modules/mine.py
+        symbol: send
+      summary: Send a specific function and its result to the salt mine.
+      parameters:
+        - name: name
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.merge
+        - data.get
+        - data.update
+      tests:
+        - path: tests/pytests/unit/modules/test_mine.py
+          functions: 18
+    - function: get
+      source:
+        path: salt/modules/mine.py
+        symbol: get
+      summary: Get data from the mine.
+      parameters:
+        - name: tgt
+        - name: fun
+        - name: tgt_type
+          default: '"glob"'
+        - name: exclude_minion
+          default: "False"
+      execution_dependencies:
+        - config.merge
+        - data.get
+        - data.update
+        - match.compound
+        - match.glob
+        - match.grain
+        - match.grain_pcre
+        - match.ipcidr
+        - match.list
+        - match.pcre
+        - match.pillar
+        - match.pillar_pcre
+      tests:
+        - path: tests/pytests/unit/modules/test_mine.py
+          functions: 18
+    - function: delete
+      source:
+        path: salt/modules/mine.py
+        symbol: delete
+      summary: Remove specific function contents of minion.
+      parameters:
+        - name: fun
+      execution_dependencies:
+        - config.merge
+        - data.get
+        - data.update
+        - match.compound
+        - match.glob
+        - match.grain
+        - match.grain_pcre
+        - match.ipcidr
+        - match.list
+        - match.pcre
+        - match.pillar
+        - match.pillar_pcre
+      tests:
+        - path: tests/pytests/unit/modules/test_mine.py
+          functions: 18
+    - function: flush
+      source:
+        path: salt/modules/mine.py
+        symbol: flush
+      summary: Remove all mine contents of minion.
+      execution_dependencies:
+        - config.merge
+        - data.get
+        - data.update
+        - match.compound
+        - match.glob
+        - match.grain
+        - match.grain_pcre
+        - match.ipcidr
+        - match.list
+        - match.pcre
+        - match.pillar
+        - match.pillar_pcre
+      tests:
+        - path: tests/pytests/unit/modules/test_mine.py
+          functions: 18
+    - function: get_docker
+      source:
+        path: salt/modules/mine.py
+        symbol: get_docker
+      summary: '.. versionchanged:: 2017.7.8,2018.3.3'
+      parameters:
+        - name: interfaces
+          default: None
+        - name: cidrs
+          default: None
+        - name: with_container_id
+          default: "False"
+      execution_dependencies:
+        - config.merge
+        - data.get
+        - data.update
+        - match.compound
+        - match.glob
+        - match.grain
+        - match.grain_pcre
+        - match.ipcidr
+        - match.list
+        - match.pcre
+        - match.pillar
+        - match.pillar_pcre
+      tests:
+        - path: tests/pytests/unit/modules/test_mine.py
+          functions: 18
+    - function: valid
+      source:
+        path: salt/modules/mine.py
+        symbol: valid
+      summary: List valid entries in mine configuration.
+      execution_dependencies:
+        - config.merge
+        - data.get
+        - data.update
+        - match.compound
+        - match.glob
+        - match.grain
+        - match.grain_pcre
+        - match.ipcidr
+        - match.list
+        - match.pcre
+        - match.pillar
+        - match.pillar_pcre
+      tests:
+        - path: tests/pytests/unit/modules/test_mine.py
+          functions: 18

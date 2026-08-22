@@ -1,0 +1,91 @@
+kind: exec
+module: shortcut
+source_module: win_shortcut
+virtual: true
+path: salt/modules/win_shortcut.py
+platform_markers:
+    - is_windows
+functions:
+    - function: get
+      source:
+        path: salt/modules/win_shortcut.py
+        symbol: get
+      parameters:
+        - name: path
+    - function: _set_info
+      source:
+        path: salt/modules/win_shortcut.py
+        symbol: _set_info
+      parameters:
+        - name: path
+        - name: target
+          default: '""'
+        - name: arguments
+          default: '""'
+        - name: description
+          default: '""'
+        - name: hot_key
+          default: '""'
+        - name: icon_index
+          default: "0"
+        - name: icon_location
+          default: '""'
+        - name: window_style
+          default: '"Normal"'
+        - name: working_dir
+          default: '""'
+    - function: modify
+      source:
+        path: salt/modules/win_shortcut.py
+        symbol: modify
+      parameters:
+        - name: path
+        - name: target
+          default: '""'
+        - name: arguments
+          default: '""'
+        - name: description
+          default: '""'
+        - name: hot_key
+          default: '""'
+        - name: icon_index
+          default: "0"
+        - name: icon_location
+          default: '""'
+        - name: window_style
+          default: '"Normal"'
+        - name: working_dir
+          default: '""'
+    - function: create
+      source:
+        path: salt/modules/win_shortcut.py
+        symbol: create
+      parameters:
+        - name: path
+        - name: target
+        - name: arguments
+          default: '""'
+        - name: description
+          default: '""'
+        - name: hot_key
+          default: '""'
+        - name: icon_index
+          default: "0"
+        - name: icon_location
+          default: '""'
+        - name: window_style
+          default: '"Normal"'
+        - name: working_dir
+          default: '""'
+        - name: backup
+          default: "False"
+        - name: force
+          default: "False"
+        - name: make_dirs
+          default: "False"
+        - name: user
+          default: None
+      execution_dependencies:
+        - file.makedirs
+        - user.current
+        - user.info

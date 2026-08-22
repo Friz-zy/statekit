@@ -1,0 +1,44 @@
+kind: state
+module: ansible
+source_module: ansiblegate
+virtual: true
+path: salt/states/ansiblegate.py
+functions:
+    - function: _file_client
+      source:
+        path: salt/states/ansiblegate.py
+        symbol: _file_client
+      summary: Return a file client
+      tests:
+        - path: tests/pytests/unit/states/test_ansiblegate.py
+          functions: 3
+    - function: _changes
+      source:
+        path: salt/states/ansiblegate.py
+        symbol: _changes
+      summary: Find changes in ansible return data
+      parameters:
+        - name: plays
+      tests:
+        - path: tests/pytests/unit/states/test_ansiblegate.py
+          functions: 3
+    - function: playbooks
+      source:
+        path: salt/states/ansiblegate.py
+        symbol: playbooks
+      summary: Run Ansible Playbooks
+      parameters:
+        - name: name
+        - name: rundir
+          default: None
+        - name: git_repo
+          default: None
+        - name: git_kwargs
+          default: None
+        - name: ansible_kwargs
+          default: None
+      execution_dependencies:
+        - ansible.playbooks
+      tests:
+        - path: tests/pytests/unit/states/test_ansiblegate.py
+          functions: 3

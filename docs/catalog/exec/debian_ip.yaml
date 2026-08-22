@@ -1,0 +1,673 @@
+kind: exec
+module: ip
+source_module: debian_ip
+virtual: true
+path: salt/modules/debian_ip.py
+functions:
+    - function: _error_msg_iface
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _error_msg_iface
+      summary: Build an appropriate error message from a given option and
+      parameters:
+        - name: iface
+        - name: option
+        - name: expected
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _error_msg_routes
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _error_msg_routes
+      summary: Build an appropriate error message from a given option and
+      parameters:
+        - name: iface
+        - name: option
+        - name: expected
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _log_default_iface
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _log_default_iface
+      parameters:
+        - name: iface
+        - name: opt
+        - name: value
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _error_msg_network
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _error_msg_network
+      summary: Build an appropriate error message from a given option and
+      parameters:
+        - name: option
+        - name: expected
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _log_default_network
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _log_default_network
+      parameters:
+        - name: opt
+        - name: value
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _raise_error_iface
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _raise_error_iface
+      summary: Log and raise an error with a logical formatted message.
+      parameters:
+        - name: iface
+        - name: option
+        - name: expected
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _raise_error_network
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _raise_error_network
+      summary: Log and raise an error with a logical formatted message.
+      parameters:
+        - name: option
+        - name: expected
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _raise_error_routes
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _raise_error_routes
+      summary: Log and raise an error with a logical formatted message.
+      parameters:
+        - name: iface
+        - name: option
+        - name: expected
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _read_file
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _read_file
+      summary: Reads and returns the contents of a text file
+      parameters:
+        - name: path
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _parse_resolve
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _parse_resolve
+      summary: Parse /etc/resolv.conf
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _parse_domainname
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _parse_domainname
+      summary: Parse /etc/resolv.conf and return domainname
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _parse_searchdomain
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _parse_searchdomain
+      summary: Parse /etc/resolv.conf and return searchdomain
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _parse_hostname
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _parse_hostname
+      summary: Parse /etc/hostname and return hostname
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _parse_current_network_settings
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _parse_current_network_settings
+      summary: Parse /etc/default/networking and return current configuration
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _validate_interface_option
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _validate_interface_option
+      summary: lookup the validation function for a [addrfam][attr] and
+      parameters:
+        - name: attr
+        - name: value
+        - name: addrfam
+          default: '"inet"'
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _attrmaps_contain_attr
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _attrmaps_contain_attr
+      parameters:
+        - name: attr
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _parse_interfaces
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _parse_interfaces
+      summary: Parse /etc/network/interfaces and return current configured interfaces
+      parameters:
+        - name: interface_files
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _filter_malformed_interfaces
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _filter_malformed_interfaces
+      parameters:
+        - name: '*'
+          kind: '*'
+        - name: adapters
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _parse_ethtool_opts
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _parse_ethtool_opts
+      summary: Filters given options and outputs valid settings for ETHTOOLS_OPTS
+      parameters:
+        - name: opts
+        - name: iface
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _parse_ethtool_pppoe_opts
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _parse_ethtool_pppoe_opts
+      summary: Filters given options and outputs valid settings for ETHTOOLS_PPPOE_OPTS
+      parameters:
+        - name: opts
+        - name: iface
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _parse_settings_bond
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _parse_settings_bond
+      summary: Filters given options and outputs valid settings for requested
+      parameters:
+        - name: opts
+        - name: iface
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _parse_settings_bond_0
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _parse_settings_bond_0
+      summary: Filters given options and outputs valid settings for bond0.
+      parameters:
+        - name: opts
+        - name: iface
+        - name: bond_def
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _parse_settings_bond_1
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _parse_settings_bond_1
+      summary: Filters given options and outputs valid settings for bond1.
+      parameters:
+        - name: opts
+        - name: iface
+        - name: bond_def
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _parse_settings_bond_2
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _parse_settings_bond_2
+      summary: Filters given options and outputs valid settings for bond2.
+      parameters:
+        - name: opts
+        - name: iface
+        - name: bond_def
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _parse_settings_bond_3
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _parse_settings_bond_3
+      summary: Filters given options and outputs valid settings for bond3.
+      parameters:
+        - name: opts
+        - name: iface
+        - name: bond_def
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _parse_settings_bond_4
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _parse_settings_bond_4
+      summary: Filters given options and outputs valid settings for bond4.
+      parameters:
+        - name: opts
+        - name: iface
+        - name: bond_def
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _parse_settings_bond_5
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _parse_settings_bond_5
+      summary: Filters given options and outputs valid settings for bond5.
+      parameters:
+        - name: opts
+        - name: iface
+        - name: bond_def
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _parse_settings_bond_6
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _parse_settings_bond_6
+      summary: Filters given options and outputs valid settings for bond6.
+      parameters:
+        - name: opts
+        - name: iface
+        - name: bond_def
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _parse_bridge_opts
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _parse_bridge_opts
+      summary: Filters given options and outputs valid settings for BRIDGING_OPTS
+      parameters:
+        - name: opts
+        - name: iface
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _parse_settings_eth
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _parse_settings_eth
+      summary: Filters given options and outputs valid settings for a
+      parameters:
+        - name: opts
+        - name: iface_type
+        - name: enabled
+        - name: iface
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _parse_settings_source
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _parse_settings_source
+      summary: Filters given options and outputs valid settings for a
+      parameters:
+        - name: opts
+        - name: iface_type
+        - name: enabled
+        - name: iface
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _parse_network_settings
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _parse_network_settings
+      summary: Filters given options and outputs valid settings for
+      parameters:
+        - name: opts
+        - name: current
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _parse_routes
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _parse_routes
+      summary: Filters given options and outputs valid settings for
+      parameters:
+        - name: iface
+        - name: opts
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _write_file
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _write_file
+      summary: Writes a file to disk
+      parameters:
+        - name: iface
+        - name: data
+        - name: folder
+        - name: pattern
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _write_file_routes
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _write_file_routes
+      summary: Writes a file to disk
+      parameters:
+        - name: iface
+        - name: data
+        - name: folder
+        - name: pattern
+      execution_dependencies:
+        - file.set_mode
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _write_file_network
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _write_file_network
+      summary: Writes a file to disk
+      parameters:
+        - name: data
+        - name: filename
+        - name: create
+          default: "False"
+      execution_dependencies:
+        - file.set_mode
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _read_temp
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _read_temp
+      summary: Return what would be written to disk
+      parameters:
+        - name: data
+      execution_dependencies:
+        - file.set_mode
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _read_temp_ifaces
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _read_temp_ifaces
+      summary: Return what would be written to disk for interfaces
+      parameters:
+        - name: iface
+        - name: data
+      execution_dependencies:
+        - file.set_mode
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _write_file_ifaces
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _write_file_ifaces
+      summary: Writes a file to disk
+      parameters:
+        - name: iface
+        - name: data
+        - name: settings
+          kind: '**'
+      execution_dependencies:
+        - file.set_mode
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: _write_file_ppp_ifaces
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: _write_file_ppp_ifaces
+      summary: Writes a file to disk
+      parameters:
+        - name: iface
+        - name: data
+      execution_dependencies:
+        - file.set_mode
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: build_bond
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: build_bond
+      summary: Create a bond script in /etc/modprobe.d with the passed settings
+      parameters:
+        - name: iface
+        - name: settings
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - file.append
+        - file.set_mode
+        - kmod.load
+        - pkg.install
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: build_interface
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: build_interface
+      summary: Build an interface script for a network interface.
+      parameters:
+        - name: iface
+        - name: iface_type
+        - name: enabled
+        - name: settings
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - file.append
+        - file.set_mode
+        - kmod.load
+        - pkg.install
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: build_routes
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: build_routes
+      summary: Add route scripts for a network interface using up commands.
+      parameters:
+        - name: iface
+        - name: settings
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - file.append
+        - file.set_mode
+        - kmod.load
+        - pkg.install
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: down
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: down
+      summary: Shutdown a network interface
+      parameters:
+        - name: iface
+        - name: iface_type
+      execution_dependencies:
+        - cmd.run
+        - file.append
+        - file.set_mode
+        - kmod.load
+        - pkg.install
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: get_bond
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: get_bond
+      summary: Return the content of a bond script
+      parameters:
+        - name: iface
+      execution_dependencies:
+        - cmd.run
+        - file.append
+        - file.set_mode
+        - kmod.load
+        - pkg.install
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: get_interface
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: get_interface
+      summary: Return the contents of an interface script
+      parameters:
+        - name: iface
+      execution_dependencies:
+        - cmd.run
+        - file.append
+        - file.set_mode
+        - kmod.load
+        - pkg.install
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: up
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: up
+      summary: Start up a network interface
+      parameters:
+        - name: iface
+        - name: iface_type
+      execution_dependencies:
+        - cmd.run
+        - file.append
+        - file.set_mode
+        - kmod.load
+        - pkg.install
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: get_network_settings
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: get_network_settings
+      summary: Return the contents of the global network script.
+      execution_dependencies:
+        - cmd.run
+        - file.append
+        - file.set_mode
+        - kmod.load
+        - pkg.install
+        - pkg.version
+        - service.available
+        - service.status
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: get_routes
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: get_routes
+      summary: Return the routes for the interface
+      parameters:
+        - name: iface
+      execution_dependencies:
+        - cmd.run
+        - file.append
+        - file.set_mode
+        - kmod.load
+        - pkg.install
+        - pkg.version
+        - service.available
+        - service.status
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: apply_network_settings
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: apply_network_settings
+      summary: Apply global network configuration.
+      parameters:
+        - name: settings
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - file.append
+        - file.set_mode
+        - kmod.load
+        - network.mod_hostname
+        - pkg.install
+        - pkg.version
+        - service.available
+        - service.start
+        - service.status
+        - service.stop
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23
+    - function: build_network_settings
+      source:
+        path: salt/modules/debian_ip.py
+        symbol: build_network_settings
+      summary: Build the global network script.
+      parameters:
+        - name: settings
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - file.append
+        - file.set_mode
+        - kmod.load
+        - network.mod_hostname
+        - pkg.install
+        - pkg.version
+        - service.available
+        - service.start
+        - service.status
+        - service.stop
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_ip.py
+          functions: 23

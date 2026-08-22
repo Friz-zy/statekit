@@ -1,0 +1,113 @@
+kind: state
+module: ipset
+source_module: ipset
+path: salt/states/ipset.py
+functions:
+    - function: set_present
+      source:
+        path: salt/states/ipset.py
+        symbol: set_present
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+        - name: set_type
+        - name: family
+          default: '"ipv4"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - ipset.check_set
+        - ipset.new_set
+      tests:
+        - path: tests/unit/states/test_ipset.py
+          functions: 0
+    - function: set_absent
+      source:
+        path: salt/states/ipset.py
+        symbol: set_absent
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+        - name: family
+          default: '"ipv4"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - ipset.check_set
+        - ipset.delete_set
+        - ipset.flush
+        - ipset.new_set
+      tests:
+        - path: tests/unit/states/test_ipset.py
+          functions: 0
+    - function: present
+      source:
+        path: salt/states/ipset.py
+        symbol: present
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+        - name: entry
+          default: None
+        - name: family
+          default: '"ipv4"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - ipset.add
+        - ipset.check
+        - ipset.check_set
+        - ipset.delete_set
+        - ipset.flush
+        - ipset.new_set
+      tests:
+        - path: tests/unit/states/test_ipset.py
+          functions: 0
+    - function: absent
+      source:
+        path: salt/states/ipset.py
+        symbol: absent
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+        - name: entry
+          default: None
+        - name: entries
+          default: None
+        - name: family
+          default: '"ipv4"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - ipset.add
+        - ipset.check
+        - ipset.check_set
+        - ipset.delete
+        - ipset.delete_set
+        - ipset.flush
+        - ipset.new_set
+      tests:
+        - path: tests/unit/states/test_ipset.py
+          functions: 0
+    - function: flush
+      source:
+        path: salt/states/ipset.py
+        symbol: flush
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+        - name: family
+          default: '"ipv4"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - ipset.add
+        - ipset.check
+        - ipset.check_set
+        - ipset.delete
+        - ipset.delete_set
+        - ipset.flush
+        - ipset.new_set
+      tests:
+        - path: tests/unit/states/test_ipset.py
+          functions: 0

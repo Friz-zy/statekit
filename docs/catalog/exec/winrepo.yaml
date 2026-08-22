@@ -1,0 +1,35 @@
+kind: exec
+module: winrepo
+source_module: winrepo
+virtual: true
+path: salt/modules/winrepo.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _get_local_repo_dir
+      source:
+        path: salt/modules/winrepo.py
+        symbol: _get_local_repo_dir
+      parameters:
+        - name: saltenv
+          default: '"base"'
+    - function: genrepo
+      source:
+        path: salt/modules/winrepo.py
+        symbol: genrepo
+    - function: update_git_repos
+      source:
+        path: salt/modules/winrepo.py
+        symbol: update_git_repos
+      summary: Checkout git repos containing :ref:`Windows Software Package Definitions
+      parameters:
+        - name: clean
+          default: "False"
+    - function: show_sls
+      source:
+        path: salt/modules/winrepo.py
+        symbol: show_sls
+      parameters:
+        - name: name
+        - name: saltenv
+          default: '"base"'

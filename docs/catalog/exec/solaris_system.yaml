@@ -1,0 +1,53 @@
+kind: exec
+module: system
+source_module: solaris_system
+virtual: true
+path: salt/modules/solaris_system.py
+platform_markers:
+    - is_sunos
+functions:
+    - function: halt
+      source:
+        path: salt/modules/solaris_system.py
+        symbol: halt
+      summary: Halt a running system
+    - function: init
+      source:
+        path: salt/modules/solaris_system.py
+        symbol: init
+      summary: Change the system runlevel on sysV compatible systems
+      parameters:
+        - name: state
+      execution_dependencies:
+        - cmd.run
+    - function: poweroff
+      source:
+        path: salt/modules/solaris_system.py
+        symbol: poweroff
+      summary: Poweroff a running system
+      execution_dependencies:
+        - cmd.run
+    - function: reboot
+      source:
+        path: salt/modules/solaris_system.py
+        symbol: reboot
+      summary: Reboot the system
+      parameters:
+        - name: delay
+          default: "0"
+        - name: message
+          default: None
+      execution_dependencies:
+        - cmd.run
+    - function: shutdown
+      source:
+        path: salt/modules/solaris_system.py
+        symbol: shutdown
+      summary: Shutdown a running system
+      parameters:
+        - name: delay
+          default: "0"
+        - name: message
+          default: None
+      execution_dependencies:
+        - cmd.run

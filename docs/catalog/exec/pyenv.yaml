@@ -1,0 +1,280 @@
+kind: exec
+module: pyenv
+source_module: pyenv
+path: salt/modules/pyenv.py
+functions:
+    - function: _pyenv_exec
+      source:
+        path: salt/modules/pyenv.py
+        symbol: _pyenv_exec
+      parameters:
+        - name: command
+        - name: args
+          default: '""'
+        - name: env
+          default: None
+        - name: runas
+          default: None
+        - name: ret
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_pyenv.py
+          functions: 11
+    - function: _pyenv_bin
+      source:
+        path: salt/modules/pyenv.py
+        symbol: _pyenv_bin
+      parameters:
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_pyenv.py
+          functions: 11
+    - function: _pyenv_path
+      source:
+        path: salt/modules/pyenv.py
+        symbol: _pyenv_path
+      parameters:
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_pyenv.py
+          functions: 11
+    - function: _install_pyenv
+      source:
+        path: salt/modules/pyenv.py
+        symbol: _install_pyenv
+      parameters:
+        - name: path
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_pyenv.py
+          functions: 11
+    - function: _update_pyenv
+      source:
+        path: salt/modules/pyenv.py
+        symbol: _update_pyenv
+      parameters:
+        - name: path
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_pyenv.py
+          functions: 11
+    - function: _update_python_build
+      source:
+        path: salt/modules/pyenv.py
+        symbol: _update_python_build
+      parameters:
+        - name: path
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_pyenv.py
+          functions: 11
+    - function: install
+      source:
+        path: salt/modules/pyenv.py
+        symbol: install
+      summary: Install pyenv systemwide
+      parameters:
+        - name: runas
+          default: None
+        - name: path
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_pyenv.py
+          functions: 11
+    - function: update
+      source:
+        path: salt/modules/pyenv.py
+        symbol: update
+      summary: Updates the current versions of pyenv and python-Build
+      parameters:
+        - name: runas
+          default: None
+        - name: path
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_pyenv.py
+          functions: 11
+    - function: is_installed
+      source:
+        path: salt/modules/pyenv.py
+        symbol: is_installed
+      summary: Check if pyenv is installed.
+      parameters:
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.has_exec
+        - cmd.retcode
+        - cmd.run_all
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_pyenv.py
+          functions: 11
+    - function: install_python
+      source:
+        path: salt/modules/pyenv.py
+        symbol: install_python
+      summary: Install a python implementation.
+      parameters:
+        - name: python
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.has_exec
+        - cmd.retcode
+        - cmd.run_all
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_pyenv.py
+          functions: 11
+    - function: uninstall_python
+      source:
+        path: salt/modules/pyenv.py
+        symbol: uninstall_python
+      summary: Uninstall a python implementation.
+      parameters:
+        - name: python
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.has_exec
+        - cmd.retcode
+        - cmd.run_all
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_pyenv.py
+          functions: 11
+    - function: versions
+      source:
+        path: salt/modules/pyenv.py
+        symbol: versions
+      summary: List the installed versions of python.
+      parameters:
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.has_exec
+        - cmd.retcode
+        - cmd.run_all
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_pyenv.py
+          functions: 11
+    - function: default
+      source:
+        path: salt/modules/pyenv.py
+        symbol: default
+      summary: Returns or sets the currently defined default python.
+      parameters:
+        - name: python
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.has_exec
+        - cmd.retcode
+        - cmd.run_all
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_pyenv.py
+          functions: 11
+    - function: list_
+      source:
+        path: salt/modules/pyenv.py
+        symbol: list_
+      summary: List the installable versions of python.
+      parameters:
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.has_exec
+        - cmd.retcode
+        - cmd.run_all
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_pyenv.py
+          functions: 11
+    - function: rehash
+      source:
+        path: salt/modules/pyenv.py
+        symbol: rehash
+      summary: Run pyenv rehash to update the installed shims.
+      parameters:
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.has_exec
+        - cmd.retcode
+        - cmd.run_all
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_pyenv.py
+          functions: 11
+    - function: do
+      source:
+        path: salt/modules/pyenv.py
+        symbol: do
+      summary: Execute a python command with pyenv's shims from the user or the system.
+      parameters:
+        - name: cmdline
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.has_exec
+        - cmd.retcode
+        - cmd.run_all
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_pyenv.py
+          functions: 11
+    - function: do_with_python
+      source:
+        path: salt/modules/pyenv.py
+        symbol: do_with_python
+      summary: Execute a python command with pyenv's shims using a specific python version.
+      parameters:
+        - name: python
+        - name: cmdline
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.has_exec
+        - cmd.retcode
+        - cmd.run_all
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_pyenv.py
+          functions: 11

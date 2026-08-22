@@ -1,0 +1,746 @@
+kind: exec
+module: mount
+source_module: mount
+virtual: true
+path: salt/modules/mount.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _list_mounts
+      source:
+        path: salt/modules/mount.py
+        symbol: _list_mounts
+      execution_dependencies:
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: _active_mountinfo
+      source:
+        path: salt/modules/mount.py
+        symbol: _active_mountinfo
+      parameters:
+        - name: ret
+      execution_dependencies:
+        - cmd.run_stdout
+        - disk.blkid
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: _active_mounts
+      source:
+        path: salt/modules/mount.py
+        symbol: _active_mounts
+      summary: List active mounts on Linux systems
+      parameters:
+        - name: ret
+      execution_dependencies:
+        - cmd.run_stdout
+        - disk.blkid
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: _active_mounts_aix
+      source:
+        path: salt/modules/mount.py
+        symbol: _active_mounts_aix
+      summary: List active mounts on AIX systems
+      parameters:
+        - name: ret
+      execution_dependencies:
+        - cmd.run_stdout
+        - disk.blkid
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: _active_mounts_freebsd
+      source:
+        path: salt/modules/mount.py
+        symbol: _active_mounts_freebsd
+      summary: List active mounts on FreeBSD systems
+      parameters:
+        - name: ret
+      execution_dependencies:
+        - cmd.run_stdout
+        - disk.blkid
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: _active_mounts_solaris
+      source:
+        path: salt/modules/mount.py
+        symbol: _active_mounts_solaris
+      summary: List active mounts on Solaris systems
+      parameters:
+        - name: ret
+      execution_dependencies:
+        - cmd.run_stdout
+        - disk.blkid
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: _active_mounts_openbsd
+      source:
+        path: salt/modules/mount.py
+        symbol: _active_mounts_openbsd
+      summary: List active mounts on OpenBSD systems
+      parameters:
+        - name: ret
+      execution_dependencies:
+        - cmd.run_stdout
+        - disk.blkid
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: _active_mounts_darwin
+      source:
+        path: salt/modules/mount.py
+        symbol: _active_mounts_darwin
+      summary: List active mounts on Mac OS systems
+      parameters:
+        - name: ret
+      execution_dependencies:
+        - cmd.run_stdout
+        - disk.blkid
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: _resolve_user_group_names
+      source:
+        path: salt/modules/mount.py
+        symbol: _resolve_user_group_names
+      summary: Resolve user and group names in related opts
+      parameters:
+        - name: opts
+      execution_dependencies:
+        - cmd.run_stdout
+        - disk.blkid
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: active
+      source:
+        path: salt/modules/mount.py
+        symbol: active
+      summary: List the active mounts.
+      parameters:
+        - name: extended
+          default: "False"
+      execution_dependencies:
+        - cmd.run_stdout
+        - disk.blkid
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: fstab
+      source:
+        path: salt/modules/mount.py
+        symbol: fstab
+      summary: '.. versionchanged:: 2016.3.2'
+      parameters:
+        - name: config
+          default: '"/etc/fstab"'
+      execution_dependencies:
+        - cmd.run_stdout
+        - disk.blkid
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: vfstab
+      source:
+        path: salt/modules/mount.py
+        symbol: vfstab
+      summary: '.. versionadded:: 2016.3.2'
+      parameters:
+        - name: config
+          default: '"/etc/vfstab"'
+      execution_dependencies:
+        - cmd.run_stdout
+        - disk.blkid
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: rm_fstab
+      source:
+        path: salt/modules/mount.py
+        symbol: rm_fstab
+      summary: '.. versionchanged:: 2016.3.2'
+      parameters:
+        - name: name
+        - name: device
+        - name: config
+          default: '"/etc/fstab"'
+      execution_dependencies:
+        - cmd.run_stdout
+        - disk.blkid
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: rm_vfstab
+      source:
+        path: salt/modules/mount.py
+        symbol: rm_vfstab
+      summary: '.. versionadded:: 2016.3.2'
+      parameters:
+        - name: name
+        - name: device
+        - name: config
+          default: '"/etc/vfstab"'
+      execution_dependencies:
+        - cmd.run_stdout
+        - disk.blkid
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: set_fstab
+      source:
+        path: salt/modules/mount.py
+        symbol: set_fstab
+      summary: Verify that this mount is represented in the fstab, change the mount
+      parameters:
+        - name: name
+        - name: device
+        - name: fstype
+        - name: opts
+          default: '"defaults"'
+        - name: dump
+          default: "0"
+        - name: pass_num
+          default: "0"
+        - name: config
+          default: '"/etc/fstab"'
+        - name: test
+          default: "False"
+        - name: match_on
+          default: '"auto"'
+        - name: not_change
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_stdout
+        - disk.blkid
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: set_vfstab
+      source:
+        path: salt/modules/mount.py
+        symbol: set_vfstab
+      summary: '.. versionadded:: 2016.3.2'
+      parameters:
+        - name: name
+        - name: device
+        - name: fstype
+        - name: opts
+          default: '"-"'
+        - name: device_fsck
+          default: '"-"'
+        - name: pass_fsck
+          default: '"-"'
+        - name: mount_at_boot
+          default: '"yes"'
+        - name: config
+          default: '"/etc/vfstab"'
+        - name: test
+          default: "False"
+        - name: match_on
+          default: '"auto"'
+        - name: not_change
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_stdout
+        - disk.blkid
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: rm_automaster
+      source:
+        path: salt/modules/mount.py
+        symbol: rm_automaster
+      summary: Remove the mount point from the auto_master
+      parameters:
+        - name: name
+        - name: device
+        - name: config
+          default: '"/etc/auto_salt"'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+        - disk.blkid
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: set_automaster
+      source:
+        path: salt/modules/mount.py
+        symbol: set_automaster
+      summary: Verify that this mount is represented in the auto_salt, change the mount
+      parameters:
+        - name: name
+        - name: device
+        - name: fstype
+        - name: opts
+          default: '""'
+        - name: config
+          default: '"/etc/auto_salt"'
+        - name: test
+          default: "False"
+        - name: not_change
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+        - disk.blkid
+        - file.append
+        - file.touch
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: automaster
+      source:
+        path: salt/modules/mount.py
+        symbol: automaster
+      summary: List the contents of the auto master
+      parameters:
+        - name: config
+          default: '"/etc/auto_salt"'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+        - disk.blkid
+        - file.append
+        - file.touch
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: mount
+      source:
+        path: salt/modules/mount.py
+        symbol: mount
+      summary: Mount a device
+      parameters:
+        - name: name
+        - name: device
+          default: "False"
+        - name: mkmnt
+          default: "False"
+        - name: fstype
+          default: '""'
+        - name: opts
+          default: '"defaults"'
+        - name: user
+          default: None
+        - name: util
+          default: '"mount"'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - disk.blkid
+        - file.append
+        - file.mkdir
+        - file.touch
+        - guestfs.mount
+        - qemu_nbd.init
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: remount
+      source:
+        path: salt/modules/mount.py
+        symbol: remount
+      summary: Attempt to remount a device, if the device is not already mounted, mount
+      parameters:
+        - name: name
+        - name: device
+        - name: mkmnt
+          default: "False"
+        - name: fstype
+          default: '""'
+        - name: opts
+          default: '"defaults"'
+        - name: user
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - disk.blkid
+        - file.append
+        - file.mkdir
+        - file.touch
+        - guestfs.mount
+        - qemu_nbd.init
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: umount
+      source:
+        path: salt/modules/mount.py
+        symbol: umount
+      summary: Attempt to unmount a device by specifying the directory it is mounted on
+      parameters:
+        - name: name
+        - name: device
+          default: None
+        - name: user
+          default: None
+        - name: util
+          default: '"mount"'
+        - name: lazy
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - disk.blkid
+        - file.append
+        - file.mkdir
+        - file.touch
+        - guestfs.mount
+        - guestfs.umount
+        - qemu_nbd.clear
+        - qemu_nbd.init
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: is_fuse_exec
+      source:
+        path: salt/modules/mount.py
+        symbol: is_fuse_exec
+      summary: Returns true if the command passed is a fuse mountable application.
+      parameters:
+        - name: cmd
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - disk.blkid
+        - file.append
+        - file.mkdir
+        - file.touch
+        - guestfs.mount
+        - guestfs.umount
+        - qemu_nbd.clear
+        - qemu_nbd.init
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: swaps
+      source:
+        path: salt/modules/mount.py
+        symbol: swaps
+      summary: Return a dict containing information on active swap
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - disk.blkid
+        - file.append
+        - file.mkdir
+        - file.touch
+        - guestfs.mount
+        - guestfs.umount
+        - qemu_nbd.clear
+        - qemu_nbd.init
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: swapon
+      source:
+        path: salt/modules/mount.py
+        symbol: swapon
+      summary: Activate a swap disk
+      parameters:
+        - name: name
+        - name: priority
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - disk.blkid
+        - file.append
+        - file.mkdir
+        - file.touch
+        - guestfs.mount
+        - guestfs.umount
+        - qemu_nbd.clear
+        - qemu_nbd.init
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: swapoff
+      source:
+        path: salt/modules/mount.py
+        symbol: swapoff
+      summary: Deactivate a named swap mount
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - disk.blkid
+        - file.append
+        - file.mkdir
+        - file.touch
+        - guestfs.mount
+        - guestfs.umount
+        - qemu_nbd.clear
+        - qemu_nbd.init
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: is_mounted
+      source:
+        path: salt/modules/mount.py
+        symbol: is_mounted
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - disk.blkid
+        - file.append
+        - file.mkdir
+        - file.touch
+        - guestfs.mount
+        - guestfs.umount
+        - qemu_nbd.clear
+        - qemu_nbd.init
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: read_mount_cache
+      source:
+        path: salt/modules/mount.py
+        symbol: read_mount_cache
+      summary: '.. versionadded:: 2018.3.0'
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - disk.blkid
+        - file.append
+        - file.mkdir
+        - file.touch
+        - guestfs.mount
+        - guestfs.umount
+        - qemu_nbd.clear
+        - qemu_nbd.init
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: write_mount_cache
+      source:
+        path: salt/modules/mount.py
+        symbol: write_mount_cache
+      summary: '.. versionadded:: 2018.3.0'
+      parameters:
+        - name: real_name
+        - name: device
+        - name: mkmnt
+        - name: fstype
+        - name: mount_opts
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - disk.blkid
+        - file.append
+        - file.mkdir
+        - file.touch
+        - guestfs.mount
+        - guestfs.umount
+        - qemu_nbd.clear
+        - qemu_nbd.init
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: delete_mount_cache
+      source:
+        path: salt/modules/mount.py
+        symbol: delete_mount_cache
+      summary: '.. versionadded:: 2018.3.0'
+      parameters:
+        - name: real_name
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - disk.blkid
+        - file.append
+        - file.mkdir
+        - file.touch
+        - guestfs.mount
+        - guestfs.umount
+        - qemu_nbd.clear
+        - qemu_nbd.init
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: _filesystems
+      source:
+        path: salt/modules/mount.py
+        symbol: _filesystems
+      summary: Return the contents of the filesystems in an OrderedDict
+      parameters:
+        - name: config
+          default: '"/etc/filesystems"'
+        - name: leading_key
+          default: "True"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - disk.blkid
+        - file.append
+        - file.mkdir
+        - file.touch
+        - guestfs.mount
+        - guestfs.umount
+        - qemu_nbd.clear
+        - qemu_nbd.init
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: filesystems
+      source:
+        path: salt/modules/mount.py
+        symbol: filesystems
+      summary: '.. versionadded:: 2018.3.3'
+      parameters:
+        - name: config
+          default: '"/etc/filesystems"'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - disk.blkid
+        - file.append
+        - file.mkdir
+        - file.touch
+        - guestfs.mount
+        - guestfs.umount
+        - qemu_nbd.clear
+        - qemu_nbd.init
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: set_filesystems
+      source:
+        path: salt/modules/mount.py
+        symbol: set_filesystems
+      summary: '.. versionadded:: 2018.3.3'
+      parameters:
+        - name: name
+        - name: device
+        - name: vfstype
+        - name: opts
+          default: '"-"'
+        - name: mount
+          default: '"true"'
+        - name: config
+          default: '"/etc/filesystems"'
+        - name: test
+          default: "False"
+        - name: match_on
+          default: '"auto"'
+        - name: not_change
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - disk.blkid
+        - file.append
+        - file.mkdir
+        - file.touch
+        - guestfs.mount
+        - guestfs.umount
+        - qemu_nbd.clear
+        - qemu_nbd.init
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: rm_filesystems
+      source:
+        path: salt/modules/mount.py
+        symbol: rm_filesystems
+      summary: '.. versionadded:: 2018.3.3'
+      parameters:
+        - name: name
+        - name: device
+        - name: config
+          default: '"/etc/filesystems"'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - disk.blkid
+        - file.append
+        - file.mkdir
+        - file.touch
+        - guestfs.mount
+        - guestfs.umount
+        - qemu_nbd.clear
+        - qemu_nbd.init
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: get_mount_from_path
+      source:
+        path: salt/modules/mount.py
+        symbol: get_mount_from_path
+      summary: Return the mount providing a specified path.
+      parameters:
+        - name: path
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - disk.blkid
+        - file.append
+        - file.mkdir
+        - file.touch
+        - guestfs.mount
+        - guestfs.umount
+        - qemu_nbd.clear
+        - qemu_nbd.init
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27
+    - function: get_device_from_path
+      source:
+        path: salt/modules/mount.py
+        symbol: get_device_from_path
+      summary: Return the underlying device for a specified path.
+      parameters:
+        - name: path
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - disk.blkid
+        - file.append
+        - file.mkdir
+        - file.touch
+        - guestfs.mount
+        - guestfs.umount
+        - qemu_nbd.clear
+        - qemu_nbd.init
+      tests:
+        - path: tests/pytests/unit/modules/test_mount.py
+          functions: 27

@@ -1,0 +1,463 @@
+kind: exec
+module: selinux
+source_module: selinux
+path: salt/modules/selinux.py
+functions:
+    - function: selinux_fs_path
+      source:
+        path: salt/modules/selinux.py
+        symbol: selinux_fs_path
+      summary: Return the location of the SELinux VFS directory
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12
+    - function: getenforce
+      source:
+        path: salt/modules/selinux.py
+        symbol: getenforce
+      summary: Return the mode selinux is running in
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12
+    - function: getconfig
+      source:
+        path: salt/modules/selinux.py
+        symbol: getconfig
+      summary: Return the selinux mode from the config file
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12
+    - function: setenforce
+      source:
+        path: salt/modules/selinux.py
+        symbol: setenforce
+      summary: Set the SELinux enforcing mode
+      parameters:
+        - name: |-
+            mode: Literal[
+                    "enforcing", "Enforcing", "Permissive", "permissive", "Disabled", "disabled"
+                ]
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12
+    - function: getsebool
+      source:
+        path: salt/modules/selinux.py
+        symbol: getsebool
+      summary: Return the information on a specific selinux boolean
+      parameters:
+        - name: 'boolean: str'
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12
+    - function: setsebool
+      source:
+        path: salt/modules/selinux.py
+        symbol: setsebool
+      summary: Set the value for a boolean
+      parameters:
+        - name: 'boolean: Any'
+        - name: 'value: SeBool'
+        - name: persist
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12
+    - function: setsebools
+      source:
+        path: salt/modules/selinux.py
+        symbol: setsebools
+      summary: Set the value of multiple booleans
+      parameters:
+        - name: 'pairs: dict[Any, SeBool]'
+        - name: persist
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12
+    - function: list_sebool
+      source:
+        path: salt/modules/selinux.py
+        symbol: list_sebool
+      summary: Return a structure listing all of the selinux booleans on the system and
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12
+    - function: getsemod
+      source:
+        path: salt/modules/selinux.py
+        symbol: getsemod
+      summary: Return the information on a specific selinux module
+      parameters:
+        - name: module
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12
+    - function: setsemod
+      source:
+        path: salt/modules/selinux.py
+        symbol: setsemod
+      summary: Enable or disable an SELinux module.
+      parameters:
+        - name: 'module: Any'
+        - name: 'state: Literal["enabled", "Enabled", "disabled", "Disabled"]'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12
+    - function: install_semod
+      source:
+        path: salt/modules/selinux.py
+        symbol: install_semod
+      summary: Install custom SELinux module from file
+      parameters:
+        - name: 'module_path: str'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12
+    - function: remove_semod
+      source:
+        path: salt/modules/selinux.py
+        symbol: remove_semod
+      summary: Remove SELinux module
+      parameters:
+        - name: module
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12
+    - function: list_semod
+      source:
+        path: salt/modules/selinux.py
+        symbol: list_semod
+      summary: Return a structure listing all of the selinux modules on the system and
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12
+    - function: _parse_protocol_port
+      source:
+        path: salt/modules/selinux.py
+        symbol: _parse_protocol_port
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: name
+        - name: protocol
+        - name: port
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12
+    - function: _context_dict_to_string
+      source:
+        path: salt/modules/selinux.py
+        symbol: _context_dict_to_string
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: context
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12
+    - function: _context_string_to_dict
+      source:
+        path: salt/modules/selinux.py
+        symbol: _context_string_to_dict
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: 'context: str'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12
+    - function: filetype_id_to_string
+      source:
+        path: salt/modules/selinux.py
+        symbol: filetype_id_to_string
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: filetype
+          default: '"a"'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12
+    - function: fcontext_get_policy
+      source:
+        path: salt/modules/selinux.py
+        symbol: fcontext_get_policy
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: name
+        - name: filetype
+          default: None
+        - name: sel_type
+          default: None
+        - name: sel_user
+          default: None
+        - name: sel_level
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.shell
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12
+    - function: fcontext_add_policy
+      source:
+        path: salt/modules/selinux.py
+        symbol: fcontext_add_policy
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: name
+        - name: filetype
+          default: None
+        - name: sel_type
+          default: None
+        - name: sel_user
+          default: None
+        - name: sel_level
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.shell
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12
+    - function: fcontext_delete_policy
+      source:
+        path: salt/modules/selinux.py
+        symbol: fcontext_delete_policy
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: name
+        - name: filetype
+          default: None
+        - name: sel_type
+          default: None
+        - name: sel_user
+          default: None
+        - name: sel_level
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.shell
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12
+    - function: _fcontext_add_or_delete_policy
+      source:
+        path: salt/modules/selinux.py
+        symbol: _fcontext_add_or_delete_policy
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: action
+        - name: name
+        - name: filetype
+          default: None
+        - name: sel_type
+          default: None
+        - name: sel_user
+          default: None
+        - name: sel_level
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.shell
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12
+    - function: fcontext_policy_is_applied
+      source:
+        path: salt/modules/selinux.py
+        symbol: fcontext_policy_is_applied
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: name
+        - name: recursive
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.shell
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12
+    - function: fcontext_apply_policy
+      source:
+        path: salt/modules/selinux.py
+        symbol: fcontext_apply_policy
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: name
+        - name: recursive
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.shell
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12
+    - function: port_get_policy
+      source:
+        path: salt/modules/selinux.py
+        symbol: port_get_policy
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: name
+        - name: sel_type
+          default: None
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.shell
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12
+    - function: port_add_policy
+      source:
+        path: salt/modules/selinux.py
+        symbol: port_add_policy
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: name
+        - name: sel_type
+          default: None
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: sel_range
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.shell
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12
+    - function: port_modify_policy
+      source:
+        path: salt/modules/selinux.py
+        symbol: port_modify_policy
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: name
+        - name: sel_type
+          default: None
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: sel_range
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.shell
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12
+    - function: port_delete_policy
+      source:
+        path: salt/modules/selinux.py
+        symbol: port_delete_policy
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: name
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.shell
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12
+    - function: _port_add_or_delete_policy
+      source:
+        path: salt/modules/selinux.py
+        symbol: _port_add_or_delete_policy
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: action
+        - name: name
+        - name: sel_type
+          default: None
+        - name: protocol
+          default: None
+        - name: port
+          default: None
+        - name: sel_range
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.shell
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_selinux.py
+          functions: 12

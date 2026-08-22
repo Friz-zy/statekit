@@ -1,0 +1,147 @@
+kind: state
+module: ssh_auth
+source_module: ssh_auth
+path: salt/states/ssh_auth.py
+functions:
+    - function: _present_test
+      source:
+        path: salt/states/ssh_auth.py
+        symbol: _present_test
+      summary: Run checks for "present"
+      parameters:
+        - name: user
+        - name: name
+        - name: enc
+        - name: comment
+        - name: options
+        - name: source
+        - name: config
+        - name: fingerprint_hash_type
+      execution_dependencies:
+        - ssh.check_key
+        - ssh.check_key_file
+        - test.ping
+      tests:
+        - path: tests/pytests/unit/states/test_ssh_auth.py
+          functions: 9
+    - function: _absent_test
+      source:
+        path: salt/states/ssh_auth.py
+        symbol: _absent_test
+      summary: Run checks for "absent"
+      parameters:
+        - name: user
+        - name: name
+        - name: enc
+        - name: comment
+        - name: options
+        - name: source
+        - name: config
+        - name: fingerprint_hash_type
+      execution_dependencies:
+        - ssh.check_key
+        - ssh.check_key_file
+        - test.ping
+      tests:
+        - path: tests/pytests/unit/states/test_ssh_auth.py
+          functions: 9
+    - function: present
+      source:
+        path: salt/states/ssh_auth.py
+        symbol: present
+      summary: Verifies that the specified SSH key is present for the specified user
+      parameters:
+        - name: name
+        - name: user
+        - name: enc
+          default: '"ssh-rsa"'
+        - name: comment
+          default: '""'
+        - name: source
+          default: '""'
+        - name: options
+          default: None
+        - name: config
+          default: '".ssh/authorized_keys"'
+        - name: fingerprint_hash_type
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_url
+        - ssh.check_key
+        - ssh.check_key_file
+        - ssh.set_auth_key
+        - ssh.set_auth_key_from_file
+        - test.ping
+      tests:
+        - path: tests/pytests/unit/states/test_ssh_auth.py
+          functions: 9
+    - function: absent
+      source:
+        path: salt/states/ssh_auth.py
+        symbol: absent
+      summary: Verifies that the specified SSH key is absent
+      parameters:
+        - name: name
+        - name: user
+        - name: enc
+          default: '"ssh-rsa"'
+        - name: comment
+          default: '""'
+        - name: source
+          default: '""'
+        - name: options
+          default: None
+        - name: config
+          default: '".ssh/authorized_keys"'
+        - name: fingerprint_hash_type
+          default: None
+      execution_dependencies:
+        - cp.get_url
+        - ssh.check_key
+        - ssh.check_key_file
+        - ssh.rm_auth_key
+        - ssh.rm_auth_key_from_file
+        - ssh.set_auth_key
+        - ssh.set_auth_key_from_file
+        - test.ping
+      tests:
+        - path: tests/pytests/unit/states/test_ssh_auth.py
+          functions: 9
+    - function: manage
+      source:
+        path: salt/states/ssh_auth.py
+        symbol: manage
+      summary: '.. versionadded:: 3000'
+      parameters:
+        - name: name
+        - name: ssh_keys
+        - name: user
+        - name: enc
+          default: '"ssh-rsa"'
+        - name: comment
+          default: '""'
+        - name: source
+          default: '""'
+        - name: options
+          default: None
+        - name: config
+          default: '".ssh/authorized_keys"'
+        - name: fingerprint_hash_type
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_url
+        - ssh.auth_keys
+        - ssh.check_key
+        - ssh.check_key_file
+        - ssh.rm_auth_key
+        - ssh.rm_auth_key_from_file
+        - ssh.set_auth_key
+        - ssh.set_auth_key_from_file
+        - test.ping
+      tests:
+        - path: tests/pytests/unit/states/test_ssh_auth.py
+          functions: 9

@@ -1,0 +1,633 @@
+kind: exec
+module: chocolatey
+source_module: chocolatey
+virtual: true
+path: salt/modules/chocolatey.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _clear_context
+      source:
+        path: salt/modules/chocolatey.py
+        symbol: _clear_context
+      summary: Clear variables stored in __context__. Run this function when a new version
+      tests:
+        - path: tests/pytests/unit/modules/test_chocolatey.py
+          functions: 24
+    - function: _yes
+      source:
+        path: salt/modules/chocolatey.py
+        symbol: _yes
+      summary: Returns ['--yes'] if on v0.9.9.0 or later, otherwise returns an empty list
+      tests:
+        - path: tests/pytests/unit/modules/test_chocolatey.py
+          functions: 24
+    - function: _no_progress
+      source:
+        path: salt/modules/chocolatey.py
+        symbol: _no_progress
+      summary: Returns ['--no-progress'] if on v0.10.4 or later, otherwise returns an
+      tests:
+        - path: tests/pytests/unit/modules/test_chocolatey.py
+          functions: 24
+    - function: _find_chocolatey
+      source:
+        path: salt/modules/chocolatey.py
+        symbol: _find_chocolatey
+      summary: Returns the full path to the chocolatey binary on the host. If found, the
+      parameters:
+        - name: refresh
+          default: "False"
+      execution_dependencies:
+        - cmd.which
+      tests:
+        - path: tests/pytests/unit/modules/test_chocolatey.py
+          functions: 24
+    - function: chocolatey_version
+      source:
+        path: salt/modules/chocolatey.py
+        symbol: chocolatey_version
+      summary: Returns the version of Chocolatey installed on the minion.
+      parameters:
+        - name: refresh
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.which
+      tests:
+        - path: tests/pytests/unit/modules/test_chocolatey.py
+          functions: 24
+    - function: bootstrap
+      source:
+        path: salt/modules/chocolatey.py
+        symbol: bootstrap
+      summary: Download and install the latest version of the Chocolatey package manager
+      parameters:
+        - name: force
+          default: "False"
+        - name: source
+          default: None
+        - name: version
+          default: None
+      execution_dependencies:
+        - archive.unzip
+        - cmd.run
+        - cmd.run_all
+        - cmd.script
+        - cmd.shell_info
+        - cmd.which
+        - cp.get_url
+      tests:
+        - path: tests/pytests/unit/modules/test_chocolatey.py
+          functions: 24
+    - function: unbootstrap
+      source:
+        path: salt/modules/chocolatey.py
+        symbol: unbootstrap
+      summary: 'Uninstall chocolatey from the system by doing the following:'
+      execution_dependencies:
+        - archive.unzip
+        - cmd.run
+        - cmd.run_all
+        - cmd.script
+        - cmd.shell_info
+        - cmd.which
+        - cp.get_url
+        - environ.items
+        - environ.setval
+        - file.remove
+        - win_path.get_path
+        - win_path.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_chocolatey.py
+          functions: 24
+    - function: list_
+      source:
+        path: salt/modules/chocolatey.py
+        symbol: list_
+      summary: Instructs Chocolatey to pull a vague package list from the repository.
+      parameters:
+        - name: narrow
+          default: None
+        - name: all_versions
+          default: "False"
+        - name: pre_versions
+          default: "False"
+        - name: source
+          default: None
+        - name: local_only
+          default: "False"
+        - name: exact
+          default: "False"
+      execution_dependencies:
+        - archive.unzip
+        - cmd.run
+        - cmd.run_all
+        - cmd.script
+        - cmd.shell_info
+        - cmd.which
+        - cp.get_url
+        - environ.items
+        - environ.setval
+        - file.remove
+        - win_path.get_path
+        - win_path.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_chocolatey.py
+          functions: 24
+    - function: list_webpi
+      source:
+        path: salt/modules/chocolatey.py
+        symbol: list_webpi
+      summary: Instructs Chocolatey to pull a full package list from the Microsoft Web PI
+      execution_dependencies:
+        - archive.unzip
+        - cmd.run
+        - cmd.run_all
+        - cmd.script
+        - cmd.shell_info
+        - cmd.which
+        - cp.get_url
+        - environ.items
+        - environ.setval
+        - file.remove
+        - win_path.get_path
+        - win_path.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_chocolatey.py
+          functions: 24
+    - function: list_windowsfeatures
+      source:
+        path: salt/modules/chocolatey.py
+        symbol: list_windowsfeatures
+      summary: Instructs Chocolatey to pull a full package list from the Windows Features
+      execution_dependencies:
+        - archive.unzip
+        - cmd.run
+        - cmd.run_all
+        - cmd.script
+        - cmd.shell_info
+        - cmd.which
+        - cp.get_url
+        - environ.items
+        - environ.setval
+        - file.remove
+        - win_path.get_path
+        - win_path.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_chocolatey.py
+          functions: 24
+    - function: install
+      source:
+        path: salt/modules/chocolatey.py
+        symbol: install
+      summary: Instructs Chocolatey to install a package.
+      parameters:
+        - name: name
+        - name: version
+          default: None
+        - name: source
+          default: None
+        - name: force
+          default: "False"
+        - name: pre_versions
+          default: "False"
+        - name: install_args
+          default: None
+        - name: override_args
+          default: "False"
+        - name: force_x86
+          default: "False"
+        - name: package_args
+          default: None
+        - name: allow_multiple
+          default: "False"
+        - name: execution_timeout
+          default: None
+        - name: virus_check
+          default: None
+      execution_dependencies:
+        - archive.unzip
+        - cmd.run
+        - cmd.run_all
+        - cmd.script
+        - cmd.shell_info
+        - cmd.which
+        - cp.get_url
+        - environ.items
+        - environ.setval
+        - file.remove
+        - win_path.get_path
+        - win_path.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_chocolatey.py
+          functions: 24
+    - function: install_cygwin
+      source:
+        path: salt/modules/chocolatey.py
+        symbol: install_cygwin
+      summary: Instructs Chocolatey to install a package via Cygwin.
+      parameters:
+        - name: name
+        - name: install_args
+          default: None
+        - name: override_args
+          default: "False"
+      execution_dependencies:
+        - archive.unzip
+        - cmd.run
+        - cmd.run_all
+        - cmd.script
+        - cmd.shell_info
+        - cmd.which
+        - cp.get_url
+        - environ.items
+        - environ.setval
+        - file.remove
+        - win_path.get_path
+        - win_path.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_chocolatey.py
+          functions: 24
+    - function: install_gem
+      source:
+        path: salt/modules/chocolatey.py
+        symbol: install_gem
+      summary: Instructs Chocolatey to install a package via Ruby's Gems.
+      parameters:
+        - name: name
+        - name: version
+          default: None
+        - name: install_args
+          default: None
+        - name: override_args
+          default: "False"
+      execution_dependencies:
+        - archive.unzip
+        - cmd.run
+        - cmd.run_all
+        - cmd.script
+        - cmd.shell_info
+        - cmd.which
+        - cp.get_url
+        - environ.items
+        - environ.setval
+        - file.remove
+        - win_path.get_path
+        - win_path.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_chocolatey.py
+          functions: 24
+    - function: install_missing
+      source:
+        path: salt/modules/chocolatey.py
+        symbol: install_missing
+      summary: Instructs Chocolatey to install a package if it doesn't already exist.
+      parameters:
+        - name: name
+        - name: version
+          default: None
+        - name: source
+          default: None
+      execution_dependencies:
+        - archive.unzip
+        - cmd.run
+        - cmd.run_all
+        - cmd.script
+        - cmd.shell_info
+        - cmd.which
+        - cp.get_url
+        - environ.items
+        - environ.setval
+        - file.remove
+        - win_path.get_path
+        - win_path.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_chocolatey.py
+          functions: 24
+    - function: install_python
+      source:
+        path: salt/modules/chocolatey.py
+        symbol: install_python
+      summary: Instructs Chocolatey to install a package via Python's easy_install.
+      parameters:
+        - name: name
+        - name: version
+          default: None
+        - name: install_args
+          default: None
+        - name: override_args
+          default: "False"
+      execution_dependencies:
+        - archive.unzip
+        - cmd.run
+        - cmd.run_all
+        - cmd.script
+        - cmd.shell_info
+        - cmd.which
+        - cp.get_url
+        - environ.items
+        - environ.setval
+        - file.remove
+        - win_path.get_path
+        - win_path.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_chocolatey.py
+          functions: 24
+    - function: install_windowsfeatures
+      source:
+        path: salt/modules/chocolatey.py
+        symbol: install_windowsfeatures
+      summary: Instructs Chocolatey to install a Windows Feature via the Deployment Image
+      parameters:
+        - name: name
+      execution_dependencies:
+        - archive.unzip
+        - cmd.run
+        - cmd.run_all
+        - cmd.script
+        - cmd.shell_info
+        - cmd.which
+        - cp.get_url
+        - environ.items
+        - environ.setval
+        - file.remove
+        - win_path.get_path
+        - win_path.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_chocolatey.py
+          functions: 24
+    - function: install_webpi
+      source:
+        path: salt/modules/chocolatey.py
+        symbol: install_webpi
+      summary: Instructs Chocolatey to install a package via the Microsoft Web PI service.
+      parameters:
+        - name: name
+        - name: install_args
+          default: None
+        - name: override_args
+          default: "False"
+      execution_dependencies:
+        - archive.unzip
+        - cmd.run
+        - cmd.run_all
+        - cmd.script
+        - cmd.shell_info
+        - cmd.which
+        - cp.get_url
+        - environ.items
+        - environ.setval
+        - file.remove
+        - win_path.get_path
+        - win_path.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_chocolatey.py
+          functions: 24
+    - function: uninstall
+      source:
+        path: salt/modules/chocolatey.py
+        symbol: uninstall
+      summary: Instructs Chocolatey to uninstall a package.
+      parameters:
+        - name: name
+        - name: version
+          default: None
+        - name: uninstall_args
+          default: None
+        - name: override_args
+          default: "False"
+        - name: force
+          default: "False"
+      execution_dependencies:
+        - archive.unzip
+        - cmd.run
+        - cmd.run_all
+        - cmd.script
+        - cmd.shell_info
+        - cmd.which
+        - cp.get_url
+        - environ.items
+        - environ.setval
+        - file.remove
+        - win_path.get_path
+        - win_path.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_chocolatey.py
+          functions: 24
+    - function: upgrade
+      source:
+        path: salt/modules/chocolatey.py
+        symbol: upgrade
+      summary: '.. versionadded:: 2016.3.4'
+      parameters:
+        - name: name
+        - name: version
+          default: None
+        - name: source
+          default: None
+        - name: force
+          default: "False"
+        - name: pre_versions
+          default: "False"
+        - name: install_args
+          default: None
+        - name: override_args
+          default: "False"
+        - name: force_x86
+          default: "False"
+        - name: package_args
+          default: None
+      execution_dependencies:
+        - archive.unzip
+        - cmd.run
+        - cmd.run_all
+        - cmd.script
+        - cmd.shell_info
+        - cmd.which
+        - cp.get_url
+        - environ.items
+        - environ.setval
+        - file.remove
+        - win_path.get_path
+        - win_path.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_chocolatey.py
+          functions: 24
+    - function: update
+      source:
+        path: salt/modules/chocolatey.py
+        symbol: update
+      summary: Instructs Chocolatey to update packages on the system.
+      parameters:
+        - name: name
+        - name: source
+          default: None
+        - name: pre_versions
+          default: "False"
+      execution_dependencies:
+        - archive.unzip
+        - cmd.run
+        - cmd.run_all
+        - cmd.script
+        - cmd.shell_info
+        - cmd.which
+        - cp.get_url
+        - environ.items
+        - environ.setval
+        - file.remove
+        - win_path.get_path
+        - win_path.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_chocolatey.py
+          functions: 24
+    - function: version
+      source:
+        path: salt/modules/chocolatey.py
+        symbol: version
+      summary: Instructs Chocolatey to check an installed package version, and optionally
+      parameters:
+        - name: name
+        - name: check_remote
+          default: "False"
+        - name: source
+          default: None
+        - name: pre_versions
+          default: "False"
+      execution_dependencies:
+        - archive.unzip
+        - cmd.run
+        - cmd.run_all
+        - cmd.script
+        - cmd.shell_info
+        - cmd.which
+        - cp.get_url
+        - environ.items
+        - environ.setval
+        - file.remove
+        - win_path.get_path
+        - win_path.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_chocolatey.py
+          functions: 24
+    - function: add_source
+      source:
+        path: salt/modules/chocolatey.py
+        symbol: add_source
+      summary: Instructs Chocolatey to add a source.
+      parameters:
+        - name: name
+        - name: source_location
+        - name: username
+          default: None
+        - name: password
+          default: None
+        - name: priority
+          default: None
+      execution_dependencies:
+        - archive.unzip
+        - cmd.run
+        - cmd.run_all
+        - cmd.script
+        - cmd.shell_info
+        - cmd.which
+        - cp.get_url
+        - environ.items
+        - environ.setval
+        - file.remove
+        - win_path.get_path
+        - win_path.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_chocolatey.py
+          functions: 24
+    - function: _change_source_state
+      source:
+        path: salt/modules/chocolatey.py
+        symbol: _change_source_state
+      summary: Instructs Chocolatey to change the state of a source.
+      parameters:
+        - name: name
+        - name: state
+      execution_dependencies:
+        - archive.unzip
+        - cmd.run
+        - cmd.run_all
+        - cmd.script
+        - cmd.shell_info
+        - cmd.which
+        - cp.get_url
+        - environ.items
+        - environ.setval
+        - file.remove
+        - win_path.get_path
+        - win_path.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_chocolatey.py
+          functions: 24
+    - function: enable_source
+      source:
+        path: salt/modules/chocolatey.py
+        symbol: enable_source
+      summary: Instructs Chocolatey to enable a source.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - archive.unzip
+        - cmd.run
+        - cmd.run_all
+        - cmd.script
+        - cmd.shell_info
+        - cmd.which
+        - cp.get_url
+        - environ.items
+        - environ.setval
+        - file.remove
+        - win_path.get_path
+        - win_path.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_chocolatey.py
+          functions: 24
+    - function: disable_source
+      source:
+        path: salt/modules/chocolatey.py
+        symbol: disable_source
+      summary: Instructs Chocolatey to disable a source.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - archive.unzip
+        - cmd.run
+        - cmd.run_all
+        - cmd.script
+        - cmd.shell_info
+        - cmd.which
+        - cp.get_url
+        - environ.items
+        - environ.setval
+        - file.remove
+        - win_path.get_path
+        - win_path.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_chocolatey.py
+          functions: 24
+    - function: list_sources
+      source:
+        path: salt/modules/chocolatey.py
+        symbol: list_sources
+      summary: Returns the list of installed sources.
+      execution_dependencies:
+        - archive.unzip
+        - cmd.run
+        - cmd.run_all
+        - cmd.script
+        - cmd.shell_info
+        - cmd.which
+        - cp.get_url
+        - environ.items
+        - environ.setval
+        - file.remove
+        - win_path.get_path
+        - win_path.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_chocolatey.py
+          functions: 24

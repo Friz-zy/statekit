@@ -1,0 +1,58 @@
+kind: state
+module: win_snmp
+source_module: win_snmp
+path: salt/states/win_snmp.py
+functions:
+    - function: agent_settings
+      source:
+        path: salt/states/win_snmp.py
+        symbol: agent_settings
+      summary: Manage the SNMP sysContact, sysLocation, and sysServices settings.
+      parameters:
+        - name: name
+        - name: contact
+        - name: location
+        - name: services
+          default: None
+      execution_dependencies:
+        - win_snmp.get_agent_settings
+        - win_snmp.set_agent_settings
+      tests:
+        - path: tests/pytests/unit/states/test_win_snmp.py
+          functions: 3
+    - function: auth_traps_enabled
+      source:
+        path: salt/states/win_snmp.py
+        symbol: auth_traps_enabled
+      summary: Manage the sending of authentication traps.
+      parameters:
+        - name: name
+        - name: status
+          default: "True"
+      execution_dependencies:
+        - win_snmp.get_agent_settings
+        - win_snmp.get_auth_traps_enabled
+        - win_snmp.set_agent_settings
+        - win_snmp.set_auth_traps_enabled
+      tests:
+        - path: tests/pytests/unit/states/test_win_snmp.py
+          functions: 3
+    - function: community_names
+      source:
+        path: salt/states/win_snmp.py
+        symbol: community_names
+      summary: Manage the SNMP accepted community names and their permissions.
+      parameters:
+        - name: name
+        - name: communities
+          default: None
+      execution_dependencies:
+        - win_snmp.get_agent_settings
+        - win_snmp.get_auth_traps_enabled
+        - win_snmp.get_community_names
+        - win_snmp.set_agent_settings
+        - win_snmp.set_auth_traps_enabled
+        - win_snmp.set_community_names
+      tests:
+        - path: tests/pytests/unit/states/test_win_snmp.py
+          functions: 3

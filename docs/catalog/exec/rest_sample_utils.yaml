@@ -1,0 +1,15 @@
+kind: exec
+module: rest_sample_utils
+source_module: rest_sample_utils
+path: salt/modules/rest_sample_utils.py
+functions:
+    - function: fix_outage
+      source:
+        path: salt/modules/rest_sample_utils.py
+        symbol: fix_outage
+      summary: '"Fix" the outage'
+    - function: get_test_string
+      source:
+        path: salt/modules/rest_sample_utils.py
+        symbol: get_test_string
+      summary: Helper function to test cross-calling to the __proxy__ dunder.

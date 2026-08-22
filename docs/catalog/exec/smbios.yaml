@@ -1,0 +1,72 @@
+kind: exec
+module: smbios
+source_module: smbios
+path: salt/modules/smbios.py
+functions:
+    - function: get
+      source:
+        path: salt/modules/smbios.py
+        symbol: get
+      summary: Get an individual DMI string from SMBIOS info
+      parameters:
+        - name: string
+        - name: clean
+          default: "True"
+    - function: records
+      source:
+        path: salt/modules/smbios.py
+        symbol: records
+      summary: Return DMI records from SMBIOS
+      parameters:
+        - name: rec_type
+          default: None
+        - name: fields
+          default: None
+        - name: clean
+          default: "True"
+    - function: _dmi_parse
+      source:
+        path: salt/modules/smbios.py
+        symbol: _dmi_parse
+      summary: Structurize DMI records into a nice list
+      parameters:
+        - name: data
+        - name: clean
+          default: "True"
+        - name: fields
+          default: None
+    - function: _dmi_data
+      source:
+        path: salt/modules/smbios.py
+        symbol: _dmi_data
+      summary: Parse the raw DMIdecode output of a single handle
+      parameters:
+        - name: dmi_raw
+        - name: clean
+        - name: fields
+    - function: _dmi_cast
+      source:
+        path: salt/modules/smbios.py
+        symbol: _dmi_cast
+      summary: Simple caster thingy for trying to fish out at least ints & lists from strings
+      parameters:
+        - name: key
+        - name: val
+        - name: clean
+          default: "True"
+    - function: _dmi_isclean
+      source:
+        path: salt/modules/smbios.py
+        symbol: _dmi_isclean
+      summary: Clean out well-known bogus values
+      parameters:
+        - name: key
+        - name: val
+    - function: _dmidecoder
+      source:
+        path: salt/modules/smbios.py
+        symbol: _dmidecoder
+      summary: Call DMIdecode
+      parameters:
+        - name: args
+          default: None

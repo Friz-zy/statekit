@@ -1,0 +1,52 @@
+kind: exec
+module: keyboard
+source_module: keyboard
+path: salt/modules/keyboard.py
+functions:
+    - function: get_sys
+      source:
+        path: salt/modules/keyboard.py
+        symbol: get_sys
+      summary: Get current system keyboard setting
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_keyboard.py
+          functions: 4
+    - function: set_sys
+      source:
+        path: salt/modules/keyboard.py
+        symbol: set_sys
+      summary: Set current system keyboard setting
+      parameters:
+        - name: layout
+      execution_dependencies:
+        - cmd.run
+        - file.sed
+      tests:
+        - path: tests/pytests/unit/modules/test_keyboard.py
+          functions: 4
+    - function: get_x
+      source:
+        path: salt/modules/keyboard.py
+        symbol: get_x
+      summary: Get current X keyboard setting
+      execution_dependencies:
+        - cmd.run
+        - file.sed
+      tests:
+        - path: tests/pytests/unit/modules/test_keyboard.py
+          functions: 4
+    - function: set_x
+      source:
+        path: salt/modules/keyboard.py
+        symbol: set_x
+      summary: Set current X keyboard setting
+      parameters:
+        - name: layout
+      execution_dependencies:
+        - cmd.run
+        - file.sed
+      tests:
+        - path: tests/pytests/unit/modules/test_keyboard.py
+          functions: 4

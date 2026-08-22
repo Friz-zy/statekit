@@ -1,0 +1,90 @@
+kind: exec
+module: sqlite3
+source_module: sqlite3
+path: salt/modules/sqlite3.py
+functions:
+    - function: _connect
+      source:
+        path: salt/modules/sqlite3.py
+        symbol: _connect
+      parameters:
+        - name: db
+          default: None
+      tests:
+        - path: tests/unit/modules/test_sqlite3.py
+          functions: 0
+    - function: version
+      source:
+        path: salt/modules/sqlite3.py
+        symbol: version
+      summary: Return version of pysqlite
+      tests:
+        - path: tests/unit/modules/test_sqlite3.py
+          functions: 0
+    - function: sqlite_version
+      source:
+        path: salt/modules/sqlite3.py
+        symbol: sqlite_version
+      summary: Return version of sqlite
+      tests:
+        - path: tests/unit/modules/test_sqlite3.py
+          functions: 0
+    - function: modify
+      source:
+        path: salt/modules/sqlite3.py
+        symbol: modify
+      summary: Issue an SQL query to sqlite3 (with no return data), usually used
+      parameters:
+        - name: db
+          default: None
+        - name: sql
+          default: None
+      tests:
+        - path: tests/unit/modules/test_sqlite3.py
+          functions: 0
+    - function: fetch
+      source:
+        path: salt/modules/sqlite3.py
+        symbol: fetch
+      summary: Retrieve data from an sqlite3 db (returns all rows, be careful!)
+      parameters:
+        - name: db
+          default: None
+        - name: sql
+          default: None
+      tests:
+        - path: tests/unit/modules/test_sqlite3.py
+          functions: 0
+    - function: tables
+      source:
+        path: salt/modules/sqlite3.py
+        symbol: tables
+      summary: Show all tables in the database
+      parameters:
+        - name: db
+          default: None
+      tests:
+        - path: tests/unit/modules/test_sqlite3.py
+          functions: 0
+    - function: indices
+      source:
+        path: salt/modules/sqlite3.py
+        symbol: indices
+      summary: Show all indices in the database
+      parameters:
+        - name: db
+          default: None
+      tests:
+        - path: tests/unit/modules/test_sqlite3.py
+          functions: 0
+    - function: indexes
+      source:
+        path: salt/modules/sqlite3.py
+        symbol: indexes
+      summary: Show all indices in the database, for people with poor spelling skills
+      parameters:
+        - name: db
+          default: None
+      tests:
+        - path: tests/unit/modules/test_sqlite3.py
+          functions: 0

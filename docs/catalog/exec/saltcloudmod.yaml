@@ -1,0 +1,19 @@
+kind: exec
+module: saltcloud
+source_module: saltcloudmod
+virtual: true
+path: salt/modules/saltcloudmod.py
+functions:
+    - function: create
+      source:
+        path: salt/modules/saltcloudmod.py
+        symbol: create
+      summary: Create the named vm
+      parameters:
+        - name: name
+        - name: profile
+      execution_dependencies:
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_saltcloudmod.py
+          functions: 1

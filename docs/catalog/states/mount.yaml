@@ -1,0 +1,312 @@
+kind: state
+module: mount
+source_module: mount
+path: salt/states/mount.py
+functions:
+    - function: _size_convert
+      source:
+        path: salt/states/mount.py
+        symbol: _size_convert
+      parameters:
+        - name: _re_size
+      tests:
+        - path: tests/pytests/unit/states/test_mount.py
+          functions: 34
+    - function: mounted
+      source:
+        path: salt/states/mount.py
+        symbol: mounted
+      summary: Verify that a device is mounted
+      parameters:
+        - name: name
+        - name: device
+        - name: fstype
+        - name: mkmnt
+          default: "False"
+        - name: opts
+          default: '"defaults"'
+        - name: dump
+          default: "0"
+        - name: pass_num
+          default: "0"
+        - name: config
+          default: '"/etc/fstab"'
+        - name: persist
+          default: "True"
+        - name: mount
+          default: "True"
+        - name: user
+          default: None
+        - name: match_on
+          default: '"auto"'
+        - name: device_name_regex
+          default: None
+        - name: extra_mount_invisible_options
+          default: None
+        - name: extra_mount_invisible_keys
+          default: None
+        - name: extra_mount_ignore_fs_keys
+          default: None
+        - name: extra_mount_translate_options
+          default: None
+        - name: hidden_opts
+          default: None
+        - name: bind_mount_copy_active_opts
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - file.mkdir
+        - mount.active
+        - mount.mount
+        - mount.read_mount_cache
+        - mount.remount
+        - mount.set_automaster
+        - mount.set_filesystems
+        - mount.set_fstab
+        - mount.umount
+        - mount.write_mount_cache
+      tests:
+        - path: tests/pytests/unit/states/test_mount.py
+          functions: 34
+    - function: swap
+      source:
+        path: salt/states/mount.py
+        symbol: swap
+      summary: Activates a swap device
+      parameters:
+        - name: name
+        - name: persist
+          default: "True"
+        - name: config
+          default: '"/etc/fstab"'
+      execution_dependencies:
+        - cmd.run_all
+        - file.is_link
+        - file.mkdir
+        - file.readlink
+        - mount.active
+        - mount.filesystems
+        - mount.fstab
+        - mount.mount
+        - mount.read_mount_cache
+        - mount.remount
+        - mount.set_automaster
+        - mount.set_filesystems
+        - mount.set_fstab
+        - mount.swapon
+        - mount.swaps
+        - mount.umount
+        - mount.write_mount_cache
+      tests:
+        - path: tests/pytests/unit/states/test_mount.py
+          functions: 34
+    - function: unmounted
+      source:
+        path: salt/states/mount.py
+        symbol: unmounted
+      summary: '.. versionadded:: 0.17.0'
+      parameters:
+        - name: name
+        - name: device
+          default: None
+        - name: config
+          default: '"/etc/fstab"'
+        - name: persist
+          default: "False"
+        - name: user
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - file.is_link
+        - file.mkdir
+        - file.readlink
+        - mount.active
+        - mount.automaster
+        - mount.delete_mount_cache
+        - mount.filesystems
+        - mount.fstab
+        - mount.mount
+        - mount.read_mount_cache
+        - mount.remount
+        - mount.rm_automaster
+        - mount.rm_filesystems
+        - mount.rm_fstab
+        - mount.set_automaster
+        - mount.set_filesystems
+        - mount.set_fstab
+        - mount.swapon
+        - mount.swaps
+        - mount.umount
+        - mount.write_mount_cache
+      tests:
+        - path: tests/pytests/unit/states/test_mount.py
+          functions: 34
+    - function: mod_watch
+      source:
+        path: salt/states/mount.py
+        symbol: mod_watch
+      summary: The mounted watcher, called to invoke the watch command.
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - file.is_link
+        - file.mkdir
+        - file.readlink
+        - mount.active
+        - mount.automaster
+        - mount.delete_mount_cache
+        - mount.filesystems
+        - mount.fstab
+        - mount.mount
+        - mount.read_mount_cache
+        - mount.remount
+        - mount.rm_automaster
+        - mount.rm_filesystems
+        - mount.rm_fstab
+        - mount.set_automaster
+        - mount.set_filesystems
+        - mount.set_fstab
+        - mount.swapon
+        - mount.swaps
+        - mount.umount
+        - mount.write_mount_cache
+      tests:
+        - path: tests/pytests/unit/states/test_mount.py
+          functions: 34
+    - function: _convert_to
+      source:
+        path: salt/states/mount.py
+        symbol: _convert_to
+      summary: Convert a device name, UUID or LABEL to a device name, UUID or
+      parameters:
+        - name: maybe_device
+        - name: convert_to
+      execution_dependencies:
+        - cmd.run_all
+        - disk.blkid
+        - file.is_link
+        - file.mkdir
+        - file.readlink
+        - mount.active
+        - mount.automaster
+        - mount.delete_mount_cache
+        - mount.filesystems
+        - mount.fstab
+        - mount.mount
+        - mount.read_mount_cache
+        - mount.remount
+        - mount.rm_automaster
+        - mount.rm_filesystems
+        - mount.rm_fstab
+        - mount.set_automaster
+        - mount.set_filesystems
+        - mount.set_fstab
+        - mount.swapon
+        - mount.swaps
+        - mount.umount
+        - mount.write_mount_cache
+      tests:
+        - path: tests/pytests/unit/states/test_mount.py
+          functions: 34
+    - function: fstab_present
+      source:
+        path: salt/states/mount.py
+        symbol: fstab_present
+      summary: Makes sure that a fstab mount point is present.
+      parameters:
+        - name: name
+        - name: fs_file
+        - name: fs_vfstype
+        - name: fs_mntops
+          default: '"defaults"'
+        - name: fs_freq
+          default: "0"
+        - name: fs_passno
+          default: "0"
+        - name: mount_by
+          default: None
+        - name: config
+          default: '"/etc/fstab"'
+        - name: mount
+          default: "True"
+        - name: match_on
+          default: '"auto"'
+        - name: not_change
+          default: "False"
+        - name: fs_mount
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+        - disk.blkid
+        - file.is_link
+        - file.mkdir
+        - file.readlink
+        - mount.active
+        - mount.automaster
+        - mount.delete_mount_cache
+        - mount.filesystems
+        - mount.fstab
+        - mount.mount
+        - mount.read_mount_cache
+        - mount.remount
+        - mount.rm_automaster
+        - mount.rm_filesystems
+        - mount.rm_fstab
+        - mount.set_automaster
+        - mount.set_filesystems
+        - mount.set_fstab
+        - mount.swapon
+        - mount.swaps
+        - mount.umount
+        - mount.write_mount_cache
+      tests:
+        - path: tests/pytests/unit/states/test_mount.py
+          functions: 34
+    - function: fstab_absent
+      source:
+        path: salt/states/mount.py
+        symbol: fstab_absent
+      summary: Makes sure that a fstab mount point is absent.
+      parameters:
+        - name: name
+        - name: fs_file
+        - name: mount_by
+          default: None
+        - name: config
+          default: '"/etc/fstab"'
+      execution_dependencies:
+        - cmd.run_all
+        - disk.blkid
+        - file.is_link
+        - file.mkdir
+        - file.readlink
+        - mount.active
+        - mount.automaster
+        - mount.delete_mount_cache
+        - mount.filesystems
+        - mount.fstab
+        - mount.mount
+        - mount.read_mount_cache
+        - mount.remount
+        - mount.rm_automaster
+        - mount.rm_filesystems
+        - mount.rm_fstab
+        - mount.set_automaster
+        - mount.set_filesystems
+        - mount.set_fstab
+        - mount.swapon
+        - mount.swaps
+        - mount.umount
+        - mount.write_mount_cache
+      tests:
+        - path: tests/pytests/unit/states/test_mount.py
+          functions: 34

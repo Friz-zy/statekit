@@ -1,0 +1,83 @@
+kind: exec
+module: logrotate
+source_module: logrotate
+path: salt/modules/logrotate.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _convert_if_int
+      source:
+        path: salt/modules/logrotate.py
+        symbol: _convert_if_int
+      summary: Convert to an int if necessary.
+      parameters:
+        - name: value
+      tests:
+        - path: tests/pytests/unit/modules/test_logrotate.py
+          functions: 7
+    - function: _parse_conf
+      source:
+        path: salt/modules/logrotate.py
+        symbol: _parse_conf
+      summary: Parse a logrotate configuration file.
+      parameters:
+        - name: conf_file
+          default: _DEFAULT_CONF
+      tests:
+        - path: tests/pytests/unit/modules/test_logrotate.py
+          functions: 7
+    - function: show_conf
+      source:
+        path: salt/modules/logrotate.py
+        symbol: show_conf
+      summary: Show parsed configuration
+      parameters:
+        - name: conf_file
+          default: _DEFAULT_CONF
+      tests:
+        - path: tests/pytests/unit/modules/test_logrotate.py
+          functions: 7
+    - function: get
+      source:
+        path: salt/modules/logrotate.py
+        symbol: get
+      summary: Get the value for a specific configuration line.
+      parameters:
+        - name: key
+        - name: value
+          default: None
+        - name: conf_file
+          default: _DEFAULT_CONF
+      tests:
+        - path: tests/pytests/unit/modules/test_logrotate.py
+          functions: 7
+    - function: set_
+      source:
+        path: salt/modules/logrotate.py
+        symbol: set_
+      summary: Set a new value for a specific configuration line.
+      parameters:
+        - name: key
+        - name: value
+        - name: setting
+          default: None
+        - name: conf_file
+          default: _DEFAULT_CONF
+      execution_dependencies:
+        - file.replace
+      tests:
+        - path: tests/pytests/unit/modules/test_logrotate.py
+          functions: 7
+    - function: _dict_to_stanza
+      source:
+        path: salt/modules/logrotate.py
+        symbol: _dict_to_stanza
+      summary: Convert a dict to a multi-line stanza
+      parameters:
+        - name: key
+        - name: stanza
+      execution_dependencies:
+        - file.replace
+      tests:
+        - path: tests/pytests/unit/modules/test_logrotate.py
+          functions: 7

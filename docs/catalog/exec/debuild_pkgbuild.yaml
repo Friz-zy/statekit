@@ -1,0 +1,164 @@
+kind: exec
+module: pkgbuild
+source_module: debuild_pkgbuild
+virtual: true
+path: salt/modules/debuild_pkgbuild.py
+functions:
+    - function: _check_repo_sign_utils_support
+      source:
+        path: salt/modules/debuild_pkgbuild.py
+        symbol: _check_repo_sign_utils_support
+      summary: Check for specified command name in search path
+      parameters:
+        - name: name
+    - function: _check_repo_gpg_phrase_utils
+      source:
+        path: salt/modules/debuild_pkgbuild.py
+        symbol: _check_repo_gpg_phrase_utils
+      summary: Check for /usr/lib/gnupg2/gpg-preset-passphrase is installed
+      execution_dependencies:
+        - file.file_exists
+    - function: _get_build_env
+      source:
+        path: salt/modules/debuild_pkgbuild.py
+        symbol: _get_build_env
+      summary: Get build environment overrides dictionary to use in build process
+      parameters:
+        - name: env
+      execution_dependencies:
+        - file.file_exists
+    - function: _get_repo_options_env
+      source:
+        path: salt/modules/debuild_pkgbuild.py
+        symbol: _get_repo_options_env
+      summary: Get repo environment overrides dictionary to use in repo options process
+      parameters:
+        - name: env
+      execution_dependencies:
+        - file.file_exists
+    - function: _get_repo_dists_env
+      source:
+        path: salt/modules/debuild_pkgbuild.py
+        symbol: _get_repo_dists_env
+      summary: Get repo environment overrides dictionary to use in repo distributions process
+      parameters:
+        - name: env
+      execution_dependencies:
+        - file.file_exists
+    - function: _create_pbuilders
+      source:
+        path: salt/modules/debuild_pkgbuild.py
+        symbol: _create_pbuilders
+      summary: Create the .pbuilder family of files in user's home directory
+      parameters:
+        - name: env
+        - name: runas
+          default: '"root"'
+      execution_dependencies:
+        - cmd.retcode
+        - file.file_exists
+    - function: _mk_tree
+      source:
+        path: salt/modules/debuild_pkgbuild.py
+        symbol: _mk_tree
+      summary: Create the debian build area
+      execution_dependencies:
+        - cmd.retcode
+        - file.file_exists
+    - function: _get_spec
+      source:
+        path: salt/modules/debuild_pkgbuild.py
+        symbol: _get_spec
+      summary: Get the spec file (tarball of the debian sub-dir to use)
+      parameters:
+        - name: tree_base
+        - name: spec
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cmd.retcode
+        - cp.get_url
+        - file.file_exists
+    - function: _get_src
+      source:
+        path: salt/modules/debuild_pkgbuild.py
+        symbol: _get_src
+      summary: Get the named sources and place them into the tree_base
+      parameters:
+        - name: tree_base
+        - name: source
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cmd.retcode
+        - cp.get_url
+        - file.file_exists
+    - function: make_src_pkg
+      source:
+        path: salt/modules/debuild_pkgbuild.py
+        symbol: make_src_pkg
+      summary: Create a platform specific source package from the given platform spec/control file and sources
+      parameters:
+        - name: dest_dir
+        - name: spec
+        - name: sources
+        - name: env
+          default: None
+        - name: saltenv
+          default: '"base"'
+        - name: runas
+          default: '"root"'
+      execution_dependencies:
+        - cmd.retcode
+        - cp.get_url
+        - file.file_exists
+    - function: build
+      source:
+        path: salt/modules/debuild_pkgbuild.py
+        symbol: build
+      summary: Given the package destination directory, the tarball containing debian files (e.g. control)
+      parameters:
+        - name: runas
+        - name: tgt
+        - name: dest_dir
+        - name: spec
+        - name: sources
+        - name: deps
+        - name: env
+        - name: template
+        - name: saltenv
+          default: '"base"'
+        - name: log_dir
+          default: '"/var/log/salt/pkgbuild"'
+      execution_dependencies:
+        - cmd.retcode
+        - cp.get_url
+        - file.file_exists
+    - function: make_repo
+      source:
+        path: salt/modules/debuild_pkgbuild.py
+        symbol: make_repo
+      summary: Make a package repository and optionally sign it and packages present
+      parameters:
+        - name: repodir
+        - name: keyid
+          default: None
+        - name: env
+          default: None
+        - name: use_passphrase
+          default: "False"
+        - name: gnupghome
+          default: '"/etc/salt/gpgkeys"'
+        - name: runas
+          default: '"root"'
+        - name: timeout
+          default: "15.0"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cp.get_url
+        - file.file_exists
+        - gpg.import_key
+        - gpg.list_keys
+        - pillar.get

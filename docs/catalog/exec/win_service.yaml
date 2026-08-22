@@ -1,0 +1,344 @@
+kind: exec
+module: service
+source_module: win_service
+virtual: true
+path: salt/modules/win_service.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _status_wait
+      source:
+        path: salt/modules/win_service.py
+        symbol: _status_wait
+      summary: Helper function that will wait for the status of the service to match the
+      parameters:
+        - name: service_name
+        - name: end_time
+        - name: service_states
+      tests:
+        - path: tests/pytests/unit/modules/test_win_service.py
+          functions: 21
+    - function: _cmd_quote
+      source:
+        path: salt/modules/win_service.py
+        symbol: _cmd_quote
+      parameters:
+        - name: cmd
+      tests:
+        - path: tests/pytests/unit/modules/test_win_service.py
+          functions: 21
+    - function: get_enabled
+      source:
+        path: salt/modules/win_service.py
+        symbol: get_enabled
+      summary: Return a list of enabled services. Enabled is defined as a service that is
+      tests:
+        - path: tests/pytests/unit/modules/test_win_service.py
+          functions: 21
+    - function: get_disabled
+      source:
+        path: salt/modules/win_service.py
+        symbol: get_disabled
+      summary: Return a list of disabled services. Disabled is defined as a service that is
+      tests:
+        - path: tests/pytests/unit/modules/test_win_service.py
+          functions: 21
+    - function: available
+      source:
+        path: salt/modules/win_service.py
+        symbol: available
+      summary: Check if a service is available on the system.
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_win_service.py
+          functions: 21
+    - function: missing
+      source:
+        path: salt/modules/win_service.py
+        symbol: missing
+      summary: The inverse of service.available.
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_win_service.py
+          functions: 21
+    - function: _get_services
+      source:
+        path: salt/modules/win_service.py
+        symbol: _get_services
+      summary: Returns a list of all services on the system.
+      tests:
+        - path: tests/pytests/unit/modules/test_win_service.py
+          functions: 21
+    - function: get_all
+      source:
+        path: salt/modules/win_service.py
+        symbol: get_all
+      summary: Return all installed services
+      tests:
+        - path: tests/pytests/unit/modules/test_win_service.py
+          functions: 21
+    - function: get_service_name
+      source:
+        path: salt/modules/win_service.py
+        symbol: get_service_name
+      summary: The Display Name is what is displayed in Windows when services.msc is
+      parameters:
+        - name: args
+          kind: '*'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_service.py
+          functions: 21
+    - function: info
+      source:
+        path: salt/modules/win_service.py
+        symbol: info
+      summary: Get information about a service on the system
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_win_service.py
+          functions: 21
+    - function: start
+      source:
+        path: salt/modules/win_service.py
+        symbol: start
+      summary: Start the specified service.
+      parameters:
+        - name: name
+        - name: timeout
+          default: "90"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_service.py
+          functions: 21
+    - function: stop
+      source:
+        path: salt/modules/win_service.py
+        symbol: stop
+      summary: Stop the specified service
+      parameters:
+        - name: name
+        - name: timeout
+          default: "90"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_service.py
+          functions: 21
+    - function: restart
+      source:
+        path: salt/modules/win_service.py
+        symbol: restart
+      summary: Restart the named service. This issues a stop command followed by a start.
+      parameters:
+        - name: name
+        - name: timeout
+          default: "90"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_service.py
+          functions: 21
+    - function: create_win_salt_restart_task
+      source:
+        path: salt/modules/win_service.py
+        symbol: create_win_salt_restart_task
+      summary: Create a task in Windows task scheduler to enable restarting the salt-minion
+      execution_dependencies:
+        - task.create_task
+      tests:
+        - path: tests/pytests/unit/modules/test_win_service.py
+          functions: 21
+    - function: execute_salt_restart_task
+      source:
+        path: salt/modules/win_service.py
+        symbol: execute_salt_restart_task
+      summary: Run the Windows Salt restart task
+      execution_dependencies:
+        - task.create_task
+        - task.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_service.py
+          functions: 21
+    - function: status
+      source:
+        path: salt/modules/win_service.py
+        symbol: status
+      summary: Return the status for a service.
+      parameters:
+        - name: name
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - task.create_task
+        - task.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_service.py
+          functions: 21
+    - function: getsid
+      source:
+        path: salt/modules/win_service.py
+        symbol: getsid
+      summary: Return the SID for this windows service
+      parameters:
+        - name: name
+      execution_dependencies:
+        - task.create_task
+        - task.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_service.py
+          functions: 21
+    - function: modify
+      source:
+        path: salt/modules/win_service.py
+        symbol: modify
+      parameters:
+        - name: name
+        - name: bin_path
+          default: None
+        - name: exe_args
+          default: None
+        - name: display_name
+          default: None
+        - name: description
+          default: None
+        - name: service_type
+          default: None
+        - name: start_type
+          default: None
+        - name: start_delayed
+          default: None
+        - name: error_control
+          default: None
+        - name: load_order_group
+          default: None
+        - name: dependencies
+          default: None
+        - name: account_name
+          default: None
+        - name: account_password
+          default: None
+        - name: run_interactive
+          default: None
+      execution_dependencies:
+        - task.create_task
+        - task.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_service.py
+          functions: 21
+    - function: enable
+      source:
+        path: salt/modules/win_service.py
+        symbol: enable
+      summary: Enable the named service to start at boot
+      parameters:
+        - name: name
+        - name: start_type
+          default: '"auto"'
+        - name: start_delayed
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - task.create_task
+        - task.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_service.py
+          functions: 21
+    - function: disable
+      source:
+        path: salt/modules/win_service.py
+        symbol: disable
+      summary: Disable the named service to start at boot
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - task.create_task
+        - task.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_service.py
+          functions: 21
+    - function: enabled
+      source:
+        path: salt/modules/win_service.py
+        symbol: enabled
+      summary: Check to see if the named service is enabled to start on boot
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - task.create_task
+        - task.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_service.py
+          functions: 21
+    - function: disabled
+      source:
+        path: salt/modules/win_service.py
+        symbol: disabled
+      summary: Check to see if the named service is disabled to start on boot
+      parameters:
+        - name: name
+      execution_dependencies:
+        - task.create_task
+        - task.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_service.py
+          functions: 21
+    - function: create
+      source:
+        path: salt/modules/win_service.py
+        symbol: create
+      summary: Create the named service.
+      parameters:
+        - name: name
+        - name: bin_path
+        - name: exe_args
+          default: None
+        - name: display_name
+          default: None
+        - name: description
+          default: None
+        - name: service_type
+          default: '"own"'
+        - name: start_type
+          default: '"manual"'
+        - name: start_delayed
+          default: "False"
+        - name: error_control
+          default: '"normal"'
+        - name: load_order_group
+          default: None
+        - name: dependencies
+          default: None
+        - name: account_name
+          default: '".\\LocalSystem"'
+        - name: account_password
+          default: None
+        - name: run_interactive
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - task.create_task
+        - task.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_service.py
+          functions: 21
+    - function: delete
+      source:
+        path: salt/modules/win_service.py
+        symbol: delete
+      summary: Delete the named service
+      parameters:
+        - name: name
+        - name: timeout
+          default: "90"
+      execution_dependencies:
+        - task.create_task
+        - task.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_service.py
+          functions: 21

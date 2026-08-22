@@ -1,0 +1,382 @@
+kind: exec
+module: cp
+source_module: cp
+path: salt/modules/cp.py
+functions:
+    - function: _auth
+      source:
+        path: salt/modules/cp.py
+        symbol: _auth
+      summary: Return the auth object
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8
+    - function: _gather_pillar
+      source:
+        path: salt/modules/cp.py
+        symbol: _gather_pillar
+      summary: Whenever a state run starts, gather the pillar data fresh
+      parameters:
+        - name: pillarenv
+        - name: pillar_override
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8
+    - function: recv
+      source:
+        path: salt/modules/cp.py
+        symbol: recv
+      summary: Used with salt-cp, pass the files dict, and the destination.
+      parameters:
+        - name: files
+        - name: dest
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8
+    - function: recv_chunked
+      source:
+        path: salt/modules/cp.py
+        symbol: recv_chunked
+      summary: This function receives files copied to the minion using ``salt-cp`` and is
+      parameters:
+        - name: dest
+        - name: chunk
+        - name: append
+          default: "False"
+        - name: compressed
+          default: "True"
+        - name: mode
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8
+    - function: _client
+      source:
+        path: salt/modules/cp.py
+        symbol: _client
+      summary: Return a file client
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8
+    - function: _render_filenames
+      source:
+        path: salt/modules/cp.py
+        symbol: _render_filenames
+      summary: Process markup in the :param:`path` and :param:`dest` variables (NOT the
+      parameters:
+        - name: path
+        - name: dest
+        - name: saltenv
+        - name: template
+        - name: kw
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8
+    - function: get_file
+      source:
+        path: salt/modules/cp.py
+        symbol: get_file
+      summary: '.. versionchanged:: 3005'
+      parameters:
+        - name: path
+        - name: dest
+        - name: saltenv
+          default: None
+        - name: makedirs
+          default: "False"
+        - name: template
+          default: None
+        - name: gzip
+          default: None
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8
+    - function: envs
+      source:
+        path: salt/modules/cp.py
+        symbol: envs
+      summary: List available environments for fileserver
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8
+    - function: get_template
+      source:
+        path: salt/modules/cp.py
+        symbol: get_template
+      summary: '.. versionchanged:: 3005'
+      parameters:
+        - name: path
+        - name: dest
+        - name: template
+          default: '"jinja"'
+        - name: saltenv
+          default: None
+        - name: makedirs
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8
+    - function: get_dir
+      source:
+        path: salt/modules/cp.py
+        symbol: get_dir
+      summary: '.. versionchanged:: 3005'
+      parameters:
+        - name: path
+        - name: dest
+        - name: saltenv
+          default: None
+        - name: template
+          default: None
+        - name: gzip
+          default: None
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8
+    - function: get_url
+      source:
+        path: salt/modules/cp.py
+        symbol: get_url
+      summary: '.. versionchanged:: 3005'
+      parameters:
+        - name: path
+        - name: dest
+          default: '""'
+        - name: saltenv
+          default: None
+        - name: makedirs
+          default: "False"
+        - name: source_hash
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8
+    - function: get_file_str
+      source:
+        path: salt/modules/cp.py
+        symbol: get_file_str
+      summary: '.. versionchanged:: 3005'
+      parameters:
+        - name: path
+        - name: saltenv
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8
+    - function: cache_file
+      source:
+        path: salt/modules/cp.py
+        symbol: cache_file
+      summary: '.. versionchanged:: 3005'
+      parameters:
+        - name: path
+        - name: saltenv
+          default: None
+        - name: source_hash
+          default: None
+        - name: verify_ssl
+          default: "True"
+        - name: use_etag
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8
+    - function: cache_dest
+      source:
+        path: salt/modules/cp.py
+        symbol: cache_dest
+      summary: '.. versionadded:: 3000'
+      parameters:
+        - name: url
+        - name: saltenv
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8
+    - function: cache_files
+      source:
+        path: salt/modules/cp.py
+        symbol: cache_files
+      summary: '.. versionchanged:: 3005'
+      parameters:
+        - name: paths
+        - name: saltenv
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8
+    - function: cache_dir
+      source:
+        path: salt/modules/cp.py
+        symbol: cache_dir
+      summary: '.. versionchanged:: 3005'
+      parameters:
+        - name: path
+        - name: saltenv
+          default: None
+        - name: include_empty
+          default: "False"
+        - name: include_pat
+          default: None
+        - name: exclude_pat
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8
+    - function: cache_master
+      source:
+        path: salt/modules/cp.py
+        symbol: cache_master
+      summary: '.. versionchanged:: 3005'
+      parameters:
+        - name: saltenv
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8
+    - function: cache_local_file
+      source:
+        path: salt/modules/cp.py
+        symbol: cache_local_file
+      summary: Cache a local file on the minion in the localfiles cache
+      parameters:
+        - name: path
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8
+    - function: list_states
+      source:
+        path: salt/modules/cp.py
+        symbol: list_states
+      summary: '.. versionchanged:: 3005'
+      parameters:
+        - name: saltenv
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8
+    - function: list_master
+      source:
+        path: salt/modules/cp.py
+        symbol: list_master
+      summary: '.. versionchanged:: 3005'
+      parameters:
+        - name: saltenv
+          default: None
+        - name: prefix
+          default: '""'
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8
+    - function: list_master_dirs
+      source:
+        path: salt/modules/cp.py
+        symbol: list_master_dirs
+      summary: '.. versionchanged:: 3005'
+      parameters:
+        - name: saltenv
+          default: None
+        - name: prefix
+          default: '""'
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8
+    - function: list_master_symlinks
+      source:
+        path: salt/modules/cp.py
+        symbol: list_master_symlinks
+      summary: '.. versionchanged:: 3005'
+      parameters:
+        - name: saltenv
+          default: None
+        - name: prefix
+          default: '""'
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8
+    - function: list_minion
+      source:
+        path: salt/modules/cp.py
+        symbol: list_minion
+      summary: '.. versionchanged:: 3005'
+      parameters:
+        - name: saltenv
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8
+    - function: is_cached
+      source:
+        path: salt/modules/cp.py
+        symbol: is_cached
+      summary: '.. versionchanged:: 3005'
+      parameters:
+        - name: path
+        - name: saltenv
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8
+    - function: hash_file
+      source:
+        path: salt/modules/cp.py
+        symbol: hash_file
+      summary: '.. versionchanged:: 3005'
+      parameters:
+        - name: path
+        - name: saltenv
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8
+    - function: stat_file
+      source:
+        path: salt/modules/cp.py
+        symbol: stat_file
+      summary: '.. versionchanged:: 3005'
+      parameters:
+        - name: path
+        - name: saltenv
+          default: None
+        - name: octal
+          default: "True"
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8
+    - function: push
+      source:
+        path: salt/modules/cp.py
+        symbol: push
+      summary: WARNING Files pushed to the master will have global read permissions..
+      parameters:
+        - name: path
+        - name: keep_symlinks
+          default: "False"
+        - name: upload_path
+          default: None
+        - name: remove_source
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8
+    - function: push_dir
+      source:
+        path: salt/modules/cp.py
+        symbol: push_dir
+      summary: Push a directory from the minion up to the master, the files will be saved
+      parameters:
+        - name: path
+        - name: glob
+          default: None
+        - name: upload_path
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_cp.py
+          functions: 8

@@ -1,0 +1,93 @@
+kind: state
+module: network
+source_module: network
+path: salt/states/network.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _diff_lines
+      source:
+        path: salt/states/network.py
+        symbol: _diff_lines
+      summary: Normalize ``value`` into a sequence of strings for ``difflib.unified_diff``.
+      parameters:
+        - name: value
+      tests:
+        - path: tests/pytests/unit/states/test_network.py
+          functions: 3
+    - function: managed
+      source:
+        path: salt/states/network.py
+        symbol: managed
+      summary: Ensure that the named interface is configured properly.
+      parameters:
+        - name: name
+        - name: enabled
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - ip.build_bond
+        - ip.build_interface
+        - ip.down
+        - ip.get_bond
+        - ip.get_interface
+        - ip.up
+        - saltutil.refresh_grains
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/states/test_network.py
+          functions: 3
+    - function: routes
+      source:
+        path: salt/states/network.py
+        symbol: routes
+      summary: Manage network interface static routes.
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - ip.apply_network_settings
+        - ip.build_bond
+        - ip.build_interface
+        - ip.build_routes
+        - ip.down
+        - ip.get_bond
+        - ip.get_interface
+        - ip.get_routes
+        - ip.up
+        - saltutil.refresh_grains
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/states/test_network.py
+          functions: 3
+    - function: system
+      source:
+        path: salt/states/network.py
+        symbol: system
+      summary: Ensure that global network settings are configured properly.
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - ip.apply_network_settings
+        - ip.build_bond
+        - ip.build_interface
+        - ip.build_network_settings
+        - ip.build_routes
+        - ip.down
+        - ip.get_bond
+        - ip.get_interface
+        - ip.get_network_settings
+        - ip.get_routes
+        - ip.up
+        - saltutil.refresh_grains
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/states/test_network.py
+          functions: 3

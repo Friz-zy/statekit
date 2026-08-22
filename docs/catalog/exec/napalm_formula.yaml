@@ -1,0 +1,107 @@
+kind: exec
+module: napalm_formula
+source_module: napalm_formula
+virtual: true
+path: salt/modules/napalm_formula.py
+functions:
+    - function: _container_path
+      source:
+        path: salt/modules/napalm_formula.py
+        symbol: _container_path
+      summary: Generate all the possible paths within an OpenConfig-like object.
+      parameters:
+        - name: model
+        - name: key
+          default: None
+        - name: container
+          default: None
+        - name: delim
+          default: DEFAULT_TARGET_DELIM
+    - function: container_path
+      source:
+        path: salt/modules/napalm_formula.py
+        symbol: container_path
+      summary: Return the list of all the possible paths in a container, down to the
+      parameters:
+        - name: model
+        - name: key
+          default: None
+        - name: container
+          default: None
+        - name: delim
+          default: DEFAULT_TARGET_DELIM
+    - function: setval
+      source:
+        path: salt/modules/napalm_formula.py
+        symbol: setval
+      summary: Set a value under the dictionary hierarchy identified
+      parameters:
+        - name: key
+        - name: val
+        - name: dict_
+          default: None
+        - name: delim
+          default: DEFAULT_TARGET_DELIM
+    - function: traverse
+      source:
+        path: salt/modules/napalm_formula.py
+        symbol: traverse
+      summary: Traverse a dict or list using a colon-delimited (or otherwise delimited,
+      parameters:
+        - name: data
+        - name: key
+        - name: default
+          default: None
+        - name: delimiter
+          default: DEFAULT_TARGET_DELIM
+    - function: dictupdate
+      source:
+        path: salt/modules/napalm_formula.py
+        symbol: dictupdate
+      summary: Recursive version of the default dict.update
+      parameters:
+        - name: dest
+        - name: upd
+        - name: recursive_update
+          default: "True"
+        - name: merge_lists
+          default: "False"
+    - function: defaults
+      source:
+        path: salt/modules/napalm_formula.py
+        symbol: defaults
+      summary: Apply the defaults to a Python dictionary having the structure as described
+      parameters:
+        - name: model
+        - name: defaults_
+        - name: delim
+          default: '"//"'
+        - name: flipped_merge
+          default: "False"
+    - function: render_field
+      source:
+        path: salt/modules/napalm_formula.py
+        symbol: render_field
+      summary: Render a field found under the ``field`` level of the hierarchy in the
+      parameters:
+        - name: dictionary
+        - name: field
+        - name: prepend
+          default: None
+        - name: append
+          default: None
+        - name: quotes
+          default: "False"
+        - name: opts
+          kind: '**'
+    - function: render_fields
+      source:
+        path: salt/modules/napalm_formula.py
+        symbol: render_fields
+      summary: This function works similarly to
+      parameters:
+        - name: dictionary
+        - name: fields
+          kind: '*'
+        - name: opts
+          kind: '**'

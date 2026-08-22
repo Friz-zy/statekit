@@ -1,0 +1,44 @@
+kind: exec
+module: users
+source_module: napalm_users
+virtual: true
+path: salt/modules/napalm_users.py
+functions:
+    - function: config
+      source:
+        path: salt/modules/napalm_users.py
+        symbol: config
+      summary: Returns the configuration of the users on the device
+      parameters:
+        - name: kwargs
+          kind: '**'
+    - function: set_users
+      source:
+        path: salt/modules/napalm_users.py
+        symbol: set_users
+      summary: Configures users on network devices.
+      parameters:
+        - name: users
+        - name: test
+          default: "False"
+        - name: commit
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - net.load_template
+    - function: delete_users
+      source:
+        path: salt/modules/napalm_users.py
+        symbol: delete_users
+      summary: Removes users from the configuration of network devices.
+      parameters:
+        - name: users
+        - name: test
+          default: "False"
+        - name: commit
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - net.load_template

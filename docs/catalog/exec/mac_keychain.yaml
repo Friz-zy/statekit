@@ -1,0 +1,129 @@
+kind: exec
+module: keychain
+source_module: mac_keychain
+virtual: true
+path: salt/modules/mac_keychain.py
+platform_markers:
+    - is_darwin
+functions:
+    - function: install
+      source:
+        path: salt/modules/mac_keychain.py
+        symbol: install
+      summary: Install a certificate
+      parameters:
+        - name: cert
+        - name: password
+        - name: keychain
+          default: '"/Library/Keychains/System.keychain"'
+        - name: allow_any
+          default: "False"
+        - name: keychain_password
+          default: None
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_keychain.py
+          functions: 8
+    - function: uninstall
+      source:
+        path: salt/modules/mac_keychain.py
+        symbol: uninstall
+      summary: Uninstall a certificate from a keychain
+      parameters:
+        - name: cert_name
+        - name: keychain
+          default: '"/Library/Keychains/System.keychain"'
+        - name: keychain_password
+          default: None
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_keychain.py
+          functions: 8
+    - function: list_certs
+      source:
+        path: salt/modules/mac_keychain.py
+        symbol: list_certs
+      summary: List all of the installed certificates
+      parameters:
+        - name: keychain
+          default: '"/Library/Keychains/System.keychain"'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_keychain.py
+          functions: 8
+    - function: get_friendly_name
+      source:
+        path: salt/modules/mac_keychain.py
+        symbol: get_friendly_name
+      summary: Get the friendly name of the given certificate
+      parameters:
+        - name: cert
+        - name: password
+        - name: legacy
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_keychain.py
+          functions: 8
+    - function: get_default_keychain
+      source:
+        path: salt/modules/mac_keychain.py
+        symbol: get_default_keychain
+      summary: Get the default keychain
+      parameters:
+        - name: user
+          default: None
+        - name: domain
+          default: '"user"'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_keychain.py
+          functions: 8
+    - function: set_default_keychain
+      source:
+        path: salt/modules/mac_keychain.py
+        symbol: set_default_keychain
+      summary: Set the default keychain
+      parameters:
+        - name: keychain
+        - name: domain
+          default: '"user"'
+        - name: user
+          default: None
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_keychain.py
+          functions: 8
+    - function: unlock_keychain
+      source:
+        path: salt/modules/mac_keychain.py
+        symbol: unlock_keychain
+      summary: Unlock the given keychain with the password
+      parameters:
+        - name: keychain
+        - name: password
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_keychain.py
+          functions: 8
+    - function: get_hash
+      source:
+        path: salt/modules/mac_keychain.py
+        symbol: get_hash
+      summary: Returns the hash of a certificate in the keychain.
+      parameters:
+        - name: name
+        - name: password
+          default: None
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_keychain.py
+          functions: 8

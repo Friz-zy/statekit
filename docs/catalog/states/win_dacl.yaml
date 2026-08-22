@@ -1,0 +1,70 @@
+kind: state
+module: win_dacl
+source_module: win_dacl
+virtual: true
+path: salt/states/win_dacl.py
+functions:
+    - function: present
+      source:
+        path: salt/states/win_dacl.py
+        symbol: present
+      summary: Ensure an ACE is present
+      parameters:
+        - name: name
+        - name: objectType
+        - name: user
+        - name: permission
+        - name: acetype
+        - name: propagation
+      execution_dependencies:
+        - win_dacl.add_ace
+        - win_dacl.check_ace
+    - function: absent
+      source:
+        path: salt/states/win_dacl.py
+        symbol: absent
+      summary: Ensure an ACL does not exist
+      parameters:
+        - name: name
+        - name: objectType
+        - name: user
+        - name: permission
+        - name: acetype
+        - name: propagation
+      execution_dependencies:
+        - win_dacl.add_ace
+        - win_dacl.check_ace
+        - win_dacl.rm_ace
+    - function: inherit
+      source:
+        path: salt/states/win_dacl.py
+        symbol: inherit
+      summary: Ensure an object is inheriting ACLs from its parent
+      parameters:
+        - name: name
+        - name: objectType
+        - name: clear_existing_acl
+          default: "False"
+      execution_dependencies:
+        - win_dacl.add_ace
+        - win_dacl.check_ace
+        - win_dacl.check_inheritance
+        - win_dacl.enable_inheritance
+        - win_dacl.rm_ace
+    - function: disinherit
+      source:
+        path: salt/states/win_dacl.py
+        symbol: disinherit
+      summary: Ensure an object is not inheriting ACLs from its parent
+      parameters:
+        - name: name
+        - name: objectType
+        - name: copy_inherited_acl
+          default: "True"
+      execution_dependencies:
+        - win_dacl.add_ace
+        - win_dacl.check_ace
+        - win_dacl.check_inheritance
+        - win_dacl.disable_inheritance
+        - win_dacl.enable_inheritance
+        - win_dacl.rm_ace

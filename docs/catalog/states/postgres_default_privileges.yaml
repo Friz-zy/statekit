@@ -1,0 +1,70 @@
+kind: state
+module: postgres_default_privileges
+source_module: postgres_default_privileges
+path: salt/states/postgres_default_privileges.py
+functions:
+    - function: present
+      source:
+        path: salt/states/postgres_default_privileges.py
+        symbol: present
+      summary: Grant the requested privilege(s) on the specified object to a role
+      parameters:
+        - name: name
+        - name: object_name
+        - name: object_type
+        - name: defprivileges
+          default: None
+        - name: grant_option
+          default: None
+        - name: prepend
+          default: '"public"'
+        - name: maintenance_db
+          default: None
+        - name: user
+          default: None
+        - name: db_password
+          default: None
+        - name: db_host
+          default: None
+        - name: db_port
+          default: None
+        - name: db_user
+          default: None
+      execution_dependencies:
+        - postgres.default_privileges_grant
+        - postgres.has_default_privileges
+      tests:
+        - path: tests/unit/states/test_postgres_default_privileges.py
+          functions: 0
+    - function: absent
+      source:
+        path: salt/states/postgres_default_privileges.py
+        symbol: absent
+      summary: Revoke the requested default privilege(s) on the specificed object(s)
+      parameters:
+        - name: name
+        - name: object_name
+        - name: object_type
+        - name: defprivileges
+          default: None
+        - name: prepend
+          default: '"public"'
+        - name: maintenance_db
+          default: None
+        - name: user
+          default: None
+        - name: db_password
+          default: None
+        - name: db_host
+          default: None
+        - name: db_port
+          default: None
+        - name: db_user
+          default: None
+      execution_dependencies:
+        - postgres.default_privileges_grant
+        - postgres.default_privileges_revoke
+        - postgres.has_default_privileges
+      tests:
+        - path: tests/unit/states/test_postgres_default_privileges.py
+          functions: 0

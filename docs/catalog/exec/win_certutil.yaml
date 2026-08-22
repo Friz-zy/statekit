@@ -1,0 +1,74 @@
+kind: exec
+module: certutil
+source_module: win_certutil
+virtual: true
+path: salt/modules/win_certutil.py
+platform_markers:
+    - is_windows
+functions:
+    - function: get_cert_serial
+      source:
+        path: salt/modules/win_certutil.py
+        symbol: get_cert_serial
+      summary: Get the serial number of a certificate file
+      parameters:
+        - name: cert_file
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cmd.run
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_win_certutil.py
+          functions: 4
+    - function: get_stored_cert_serials
+      source:
+        path: salt/modules/win_certutil.py
+        symbol: get_stored_cert_serials
+      summary: Get all of the certificate serials in the specified store
+      parameters:
+        - name: store
+      execution_dependencies:
+        - cmd.run
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_win_certutil.py
+          functions: 4
+    - function: add_store
+      source:
+        path: salt/modules/win_certutil.py
+        symbol: add_store
+      summary: Add the cert to the given Certificate Store
+      parameters:
+        - name: source
+        - name: store
+        - name: retcode
+          default: "False"
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_win_certutil.py
+          functions: 4
+    - function: del_store
+      source:
+        path: salt/modules/win_certutil.py
+        symbol: del_store
+      summary: Delete the cert from the given Certificate Store
+      parameters:
+        - name: source
+        - name: store
+        - name: retcode
+          default: "False"
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_win_certutil.py
+          functions: 4

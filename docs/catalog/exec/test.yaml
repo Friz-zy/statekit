@@ -1,0 +1,319 @@
+kind: exec
+module: test
+source_module: test
+path: salt/modules/test.py
+functions:
+    - function: missing_func
+      source:
+        path: salt/modules/test.py
+        symbol: missing_func
+    - function: attr_call
+      source:
+        path: salt/modules/test.py
+        symbol: attr_call
+      summary: Call grains.items via the attribute
+    - function: module_report
+      source:
+        path: salt/modules/test.py
+        symbol: module_report
+      summary: Return a dict containing all of the execution modules with a report on
+    - function: echo
+      source:
+        path: salt/modules/test.py
+        symbol: echo
+      summary: Return a string - used for testing the connection
+      parameters:
+        - name: text
+    - function: ping
+      source:
+        path: salt/modules/test.py
+        symbol: ping
+      summary: Used to make sure the minion is up and responding. Not an ICMP ping.
+    - function: sleep
+      source:
+        path: salt/modules/test.py
+        symbol: sleep
+      summary: Instruct the minion to initiate a process that will sleep for a given
+      parameters:
+        - name: length
+    - function: rand_sleep
+      source:
+        path: salt/modules/test.py
+        symbol: rand_sleep
+      summary: Sleep for a random number of seconds, used to test long-running commands
+      parameters:
+        - name: max
+          default: "60"
+    - function: version
+      source:
+        path: salt/modules/test.py
+        symbol: version
+      summary: Return the version of salt on the minion
+    - function: versions_information
+      source:
+        path: salt/modules/test.py
+        symbol: versions_information
+      summary: Report the versions of dependent and system software
+    - function: versions_report
+      source:
+        path: salt/modules/test.py
+        symbol: versions_report
+      summary: Returns versions of components used by salt
+    - function: conf_test
+      source:
+        path: salt/modules/test.py
+        symbol: conf_test
+      summary: Return the value for test.foo in the minion configuration file, or return
+      execution_dependencies:
+        - config.option
+    - function: get_opts
+      source:
+        path: salt/modules/test.py
+        symbol: get_opts
+      summary: Return the configuration options passed to this minion
+      execution_dependencies:
+        - config.option
+    - function: cross_test
+      source:
+        path: salt/modules/test.py
+        symbol: cross_test
+      summary: Execute a minion function via the ``__salt__`` object in the test
+      parameters:
+        - name: func
+        - name: args
+          default: None
+      execution_dependencies:
+        - config.option
+    - function: kwarg
+      source:
+        path: salt/modules/test.py
+        symbol: kwarg
+      summary: Print out the data passed into the function ``**kwargs``, this is used to
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.option
+    - function: arg
+      source:
+        path: salt/modules/test.py
+        symbol: arg
+      summary: Print out the data passed into the function ``*args`` and ``kwargs``, this
+      parameters:
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.option
+    - function: arg_type
+      source:
+        path: salt/modules/test.py
+        symbol: arg_type
+      summary: Print out the types of the ``args`` and ``kwargs``. This is used to test the types
+      parameters:
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.option
+    - function: arg_repr
+      source:
+        path: salt/modules/test.py
+        symbol: arg_repr
+      summary: Print out the data passed into the function ``*args`` and ``kwargs``, this
+      parameters:
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.option
+    - function: arg_clean
+      source:
+        path: salt/modules/test.py
+        symbol: arg_clean
+      summary: Like :mod:`test.arg <salt.modules.test.arg>` but cleans ``kwargs`` of the ``__pub*`` items
+      parameters:
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.option
+    - function: fib
+      source:
+        path: salt/modules/test.py
+        symbol: fib
+      summary: Return the ``num``-th Fibonacci number, and the time it took to compute in
+      parameters:
+        - name: num
+      execution_dependencies:
+        - config.option
+    - function: collatz
+      source:
+        path: salt/modules/test.py
+        symbol: collatz
+      summary: Execute the collatz conjecture from the passed starting number,
+      parameters:
+        - name: start
+      execution_dependencies:
+        - config.option
+    - function: outputter
+      source:
+        path: salt/modules/test.py
+        symbol: outputter
+      summary: Test the outputter, pass in data to return
+      parameters:
+        - name: data
+      execution_dependencies:
+        - config.option
+    - function: retcode
+      source:
+        path: salt/modules/test.py
+        symbol: retcode
+      summary: Test that the returncode system is functioning correctly
+      parameters:
+        - name: code
+          default: "42"
+      execution_dependencies:
+        - config.option
+    - function: provider
+      source:
+        path: salt/modules/test.py
+        symbol: provider
+      summary: Pass in a function name to discover what provider is being used
+      parameters:
+        - name: module
+      execution_dependencies:
+        - config.option
+    - function: providers
+      source:
+        path: salt/modules/test.py
+        symbol: providers
+      summary: Return a dict of the provider names and the files that provided them
+      execution_dependencies:
+        - config.option
+    - function: not_loaded
+      source:
+        path: salt/modules/test.py
+        symbol: not_loaded
+      summary: List the modules that were not loaded by the salt loader system
+      execution_dependencies:
+        - config.option
+    - function: opts_pkg
+      source:
+        path: salt/modules/test.py
+        symbol: opts_pkg
+      summary: Return an ``opts`` package with the ``grains`` and ``opts`` for this Minion.
+      execution_dependencies:
+        - config.option
+    - function: rand_str
+      source:
+        path: salt/modules/test.py
+        symbol: rand_str
+      summary: This function has been renamed to
+      parameters:
+        - name: size
+          default: "9999999999"
+        - name: hash_type
+          default: None
+      execution_dependencies:
+        - config.option
+    - function: random_hash
+      source:
+        path: salt/modules/test.py
+        symbol: random_hash
+      summary: '.. versionadded:: 2015.5.2'
+      parameters:
+        - name: size
+          default: "9999999999"
+        - name: hash_type
+          default: None
+      execution_dependencies:
+        - config.option
+    - function: exception
+      source:
+        path: salt/modules/test.py
+        symbol: exception
+      summary: Raise an exception
+      parameters:
+        - name: message
+          default: '"Test Exception"'
+      execution_dependencies:
+        - config.option
+    - function: stack
+      source:
+        path: salt/modules/test.py
+        symbol: stack
+      summary: Return the current stack trace
+      execution_dependencies:
+        - config.option
+    - function: tty
+      source:
+        path: salt/modules/test.py
+        symbol: tty
+      summary: Deprecated! Moved to :mod:`cmd.tty <salt.modules.cmdmod.tty>`
+      parameters:
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.option
+    - function: try_
+      source:
+        path: salt/modules/test.py
+        symbol: try_
+      summary: Try to run a module command. On an exception return ``None``.
+      parameters:
+        - name: module
+        - name: return_try_exception
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.option
+    - function: assertion
+      source:
+        path: salt/modules/test.py
+        symbol: assertion
+      summary: Assert the given argument
+      parameters:
+        - name: assertion
+      execution_dependencies:
+        - config.option
+    - function: true_
+      source:
+        path: salt/modules/test.py
+        symbol: true_
+      summary: Always return ``True``
+      execution_dependencies:
+        - config.option
+    - function: false_
+      source:
+        path: salt/modules/test.py
+        symbol: false_
+      summary: Always return ``False``
+      execution_dependencies:
+        - config.option
+    - function: raise_exception
+      source:
+        path: salt/modules/test.py
+        symbol: raise_exception
+      summary: Raise an exception. Built-in exceptions and those in
+      parameters:
+        - name: name
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.option
+    - function: deprecation_warning
+      source:
+        path: salt/modules/test.py
+        symbol: deprecation_warning
+      execution_dependencies:
+        - config.option

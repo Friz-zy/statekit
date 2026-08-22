@@ -1,0 +1,27 @@
+kind: exec
+module: key
+source_module: key
+path: salt/modules/key.py
+functions:
+    - function: finger
+      source:
+        path: salt/modules/key.py
+        symbol: finger
+      summary: Return the minion's public key fingerprint
+      parameters:
+        - name: hash_type
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_key.py
+          functions: 2
+    - function: finger_master
+      source:
+        path: salt/modules/key.py
+        symbol: finger_master
+      summary: Return the fingerprint of the master's public key on the minion.
+      parameters:
+        - name: hash_type
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_key.py
+          functions: 2

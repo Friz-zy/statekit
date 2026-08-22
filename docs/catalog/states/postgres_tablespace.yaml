@@ -1,0 +1,59 @@
+kind: state
+module: postgres_tablespace
+source_module: postgres_tablespace
+path: salt/states/postgres_tablespace.py
+functions:
+    - function: present
+      source:
+        path: salt/states/postgres_tablespace.py
+        symbol: present
+      summary: Ensure that the named tablespace is present with the specified properties.
+      parameters:
+        - name: name
+        - name: directory
+        - name: options
+          default: None
+        - name: owner
+          default: None
+        - name: user
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: db_password
+          default: None
+        - name: db_host
+          default: None
+        - name: db_port
+          default: None
+        - name: db_user
+          default: None
+      execution_dependencies:
+        - postgres.tablespace_alter
+        - postgres.tablespace_create
+        - postgres.tablespace_exists
+        - postgres.tablespace_list
+    - function: absent
+      source:
+        path: salt/states/postgres_tablespace.py
+        symbol: absent
+      summary: Ensure that the named tablespace is absent.
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: db_user
+          default: None
+        - name: db_password
+          default: None
+        - name: db_host
+          default: None
+        - name: db_port
+          default: None
+      execution_dependencies:
+        - postgres.tablespace_alter
+        - postgres.tablespace_create
+        - postgres.tablespace_exists
+        - postgres.tablespace_list
+        - postgres.tablespace_remove

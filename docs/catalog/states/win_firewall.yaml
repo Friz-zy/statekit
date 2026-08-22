@@ -1,0 +1,51 @@
+kind: state
+module: win_firewall
+source_module: win_firewall
+path: salt/states/win_firewall.py
+functions:
+    - function: disabled
+      source:
+        path: salt/states/win_firewall.py
+        symbol: disabled
+      summary: Disable all the firewall profiles (Windows only)
+      parameters:
+        - name: name
+          default: '"allprofiles"'
+      execution_dependencies:
+        - firewall.disable
+        - firewall.get_config
+    - function: add_rule
+      source:
+        path: salt/states/win_firewall.py
+        symbol: add_rule
+      summary: Add a new inbound or outbound rule to the firewall policy
+      parameters:
+        - name: name
+        - name: localport
+        - name: protocol
+          default: '"tcp"'
+        - name: action
+          default: '"allow"'
+        - name: dir
+          default: '"in"'
+        - name: remoteip
+          default: '"any"'
+      execution_dependencies:
+        - firewall.add_rule
+        - firewall.disable
+        - firewall.get_config
+        - firewall.rule_exists
+    - function: enabled
+      source:
+        path: salt/states/win_firewall.py
+        symbol: enabled
+      summary: Enable all the firewall profiles (Windows only)
+      parameters:
+        - name: name
+          default: '"allprofiles"'
+      execution_dependencies:
+        - firewall.add_rule
+        - firewall.disable
+        - firewall.enable
+        - firewall.get_config
+        - firewall.rule_exists

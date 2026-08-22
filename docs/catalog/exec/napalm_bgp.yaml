@@ -1,0 +1,28 @@
+kind: exec
+module: bgp
+source_module: napalm_bgp
+virtual: true
+path: salt/modules/napalm_bgp.py
+functions:
+    - function: config
+      source:
+        path: salt/modules/napalm_bgp.py
+        symbol: config
+      summary: Provides the BGP configuration on the device.
+      parameters:
+        - name: group
+          default: None
+        - name: neighbor
+          default: None
+        - name: kwargs
+          kind: '**'
+    - function: neighbors
+      source:
+        path: salt/modules/napalm_bgp.py
+        symbol: neighbors
+      summary: Provides details regarding the BGP sessions configured on the network device.
+      parameters:
+        - name: neighbor
+          default: None
+        - name: kwargs
+          kind: '**'

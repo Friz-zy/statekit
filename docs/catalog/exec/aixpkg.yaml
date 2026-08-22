@@ -1,0 +1,193 @@
+kind: exec
+module: pkg
+source_module: aixpkg
+virtual: true
+path: salt/modules/aixpkg.py
+functions:
+    - function: _check_pkg
+      source:
+        path: salt/modules/aixpkg.py
+        symbol: _check_pkg
+      summary: Return name, version and if rpm package for specified target
+      parameters:
+        - name: target
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_aixpkg.py
+          functions: 15
+    - function: _is_installed_rpm
+      source:
+        path: salt/modules/aixpkg.py
+        symbol: _is_installed_rpm
+      summary: Returns True if the rpm package is installed. Otherwise returns False.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_aixpkg.py
+          functions: 15
+    - function: _list_pkgs_from_context
+      source:
+        path: salt/modules/aixpkg.py
+        symbol: _list_pkgs_from_context
+      summary: Use pkg list from __context__
+      parameters:
+        - name: versions_as_list
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_aixpkg.py
+          functions: 15
+    - function: list_pkgs
+      source:
+        path: salt/modules/aixpkg.py
+        symbol: list_pkgs
+      summary: 'List the filesets/rpm packages currently installed as a dict:'
+      parameters:
+        - name: versions_as_list
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_aixpkg.py
+          functions: 15
+    - function: version
+      source:
+        path: salt/modules/aixpkg.py
+        symbol: version
+      summary: Return the current installed version of the named fileset/rpm package
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_aixpkg.py
+          functions: 15
+    - function: _is_installed
+      source:
+        path: salt/modules/aixpkg.py
+        symbol: _is_installed
+      summary: Returns True if the fileset/rpm package is installed. Otherwise returns False.
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_aixpkg.py
+          functions: 15
+    - function: install
+      source:
+        path: salt/modules/aixpkg.py
+        symbol: install
+      summary: Install the named fileset(s)/rpm package(s).
+      parameters:
+        - name: name
+          default: None
+        - name: refresh
+          default: "False"
+        - name: pkgs
+          default: None
+        - name: version
+          default: None
+        - name: test
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_aixpkg.py
+          functions: 15
+    - function: remove
+      source:
+        path: salt/modules/aixpkg.py
+        symbol: remove
+      summary: Remove specified fileset(s)/rpm package(s).
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_aixpkg.py
+          functions: 15
+    - function: latest_version
+      source:
+        path: salt/modules/aixpkg.py
+        symbol: latest_version
+      summary: Return the latest available version of the named fileset/rpm package available for
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_aixpkg.py
+          functions: 15
+    - function: upgrade_available
+      source:
+        path: salt/modules/aixpkg.py
+        symbol: upgrade_available
+      summary: Check whether or not an upgrade is available for a given package
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_aixpkg.py
+          functions: 15

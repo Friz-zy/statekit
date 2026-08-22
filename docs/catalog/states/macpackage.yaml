@@ -1,0 +1,43 @@
+kind: state
+module: macpackage
+source_module: macpackage
+virtual: true
+path: salt/states/macpackage.py
+platform_markers:
+    - is_darwin
+functions:
+    - function: installed
+      source:
+        path: salt/states/macpackage.py
+        symbol: installed
+      summary: Install a Mac OS Package from a pkg or dmg file, if given a dmg file it
+      parameters:
+        - name: name
+        - name: target
+          default: '"LocalSystem"'
+        - name: dmg
+          default: "False"
+        - name: store
+          default: "False"
+        - name: app
+          default: "False"
+        - name: mpkg
+          default: "False"
+        - name: force
+          default: "False"
+        - name: allow_untrusted
+          default: "False"
+        - name: version_check
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - macpackage.get_mpkg_ids
+        - macpackage.get_pkg_id
+        - macpackage.install
+        - macpackage.install_app
+        - macpackage.installed_pkgs
+        - macpackage.mount
+        - macpackage.unmount
+      tests:
+        - path: tests/pytests/unit/states/test_macpackage.py
+          functions: 13

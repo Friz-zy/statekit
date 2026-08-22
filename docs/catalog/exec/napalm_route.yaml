@@ -1,0 +1,17 @@
+kind: exec
+module: route
+source_module: napalm_route
+virtual: true
+path: salt/modules/napalm_route.py
+functions:
+    - function: show
+      source:
+        path: salt/modules/napalm_route.py
+        symbol: show
+      summary: Displays all details for a certain route learned via a specific protocol.
+      parameters:
+        - name: destination
+        - name: protocol
+          default: None
+        - name: kwargs
+          kind: '**'

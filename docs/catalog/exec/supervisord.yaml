@@ -1,0 +1,288 @@
+kind: exec
+module: supervisord
+source_module: supervisord
+path: salt/modules/supervisord.py
+functions:
+    - function: _get_supervisorctl_bin
+      source:
+        path: salt/modules/supervisord.py
+        symbol: _get_supervisorctl_bin
+      summary: Return supervisorctl command to call, either from a virtualenv, an argument
+      parameters:
+        - name: bin_env
+      execution_dependencies:
+        - cmd.which_bin
+      tests:
+        - path: tests/unit/modules/test_supervisord.py
+          functions: 0
+    - function: _ctl_cmd
+      source:
+        path: salt/modules/supervisord.py
+        symbol: _ctl_cmd
+      summary: Return the command list to use
+      parameters:
+        - name: cmd
+        - name: name
+        - name: conf_file
+        - name: bin_env
+      execution_dependencies:
+        - cmd.which_bin
+      tests:
+        - path: tests/unit/modules/test_supervisord.py
+          functions: 0
+    - function: _get_return
+      source:
+        path: salt/modules/supervisord.py
+        symbol: _get_return
+      parameters:
+        - name: ret
+      execution_dependencies:
+        - cmd.which_bin
+      tests:
+        - path: tests/unit/modules/test_supervisord.py
+          functions: 0
+    - function: start
+      source:
+        path: salt/modules/supervisord.py
+        symbol: start
+      summary: Start the named service.
+      parameters:
+        - name: name
+          default: '"all"'
+        - name: user
+          default: None
+        - name: conf_file
+          default: None
+        - name: bin_env
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.which_bin
+      tests:
+        - path: tests/unit/modules/test_supervisord.py
+          functions: 0
+    - function: restart
+      source:
+        path: salt/modules/supervisord.py
+        symbol: restart
+      summary: Restart the named service.
+      parameters:
+        - name: name
+          default: '"all"'
+        - name: user
+          default: None
+        - name: conf_file
+          default: None
+        - name: bin_env
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.which_bin
+      tests:
+        - path: tests/unit/modules/test_supervisord.py
+          functions: 0
+    - function: stop
+      source:
+        path: salt/modules/supervisord.py
+        symbol: stop
+      summary: Stop the named service.
+      parameters:
+        - name: name
+          default: '"all"'
+        - name: user
+          default: None
+        - name: conf_file
+          default: None
+        - name: bin_env
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.which_bin
+      tests:
+        - path: tests/unit/modules/test_supervisord.py
+          functions: 0
+    - function: add
+      source:
+        path: salt/modules/supervisord.py
+        symbol: add
+      summary: Activates any updates in config for process/group.
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: conf_file
+          default: None
+        - name: bin_env
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.which_bin
+      tests:
+        - path: tests/unit/modules/test_supervisord.py
+          functions: 0
+    - function: remove
+      source:
+        path: salt/modules/supervisord.py
+        symbol: remove
+      summary: Removes process/group from active config
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: conf_file
+          default: None
+        - name: bin_env
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.which_bin
+      tests:
+        - path: tests/unit/modules/test_supervisord.py
+          functions: 0
+    - function: reread
+      source:
+        path: salt/modules/supervisord.py
+        symbol: reread
+      summary: Reload the daemon's configuration files
+      parameters:
+        - name: user
+          default: None
+        - name: conf_file
+          default: None
+        - name: bin_env
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.which_bin
+      tests:
+        - path: tests/unit/modules/test_supervisord.py
+          functions: 0
+    - function: update
+      source:
+        path: salt/modules/supervisord.py
+        symbol: update
+      summary: Reload config and add/remove/update as necessary
+      parameters:
+        - name: user
+          default: None
+        - name: conf_file
+          default: None
+        - name: bin_env
+          default: None
+        - name: name
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.which_bin
+      tests:
+        - path: tests/unit/modules/test_supervisord.py
+          functions: 0
+    - function: status
+      source:
+        path: salt/modules/supervisord.py
+        symbol: status
+      summary: List programs and its state
+      parameters:
+        - name: name
+          default: None
+        - name: user
+          default: None
+        - name: conf_file
+          default: None
+        - name: bin_env
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.which_bin
+      tests:
+        - path: tests/unit/modules/test_supervisord.py
+          functions: 0
+    - function: status_raw
+      source:
+        path: salt/modules/supervisord.py
+        symbol: status_raw
+      summary: Display the raw output of status
+      parameters:
+        - name: name
+          default: None
+        - name: user
+          default: None
+        - name: conf_file
+          default: None
+        - name: bin_env
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.which_bin
+      tests:
+        - path: tests/unit/modules/test_supervisord.py
+          functions: 0
+    - function: custom
+      source:
+        path: salt/modules/supervisord.py
+        symbol: custom
+      summary: Run any custom supervisord command
+      parameters:
+        - name: command
+        - name: user
+          default: None
+        - name: conf_file
+          default: None
+        - name: bin_env
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.which_bin
+      tests:
+        - path: tests/unit/modules/test_supervisord.py
+          functions: 0
+    - function: _read_config
+      source:
+        path: salt/modules/supervisord.py
+        symbol: _read_config
+      summary: Reads the config file using configparser
+      parameters:
+        - name: conf_file
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.which_bin
+      tests:
+        - path: tests/unit/modules/test_supervisord.py
+          functions: 0
+    - function: options
+      source:
+        path: salt/modules/supervisord.py
+        symbol: options
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: name
+        - name: conf_file
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.which_bin
+      tests:
+        - path: tests/unit/modules/test_supervisord.py
+          functions: 0
+    - function: status_bool
+      source:
+        path: salt/modules/supervisord.py
+        symbol: status_bool
+      summary: Check for status of a specific supervisord process and return boolean result.
+      parameters:
+        - name: name
+        - name: expected_state
+          default: None
+        - name: user
+          default: None
+        - name: conf_file
+          default: None
+        - name: bin_env
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.which_bin
+      tests:
+        - path: tests/unit/modules/test_supervisord.py
+          functions: 0

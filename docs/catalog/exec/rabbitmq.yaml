@@ -1,0 +1,719 @@
+kind: exec
+module: rabbitmq
+source_module: rabbitmq
+path: salt/modules/rabbitmq.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _check_response
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: _check_response
+      parameters:
+        - name: response
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: _format_response
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: _format_response
+      parameters:
+        - name: response
+        - name: msg
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: _get_rabbitmq_plugin
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: _get_rabbitmq_plugin
+      summary: Returns the rabbitmq-plugin command path if we're running an OS that
+      execution_dependencies:
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: _safe_output
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: _safe_output
+      summary: Looks for rabbitmqctl warning, or general formatting, strings that aren't
+      parameters:
+        - name: line
+      execution_dependencies:
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: _strip_listing_to_done
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: _strip_listing_to_done
+      summary: Conditionally remove non-relevant first and last line,
+      parameters:
+        - name: output_list
+      execution_dependencies:
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: _output_to_dict
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: _output_to_dict
+      summary: Convert rabbitmqctl output to a dict of data
+      parameters:
+        - name: cmdoutput
+        - name: values_mapper
+          default: None
+      execution_dependencies:
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: _output_to_list
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: _output_to_list
+      summary: Convert rabbitmqctl output to a list of strings (assuming whitespace-delimited output).
+      parameters:
+        - name: cmdoutput
+      execution_dependencies:
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: _output_lines_to_list
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: _output_lines_to_list
+      summary: Convert rabbitmqctl output to a list of strings (assuming newline-delimited output).
+      parameters:
+        - name: cmdoutput
+      execution_dependencies:
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: list_users
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: list_users
+      summary: Return a list of users based off of rabbitmqctl user_list.
+      parameters:
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: list_vhosts
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: list_vhosts
+      summary: Return a list of vhost based on rabbitmqctl list_vhosts.
+      parameters:
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: list_upstreams
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: list_upstreams
+      summary: Returns a dict of upstreams based on rabbitmqctl list_parameters.
+      parameters:
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: user_exists
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: user_exists
+      summary: Return whether the user exists based on rabbitmqctl list_users.
+      parameters:
+        - name: name
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: vhost_exists
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: vhost_exists
+      summary: Return whether the vhost exists based on rabbitmqctl list_vhosts.
+      parameters:
+        - name: name
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: upstream_exists
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: upstream_exists
+      summary: Return whether the upstreamexists based on rabbitmqctl list_parameters.
+      parameters:
+        - name: name
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: add_user
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: add_user
+      summary: Add a rabbitMQ user via rabbitmqctl user_add <user> <password>
+      parameters:
+        - name: name
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: delete_user
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: delete_user
+      summary: Deletes a user via rabbitmqctl delete_user.
+      parameters:
+        - name: name
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: change_password
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: change_password
+      summary: Changes a user's password.
+      parameters:
+        - name: name
+        - name: password
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: clear_password
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: clear_password
+      summary: Removes a user's password.
+      parameters:
+        - name: name
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: check_password
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: check_password
+      summary: '.. versionadded:: 2016.3.0'
+      parameters:
+        - name: name
+        - name: password
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: add_vhost
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: add_vhost
+      summary: Adds a vhost via rabbitmqctl add_vhost.
+      parameters:
+        - name: vhost
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: delete_vhost
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: delete_vhost
+      summary: Deletes a vhost rabbitmqctl delete_vhost.
+      parameters:
+        - name: vhost
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: set_permissions
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: set_permissions
+      summary: Sets permissions for vhost via rabbitmqctl set_permissions
+      parameters:
+        - name: vhost
+        - name: user
+        - name: conf
+          default: '".*"'
+        - name: write
+          default: '".*"'
+        - name: read
+          default: '".*"'
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: list_permissions
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: list_permissions
+      summary: Lists permissions for vhost via rabbitmqctl list_permissions
+      parameters:
+        - name: vhost
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: list_user_permissions
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: list_user_permissions
+      summary: List permissions for a user via rabbitmqctl list_user_permissions
+      parameters:
+        - name: name
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: set_user_tags
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: set_user_tags
+      summary: Add user tags via rabbitmqctl set_user_tags
+      parameters:
+        - name: name
+        - name: tags
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: status
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: status
+      summary: return rabbitmq status
+      parameters:
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: cluster_status
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: cluster_status
+      summary: return rabbitmq cluster_status
+      parameters:
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: join_cluster
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: join_cluster
+      summary: Join a rabbit cluster
+      parameters:
+        - name: host
+        - name: user
+          default: '"rabbit"'
+        - name: ram_node
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: stop_app
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: stop_app
+      summary: Stops the RabbitMQ application, leaving the Erlang node running.
+      parameters:
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: start_app
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: start_app
+      summary: Start the RabbitMQ application.
+      parameters:
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: reset
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: reset
+      summary: Return a RabbitMQ node to its virgin state
+      parameters:
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: force_reset
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: force_reset
+      summary: Forcefully Return a RabbitMQ node to its virgin state
+      parameters:
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: list_queues
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: list_queues
+      summary: Returns queue details of the / virtual host
+      parameters:
+        - name: runas
+          default: None
+        - name: args
+          kind: '*'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: list_queues_vhost
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: list_queues_vhost
+      summary: Returns queue details of specified virtual host. This command will consider
+      parameters:
+        - name: vhost
+        - name: runas
+          default: None
+        - name: args
+          kind: '*'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: list_policies
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: list_policies
+      summary: Return a dictionary of policies nested by vhost and name
+      parameters:
+        - name: vhost
+          default: '"/"'
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: set_policy
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: set_policy
+      summary: Set a policy based on rabbitmqctl set_policy.
+      parameters:
+        - name: vhost
+        - name: name
+        - name: pattern
+        - name: definition
+        - name: priority
+          default: None
+        - name: runas
+          default: None
+        - name: apply_to
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: delete_policy
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: delete_policy
+      summary: Delete a policy based on rabbitmqctl clear_policy.
+      parameters:
+        - name: vhost
+        - name: name
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: policy_exists
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: policy_exists
+      summary: Return whether the policy exists based on rabbitmqctl list_policies.
+      parameters:
+        - name: vhost
+        - name: name
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: list_available_plugins
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: list_available_plugins
+      summary: Returns a list of the names of all available plugins (enabled and disabled).
+      parameters:
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: list_enabled_plugins
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: list_enabled_plugins
+      summary: Returns a list of the names of the enabled plugins.
+      parameters:
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: plugin_is_enabled
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: plugin_is_enabled
+      summary: Return whether the plugin is enabled.
+      parameters:
+        - name: name
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: enable_plugin
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: enable_plugin
+      summary: Enable a RabbitMQ plugin via the rabbitmq-plugins command.
+      parameters:
+        - name: name
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: disable_plugin
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: disable_plugin
+      summary: Disable a RabbitMQ plugin via the rabbitmq-plugins command.
+      parameters:
+        - name: name
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: set_upstream
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: set_upstream
+      summary: Configures an upstream via rabbitmqctl set_parameter. This can be an exchange-upstream,
+      parameters:
+        - name: name
+        - name: uri
+        - name: prefetch_count
+          default: None
+        - name: reconnect_delay
+          default: None
+        - name: ack_mode
+          default: None
+        - name: trust_user_id
+          default: None
+        - name: exchange
+          default: None
+        - name: max_hops
+          default: None
+        - name: expires
+          default: None
+        - name: message_ttl
+          default: None
+        - name: ha_policy
+          default: None
+        - name: queue
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51
+    - function: delete_upstream
+      source:
+        path: salt/modules/rabbitmq.py
+        symbol: delete_upstream
+      summary: Deletes an upstream via rabbitmqctl clear_parameter.
+      parameters:
+        - name: name
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg.version
+      tests:
+        - path: tests/pytests/unit/modules/test_rabbitmq.py
+          functions: 51

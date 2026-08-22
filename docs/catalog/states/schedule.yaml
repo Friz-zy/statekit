@@ -1,0 +1,79 @@
+kind: state
+module: schedule
+source_module: schedule
+path: salt/states/schedule.py
+functions:
+    - function: present
+      source:
+        path: salt/states/schedule.py
+        symbol: present
+      summary: Ensure a job is present in the schedule
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - schedule.add
+        - schedule.build_schedule_item
+        - schedule.list
+        - schedule.modify
+      tests:
+        - path: tests/pytests/unit/states/test_schedule.py
+          functions: 2
+    - function: absent
+      source:
+        path: salt/states/schedule.py
+        symbol: absent
+      summary: Ensure a job is absent from the schedule
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - schedule.add
+        - schedule.build_schedule_item
+        - schedule.delete
+        - schedule.list
+        - schedule.modify
+      tests:
+        - path: tests/pytests/unit/states/test_schedule.py
+          functions: 2
+    - function: enabled
+      source:
+        path: salt/states/schedule.py
+        symbol: enabled
+      summary: Ensure a job is enabled in the schedule
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - schedule.add
+        - schedule.build_schedule_item
+        - schedule.delete
+        - schedule.enable_job
+        - schedule.list
+        - schedule.modify
+      tests:
+        - path: tests/pytests/unit/states/test_schedule.py
+          functions: 2
+    - function: disabled
+      source:
+        path: salt/states/schedule.py
+        symbol: disabled
+      summary: Ensure a job is disabled in the schedule
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - schedule.add
+        - schedule.build_schedule_item
+        - schedule.delete
+        - schedule.disable_job
+        - schedule.enable_job
+        - schedule.list
+        - schedule.modify
+      tests:
+        - path: tests/pytests/unit/states/test_schedule.py
+          functions: 2

@@ -1,0 +1,29 @@
+kind: state
+module: appx
+source_module: win_appx
+virtual: true
+path: salt/states/win_appx.py
+platform_markers:
+    - is_windows
+functions:
+    - function: absent
+      source:
+        path: salt/states/win_appx.py
+        symbol: absent
+      summary: Removes Microsoft Store packages from the system. If the package is part of
+      parameters:
+        - name: name
+        - name: query
+        - name: include_store
+          default: "False"
+        - name: frameworks
+          default: "False"
+        - name: deprovision_only
+          default: "False"
+      execution_dependencies:
+        - appx.list
+        - appx.remove
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/states/test_win_appx.py
+          functions: 4

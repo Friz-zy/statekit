@@ -1,0 +1,23 @@
+kind: state
+module: powercfg
+source_module: win_powercfg
+virtual: true
+path: salt/states/win_powercfg.py
+platform_markers:
+    - is_windows
+functions:
+    - function: set_timeout
+      source:
+        path: salt/states/win_powercfg.py
+        symbol: set_timeout
+      summary: Set the sleep timeouts of specific items such as disk, monitor, etc.
+      parameters:
+        - name: name
+        - name: value
+        - name: power
+          default: '"ac"'
+        - name: scheme
+          default: None
+      tests:
+        - path: tests/pytests/unit/states/test_win_powercfg.py
+          functions: 5

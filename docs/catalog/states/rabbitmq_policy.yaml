@@ -1,0 +1,41 @@
+kind: state
+module: rabbitmq_policy
+source_module: rabbitmq_policy
+path: salt/states/rabbitmq_policy.py
+functions:
+    - function: present
+      source:
+        path: salt/states/rabbitmq_policy.py
+        symbol: present
+      summary: Ensure the RabbitMQ policy exists.
+      parameters:
+        - name: name
+        - name: pattern
+        - name: definition
+        - name: priority
+          default: "0"
+        - name: vhost
+          default: '"/"'
+        - name: runas
+          default: None
+        - name: apply_to
+          default: None
+      execution_dependencies:
+        - rabbitmq.list_policies
+        - rabbitmq.set_policy
+    - function: absent
+      source:
+        path: salt/states/rabbitmq_policy.py
+        symbol: absent
+      summary: Ensure the named policy is absent
+      parameters:
+        - name: name
+        - name: vhost
+          default: '"/"'
+        - name: runas
+          default: None
+      execution_dependencies:
+        - rabbitmq.delete_policy
+        - rabbitmq.list_policies
+        - rabbitmq.policy_exists
+        - rabbitmq.set_policy

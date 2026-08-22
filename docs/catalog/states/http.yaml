@@ -1,0 +1,47 @@
+kind: state
+module: http
+source_module: http
+path: salt/states/http.py
+functions:
+    - function: query
+      source:
+        path: salt/states/http.py
+        symbol: query
+      summary: Perform an HTTP query and statefully return the result
+      parameters:
+        - name: name
+        - name: match
+          default: None
+        - name: match_type
+          default: '"string"'
+        - name: status
+          default: None
+        - name: status_type
+          default: '"string"'
+        - name: wait_for
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - http.query
+        - http.wait_for_successful_query
+      tests:
+        - path: tests/pytests/unit/states/test_http.py
+          functions: 8
+    - function: wait_for_successful_query
+      source:
+        path: salt/states/http.py
+        symbol: wait_for_successful_query
+      summary: Like query but, repeat and wait until match/match_type or status is fulfilled. State returns result from last
+      parameters:
+        - name: name
+        - name: wait_for
+          default: "300"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - http.query
+        - http.wait_for_successful_query
+      tests:
+        - path: tests/pytests/unit/states/test_http.py
+          functions: 8

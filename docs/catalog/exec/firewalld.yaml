@@ -1,0 +1,626 @@
+kind: exec
+module: firewalld
+source_module: firewalld
+path: salt/modules/firewalld.py
+functions:
+    - function: version
+      source:
+        path: salt/modules/firewalld.py
+        symbol: version
+      summary: Return version from firewall-cmd
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: reload_rules
+      source:
+        path: salt/modules/firewalld.py
+        symbol: reload_rules
+      summary: Reload the firewall rules, which makes the permanent configuration the new
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: default_zone
+      source:
+        path: salt/modules/firewalld.py
+        symbol: default_zone
+      summary: Print default zone for connections and interfaces
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: list_zones
+      source:
+        path: salt/modules/firewalld.py
+        symbol: list_zones
+      summary: List everything added for or enabled in all zones
+      parameters:
+        - name: permanent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: get_zones
+      source:
+        path: salt/modules/firewalld.py
+        symbol: get_zones
+      summary: Print predefined zones
+      parameters:
+        - name: permanent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: get_services
+      source:
+        path: salt/modules/firewalld.py
+        symbol: get_services
+      summary: Print predefined services
+      parameters:
+        - name: permanent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: get_icmp_types
+      source:
+        path: salt/modules/firewalld.py
+        symbol: get_icmp_types
+      summary: Print predefined icmptypes
+      parameters:
+        - name: permanent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: new_zone
+      source:
+        path: salt/modules/firewalld.py
+        symbol: new_zone
+      summary: Add a new zone
+      parameters:
+        - name: zone
+        - name: restart
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: delete_zone
+      source:
+        path: salt/modules/firewalld.py
+        symbol: delete_zone
+      summary: Delete an existing zone
+      parameters:
+        - name: zone
+        - name: restart
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: set_default_zone
+      source:
+        path: salt/modules/firewalld.py
+        symbol: set_default_zone
+      summary: Set default zone
+      parameters:
+        - name: zone
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: new_service
+      source:
+        path: salt/modules/firewalld.py
+        symbol: new_service
+      summary: Add a new service
+      parameters:
+        - name: name
+        - name: restart
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: delete_service
+      source:
+        path: salt/modules/firewalld.py
+        symbol: delete_service
+      summary: Delete an existing service
+      parameters:
+        - name: name
+        - name: restart
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: list_all
+      source:
+        path: salt/modules/firewalld.py
+        symbol: list_all
+      summary: List everything added for or enabled in a zone
+      parameters:
+        - name: zone
+          default: None
+        - name: permanent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: list_services
+      source:
+        path: salt/modules/firewalld.py
+        symbol: list_services
+      summary: List services added for zone as a space separated list.
+      parameters:
+        - name: zone
+          default: None
+        - name: permanent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: add_service
+      source:
+        path: salt/modules/firewalld.py
+        symbol: add_service
+      summary: Add a service for zone. If zone is omitted, default zone will be used.
+      parameters:
+        - name: service
+        - name: zone
+          default: None
+        - name: permanent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: remove_service
+      source:
+        path: salt/modules/firewalld.py
+        symbol: remove_service
+      summary: Remove a service from zone. This option can be specified multiple times.
+      parameters:
+        - name: service
+        - name: zone
+          default: None
+        - name: permanent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: add_service_port
+      source:
+        path: salt/modules/firewalld.py
+        symbol: add_service_port
+      summary: Add a new port to the specified service.
+      parameters:
+        - name: service
+        - name: port
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: remove_service_port
+      source:
+        path: salt/modules/firewalld.py
+        symbol: remove_service_port
+      summary: Remove a port from the specified service.
+      parameters:
+        - name: service
+        - name: port
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: get_service_ports
+      source:
+        path: salt/modules/firewalld.py
+        symbol: get_service_ports
+      summary: List ports of a service.
+      parameters:
+        - name: service
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: add_service_protocol
+      source:
+        path: salt/modules/firewalld.py
+        symbol: add_service_protocol
+      summary: Add a new protocol to the specified service.
+      parameters:
+        - name: service
+        - name: protocol
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: remove_service_protocol
+      source:
+        path: salt/modules/firewalld.py
+        symbol: remove_service_protocol
+      summary: Remove a protocol from the specified service.
+      parameters:
+        - name: service
+        - name: protocol
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: get_service_protocols
+      source:
+        path: salt/modules/firewalld.py
+        symbol: get_service_protocols
+      summary: List protocols of a service.
+      parameters:
+        - name: service
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: get_masquerade
+      source:
+        path: salt/modules/firewalld.py
+        symbol: get_masquerade
+      summary: Show if masquerading is enabled on a zone.
+      parameters:
+        - name: zone
+          default: None
+        - name: permanent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: add_masquerade
+      source:
+        path: salt/modules/firewalld.py
+        symbol: add_masquerade
+      summary: Enable masquerade on a zone.
+      parameters:
+        - name: zone
+          default: None
+        - name: permanent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: remove_masquerade
+      source:
+        path: salt/modules/firewalld.py
+        symbol: remove_masquerade
+      summary: Remove masquerade on a zone.
+      parameters:
+        - name: zone
+          default: None
+        - name: permanent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: add_port
+      source:
+        path: salt/modules/firewalld.py
+        symbol: add_port
+      summary: Allow specific ports in a zone.
+      parameters:
+        - name: zone
+        - name: port
+        - name: permanent
+          default: "True"
+        - name: force_masquerade
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: remove_port
+      source:
+        path: salt/modules/firewalld.py
+        symbol: remove_port
+      summary: Remove a specific port from a zone.
+      parameters:
+        - name: zone
+        - name: port
+        - name: permanent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: list_ports
+      source:
+        path: salt/modules/firewalld.py
+        symbol: list_ports
+      summary: List all ports in a zone.
+      parameters:
+        - name: zone
+        - name: permanent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: add_port_fwd
+      source:
+        path: salt/modules/firewalld.py
+        symbol: add_port_fwd
+      summary: Add port forwarding.
+      parameters:
+        - name: zone
+        - name: src
+        - name: dest
+        - name: proto
+          default: '"tcp"'
+        - name: dstaddr
+          default: '""'
+        - name: permanent
+          default: "True"
+        - name: force_masquerade
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: remove_port_fwd
+      source:
+        path: salt/modules/firewalld.py
+        symbol: remove_port_fwd
+      summary: Remove Port Forwarding.
+      parameters:
+        - name: zone
+        - name: src
+        - name: dest
+        - name: proto
+          default: '"tcp"'
+        - name: dstaddr
+          default: '""'
+        - name: permanent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: list_port_fwd
+      source:
+        path: salt/modules/firewalld.py
+        symbol: list_port_fwd
+      summary: List port forwarding
+      parameters:
+        - name: zone
+        - name: permanent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: block_icmp
+      source:
+        path: salt/modules/firewalld.py
+        symbol: block_icmp
+      summary: Block a specific ICMP type on a zone
+      parameters:
+        - name: zone
+        - name: icmp
+        - name: permanent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: allow_icmp
+      source:
+        path: salt/modules/firewalld.py
+        symbol: allow_icmp
+      summary: Allow a specific ICMP type on a zone
+      parameters:
+        - name: zone
+        - name: icmp
+        - name: permanent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: list_icmp_block
+      source:
+        path: salt/modules/firewalld.py
+        symbol: list_icmp_block
+      summary: List ICMP blocks on a zone
+      parameters:
+        - name: zone
+        - name: permanent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: make_permanent
+      source:
+        path: salt/modules/firewalld.py
+        symbol: make_permanent
+      summary: Make current runtime configuration permanent.
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: get_interfaces
+      source:
+        path: salt/modules/firewalld.py
+        symbol: get_interfaces
+      summary: List interfaces bound to a zone
+      parameters:
+        - name: zone
+        - name: permanent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: add_interface
+      source:
+        path: salt/modules/firewalld.py
+        symbol: add_interface
+      summary: Bind an interface to a zone
+      parameters:
+        - name: zone
+        - name: interface
+        - name: permanent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: remove_interface
+      source:
+        path: salt/modules/firewalld.py
+        symbol: remove_interface
+      summary: Remove an interface bound to a zone
+      parameters:
+        - name: zone
+        - name: interface
+        - name: permanent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: get_sources
+      source:
+        path: salt/modules/firewalld.py
+        symbol: get_sources
+      summary: List sources bound to a zone
+      parameters:
+        - name: zone
+        - name: permanent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: add_source
+      source:
+        path: salt/modules/firewalld.py
+        symbol: add_source
+      summary: Bind a source to a zone
+      parameters:
+        - name: zone
+        - name: source
+        - name: permanent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: remove_source
+      source:
+        path: salt/modules/firewalld.py
+        symbol: remove_source
+      summary: Remove a source bound to a zone
+      parameters:
+        - name: zone
+        - name: source
+        - name: permanent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: get_rich_rules
+      source:
+        path: salt/modules/firewalld.py
+        symbol: get_rich_rules
+      summary: List rich rules bound to a zone
+      parameters:
+        - name: zone
+        - name: permanent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: add_rich_rule
+      source:
+        path: salt/modules/firewalld.py
+        symbol: add_rich_rule
+      summary: Add a rich rule to a zone
+      parameters:
+        - name: zone
+        - name: rule
+        - name: permanent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31
+    - function: remove_rich_rule
+      source:
+        path: salt/modules/firewalld.py
+        symbol: remove_rich_rule
+      summary: Add a rich rule to a zone
+      parameters:
+        - name: zone
+        - name: rule
+        - name: permanent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_firewalld.py
+          functions: 31

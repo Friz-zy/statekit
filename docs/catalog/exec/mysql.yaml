@@ -1,0 +1,894 @@
+kind: exec
+module: mysql
+source_module: mysql
+path: salt/modules/mysql.py
+functions:
+    - function: _connect
+      source:
+        path: salt/modules/mysql.py
+        symbol: _connect
+      summary: wrap authentication credentials here
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: _grant_to_tokens
+      source:
+        path: salt/modules/mysql.py
+        symbol: _grant_to_tokens
+      summary: This should correspond fairly closely to the YAML rendering of a
+      parameters:
+        - name: grant
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: _resolve_grant_aliases
+      source:
+        path: salt/modules/mysql.py
+        symbol: _resolve_grant_aliases
+      summary: There can be a situation where the database supports grants "A" and "B", where
+      parameters:
+        - name: grants
+        - name: server_version
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: quote_identifier
+      source:
+        path: salt/modules/mysql.py
+        symbol: quote_identifier
+      parameters:
+        - name: identifier
+        - name: for_grants
+          default: "False"
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: _execute
+      source:
+        path: salt/modules/mysql.py
+        symbol: _execute
+      summary: Internal wrapper around MySQLdb cursor.execute() function
+      parameters:
+        - name: cur
+        - name: qry
+        - name: args
+          default: None
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: _sanitize_comments
+      source:
+        path: salt/modules/mysql.py
+        symbol: _sanitize_comments
+      parameters:
+        - name: content
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: query
+      source:
+        path: salt/modules/mysql.py
+        symbol: query
+      summary: Run an arbitrary SQL query and return the results or
+      parameters:
+        - name: database
+        - name: query
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: file_query
+      source:
+        path: salt/modules/mysql.py
+        symbol: file_query
+      summary: Run an arbitrary SQL query from the specified file and return the
+      parameters:
+        - name: database
+        - name: file_name
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: status
+      source:
+        path: salt/modules/mysql.py
+        symbol: status
+      summary: Return the status of a MySQL server using the output from the ``SHOW
+      parameters:
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: version
+      source:
+        path: salt/modules/mysql.py
+        symbol: version
+      summary: Return the version of a MySQL server using the output from the ``SELECT
+      parameters:
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: slave_lag
+      source:
+        path: salt/modules/mysql.py
+        symbol: slave_lag
+      summary: Return the number of seconds that a slave SQL server is lagging behind the
+      parameters:
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: free_slave
+      source:
+        path: salt/modules/mysql.py
+        symbol: free_slave
+      summary: Frees a slave from its master.  This is a WIP, do not use.
+      parameters:
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: db_list
+      source:
+        path: salt/modules/mysql.py
+        symbol: db_list
+      summary: Return a list of databases of a MySQL server using the output
+      parameters:
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: alter_db
+      source:
+        path: salt/modules/mysql.py
+        symbol: alter_db
+      summary: Modify database using ``ALTER DATABASE %(dbname)s CHARACTER SET %(charset)s
+      parameters:
+        - name: name
+        - name: character_set
+          default: None
+        - name: collate
+          default: None
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: db_get
+      source:
+        path: salt/modules/mysql.py
+        symbol: db_get
+      summary: Return a list of databases of a MySQL server using the output
+      parameters:
+        - name: name
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: db_tables
+      source:
+        path: salt/modules/mysql.py
+        symbol: db_tables
+      summary: Shows the tables in the given MySQL database (if exists)
+      parameters:
+        - name: name
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: db_exists
+      source:
+        path: salt/modules/mysql.py
+        symbol: db_exists
+      summary: Checks if a database exists on the MySQL server.
+      parameters:
+        - name: name
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: db_create
+      source:
+        path: salt/modules/mysql.py
+        symbol: db_create
+      summary: Adds a databases to the MySQL server.
+      parameters:
+        - name: name
+        - name: character_set
+          default: None
+        - name: collate
+          default: None
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: db_remove
+      source:
+        path: salt/modules/mysql.py
+        symbol: db_remove
+      summary: Removes a databases from the MySQL server.
+      parameters:
+        - name: name
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: user_list
+      source:
+        path: salt/modules/mysql.py
+        symbol: user_list
+      summary: Return a list of users on a MySQL server
+      parameters:
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: _mysql_user_exists
+      source:
+        path: salt/modules/mysql.py
+        symbol: _mysql_user_exists
+      parameters:
+        - name: user
+        - name: host
+          default: '"localhost"'
+        - name: password
+          default: None
+        - name: password_hash
+          default: None
+        - name: passwordless
+          default: "False"
+        - name: unix_socket
+          default: "False"
+        - name: password_column
+          default: None
+        - name: auth_plugin
+          default: '"mysql_native_password"'
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: _mariadb_user_exists
+      source:
+        path: salt/modules/mysql.py
+        symbol: _mariadb_user_exists
+      parameters:
+        - name: user
+        - name: host
+          default: '"localhost"'
+        - name: password
+          default: None
+        - name: password_hash
+          default: None
+        - name: passwordless
+          default: "False"
+        - name: unix_socket
+          default: "False"
+        - name: password_column
+          default: None
+        - name: auth_plugin
+          default: '"mysql_native_password"'
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: user_exists
+      source:
+        path: salt/modules/mysql.py
+        symbol: user_exists
+      summary: Checks if a user exists on the MySQL server. A login can be checked to see
+      parameters:
+        - name: user
+        - name: host
+          default: '"localhost"'
+        - name: password
+          default: None
+        - name: password_hash
+          default: None
+        - name: passwordless
+          default: "False"
+        - name: unix_socket
+          default: "False"
+        - name: password_column
+          default: None
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: user_info
+      source:
+        path: salt/modules/mysql.py
+        symbol: user_info
+      summary: Get full info on a MySQL user
+      parameters:
+        - name: user
+        - name: host
+          default: '"localhost"'
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: _mysql_user_create
+      source:
+        path: salt/modules/mysql.py
+        symbol: _mysql_user_create
+      parameters:
+        - name: user
+        - name: host
+          default: '"localhost"'
+        - name: password
+          default: None
+        - name: password_hash
+          default: None
+        - name: allow_passwordless
+          default: "False"
+        - name: unix_socket
+          default: "False"
+        - name: password_column
+          default: None
+        - name: auth_plugin
+          default: '"mysql_native_password"'
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: _mariadb_user_create
+      source:
+        path: salt/modules/mysql.py
+        symbol: _mariadb_user_create
+      parameters:
+        - name: user
+        - name: host
+          default: '"localhost"'
+        - name: password
+          default: None
+        - name: password_hash
+          default: None
+        - name: allow_passwordless
+          default: "False"
+        - name: unix_socket
+          default: "False"
+        - name: password_column
+          default: None
+        - name: auth_plugin
+          default: '"mysql_native_password"'
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: user_create
+      source:
+        path: salt/modules/mysql.py
+        symbol: user_create
+      summary: Creates a MySQL user
+      parameters:
+        - name: user
+        - name: host
+          default: '"localhost"'
+        - name: password
+          default: None
+        - name: password_hash
+          default: None
+        - name: allow_passwordless
+          default: "False"
+        - name: unix_socket
+          default: "False"
+        - name: password_column
+          default: None
+        - name: auth_plugin
+          default: '"mysql_native_password"'
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: _mysql_user_chpass
+      source:
+        path: salt/modules/mysql.py
+        symbol: _mysql_user_chpass
+      parameters:
+        - name: user
+        - name: host
+          default: '"localhost"'
+        - name: password
+          default: None
+        - name: password_hash
+          default: None
+        - name: allow_passwordless
+          default: "False"
+        - name: unix_socket
+          default: None
+        - name: password_column
+          default: None
+        - name: auth_plugin
+          default: '"mysql_native_password"'
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: _mariadb_user_chpass
+      source:
+        path: salt/modules/mysql.py
+        symbol: _mariadb_user_chpass
+      parameters:
+        - name: user
+        - name: host
+          default: '"localhost"'
+        - name: password
+          default: None
+        - name: password_hash
+          default: None
+        - name: allow_passwordless
+          default: "False"
+        - name: unix_socket
+          default: None
+        - name: password_column
+          default: None
+        - name: auth_plugin
+          default: '"mysql_native_password"'
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: user_chpass
+      source:
+        path: salt/modules/mysql.py
+        symbol: user_chpass
+      summary: Change password for a MySQL user
+      parameters:
+        - name: user
+        - name: host
+          default: '"localhost"'
+        - name: password
+          default: None
+        - name: password_hash
+          default: None
+        - name: allow_passwordless
+          default: "False"
+        - name: unix_socket
+          default: None
+        - name: password_column
+          default: None
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: user_remove
+      source:
+        path: salt/modules/mysql.py
+        symbol: user_remove
+      summary: Delete MySQL user
+      parameters:
+        - name: user
+        - name: host
+          default: '"localhost"'
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: tokenize_grant
+      source:
+        path: salt/modules/mysql.py
+        symbol: tokenize_grant
+      summary: External wrapper function
+      parameters:
+        - name: grant
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: db_check
+      source:
+        path: salt/modules/mysql.py
+        symbol: db_check
+      summary: Repairs the full database or just a given table
+      parameters:
+        - name: name
+        - name: table
+          default: None
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: db_repair
+      source:
+        path: salt/modules/mysql.py
+        symbol: db_repair
+      summary: Repairs the full database or just a given table
+      parameters:
+        - name: name
+        - name: table
+          default: None
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: db_optimize
+      source:
+        path: salt/modules/mysql.py
+        symbol: db_optimize
+      summary: Optimizes the full database or just a given table
+      parameters:
+        - name: name
+        - name: table
+          default: None
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: user_grants
+      source:
+        path: salt/modules/mysql.py
+        symbol: user_grants
+      summary: Shows the grants for the given MySQL user (if it exists)
+      parameters:
+        - name: user
+        - name: host
+          default: '"localhost"'
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: _server_all_privileges
+      source:
+        path: salt/modules/mysql.py
+        symbol: _server_all_privileges
+      summary: Return the list of privileges the connected MySQL server reports via
+      parameters:
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: grant_exists
+      source:
+        path: salt/modules/mysql.py
+        symbol: grant_exists
+      summary: Checks to see if a grant exists in the database
+      parameters:
+        - name: grant
+        - name: database
+        - name: user
+        - name: host
+          default: '"localhost"'
+        - name: grant_option
+          default: "False"
+        - name: escape
+          default: "True"
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: grant_add
+      source:
+        path: salt/modules/mysql.py
+        symbol: grant_add
+      summary: Adds a grant to the MySQL server.
+      parameters:
+        - name: grant
+        - name: database
+        - name: user
+        - name: host
+          default: '"localhost"'
+        - name: grant_option
+          default: "False"
+        - name: escape
+          default: "True"
+        - name: ssl_option
+          default: "False"
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: grant_revoke
+      source:
+        path: salt/modules/mysql.py
+        symbol: grant_revoke
+      summary: Removes a grant from the MySQL server.
+      parameters:
+        - name: grant
+        - name: database
+        - name: user
+        - name: host
+          default: '"localhost"'
+        - name: grant_option
+          default: "False"
+        - name: escape
+          default: "True"
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: processlist
+      source:
+        path: salt/modules/mysql.py
+        symbol: processlist
+      summary: Retrieves the processlist from the MySQL server via
+      parameters:
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: get_master_status
+      source:
+        path: salt/modules/mysql.py
+        symbol: get_master_status
+      summary: Retrieves the master status from the minion.
+      parameters:
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: get_slave_status
+      source:
+        path: salt/modules/mysql.py
+        symbol: get_slave_status
+      summary: Retrieves the slave status from the minion.
+      parameters:
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: showvariables
+      source:
+        path: salt/modules/mysql.py
+        symbol: showvariables
+      summary: Retrieves the show variables from the minion.
+      parameters:
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: showglobal
+      source:
+        path: salt/modules/mysql.py
+        symbol: showglobal
+      summary: Retrieves the show global variables from the minion.
+      parameters:
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: verify_login
+      source:
+        path: salt/modules/mysql.py
+        symbol: verify_login
+      summary: Attempt to login using the provided credentials.
+      parameters:
+        - name: user
+        - name: password
+          default: None
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: plugins_list
+      source:
+        path: salt/modules/mysql.py
+        symbol: plugins_list
+      summary: Return a list of plugins and their status
+      parameters:
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: plugin_add
+      source:
+        path: salt/modules/mysql.py
+        symbol: plugin_add
+      summary: Add a plugina.
+      parameters:
+        - name: name
+        - name: soname
+          default: None
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: plugin_remove
+      source:
+        path: salt/modules/mysql.py
+        symbol: plugin_remove
+      summary: Remove a plugin.
+      parameters:
+        - name: name
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36
+    - function: plugin_status
+      source:
+        path: salt/modules/mysql.py
+        symbol: plugin_status
+      summary: Return the status of a plugin.
+      parameters:
+        - name: name
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_mysql.py
+          functions: 36

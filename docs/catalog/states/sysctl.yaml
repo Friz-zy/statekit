@@ -1,0 +1,23 @@
+kind: state
+module: sysctl
+source_module: sysctl
+path: salt/states/sysctl.py
+functions:
+    - function: present
+      source:
+        path: salt/states/sysctl.py
+        symbol: present
+      summary: Ensure that the named sysctl value is set in memory and persisted to the
+      parameters:
+        - name: name
+        - name: value
+        - name: config
+          default: None
+      execution_dependencies:
+        - sysctl.default_config
+        - sysctl.get
+        - sysctl.persist
+        - sysctl.show
+      tests:
+        - path: tests/pytests/unit/states/test_sysctl.py
+          functions: 10

@@ -1,0 +1,356 @@
+kind: exec
+module: status
+source_module: status
+virtual: true
+path: salt/modules/status.py
+platform_markers:
+    - is_aix
+    - is_darwin
+    - is_freebsd
+    - is_linux
+    - is_netbsd
+    - is_openbsd
+    - is_sunos
+    - is_windows
+functions:
+    - function: _number
+      source:
+        path: salt/modules/status.py
+        symbol: _number
+      summary: Convert a string to a number.
+      parameters:
+        - name: text
+      tests:
+        - path: tests/pytests/unit/modules/test_status.py
+          functions: 16
+    - function: _get_boot_time_aix
+      source:
+        path: salt/modules/status.py
+        symbol: _get_boot_time_aix
+      summary: Return the number of seconds since boot time on AIX
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_status.py
+          functions: 16
+    - function: _aix_loadavg
+      source:
+        path: salt/modules/status.py
+        symbol: _aix_loadavg
+      summary: Return the load average on AIX
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_status.py
+          functions: 16
+    - function: _aix_nproc
+      source:
+        path: salt/modules/status.py
+        symbol: _aix_nproc
+      summary: Return the maximun number of PROCESSES allowed per user on AIX
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_status.py
+          functions: 16
+    - function: procs
+      source:
+        path: salt/modules/status.py
+        symbol: procs
+      summary: Return the process data
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_status.py
+          functions: 16
+    - function: custom
+      source:
+        path: salt/modules/status.py
+        symbol: custom
+      summary: Return a custom composite of status data and info for this minion,
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.dot_vals
+      tests:
+        - path: tests/pytests/unit/modules/test_status.py
+          functions: 16
+    - function: uptime
+      source:
+        path: salt/modules/status.py
+        symbol: uptime
+      summary: Return the uptime for this system.
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.dot_vals
+        - sysctl.get
+      tests:
+        - path: tests/pytests/unit/modules/test_status.py
+          functions: 16
+    - function: loadavg
+      source:
+        path: salt/modules/status.py
+        symbol: loadavg
+      summary: Return the load averages for this minion
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.dot_vals
+        - sysctl.get
+      tests:
+        - path: tests/pytests/unit/modules/test_status.py
+          functions: 16
+    - function: cpustats
+      source:
+        path: salt/modules/status.py
+        symbol: cpustats
+      summary: Return the CPU stats for this minion
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.dot_vals
+        - sysctl.get
+      tests:
+        - path: tests/pytests/unit/modules/test_status.py
+          functions: 16
+    - function: meminfo
+      source:
+        path: salt/modules/status.py
+        symbol: meminfo
+      summary: Return the memory info for this minion
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.dot_vals
+        - sysctl.get
+      tests:
+        - path: tests/pytests/unit/modules/test_status.py
+          functions: 16
+    - function: cpuinfo
+      source:
+        path: salt/modules/status.py
+        symbol: cpuinfo
+      summary: '.. versionchanged:: 2016.3.2'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.dot_vals
+        - sysctl.get
+      tests:
+        - path: tests/pytests/unit/modules/test_status.py
+          functions: 16
+    - function: diskstats
+      source:
+        path: salt/modules/status.py
+        symbol: diskstats
+      summary: '.. versionchanged:: 2016.3.2'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.dot_vals
+        - sysctl.get
+      tests:
+        - path: tests/pytests/unit/modules/test_status.py
+          functions: 16
+    - function: diskusage
+      source:
+        path: salt/modules/status.py
+        symbol: diskusage
+      summary: Return the disk usage for this minion
+      parameters:
+        - name: args
+          kind: '*'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.dot_vals
+        - sysctl.get
+      tests:
+        - path: tests/pytests/unit/modules/test_status.py
+          functions: 16
+    - function: vmstats
+      source:
+        path: salt/modules/status.py
+        symbol: vmstats
+      summary: '.. versionchanged:: 2016.3.2'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.dot_vals
+        - sysctl.get
+      tests:
+        - path: tests/pytests/unit/modules/test_status.py
+          functions: 16
+    - function: nproc
+      source:
+        path: salt/modules/status.py
+        symbol: nproc
+      summary: Return the number of processing units available on this system
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.dot_vals
+        - sysctl.get
+      tests:
+        - path: tests/pytests/unit/modules/test_status.py
+          functions: 16
+    - function: netstats
+      source:
+        path: salt/modules/status.py
+        symbol: netstats
+      summary: Return the network stats for this minion
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.dot_vals
+        - sysctl.get
+      tests:
+        - path: tests/pytests/unit/modules/test_status.py
+          functions: 16
+    - function: netdev
+      source:
+        path: salt/modules/status.py
+        symbol: netdev
+      summary: '.. versionchanged:: 2016.3.2'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.dot_vals
+        - sysctl.get
+      tests:
+        - path: tests/pytests/unit/modules/test_status.py
+          functions: 16
+    - function: w
+      source:
+        path: salt/modules/status.py
+        symbol: w
+      summary: Return a list of logged in users for this minion, using the w command
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.dot_vals
+        - sysctl.get
+      tests:
+        - path: tests/pytests/unit/modules/test_status.py
+          functions: 16
+    - function: all_status
+      source:
+        path: salt/modules/status.py
+        symbol: all_status
+      summary: Return a composite of all status data and info for this minion.
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.dot_vals
+        - sysctl.get
+      tests:
+        - path: tests/pytests/unit/modules/test_status.py
+          functions: 16
+    - function: pid
+      source:
+        path: salt/modules/status.py
+        symbol: pid
+      summary: Return the PID or an empty string if the process is running or not.
+      parameters:
+        - name: sig
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.dot_vals
+        - sysctl.get
+      tests:
+        - path: tests/pytests/unit/modules/test_status.py
+          functions: 16
+    - function: version
+      source:
+        path: salt/modules/status.py
+        symbol: version
+      summary: Return the system version for this minion
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.dot_vals
+        - sysctl.get
+      tests:
+        - path: tests/pytests/unit/modules/test_status.py
+          functions: 16
+    - function: master
+      source:
+        path: salt/modules/status.py
+        symbol: master
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: master
+          default: None
+        - name: connected
+          default: "True"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.dot_vals
+        - config.get
+        - sysctl.get
+      tests:
+        - path: tests/pytests/unit/modules/test_status.py
+          functions: 16
+    - function: ping_master
+      source:
+        path: salt/modules/status.py
+        symbol: ping_master
+      summary: '.. versionadded:: 2016.3.0'
+      parameters:
+        - name: master
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.dot_vals
+        - config.get
+        - sysctl.get
+      tests:
+        - path: tests/pytests/unit/modules/test_status.py
+          functions: 16
+    - function: proxy_reconnect
+      source:
+        path: salt/modules/status.py
+        symbol: proxy_reconnect
+      summary: Forces proxy minion reconnection when not alive.
+      parameters:
+        - name: proxy_name
+        - name: opts
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.dot_vals
+        - config.get
+        - sysctl.get
+      tests:
+        - path: tests/pytests/unit/modules/test_status.py
+          functions: 16
+    - function: time_
+      source:
+        path: salt/modules/status.py
+        symbol: time_
+      summary: '.. versionadded:: 2016.3.0'
+      parameters:
+        - name: format
+          default: '"%A, %d. %B %Y %I:%M%p"'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.dot_vals
+        - config.get
+        - sysctl.get
+      tests:
+        - path: tests/pytests/unit/modules/test_status.py
+          functions: 16

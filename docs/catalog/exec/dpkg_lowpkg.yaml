@@ -1,0 +1,164 @@
+kind: exec
+module: lowpkg
+source_module: dpkg_lowpkg
+virtual: true
+path: salt/modules/dpkg_lowpkg.py
+functions:
+    - function: bin_pkg_info
+      source:
+        path: salt/modules/dpkg_lowpkg.py
+        symbol: bin_pkg_info
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: path
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cmd.run_all
+        - config.valid_fileproto
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_dpkg_lowpkg.py
+          functions: 12
+    - function: unpurge
+      source:
+        path: salt/modules/dpkg_lowpkg.py
+        symbol: unpurge
+      summary: Change package selection for each package specified to 'install'
+      parameters:
+        - name: packages
+          kind: '*'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.valid_fileproto
+        - cp.cache_file
+        - pkg.list_pkgs
+      tests:
+        - path: tests/pytests/unit/modules/test_dpkg_lowpkg.py
+          functions: 12
+    - function: list_pkgs
+      source:
+        path: salt/modules/dpkg_lowpkg.py
+        symbol: list_pkgs
+      summary: 'List the packages currently installed in a dict::'
+      parameters:
+        - name: packages
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.valid_fileproto
+        - cp.cache_file
+        - pkg.list_pkgs
+      tests:
+        - path: tests/pytests/unit/modules/test_dpkg_lowpkg.py
+          functions: 12
+    - function: file_list
+      source:
+        path: salt/modules/dpkg_lowpkg.py
+        symbol: file_list
+      summary: List the files that belong to a package. Not specifying any packages will
+      parameters:
+        - name: packages
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.valid_fileproto
+        - cp.cache_file
+        - pkg.list_pkgs
+      tests:
+        - path: tests/pytests/unit/modules/test_dpkg_lowpkg.py
+          functions: 12
+    - function: file_dict
+      source:
+        path: salt/modules/dpkg_lowpkg.py
+        symbol: file_dict
+      summary: List the files that belong to a package, grouped by package. Not
+      parameters:
+        - name: packages
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.valid_fileproto
+        - cp.cache_file
+        - pkg.list_pkgs
+      tests:
+        - path: tests/pytests/unit/modules/test_dpkg_lowpkg.py
+          functions: 12
+    - function: _get_pkg_info
+      source:
+        path: salt/modules/dpkg_lowpkg.py
+        symbol: _get_pkg_info
+      summary: Return list of package information. If 'packages' parameter is empty,
+      parameters:
+        - name: packages
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.valid_fileproto
+        - cp.cache_file
+        - pkg.list_pkgs
+      tests:
+        - path: tests/pytests/unit/modules/test_dpkg_lowpkg.py
+          functions: 12
+    - function: _get_pkg_license
+      source:
+        path: salt/modules/dpkg_lowpkg.py
+        symbol: _get_pkg_license
+      summary: Try to get a license from the package.
+      parameters:
+        - name: pkg
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.valid_fileproto
+        - cp.cache_file
+        - pkg.list_pkgs
+      tests:
+        - path: tests/pytests/unit/modules/test_dpkg_lowpkg.py
+          functions: 12
+    - function: _get_pkg_ds_avail
+      source:
+        path: salt/modules/dpkg_lowpkg.py
+        symbol: _get_pkg_ds_avail
+      summary: Get the package information of the available packages via
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.valid_fileproto
+        - cp.cache_file
+        - pkg.list_pkgs
+      tests:
+        - path: tests/pytests/unit/modules/test_dpkg_lowpkg.py
+          functions: 12
+    - function: info
+      source:
+        path: salt/modules/dpkg_lowpkg.py
+        symbol: info
+      summary: Returns a detailed summary of package information for provided package names.
+      parameters:
+        - name: packages
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.valid_fileproto
+        - cp.cache_file
+        - pkg.list_pkgs
+      tests:
+        - path: tests/pytests/unit/modules/test_dpkg_lowpkg.py
+          functions: 12

@@ -1,0 +1,75 @@
+kind: exec
+module: desktop
+source_module: mac_desktop
+virtual: true
+path: salt/modules/mac_desktop.py
+platform_markers:
+    - is_darwin
+functions:
+    - function: get_output_volume
+      source:
+        path: salt/modules/mac_desktop.py
+        symbol: get_output_volume
+      summary: Get the output volume (range 0 to 100)
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_desktop.py
+          functions: 10
+    - function: set_output_volume
+      source:
+        path: salt/modules/mac_desktop.py
+        symbol: set_output_volume
+      summary: Set the volume of sound.
+      parameters:
+        - name: volume
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_desktop.py
+          functions: 10
+    - function: screensaver
+      source:
+        path: salt/modules/mac_desktop.py
+        symbol: screensaver
+      summary: Launch the screensaver.
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_desktop.py
+          functions: 10
+    - function: lock
+      source:
+        path: salt/modules/mac_desktop.py
+        symbol: lock
+      summary: Lock the desktop session
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_desktop.py
+          functions: 10
+    - function: say
+      source:
+        path: salt/modules/mac_desktop.py
+        symbol: say
+      summary: Say some words.
+      parameters:
+        - name: words
+          kind: '*'
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_desktop.py
+          functions: 10
+    - function: _check_cmd
+      source:
+        path: salt/modules/mac_desktop.py
+        symbol: _check_cmd
+      summary: Check the output of the cmd.run_all function call.
+      parameters:
+        - name: call
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_desktop.py
+          functions: 10

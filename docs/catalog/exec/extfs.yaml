@@ -1,0 +1,83 @@
+kind: exec
+module: extfs
+source_module: extfs
+path: salt/modules/extfs.py
+platform_markers:
+    - is_windows
+functions:
+    - function: mkfs
+      source:
+        path: salt/modules/extfs.py
+        symbol: mkfs
+      summary: Create a file system on the specified device
+      parameters:
+        - name: device
+        - name: fs_type
+        - name: full_return
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_extfs.py
+          functions: 5
+    - function: tune
+      source:
+        path: salt/modules/extfs.py
+        symbol: tune
+      summary: Set attributes for the specified device (using tune2fs)
+      parameters:
+        - name: device
+        - name: full_return
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_extfs.py
+          functions: 5
+    - function: attributes
+      source:
+        path: salt/modules/extfs.py
+        symbol: attributes
+      summary: Return attributes from dumpe2fs for a specified device
+      parameters:
+        - name: device
+        - name: args
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_extfs.py
+          functions: 5
+    - function: blocks
+      source:
+        path: salt/modules/extfs.py
+        symbol: blocks
+      summary: Return block and inode info from dumpe2fs for a specified device
+      parameters:
+        - name: device
+        - name: args
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_extfs.py
+          functions: 5
+    - function: dump
+      source:
+        path: salt/modules/extfs.py
+        symbol: dump
+      summary: Return all contents of dumpe2fs for a specified device
+      parameters:
+        - name: device
+        - name: args
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_extfs.py
+          functions: 5

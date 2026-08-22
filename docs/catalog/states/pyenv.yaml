@@ -1,0 +1,134 @@
+kind: state
+module: pyenv
+source_module: pyenv
+path: salt/states/pyenv.py
+functions:
+    - function: _check_pyenv
+      source:
+        path: salt/states/pyenv.py
+        symbol: _check_pyenv
+      summary: Check to see if pyenv is installed.
+      parameters:
+        - name: ret
+        - name: user
+          default: None
+      execution_dependencies:
+        - pyenv.is_installed
+      tests:
+        - path: tests/pytests/unit/states/test_pyenv.py
+          functions: 3
+    - function: _python_installed
+      source:
+        path: salt/states/pyenv.py
+        symbol: _python_installed
+      summary: Check to see if given python is installed.
+      parameters:
+        - name: ret
+        - name: python
+        - name: user
+          default: None
+      execution_dependencies:
+        - pyenv.default
+        - pyenv.is_installed
+        - pyenv.versions
+      tests:
+        - path: tests/pytests/unit/states/test_pyenv.py
+          functions: 3
+    - function: _check_and_install_python
+      source:
+        path: salt/states/pyenv.py
+        symbol: _check_and_install_python
+      summary: Verify that python is installed, install if unavailable
+      parameters:
+        - name: ret
+        - name: python
+        - name: default
+          default: "False"
+        - name: user
+          default: None
+      execution_dependencies:
+        - pyenv.default
+        - pyenv.install_python
+        - pyenv.is_installed
+        - pyenv.versions
+      tests:
+        - path: tests/pytests/unit/states/test_pyenv.py
+          functions: 3
+    - function: installed
+      source:
+        path: salt/states/pyenv.py
+        symbol: installed
+      summary: Verify that the specified python is installed with pyenv. pyenv is
+      parameters:
+        - name: name
+        - name: default
+          default: "False"
+        - name: user
+          default: None
+      execution_dependencies:
+        - pyenv.default
+        - pyenv.install
+        - pyenv.install_python
+        - pyenv.is_installed
+        - pyenv.versions
+      tests:
+        - path: tests/pytests/unit/states/test_pyenv.py
+          functions: 3
+    - function: _check_and_uninstall_python
+      source:
+        path: salt/states/pyenv.py
+        symbol: _check_and_uninstall_python
+      summary: Verify that python is uninstalled
+      parameters:
+        - name: ret
+        - name: python
+        - name: user
+          default: None
+      execution_dependencies:
+        - pyenv.default
+        - pyenv.install
+        - pyenv.install_python
+        - pyenv.is_installed
+        - pyenv.uninstall_python
+        - pyenv.versions
+      tests:
+        - path: tests/pytests/unit/states/test_pyenv.py
+          functions: 3
+    - function: absent
+      source:
+        path: salt/states/pyenv.py
+        symbol: absent
+      summary: Verify that the specified python is not installed with pyenv. pyenv
+      parameters:
+        - name: name
+        - name: user
+          default: None
+      execution_dependencies:
+        - pyenv.default
+        - pyenv.install
+        - pyenv.install_python
+        - pyenv.is_installed
+        - pyenv.uninstall_python
+        - pyenv.versions
+      tests:
+        - path: tests/pytests/unit/states/test_pyenv.py
+          functions: 3
+    - function: install_pyenv
+      source:
+        path: salt/states/pyenv.py
+        symbol: install_pyenv
+      summary: Install pyenv if not installed. Allows you to require pyenv be installed
+      parameters:
+        - name: name
+        - name: user
+          default: None
+      execution_dependencies:
+        - pyenv.default
+        - pyenv.install
+        - pyenv.install_python
+        - pyenv.is_installed
+        - pyenv.uninstall_python
+        - pyenv.versions
+      tests:
+        - path: tests/pytests/unit/states/test_pyenv.py
+          functions: 3

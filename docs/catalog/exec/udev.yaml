@@ -1,0 +1,115 @@
+kind: exec
+module: udev
+source_module: udev
+path: salt/modules/udev.py
+functions:
+    - function: _parse_udevadm_info
+      source:
+        path: salt/modules/udev.py
+        symbol: _parse_udevadm_info
+      summary: Parse the info returned by udevadm command.
+      parameters:
+        - name: udev_info
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_udev.py
+          functions: 4
+    - function: _normalize_info
+      source:
+        path: salt/modules/udev.py
+        symbol: _normalize_info
+      summary: Replace list with only one element to the value of the element.
+      parameters:
+        - name: dev
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_udev.py
+          functions: 4
+    - function: info
+      source:
+        path: salt/modules/udev.py
+        symbol: info
+      summary: Extract all info delivered by udevadm
+      parameters:
+        - name: dev
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_udev.py
+          functions: 4
+    - function: env
+      source:
+        path: salt/modules/udev.py
+        symbol: env
+      summary: Return all environment variables udev has for dev
+      parameters:
+        - name: dev
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_udev.py
+          functions: 4
+    - function: name
+      source:
+        path: salt/modules/udev.py
+        symbol: name
+      summary: Return the actual dev name(s?) according to udev for dev
+      parameters:
+        - name: dev
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_udev.py
+          functions: 4
+    - function: path
+      source:
+        path: salt/modules/udev.py
+        symbol: path
+      summary: Return the physical device path(s?) according to udev for dev
+      parameters:
+        - name: dev
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_udev.py
+          functions: 4
+    - function: links
+      source:
+        path: salt/modules/udev.py
+        symbol: links
+      summary: Return all udev-created device symlinks
+      parameters:
+        - name: dev
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_udev.py
+          functions: 4
+    - function: _filter_subsystems
+      source:
+        path: salt/modules/udev.py
+        symbol: _filter_subsystems
+      summary: Filter udevadm_info, keep entries that match any of the passed subsystems.
+      parameters:
+        - name: udevadm_info
+        - name: subsystems
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_udev.py
+          functions: 4
+    - function: exportdb
+      source:
+        path: salt/modules/udev.py
+        symbol: exportdb
+      summary: Return the complete udev database.
+      parameters:
+        - name: subsystems
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_udev.py
+          functions: 4

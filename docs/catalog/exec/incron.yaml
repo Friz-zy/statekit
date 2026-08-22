@@ -1,0 +1,186 @@
+kind: exec
+module: incron
+source_module: incron
+path: salt/modules/incron.py
+functions:
+    - function: _needs_change
+      source:
+        path: salt/modules/incron.py
+        symbol: _needs_change
+      parameters:
+        - name: old
+        - name: new
+      tests:
+        - path: tests/pytests/unit/modules/test_incron.py
+          functions: 7
+    - function: _render_tab
+      source:
+        path: salt/modules/incron.py
+        symbol: _render_tab
+      summary: Takes a tab list structure and renders it to a list for applying it to
+      parameters:
+        - name: lst
+      tests:
+        - path: tests/pytests/unit/modules/test_incron.py
+          functions: 7
+    - function: _get_incron_cmdstr
+      source:
+        path: salt/modules/incron.py
+        symbol: _get_incron_cmdstr
+      summary: Returns a format string, to be used to build an incrontab command.
+      parameters:
+        - name: path
+      tests:
+        - path: tests/pytests/unit/modules/test_incron.py
+          functions: 7
+    - function: write_incron_file
+      source:
+        path: salt/modules/incron.py
+        symbol: write_incron_file
+      summary: Writes the contents of a file to a user's incrontab
+      parameters:
+        - name: user
+        - name: path
+      execution_dependencies:
+        - cmd.retcode
+      tests:
+        - path: tests/pytests/unit/modules/test_incron.py
+          functions: 7
+    - function: write_incron_file_verbose
+      source:
+        path: salt/modules/incron.py
+        symbol: write_incron_file_verbose
+      summary: Writes the contents of a file to a user's incrontab and return error message on error
+      parameters:
+        - name: user
+        - name: path
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_incron.py
+          functions: 7
+    - function: _write_incron_lines
+      source:
+        path: salt/modules/incron.py
+        symbol: _write_incron_lines
+      summary: Takes a list of lines to be committed to a user's incrontab and writes it
+      parameters:
+        - name: user
+        - name: lines
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_incron.py
+          functions: 7
+    - function: _write_file
+      source:
+        path: salt/modules/incron.py
+        symbol: _write_file
+      summary: Writes a file to disk
+      parameters:
+        - name: folder
+        - name: filename
+        - name: data
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_incron.py
+          functions: 7
+    - function: _read_file
+      source:
+        path: salt/modules/incron.py
+        symbol: _read_file
+      summary: Reads and returns the contents of a file
+      parameters:
+        - name: folder
+        - name: filename
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_incron.py
+          functions: 7
+    - function: raw_system_incron
+      source:
+        path: salt/modules/incron.py
+        symbol: raw_system_incron
+      summary: Return the contents of the system wide incrontab
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_incron.py
+          functions: 7
+    - function: raw_incron
+      source:
+        path: salt/modules/incron.py
+        symbol: raw_incron
+      summary: Return the contents of the user's incrontab
+      parameters:
+        - name: user
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_incron.py
+          functions: 7
+    - function: list_tab
+      source:
+        path: salt/modules/incron.py
+        symbol: list_tab
+      summary: Return the contents of the specified user's incrontab
+      parameters:
+        - name: user
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_incron.py
+          functions: 7
+    - function: set_job
+      source:
+        path: salt/modules/incron.py
+        symbol: set_job
+      summary: Sets an incron job up for a specified user.
+      parameters:
+        - name: user
+        - name: path
+        - name: mask
+        - name: cmd
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_incron.py
+          functions: 7
+    - function: rm_job
+      source:
+        path: salt/modules/incron.py
+        symbol: rm_job
+      summary: Remove a incron job for a specified user. If any of the day/time params are
+      parameters:
+        - name: user
+        - name: path
+        - name: mask
+        - name: cmd
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_incron.py
+          functions: 7

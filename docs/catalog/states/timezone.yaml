@@ -1,0 +1,24 @@
+kind: state
+module: timezone
+source_module: timezone
+path: salt/states/timezone.py
+platform_markers:
+    - is_windows
+functions:
+    - function: system
+      source:
+        path: salt/states/timezone.py
+        symbol: system
+      summary: Set the timezone for the system.
+      parameters:
+        - name: name
+        - name: utc
+          default: "True"
+      execution_dependencies:
+        - timezone.get_hwclock
+        - timezone.set_hwclock
+        - timezone.set_zone
+        - timezone.zone_compare
+      tests:
+        - path: tests/pytests/unit/states/test_timezone.py
+          functions: 3

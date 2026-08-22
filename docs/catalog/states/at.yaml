@@ -1,0 +1,91 @@
+kind: state
+module: at
+source_module: at
+path: salt/states/at.py
+functions:
+    - function: present
+      source:
+        path: salt/states/at.py
+        symbol: present
+      summary: '.. versionchanged:: 2017.7.0'
+      parameters:
+        - name: name
+        - name: timespec
+        - name: tag
+          default: None
+        - name: user
+          default: None
+        - name: job
+          default: None
+        - name: unique_tag
+          default: "False"
+      execution_dependencies:
+        - at.at
+        - at.jobcheck
+        - user.info
+      tests:
+        - path: tests/pytests/unit/states/test_at.py
+          functions: 2
+    - function: absent
+      source:
+        path: salt/states/at.py
+        symbol: absent
+      summary: '.. versionchanged:: 2017.7.0'
+      parameters:
+        - name: name
+        - name: jobid
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - at.at
+        - at.atq
+        - at.atrm
+        - at.jobcheck
+        - user.info
+      tests:
+        - path: tests/pytests/unit/states/test_at.py
+          functions: 2
+    - function: watch
+      source:
+        path: salt/states/at.py
+        symbol: watch
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: name
+        - name: timespec
+        - name: tag
+          default: None
+        - name: user
+          default: None
+        - name: job
+          default: None
+        - name: unique_tag
+          default: "False"
+      execution_dependencies:
+        - at.at
+        - at.atq
+        - at.atrm
+        - at.jobcheck
+        - user.info
+      tests:
+        - path: tests/pytests/unit/states/test_at.py
+          functions: 2
+    - function: mod_watch
+      source:
+        path: salt/states/at.py
+        symbol: mod_watch
+      summary: The at watcher, called to invoke the watch command.
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - at.at
+        - at.atq
+        - at.atrm
+        - at.jobcheck
+        - user.info
+      tests:
+        - path: tests/pytests/unit/states/test_at.py
+          functions: 2

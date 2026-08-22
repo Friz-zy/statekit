@@ -1,0 +1,444 @@
+kind: exec
+module: file
+source_module: win_file
+virtual: true
+path: salt/modules/win_file.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _resolve_symlink
+      source:
+        path: salt/modules/win_file.py
+        symbol: _resolve_symlink
+      summary: Resolves the given symlink path to its real path, up to a maximum of the
+      parameters:
+        - name: path
+        - name: max_depth
+          default: "64"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: gid_to_group
+      source:
+        path: salt/modules/win_file.py
+        symbol: gid_to_group
+      summary: Convert the group id to the group name on this system
+      parameters:
+        - name: gid
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: group_to_gid
+      source:
+        path: salt/modules/win_file.py
+        symbol: group_to_gid
+      summary: Convert the group to the gid on this system
+      parameters:
+        - name: group
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: get_pgid
+      source:
+        path: salt/modules/win_file.py
+        symbol: get_pgid
+      summary: Return the id of the primary group that owns a given file (Windows only)
+      parameters:
+        - name: path
+        - name: follow_symlinks
+          default: "True"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: get_pgroup
+      source:
+        path: salt/modules/win_file.py
+        symbol: get_pgroup
+      summary: Return the name of the primary group that owns a given file (Windows only)
+      parameters:
+        - name: path
+        - name: follow_symlinks
+          default: "True"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: get_gid
+      source:
+        path: salt/modules/win_file.py
+        symbol: get_gid
+      summary: Return the id of the group that owns a given file
+      parameters:
+        - name: path
+        - name: follow_symlinks
+          default: "True"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: get_group
+      source:
+        path: salt/modules/win_file.py
+        symbol: get_group
+      summary: Return the group that owns a given file
+      parameters:
+        - name: path
+        - name: follow_symlinks
+          default: "True"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: uid_to_user
+      source:
+        path: salt/modules/win_file.py
+        symbol: uid_to_user
+      summary: Convert a User ID (uid) to a username
+      parameters:
+        - name: uid
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: user_to_uid
+      source:
+        path: salt/modules/win_file.py
+        symbol: user_to_uid
+      summary: Convert user name to a uid
+      parameters:
+        - name: user
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: get_uid
+      source:
+        path: salt/modules/win_file.py
+        symbol: get_uid
+      summary: Return the id of the user that owns a given file
+      parameters:
+        - name: path
+        - name: follow_symlinks
+          default: "True"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: get_user
+      source:
+        path: salt/modules/win_file.py
+        symbol: get_user
+      summary: Return the user that owns a given file
+      parameters:
+        - name: path
+        - name: follow_symlinks
+          default: "True"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: get_mode
+      source:
+        path: salt/modules/win_file.py
+        symbol: get_mode
+      summary: Return the mode of a file
+      parameters:
+        - name: path
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: lchown
+      source:
+        path: salt/modules/win_file.py
+        symbol: lchown
+      summary: Chown a file, pass the file the desired user and group without following any
+      parameters:
+        - name: path
+        - name: user
+        - name: group
+          default: None
+        - name: pgroup
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: chown
+      source:
+        path: salt/modules/win_file.py
+        symbol: chown
+      summary: Chown a file, pass the file the desired user and group
+      parameters:
+        - name: path
+        - name: user
+        - name: group
+          default: None
+        - name: pgroup
+          default: None
+        - name: follow_symlinks
+          default: "True"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: chpgrp
+      source:
+        path: salt/modules/win_file.py
+        symbol: chpgrp
+      summary: Change the group of a file
+      parameters:
+        - name: path
+        - name: group
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: chgrp
+      source:
+        path: salt/modules/win_file.py
+        symbol: chgrp
+      summary: Change the group of a file
+      parameters:
+        - name: path
+        - name: group
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: stats
+      source:
+        path: salt/modules/win_file.py
+        symbol: stats
+      summary: Return a dict containing the stats about a given file
+      parameters:
+        - name: path
+        - name: hash_type
+          default: '"sha256"'
+        - name: follow_symlinks
+          default: "True"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: _get_version_os
+      source:
+        path: salt/modules/win_file.py
+        symbol: _get_version_os
+      summary: Helper function to parse the OS data
+      parameters:
+        - name: flags
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: _get_version_type
+      source:
+        path: salt/modules/win_file.py
+        symbol: _get_version_type
+      parameters:
+        - name: file_type
+        - name: file_subtype
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: _get_version
+      source:
+        path: salt/modules/win_file.py
+        symbol: _get_version
+      summary: Get the version of the file passed in path or the fixed_info object if
+      parameters:
+        - name: path
+        - name: fixed_info
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: version
+      source:
+        path: salt/modules/win_file.py
+        symbol: version
+      parameters:
+        - name: path
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: version_details
+      source:
+        path: salt/modules/win_file.py
+        symbol: version_details
+      parameters:
+        - name: path
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: get_attributes
+      source:
+        path: salt/modules/win_file.py
+        symbol: get_attributes
+      summary: Return a dictionary object with the Windows file attributes for a file.
+      parameters:
+        - name: path
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: set_attributes
+      source:
+        path: salt/modules/win_file.py
+        symbol: set_attributes
+      summary: Set file attributes for a file. Note that the normal attribute means that
+      parameters:
+        - name: path
+        - name: archive
+          default: None
+        - name: hidden
+          default: None
+        - name: normal
+          default: None
+        - name: notIndexed
+          default: None
+        - name: readonly
+          default: None
+        - name: system
+          default: None
+        - name: temporary
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: set_mode
+      source:
+        path: salt/modules/win_file.py
+        symbol: set_mode
+      summary: Set the mode of a file
+      parameters:
+        - name: path
+        - name: mode
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: remove
+      source:
+        path: salt/modules/win_file.py
+        symbol: remove
+      summary: Remove the named file or directory
+      parameters:
+        - name: path
+        - name: force
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: symlink
+      source:
+        path: salt/modules/win_file.py
+        symbol: symlink
+      summary: Create a symbolic link to a file
+      parameters:
+        - name: src
+        - name: link
+        - name: force
+          default: "False"
+        - name: atomic
+          default: "False"
+        - name: follow_symlinks
+          default: "True"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: is_link
+      source:
+        path: salt/modules/win_file.py
+        symbol: is_link
+      summary: Check if the path is a symlink
+      parameters:
+        - name: path
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: mkdir
+      source:
+        path: salt/modules/win_file.py
+        symbol: mkdir
+      summary: Ensure that the directory is available and permissions are set.
+      parameters:
+        - name: path
+        - name: owner
+          default: None
+        - name: grant_perms
+          default: None
+        - name: deny_perms
+          default: None
+        - name: inheritance
+          default: "True"
+        - name: reset
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: makedirs_
+      source:
+        path: salt/modules/win_file.py
+        symbol: makedirs_
+      summary: Ensure that the parent directory containing this path is available.
+      parameters:
+        - name: path
+        - name: owner
+          default: None
+        - name: grant_perms
+          default: None
+        - name: deny_perms
+          default: None
+        - name: inheritance
+          default: "True"
+        - name: reset
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: makedirs_perms
+      source:
+        path: salt/modules/win_file.py
+        symbol: makedirs_perms
+      summary: Set owner and permissions for each directory created.
+      parameters:
+        - name: path
+        - name: owner
+          default: None
+        - name: grant_perms
+          default: None
+        - name: deny_perms
+          default: None
+        - name: inheritance
+          default: "True"
+        - name: reset
+          default: "True"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: check_perms
+      source:
+        path: salt/modules/win_file.py
+        symbol: check_perms
+      summary: Check owner and permissions for the passed directory. This function checks
+      parameters:
+        - name: path
+        - name: ret
+          default: None
+        - name: owner
+          default: None
+        - name: grant_perms
+          default: None
+        - name: deny_perms
+          default: None
+        - name: inheritance
+          default: "True"
+        - name: reset
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38
+    - function: set_perms
+      source:
+        path: salt/modules/win_file.py
+        symbol: set_perms
+      summary: Set permissions for the given path
+      parameters:
+        - name: path
+        - name: grant_perms
+          default: None
+        - name: deny_perms
+          default: None
+        - name: inheritance
+          default: "True"
+        - name: reset
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_file.py
+          functions: 38

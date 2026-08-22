@@ -1,0 +1,86 @@
+kind: state
+module: network
+source_module: win_network
+virtual: true
+path: salt/states/win_network.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _validate
+      source:
+        path: salt/states/win_network.py
+        symbol: _validate
+      summary: Ensure that the configuration passed is formatted correctly and contains
+      parameters:
+        - name: dns_proto
+        - name: dns_servers
+        - name: ip_proto
+        - name: ip_addrs
+        - name: gateway
+      execution_dependencies:
+        - ip.get_interface
+      tests:
+        - path: tests/pytests/unit/states/test_win_network.py
+          functions: 12
+    - function: _addrdict_to_ip_addrs
+      source:
+        path: salt/states/win_network.py
+        symbol: _addrdict_to_ip_addrs
+      summary: Extracts a list of IP/CIDR expressions from a list of addrdicts, as
+      parameters:
+        - name: addrs
+      execution_dependencies:
+        - ip.get_interface
+      tests:
+        - path: tests/pytests/unit/states/test_win_network.py
+          functions: 12
+    - function: _changes
+      source:
+        path: salt/states/win_network.py
+        symbol: _changes
+      summary: Compares the current interface against the desired configuration and
+      parameters:
+        - name: cur
+        - name: dns_proto
+        - name: dns_servers
+        - name: ip_proto
+        - name: ip_addrs
+        - name: gateway
+      execution_dependencies:
+        - ip.get_interface
+      tests:
+        - path: tests/pytests/unit/states/test_win_network.py
+          functions: 12
+    - function: managed
+      source:
+        path: salt/states/win_network.py
+        symbol: managed
+      summary: Ensure that the named interface is configured properly.
+      parameters:
+        - name: name
+        - name: dns_proto
+          default: None
+        - name: dns_servers
+          default: None
+        - name: ip_proto
+          default: None
+        - name: ip_addrs
+          default: None
+        - name: gateway
+          default: None
+        - name: enabled
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - ip.disable
+        - ip.enable
+        - ip.get_interface
+        - ip.is_enabled
+        - ip.set_dhcp_dns
+        - ip.set_dhcp_ip
+        - ip.set_static_dns
+        - ip.set_static_ip
+      tests:
+        - path: tests/pytests/unit/states/test_win_network.py
+          functions: 12

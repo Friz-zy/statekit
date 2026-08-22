@@ -1,0 +1,623 @@
+kind: exec
+module: system
+source_module: win_system
+virtual: true
+path: salt/modules/win_system.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _convert_minutes_seconds
+      source:
+        path: salt/modules/win_system.py
+        symbol: _convert_minutes_seconds
+      summary: convert timeout to seconds
+      parameters:
+        - name: timeout
+        - name: in_seconds
+          default: "False"
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: _convert_date_time_string
+      source:
+        path: salt/modules/win_system.py
+        symbol: _convert_date_time_string
+      summary: convert string to date time object
+      parameters:
+        - name: dt_string
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: halt
+      source:
+        path: salt/modules/win_system.py
+        symbol: halt
+      summary: Halt a running system.
+      parameters:
+        - name: timeout
+          default: "5"
+        - name: in_seconds
+          default: "False"
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: init
+      source:
+        path: salt/modules/win_system.py
+        symbol: init
+      summary: Change the system runlevel on sysV compatible systems. Not applicable to
+      parameters:
+        - name: runlevel
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: poweroff
+      source:
+        path: salt/modules/win_system.py
+        symbol: poweroff
+      summary: Power off a running system.
+      parameters:
+        - name: timeout
+          default: "5"
+        - name: in_seconds
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: reboot
+      source:
+        path: salt/modules/win_system.py
+        symbol: reboot
+      summary: Reboot a running system.
+      parameters:
+        - name: timeout
+          default: "5"
+        - name: in_seconds
+          default: "False"
+        - name: wait_for_reboot
+          default: "False"
+        - name: '# pylint: disable'
+          default: |-
+            redefined-outer-name
+                only_on_pending_reboot=False
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: shutdown
+      source:
+        path: salt/modules/win_system.py
+        symbol: shutdown
+      summary: Shutdown a running system.
+      parameters:
+        - name: message
+          default: None
+        - name: timeout
+          default: "5"
+        - name: force_close
+          default: "True"
+        - name: reboot
+          default: "False"
+        - name: '# pylint: disable'
+          default: |-
+            redefined-outer-name
+                in_seconds=False
+        - name: only_on_pending_reboot
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: shutdown_hard
+      source:
+        path: salt/modules/win_system.py
+        symbol: shutdown_hard
+      summary: Shutdown a running system with no timeout or warning.
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: shutdown_abort
+      source:
+        path: salt/modules/win_system.py
+        symbol: shutdown_abort
+      summary: Abort a shutdown. Only available while the dialog box is being
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: lock
+      source:
+        path: salt/modules/win_system.py
+        symbol: lock
+      summary: Lock the workstation.
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: set_computer_name
+      source:
+        path: salt/modules/win_system.py
+        symbol: set_computer_name
+      summary: Set the Windows computer name
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: get_pending_computer_name
+      source:
+        path: salt/modules/win_system.py
+        symbol: get_pending_computer_name
+      summary: Get a pending computer name. If the computer name has been changed, and the
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: get_computer_name
+      source:
+        path: salt/modules/win_system.py
+        symbol: get_computer_name
+      summary: Get the Windows computer name
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: set_computer_desc
+      source:
+        path: salt/modules/win_system.py
+        symbol: set_computer_desc
+      summary: Set the Windows computer description.
+      parameters:
+        - name: desc
+          default: None
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: get_system_info
+      source:
+        path: salt/modules/win_system.py
+        symbol: get_system_info
+      summary: Get system information.
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: get_computer_desc
+      source:
+        path: salt/modules/win_system.py
+        symbol: get_computer_desc
+      summary: Get the Windows computer description.
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: get_hostname
+      source:
+        path: salt/modules/win_system.py
+        symbol: get_hostname
+      summary: Get the hostname of the windows minion.
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: set_hostname
+      source:
+        path: salt/modules/win_system.py
+        symbol: set_hostname
+      summary: Set the hostname of the windows minion, requires a restart before this will
+      parameters:
+        - name: hostname
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: join_domain
+      source:
+        path: salt/modules/win_system.py
+        symbol: join_domain
+      summary: Join a computer to an Active Directory domain. Requires a reboot.
+      parameters:
+        - name: domain
+        - name: username
+          default: None
+        - name: password
+          default: None
+        - name: account_ou
+          default: None
+        - name: account_exists
+          default: "False"
+        - name: restart
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: _join_domain
+      source:
+        path: salt/modules/win_system.py
+        symbol: _join_domain
+      summary: Helper function to join the domain.
+      parameters:
+        - name: domain
+        - name: username
+          default: None
+        - name: password
+          default: None
+        - name: account_ou
+          default: None
+        - name: account_exists
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: unjoin_domain
+      source:
+        path: salt/modules/win_system.py
+        symbol: unjoin_domain
+      parameters:
+        - name: username
+          default: None
+        - name: password
+          default: None
+        - name: domain
+          default: None
+        - name: workgroup
+          default: '"WORKGROUP"'
+        - name: disable
+          default: "False"
+        - name: restart
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: get_domain_workgroup
+      source:
+        path: salt/modules/win_system.py
+        symbol: get_domain_workgroup
+      summary: Get the domain or workgroup the computer belongs to.
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: set_domain_workgroup
+      source:
+        path: salt/modules/win_system.py
+        symbol: set_domain_workgroup
+      summary: Set the domain or workgroup the computer belongs to.
+      parameters:
+        - name: workgroup
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: _try_parse_datetime
+      source:
+        path: salt/modules/win_system.py
+        symbol: _try_parse_datetime
+      summary: A helper function that attempts to parse the input time_str as a date.
+      parameters:
+        - name: time_str
+        - name: fmts
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: get_system_time
+      source:
+        path: salt/modules/win_system.py
+        symbol: get_system_time
+      summary: Get the system time.
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: set_system_time
+      source:
+        path: salt/modules/win_system.py
+        symbol: set_system_time
+      summary: Set the system time.
+      parameters:
+        - name: newtime
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: set_system_date_time
+      source:
+        path: salt/modules/win_system.py
+        symbol: set_system_date_time
+      summary: Set the system date and time. Each argument is an element of the date, but
+      parameters:
+        - name: years
+          default: None
+        - name: months
+          default: None
+        - name: days
+          default: None
+        - name: hours
+          default: None
+        - name: minutes
+          default: None
+        - name: seconds
+          default: None
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: get_system_date
+      source:
+        path: salt/modules/win_system.py
+        symbol: get_system_date
+      summary: Get the Windows system date
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: set_system_date
+      source:
+        path: salt/modules/win_system.py
+        symbol: set_system_date
+      summary: Set the Windows system date. Use <mm-dd-yy> format for the date.
+      parameters:
+        - name: newdate
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: start_time_service
+      source:
+        path: salt/modules/win_system.py
+        symbol: start_time_service
+      summary: Start the Windows time service.
+      execution_dependencies:
+        - cmd.run
+        - service.start
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: stop_time_service
+      source:
+        path: salt/modules/win_system.py
+        symbol: stop_time_service
+      summary: Stop the Windows time service.
+      execution_dependencies:
+        - cmd.run
+        - service.start
+        - service.stop
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: get_pending_component_servicing
+      source:
+        path: salt/modules/win_system.py
+        symbol: get_pending_component_servicing
+      summary: Determine whether there are pending Component Based Servicing tasks that
+      execution_dependencies:
+        - cmd.run
+        - service.start
+        - service.stop
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: get_pending_domain_join
+      source:
+        path: salt/modules/win_system.py
+        symbol: get_pending_domain_join
+      summary: Determine whether there is a pending domain join action that requires a
+      execution_dependencies:
+        - cmd.run
+        - service.start
+        - service.stop
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: get_pending_file_rename
+      source:
+        path: salt/modules/win_system.py
+        symbol: get_pending_file_rename
+      summary: Determine whether there are pending file rename operations that require a
+      execution_dependencies:
+        - cmd.run
+        - service.start
+        - service.stop
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: get_pending_servermanager
+      source:
+        path: salt/modules/win_system.py
+        symbol: get_pending_servermanager
+      summary: Determine whether there are pending Server Manager tasks that require a
+      execution_dependencies:
+        - cmd.run
+        - service.start
+        - service.stop
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: get_pending_update
+      source:
+        path: salt/modules/win_system.py
+        symbol: get_pending_update
+      summary: Determine whether there are pending updates that require a reboot.
+      execution_dependencies:
+        - cmd.run
+        - service.start
+        - service.stop
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: set_reboot_required_witnessed
+      source:
+        path: salt/modules/win_system.py
+        symbol: set_reboot_required_witnessed
+      execution_dependencies:
+        - cmd.run
+        - service.start
+        - service.stop
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: get_reboot_required_witnessed
+      source:
+        path: salt/modules/win_system.py
+        symbol: get_reboot_required_witnessed
+      summary: Determine if at any time during the current boot session the salt minion
+      execution_dependencies:
+        - cmd.run
+        - service.start
+        - service.stop
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: get_pending_reboot
+      source:
+        path: salt/modules/win_system.py
+        symbol: get_pending_reboot
+      summary: Determine whether there is a reboot pending.
+      execution_dependencies:
+        - cmd.run
+        - service.start
+        - service.stop
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: get_pending_reboot_details
+      source:
+        path: salt/modules/win_system.py
+        symbol: get_pending_reboot_details
+      summary: Determine which check is signalling that the system is pending a reboot.
+      execution_dependencies:
+        - cmd.run
+        - service.start
+        - service.stop
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9
+    - function: get_pending_windows_update
+      source:
+        path: salt/modules/win_system.py
+        symbol: get_pending_windows_update
+      summary: Check the Windows Update system for a pending reboot state.
+      execution_dependencies:
+        - cmd.run
+        - service.start
+        - service.stop
+      tests:
+        - path: tests/unit/modules/test_win_system.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_win_system.py
+          functions: 9

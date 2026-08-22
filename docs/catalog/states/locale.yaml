@@ -1,0 +1,33 @@
+kind: state
+module: locale
+source_module: locale
+path: salt/states/locale.py
+functions:
+    - function: system
+      source:
+        path: salt/states/locale.py
+        symbol: system
+      summary: Set the locale for the system
+      parameters:
+        - name: name
+      execution_dependencies:
+        - locale.get_locale
+        - locale.set_locale
+      tests:
+        - path: tests/pytests/unit/states/test_locale.py
+          functions: 2
+    - function: present
+      source:
+        path: salt/states/locale.py
+        symbol: present
+      summary: Generate a locale if it is not present
+      parameters:
+        - name: name
+      execution_dependencies:
+        - locale.avail
+        - locale.gen_locale
+        - locale.get_locale
+        - locale.set_locale
+      tests:
+        - path: tests/pytests/unit/states/test_locale.py
+          functions: 2

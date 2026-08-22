@@ -1,0 +1,71 @@
+kind: exec
+module: textfsm
+source_module: textfsm_mod
+virtual: true
+path: salt/modules/textfsm_mod.py
+functions:
+    - function: _clitable_to_dict
+      source:
+        path: salt/modules/textfsm_mod.py
+        symbol: _clitable_to_dict
+      summary: Converts TextFSM cli_table object to list of dictionaries.
+      parameters:
+        - name: objects
+        - name: fsm_handler
+      tests:
+        - path: tests/pytests/unit/modules/test_textfsm_mod.py
+          functions: 15
+    - function: extract
+      source:
+        path: salt/modules/textfsm_mod.py
+        symbol: extract
+      parameters:
+        - name: template_path
+        - name: raw_text
+          default: None
+        - name: raw_text_file
+          default: None
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cp.cache_file
+        - cp.get_file_str
+      tests:
+        - path: tests/pytests/unit/modules/test_textfsm_mod.py
+          functions: 15
+    - function: index
+      source:
+        path: salt/modules/textfsm_mod.py
+        symbol: index
+      summary: Dynamically identify the template required to extract the
+      parameters:
+        - name: command
+        - name: platform
+          default: None
+        - name: platform_grain_name
+          default: None
+        - name: platform_column_name
+          default: None
+        - name: output
+          default: None
+        - name: output_file
+          default: None
+        - name: textfsm_path
+          default: None
+        - name: index_file
+          default: None
+        - name: saltenv
+          default: '"base"'
+        - name: include_empty
+          default: "False"
+        - name: include_pat
+          default: None
+        - name: exclude_pat
+          default: None
+      execution_dependencies:
+        - cp.cache_dir
+        - cp.cache_file
+        - cp.get_file_str
+      tests:
+        - path: tests/pytests/unit/modules/test_textfsm_mod.py
+          functions: 15

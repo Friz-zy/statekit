@@ -1,0 +1,231 @@
+kind: exec
+module: group
+source_module: groupadd
+virtual: true
+path: salt/modules/groupadd.py
+functions:
+    - function: _which
+      source:
+        path: salt/modules/groupadd.py
+        symbol: _which
+      summary: Utility function wrapper to error out early if a command is not found
+      parameters:
+        - name: cmd
+      execution_dependencies:
+        - group.info
+      tests:
+        - path: tests/pytests/unit/modules/test_groupadd.py
+          functions: 14
+    - function: add
+      source:
+        path: salt/modules/groupadd.py
+        symbol: add
+      summary: '.. versionchanged:: 3006.0'
+      parameters:
+        - name: name
+        - name: gid
+          default: None
+        - name: system
+          default: "False"
+        - name: root
+          default: None
+        - name: non_unique
+          default: "False"
+        - name: local
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+        - group.info
+      tests:
+        - path: tests/pytests/unit/modules/test_groupadd.py
+          functions: 14
+    - function: delete
+      source:
+        path: salt/modules/groupadd.py
+        symbol: delete
+      summary: Remove the named group
+      parameters:
+        - name: name
+        - name: root
+          default: None
+        - name: local
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+        - group.info
+      tests:
+        - path: tests/pytests/unit/modules/test_groupadd.py
+          functions: 14
+    - function: info
+      source:
+        path: salt/modules/groupadd.py
+        symbol: info
+      summary: Return information about a group
+      parameters:
+        - name: name
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - group.info
+      tests:
+        - path: tests/pytests/unit/modules/test_groupadd.py
+          functions: 14
+    - function: _format_info
+      source:
+        path: salt/modules/groupadd.py
+        symbol: _format_info
+      summary: Return formatted information in a pretty way.
+      parameters:
+        - name: data
+      execution_dependencies:
+        - cmd.run_all
+        - group.info
+      tests:
+        - path: tests/pytests/unit/modules/test_groupadd.py
+          functions: 14
+    - function: getent
+      source:
+        path: salt/modules/groupadd.py
+        symbol: getent
+      summary: Return info on all groups
+      parameters:
+        - name: refresh
+          default: "False"
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - group.info
+      tests:
+        - path: tests/pytests/unit/modules/test_groupadd.py
+          functions: 14
+    - function: _chattrib
+      source:
+        path: salt/modules/groupadd.py
+        symbol: _chattrib
+      summary: Change an attribute for a named user
+      parameters:
+        - name: name
+        - name: key
+        - name: value
+        - name: param
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - group.info
+      tests:
+        - path: tests/pytests/unit/modules/test_groupadd.py
+          functions: 14
+    - function: chgid
+      source:
+        path: salt/modules/groupadd.py
+        symbol: chgid
+      summary: '.. versionchanged:: 3006.0'
+      parameters:
+        - name: name
+        - name: gid
+        - name: root
+          default: None
+        - name: non_unique
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - group.info
+      tests:
+        - path: tests/pytests/unit/modules/test_groupadd.py
+          functions: 14
+    - function: adduser
+      source:
+        path: salt/modules/groupadd.py
+        symbol: adduser
+      summary: Add a user in the group.
+      parameters:
+        - name: name
+        - name: username
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - group.info
+      tests:
+        - path: tests/pytests/unit/modules/test_groupadd.py
+          functions: 14
+    - function: deluser
+      source:
+        path: salt/modules/groupadd.py
+        symbol: deluser
+      summary: Remove a user from the group.
+      parameters:
+        - name: name
+        - name: username
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - group.info
+      tests:
+        - path: tests/pytests/unit/modules/test_groupadd.py
+          functions: 14
+    - function: members
+      source:
+        path: salt/modules/groupadd.py
+        symbol: members
+      summary: Replaces members of the group with a provided list.
+      parameters:
+        - name: name
+        - name: members_list
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - group.info
+      tests:
+        - path: tests/pytests/unit/modules/test_groupadd.py
+          functions: 14
+    - function: _getgrnam
+      source:
+        path: salt/modules/groupadd.py
+        symbol: _getgrnam
+      summary: Alternative implementation for getgrnam, that use only /etc/group
+      parameters:
+        - name: name
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - group.info
+      tests:
+        - path: tests/pytests/unit/modules/test_groupadd.py
+          functions: 14
+    - function: _getgrall
+      source:
+        path: salt/modules/groupadd.py
+        symbol: _getgrall
+      summary: Alternative implemetantion for getgrall, that use only /etc/group
+      parameters:
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - group.info
+      tests:
+        - path: tests/pytests/unit/modules/test_groupadd.py
+          functions: 14

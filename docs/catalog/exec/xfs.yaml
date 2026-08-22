@@ -1,0 +1,259 @@
+kind: exec
+module: xfs
+source_module: xfs
+path: salt/modules/xfs.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _verify_run
+      source:
+        path: salt/modules/xfs.py
+        symbol: _verify_run
+      summary: Crash to the log if command execution was not successful.
+      parameters:
+        - name: out
+        - name: cmd
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_xfs.py
+          functions: 2
+    - function: _xfs_info_get_kv
+      source:
+        path: salt/modules/xfs.py
+        symbol: _xfs_info_get_kv
+      summary: Parse one line of the XFS info output.
+      parameters:
+        - name: serialized
+      tests:
+        - path: tests/pytests/unit/modules/test_xfs.py
+          functions: 2
+    - function: _parse_xfs_info
+      source:
+        path: salt/modules/xfs.py
+        symbol: _parse_xfs_info
+      summary: Parse output from "xfs_info" or "xfs_growfs -n".
+      parameters:
+        - name: data
+      tests:
+        - path: tests/pytests/unit/modules/test_xfs.py
+          functions: 2
+    - function: info
+      source:
+        path: salt/modules/xfs.py
+        symbol: info
+      summary: Get filesystem geometry information.
+      parameters:
+        - name: device
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_xfs.py
+          functions: 2
+    - function: _xfsdump_output
+      source:
+        path: salt/modules/xfs.py
+        symbol: _xfsdump_output
+      summary: Parse CLI output of the xfsdump utility.
+      parameters:
+        - name: data
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_xfs.py
+          functions: 2
+    - function: dump
+      source:
+        path: salt/modules/xfs.py
+        symbol: dump
+      summary: Dump filesystem device to the media (file, tape etc).
+      parameters:
+        - name: device
+        - name: destination
+        - name: level
+          default: "0"
+        - name: label
+          default: None
+        - name: noerase
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_xfs.py
+          functions: 2
+    - function: _xr_to_keyset
+      source:
+        path: salt/modules/xfs.py
+        symbol: _xr_to_keyset
+      summary: Parse xfsrestore output keyset elements.
+      parameters:
+        - name: line
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_xfs.py
+          functions: 2
+    - function: _xfs_inventory_output
+      source:
+        path: salt/modules/xfs.py
+        symbol: _xfs_inventory_output
+      summary: Transform xfsrestore inventory data output to a Python dict source and evaluate it.
+      parameters:
+        - name: out
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_xfs.py
+          functions: 2
+    - function: inventory
+      source:
+        path: salt/modules/xfs.py
+        symbol: inventory
+      summary: Display XFS dump inventory without restoration.
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_xfs.py
+          functions: 2
+    - function: _xfs_prune_output
+      source:
+        path: salt/modules/xfs.py
+        symbol: _xfs_prune_output
+      summary: Parse prune output.
+      parameters:
+        - name: out
+        - name: uuid
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_xfs.py
+          functions: 2
+    - function: prune_dump
+      source:
+        path: salt/modules/xfs.py
+        symbol: prune_dump
+      summary: Prunes the dump session identified by the given session id.
+      parameters:
+        - name: sessionid
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_xfs.py
+          functions: 2
+    - function: _blkid_output
+      source:
+        path: salt/modules/xfs.py
+        symbol: _blkid_output
+      summary: Parse blkid output.
+      parameters:
+        - name: out
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_xfs.py
+          functions: 2
+    - function: devices
+      source:
+        path: salt/modules/xfs.py
+        symbol: devices
+      summary: Get known XFS formatted devices on the system.
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_xfs.py
+          functions: 2
+    - function: _xfs_estimate_output
+      source:
+        path: salt/modules/xfs.py
+        symbol: _xfs_estimate_output
+      summary: Parse xfs_estimate output.
+      parameters:
+        - name: out
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_xfs.py
+          functions: 2
+    - function: estimate
+      source:
+        path: salt/modules/xfs.py
+        symbol: estimate
+      summary: Estimate the space that an XFS filesystem will take.
+      parameters:
+        - name: path
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_xfs.py
+          functions: 2
+    - function: mkfs
+      source:
+        path: salt/modules/xfs.py
+        symbol: mkfs
+      summary: Create a file system on the specified device. By default wipes out with force.
+      parameters:
+        - name: device
+        - name: label
+          default: None
+        - name: ssize
+          default: None
+        - name: noforce
+          default: None
+        - name: bso
+          default: None
+        - name: gmo
+          default: None
+        - name: ino
+          default: None
+        - name: lso
+          default: None
+        - name: rso
+          default: None
+        - name: nmo
+          default: None
+        - name: dso
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_xfs.py
+          functions: 2
+    - function: modify
+      source:
+        path: salt/modules/xfs.py
+        symbol: modify
+      summary: Modify parameters of an XFS filesystem.
+      parameters:
+        - name: device
+        - name: label
+          default: None
+        - name: lazy_counting
+          default: None
+        - name: uuid
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_xfs.py
+          functions: 2
+    - function: _get_mounts
+      source:
+        path: salt/modules/xfs.py
+        symbol: _get_mounts
+      summary: List mounted filesystems.
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_xfs.py
+          functions: 2
+    - function: defragment
+      source:
+        path: salt/modules/xfs.py
+        symbol: defragment
+      summary: Defragment mounted XFS filesystem.
+      parameters:
+        - name: device
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_xfs.py
+          functions: 2

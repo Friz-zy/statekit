@@ -1,0 +1,223 @@
+kind: exec
+module: service
+source_module: debian_service
+virtual: true
+path: salt/modules/debian_service.py
+functions:
+    - function: _service_cmd
+      source:
+        path: salt/modules/debian_service.py
+        symbol: _service_cmd
+      parameters:
+        - name: args
+          kind: '*'
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_service.py
+          functions: 15
+    - function: _get_runlevel
+      source:
+        path: salt/modules/debian_service.py
+        symbol: _get_runlevel
+      summary: returns the current runlevel
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_service.py
+          functions: 15
+    - function: get_enabled
+      source:
+        path: salt/modules/debian_service.py
+        symbol: get_enabled
+      summary: Return a list of service that are enabled on boot
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_service.py
+          functions: 15
+    - function: get_disabled
+      source:
+        path: salt/modules/debian_service.py
+        symbol: get_disabled
+      summary: Return a set of services that are installed but disabled
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_service.py
+          functions: 15
+    - function: available
+      source:
+        path: salt/modules/debian_service.py
+        symbol: available
+      summary: Returns ``True`` if the specified service is available, otherwise returns
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_service.py
+          functions: 15
+    - function: missing
+      source:
+        path: salt/modules/debian_service.py
+        symbol: missing
+      summary: The inverse of service.available.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_service.py
+          functions: 15
+    - function: get_all
+      source:
+        path: salt/modules/debian_service.py
+        symbol: get_all
+      summary: Return all available boot services
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_service.py
+          functions: 15
+    - function: start
+      source:
+        path: salt/modules/debian_service.py
+        symbol: start
+      summary: Start the specified service
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_service.py
+          functions: 15
+    - function: stop
+      source:
+        path: salt/modules/debian_service.py
+        symbol: stop
+      summary: Stop the specified service
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_service.py
+          functions: 15
+    - function: restart
+      source:
+        path: salt/modules/debian_service.py
+        symbol: restart
+      summary: Restart the named service
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_service.py
+          functions: 15
+    - function: reload_
+      source:
+        path: salt/modules/debian_service.py
+        symbol: reload_
+      summary: Reload the named service
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_service.py
+          functions: 15
+    - function: force_reload
+      source:
+        path: salt/modules/debian_service.py
+        symbol: force_reload
+      summary: Force-reload the named service
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_service.py
+          functions: 15
+    - function: status
+      source:
+        path: salt/modules/debian_service.py
+        symbol: status
+      summary: Return the status for a service.
+      parameters:
+        - name: name
+        - name: sig
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - status.pid
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_service.py
+          functions: 15
+    - function: enable
+      source:
+        path: salt/modules/debian_service.py
+        symbol: enable
+      summary: Enable the named service to start at boot
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - status.pid
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_service.py
+          functions: 15
+    - function: disable
+      source:
+        path: salt/modules/debian_service.py
+        symbol: disable
+      summary: Disable the named service to start at boot
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - status.pid
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_service.py
+          functions: 15
+    - function: enabled
+      source:
+        path: salt/modules/debian_service.py
+        symbol: enabled
+      summary: Return True if the named service is enabled, false otherwise
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - status.pid
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_service.py
+          functions: 15
+    - function: disabled
+      source:
+        path: salt/modules/debian_service.py
+        symbol: disabled
+      summary: Return True if the named service is disabled, false otherwise
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - status.pid
+      tests:
+        - path: tests/pytests/unit/modules/test_debian_service.py
+          functions: 15

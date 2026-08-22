@@ -1,0 +1,66 @@
+kind: exec
+module: assistive
+source_module: mac_assistive
+virtual: true
+path: salt/modules/mac_assistive.py
+platform_markers:
+    - is_darwin
+functions:
+    - function: install
+      source:
+        path: salt/modules/mac_assistive.py
+        symbol: install
+      summary: Install a bundle ID or command as being allowed to use
+      parameters:
+        - name: app_id
+        - name: enable
+          default: "True"
+        - name: tries
+          default: "3"
+        - name: wait
+          default: "10"
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_assistive.py
+          functions: 11
+    - function: installed
+      source:
+        path: salt/modules/mac_assistive.py
+        symbol: installed
+      summary: Check if a bundle ID or command is listed in assistive access.
+      parameters:
+        - name: app_id
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_assistive.py
+          functions: 11
+    - function: enable_
+      source:
+        path: salt/modules/mac_assistive.py
+        symbol: enable_
+      summary: Enable or disable an existing assistive access application.
+      parameters:
+        - name: app_id
+        - name: enabled
+          default: "True"
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_assistive.py
+          functions: 11
+    - function: enabled
+      source:
+        path: salt/modules/mac_assistive.py
+        symbol: enabled
+      summary: Check if a bundle ID or command is listed in assistive access and
+      parameters:
+        - name: app_id
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_assistive.py
+          functions: 11
+    - function: remove
+      source:
+        path: salt/modules/mac_assistive.py
+        symbol: remove
+      summary: Remove a bundle ID or command as being allowed to use assistive access.
+      parameters:
+        - name: app_id
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_assistive.py
+          functions: 11

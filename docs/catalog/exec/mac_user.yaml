@@ -1,0 +1,363 @@
+kind: exec
+module: user
+source_module: mac_user
+virtual: true
+path: salt/modules/mac_user.py
+functions:
+    - function: _flush_dscl_cache
+      source:
+        path: salt/modules/mac_user.py
+        symbol: _flush_dscl_cache
+      summary: Flush dscl cache
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_user.py
+          functions: 28
+    - function: _dscl
+      source:
+        path: salt/modules/mac_user.py
+        symbol: _dscl
+      summary: Run a dscl -create command
+      parameters:
+        - name: cmd
+        - name: ctype
+          default: '"create"'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_user.py
+          functions: 28
+    - function: _first_avail_uid
+      source:
+        path: salt/modules/mac_user.py
+        symbol: _first_avail_uid
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_user.py
+          functions: 28
+    - function: add
+      source:
+        path: salt/modules/mac_user.py
+        symbol: add
+      summary: Add a user to the minion
+      parameters:
+        - name: name
+        - name: uid
+          default: None
+        - name: gid
+          default: None
+        - name: groups
+          default: None
+        - name: home
+          default: None
+        - name: shell
+          default: None
+        - name: fullname
+          default: None
+        - name: createhome
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.mkdir
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_user.py
+          functions: 28
+    - function: delete
+      source:
+        path: salt/modules/mac_user.py
+        symbol: delete
+      summary: Remove a user from the minion
+      parameters:
+        - name: name
+        - name: remove
+          default: "False"
+        - name: force
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.mkdir
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_user.py
+          functions: 28
+    - function: getent
+      source:
+        path: salt/modules/mac_user.py
+        symbol: getent
+      summary: Return the list of all info for all users
+      parameters:
+        - name: refresh
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.mkdir
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_user.py
+          functions: 28
+    - function: chuid
+      source:
+        path: salt/modules/mac_user.py
+        symbol: chuid
+      summary: Change the uid for a named user
+      parameters:
+        - name: name
+        - name: uid
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.mkdir
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_user.py
+          functions: 28
+    - function: chgid
+      source:
+        path: salt/modules/mac_user.py
+        symbol: chgid
+      summary: Change the default group of the user
+      parameters:
+        - name: name
+        - name: gid
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.mkdir
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_user.py
+          functions: 28
+    - function: chshell
+      source:
+        path: salt/modules/mac_user.py
+        symbol: chshell
+      summary: Change the default shell of the user
+      parameters:
+        - name: name
+        - name: shell
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.mkdir
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_user.py
+          functions: 28
+    - function: chhome
+      source:
+        path: salt/modules/mac_user.py
+        symbol: chhome
+      summary: Change the home directory of the user
+      parameters:
+        - name: name
+        - name: home
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.mkdir
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_user.py
+          functions: 28
+    - function: chfullname
+      source:
+        path: salt/modules/mac_user.py
+        symbol: chfullname
+      summary: Change the user's Full Name
+      parameters:
+        - name: name
+        - name: fullname
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.mkdir
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_user.py
+          functions: 28
+    - function: chgroups
+      source:
+        path: salt/modules/mac_user.py
+        symbol: chgroups
+      summary: Change the groups to which the user belongs. Note that the user's primary
+      parameters:
+        - name: name
+        - name: groups
+        - name: append
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.gid_to_group
+        - file.mkdir
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_user.py
+          functions: 28
+    - function: info
+      source:
+        path: salt/modules/mac_user.py
+        symbol: info
+      summary: Return user information
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.gid_to_group
+        - file.mkdir
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_user.py
+          functions: 28
+    - function: _format_info
+      source:
+        path: salt/modules/mac_user.py
+        symbol: _format_info
+      summary: Return user information in a pretty way
+      parameters:
+        - name: data
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.gid_to_group
+        - file.mkdir
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_user.py
+          functions: 28
+    - function: primary_group
+      source:
+        path: salt/modules/mac_user.py
+        symbol: primary_group
+      summary: Return the primary group of the named user
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.gid_to_group
+        - file.mkdir
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_user.py
+          functions: 28
+    - function: list_groups
+      source:
+        path: salt/modules/mac_user.py
+        symbol: list_groups
+      summary: Return a list of groups the named user belongs to.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.gid_to_group
+        - file.mkdir
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_user.py
+          functions: 28
+    - function: list_users
+      source:
+        path: salt/modules/mac_user.py
+        symbol: list_users
+      summary: Return a list of all users
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.gid_to_group
+        - file.mkdir
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_user.py
+          functions: 28
+    - function: rename
+      source:
+        path: salt/modules/mac_user.py
+        symbol: rename
+      summary: Change the username for a named user
+      parameters:
+        - name: name
+        - name: new_name
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.gid_to_group
+        - file.mkdir
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_user.py
+          functions: 28
+    - function: get_auto_login
+      source:
+        path: salt/modules/mac_user.py
+        symbol: get_auto_login
+      summary: '.. versionadded:: 2016.3.0'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.gid_to_group
+        - file.mkdir
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_user.py
+          functions: 28
+    - function: _kcpassword
+      source:
+        path: salt/modules/mac_user.py
+        symbol: _kcpassword
+      summary: Internal function for obfuscating the password used for AutoLogin
+      parameters:
+        - name: password
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.gid_to_group
+        - file.mkdir
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_user.py
+          functions: 28
+    - function: enable_auto_login
+      source:
+        path: salt/modules/mac_user.py
+        symbol: enable_auto_login
+      summary: '.. versionadded:: 2016.3.0'
+      parameters:
+        - name: name
+        - name: password
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.gid_to_group
+        - file.mkdir
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_user.py
+          functions: 28
+    - function: disable_auto_login
+      source:
+        path: salt/modules/mac_user.py
+        symbol: disable_auto_login
+      summary: '.. versionadded:: 2016.3.0'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.gid_to_group
+        - file.mkdir
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_user.py
+          functions: 28

@@ -1,0 +1,108 @@
+kind: exec
+module: rdp
+source_module: rdp
+path: salt/modules/rdp.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _parse_return_code_powershell
+      source:
+        path: salt/modules/rdp.py
+        symbol: _parse_return_code_powershell
+      summary: return from the input string the return code of the powershell command
+      parameters:
+        - name: string
+      tests:
+        - path: tests/pytests/unit/modules/test_rdp.py
+          functions: 3
+    - function: _psrdp
+      source:
+        path: salt/modules/rdp.py
+        symbol: _psrdp
+      summary: Create a Win32_TerminalServiceSetting WMI Object as $RDP and execute the
+      parameters:
+        - name: cmd
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_rdp.py
+          functions: 3
+    - function: enable
+      source:
+        path: salt/modules/rdp.py
+        symbol: enable
+      summary: Enable RDP the service on the server
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_rdp.py
+          functions: 3
+    - function: disable
+      source:
+        path: salt/modules/rdp.py
+        symbol: disable
+      summary: Disable RDP the service on the server
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_rdp.py
+          functions: 3
+    - function: status
+      source:
+        path: salt/modules/rdp.py
+        symbol: status
+      summary: Show if rdp is enabled on the server
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_rdp.py
+          functions: 3
+    - function: list_sessions
+      source:
+        path: salt/modules/rdp.py
+        symbol: list_sessions
+      summary: List information about the sessions.
+      parameters:
+        - name: logged_in_users_only
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_rdp.py
+          functions: 3
+    - function: get_session
+      source:
+        path: salt/modules/rdp.py
+        symbol: get_session
+      summary: Get information about a session.
+      parameters:
+        - name: session_id
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_rdp.py
+          functions: 3
+    - function: disconnect_session
+      source:
+        path: salt/modules/rdp.py
+        symbol: disconnect_session
+      summary: Disconnect a session.
+      parameters:
+        - name: session_id
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_rdp.py
+          functions: 3
+    - function: logoff_session
+      source:
+        path: salt/modules/rdp.py
+        symbol: logoff_session
+      summary: Initiate the logoff of a session.
+      parameters:
+        - name: session_id
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_rdp.py
+          functions: 3

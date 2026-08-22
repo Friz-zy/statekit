@@ -1,0 +1,149 @@
+kind: exec
+module: group
+source_module: win_groupadd
+virtual: true
+path: salt/modules/win_groupadd.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _get_computer_object
+      source:
+        path: salt/modules/win_groupadd.py
+        symbol: _get_computer_object
+      summary: A helper function to get the object for the local machine
+      tests:
+        - path: tests/unit/modules/test_win_groupadd.py
+          functions: 0
+    - function: _get_group_object
+      source:
+        path: salt/modules/win_groupadd.py
+        symbol: _get_group_object
+      summary: A helper function to get a specified group object
+      parameters:
+        - name: name
+      tests:
+        - path: tests/unit/modules/test_win_groupadd.py
+          functions: 0
+    - function: _get_all_groups
+      source:
+        path: salt/modules/win_groupadd.py
+        symbol: _get_all_groups
+      summary: A helper function that gets a list of group objects for all groups on the
+      tests:
+        - path: tests/unit/modules/test_win_groupadd.py
+          functions: 0
+    - function: _get_username
+      source:
+        path: salt/modules/win_groupadd.py
+        symbol: _get_username
+      summary: Resolve the username from the member object returned from a group query
+      parameters:
+        - name: member
+      tests:
+        - path: tests/unit/modules/test_win_groupadd.py
+          functions: 0
+    - function: add
+      source:
+        path: salt/modules/win_groupadd.py
+        symbol: add
+      summary: Add the specified group
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/unit/modules/test_win_groupadd.py
+          functions: 0
+    - function: delete
+      source:
+        path: salt/modules/win_groupadd.py
+        symbol: delete
+      summary: Remove the named group
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/unit/modules/test_win_groupadd.py
+          functions: 0
+    - function: info
+      source:
+        path: salt/modules/win_groupadd.py
+        symbol: info
+      summary: Return information about a group
+      parameters:
+        - name: name
+      tests:
+        - path: tests/unit/modules/test_win_groupadd.py
+          functions: 0
+    - function: getent
+      source:
+        path: salt/modules/win_groupadd.py
+        symbol: getent
+      summary: Return info on all groups
+      parameters:
+        - name: refresh
+          default: "False"
+      execution_dependencies:
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_win_groupadd.py
+          functions: 0
+    - function: adduser
+      source:
+        path: salt/modules/win_groupadd.py
+        symbol: adduser
+      summary: Add a user to a group
+      parameters:
+        - name: name
+        - name: username
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_win_groupadd.py
+          functions: 0
+    - function: deluser
+      source:
+        path: salt/modules/win_groupadd.py
+        symbol: deluser
+      summary: Remove a user from a group
+      parameters:
+        - name: name
+        - name: username
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_win_groupadd.py
+          functions: 0
+    - function: members
+      source:
+        path: salt/modules/win_groupadd.py
+        symbol: members
+      summary: Ensure a group contains only the members in the list
+      parameters:
+        - name: name
+        - name: members_list
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_win_groupadd.py
+          functions: 0
+    - function: list_groups
+      source:
+        path: salt/modules/win_groupadd.py
+        symbol: list_groups
+      summary: Return a list of groups
+      parameters:
+        - name: refresh
+          default: "False"
+      execution_dependencies:
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_win_groupadd.py
+          functions: 0

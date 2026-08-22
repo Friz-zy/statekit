@@ -1,0 +1,524 @@
+kind: exec
+module: ssh
+source_module: ssh
+path: salt/modules/ssh.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _refine_enc
+      source:
+        path: salt/modules/ssh.py
+        symbol: _refine_enc
+      summary: Return the properly formatted ssh value for the authorized encryption key
+      parameters:
+        - name: enc
+      tests:
+        - path: tests/unit/modules/test_ssh.py
+          functions: 0
+    - function: _format_auth_line
+      source:
+        path: salt/modules/ssh.py
+        symbol: _format_auth_line
+      summary: Properly format user input.
+      parameters:
+        - name: key
+        - name: enc
+        - name: comment
+        - name: options
+      tests:
+        - path: tests/unit/modules/test_ssh.py
+          functions: 0
+    - function: _expand_authorized_keys_path
+      source:
+        path: salt/modules/ssh.py
+        symbol: _expand_authorized_keys_path
+      summary: Expand the AuthorizedKeysFile expression. Defined in man sshd_config(5)
+      parameters:
+        - name: path
+        - name: user
+        - name: home
+      tests:
+        - path: tests/unit/modules/test_ssh.py
+          functions: 0
+    - function: _get_config_file
+      source:
+        path: salt/modules/ssh.py
+        symbol: _get_config_file
+      summary: Get absolute path to a user's ssh_config.
+      parameters:
+        - name: user
+        - name: config
+      execution_dependencies:
+        - user.info
+      tests:
+        - path: tests/unit/modules/test_ssh.py
+          functions: 0
+    - function: _replace_auth_key
+      source:
+        path: salt/modules/ssh.py
+        symbol: _replace_auth_key
+      summary: Replace an existing key
+      parameters:
+        - name: user
+        - name: key
+        - name: enc
+          default: '"ssh-rsa"'
+        - name: comment
+          default: '""'
+        - name: options
+          default: None
+        - name: config
+          default: '".ssh/authorized_keys"'
+      execution_dependencies:
+        - user.info
+      tests:
+        - path: tests/unit/modules/test_ssh.py
+          functions: 0
+    - function: _validate_keys
+      source:
+        path: salt/modules/ssh.py
+        symbol: _validate_keys
+      summary: Return a dict containing validated keys in the passed file
+      parameters:
+        - name: key_file
+        - name: fingerprint_hash_type
+      execution_dependencies:
+        - user.info
+      tests:
+        - path: tests/unit/modules/test_ssh.py
+          functions: 0
+    - function: _fingerprint
+      source:
+        path: salt/modules/ssh.py
+        symbol: _fingerprint
+      summary: Return a public key fingerprint based on its base64-encoded representation
+      parameters:
+        - name: public_key
+        - name: fingerprint_hash_type
+      execution_dependencies:
+        - user.info
+      tests:
+        - path: tests/unit/modules/test_ssh.py
+          functions: 0
+    - function: _get_known_hosts_file
+      source:
+        path: salt/modules/ssh.py
+        symbol: _get_known_hosts_file
+      parameters:
+        - name: config
+          default: None
+        - name: user
+          default: None
+      execution_dependencies:
+        - user.info
+      tests:
+        - path: tests/unit/modules/test_ssh.py
+          functions: 0
+    - function: host_keys
+      source:
+        path: salt/modules/ssh.py
+        symbol: host_keys
+      summary: Return the minion's host keys
+      parameters:
+        - name: keydir
+          default: None
+        - name: private
+          default: "True"
+        - name: certs
+          default: "True"
+      execution_dependencies:
+        - user.info
+      tests:
+        - path: tests/unit/modules/test_ssh.py
+          functions: 0
+    - function: auth_keys
+      source:
+        path: salt/modules/ssh.py
+        symbol: auth_keys
+      summary: Return the authorized keys for users
+      parameters:
+        - name: user
+          default: None
+        - name: config
+          default: '".ssh/authorized_keys"'
+        - name: fingerprint_hash_type
+          default: None
+      execution_dependencies:
+        - user.info
+        - user.list_users
+      tests:
+        - path: tests/unit/modules/test_ssh.py
+          functions: 0
+    - function: check_key_file
+      source:
+        path: salt/modules/ssh.py
+        symbol: check_key_file
+      summary: Check a keyfile from a source destination against the local keys and
+      parameters:
+        - name: user
+        - name: source
+        - name: config
+          default: '".ssh/authorized_keys"'
+        - name: saltenv
+          default: '"base"'
+        - name: fingerprint_hash_type
+          default: None
+      execution_dependencies:
+        - cp.cache_file
+        - user.info
+        - user.list_users
+      tests:
+        - path: tests/unit/modules/test_ssh.py
+          functions: 0
+    - function: check_key
+      source:
+        path: salt/modules/ssh.py
+        symbol: check_key
+      summary: Check to see if a key needs updating, returns "update", "add" or "exists"
+      parameters:
+        - name: user
+        - name: key
+        - name: enc
+        - name: comment
+        - name: options
+        - name: config
+          default: '".ssh/authorized_keys"'
+        - name: cache_keys
+          default: None
+        - name: fingerprint_hash_type
+          default: None
+      execution_dependencies:
+        - cp.cache_file
+        - user.info
+        - user.list_users
+      tests:
+        - path: tests/unit/modules/test_ssh.py
+          functions: 0
+    - function: rm_auth_key_from_file
+      source:
+        path: salt/modules/ssh.py
+        symbol: rm_auth_key_from_file
+      summary: Remove an authorized key from the specified user's authorized key file,
+      parameters:
+        - name: user
+        - name: source
+        - name: config
+          default: '".ssh/authorized_keys"'
+        - name: saltenv
+          default: '"base"'
+        - name: fingerprint_hash_type
+          default: None
+      execution_dependencies:
+        - cp.cache_file
+        - user.info
+        - user.list_users
+      tests:
+        - path: tests/unit/modules/test_ssh.py
+          functions: 0
+    - function: rm_auth_key
+      source:
+        path: salt/modules/ssh.py
+        symbol: rm_auth_key
+      summary: Remove an authorized key from the specified user's authorized key file
+      parameters:
+        - name: user
+        - name: key
+        - name: config
+          default: '".ssh/authorized_keys"'
+        - name: fingerprint_hash_type
+          default: None
+      execution_dependencies:
+        - cp.cache_file
+        - user.info
+        - user.list_users
+      tests:
+        - path: tests/unit/modules/test_ssh.py
+          functions: 0
+    - function: set_auth_key_from_file
+      source:
+        path: salt/modules/ssh.py
+        symbol: set_auth_key_from_file
+      summary: Add a key to the authorized_keys file, using a file as the source.
+      parameters:
+        - name: user
+        - name: source
+        - name: config
+          default: '".ssh/authorized_keys"'
+        - name: saltenv
+          default: '"base"'
+        - name: fingerprint_hash_type
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+        - user.info
+        - user.list_users
+      tests:
+        - path: tests/unit/modules/test_ssh.py
+          functions: 0
+    - function: set_auth_key
+      source:
+        path: salt/modules/ssh.py
+        symbol: set_auth_key
+      summary: Add a key to the authorized_keys file. The "key" parameter must only be the
+      parameters:
+        - name: user
+        - name: key
+        - name: enc
+          default: '"ssh-rsa"'
+        - name: comment
+          default: '""'
+        - name: options
+          default: None
+        - name: config
+          default: '".ssh/authorized_keys"'
+        - name: cache_keys
+          default: None
+        - name: fingerprint_hash_type
+          default: None
+      execution_dependencies:
+        - cp.cache_file
+        - user.info
+        - user.list_users
+      tests:
+        - path: tests/unit/modules/test_ssh.py
+          functions: 0
+    - function: _get_matched_host_line_numbers
+      source:
+        path: salt/modules/ssh.py
+        symbol: _get_matched_host_line_numbers
+      summary: Helper function which parses ssh-keygen -F function output and yield line
+      parameters:
+        - name: lines
+        - name: enc
+      execution_dependencies:
+        - cp.cache_file
+        - user.info
+        - user.list_users
+      tests:
+        - path: tests/unit/modules/test_ssh.py
+          functions: 0
+    - function: _parse_openssh_output
+      source:
+        path: salt/modules/ssh.py
+        symbol: _parse_openssh_output
+      summary: Helper function which parses ssh-keygen -F and ssh-keyscan function output
+      parameters:
+        - name: lines
+        - name: fingerprint_hash_type
+          default: None
+      execution_dependencies:
+        - cp.cache_file
+        - user.info
+        - user.list_users
+      tests:
+        - path: tests/unit/modules/test_ssh.py
+          functions: 0
+    - function: get_known_host_entries
+      source:
+        path: salt/modules/ssh.py
+        symbol: get_known_host_entries
+      summary: '.. versionadded:: 2018.3.0'
+      parameters:
+        - name: user
+        - name: hostname
+        - name: config
+          default: None
+        - name: port
+          default: None
+        - name: fingerprint_hash_type
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cp.cache_file
+        - user.info
+        - user.list_users
+      tests:
+        - path: tests/unit/modules/test_ssh.py
+          functions: 0
+    - function: recv_known_host_entries
+      source:
+        path: salt/modules/ssh.py
+        symbol: recv_known_host_entries
+      summary: '.. versionadded:: 2018.3.0'
+      parameters:
+        - name: hostname
+        - name: enc
+          default: None
+        - name: port
+          default: None
+        - name: hash_known_hosts
+          default: "True"
+        - name: timeout
+          default: "5"
+        - name: fingerprint_hash_type
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cp.cache_file
+        - user.info
+        - user.list_users
+      tests:
+        - path: tests/unit/modules/test_ssh.py
+          functions: 0
+    - function: check_known_host
+      source:
+        path: salt/modules/ssh.py
+        symbol: check_known_host
+      summary: Check the record in known_hosts file, either by its value or by fingerprint
+      parameters:
+        - name: user
+          default: None
+        - name: hostname
+          default: None
+        - name: key
+          default: None
+        - name: fingerprint
+          default: None
+        - name: config
+          default: None
+        - name: port
+          default: None
+        - name: fingerprint_hash_type
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cp.cache_file
+        - user.info
+        - user.list_users
+      tests:
+        - path: tests/unit/modules/test_ssh.py
+          functions: 0
+    - function: rm_known_host
+      source:
+        path: salt/modules/ssh.py
+        symbol: rm_known_host
+      summary: Remove all keys belonging to hostname from a known_hosts file.
+      parameters:
+        - name: user
+          default: None
+        - name: hostname
+          default: None
+        - name: config
+          default: None
+        - name: port
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cp.cache_file
+        - user.info
+        - user.list_users
+      tests:
+        - path: tests/unit/modules/test_ssh.py
+          functions: 0
+    - function: set_known_host
+      source:
+        path: salt/modules/ssh.py
+        symbol: set_known_host
+      summary: Download SSH public key from remote host "hostname", optionally validate
+      parameters:
+        - name: user
+          default: None
+        - name: hostname
+          default: None
+        - name: fingerprint
+          default: None
+        - name: key
+          default: None
+        - name: port
+          default: None
+        - name: enc
+          default: None
+        - name: config
+          default: None
+        - name: hash_known_hosts
+          default: "True"
+        - name: timeout
+          default: "5"
+        - name: fingerprint_hash_type
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cp.cache_file
+        - ssh.hash_known_hosts
+        - user.info
+        - user.list_users
+      tests:
+        - path: tests/unit/modules/test_ssh.py
+          functions: 0
+    - function: user_keys
+      source:
+        path: salt/modules/ssh.py
+        symbol: user_keys
+      summary: Return the user's ssh keys on the minion
+      parameters:
+        - name: user
+          default: None
+        - name: pubfile
+          default: None
+        - name: prvfile
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cp.cache_file
+        - ssh.hash_known_hosts
+        - user.info
+        - user.list_users
+      tests:
+        - path: tests/unit/modules/test_ssh.py
+          functions: 0
+    - function: hash_known_hosts
+      source:
+        path: salt/modules/ssh.py
+        symbol: hash_known_hosts
+      summary: Hash all the hostnames in the known hosts file.
+      parameters:
+        - name: user
+          default: None
+        - name: config
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cp.cache_file
+        - ssh.hash_known_hosts
+        - user.info
+        - user.list_users
+      tests:
+        - path: tests/unit/modules/test_ssh.py
+          functions: 0
+    - function: _hostname_and_port_to_ssh_hostname
+      source:
+        path: salt/modules/ssh.py
+        symbol: _hostname_and_port_to_ssh_hostname
+      parameters:
+        - name: hostname
+        - name: port
+          default: DEFAULT_SSH_PORT
+      execution_dependencies:
+        - cmd.run
+        - cp.cache_file
+        - ssh.hash_known_hosts
+        - user.info
+        - user.list_users
+      tests:
+        - path: tests/unit/modules/test_ssh.py
+          functions: 0
+    - function: key_is_encrypted
+      source:
+        path: salt/modules/ssh.py
+        symbol: key_is_encrypted
+      summary: '.. versionadded:: 2015.8.7'
+      parameters:
+        - name: key
+      execution_dependencies:
+        - cmd.run
+        - cp.cache_file
+        - ssh.hash_known_hosts
+        - user.info
+        - user.list_users
+      utility_dependencies:
+        - ssh.key_is_encrypted
+      tests:
+        - path: tests/unit/modules/test_ssh.py
+          functions: 0

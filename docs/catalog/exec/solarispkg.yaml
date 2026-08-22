@@ -1,0 +1,176 @@
+kind: exec
+module: pkg
+source_module: solarispkg
+virtual: true
+path: salt/modules/solarispkg.py
+functions:
+    - function: _write_adminfile
+      source:
+        path: salt/modules/solarispkg.py
+        symbol: _write_adminfile
+      summary: Create a temporary adminfile based on the keyword arguments passed to
+      parameters:
+        - name: kwargs
+      tests:
+        - path: tests/pytests/unit/modules/test_solarispkg.py
+          functions: 5
+    - function: _list_pkgs_from_context
+      source:
+        path: salt/modules/solarispkg.py
+        symbol: _list_pkgs_from_context
+      summary: Use pkg list from __context__
+      parameters:
+        - name: versions_as_list
+      execution_dependencies:
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_solarispkg.py
+          functions: 5
+    - function: list_pkgs
+      source:
+        path: salt/modules/solarispkg.py
+        symbol: list_pkgs
+      summary: 'List the packages currently installed as a dict:'
+      parameters:
+        - name: versions_as_list
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_solarispkg.py
+          functions: 5
+    - function: latest_version
+      source:
+        path: salt/modules/solarispkg.py
+        symbol: latest_version
+      summary: Return the latest version of the named package available for upgrade or
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_solarispkg.py
+          functions: 5
+    - function: upgrade_available
+      source:
+        path: salt/modules/solarispkg.py
+        symbol: upgrade_available
+      summary: Check whether or not an upgrade is available for a given package
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_solarispkg.py
+          functions: 5
+    - function: version
+      source:
+        path: salt/modules/solarispkg.py
+        symbol: version
+      summary: Returns a string representing the package version or an empty string if not
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_solarispkg.py
+          functions: 5
+    - function: install
+      source:
+        path: salt/modules/solarispkg.py
+        symbol: install
+      summary: Install the passed package. Can install packages from the following
+      parameters:
+        - name: name
+          default: None
+        - name: sources
+          default: None
+        - name: saltenv
+          default: '"base"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cp.cache_file
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_solarispkg.py
+          functions: 5
+    - function: remove
+      source:
+        path: salt/modules/solarispkg.py
+        symbol: remove
+      summary: Remove packages with pkgrm
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: saltenv
+          default: '"base"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cp.cache_file
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_solarispkg.py
+          functions: 5
+    - function: purge
+      source:
+        path: salt/modules/solarispkg.py
+        symbol: purge
+      summary: Package purges are not supported, this function is identical to
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cp.cache_file
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_solarispkg.py
+          functions: 5

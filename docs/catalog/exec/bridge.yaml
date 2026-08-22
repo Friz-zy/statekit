@@ -1,0 +1,334 @@
+kind: exec
+module: bridge
+source_module: bridge
+path: salt/modules/bridge.py
+functions:
+    - function: _tool_path
+      source:
+        path: salt/modules/bridge.py
+        symbol: _tool_path
+      summary: Internal, returns tools path
+      parameters:
+        - name: ostool
+      tests:
+        - path: tests/pytests/unit/modules/test_bridge.py
+          functions: 9
+    - function: _linux_brshow
+      source:
+        path: salt/modules/bridge.py
+        symbol: _linux_brshow
+      summary: Internal, returns bridges and enslaved interfaces (GNU/Linux - brctl)
+      parameters:
+        - name: br
+          default: None
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_bridge.py
+          functions: 9
+    - function: _linux_bradd
+      source:
+        path: salt/modules/bridge.py
+        symbol: _linux_bradd
+      summary: Internal, creates the bridge
+      parameters:
+        - name: br
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_bridge.py
+          functions: 9
+    - function: _linux_brdel
+      source:
+        path: salt/modules/bridge.py
+        symbol: _linux_brdel
+      summary: Internal, deletes the bridge
+      parameters:
+        - name: br
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_bridge.py
+          functions: 9
+    - function: _linux_addif
+      source:
+        path: salt/modules/bridge.py
+        symbol: _linux_addif
+      summary: Internal, adds an interface to a bridge
+      parameters:
+        - name: br
+        - name: iface
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_bridge.py
+          functions: 9
+    - function: _linux_delif
+      source:
+        path: salt/modules/bridge.py
+        symbol: _linux_delif
+      summary: Internal, removes an interface from a bridge
+      parameters:
+        - name: br
+        - name: iface
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_bridge.py
+          functions: 9
+    - function: _linux_stp
+      source:
+        path: salt/modules/bridge.py
+        symbol: _linux_stp
+      summary: Internal, sets STP state
+      parameters:
+        - name: br
+        - name: state
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_bridge.py
+          functions: 9
+    - function: _bsd_brshow
+      source:
+        path: salt/modules/bridge.py
+        symbol: _bsd_brshow
+      summary: 'Internal, returns bridges and member interfaces (BSD-like: ifconfig)'
+      parameters:
+        - name: br
+          default: None
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_bridge.py
+          functions: 9
+    - function: _netbsd_brshow
+      source:
+        path: salt/modules/bridge.py
+        symbol: _netbsd_brshow
+      summary: Internal, returns bridges and enslaved interfaces (NetBSD - brconfig)
+      parameters:
+        - name: br
+          default: None
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_bridge.py
+          functions: 9
+    - function: _bsd_bradd
+      source:
+        path: salt/modules/bridge.py
+        symbol: _bsd_bradd
+      summary: Internal, creates the bridge
+      parameters:
+        - name: br
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_bridge.py
+          functions: 9
+    - function: _bsd_brdel
+      source:
+        path: salt/modules/bridge.py
+        symbol: _bsd_brdel
+      summary: Internal, deletes the bridge
+      parameters:
+        - name: br
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_bridge.py
+          functions: 9
+    - function: _bsd_addif
+      source:
+        path: salt/modules/bridge.py
+        symbol: _bsd_addif
+      summary: Internal, adds an interface to a bridge
+      parameters:
+        - name: br
+        - name: iface
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_bridge.py
+          functions: 9
+    - function: _bsd_delif
+      source:
+        path: salt/modules/bridge.py
+        symbol: _bsd_delif
+      summary: Internal, removes an interface from a bridge
+      parameters:
+        - name: br
+        - name: iface
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_bridge.py
+          functions: 9
+    - function: _bsd_stp
+      source:
+        path: salt/modules/bridge.py
+        symbol: _bsd_stp
+      summary: Internal, sets STP state. On BSD-like, it is required to specify the
+      parameters:
+        - name: br
+        - name: state
+        - name: iface
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_bridge.py
+          functions: 9
+    - function: _os_dispatch
+      source:
+        path: salt/modules/bridge.py
+        symbol: _os_dispatch
+      summary: Internal, dispatches functions by operating system
+      parameters:
+        - name: func
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_bridge.py
+          functions: 9
+    - function: show
+      source:
+        path: salt/modules/bridge.py
+        symbol: show
+      summary: Returns bridges interfaces along with enslaved physical interfaces. If
+      parameters:
+        - name: br
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_bridge.py
+          functions: 9
+    - function: list_
+      source:
+        path: salt/modules/bridge.py
+        symbol: list_
+      summary: Returns the machine's bridges list
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_bridge.py
+          functions: 9
+    - function: interfaces
+      source:
+        path: salt/modules/bridge.py
+        symbol: interfaces
+      summary: Returns interfaces attached to a bridge
+      parameters:
+        - name: br
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_bridge.py
+          functions: 9
+    - function: find_interfaces
+      source:
+        path: salt/modules/bridge.py
+        symbol: find_interfaces
+      summary: Returns the bridge to which the interfaces are bond to
+      parameters:
+        - name: args
+          kind: '*'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_bridge.py
+          functions: 9
+    - function: add
+      source:
+        path: salt/modules/bridge.py
+        symbol: add
+      summary: Creates a bridge
+      parameters:
+        - name: br
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_bridge.py
+          functions: 9
+    - function: delete
+      source:
+        path: salt/modules/bridge.py
+        symbol: delete
+      summary: Deletes a bridge
+      parameters:
+        - name: br
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_bridge.py
+          functions: 9
+    - function: addif
+      source:
+        path: salt/modules/bridge.py
+        symbol: addif
+      summary: Adds an interface to a bridge
+      parameters:
+        - name: br
+          default: None
+        - name: iface
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_bridge.py
+          functions: 9
+    - function: delif
+      source:
+        path: salt/modules/bridge.py
+        symbol: delif
+      summary: Removes an interface from a bridge
+      parameters:
+        - name: br
+          default: None
+        - name: iface
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_bridge.py
+          functions: 9
+    - function: stp
+      source:
+        path: salt/modules/bridge.py
+        symbol: stp
+      summary: Sets Spanning Tree Protocol state for a bridge
+      parameters:
+        - name: br
+          default: None
+        - name: state
+          default: '"disable"'
+        - name: iface
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_bridge.py
+          functions: 9

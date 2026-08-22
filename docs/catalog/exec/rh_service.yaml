@@ -1,0 +1,468 @@
+kind: exec
+module: service
+source_module: rh_service
+virtual: true
+path: salt/modules/rh_service.py
+functions:
+    - function: _runlevel
+      source:
+        path: salt/modules/rh_service.py
+        symbol: _runlevel
+      summary: Return the current runlevel
+      execution_dependencies:
+        - cmd.run
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15
+    - function: _chkconfig_add
+      source:
+        path: salt/modules/rh_service.py
+        symbol: _chkconfig_add
+      summary: Run 'chkconfig --add' for a service whose script is installed in
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15
+    - function: _service_is_upstart
+      source:
+        path: salt/modules/rh_service.py
+        symbol: _service_is_upstart
+      summary: Return True if the service is an upstart service, otherwise return False.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15
+    - function: _service_is_sysv
+      source:
+        path: salt/modules/rh_service.py
+        symbol: _service_is_sysv
+      summary: Return True if the service is a System V service (includes those managed by
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15
+    - function: _service_is_chkconfig
+      source:
+        path: salt/modules/rh_service.py
+        symbol: _service_is_chkconfig
+      summary: Return True if the service is managed by chkconfig.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15
+    - function: _sysv_is_enabled
+      source:
+        path: salt/modules/rh_service.py
+        symbol: _sysv_is_enabled
+      summary: Return True if the sysv (or chkconfig) service is enabled for the specified
+      parameters:
+        - name: name
+        - name: runlevel
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15
+    - function: _chkconfig_is_enabled
+      source:
+        path: salt/modules/rh_service.py
+        symbol: _chkconfig_is_enabled
+      summary: Return ``True`` if the service is enabled according to chkconfig; otherwise
+      parameters:
+        - name: name
+        - name: runlevel
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15
+    - function: _sysv_enable
+      source:
+        path: salt/modules/rh_service.py
+        symbol: _sysv_enable
+      summary: Enable the named sysv service to start at boot.  The service will be enabled
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15
+    - function: _sysv_disable
+      source:
+        path: salt/modules/rh_service.py
+        symbol: _sysv_disable
+      summary: Disable the named sysv service from starting at boot.  The service will be
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15
+    - function: _sysv_delete
+      source:
+        path: salt/modules/rh_service.py
+        symbol: _sysv_delete
+      summary: Delete the named sysv service from the system. The service will be
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15
+    - function: _upstart_delete
+      source:
+        path: salt/modules/rh_service.py
+        symbol: _upstart_delete
+      summary: Delete an upstart service. This will only rename the .conf file
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15
+    - function: _upstart_services
+      source:
+        path: salt/modules/rh_service.py
+        symbol: _upstart_services
+      summary: Return list of upstart services.
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15
+    - function: _sysv_services
+      source:
+        path: salt/modules/rh_service.py
+        symbol: _sysv_services
+      summary: Return list of sysv services.
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15
+    - function: get_enabled
+      source:
+        path: salt/modules/rh_service.py
+        symbol: get_enabled
+      summary: Return the enabled services. Use the ``limit`` param to restrict results
+      parameters:
+        - name: limit
+          default: '""'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15
+    - function: get_disabled
+      source:
+        path: salt/modules/rh_service.py
+        symbol: get_disabled
+      summary: Return the disabled services. Use the ``limit`` param to restrict results
+      parameters:
+        - name: limit
+          default: '""'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15
+    - function: get_all
+      source:
+        path: salt/modules/rh_service.py
+        symbol: get_all
+      summary: Return all installed services. Use the ``limit`` param to restrict results
+      parameters:
+        - name: limit
+          default: '""'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15
+    - function: available
+      source:
+        path: salt/modules/rh_service.py
+        symbol: available
+      summary: Return True if the named service is available.  Use the ``limit`` param to
+      parameters:
+        - name: name
+        - name: limit
+          default: '""'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15
+    - function: missing
+      source:
+        path: salt/modules/rh_service.py
+        symbol: missing
+      summary: The inverse of service.available.
+      parameters:
+        - name: name
+        - name: limit
+          default: '""'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15
+    - function: start
+      source:
+        path: salt/modules/rh_service.py
+        symbol: start
+      summary: Start the specified service
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15
+    - function: stop
+      source:
+        path: salt/modules/rh_service.py
+        symbol: stop
+      summary: Stop the specified service
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15
+    - function: restart
+      source:
+        path: salt/modules/rh_service.py
+        symbol: restart
+      summary: Restart the named service
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15
+    - function: reload_
+      source:
+        path: salt/modules/rh_service.py
+        symbol: reload_
+      summary: Reload the named service
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15
+    - function: status
+      source:
+        path: salt/modules/rh_service.py
+        symbol: status
+      summary: Return the status for a service.
+      parameters:
+        - name: name
+        - name: sig
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - status.pid
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15
+    - function: delete
+      source:
+        path: salt/modules/rh_service.py
+        symbol: delete
+      summary: Delete the named service
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - status.pid
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15
+    - function: enable
+      source:
+        path: salt/modules/rh_service.py
+        symbol: enable
+      summary: Enable the named service to start at boot
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - status.pid
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15
+    - function: disable
+      source:
+        path: salt/modules/rh_service.py
+        symbol: disable
+      summary: Disable the named service to start at boot
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - status.pid
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15
+    - function: enabled
+      source:
+        path: salt/modules/rh_service.py
+        symbol: enabled
+      summary: Check to see if the named service is enabled to start on boot
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - status.pid
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15
+    - function: disabled
+      source:
+        path: salt/modules/rh_service.py
+        symbol: disabled
+      summary: Check to see if the named service is disabled to start on boot
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - status.pid
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_rh_service.py
+          functions: 15

@@ -1,0 +1,272 @@
+kind: exec
+module: pkg
+source_module: nixpkg
+virtual: true
+path: salt/modules/nixpkg.py
+functions:
+    - function: _nix_user
+      source:
+        path: salt/modules/nixpkg.py
+        symbol: _nix_user
+      summary: Get the user that nix is running as.
+      tests:
+        - path: tests/pytests/unit/modules/test_nixpkg.py
+          functions: 30
+    - function: _nix_home
+      source:
+        path: salt/modules/nixpkg.py
+        symbol: _nix_home
+      summary: Get the path to the nix profile for the nix user.
+      tests:
+        - path: tests/pytests/unit/modules/test_nixpkg.py
+          functions: 30
+    - function: _run
+      source:
+        path: salt/modules/nixpkg.py
+        symbol: _run
+      summary: Just a convenience function for ``__salt__['cmd.run_all'](cmd)``
+      parameters:
+        - name: cmd
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_nixpkg.py
+          functions: 30
+    - function: _nix_profile
+      source:
+        path: salt/modules/nixpkg.py
+        symbol: _nix_profile
+      summary: nix profile command
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_nixpkg.py
+          functions: 30
+    - function: _nix_collect_garbage
+      source:
+        path: salt/modules/nixpkg.py
+        symbol: _nix_collect_garbage
+      summary: Make sure we get the right nix-collect-garbage, too.
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_nixpkg.py
+          functions: 30
+    - function: upgrade
+      source:
+        path: salt/modules/nixpkg.py
+        symbol: upgrade
+      summary: Runs an update operation on the specified packages, or all packages if none is specified.
+      parameters:
+        - name: pkgs
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_nixpkg.py
+          functions: 30
+    - function: list_upgrades
+      source:
+        path: salt/modules/nixpkg.py
+        symbol: list_upgrades
+      summary: List all available package upgrades.
+      parameters:
+        - name: refresh
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_nixpkg.py
+          functions: 30
+    - function: _add_source
+      source:
+        path: salt/modules/nixpkg.py
+        symbol: _add_source
+      parameters:
+        - name: pkg
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_nixpkg.py
+          functions: 30
+    - function: install
+      source:
+        path: salt/modules/nixpkg.py
+        symbol: install
+      summary: Installs a single or multiple packages via nix profile
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - pkg_resource.parse_targets
+      tests:
+        - path: tests/pytests/unit/modules/test_nixpkg.py
+          functions: 30
+    - function: _list_pkgs_from_context
+      source:
+        path: salt/modules/nixpkg.py
+        symbol: _list_pkgs_from_context
+      summary: Use pkg list from __context__
+      parameters:
+        - name: versions_as_list
+      execution_dependencies:
+        - cmd.run_all
+        - pkg_resource.parse_targets
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_nixpkg.py
+          functions: 30
+    - function: _extract_version
+      source:
+        path: salt/modules/nixpkg.py
+        symbol: _extract_version
+      parameters:
+        - name: info
+      execution_dependencies:
+        - cmd.run_all
+        - pkg_resource.parse_targets
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_nixpkg.py
+          functions: 30
+    - function: list_pkgs
+      source:
+        path: salt/modules/nixpkg.py
+        symbol: list_pkgs
+      summary: Lists installed packages.
+      parameters:
+        - name: versions_as_list
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_nixpkg.py
+          functions: 30
+    - function: version
+      source:
+        path: salt/modules/nixpkg.py
+        symbol: version
+      summary: Returns a string representing the package version or an empty string if not
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_nixpkg.py
+          functions: 30
+    - function: latest_version
+      source:
+        path: salt/modules/nixpkg.py
+        symbol: latest_version
+      summary: Return the latest version of the named package available for upgrade or
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_nixpkg.py
+          functions: 30
+    - function: refresh_db
+      source:
+        path: salt/modules/nixpkg.py
+        symbol: refresh_db
+      summary: Nix doesn't have a traditional package database to refresh,
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_nixpkg.py
+          functions: 30
+    - function: uninstall
+      source:
+        path: salt/modules/nixpkg.py
+        symbol: uninstall
+      summary: Erases a package from the current nix profile.
+      parameters:
+        - name: pkgs
+          kind: '*'
+      execution_dependencies:
+        - cmd.run_all
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_nixpkg.py
+          functions: 30
+    - function: remove
+      source:
+        path: salt/modules/nixpkg.py
+        symbol: remove
+      summary: Removes packages with ``nix profile remove``.
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_nixpkg.py
+          functions: 30
+    - function: collect_garbage
+      source:
+        path: salt/modules/nixpkg.py
+        symbol: collect_garbage
+      summary: Completely removed all currently 'uninstalled' packages in the nix store.
+      execution_dependencies:
+        - cmd.run_all
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_nixpkg.py
+          functions: 30

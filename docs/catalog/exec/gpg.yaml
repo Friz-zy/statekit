@@ -1,0 +1,716 @@
+kind: exec
+module: gpg
+source_module: gpg
+virtual: true
+path: salt/modules/gpg.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _gpg
+      source:
+        path: salt/modules/gpg.py
+        symbol: _gpg
+      summary: Returns the path to the gpg binary
+      tests:
+        - path: tests/pytests/unit/modules/test_gpg.py
+          functions: 23
+    - function: _get_user_info
+      source:
+        path: salt/modules/gpg.py
+        symbol: _get_user_info
+      summary: Wrapper for user.info Salt function
+      parameters:
+        - name: user
+          default: None
+      execution_dependencies:
+        - config.option
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_gpg.py
+          functions: 23
+    - function: _get_user_gnupghome
+      source:
+        path: salt/modules/gpg.py
+        symbol: _get_user_gnupghome
+      summary: Return default GnuPG home directory path for a user
+      parameters:
+        - name: user
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - environ.get
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_gpg.py
+          functions: 23
+    - function: _restore_ownership
+      source:
+        path: salt/modules/gpg.py
+        symbol: _restore_ownership
+      parameters:
+        - name: func
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - environ.get
+        - file.chown
+        - file.find
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_gpg.py
+          functions: 23
+    - function: _homedir_fix
+      source:
+        path: salt/modules/gpg.py
+        symbol: _homedir_fix
+      summary: Some versions of git for windows fail to properly honor gpg home directories.
+      parameters:
+        - name: path
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - environ.get
+        - file.chown
+        - file.find
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_gpg.py
+          functions: 23
+    - function: _create_gpg
+      source:
+        path: salt/modules/gpg.py
+        symbol: _create_gpg
+      summary: Create the GPG object
+      parameters:
+        - name: user
+          default: None
+        - name: gnupghome
+          default: None
+        - name: keyring
+          default: None
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - environ.get
+        - file.chown
+        - file.find
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_gpg.py
+          functions: 23
+    - function: _create_gnupghome
+      source:
+        path: salt/modules/gpg.py
+        symbol: _create_gnupghome
+      parameters:
+        - name: user
+        - name: gnupghome
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - environ.get
+        - file.chown
+        - file.find
+        - file.mkdir
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_gpg.py
+          functions: 23
+    - function: _list_keys
+      source:
+        path: salt/modules/gpg.py
+        symbol: _list_keys
+      summary: Helper function for listing keys
+      parameters:
+        - name: secret
+          default: "False"
+        - name: user
+          default: None
+        - name: gnupghome
+          default: None
+        - name: keyring
+          default: None
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - environ.get
+        - file.chown
+        - file.find
+        - file.mkdir
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_gpg.py
+          functions: 23
+    - function: _search_keys
+      source:
+        path: salt/modules/gpg.py
+        symbol: _search_keys
+      summary: Helper function for searching keys from keyserver
+      parameters:
+        - name: text
+        - name: keyserver
+        - name: user
+          default: None
+        - name: gnupghome
+          default: None
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - environ.get
+        - file.chown
+        - file.find
+        - file.mkdir
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_gpg.py
+          functions: 23
+    - function: search_keys
+      source:
+        path: salt/modules/gpg.py
+        symbol: search_keys
+      summary: Search for keys on a keyserver
+      parameters:
+        - name: text
+        - name: keyserver
+          default: None
+        - name: user
+          default: None
+        - name: gnupghome
+          default: None
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - environ.get
+        - file.chown
+        - file.find
+        - file.mkdir
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_gpg.py
+          functions: 23
+    - function: list_keys
+      source:
+        path: salt/modules/gpg.py
+        symbol: list_keys
+      summary: List keys in GPG keychain
+      parameters:
+        - name: user
+          default: None
+        - name: gnupghome
+          default: None
+        - name: keyring
+          default: None
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - environ.get
+        - file.chown
+        - file.find
+        - file.mkdir
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_gpg.py
+          functions: 23
+    - function: list_secret_keys
+      source:
+        path: salt/modules/gpg.py
+        symbol: list_secret_keys
+      summary: List secret keys in GPG keychain
+      parameters:
+        - name: user
+          default: None
+        - name: gnupghome
+          default: None
+        - name: keyring
+          default: None
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - environ.get
+        - file.chown
+        - file.find
+        - file.mkdir
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_gpg.py
+          functions: 23
+    - function: _render_key
+      source:
+        path: salt/modules/gpg.py
+        symbol: _render_key
+      parameters:
+        - name: _key
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - environ.get
+        - file.chown
+        - file.find
+        - file.mkdir
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_gpg.py
+          functions: 23
+    - function: create_key
+      source:
+        path: salt/modules/gpg.py
+        symbol: create_key
+      summary: Create a key in the GPG keychain
+      parameters:
+        - name: key_type
+          default: '"RSA"'
+        - name: key_length
+          default: "1024"
+        - name: name_real
+          default: '"Autogenerated Key"'
+        - name: name_comment
+          default: '"Generated by SaltStack"'
+        - name: name_email
+          default: None
+        - name: subkey_type
+          default: None
+        - name: subkey_length
+          default: None
+        - name: expire_date
+          default: None
+        - name: use_passphrase
+          default: "False"
+        - name: user
+          default: None
+        - name: gnupghome
+          default: None
+        - name: keyring
+          default: None
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - environ.get
+        - file.chown
+        - file.find
+        - file.mkdir
+        - pillar.get
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_gpg.py
+          functions: 23
+    - function: delete_key
+      source:
+        path: salt/modules/gpg.py
+        symbol: delete_key
+      summary: Delete a key from the GPG keychain.
+      parameters:
+        - name: keyid
+          default: None
+        - name: fingerprint
+          default: None
+        - name: delete_secret
+          default: "False"
+        - name: user
+          default: None
+        - name: gnupghome
+          default: None
+        - name: use_passphrase
+          default: "True"
+        - name: keyring
+          default: None
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - environ.get
+        - file.chown
+        - file.find
+        - file.mkdir
+        - pillar.get
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_gpg.py
+          functions: 23
+    - function: get_key
+      source:
+        path: salt/modules/gpg.py
+        symbol: get_key
+      summary: Get a key from the GPG keychain
+      parameters:
+        - name: keyid
+          default: None
+        - name: fingerprint
+          default: None
+        - name: user
+          default: None
+        - name: gnupghome
+          default: None
+        - name: keyring
+          default: None
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - environ.get
+        - file.chown
+        - file.find
+        - file.mkdir
+        - pillar.get
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_gpg.py
+          functions: 23
+    - function: get_secret_key
+      source:
+        path: salt/modules/gpg.py
+        symbol: get_secret_key
+      summary: Get a secret key from the GPG keychain
+      parameters:
+        - name: keyid
+          default: None
+        - name: fingerprint
+          default: None
+        - name: user
+          default: None
+        - name: gnupghome
+          default: None
+        - name: keyring
+          default: None
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - environ.get
+        - file.chown
+        - file.find
+        - file.mkdir
+        - pillar.get
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_gpg.py
+          functions: 23
+    - function: import_key
+      source:
+        path: salt/modules/gpg.py
+        symbol: import_key
+      parameters:
+        - name: text
+          default: None
+        - name: filename
+          default: None
+        - name: user
+          default: None
+        - name: gnupghome
+          default: None
+        - name: keyring
+          default: None
+        - name: select
+          default: None
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - environ.get
+        - file.chown
+        - file.find
+        - file.mkdir
+        - pillar.get
+        - temp.file
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_gpg.py
+          functions: 23
+    - function: export_key
+      source:
+        path: salt/modules/gpg.py
+        symbol: export_key
+      summary: Export a key from the GPG keychain
+      parameters:
+        - name: keyids
+          default: None
+        - name: secret
+          default: "False"
+        - name: user
+          default: None
+        - name: gnupghome
+          default: None
+        - name: use_passphrase
+          default: "False"
+        - name: output
+          default: None
+        - name: bare
+          default: "False"
+        - name: keyring
+          default: None
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - environ.get
+        - file.chown
+        - file.find
+        - file.mkdir
+        - pillar.get
+        - temp.file
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_gpg.py
+          functions: 23
+    - function: read_key
+      source:
+        path: salt/modules/gpg.py
+        symbol: read_key
+      summary: '.. versionadded:: 3008.0'
+      parameters:
+        - name: path
+          default: None
+        - name: text
+          default: None
+        - name: fingerprint
+          default: None
+        - name: keyid
+          default: None
+        - name: user
+          default: None
+        - name: gnupghome
+          default: None
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - environ.get
+        - file.chown
+        - file.find
+        - file.mkdir
+        - pillar.get
+        - temp.file
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_gpg.py
+          functions: 23
+    - function: receive_keys
+      source:
+        path: salt/modules/gpg.py
+        symbol: receive_keys
+      summary: Receive key(s) from keyserver and add them to the keychain
+      parameters:
+        - name: keyserver
+          default: None
+        - name: keys
+          default: None
+        - name: user
+          default: None
+        - name: gnupghome
+          default: None
+        - name: keyring
+          default: None
+      execution_dependencies:
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - environ.get
+        - file.chown
+        - file.find
+        - file.mkdir
+        - pillar.get
+        - temp.file
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_gpg.py
+          functions: 23
+    - function: trust_key
+      source:
+        path: salt/modules/gpg.py
+        symbol: trust_key
+      summary: Set the trust level for a key in the GPG keychain
+      parameters:
+        - name: keyid
+          default: None
+        - name: fingerprint
+          default: None
+        - name: trust_level
+          default: None
+        - name: user
+          default: None
+        - name: gnupghome
+          default: None
+        - name: keyring
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - environ.get
+        - file.chown
+        - file.find
+        - file.mkdir
+        - pillar.get
+        - temp.file
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_gpg.py
+          functions: 23
+    - function: sign
+      source:
+        path: salt/modules/gpg.py
+        symbol: sign
+      summary: Sign a message or a file
+      parameters:
+        - name: user
+          default: None
+        - name: keyid
+          default: None
+        - name: text
+          default: None
+        - name: filename
+          default: None
+        - name: output
+          default: None
+        - name: use_passphrase
+          default: "False"
+        - name: gnupghome
+          default: None
+        - name: keyring
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - environ.get
+        - file.chown
+        - file.find
+        - file.mkdir
+        - pillar.get
+        - temp.file
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_gpg.py
+          functions: 23
+    - function: verify
+      source:
+        path: salt/modules/gpg.py
+        symbol: verify
+      summary: Verify a message or a file
+      parameters:
+        - name: text
+          default: None
+        - name: user
+          default: None
+        - name: filename
+          default: None
+        - name: gnupghome
+          default: None
+        - name: signature
+          default: None
+        - name: trustmodel
+          default: None
+        - name: signed_by_any
+          default: None
+        - name: signed_by_all
+          default: None
+        - name: keyring
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - environ.get
+        - file.chown
+        - file.find
+        - file.mkdir
+        - pillar.get
+        - temp.file
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_gpg.py
+          functions: 23
+    - function: encrypt
+      source:
+        path: salt/modules/gpg.py
+        symbol: encrypt
+      summary: Encrypt a message or a file
+      parameters:
+        - name: user
+          default: None
+        - name: recipients
+          default: None
+        - name: text
+          default: None
+        - name: filename
+          default: None
+        - name: output
+          default: None
+        - name: sign
+          default: None
+        - name: use_passphrase
+          default: "False"
+        - name: always_trust
+          default: "False"
+        - name: gnupghome
+          default: None
+        - name: bare
+          default: "False"
+        - name: keyring
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - environ.get
+        - file.chown
+        - file.find
+        - file.mkdir
+        - pillar.get
+        - temp.file
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_gpg.py
+          functions: 23
+    - function: decrypt
+      source:
+        path: salt/modules/gpg.py
+        symbol: decrypt
+      summary: Decrypt a message or a file
+      parameters:
+        - name: user
+          default: None
+        - name: text
+          default: None
+        - name: filename
+          default: None
+        - name: output
+          default: None
+        - name: use_passphrase
+          default: "False"
+        - name: gnupghome
+          default: None
+        - name: bare
+          default: "False"
+        - name: keyring
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - config.option
+        - environ.get
+        - file.chown
+        - file.find
+        - file.mkdir
+        - pillar.get
+        - temp.file
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_gpg.py
+          functions: 23

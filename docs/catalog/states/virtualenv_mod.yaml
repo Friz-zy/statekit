@@ -1,0 +1,86 @@
+kind: state
+module: virtualenv
+source_module: virtualenv_mod
+virtual: true
+path: salt/states/virtualenv_mod.py
+platform_markers:
+    - is_windows
+functions:
+    - function: managed
+      source:
+        path: salt/states/virtualenv_mod.py
+        symbol: managed
+      summary: Create a virtualenv and optionally manage it with pip
+      parameters:
+        - name: name
+        - name: venv_bin
+          default: None
+        - name: requirements
+          default: None
+        - name: system_site_packages
+          default: "False"
+        - name: distribute
+          default: "False"
+        - name: use_wheel
+          default: "False"
+        - name: clear
+          default: "False"
+        - name: python
+          default: None
+        - name: extra_search_dir
+          default: None
+        - name: never_download
+          default: None
+        - name: prompt
+          default: None
+        - name: user
+          default: None
+        - name: cwd
+          default: None
+        - name: index_url
+          default: None
+        - name: extra_index_url
+          default: None
+        - name: pre_releases
+          default: "False"
+        - name: no_deps
+          default: "False"
+        - name: pip_download
+          default: None
+        - name: pip_download_cache
+          default: None
+        - name: pip_exists_action
+          default: None
+        - name: pip_ignore_installed
+          default: "False"
+        - name: proxy
+          default: None
+        - name: use_vt
+          default: "False"
+        - name: env_vars
+          default: None
+        - name: no_use_wheel
+          default: "False"
+        - name: pip_upgrade
+          default: "False"
+        - name: pip_pkgs
+          default: None
+        - name: pip_no_cache_dir
+          default: "False"
+        - name: pip_cache_dir
+          default: None
+        - name: process_dependency_links
+          default: "False"
+        - name: no_binary
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_stderr
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - pip.freeze
+        - pip.install
+        - pip.version
+        - virtualenv.create

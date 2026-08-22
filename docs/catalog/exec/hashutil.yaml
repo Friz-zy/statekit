@@ -1,0 +1,236 @@
+kind: exec
+module: hashutil
+source_module: hashutil
+path: salt/modules/hashutil.py
+functions:
+    - function: digest
+      source:
+        path: salt/modules/hashutil.py
+        symbol: digest
+      summary: Return a checksum digest for a string
+      parameters:
+        - name: instr
+        - name: checksum
+          default: '"md5"'
+      execution_dependencies:
+        - hashutil.md5_digest
+        - hashutil.sha256_digest
+        - hashutil.sha512_digest
+      tests:
+        - path: tests/pytests/unit/modules/test_hashutil.py
+          functions: 9
+    - function: digest_file
+      source:
+        path: salt/modules/hashutil.py
+        symbol: digest_file
+      summary: Return a checksum digest for a file
+      parameters:
+        - name: infile
+        - name: checksum
+          default: '"md5"'
+      execution_dependencies:
+        - file.file_exists
+        - hashutil.digest
+        - hashutil.md5_digest
+        - hashutil.sha256_digest
+        - hashutil.sha512_digest
+      tests:
+        - path: tests/pytests/unit/modules/test_hashutil.py
+          functions: 9
+    - function: base64_b64encode
+      source:
+        path: salt/modules/hashutil.py
+        symbol: base64_b64encode
+      summary: Encode a string as base64 using the "modern" Python interface.
+      parameters:
+        - name: instr
+      execution_dependencies:
+        - file.file_exists
+        - hashutil.digest
+        - hashutil.md5_digest
+        - hashutil.sha256_digest
+        - hashutil.sha512_digest
+      tests:
+        - path: tests/pytests/unit/modules/test_hashutil.py
+          functions: 9
+    - function: base64_b64decode
+      source:
+        path: salt/modules/hashutil.py
+        symbol: base64_b64decode
+      summary: Decode a base64-encoded string using the "modern" Python interface
+      parameters:
+        - name: instr
+      execution_dependencies:
+        - file.file_exists
+        - hashutil.digest
+        - hashutil.md5_digest
+        - hashutil.sha256_digest
+        - hashutil.sha512_digest
+      tests:
+        - path: tests/pytests/unit/modules/test_hashutil.py
+          functions: 9
+    - function: base64_encodestring
+      source:
+        path: salt/modules/hashutil.py
+        symbol: base64_encodestring
+      summary: Encode a byte-like object as base64 using the "modern" Python interface.
+      parameters:
+        - name: instr
+      execution_dependencies:
+        - file.file_exists
+        - hashutil.digest
+        - hashutil.md5_digest
+        - hashutil.sha256_digest
+        - hashutil.sha512_digest
+      tests:
+        - path: tests/pytests/unit/modules/test_hashutil.py
+          functions: 9
+    - function: base64_encodefile
+      source:
+        path: salt/modules/hashutil.py
+        symbol: base64_encodefile
+      summary: Read a file from the file system and return as a base64 encoded string
+      parameters:
+        - name: fname
+      execution_dependencies:
+        - file.file_exists
+        - hashutil.digest
+        - hashutil.md5_digest
+        - hashutil.sha256_digest
+        - hashutil.sha512_digest
+      tests:
+        - path: tests/pytests/unit/modules/test_hashutil.py
+          functions: 9
+    - function: base64_decodestring
+      source:
+        path: salt/modules/hashutil.py
+        symbol: base64_decodestring
+      summary: Decode a base64-encoded byte-like object using the "modern" Python interface
+      parameters:
+        - name: instr
+      execution_dependencies:
+        - file.file_exists
+        - hashutil.digest
+        - hashutil.md5_digest
+        - hashutil.sha256_digest
+        - hashutil.sha512_digest
+      tests:
+        - path: tests/pytests/unit/modules/test_hashutil.py
+          functions: 9
+    - function: base64_decodefile
+      source:
+        path: salt/modules/hashutil.py
+        symbol: base64_decodefile
+      parameters:
+        - name: instr
+        - name: outfile
+      execution_dependencies:
+        - file.file_exists
+        - hashutil.digest
+        - hashutil.md5_digest
+        - hashutil.sha256_digest
+        - hashutil.sha512_digest
+      tests:
+        - path: tests/pytests/unit/modules/test_hashutil.py
+          functions: 9
+    - function: md5_digest
+      source:
+        path: salt/modules/hashutil.py
+        symbol: md5_digest
+      summary: Generate an md5 hash of a given string
+      parameters:
+        - name: instr
+      execution_dependencies:
+        - file.file_exists
+        - hashutil.digest
+        - hashutil.md5_digest
+        - hashutil.sha256_digest
+        - hashutil.sha512_digest
+      tests:
+        - path: tests/pytests/unit/modules/test_hashutil.py
+          functions: 9
+    - function: sha256_digest
+      source:
+        path: salt/modules/hashutil.py
+        symbol: sha256_digest
+      summary: Generate an sha256 hash of a given string
+      parameters:
+        - name: instr
+      execution_dependencies:
+        - file.file_exists
+        - hashutil.digest
+        - hashutil.md5_digest
+        - hashutil.sha256_digest
+        - hashutil.sha512_digest
+      tests:
+        - path: tests/pytests/unit/modules/test_hashutil.py
+          functions: 9
+    - function: sha512_digest
+      source:
+        path: salt/modules/hashutil.py
+        symbol: sha512_digest
+      summary: Generate an sha512 hash of a given string
+      parameters:
+        - name: instr
+      execution_dependencies:
+        - file.file_exists
+        - hashutil.digest
+        - hashutil.md5_digest
+        - hashutil.sha256_digest
+        - hashutil.sha512_digest
+      tests:
+        - path: tests/pytests/unit/modules/test_hashutil.py
+          functions: 9
+    - function: hmac_signature
+      source:
+        path: salt/modules/hashutil.py
+        symbol: hmac_signature
+      summary: Verify a challenging hmac signature against a string / shared-secret
+      parameters:
+        - name: string
+        - name: shared_secret
+        - name: challenge_hmac
+      execution_dependencies:
+        - file.file_exists
+        - hashutil.digest
+        - hashutil.md5_digest
+        - hashutil.sha256_digest
+        - hashutil.sha512_digest
+      tests:
+        - path: tests/pytests/unit/modules/test_hashutil.py
+          functions: 9
+    - function: hmac_compute
+      source:
+        path: salt/modules/hashutil.py
+        symbol: hmac_compute
+      summary: '.. versionadded:: 3000'
+      parameters:
+        - name: string
+        - name: shared_secret
+      execution_dependencies:
+        - file.file_exists
+        - hashutil.digest
+        - hashutil.md5_digest
+        - hashutil.sha256_digest
+        - hashutil.sha512_digest
+      tests:
+        - path: tests/pytests/unit/modules/test_hashutil.py
+          functions: 9
+    - function: github_signature
+      source:
+        path: salt/modules/hashutil.py
+        symbol: github_signature
+      summary: Verify a challenging hmac signature against a string / shared-secret for
+      parameters:
+        - name: string
+        - name: shared_secret
+        - name: challenge_hmac
+      execution_dependencies:
+        - file.file_exists
+        - hashutil.digest
+        - hashutil.md5_digest
+        - hashutil.sha256_digest
+        - hashutil.sha512_digest
+      tests:
+        - path: tests/pytests/unit/modules/test_hashutil.py
+          functions: 9

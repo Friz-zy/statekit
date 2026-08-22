@@ -1,0 +1,441 @@
+kind: exec
+module: pkg
+source_module: pacmanpkg
+virtual: true
+path: salt/modules/pacmanpkg.py
+functions:
+    - function: _list_removed
+      source:
+        path: salt/modules/pacmanpkg.py
+        symbol: _list_removed
+      summary: List the packages which have been removed between the two package objects
+      parameters:
+        - name: old
+        - name: new
+      tests:
+        - path: tests/pytests/unit/modules/test_pacmanpkg.py
+          functions: 7
+    - function: latest_version
+      source:
+        path: salt/modules/pacmanpkg.py
+        symbol: latest_version
+      summary: Return the latest version of the named package available for upgrade or
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_pacmanpkg.py
+          functions: 7
+    - function: upgrade_available
+      source:
+        path: salt/modules/pacmanpkg.py
+        symbol: upgrade_available
+      summary: Check whether or not an upgrade is available for a given package
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_pacmanpkg.py
+          functions: 7
+    - function: list_upgrades
+      source:
+        path: salt/modules/pacmanpkg.py
+        symbol: list_upgrades
+      summary: List all available package upgrades on this system
+      parameters:
+        - name: refresh
+          default: "False"
+        - name: root
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_pacmanpkg.py
+          functions: 7
+    - function: version
+      source:
+        path: salt/modules/pacmanpkg.py
+        symbol: version
+      summary: Returns a string representing the package version or an empty string if not
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.run_stdout
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pacmanpkg.py
+          functions: 7
+    - function: _list_pkgs_from_context
+      source:
+        path: salt/modules/pacmanpkg.py
+        symbol: _list_pkgs_from_context
+      summary: Use pkg list from __context__
+      parameters:
+        - name: versions_as_list
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.run_stdout
+        - pkg.list_pkgs
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pacmanpkg.py
+          functions: 7
+    - function: list_pkgs
+      source:
+        path: salt/modules/pacmanpkg.py
+        symbol: list_pkgs
+      summary: 'List the packages currently installed as a dict::'
+      parameters:
+        - name: versions_as_list
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - pkg.list_pkgs
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pacmanpkg.py
+          functions: 7
+    - function: group_list
+      source:
+        path: salt/modules/pacmanpkg.py
+        symbol: group_list
+      summary: '.. versionadded:: 2016.11.0'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - pkg.list_pkgs
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pacmanpkg.py
+          functions: 7
+    - function: group_info
+      source:
+        path: salt/modules/pacmanpkg.py
+        symbol: group_info
+      summary: '.. versionadded:: 2016.11.0'
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - pkg.list_pkgs
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pacmanpkg.py
+          functions: 7
+    - function: group_diff
+      source:
+        path: salt/modules/pacmanpkg.py
+        symbol: group_diff
+      summary: '.. versionadded:: 2016.11.0'
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - pkg.group_info
+        - pkg.list_pkgs
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pacmanpkg.py
+          functions: 7
+    - function: refresh_db
+      source:
+        path: salt/modules/pacmanpkg.py
+        symbol: refresh_db
+      summary: 'Just run a ``pacman -Sy``, return a dict::'
+      parameters:
+        - name: root
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - pkg.group_info
+        - pkg.list_pkgs
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pacmanpkg.py
+          functions: 7
+    - function: install
+      source:
+        path: salt/modules/pacmanpkg.py
+        symbol: install
+      summary: '.. versionchanged:: 2015.8.12,2016.3.3,2016.11.0'
+      parameters:
+        - name: name
+          default: None
+        - name: refresh
+          default: "False"
+        - name: sysupgrade
+          default: None
+        - name: pkgs
+          default: None
+        - name: sources
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - pkg.group_info
+        - pkg.list_pkgs
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pacmanpkg.py
+          functions: 7
+    - function: upgrade
+      source:
+        path: salt/modules/pacmanpkg.py
+        symbol: upgrade
+      summary: '.. versionchanged:: 2015.8.12,2016.3.3,2016.11.0'
+      parameters:
+        - name: refresh
+          default: "False"
+        - name: root
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - pkg.group_info
+        - pkg.list_pkgs
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pacmanpkg.py
+          functions: 7
+    - function: _uninstall
+      source:
+        path: salt/modules/pacmanpkg.py
+        symbol: _uninstall
+      summary: remove and purge do identical things but with different pacman commands,
+      parameters:
+        - name: action
+          default: '"remove"'
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - pkg.group_info
+        - pkg.list_pkgs
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pacmanpkg.py
+          functions: 7
+    - function: remove
+      source:
+        path: salt/modules/pacmanpkg.py
+        symbol: remove
+      summary: '.. versionchanged:: 2015.8.12,2016.3.3,2016.11.0'
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - pkg.group_info
+        - pkg.list_pkgs
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pacmanpkg.py
+          functions: 7
+    - function: purge
+      source:
+        path: salt/modules/pacmanpkg.py
+        symbol: purge
+      summary: '.. versionchanged:: 2015.8.12,2016.3.3,2016.11.0'
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - pkg.group_info
+        - pkg.list_pkgs
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pacmanpkg.py
+          functions: 7
+    - function: file_list
+      source:
+        path: salt/modules/pacmanpkg.py
+        symbol: file_list
+      summary: List the files that belong to a package. Not specifying any packages will
+      parameters:
+        - name: packages
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - pkg.group_info
+        - pkg.list_pkgs
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pacmanpkg.py
+          functions: 7
+    - function: file_dict
+      source:
+        path: salt/modules/pacmanpkg.py
+        symbol: file_dict
+      summary: List the files that belong to a package, grouped by package. Not
+      parameters:
+        - name: packages
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - pkg.group_info
+        - pkg.list_pkgs
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pacmanpkg.py
+          functions: 7
+    - function: owner
+      source:
+        path: salt/modules/pacmanpkg.py
+        symbol: owner
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: paths
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - pkg.group_info
+        - pkg.list_pkgs
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pacmanpkg.py
+          functions: 7
+    - function: list_repo_pkgs
+      source:
+        path: salt/modules/pacmanpkg.py
+        symbol: list_repo_pkgs
+      summary: Returns all available packages. Optionally, package names (and name globs)
+      parameters:
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - pkg.group_info
+        - pkg.list_pkgs
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pacmanpkg.py
+          functions: 7

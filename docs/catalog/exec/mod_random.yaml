@@ -1,0 +1,123 @@
+kind: exec
+module: random
+source_module: mod_random
+virtual: true
+path: salt/modules/mod_random.py
+functions:
+    - function: hash
+      source:
+        path: salt/modules/mod_random.py
+        symbol: hash
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: value
+        - name: algorithm
+          default: '"sha512"'
+      tests:
+        - path: tests/pytests/unit/modules/test_mod_random.py
+          functions: 4
+    - function: str_encode
+      source:
+        path: salt/modules/mod_random.py
+        symbol: str_encode
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: value
+        - name: encoder
+          default: '"base64"'
+      tests:
+        - path: tests/pytests/unit/modules/test_mod_random.py
+          functions: 4
+    - function: get_str
+      source:
+        path: salt/modules/mod_random.py
+        symbol: get_str
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: length
+          default: "20"
+        - name: chars
+          default: None
+        - name: lowercase
+          default: "True"
+        - name: uppercase
+          default: "True"
+        - name: digits
+          default: "True"
+        - name: punctuation
+          default: "True"
+        - name: whitespace
+          default: "False"
+        - name: printable
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_mod_random.py
+          functions: 4
+    - function: shadow_hash
+      source:
+        path: salt/modules/mod_random.py
+        symbol: shadow_hash
+      summary: Generates a salted hash suitable for /etc/shadow.
+      parameters:
+        - name: crypt_salt
+          default: None
+        - name: password
+          default: None
+        - name: algorithm
+          default: '"sha512"'
+      tests:
+        - path: tests/pytests/unit/modules/test_mod_random.py
+          functions: 4
+    - function: rand_int
+      source:
+        path: salt/modules/mod_random.py
+        symbol: rand_int
+      summary: Returns a random integer number between the start and end number.
+      parameters:
+        - name: start
+          default: "1"
+        - name: end
+          default: "10"
+        - name: seed
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_mod_random.py
+          functions: 4
+    - function: seed
+      source:
+        path: salt/modules/mod_random.py
+        symbol: seed
+      summary: Returns a random number within a range. Optional hash argument can
+      parameters:
+        - name: range
+          default: "10"
+        - name: hash
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_mod_random.py
+          functions: 4
+    - function: sample
+      source:
+        path: salt/modules/mod_random.py
+        symbol: sample
+      summary: Return a given sample size from a list. By default, the random number
+      parameters:
+        - name: value
+        - name: size
+        - name: seed
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_mod_random.py
+          functions: 4
+    - function: shuffle
+      source:
+        path: salt/modules/mod_random.py
+        symbol: shuffle
+      summary: Return a shuffled copy of an input list. By default, the random number
+      parameters:
+        - name: value
+        - name: seed
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_mod_random.py
+          functions: 4

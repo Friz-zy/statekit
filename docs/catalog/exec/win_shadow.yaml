@@ -1,0 +1,88 @@
+kind: exec
+module: shadow
+source_module: win_shadow
+virtual: true
+path: salt/modules/win_shadow.py
+platform_markers:
+    - is_windows
+functions:
+    - function: info
+      source:
+        path: salt/modules/win_shadow.py
+        symbol: info
+      summary: Return information for the specified user.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_shadow.py
+          functions: 12
+    - function: set_expire
+      source:
+        path: salt/modules/win_shadow.py
+        symbol: set_expire
+      summary: Set the expiration date for a user account.
+      parameters:
+        - name: name
+        - name: expire
+      execution_dependencies:
+        - user.info
+        - user.update
+      tests:
+        - path: tests/pytests/unit/modules/test_win_shadow.py
+          functions: 12
+    - function: require_password_change
+      source:
+        path: salt/modules/win_shadow.py
+        symbol: require_password_change
+      summary: Require the user to change their password the next time they log in.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - user.info
+        - user.update
+      tests:
+        - path: tests/pytests/unit/modules/test_win_shadow.py
+          functions: 12
+    - function: unlock_account
+      source:
+        path: salt/modules/win_shadow.py
+        symbol: unlock_account
+      summary: Unlocks a user account.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - user.info
+        - user.update
+      tests:
+        - path: tests/pytests/unit/modules/test_win_shadow.py
+          functions: 12
+    - function: set_password
+      source:
+        path: salt/modules/win_shadow.py
+        symbol: set_password
+      summary: Set the password for a named user.
+      parameters:
+        - name: name
+        - name: password
+      execution_dependencies:
+        - user.info
+        - user.update
+      tests:
+        - path: tests/pytests/unit/modules/test_win_shadow.py
+          functions: 12
+    - function: verify_password
+      source:
+        path: salt/modules/win_shadow.py
+        symbol: verify_password
+      summary: Verify the password for a Windows user account by attempting a network
+      parameters:
+        - name: name
+        - name: password
+      execution_dependencies:
+        - user.info
+        - user.update
+      tests:
+        - path: tests/pytests/unit/modules/test_win_shadow.py
+          functions: 12

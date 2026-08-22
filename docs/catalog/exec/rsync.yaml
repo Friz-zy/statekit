@@ -1,0 +1,96 @@
+kind: exec
+module: rsync
+source_module: rsync
+virtual: true
+path: salt/modules/rsync.py
+functions:
+    - function: _check
+      source:
+        path: salt/modules/rsync.py
+        symbol: _check
+      summary: Generate rsync options
+      parameters:
+        - name: delete
+        - name: force
+        - name: update
+        - name: passwordfile
+        - name: exclude
+        - name: excludefrom
+        - name: dryrun
+        - name: rsh
+      tests:
+        - path: tests/pytests/unit/modules/test_rsync.py
+          functions: 4
+    - function: rsync
+      source:
+        path: salt/modules/rsync.py
+        symbol: rsync
+      summary: '.. versionchanged:: 2016.3.0'
+      parameters:
+        - name: src
+        - name: dst
+        - name: delete
+          default: "False"
+        - name: force
+          default: "False"
+        - name: update
+          default: "False"
+        - name: passwordfile
+          default: None
+        - name: exclude
+          default: None
+        - name: excludefrom
+          default: None
+        - name: dryrun
+          default: "False"
+        - name: rsh
+          default: None
+        - name: additional_opts
+          default: None
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - cp.get_dir
+        - cp.get_file
+        - cp.list_master_dirs
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_rsync.py
+          functions: 4
+    - function: version
+      source:
+        path: salt/modules/rsync.py
+        symbol: version
+      summary: '.. versionchanged:: 2016.3.0'
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.option
+        - cp.get_dir
+        - cp.get_file
+        - cp.list_master_dirs
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_rsync.py
+          functions: 4
+    - function: config
+      source:
+        path: salt/modules/rsync.py
+        symbol: config
+      summary: '.. versionchanged:: 2016.3.0'
+      parameters:
+        - name: conf_path
+          default: '"/etc/rsyncd.conf"'
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.option
+        - cp.get_dir
+        - cp.get_file
+        - cp.list_master_dirs
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_rsync.py
+          functions: 4

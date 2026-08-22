@@ -1,0 +1,196 @@
+kind: exec
+module: timezone
+source_module: timezone
+virtual: true
+path: salt/modules/timezone.py
+platform_markers:
+    - is_darwin
+    - is_windows
+functions:
+    - function: _timedatectl
+      source:
+        path: salt/modules/timezone.py
+        symbol: _timedatectl
+      summary: get the output of timedatectl
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_timezone.py
+          functions: 32
+    - function: _get_zone_solaris
+      source:
+        path: salt/modules/timezone.py
+        symbol: _get_zone_solaris
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_timezone.py
+          functions: 32
+    - function: _get_adjtime_timezone
+      source:
+        path: salt/modules/timezone.py
+        symbol: _get_adjtime_timezone
+      summary: Return the timezone in /etc/adjtime of the system clock
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_timezone.py
+          functions: 32
+    - function: _get_zone_sysconfig
+      source:
+        path: salt/modules/timezone.py
+        symbol: _get_zone_sysconfig
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_timezone.py
+          functions: 32
+    - function: _get_zone_etc_localtime
+      source:
+        path: salt/modules/timezone.py
+        symbol: _get_zone_etc_localtime
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_timezone.py
+          functions: 32
+    - function: _get_zone_etc_timezone
+      source:
+        path: salt/modules/timezone.py
+        symbol: _get_zone_etc_timezone
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_timezone.py
+          functions: 32
+    - function: _get_zone_aix
+      source:
+        path: salt/modules/timezone.py
+        symbol: _get_zone_aix
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_timezone.py
+          functions: 32
+    - function: get_zone
+      source:
+        path: salt/modules/timezone.py
+        symbol: get_zone
+      summary: Get current timezone (i.e. America/Denver)
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_timezone.py
+          functions: 32
+    - function: get_zonecode
+      source:
+        path: salt/modules/timezone.py
+        symbol: get_zonecode
+      summary: Get current timezone (i.e. PST, MDT, etc)
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_timezone.py
+          functions: 32
+    - function: get_offset
+      source:
+        path: salt/modules/timezone.py
+        symbol: get_offset
+      summary: Get current numeric timezone offset from UTC (i.e. -0700)
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_timezone.py
+          functions: 32
+    - function: set_zone
+      source:
+        path: salt/modules/timezone.py
+        symbol: set_zone
+      summary: Unlinks, then symlinks /etc/localtime to the set timezone.
+      parameters:
+        - name: timezone
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - file.sed
+      tests:
+        - path: tests/pytests/unit/modules/test_timezone.py
+          functions: 32
+    - function: zone_compare
+      source:
+        path: salt/modules/timezone.py
+        symbol: zone_compare
+      summary: Compares the given timezone name with the system timezone name determined
+      parameters:
+        - name: timezone
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - file.sed
+      tests:
+        - path: tests/pytests/unit/modules/test_timezone.py
+          functions: 32
+    - function: _get_localtime_path
+      source:
+        path: salt/modules/timezone.py
+        symbol: _get_localtime_path
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - file.sed
+      tests:
+        - path: tests/pytests/unit/modules/test_timezone.py
+          functions: 32
+    - function: _get_zone_file
+      source:
+        path: salt/modules/timezone.py
+        symbol: _get_zone_file
+      parameters:
+        - name: timezone
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - file.sed
+      tests:
+        - path: tests/pytests/unit/modules/test_timezone.py
+          functions: 32
+    - function: get_hwclock
+      source:
+        path: salt/modules/timezone.py
+        symbol: get_hwclock
+      summary: Get current hardware clock setting (UTC or localtime)
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - file.sed
+      tests:
+        - path: tests/pytests/unit/modules/test_timezone.py
+          functions: 32
+    - function: set_hwclock
+      source:
+        path: salt/modules/timezone.py
+        symbol: set_hwclock
+      summary: Sets the hardware clock to be either UTC or localtime
+      parameters:
+        - name: clock
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - file.sed
+      tests:
+        - path: tests/pytests/unit/modules/test_timezone.py
+          functions: 32

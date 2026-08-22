@@ -1,0 +1,25 @@
+kind: state
+module: tls
+source_module: tls
+virtual: true
+path: salt/states/tls.py
+functions:
+    - function: valid_certificate
+      source:
+        path: salt/states/tls.py
+        symbol: valid_certificate
+      summary: Verify that a TLS certificate is valid now and (optionally) will be valid
+      parameters:
+        - name: name
+        - name: weeks
+          default: "0"
+        - name: days
+          default: "0"
+        - name: hours
+          default: "0"
+        - name: minutes
+          default: "0"
+        - name: seconds
+          default: "0"
+      execution_dependencies:
+        - tls.cert_info

@@ -1,0 +1,272 @@
+kind: exec
+module: grains
+source_module: grains
+path: salt/modules/grains.py
+functions:
+    - function: _infinitedict
+      source:
+        path: salt/modules/grains.py
+        symbol: _infinitedict
+      tests:
+        - path: tests/pytests/unit/modules/test_grains.py
+          functions: 42
+    - function: _serial_sanitizer
+      source:
+        path: salt/modules/grains.py
+        symbol: _serial_sanitizer
+      summary: Replaces the last 1/4 of a string with X's
+      parameters:
+        - name: instr
+      tests:
+        - path: tests/pytests/unit/modules/test_grains.py
+          functions: 42
+    - function: _fqdn_sanitizer
+      source:
+        path: salt/modules/grains.py
+        symbol: _fqdn_sanitizer
+      parameters:
+        - name: x
+      tests:
+        - path: tests/pytests/unit/modules/test_grains.py
+          functions: 42
+    - function: _hostname_sanitizer
+      source:
+        path: salt/modules/grains.py
+        symbol: _hostname_sanitizer
+      parameters:
+        - name: x
+      tests:
+        - path: tests/pytests/unit/modules/test_grains.py
+          functions: 42
+    - function: _domainname_sanitizer
+      source:
+        path: salt/modules/grains.py
+        symbol: _domainname_sanitizer
+      parameters:
+        - name: x
+      tests:
+        - path: tests/pytests/unit/modules/test_grains.py
+          functions: 42
+    - function: get
+      source:
+        path: salt/modules/grains.py
+        symbol: get
+      summary: Attempt to retrieve the named value from grains, if the named value is not
+      parameters:
+        - name: key
+        - name: default
+          default: '""'
+        - name: delimiter
+          default: DEFAULT_TARGET_DELIM
+        - name: ordered
+          default: "True"
+      tests:
+        - path: tests/pytests/unit/modules/test_grains.py
+          functions: 42
+    - function: has_value
+      source:
+        path: salt/modules/grains.py
+        symbol: has_value
+      summary: Determine whether a key exists in the grains dictionary.
+      parameters:
+        - name: key
+      tests:
+        - path: tests/pytests/unit/modules/test_grains.py
+          functions: 42
+    - function: items
+      source:
+        path: salt/modules/grains.py
+        symbol: items
+      summary: Return all of the minion's grains
+      parameters:
+        - name: sanitize
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_grains.py
+          functions: 42
+    - function: item
+      source:
+        path: salt/modules/grains.py
+        symbol: item
+      summary: Return one or more grains
+      parameters:
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_grains.py
+          functions: 42
+    - function: setvals
+      source:
+        path: salt/modules/grains.py
+        symbol: setvals
+      summary: Set new grains values in the grains config file
+      parameters:
+        - name: grains
+        - name: destructive
+          default: "False"
+        - name: refresh_pillar
+          default: "True"
+      execution_dependencies:
+        - saltutil.refresh_grains
+      tests:
+        - path: tests/pytests/unit/modules/test_grains.py
+          functions: 42
+    - function: setval
+      source:
+        path: salt/modules/grains.py
+        symbol: setval
+      summary: Set a grains value in the grains config file
+      parameters:
+        - name: key
+        - name: val
+        - name: destructive
+          default: "False"
+        - name: refresh_pillar
+          default: "True"
+      execution_dependencies:
+        - saltutil.refresh_grains
+      tests:
+        - path: tests/pytests/unit/modules/test_grains.py
+          functions: 42
+    - function: append
+      source:
+        path: salt/modules/grains.py
+        symbol: append
+      summary: '.. versionadded:: 0.17.0'
+      parameters:
+        - name: key
+        - name: val
+        - name: convert
+          default: "False"
+        - name: delimiter
+          default: DEFAULT_TARGET_DELIM
+      execution_dependencies:
+        - saltutil.refresh_grains
+      tests:
+        - path: tests/pytests/unit/modules/test_grains.py
+          functions: 42
+    - function: remove
+      source:
+        path: salt/modules/grains.py
+        symbol: remove
+      summary: '.. versionadded:: 0.17.0'
+      parameters:
+        - name: key
+        - name: val
+        - name: delimiter
+          default: DEFAULT_TARGET_DELIM
+      execution_dependencies:
+        - saltutil.refresh_grains
+      tests:
+        - path: tests/pytests/unit/modules/test_grains.py
+          functions: 42
+    - function: delkey
+      source:
+        path: salt/modules/grains.py
+        symbol: delkey
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: key
+        - name: force
+          default: "False"
+      execution_dependencies:
+        - saltutil.refresh_grains
+      tests:
+        - path: tests/pytests/unit/modules/test_grains.py
+          functions: 42
+    - function: delval
+      source:
+        path: salt/modules/grains.py
+        symbol: delval
+      summary: '.. versionadded:: 0.17.0'
+      parameters:
+        - name: key
+        - name: destructive
+          default: "False"
+        - name: force
+          default: "False"
+      execution_dependencies:
+        - saltutil.refresh_grains
+      tests:
+        - path: tests/pytests/unit/modules/test_grains.py
+          functions: 42
+    - function: ls
+      source:
+        path: salt/modules/grains.py
+        symbol: ls
+      summary: Return a list of all available grains
+      execution_dependencies:
+        - saltutil.refresh_grains
+      tests:
+        - path: tests/pytests/unit/modules/test_grains.py
+          functions: 42
+    - function: filter_by
+      source:
+        path: salt/modules/grains.py
+        symbol: filter_by
+      summary: '.. versionadded:: 0.17.0'
+      parameters:
+        - name: lookup_dict
+        - name: grain
+          default: '"os_family"'
+        - name: merge
+          default: None
+        - name: default
+          default: '"default"'
+        - name: base
+          default: None
+      execution_dependencies:
+        - saltutil.refresh_grains
+      tests:
+        - path: tests/pytests/unit/modules/test_grains.py
+          functions: 42
+    - function: _dict_from_path
+      source:
+        path: salt/modules/grains.py
+        symbol: _dict_from_path
+      summary: Given a lookup string in the form of 'foo:bar:baz" return a nested
+      parameters:
+        - name: path
+        - name: val
+        - name: delimiter
+          default: DEFAULT_TARGET_DELIM
+      execution_dependencies:
+        - saltutil.refresh_grains
+      tests:
+        - path: tests/pytests/unit/modules/test_grains.py
+          functions: 42
+    - function: set
+      source:
+        path: salt/modules/grains.py
+        symbol: set
+      summary: Set a key to an arbitrary value. It is used like setval but works
+      parameters:
+        - name: key
+        - name: val
+          default: '""'
+        - name: force
+          default: "False"
+        - name: destructive
+          default: "False"
+        - name: delimiter
+          default: DEFAULT_TARGET_DELIM
+      execution_dependencies:
+        - saltutil.refresh_grains
+      tests:
+        - path: tests/pytests/unit/modules/test_grains.py
+          functions: 42
+    - function: equals
+      source:
+        path: salt/modules/grains.py
+        symbol: equals
+      summary: Used to make sure the minion's grain key/value matches.
+      parameters:
+        - name: key
+        - name: value
+      execution_dependencies:
+        - saltutil.refresh_grains
+      tests:
+        - path: tests/pytests/unit/modules/test_grains.py
+          functions: 42

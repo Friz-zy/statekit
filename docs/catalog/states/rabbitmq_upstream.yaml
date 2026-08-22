@@ -1,0 +1,54 @@
+kind: state
+module: rabbitmq_upstream
+source_module: rabbitmq_upstream
+path: salt/states/rabbitmq_upstream.py
+functions:
+    - function: present
+      source:
+        path: salt/states/rabbitmq_upstream.py
+        symbol: present
+      summary: Ensure the RabbitMQ upstream exists.
+      parameters:
+        - name: name
+        - name: uri
+        - name: prefetch_count
+          default: None
+        - name: reconnect_delay
+          default: None
+        - name: ack_mode
+          default: None
+        - name: trust_user_id
+          default: None
+        - name: exchange
+          default: None
+        - name: max_hops
+          default: None
+        - name: expires
+          default: None
+        - name: message_ttl
+          default: None
+        - name: ha_policy
+          default: None
+        - name: queue
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - rabbitmq.delete_upstream
+        - rabbitmq.list_upstreams
+        - rabbitmq.set_upstream
+        - rabbitmq.upstream_exists
+    - function: absent
+      source:
+        path: salt/states/rabbitmq_upstream.py
+        symbol: absent
+      summary: Ensure the named upstream is absent.
+      parameters:
+        - name: name
+        - name: runas
+          default: None
+      execution_dependencies:
+        - rabbitmq.delete_upstream
+        - rabbitmq.list_upstreams
+        - rabbitmq.set_upstream
+        - rabbitmq.upstream_exists

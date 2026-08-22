@@ -1,0 +1,277 @@
+kind: exec
+module: system
+source_module: mac_system
+virtual: true
+path: salt/modules/mac_system.py
+platform_markers:
+    - is_darwin
+functions:
+    - function: _atrun_enabled
+      source:
+        path: salt/modules/mac_system.py
+        symbol: _atrun_enabled
+      summary: Check to see if atrun is running and enabled on the system
+      execution_dependencies:
+        - service.list
+    - function: _enable_atrun
+      source:
+        path: salt/modules/mac_system.py
+        symbol: _enable_atrun
+      summary: Enable and start the atrun daemon
+      execution_dependencies:
+        - service.enable
+        - service.list
+        - service.start
+    - function: _execute_command
+      source:
+        path: salt/modules/mac_system.py
+        symbol: _execute_command
+      summary: Helper function to execute the command
+      parameters:
+        - name: cmd
+        - name: at_time
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - service.enable
+        - service.list
+        - service.start
+    - function: halt
+      source:
+        path: salt/modules/mac_system.py
+        symbol: halt
+      summary: Halt a running system
+      parameters:
+        - name: at_time
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - service.enable
+        - service.list
+        - service.start
+    - function: sleep
+      source:
+        path: salt/modules/mac_system.py
+        symbol: sleep
+      summary: Sleep the system. If a user is active on the system it will likely fail to
+      parameters:
+        - name: at_time
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - service.enable
+        - service.list
+        - service.start
+    - function: restart
+      source:
+        path: salt/modules/mac_system.py
+        symbol: restart
+      summary: Restart the system
+      parameters:
+        - name: at_time
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - service.enable
+        - service.list
+        - service.start
+    - function: shutdown
+      source:
+        path: salt/modules/mac_system.py
+        symbol: shutdown
+      summary: Shutdown the system
+      parameters:
+        - name: at_time
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - service.enable
+        - service.list
+        - service.start
+    - function: get_remote_login
+      source:
+        path: salt/modules/mac_system.py
+        symbol: get_remote_login
+      summary: Displays whether remote login (SSH) is on or off.
+      execution_dependencies:
+        - cmd.retcode
+        - service.enable
+        - service.list
+        - service.start
+    - function: set_remote_login
+      source:
+        path: salt/modules/mac_system.py
+        symbol: set_remote_login
+      summary: Set the remote login (SSH) to either on or off.
+      parameters:
+        - name: enable
+      execution_dependencies:
+        - cmd.retcode
+        - service.enable
+        - service.list
+        - service.start
+    - function: get_remote_events
+      source:
+        path: salt/modules/mac_system.py
+        symbol: get_remote_events
+      summary: Displays whether remote apple events are on or off.
+      execution_dependencies:
+        - cmd.retcode
+        - service.enable
+        - service.list
+        - service.start
+    - function: set_remote_events
+      source:
+        path: salt/modules/mac_system.py
+        symbol: set_remote_events
+      summary: Set whether the server responds to events sent by other computers (such as
+      parameters:
+        - name: enable
+      execution_dependencies:
+        - cmd.retcode
+        - service.enable
+        - service.list
+        - service.start
+    - function: get_computer_name
+      source:
+        path: salt/modules/mac_system.py
+        symbol: get_computer_name
+      summary: Gets the computer name
+      execution_dependencies:
+        - cmd.retcode
+        - service.enable
+        - service.list
+        - service.start
+    - function: set_computer_name
+      source:
+        path: salt/modules/mac_system.py
+        symbol: set_computer_name
+      summary: Set the computer name
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - service.enable
+        - service.list
+        - service.start
+    - function: get_subnet_name
+      source:
+        path: salt/modules/mac_system.py
+        symbol: get_subnet_name
+      summary: Gets the local subnet name
+      execution_dependencies:
+        - cmd.retcode
+        - service.enable
+        - service.list
+        - service.start
+    - function: set_subnet_name
+      source:
+        path: salt/modules/mac_system.py
+        symbol: set_subnet_name
+      summary: Set the local subnet name
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - service.enable
+        - service.list
+        - service.start
+    - function: get_startup_disk
+      source:
+        path: salt/modules/mac_system.py
+        symbol: get_startup_disk
+      summary: Displays the current startup disk
+      execution_dependencies:
+        - cmd.retcode
+        - service.enable
+        - service.list
+        - service.start
+    - function: list_startup_disks
+      source:
+        path: salt/modules/mac_system.py
+        symbol: list_startup_disks
+      summary: List all valid startup disks on the system.
+      execution_dependencies:
+        - cmd.retcode
+        - service.enable
+        - service.list
+        - service.start
+    - function: set_startup_disk
+      source:
+        path: salt/modules/mac_system.py
+        symbol: set_startup_disk
+      summary: Set the current startup disk to the indicated path. Use
+      parameters:
+        - name: path
+      execution_dependencies:
+        - cmd.retcode
+        - service.enable
+        - service.list
+        - service.start
+    - function: get_restart_delay
+      source:
+        path: salt/modules/mac_system.py
+        symbol: get_restart_delay
+      summary: Get the number of seconds after which the computer will start up after a
+      execution_dependencies:
+        - cmd.retcode
+        - service.enable
+        - service.list
+        - service.start
+    - function: set_restart_delay
+      source:
+        path: salt/modules/mac_system.py
+        symbol: set_restart_delay
+      summary: Set the number of seconds after which the computer will start up after a
+      parameters:
+        - name: seconds
+      execution_dependencies:
+        - cmd.retcode
+        - service.enable
+        - service.list
+        - service.start
+    - function: get_disable_keyboard_on_lock
+      source:
+        path: salt/modules/mac_system.py
+        symbol: get_disable_keyboard_on_lock
+      summary: Get whether or not the keyboard should be disabled when the X Serve enclosure
+      execution_dependencies:
+        - cmd.retcode
+        - service.enable
+        - service.list
+        - service.start
+    - function: set_disable_keyboard_on_lock
+      source:
+        path: salt/modules/mac_system.py
+        symbol: set_disable_keyboard_on_lock
+      summary: Get whether or not the keyboard should be disabled when the X Serve
+      parameters:
+        - name: enable
+      execution_dependencies:
+        - cmd.retcode
+        - service.enable
+        - service.list
+        - service.start
+    - function: get_boot_arch
+      source:
+        path: salt/modules/mac_system.py
+        symbol: get_boot_arch
+      summary: Get the kernel architecture setting from ``com.apple.Boot.plist``
+      execution_dependencies:
+        - cmd.retcode
+        - service.enable
+        - service.list
+        - service.start
+    - function: set_boot_arch
+      source:
+        path: salt/modules/mac_system.py
+        symbol: set_boot_arch
+      summary: Set the kernel to boot in 32 or 64 bit mode on next boot.
+      parameters:
+        - name: arch
+          default: '"default"'
+      execution_dependencies:
+        - cmd.retcode
+        - service.enable
+        - service.list
+        - service.start

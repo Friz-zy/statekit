@@ -1,0 +1,82 @@
+kind: exec
+module: quota
+source_module: quota
+path: salt/modules/quota.py
+platform_markers:
+    - is_windows
+functions:
+    - function: report
+      source:
+        path: salt/modules/quota.py
+        symbol: report
+      summary: Report on quotas for a specific volume
+      parameters:
+        - name: mount
+    - function: _parse_quota
+      source:
+        path: salt/modules/quota.py
+        symbol: _parse_quota
+      summary: Parse the output from repquota. Requires that -u -g are passed in
+      parameters:
+        - name: mount
+        - name: opts
+      execution_dependencies:
+        - cmd.run
+    - function: set_
+      source:
+        path: salt/modules/quota.py
+        symbol: set_
+      summary: Calls out to setquota, for a specific user or group
+      parameters:
+        - name: device
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+    - function: warn
+      source:
+        path: salt/modules/quota.py
+        symbol: warn
+      summary: Runs the warnquota command, to send warning emails to users who
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+    - function: stats
+      source:
+        path: salt/modules/quota.py
+        symbol: stats
+      summary: Runs the quotastats command, and returns the parsed output
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+    - function: "on"
+      source:
+        path: salt/modules/quota.py
+        symbol: "on"
+      summary: Turns on the quota system
+      parameters:
+        - name: device
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+    - function: "off"
+      source:
+        path: salt/modules/quota.py
+        symbol: "off"
+      summary: Turns off the quota system
+      parameters:
+        - name: device
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+    - function: get_mode
+      source:
+        path: salt/modules/quota.py
+        symbol: get_mode
+      summary: Report whether the quota system for this device is on or off
+      parameters:
+        - name: device
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all

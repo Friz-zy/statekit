@@ -1,0 +1,94 @@
+kind: state
+module: win_smtp_server
+source_module: win_smtp_server
+path: salt/states/win_smtp_server.py
+functions:
+    - function: _merge_dicts
+      source:
+        path: salt/states/win_smtp_server.py
+        symbol: _merge_dicts
+      summary: Shallow copy and merge dicts together, giving precedence to last in.
+      parameters:
+        - name: args
+          kind: '*'
+      execution_dependencies:
+        - win_smtp_server.get_server_setting
+    - function: _normalize_server_settings
+      source:
+        path: salt/states/win_smtp_server.py
+        symbol: _normalize_server_settings
+      summary: Convert setting values that has been improperly converted to a dict back to a string.
+      parameters:
+        - name: settings
+          kind: '**'
+      execution_dependencies:
+        - win_smtp_server.get_server_setting
+    - function: server_setting
+      source:
+        path: salt/states/win_smtp_server.py
+        symbol: server_setting
+      summary: Ensure the value is set for the specified setting.
+      parameters:
+        - name: name
+        - name: settings
+          default: None
+        - name: server
+          default: _DEFAULT_SERVER
+      execution_dependencies:
+        - win_smtp_server.get_server_setting
+        - win_smtp_server.set_server_setting
+    - function: active_log_format
+      source:
+        path: salt/states/win_smtp_server.py
+        symbol: active_log_format
+      summary: Manage the active log format for the SMTP server.
+      parameters:
+        - name: name
+        - name: log_format
+        - name: server
+          default: _DEFAULT_SERVER
+      execution_dependencies:
+        - win_smtp_server.get_log_format
+        - win_smtp_server.get_server_setting
+        - win_smtp_server.set_log_format
+        - win_smtp_server.set_server_setting
+    - function: connection_ip_list
+      source:
+        path: salt/states/win_smtp_server.py
+        symbol: connection_ip_list
+      summary: Manage IP list for SMTP connections.
+      parameters:
+        - name: name
+        - name: addresses
+          default: None
+        - name: grant_by_default
+          default: "False"
+        - name: server
+          default: _DEFAULT_SERVER
+      execution_dependencies:
+        - win_smtp_server.get_connection_ip_list
+        - win_smtp_server.get_log_format
+        - win_smtp_server.get_server_setting
+        - win_smtp_server.set_connection_ip_list
+        - win_smtp_server.set_log_format
+        - win_smtp_server.set_server_setting
+    - function: relay_ip_list
+      source:
+        path: salt/states/win_smtp_server.py
+        symbol: relay_ip_list
+      summary: Manage IP list for SMTP relay connections.
+      parameters:
+        - name: name
+        - name: addresses
+          default: None
+        - name: server
+          default: _DEFAULT_SERVER
+      execution_dependencies:
+        - win_smtp_server.get_connection_ip_list
+        - win_smtp_server.get_log_format
+        - win_smtp_server.get_relay_ip_list
+        - win_smtp_server.get_server_setting
+        - win_smtp_server.set_connection_ip_list
+        - win_smtp_server.set_log_format
+        - win_smtp_server.set_relay_ip_list
+        - win_smtp_server.set_server_setting

@@ -1,0 +1,35 @@
+kind: state
+module: proxy
+source_module: proxy
+virtual: true
+path: salt/states/proxy.py
+platform_markers:
+    - is_darwin
+    - is_windows
+functions:
+    - function: managed
+      source:
+        path: salt/states/proxy.py
+        symbol: managed
+      summary: Manages proxy settings for this mininon
+      parameters:
+        - name: name
+        - name: port
+        - name: services
+          default: None
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: bypass_domains
+          default: None
+        - name: network_service
+          default: '"Ethernet"'
+      execution_dependencies:
+        - proxy.get_proxy_bypass
+        - proxy.get_proxy_win
+        - proxy.set_proxy_bypass
+        - proxy.set_proxy_win
+      tests:
+        - path: tests/pytests/unit/states/test_proxy.py
+          functions: 4

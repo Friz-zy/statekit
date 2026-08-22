@@ -1,0 +1,51 @@
+kind: state
+module: idem
+source_module: idem
+virtual: true
+path: salt/states/idem.py
+functions:
+    - function: _get_refs
+      source:
+        path: salt/states/idem.py
+        symbol: _get_refs
+      summary: Determine where the sls sources are
+      parameters:
+        - name: sources
+        - name: tree
+      utility_dependencies:
+        - idem.hub
+    - function: _get_low_data
+      source:
+        path: salt/states/idem.py
+        symbol: _get_low_data
+      summary: Get salt-style low data from an idem state name
+      parameters:
+        - name: low_data
+      utility_dependencies:
+        - idem.hub
+    - function: state
+      source:
+        path: salt/states/idem.py
+        symbol: state
+      summary: Execute an idem sls file through a salt state
+      parameters:
+        - name: name
+        - name: sls
+        - name: acct_file
+          default: None
+        - name: acct_key
+          default: None
+        - name: acct_profile
+          default: None
+        - name: cache_dir
+          default: None
+        - name: render
+          default: None
+        - name: runtime
+          default: None
+        - name: source_dir
+          default: None
+        - name: test
+          default: "False"
+      utility_dependencies:
+        - idem.hub

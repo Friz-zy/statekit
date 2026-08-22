@@ -1,0 +1,219 @@
+kind: state
+module: ssh_pki
+source_module: ssh_pki
+virtual: true
+path: salt/states/ssh_pki.py
+functions:
+    - function: certificate_managed
+      source:
+        path: salt/states/ssh_pki.py
+        symbol: certificate_managed
+      summary: Ensure an OpenSSH certificate is present as specified.
+      parameters:
+        - name: name
+        - name: ttl_remaining
+          default: None
+        - name: ca_server
+          default: None
+        - name: backend
+          default: None
+        - name: backend_args
+          default: None
+        - name: signing_policy
+          default: None
+        - name: copypath
+          default: None
+        - name: cert_type
+          default: None
+        - name: signing_private_key
+          default: None
+        - name: signing_private_key_passphrase
+          default: None
+        - name: public_key
+          default: None
+        - name: private_key
+          default: None
+        - name: private_key_passphrase
+          default: None
+        - name: serial_number
+          default: None
+        - name: not_before
+          default: None
+        - name: not_after
+          default: None
+        - name: ttl
+          default: None
+        - name: critical_options
+          default: None
+        - name: extensions
+          default: None
+        - name: valid_principals
+          default: None
+        - name: all_principals
+          default: "False"
+        - name: key_id
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - file.file_exists
+        - file.is_link
+        - file.remove
+    - function: private_key_managed
+      source:
+        path: salt/states/ssh_pki.py
+        symbol: private_key_managed
+      summary: Ensure a private key is present as specified.
+      parameters:
+        - name: name
+        - name: algo
+          default: '"rsa"'
+        - name: keysize
+          default: None
+        - name: passphrase
+          default: None
+        - name: new
+          default: "False"
+        - name: overwrite
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - file.file_exists
+        - file.is_link
+        - file.remove
+        - ssh_pki.create_private_key
+        - ssh_pki.encode_private_key
+    - function: public_key_managed
+      source:
+        path: salt/states/ssh_pki.py
+        symbol: public_key_managed
+      summary: Ensure a public key is present as specified.
+      parameters:
+        - name: name
+        - name: public_key_source
+        - name: passphrase
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - file.file_exists
+        - file.is_link
+        - file.remove
+        - ssh_pki.create_private_key
+        - ssh_pki.encode_private_key
+        - ssh_pki.get_public_key
+    - function: certificate_managed_ssh
+      source:
+        path: salt/states/ssh_pki.py
+        symbol: certificate_managed_ssh
+      summary: Helper for the SSH wrapper module.
+      parameters:
+        - name: name
+        - name: result
+        - name: comment
+        - name: changes
+        - name: contents
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.backup_mode
+        - file.file_exists
+        - file.is_link
+        - file.remove
+        - ssh_pki.create_private_key
+        - ssh_pki.encode_private_key
+        - ssh_pki.get_public_key
+    - function: private_key_managed_ssh
+      source:
+        path: salt/states/ssh_pki.py
+        symbol: private_key_managed_ssh
+      summary: Helper for the SSH wrapper module to report the correct return and
+      parameters:
+        - name: name
+        - name: result
+        - name: comment
+        - name: changes
+        - name: tempfile
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.backup_mode
+        - file.file_exists
+        - file.is_link
+        - file.move
+        - file.remove
+        - ssh_pki.create_private_key
+        - ssh_pki.encode_private_key
+        - ssh_pki.get_public_key
+    - function: _filter_state_internal_kwargs
+      source:
+        path: salt/states/ssh_pki.py
+        symbol: _filter_state_internal_kwargs
+      parameters:
+        - name: kwargs
+      execution_dependencies:
+        - config.backup_mode
+        - file.file_exists
+        - file.is_link
+        - file.move
+        - file.remove
+        - ssh_pki.create_private_key
+        - ssh_pki.encode_private_key
+        - ssh_pki.get_public_key
+    - function: _add_sub_state_run
+      source:
+        path: salt/states/ssh_pki.py
+        symbol: _add_sub_state_run
+      parameters:
+        - name: ret
+        - name: sub
+      execution_dependencies:
+        - config.backup_mode
+        - file.file_exists
+        - file.is_link
+        - file.move
+        - file.remove
+        - ssh_pki.create_private_key
+        - ssh_pki.encode_private_key
+        - ssh_pki.get_public_key
+    - function: _file_managed
+      source:
+        path: salt/states/ssh_pki.py
+        symbol: _file_managed
+      parameters:
+        - name: name
+        - name: test
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.backup_mode
+        - file.file_exists
+        - file.is_link
+        - file.move
+        - file.remove
+        - ssh_pki.create_private_key
+        - ssh_pki.encode_private_key
+        - ssh_pki.get_public_key
+        - state.single
+    - function: _check_file_ret
+      source:
+        path: salt/states/ssh_pki.py
+        symbol: _check_file_ret
+      parameters:
+        - name: fret
+        - name: ret
+        - name: current
+      execution_dependencies:
+        - config.backup_mode
+        - file.file_exists
+        - file.is_link
+        - file.move
+        - file.remove
+        - ssh_pki.create_private_key
+        - ssh_pki.encode_private_key
+        - ssh_pki.get_public_key
+        - state.single

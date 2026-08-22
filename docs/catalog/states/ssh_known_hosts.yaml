@@ -1,0 +1,58 @@
+kind: state
+module: ssh_known_hosts
+source_module: ssh_known_hosts
+virtual: true
+path: salt/states/ssh_known_hosts.py
+platform_markers:
+    - is_windows
+functions:
+    - function: present
+      source:
+        path: salt/states/ssh_known_hosts.py
+        symbol: present
+      summary: Verifies that the specified host is known by the specified user
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: fingerprint
+          default: None
+        - name: key
+          default: None
+        - name: port
+          default: None
+        - name: enc
+          default: None
+        - name: config
+          default: None
+        - name: hash_known_hosts
+          default: "True"
+        - name: timeout
+          default: "5"
+        - name: fingerprint_hash_type
+          default: None
+      execution_dependencies:
+        - ssh.check_known_host
+        - ssh.set_known_host
+      tests:
+        - path: tests/pytests/unit/states/test_ssh_known_hosts.py
+          functions: 2
+    - function: absent
+      source:
+        path: salt/states/ssh_known_hosts.py
+        symbol: absent
+      summary: Verifies that the specified host is not known by the given user
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: config
+          default: None
+      execution_dependencies:
+        - ssh.check_known_host
+        - ssh.get_known_host_entries
+        - ssh.rm_known_host
+        - ssh.set_known_host
+      tests:
+        - path: tests/pytests/unit/states/test_ssh_known_hosts.py
+          functions: 2

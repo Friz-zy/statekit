@@ -1,0 +1,339 @@
+kind: exec
+module: bcache
+source_module: bcache
+path: salt/modules/bcache.py
+functions:
+    - function: uuid
+      source:
+        path: salt/modules/bcache.py
+        symbol: uuid
+      summary: Return the bcache UUID of a block device.
+      parameters:
+        - name: dev
+          default: None
+    - function: attach_
+      source:
+        path: salt/modules/bcache.py
+        symbol: attach_
+      summary: Attach a backing devices to a cache set
+      parameters:
+        - name: dev
+          default: None
+    - function: detach
+      source:
+        path: salt/modules/bcache.py
+        symbol: detach
+      summary: Detach a backing device(s) from a cache set
+      parameters:
+        - name: dev
+          default: None
+    - function: start
+      source:
+        path: salt/modules/bcache.py
+        symbol: start
+      summary: Trigger a start of the full bcache system through udev.
+    - function: stop
+      source:
+        path: salt/modules/bcache.py
+        symbol: stop
+      summary: Stop a bcache device
+      parameters:
+        - name: dev
+          default: None
+    - function: back_make
+      source:
+        path: salt/modules/bcache.py
+        symbol: back_make
+      summary: Create a backing device for attachment to a set.
+      parameters:
+        - name: dev
+        - name: cache_mode
+          default: '"writeback"'
+        - name: force
+          default: "False"
+        - name: attach
+          default: "True"
+        - name: bucket_size
+          default: None
+    - function: cache_make
+      source:
+        path: salt/modules/bcache.py
+        symbol: cache_make
+      summary: Create BCache cache on a block device.
+      parameters:
+        - name: dev
+        - name: reserved
+          default: None
+        - name: force
+          default: "False"
+        - name: block_size
+          default: None
+        - name: bucket_size
+          default: None
+        - name: attach
+          default: "True"
+      execution_dependencies:
+        - udev.env
+    - function: config_
+      source:
+        path: salt/modules/bcache.py
+        symbol: config_
+      summary: Show or update config of a bcache device.
+      parameters:
+        - name: dev
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - udev.env
+    - function: status
+      source:
+        path: salt/modules/bcache.py
+        symbol: status
+      summary: Show the full status of the BCache system and optionally all its involved devices
+      parameters:
+        - name: stats
+          default: "False"
+        - name: config
+          default: "False"
+        - name: internals
+          default: "False"
+        - name: superblock
+          default: "False"
+        - name: alldevs
+          default: "False"
+      execution_dependencies:
+        - udev.env
+    - function: device
+      source:
+        path: salt/modules/bcache.py
+        symbol: device
+      summary: Check the state of a single bcache device
+      parameters:
+        - name: dev
+        - name: stats
+          default: "False"
+        - name: config
+          default: "False"
+        - name: internals
+          default: "False"
+        - name: superblock
+          default: "False"
+      execution_dependencies:
+        - udev.env
+    - function: super_
+      source:
+        path: salt/modules/bcache.py
+        symbol: super_
+      summary: Read out BCache SuperBlock
+      parameters:
+        - name: dev
+      execution_dependencies:
+        - udev.env
+    - function: _devbase
+      source:
+        path: salt/modules/bcache.py
+        symbol: _devbase
+      summary: Basename of just about any dev
+      parameters:
+        - name: dev
+      execution_dependencies:
+        - udev.env
+    - function: _devpath
+      source:
+        path: salt/modules/bcache.py
+        symbol: _devpath
+      summary: Return /dev name of just about any dev
+      parameters:
+        - name: dev
+      execution_dependencies:
+        - udev.env
+    - function: _syspath
+      source:
+        path: salt/modules/bcache.py
+        symbol: _syspath
+      summary: Full SysFS path of a device
+      parameters:
+        - name: dev
+      execution_dependencies:
+        - udev.env
+    - function: _bdev
+      source:
+        path: salt/modules/bcache.py
+        symbol: _bdev
+      summary: Resolve a bcacheX or cache to a real dev
+      parameters:
+        - name: dev
+          default: None
+      execution_dependencies:
+        - udev.env
+    - function: _bcpath
+      source:
+        path: salt/modules/bcache.py
+        symbol: _bcpath
+      summary: Full SysFS path of a bcache device
+      parameters:
+        - name: dev
+      execution_dependencies:
+        - udev.env
+    - function: _fspath
+      source:
+        path: salt/modules/bcache.py
+        symbol: _fspath
+      summary: ':return: path of active bcache'
+      execution_dependencies:
+        - udev.env
+    - function: _fssys
+      source:
+        path: salt/modules/bcache.py
+        symbol: _fssys
+      summary: Simple wrapper to interface with bcache SysFS
+      parameters:
+        - name: name
+        - name: value
+          default: None
+        - name: log_lvl
+          default: None
+        - name: log_msg
+          default: None
+      execution_dependencies:
+        - udev.env
+    - function: _bcsys
+      source:
+        path: salt/modules/bcache.py
+        symbol: _bcsys
+      summary: Simple wrapper to interface with backing devs SysFS
+      parameters:
+        - name: dev
+        - name: name
+        - name: value
+          default: None
+        - name: log_lvl
+          default: None
+        - name: log_msg
+          default: None
+      execution_dependencies:
+        - udev.env
+    - function: _sysfs_attr
+      source:
+        path: salt/modules/bcache.py
+        symbol: _sysfs_attr
+      summary: Simple wrapper with logging around sysfs.attr
+      parameters:
+        - name: name
+        - name: value
+          default: None
+        - name: log_lvl
+          default: None
+        - name: log_msg
+          default: None
+      execution_dependencies:
+        - sysfs.attr
+        - udev.env
+    - function: _sysfs_parse
+      source:
+        path: salt/modules/bcache.py
+        symbol: _sysfs_parse
+      summary: Helper function for parsing BCache's SysFS interface
+      parameters:
+        - name: path
+        - name: base_attr
+          default: None
+        - name: stats
+          default: "False"
+        - name: config
+          default: "False"
+        - name: internals
+          default: "False"
+        - name: options
+          default: "False"
+      execution_dependencies:
+        - sysfs.attr
+        - sysfs.interfaces
+        - sysfs.read
+        - udev.env
+    - function: _size_map
+      source:
+        path: salt/modules/bcache.py
+        symbol: _size_map
+      summary: Map Bcache's size strings to real bytes
+      parameters:
+        - name: size
+      execution_dependencies:
+        - sysfs.attr
+        - sysfs.interfaces
+        - sysfs.read
+        - udev.env
+    - function: _sizes
+      source:
+        path: salt/modules/bcache.py
+        symbol: _sizes
+      summary: Return neigh useless sizing info about a blockdev
+      parameters:
+        - name: dev
+      execution_dependencies:
+        - sysfs.attr
+        - sysfs.interfaces
+        - sysfs.read
+        - udev.env
+    - function: _wipe
+      source:
+        path: salt/modules/bcache.py
+        symbol: _wipe
+      summary: REALLY DESTRUCTIVE STUFF RIGHT AHEAD
+      parameters:
+        - name: dev
+      execution_dependencies:
+        - sysfs.attr
+        - sysfs.interfaces
+        - sysfs.read
+        - udev.env
+    - function: _wait
+      source:
+        path: salt/modules/bcache.py
+        symbol: _wait
+      summary: Wait for lfunc to be True
+      parameters:
+        - name: lfunc
+        - name: log_lvl
+          default: None
+        - name: log_msg
+          default: None
+        - name: tries
+          default: "10"
+      execution_dependencies:
+        - sysfs.attr
+        - sysfs.interfaces
+        - sysfs.read
+        - udev.env
+    - function: _run_all
+      source:
+        path: salt/modules/bcache.py
+        symbol: _run_all
+      summary: Simple wrapper around cmd.run_all
+      parameters:
+        - name: cmd
+        - name: log_lvl
+          default: None
+        - name: log_msg
+          default: None
+        - name: exitcode
+          default: "0"
+      execution_dependencies:
+        - cmd.run_all
+        - sysfs.attr
+        - sysfs.interfaces
+        - sysfs.read
+        - udev.env
+    - function: _alltrue
+      source:
+        path: salt/modules/bcache.py
+        symbol: _alltrue
+      parameters:
+        - name: resdict
+      execution_dependencies:
+        - cmd.run_all
+        - sysfs.attr
+        - sysfs.interfaces
+        - sysfs.read
+        - udev.env

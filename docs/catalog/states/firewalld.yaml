@@ -1,0 +1,188 @@
+kind: state
+module: firewalld
+source_module: firewalld
+path: salt/states/firewalld.py
+functions:
+    - function: _parse_forward
+      source:
+        path: salt/states/firewalld.py
+        symbol: _parse_forward
+      summary: 'Parses a port forwarding statement in the form used by this state:'
+      parameters:
+        - name: mapping
+      tests:
+        - path: tests/pytests/unit/states/test_firewalld.py
+          functions: 2
+    - function: present
+      source:
+        path: salt/states/firewalld.py
+        symbol: present
+      summary: Ensure a zone has specific attributes.
+      parameters:
+        - name: name
+        - name: block_icmp
+          default: None
+        - name: prune_block_icmp
+          default: "False"
+        - name: default
+          default: None
+        - name: masquerade
+          default: None
+        - name: ports
+          default: None
+        - name: prune_ports
+          default: "False"
+        - name: port_fwd
+          default: None
+        - name: prune_port_fwd
+          default: "False"
+        - name: services
+          default: None
+        - name: prune_services
+          default: "False"
+        - name: interfaces
+          default: None
+        - name: prune_interfaces
+          default: "False"
+        - name: sources
+          default: None
+        - name: prune_sources
+          default: "False"
+        - name: rich_rules
+          default: None
+        - name: prune_rich_rules
+          default: "False"
+      execution_dependencies:
+        - firewalld.reload_rules
+      tests:
+        - path: tests/pytests/unit/states/test_firewalld.py
+          functions: 2
+    - function: service
+      source:
+        path: salt/states/firewalld.py
+        symbol: service
+      summary: Ensure the service exists and encompasses the specified ports and
+      parameters:
+        - name: name
+        - name: ports
+          default: None
+        - name: protocols
+          default: None
+      execution_dependencies:
+        - firewalld.add_service_port
+        - firewalld.add_service_protocol
+        - firewalld.get_service_ports
+        - firewalld.get_service_protocols
+        - firewalld.get_services
+        - firewalld.new_service
+        - firewalld.reload_rules
+        - firewalld.remove_service_port
+        - firewalld.remove_service_protocol
+      tests:
+        - path: tests/pytests/unit/states/test_firewalld.py
+          functions: 2
+    - function: _normalize_rich_rules
+      source:
+        path: salt/states/firewalld.py
+        symbol: _normalize_rich_rules
+      summary: Make sure rich rules are normalized and attributes
+      parameters:
+        - name: rich_rules
+      execution_dependencies:
+        - firewalld.add_service_port
+        - firewalld.add_service_protocol
+        - firewalld.get_service_ports
+        - firewalld.get_service_protocols
+        - firewalld.get_services
+        - firewalld.new_service
+        - firewalld.reload_rules
+        - firewalld.remove_service_port
+        - firewalld.remove_service_protocol
+      tests:
+        - path: tests/pytests/unit/states/test_firewalld.py
+          functions: 2
+    - function: _present
+      source:
+        path: salt/states/firewalld.py
+        symbol: _present
+      summary: Ensure a zone has specific attributes.
+      parameters:
+        - name: name
+        - name: block_icmp
+          default: None
+        - name: prune_block_icmp
+          default: "False"
+        - name: default
+          default: None
+        - name: masquerade
+          default: None
+        - name: ports
+          default: None
+        - name: prune_ports
+          default: "False"
+        - name: port_fwd
+          default: None
+        - name: prune_port_fwd
+          default: "False"
+        - name: services
+          default: None
+        - name: '# TODO: prune_services'
+          default: |-
+            False in future release
+                # prune_services=False
+        - name: prune_services
+          default: None
+        - name: interfaces
+          default: None
+        - name: prune_interfaces
+          default: "False"
+        - name: sources
+          default: None
+        - name: prune_sources
+          default: "False"
+        - name: rich_rules
+          default: None
+        - name: prune_rich_rules
+          default: "False"
+      execution_dependencies:
+        - firewalld.add_interface
+        - firewalld.add_masquerade
+        - firewalld.add_port
+        - firewalld.add_port_fwd
+        - firewalld.add_rich_rule
+        - firewalld.add_service
+        - firewalld.add_service_port
+        - firewalld.add_service_protocol
+        - firewalld.add_source
+        - firewalld.allow_icmp
+        - firewalld.block_icmp
+        - firewalld.default_zone
+        - firewalld.get_icmp_types
+        - firewalld.get_interfaces
+        - firewalld.get_masquerade
+        - firewalld.get_rich_rules
+        - firewalld.get_service_ports
+        - firewalld.get_service_protocols
+        - firewalld.get_services
+        - firewalld.get_sources
+        - firewalld.get_zones
+        - firewalld.list_icmp_block
+        - firewalld.list_port_fwd
+        - firewalld.list_ports
+        - firewalld.list_services
+        - firewalld.new_service
+        - firewalld.new_zone
+        - firewalld.reload_rules
+        - firewalld.remove_interface
+        - firewalld.remove_masquerade
+        - firewalld.remove_port
+        - firewalld.remove_port_fwd
+        - firewalld.remove_rich_rule
+        - firewalld.remove_service
+        - firewalld.remove_service_port
+        - firewalld.remove_service_protocol
+        - firewalld.remove_source
+        - firewalld.set_default_zone
+      tests:
+        - path: tests/pytests/unit/states/test_firewalld.py
+          functions: 2

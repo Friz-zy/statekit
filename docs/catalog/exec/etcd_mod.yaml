@@ -1,0 +1,137 @@
+kind: exec
+module: etcd
+source_module: etcd_mod
+virtual: true
+path: salt/modules/etcd_mod.py
+functions:
+    - function: get_
+      source:
+        path: salt/modules/etcd_mod.py
+        symbol: get_
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: key
+        - name: recurse
+          default: "False"
+        - name: profile
+          default: None
+        - name: kwargs
+          kind: '**'
+      utility_dependencies:
+        - etcd_util.get_conn
+      tests:
+        - path: tests/pytests/unit/modules/test_etcd_mod.py
+          functions: 8
+    - function: set_
+      source:
+        path: salt/modules/etcd_mod.py
+        symbol: set_
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: key
+        - name: value
+        - name: profile
+          default: None
+        - name: ttl
+          default: None
+        - name: directory
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      utility_dependencies:
+        - etcd_util.get_conn
+      tests:
+        - path: tests/pytests/unit/modules/test_etcd_mod.py
+          functions: 8
+    - function: update
+      source:
+        path: salt/modules/etcd_mod.py
+        symbol: update
+      summary: '.. versionadded:: 2016.3.0'
+      parameters:
+        - name: fields
+        - name: path
+          default: '""'
+        - name: profile
+          default: None
+        - name: kwargs
+          kind: '**'
+      utility_dependencies:
+        - etcd_util.get_conn
+      tests:
+        - path: tests/pytests/unit/modules/test_etcd_mod.py
+          functions: 8
+    - function: watch
+      source:
+        path: salt/modules/etcd_mod.py
+        symbol: watch
+      summary: '.. versionadded:: 2016.3.0'
+      parameters:
+        - name: key
+        - name: recurse
+          default: "False"
+        - name: profile
+          default: None
+        - name: timeout
+          default: "0"
+        - name: index
+          default: None
+        - name: kwargs
+          kind: '**'
+      utility_dependencies:
+        - etcd_util.get_conn
+      tests:
+        - path: tests/pytests/unit/modules/test_etcd_mod.py
+          functions: 8
+    - function: ls_
+      source:
+        path: salt/modules/etcd_mod.py
+        symbol: ls_
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: path
+          default: '"/"'
+        - name: profile
+          default: None
+        - name: kwargs
+          kind: '**'
+      utility_dependencies:
+        - etcd_util.get_conn
+      tests:
+        - path: tests/pytests/unit/modules/test_etcd_mod.py
+          functions: 8
+    - function: rm_
+      source:
+        path: salt/modules/etcd_mod.py
+        symbol: rm_
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: key
+        - name: recurse
+          default: "False"
+        - name: profile
+          default: None
+        - name: kwargs
+          kind: '**'
+      utility_dependencies:
+        - etcd_util.get_conn
+      tests:
+        - path: tests/pytests/unit/modules/test_etcd_mod.py
+          functions: 8
+    - function: tree
+      source:
+        path: salt/modules/etcd_mod.py
+        symbol: tree
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: path
+          default: '"/"'
+        - name: profile
+          default: None
+        - name: kwargs
+          kind: '**'
+      utility_dependencies:
+        - etcd_util.get_conn
+      tests:
+        - path: tests/pytests/unit/modules/test_etcd_mod.py
+          functions: 8

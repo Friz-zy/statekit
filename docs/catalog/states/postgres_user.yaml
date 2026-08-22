@@ -1,0 +1,76 @@
+kind: state
+module: postgres_user
+source_module: postgres_user
+path: salt/states/postgres_user.py
+functions:
+    - function: present
+      source:
+        path: salt/states/postgres_user.py
+        symbol: present
+      summary: Ensure that the named user is present with the specified privileges
+      parameters:
+        - name: name
+        - name: createdb
+          default: None
+        - name: createroles
+          default: None
+        - name: encrypted
+          default: None
+        - name: superuser
+          default: None
+        - name: replication
+          default: None
+        - name: inherit
+          default: None
+        - name: login
+          default: None
+        - name: password
+          default: None
+        - name: default_password
+          default: None
+        - name: refresh_password
+          default: None
+        - name: valid_until
+          default: None
+        - name: groups
+          default: None
+        - name: user
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: db_password
+          default: None
+        - name: db_host
+          default: None
+        - name: db_port
+          default: None
+        - name: db_user
+          default: None
+      execution_dependencies:
+        - postgres.psql_query
+        - postgres.role_get
+        - postgres.user_exists
+    - function: absent
+      source:
+        path: salt/states/postgres_user.py
+        symbol: absent
+      summary: Ensure that the named user is absent
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: db_password
+          default: None
+        - name: db_host
+          default: None
+        - name: db_port
+          default: None
+        - name: db_user
+          default: None
+      execution_dependencies:
+        - postgres.psql_query
+        - postgres.role_get
+        - postgres.user_exists
+        - postgres.user_remove

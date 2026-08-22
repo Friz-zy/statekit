@@ -1,0 +1,348 @@
+kind: exec
+module: disk
+source_module: disk
+path: salt/modules/disk.py
+platform_markers:
+    - is_aix
+    - is_freebsd
+    - is_linux
+    - is_windows
+functions:
+    - function: _parse_numbers
+      source:
+        path: salt/modules/disk.py
+        symbol: _parse_numbers
+      summary: Convert a string to a number, allowing for a K|M|G|T postfix, 32.8K.
+      parameters:
+        - name: text
+      tests:
+        - path: tests/pytests/unit/modules/test_disk.py
+          functions: 23
+    - function: _clean_flags
+      source:
+        path: salt/modules/disk.py
+        symbol: _clean_flags
+      summary: Sanitize flags passed into df
+      parameters:
+        - name: args
+        - name: caller
+      tests:
+        - path: tests/pytests/unit/modules/test_disk.py
+          functions: 23
+    - function: usage
+      source:
+        path: salt/modules/disk.py
+        symbol: usage
+      summary: Return usage information for volumes mounted on this minion
+      parameters:
+        - name: args
+          default: None
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_disk.py
+          functions: 23
+    - function: inodeusage
+      source:
+        path: salt/modules/disk.py
+        symbol: inodeusage
+      summary: Return inode usage information for volumes mounted on this minion
+      parameters:
+        - name: args
+          default: None
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_disk.py
+          functions: 23
+    - function: percent
+      source:
+        path: salt/modules/disk.py
+        symbol: percent
+      summary: Return partition information for volumes mounted on this minion
+      parameters:
+        - name: args
+          default: None
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_disk.py
+          functions: 23
+    - function: blkid
+      source:
+        path: salt/modules/disk.py
+        symbol: blkid
+      summary: 'Return block device attributes: UUID, LABEL, etc. This function only works'
+      parameters:
+        - name: device
+          default: None
+        - name: token
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_disk.py
+          functions: 23
+    - function: tune
+      source:
+        path: salt/modules/disk.py
+        symbol: tune
+      summary: Set attributes for the specified device
+      parameters:
+        - name: device
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_disk.py
+          functions: 23
+    - function: wipe
+      source:
+        path: salt/modules/disk.py
+        symbol: wipe
+      summary: Remove the filesystem information
+      parameters:
+        - name: device
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_disk.py
+          functions: 23
+    - function: dump
+      source:
+        path: salt/modules/disk.py
+        symbol: dump
+      summary: Return all contents of dumpe2fs for a specified device
+      parameters:
+        - name: device
+        - name: args
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_disk.py
+          functions: 23
+    - function: resize2fs
+      source:
+        path: salt/modules/disk.py
+        symbol: resize2fs
+      summary: Resizes the filesystem.
+      parameters:
+        - name: device
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_disk.py
+          functions: 23
+    - function: format_
+      source:
+        path: salt/modules/disk.py
+        symbol: format_
+      summary: Format a filesystem onto a device
+      parameters:
+        - name: device
+        - name: fs_type
+          default: '"ext4"'
+        - name: inode_size
+          default: None
+        - name: lazy_itable_init
+          default: None
+        - name: fat
+          default: None
+        - name: force
+          default: "False"
+        - name: discard
+          default: "True"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_disk.py
+          functions: 23
+    - function: fstype
+      source:
+        path: salt/modules/disk.py
+        symbol: fstype
+      summary: Return the filesystem name of the specified device
+      parameters:
+        - name: device
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_disk.py
+          functions: 23
+    - function: _hdparm
+      source:
+        path: salt/modules/disk.py
+        symbol: _hdparm
+      summary: Execute hdparm
+      parameters:
+        - name: args
+        - name: failhard
+          default: "True"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_disk.py
+          functions: 23
+    - function: hdparms
+      source:
+        path: salt/modules/disk.py
+        symbol: hdparms
+      summary: Retrieve disk parameters.
+      parameters:
+        - name: disks
+        - name: args
+          default: '"aAbBcCdgHiJkMmNnQrRuW"'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_disk.py
+          functions: 23
+    - function: hpa
+      source:
+        path: salt/modules/disk.py
+        symbol: hpa
+      summary: Get/set Host Protected Area settings
+      parameters:
+        - name: disks
+        - name: size
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_disk.py
+          functions: 23
+    - function: smart_attributes
+      source:
+        path: salt/modules/disk.py
+        symbol: smart_attributes
+      summary: Fetch SMART attributes
+      parameters:
+        - name: dev
+        - name: attributes
+          default: None
+        - name: values
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_disk.py
+          functions: 23
+    - function: iostat
+      source:
+        path: salt/modules/disk.py
+        symbol: iostat
+      summary: Gather and return (averaged) IO stats.
+      parameters:
+        - name: interval
+          default: "1"
+        - name: count
+          default: "5"
+        - name: disks
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_disk.py
+          functions: 23
+    - function: _iostats_dict
+      source:
+        path: salt/modules/disk.py
+        symbol: _iostats_dict
+      summary: Transpose collected data, average it, stomp it in dict using header
+      parameters:
+        - name: header
+        - name: stats
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_disk.py
+          functions: 23
+    - function: _iostat_fbsd
+      source:
+        path: salt/modules/disk.py
+        symbol: _iostat_fbsd
+      summary: Tested on FreeBSD, quite likely other BSD's only need small changes in cmd syntax
+      parameters:
+        - name: interval
+        - name: count
+        - name: disks
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_disk.py
+          functions: 23
+    - function: _iostat_linux
+      source:
+        path: salt/modules/disk.py
+        symbol: _iostat_linux
+      parameters:
+        - name: interval
+        - name: count
+        - name: disks
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_disk.py
+          functions: 23
+    - function: _iostat_aix
+      source:
+        path: salt/modules/disk.py
+        symbol: _iostat_aix
+      summary: AIX support to gather and return (averaged) IO stats.
+      parameters:
+        - name: interval
+        - name: count
+        - name: disks
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_disk.py
+          functions: 23
+    - function: get_fstype_from_path
+      source:
+        path: salt/modules/disk.py
+        symbol: get_fstype_from_path
+      summary: Return the filesystem type of the underlying device for a specified path.
+      parameters:
+        - name: path
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - mount.get_device_from_path
+      tests:
+        - path: tests/pytests/unit/modules/test_disk.py
+          functions: 23

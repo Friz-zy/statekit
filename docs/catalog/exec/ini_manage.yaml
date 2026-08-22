@@ -1,0 +1,100 @@
+kind: exec
+module: ini
+source_module: ini_manage
+virtual: true
+path: salt/modules/ini_manage.py
+functions:
+    - function: set_option
+      source:
+        path: salt/modules/ini_manage.py
+        symbol: set_option
+      summary: Edit an ini file, replacing one or more sections. Returns a dictionary
+      parameters:
+        - name: file_name
+        - name: sections
+          default: None
+        - name: separator
+          default: '"="'
+        - name: encoding
+          default: None
+        - name: no_spaces
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_ini_manage.py
+          functions: 15
+    - function: get_option
+      source:
+        path: salt/modules/ini_manage.py
+        symbol: get_option
+      summary: Get value of a key from a section in an ini file. Returns ``None`` if
+      parameters:
+        - name: file_name
+        - name: section
+        - name: option
+        - name: separator
+          default: '"="'
+        - name: encoding
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_ini_manage.py
+          functions: 15
+    - function: remove_option
+      source:
+        path: salt/modules/ini_manage.py
+        symbol: remove_option
+      summary: Remove a key/value pair from a section in an ini file. Returns the value of
+      parameters:
+        - name: file_name
+        - name: section
+        - name: option
+        - name: separator
+          default: '"="'
+        - name: encoding
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_ini_manage.py
+          functions: 15
+    - function: get_section
+      source:
+        path: salt/modules/ini_manage.py
+        symbol: get_section
+      summary: Retrieve a section from an ini file. Returns the section as a dictionary. If
+      parameters:
+        - name: file_name
+        - name: section
+        - name: separator
+          default: '"="'
+        - name: encoding
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_ini_manage.py
+          functions: 15
+    - function: remove_section
+      source:
+        path: salt/modules/ini_manage.py
+        symbol: remove_section
+      summary: Remove a section in an ini file. Returns the removed section as a
+      parameters:
+        - name: file_name
+        - name: section
+        - name: separator
+          default: '"="'
+        - name: encoding
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_ini_manage.py
+          functions: 15
+    - function: get_ini
+      source:
+        path: salt/modules/ini_manage.py
+        symbol: get_ini
+      summary: Retrieve the whole structure from an ini file and return it as a dictionary.
+      parameters:
+        - name: file_name
+        - name: separator
+          default: '"="'
+        - name: encoding
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_ini_manage.py
+          functions: 15

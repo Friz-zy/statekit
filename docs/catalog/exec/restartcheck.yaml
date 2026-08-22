@@ -1,0 +1,148 @@
+kind: exec
+module: restartcheck
+source_module: restartcheck
+path: salt/modules/restartcheck.py
+functions:
+    - function: _valid_deleted_file
+      source:
+        path: salt/modules/restartcheck.py
+        symbol: _valid_deleted_file
+      summary: Filters file path against unwanted directories and decides whether file is marked as deleted.
+      parameters:
+        - name: path
+      tests:
+        - path: tests/pytests/unit/modules/test_restartcheck.py
+          functions: 39
+    - function: _deleted_files
+      source:
+        path: salt/modules/restartcheck.py
+        symbol: _deleted_files
+      summary: Iterates over /proc/PID/maps and /proc/PID/fd links and returns list of desired deleted files.
+      tests:
+        - path: tests/pytests/unit/modules/test_restartcheck.py
+          functions: 39
+    - function: _format_output
+      source:
+        path: salt/modules/restartcheck.py
+        symbol: _format_output
+      summary: Formats the output of the restartcheck module.
+      parameters:
+        - name: kernel_restart
+        - name: packages
+        - name: verbose
+        - name: restartable
+        - name: nonrestartable
+        - name: restartservicecommands
+        - name: restartinitcommands
+      tests:
+        - path: tests/pytests/unit/modules/test_restartcheck.py
+          functions: 39
+    - function: _kernel_versions_debian
+      source:
+        path: salt/modules/restartcheck.py
+        symbol: _kernel_versions_debian
+      summary: Last installed kernel name, for Debian based systems.
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_restartcheck.py
+          functions: 39
+    - function: _kernel_versions_redhat
+      source:
+        path: salt/modules/restartcheck.py
+        symbol: _kernel_versions_redhat
+      summary: Name of the last installed kernel, for Red Hat based systems.
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_restartcheck.py
+          functions: 39
+    - function: _kernel_versions_nilrt
+      source:
+        path: salt/modules/restartcheck.py
+        symbol: _kernel_versions_nilrt
+      summary: Last installed kernel name, for Debian based systems.
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_restartcheck.py
+          functions: 39
+    - function: _check_timeout
+      source:
+        path: salt/modules/restartcheck.py
+        symbol: _check_timeout
+      summary: Name of the last installed kernel, for Red Hat based systems.
+      parameters:
+        - name: start_time
+        - name: timeout
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_restartcheck.py
+          functions: 39
+    - function: _file_changed_nilrt
+      source:
+        path: salt/modules/restartcheck.py
+        symbol: _file_changed_nilrt
+      summary: Detect whether a file changed in an NILinuxRT system using md5sum and timestamp
+      parameters:
+        - name: full_filepath
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.read
+      tests:
+        - path: tests/pytests/unit/modules/test_restartcheck.py
+          functions: 39
+    - function: _kernel_modules_changed_nilrt
+      source:
+        path: salt/modules/restartcheck.py
+        symbol: _kernel_modules_changed_nilrt
+      summary: Once a NILRT kernel module is inserted, it can't be rmmod so systems need
+      parameters:
+        - name: kernelversion
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.read
+      tests:
+        - path: tests/pytests/unit/modules/test_restartcheck.py
+          functions: 39
+    - function: _sysapi_changed_nilrt
+      source:
+        path: salt/modules/restartcheck.py
+        symbol: _sysapi_changed_nilrt
+      summary: Besides the normal Linux kernel driver interfaces, NILinuxRT-supported hardware features an
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.read
+      tests:
+        - path: tests/pytests/unit/modules/test_restartcheck.py
+          functions: 39
+    - function: restartcheck
+      source:
+        path: salt/modules/restartcheck.py
+        symbol: restartcheck
+      summary: Analyzes files openeded by running processes and seeks for packages which need to be restarted.
+      parameters:
+        - name: ignorelist
+          default: None
+        - name: blacklist
+          default: None
+        - name: excludepid
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.read
+        - pkg.owner
+        - service.available
+        - service.get_running
+        - service.show
+        - system.get_reboot_required_witnessed
+      tests:
+        - path: tests/pytests/unit/modules/test_restartcheck.py
+          functions: 39

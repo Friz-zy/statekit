@@ -1,0 +1,66 @@
+kind: exec
+module: xattr
+source_module: mac_xattr
+virtual: true
+path: salt/modules/mac_xattr.py
+functions:
+    - function: list_
+      source:
+        path: salt/modules/mac_xattr.py
+        symbol: list_
+      summary: List all of the extended attributes on the given file/directory
+      parameters:
+        - name: path
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_xattr.py
+          functions: 12
+    - function: read
+      source:
+        path: salt/modules/mac_xattr.py
+        symbol: read
+      summary: Read the given attributes on the given file/directory
+      parameters:
+        - name: path
+        - name: attribute
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_xattr.py
+          functions: 12
+    - function: write
+      source:
+        path: salt/modules/mac_xattr.py
+        symbol: write
+      summary: Causes the given attribute name to be assigned the given value
+      parameters:
+        - name: path
+        - name: attribute
+        - name: value
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_xattr.py
+          functions: 12
+    - function: delete
+      source:
+        path: salt/modules/mac_xattr.py
+        symbol: delete
+      summary: Removes the given attribute from the file
+      parameters:
+        - name: path
+        - name: attribute
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_xattr.py
+          functions: 12
+    - function: clear
+      source:
+        path: salt/modules/mac_xattr.py
+        symbol: clear
+      summary: Causes the all attributes on the file/directory to be removed
+      parameters:
+        - name: path
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_xattr.py
+          functions: 12

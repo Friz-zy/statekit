@@ -1,0 +1,135 @@
+kind: exec
+module: python
+source_module: python
+virtual: true
+path: salt/modules/python.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _get_python_executable
+      source:
+        path: salt/modules/python.py
+        symbol: _get_python_executable
+      summary: Return the path to the Python interpreter currently running Salt.
+      tests:
+        - path: tests/pytests/unit/modules/test_python.py
+          functions: 8
+    - function: run
+      source:
+        path: salt/modules/python.py
+        symbol: run
+      summary: Run a snippet of Python code, or pass raw arguments to the interpreter,
+      parameters:
+        - name: command
+          default: None
+        - name: args
+          default: None
+        - name: cwd
+          default: None
+        - name: stdin
+          default: None
+        - name: runas
+          default: None
+        - name: group
+          default: None
+        - name: env
+          default: None
+        - name: clean_env
+          default: "False"
+        - name: rstrip
+          default: "True"
+        - name: umask
+          default: None
+        - name: output_encoding
+          default: None
+        - name: output_loglevel
+          default: '"debug"'
+        - name: log_callback
+          default: None
+        - name: hide_output
+          default: "False"
+        - name: timeout
+          default: None
+        - name: reset_system_locale
+          default: "True"
+        - name: ignore_retcode
+          default: "False"
+        - name: use_vt
+          default: "False"
+        - name: bg
+          default: "False"
+        - name: password
+          default: None
+        - name: success_retcodes
+          default: None
+        - name: success_stdout
+          default: None
+        - name: success_stderr
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_python.py
+          functions: 8
+    - function: script
+      source:
+        path: salt/modules/python.py
+        symbol: script
+      summary: Download a Python script from the master (or another supported
+      parameters:
+        - name: source
+        - name: args
+          default: None
+        - name: cwd
+          default: None
+        - name: stdin
+          default: None
+        - name: runas
+          default: None
+        - name: group
+          default: None
+        - name: env
+          default: None
+        - name: template
+          default: None
+        - name: umask
+          default: None
+        - name: output_encoding
+          default: None
+        - name: output_loglevel
+          default: '"debug"'
+        - name: log_callback
+          default: None
+        - name: hide_output
+          default: "False"
+        - name: timeout
+          default: None
+        - name: reset_system_locale
+          default: "True"
+        - name: saltenv
+          default: None
+        - name: use_vt
+          default: "False"
+        - name: bg
+          default: "False"
+        - name: password
+          default: None
+        - name: success_retcodes
+          default: None
+        - name: success_stdout
+          default: None
+        - name: success_stderr
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - cp.cache_file
+        - cp.get_template
+        - file.remove
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/modules/test_python.py
+          functions: 8

@@ -1,0 +1,25 @@
+kind: exec
+module: idem
+source_module: idem
+virtual: true
+path: salt/modules/idem.py
+functions:
+    - function: exec_
+      source:
+        path: salt/modules/idem.py
+        symbol: exec_
+      summary: Call an idem execution module
+      parameters:
+        - name: path
+        - name: acct_file
+          default: None
+        - name: acct_key
+          default: None
+        - name: acct_profile
+          default: None
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      utility_dependencies:
+        - idem.hub

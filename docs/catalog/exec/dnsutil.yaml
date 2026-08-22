@@ -1,0 +1,202 @@
+kind: exec
+module: dnsutil
+source_module: dnsutil
+path: salt/modules/dnsutil.py
+functions:
+    - function: parse_hosts
+      source:
+        path: salt/modules/dnsutil.py
+        symbol: parse_hosts
+      summary: Parse /etc/hosts file.
+      parameters:
+        - name: hostsfile
+          default: '"/etc/hosts"'
+        - name: hosts
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_dnsutil.py
+          functions: 8
+    - function: hosts_append
+      source:
+        path: salt/modules/dnsutil.py
+        symbol: hosts_append
+      summary: Append a single line to the /etc/hosts file.
+      parameters:
+        - name: hostsfile
+          default: '"/etc/hosts"'
+        - name: ip_addr
+          default: None
+        - name: entries
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_dnsutil.py
+          functions: 8
+    - function: hosts_remove
+      source:
+        path: salt/modules/dnsutil.py
+        symbol: hosts_remove
+      summary: Remove a host from the /etc/hosts file. If doing so will leave a line
+      parameters:
+        - name: hostsfile
+          default: '"/etc/hosts"'
+        - name: entries
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_dnsutil.py
+          functions: 8
+    - function: parse_zone
+      source:
+        path: salt/modules/dnsutil.py
+        symbol: parse_zone
+      summary: Parses a zone file. Can be passed raw zone data on the API level.
+      parameters:
+        - name: zonefile
+          default: None
+        - name: zone
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_dnsutil.py
+          functions: 8
+    - function: _to_seconds
+      source:
+        path: salt/modules/dnsutil.py
+        symbol: _to_seconds
+      summary: Converts a time value to seconds.
+      parameters:
+        - name: timestr
+      tests:
+        - path: tests/pytests/unit/modules/test_dnsutil.py
+          functions: 8
+    - function: _has_dig
+      source:
+        path: salt/modules/dnsutil.py
+        symbol: _has_dig
+      summary: The dig-specific functions have been moved into their own module, but
+      tests:
+        - path: tests/pytests/unit/modules/test_dnsutil.py
+          functions: 8
+    - function: check_ip
+      source:
+        path: salt/modules/dnsutil.py
+        symbol: check_ip
+      summary: Check that string ip_addr is a valid IP
+      parameters:
+        - name: ip_addr
+      execution_dependencies:
+        - dig.check_ip
+      tests:
+        - path: tests/pytests/unit/modules/test_dnsutil.py
+          functions: 8
+    - function: A
+      source:
+        path: salt/modules/dnsutil.py
+        symbol: A
+      summary: Return the A record(s) for ``host``.
+      parameters:
+        - name: host
+        - name: nameserver
+          default: None
+      execution_dependencies:
+        - dig.A
+        - dig.check_ip
+      tests:
+        - path: tests/pytests/unit/modules/test_dnsutil.py
+          functions: 8
+    - function: AAAA
+      source:
+        path: salt/modules/dnsutil.py
+        symbol: AAAA
+      summary: Return the AAAA record(s) for ``host``.
+      parameters:
+        - name: host
+        - name: nameserver
+          default: None
+      execution_dependencies:
+        - dig.A
+        - dig.AAAA
+        - dig.check_ip
+      tests:
+        - path: tests/pytests/unit/modules/test_dnsutil.py
+          functions: 8
+    - function: NS
+      source:
+        path: salt/modules/dnsutil.py
+        symbol: NS
+      summary: Return a list of IPs of the nameservers for ``domain``
+      parameters:
+        - name: domain
+        - name: resolve
+          default: "True"
+        - name: nameserver
+          default: None
+      execution_dependencies:
+        - dig.A
+        - dig.AAAA
+        - dig.NS
+        - dig.check_ip
+      tests:
+        - path: tests/pytests/unit/modules/test_dnsutil.py
+          functions: 8
+    - function: SPF
+      source:
+        path: salt/modules/dnsutil.py
+        symbol: SPF
+      summary: Return the allowed IPv4 ranges in the SPF record for ``domain``.
+      parameters:
+        - name: domain
+        - name: record
+          default: '"SPF"'
+        - name: nameserver
+          default: None
+      execution_dependencies:
+        - dig.A
+        - dig.AAAA
+        - dig.NS
+        - dig.SPF
+        - dig.check_ip
+      tests:
+        - path: tests/pytests/unit/modules/test_dnsutil.py
+          functions: 8
+    - function: MX
+      source:
+        path: salt/modules/dnsutil.py
+        symbol: MX
+      summary: Return a list of lists for the MX of ``domain``.
+      parameters:
+        - name: domain
+        - name: resolve
+          default: "False"
+        - name: nameserver
+          default: None
+      execution_dependencies:
+        - dig.A
+        - dig.AAAA
+        - dig.MX
+        - dig.NS
+        - dig.SPF
+        - dig.check_ip
+      tests:
+        - path: tests/pytests/unit/modules/test_dnsutil.py
+          functions: 8
+    - function: serial
+      source:
+        path: salt/modules/dnsutil.py
+        symbol: serial
+      summary: Return, store and update a dns serial for your zone files.
+      parameters:
+        - name: zone
+          default: '""'
+        - name: update
+          default: "False"
+      execution_dependencies:
+        - dig.A
+        - dig.AAAA
+        - dig.MX
+        - dig.NS
+        - dig.SPF
+        - dig.check_ip
+        - grains.get
+        - grains.setval
+      tests:
+        - path: tests/pytests/unit/modules/test_dnsutil.py
+          functions: 8

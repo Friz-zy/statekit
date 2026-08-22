@@ -1,0 +1,180 @@
+kind: exec
+module: pkg
+source_module: mac_portspkg
+virtual: true
+path: salt/modules/mac_portspkg.py
+platform_markers:
+    - is_darwin
+functions:
+    - function: _list
+      source:
+        path: salt/modules/mac_portspkg.py
+        symbol: _list
+      parameters:
+        - name: query
+          default: '""'
+    - function: _list_pkgs_from_context
+      source:
+        path: salt/modules/mac_portspkg.py
+        symbol: _list_pkgs_from_context
+      summary: Use pkg list from __context__
+      parameters:
+        - name: versions_as_list
+      execution_dependencies:
+        - pkg.list_pkgs
+        - pkg_resource.stringify
+    - function: list_pkgs
+      source:
+        path: salt/modules/mac_portspkg.py
+        symbol: list_pkgs
+      summary: 'List the packages currently installed in a dict::'
+      parameters:
+        - name: versions_as_list
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - pkg.list_pkgs
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+    - function: version
+      source:
+        path: salt/modules/mac_portspkg.py
+        symbol: version
+      summary: Returns a string representing the package version or an empty string if not
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - pkg.list_pkgs
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+    - function: latest_version
+      source:
+        path: salt/modules/mac_portspkg.py
+        symbol: latest_version
+      summary: Return the latest version of the named package available for upgrade or
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - pkg.list_pkgs
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+    - function: remove
+      source:
+        path: salt/modules/mac_portspkg.py
+        symbol: remove
+      summary: Removes packages with ``port uninstall``.
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - pkg.list_pkgs
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+    - function: install
+      source:
+        path: salt/modules/mac_portspkg.py
+        symbol: install
+      summary: Install the passed package(s) with ``port install``
+      parameters:
+        - name: name
+          default: None
+        - name: refresh
+          default: "False"
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - pkg.list_pkgs
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+    - function: list_upgrades
+      source:
+        path: salt/modules/mac_portspkg.py
+        symbol: list_upgrades
+      summary: Check whether or not an upgrade is available for all packages
+      parameters:
+        - name: refresh
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - pkg.list_pkgs
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+    - function: upgrade_available
+      source:
+        path: salt/modules/mac_portspkg.py
+        symbol: upgrade_available
+      summary: Check whether or not an upgrade is available for a given package
+      parameters:
+        - name: pkg
+        - name: refresh
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - pkg.list_pkgs
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+    - function: refresh_db
+      source:
+        path: salt/modules/mac_portspkg.py
+        symbol: refresh_db
+      summary: Update ports with ``port selfupdate``
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - pkg.list_pkgs
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+    - function: upgrade
+      source:
+        path: salt/modules/mac_portspkg.py
+        symbol: upgrade
+      summary: Run a full upgrade using MacPorts 'port upgrade outdated'
+      parameters:
+        - name: refresh
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - pkg.list_pkgs
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version

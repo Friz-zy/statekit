@@ -1,0 +1,64 @@
+kind: state
+module: postgres_privileges
+source_module: postgres_privileges
+path: salt/states/postgres_privileges.py
+functions:
+    - function: present
+      source:
+        path: salt/states/postgres_privileges.py
+        symbol: present
+      summary: Grant the requested privilege(s) on the specified object to a role
+      parameters:
+        - name: name
+        - name: object_name
+        - name: object_type
+        - name: privileges
+          default: None
+        - name: grant_option
+          default: None
+        - name: prepend
+          default: '"public"'
+        - name: maintenance_db
+          default: None
+        - name: user
+          default: None
+        - name: db_password
+          default: None
+        - name: db_host
+          default: None
+        - name: db_port
+          default: None
+        - name: db_user
+          default: None
+      execution_dependencies:
+        - postgres.has_privileges
+        - postgres.privileges_grant
+    - function: absent
+      source:
+        path: salt/states/postgres_privileges.py
+        symbol: absent
+      summary: Revoke the requested privilege(s) on the specificed object(s)
+      parameters:
+        - name: name
+        - name: object_name
+        - name: object_type
+        - name: privileges
+          default: None
+        - name: prepend
+          default: '"public"'
+        - name: maintenance_db
+          default: None
+        - name: user
+          default: None
+        - name: db_password
+          default: None
+        - name: db_host
+          default: None
+        - name: db_port
+          default: None
+        - name: db_user
+          default: None
+      execution_dependencies:
+        - postgres.has_privileges
+        - postgres.privileges_grant
+        - postgres.privileges_revoke

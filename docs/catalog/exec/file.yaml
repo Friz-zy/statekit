@@ -1,0 +1,2696 @@
+kind: exec
+module: file
+source_module: file
+path: salt/modules/file.py
+platform_markers:
+    - is_aix
+    - is_linux
+    - is_windows
+functions:
+    - function: _error
+      source:
+        path: salt/modules/file.py
+        symbol: _error
+      summary: Common function for setting error information for return dicts
+      parameters:
+        - name: ret
+        - name: err_msg
+    - function: _binary_replace
+      source:
+        path: salt/modules/file.py
+        symbol: _binary_replace
+      summary: This function does NOT do any diffing, it just checks the old and new files
+      parameters:
+        - name: old
+        - name: new
+      utility_dependencies:
+        - files.is_text
+    - function: _get_bkroot
+      source:
+        path: salt/modules/file.py
+        symbol: _get_bkroot
+      summary: Get the location of the backup dir in the minion cache
+      execution_dependencies:
+        - config.get
+      utility_dependencies:
+        - files.is_text
+    - function: _splitlines_preserving_trailing_newline
+      source:
+        path: salt/modules/file.py
+        symbol: _splitlines_preserving_trailing_newline
+      summary: Returns a list of the lines in the string, breaking at line boundaries and
+      parameters:
+        - name: str
+      execution_dependencies:
+        - config.get
+      utility_dependencies:
+        - files.is_text
+    - function: _chattr_version
+      source:
+        path: salt/modules/file.py
+        symbol: _chattr_version
+      summary: Return the version of chattr installed
+      execution_dependencies:
+        - cmd.run
+        - config.get
+      utility_dependencies:
+        - files.is_text
+    - function: _chattr_has_extended_attrs
+      source:
+        path: salt/modules/file.py
+        symbol: _chattr_has_extended_attrs
+      summary: Return ``True`` if chattr supports extended attributes, that is,
+      execution_dependencies:
+        - cmd.run
+        - config.get
+      utility_dependencies:
+        - files.is_text
+    - function: gid_to_group
+      source:
+        path: salt/modules/file.py
+        symbol: gid_to_group
+      summary: Convert the group id to the group name on this system
+      parameters:
+        - name: gid
+      execution_dependencies:
+        - cmd.run
+        - config.get
+      utility_dependencies:
+        - files.is_text
+    - function: group_to_gid
+      source:
+        path: salt/modules/file.py
+        symbol: group_to_gid
+      summary: Convert the group to the gid on this system
+      parameters:
+        - name: group
+      execution_dependencies:
+        - cmd.run
+        - config.get
+      utility_dependencies:
+        - files.is_text
+    - function: get_gid
+      source:
+        path: salt/modules/file.py
+        symbol: get_gid
+      summary: Return the id of the group that owns a given file
+      parameters:
+        - name: path
+        - name: follow_symlinks
+          default: "True"
+      execution_dependencies:
+        - cmd.run
+        - config.get
+      utility_dependencies:
+        - files.is_text
+    - function: get_group
+      source:
+        path: salt/modules/file.py
+        symbol: get_group
+      summary: Return the group that owns a given file
+      parameters:
+        - name: path
+        - name: follow_symlinks
+          default: "True"
+      execution_dependencies:
+        - cmd.run
+        - config.get
+      utility_dependencies:
+        - files.is_text
+    - function: uid_to_user
+      source:
+        path: salt/modules/file.py
+        symbol: uid_to_user
+      summary: Convert a uid to a user name
+      parameters:
+        - name: uid
+      execution_dependencies:
+        - cmd.run
+        - config.get
+      utility_dependencies:
+        - files.is_text
+    - function: user_to_uid
+      source:
+        path: salt/modules/file.py
+        symbol: user_to_uid
+      summary: Convert user name to a uid
+      parameters:
+        - name: user
+      execution_dependencies:
+        - cmd.run
+        - config.get
+      utility_dependencies:
+        - files.is_text
+    - function: get_uid
+      source:
+        path: salt/modules/file.py
+        symbol: get_uid
+      summary: Return the id of the user that owns a given file
+      parameters:
+        - name: path
+        - name: follow_symlinks
+          default: "True"
+      execution_dependencies:
+        - cmd.run
+        - config.get
+      utility_dependencies:
+        - files.is_text
+    - function: get_user
+      source:
+        path: salt/modules/file.py
+        symbol: get_user
+      summary: Return the user that owns a given file
+      parameters:
+        - name: path
+        - name: follow_symlinks
+          default: "True"
+      execution_dependencies:
+        - cmd.run
+        - config.get
+      utility_dependencies:
+        - files.is_text
+    - function: get_mode
+      source:
+        path: salt/modules/file.py
+        symbol: get_mode
+      summary: Return the mode of a file
+      parameters:
+        - name: path
+        - name: follow_symlinks
+          default: "True"
+      execution_dependencies:
+        - cmd.run
+        - config.get
+      utility_dependencies:
+        - files.is_text
+    - function: set_mode
+      source:
+        path: salt/modules/file.py
+        symbol: set_mode
+      summary: Set the mode of a file
+      parameters:
+        - name: path
+        - name: mode
+      execution_dependencies:
+        - cmd.run
+        - config.get
+      utility_dependencies:
+        - files.is_text
+    - function: lchown
+      source:
+        path: salt/modules/file.py
+        symbol: lchown
+      summary: Chown a file, pass the file the desired user and group without following
+      parameters:
+        - name: path
+        - name: user
+        - name: group
+      execution_dependencies:
+        - cmd.run
+        - config.get
+      utility_dependencies:
+        - files.is_text
+    - function: chown
+      source:
+        path: salt/modules/file.py
+        symbol: chown
+      summary: Chown a file, pass the file the desired user and group
+      parameters:
+        - name: path
+        - name: user
+        - name: group
+      execution_dependencies:
+        - cmd.run
+        - config.get
+      utility_dependencies:
+        - files.is_text
+    - function: chgrp
+      source:
+        path: salt/modules/file.py
+        symbol: chgrp
+      summary: Change the group of a file
+      parameters:
+        - name: path
+        - name: group
+      execution_dependencies:
+        - cmd.run
+        - config.get
+      utility_dependencies:
+        - files.is_text
+    - function: _cmp_attrs
+      source:
+        path: salt/modules/file.py
+        symbol: _cmp_attrs
+      summary: '.. versionadded:: 2018.3.0'
+      parameters:
+        - name: path
+        - name: attrs
+      execution_dependencies:
+        - cmd.run
+        - config.get
+      utility_dependencies:
+        - files.is_text
+    - function: lsattr
+      source:
+        path: salt/modules/file.py
+        symbol: lsattr
+      summary: '.. versionadded:: 2018.3.0'
+      parameters:
+        - name: path
+      execution_dependencies:
+        - cmd.run
+        - config.get
+      utility_dependencies:
+        - files.is_text
+    - function: chattr
+      source:
+        path: salt/modules/file.py
+        symbol: chattr
+      summary: '.. versionadded:: 2018.3.0'
+      parameters:
+        - name: files
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - config.get
+      utility_dependencies:
+        - files.is_text
+    - function: get_sum
+      source:
+        path: salt/modules/file.py
+        symbol: get_sum
+      summary: Return the checksum for the given file. The following checksum algorithms
+      parameters:
+        - name: path
+        - name: form
+          default: '"sha256"'
+      execution_dependencies:
+        - cmd.run
+        - config.get
+      utility_dependencies:
+        - files.is_text
+    - function: get_hash
+      source:
+        path: salt/modules/file.py
+        symbol: get_hash
+      summary: Get the hash sum of a file
+      parameters:
+        - name: path
+        - name: form
+          default: '"sha256"'
+        - name: chunk_size
+          default: "65536"
+      execution_dependencies:
+        - cmd.run
+        - config.get
+      utility_dependencies:
+        - files.is_text
+    - function: get_source_sum
+      source:
+        path: salt/modules/file.py
+        symbol: get_source_sum
+      summary: '.. versionadded:: 2016.11.0'
+      parameters:
+        - name: file_name
+          default: '""'
+        - name: source
+          default: '""'
+        - name: source_hash
+          default: None
+        - name: source_hash_name
+          default: None
+        - name: saltenv
+          default: '"base"'
+        - name: verify_ssl
+          default: "True"
+        - name: source_hash_sig
+          default: None
+        - name: signed_by_any
+          default: None
+        - name: signed_by_all
+          default: None
+        - name: keyring
+          default: None
+        - name: gnupghome
+          default: None
+        - name: sig_backend
+          default: '"gpg"'
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.is_text
+    - function: check_hash
+      source:
+        path: salt/modules/file.py
+        symbol: check_hash
+      summary: Check if a file matches the given hash string
+      parameters:
+        - name: path
+        - name: file_hash
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.is_text
+    - function: _check_sig
+      source:
+        path: salt/modules/file.py
+        symbol: _check_sig
+      parameters:
+        - name: on_file
+        - name: signature
+          default: None
+        - name: signed_by_any
+          default: None
+        - name: signed_by_all
+          default: None
+        - name: keyring
+          default: None
+        - name: gnupghome
+          default: None
+        - name: sig_backend
+          default: '"gpg"'
+        - name: saltenv
+          default: '"base"'
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.is_text
+    - function: find
+      source:
+        path: salt/modules/file.py
+        symbol: find
+      summary: Approximate the Unix ``find(1)`` command and return a list of paths that
+      parameters:
+        - name: path
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.is_text
+    - function: _sed_esc
+      source:
+        path: salt/modules/file.py
+        symbol: _sed_esc
+      summary: Escape single quotes and forward slashes
+      parameters:
+        - name: string
+        - name: escape_all
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.is_text
+    - function: sed
+      source:
+        path: salt/modules/file.py
+        symbol: sed
+      summary: '.. deprecated:: 0.17.0'
+      parameters:
+        - name: path
+        - name: before
+        - name: after
+        - name: limit
+          default: '""'
+        - name: backup
+          default: '".bak"'
+        - name: options
+          default: '"-r -e"'
+        - name: flags
+          default: '"g"'
+        - name: escape_all
+          default: "False"
+        - name: negate_match
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.is_text
+    - function: sed_contains
+      source:
+        path: salt/modules/file.py
+        symbol: sed_contains
+      summary: '.. deprecated:: 0.17.0'
+      parameters:
+        - name: path
+        - name: text
+        - name: limit
+          default: '""'
+        - name: flags
+          default: '"g"'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.is_text
+    - function: psed
+      source:
+        path: salt/modules/file.py
+        symbol: psed
+      summary: '.. deprecated:: 0.17.0'
+      parameters:
+        - name: path
+        - name: before
+        - name: after
+        - name: limit
+          default: '""'
+        - name: backup
+          default: '".bak"'
+        - name: flags
+          default: '"gMS"'
+        - name: escape_all
+          default: "False"
+        - name: multi
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.is_text
+    - function: _psed
+      source:
+        path: salt/modules/file.py
+        symbol: _psed
+      summary: Does the actual work for file.psed, so that single lines can be passed in
+      parameters:
+        - name: text
+        - name: before
+        - name: after
+        - name: limit
+        - name: flags
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.is_text
+    - function: uncomment
+      source:
+        path: salt/modules/file.py
+        symbol: uncomment
+      summary: '.. deprecated:: 0.17.0'
+      parameters:
+        - name: path
+        - name: regex
+        - name: char
+          default: '"#"'
+        - name: backup
+          default: '".bak"'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.is_text
+    - function: comment
+      source:
+        path: salt/modules/file.py
+        symbol: comment
+      summary: '.. deprecated:: 0.17.0'
+      parameters:
+        - name: path
+        - name: regex
+        - name: char
+          default: '"#"'
+        - name: backup
+          default: '".bak"'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.is_text
+    - function: comment_line
+      source:
+        path: salt/modules/file.py
+        symbol: comment_line
+      parameters:
+        - name: path
+        - name: regex
+        - name: char
+          default: '"#"'
+        - name: cmnt
+          default: "True"
+        - name: backup
+          default: '".bak"'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.is_text
+        - stringutils.get_diff
+    - function: _get_flags
+      source:
+        path: salt/modules/file.py
+        symbol: _get_flags
+      summary: Return the names of the Regex flags that correspond to flags
+      parameters:
+        - name: flags
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.is_text
+        - stringutils.get_diff
+    - function: _add_flags
+      source:
+        path: salt/modules/file.py
+        symbol: _add_flags
+      summary: Combine ``flags`` and ``new_flags``
+      parameters:
+        - name: flags
+        - name: new_flags
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.is_text
+        - stringutils.get_diff
+    - function: _mkstemp_copy
+      source:
+        path: salt/modules/file.py
+        symbol: _mkstemp_copy
+      summary: Create a temp file and move/copy the contents of ``path`` to the temp file.
+      parameters:
+        - name: path
+        - name: preserve_inode
+          default: "True"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.is_text
+        - stringutils.get_diff
+    - function: _regex_to_static
+      source:
+        path: salt/modules/file.py
+        symbol: _regex_to_static
+      summary: Expand regular expression to static match.
+      parameters:
+        - name: src
+        - name: regex
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.is_text
+        - stringutils.get_diff
+    - function: _assert_occurrence
+      source:
+        path: salt/modules/file.py
+        symbol: _assert_occurrence
+      summary: Raise an exception, if there are different amount of specified occurrences in src.
+      parameters:
+        - name: probe
+        - name: target
+        - name: amount
+          default: "1"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.is_text
+        - stringutils.get_diff
+    - function: _set_line_indent
+      source:
+        path: salt/modules/file.py
+        symbol: _set_line_indent
+      summary: Indent the line with the source line.
+      parameters:
+        - name: src
+        - name: line
+        - name: indent
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.is_text
+        - stringutils.get_diff
+    - function: _get_eol
+      source:
+        path: salt/modules/file.py
+        symbol: _get_eol
+      parameters:
+        - name: line
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.is_text
+        - stringutils.get_diff
+    - function: _set_line_eol
+      source:
+        path: salt/modules/file.py
+        symbol: _set_line_eol
+      summary: Add line ending
+      parameters:
+        - name: src
+        - name: line
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.is_text
+        - stringutils.get_diff
+    - function: _set_line
+      source:
+        path: salt/modules/file.py
+        symbol: _set_line
+      summary: Take ``lines`` and insert ``content`` and the correct place. If
+      parameters:
+        - name: lines
+        - name: content
+          default: None
+        - name: match
+          default: None
+        - name: mode
+          default: None
+        - name: location
+          default: None
+        - name: before
+          default: None
+        - name: after
+          default: None
+        - name: indent
+          default: "True"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.is_text
+        - stringutils.get_diff
+    - function: line
+      source:
+        path: salt/modules/file.py
+        symbol: line
+      parameters:
+        - name: path
+        - name: content
+          default: None
+        - name: match
+          default: None
+        - name: mode
+          default: None
+        - name: location
+          default: None
+        - name: before
+          default: None
+        - name: after
+          default: None
+        - name: show_changes
+          default: "True"
+        - name: backup
+          default: "False"
+        - name: quiet
+          default: "False"
+        - name: indent
+          default: "True"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.is_text
+        - stringutils.get_diff
+    - function: replace
+      source:
+        path: salt/modules/file.py
+        symbol: replace
+      summary: '.. versionadded:: 0.17.0'
+      parameters:
+        - name: path
+        - name: pattern
+        - name: repl
+        - name: count
+          default: "0"
+        - name: flags
+          default: "8"
+        - name: bufsize
+          default: "1"
+        - name: append_if_not_found
+          default: "False"
+        - name: prepend_if_not_found
+          default: "False"
+        - name: not_found_content
+          default: None
+        - name: backup
+          default: '".bak"'
+        - name: dry_run
+          default: "False"
+        - name: search_only
+          default: "False"
+        - name: show_changes
+          default: "True"
+        - name: ignore_if_missing
+          default: "False"
+        - name: preserve_inode
+          default: "True"
+        - name: backslash_literal
+          default: "False"
+        - name: encoding
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.is_text
+        - stringutils.get_diff
+    - function: blockreplace
+      source:
+        path: salt/modules/file.py
+        symbol: blockreplace
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: path
+        - name: marker_start
+          default: '"#-- start managed zone --"'
+        - name: marker_end
+          default: '"#-- end managed zone --"'
+        - name: content
+          default: '""'
+        - name: append_if_not_found
+          default: "False"
+        - name: prepend_if_not_found
+          default: "False"
+        - name: backup
+          default: '".bak"'
+        - name: dry_run
+          default: "False"
+        - name: show_changes
+          default: "True"
+        - name: append_newline
+          default: "False"
+        - name: insert_before_match
+          default: None
+        - name: insert_after_match
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: search
+      source:
+        path: salt/modules/file.py
+        symbol: search
+      summary: '.. versionadded:: 0.17.0'
+      parameters:
+        - name: path
+        - name: pattern
+        - name: flags
+          default: "8"
+        - name: bufsize
+          default: "1"
+        - name: ignore_if_missing
+          default: "False"
+        - name: multiline
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: patch
+      source:
+        path: salt/modules/file.py
+        symbol: patch
+      summary: '.. versionadded:: 0.10.4'
+      parameters:
+        - name: originalfile
+        - name: patchfile
+        - name: options
+          default: '""'
+        - name: dry_run
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: contains
+      source:
+        path: salt/modules/file.py
+        symbol: contains
+      summary: '.. deprecated:: 0.17.0'
+      parameters:
+        - name: path
+        - name: text
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: contains_regex
+      source:
+        path: salt/modules/file.py
+        symbol: contains_regex
+      summary: '.. deprecated:: 0.17.0'
+      parameters:
+        - name: path
+        - name: regex
+        - name: lchar
+          default: '""'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: contains_glob
+      source:
+        path: salt/modules/file.py
+        symbol: contains_glob
+      summary: '.. deprecated:: 0.17.0'
+      parameters:
+        - name: path
+        - name: glob_expr
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: append
+      source:
+        path: salt/modules/file.py
+        symbol: append
+      summary: '.. versionadded:: 0.9.5'
+      parameters:
+        - name: path
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: prepend
+      source:
+        path: salt/modules/file.py
+        symbol: prepend
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: path
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: write
+      source:
+        path: salt/modules/file.py
+        symbol: write
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: path
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: touch
+      source:
+        path: salt/modules/file.py
+        symbol: touch
+      summary: '.. versionadded:: 0.9.5'
+      parameters:
+        - name: name
+        - name: atime
+          default: None
+        - name: mtime
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: seek_read
+      source:
+        path: salt/modules/file.py
+        symbol: seek_read
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: path
+        - name: size
+        - name: offset
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: seek_write
+      source:
+        path: salt/modules/file.py
+        symbol: seek_write
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: path
+        - name: data
+        - name: offset
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: truncate
+      source:
+        path: salt/modules/file.py
+        symbol: truncate
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: path
+        - name: length
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: link
+      source:
+        path: salt/modules/file.py
+        symbol: link
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: src
+        - name: path
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: is_hardlink
+      source:
+        path: salt/modules/file.py
+        symbol: is_hardlink
+      summary: Check if the path is a hard link by verifying that the number of links
+      parameters:
+        - name: path
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: is_link
+      source:
+        path: salt/modules/file.py
+        symbol: is_link
+      summary: Check if the path is a symbolic link
+      parameters:
+        - name: path
+        - name: nostat
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: symlink
+      source:
+        path: salt/modules/file.py
+        symbol: symlink
+      summary: Create a symbolic link (symlink, soft link) to a file
+      parameters:
+        - name: src
+        - name: path
+        - name: force
+          default: "False"
+        - name: atomic
+          default: "False"
+        - name: follow_symlinks
+          default: "True"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: rename
+      source:
+        path: salt/modules/file.py
+        symbol: rename
+      summary: Rename a file or directory
+      parameters:
+        - name: src
+        - name: dst
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: copy
+      source:
+        path: salt/modules/file.py
+        symbol: copy
+      summary: Copy a file or directory from source to dst
+      parameters:
+        - name: src
+        - name: dst
+        - name: recurse
+          default: "False"
+        - name: remove_existing
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: lstat
+      source:
+        path: salt/modules/file.py
+        symbol: lstat
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: path
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: access
+      source:
+        path: salt/modules/file.py
+        symbol: access
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: path
+        - name: mode
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: read
+      source:
+        path: salt/modules/file.py
+        symbol: read
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: path
+        - name: binary
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: readlink
+      source:
+        path: salt/modules/file.py
+        symbol: readlink
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: path
+        - name: canonicalize
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: readdir
+      source:
+        path: salt/modules/file.py
+        symbol: readdir
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: path
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: statvfs
+      source:
+        path: salt/modules/file.py
+        symbol: statvfs
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: path
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: stats
+      source:
+        path: salt/modules/file.py
+        symbol: stats
+      summary: Return a dict containing the stats for a given file
+      parameters:
+        - name: path
+        - name: hash_type
+          default: None
+        - name: follow_symlinks
+          default: "True"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: rmdir
+      source:
+        path: salt/modules/file.py
+        symbol: rmdir
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: path
+        - name: recurse
+          default: "False"
+        - name: verbose
+          default: "False"
+        - name: older_than
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: remove
+      source:
+        path: salt/modules/file.py
+        symbol: remove
+      summary: Remove the named file. If a directory is supplied, it will be recursively
+      parameters:
+        - name: path
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: directory_exists
+      source:
+        path: salt/modules/file.py
+        symbol: directory_exists
+      summary: Tests to see if path is a valid directory.  Returns True/False.
+      parameters:
+        - name: path
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: file_exists
+      source:
+        path: salt/modules/file.py
+        symbol: file_exists
+      summary: Tests to see if path is a valid file.  Returns True/False.
+      parameters:
+        - name: path
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: path_exists_glob
+      source:
+        path: salt/modules/file.py
+        symbol: path_exists_glob
+      summary: Tests to see if path after expansion is a valid path (file or directory).
+      parameters:
+        - name: path
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: restorecon
+      source:
+        path: salt/modules/file.py
+        symbol: restorecon
+      summary: Reset the SELinux context on a given path
+      parameters:
+        - name: path
+        - name: recursive
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: get_selinux_context
+      source:
+        path: salt/modules/file.py
+        symbol: get_selinux_context
+      summary: Get an SELinux context from a given path
+      parameters:
+        - name: path
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: set_selinux_context
+      source:
+        path: salt/modules/file.py
+        symbol: set_selinux_context
+      summary: '.. versionchanged:: 3001'
+      parameters:
+        - name: path
+        - name: user
+          default: None
+        - name: role
+          default: None
+        - name: type
+          default: None
+        - name: '# pylint: disable'
+          default: |-
+            W0622
+                range=None
+        - name: '# pylint: disable'
+          default: |-
+            W0622
+                persist=False
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: source_list
+      source:
+        path: salt/modules/file.py
+        symbol: source_list
+      summary: Check the source list and return the source to use
+      parameters:
+        - name: source
+        - name: source_hash
+        - name: saltenv
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+        - cp.list_master
+        - cp.list_master_dirs
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: apply_template_on_contents
+      source:
+        path: salt/modules/file.py
+        symbol: apply_template_on_contents
+      summary: Return the contents after applying the templating engine
+      parameters:
+        - name: contents
+        - name: template
+        - name: context
+        - name: defaults
+        - name: saltenv
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+        - cp.list_master
+        - cp.list_master_dirs
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: get_managed
+      source:
+        path: salt/modules/file.py
+        symbol: get_managed
+      summary: Return the managed file data for file.managed
+      parameters:
+        - name: name
+        - name: template
+        - name: source
+        - name: source_hash
+        - name: source_hash_name
+        - name: user
+        - name: group
+        - name: mode
+        - name: attrs
+        - name: saltenv
+        - name: context
+        - name: defaults
+        - name: skip_verify
+          default: "False"
+        - name: verify_ssl
+          default: "True"
+        - name: use_etag
+          default: "False"
+        - name: source_hash_sig
+          default: None
+        - name: signed_by_any
+          default: None
+        - name: signed_by_all
+          default: None
+        - name: keyring
+          default: None
+        - name: gnupghome
+          default: None
+        - name: ignore_ordering
+          default: "False"
+        - name: ignore_whitespace
+          default: "False"
+        - name: ignore_comment_characters
+          default: None
+        - name: sig_backend
+          default: '"gpg"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: extract_hash
+      source:
+        path: salt/modules/file.py
+        symbol: extract_hash
+      summary: '.. versionchanged:: 2016.3.5'
+      parameters:
+        - name: hash_fn
+        - name: hash_type
+          default: '"sha256"'
+        - name: file_name
+          default: '""'
+        - name: source
+          default: '""'
+        - name: source_hash_name
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: check_perms
+      source:
+        path: salt/modules/file.py
+        symbol: check_perms
+      summary: '.. versionchanged:: 3001'
+      parameters:
+        - name: name
+        - name: ret
+        - name: user
+        - name: group
+        - name: mode
+        - name: attrs
+          default: None
+        - name: follow_symlinks
+          default: "False"
+        - name: seuser
+          default: None
+        - name: serole
+          default: None
+        - name: setype
+          default: None
+        - name: serange
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: check_managed
+      source:
+        path: salt/modules/file.py
+        symbol: check_managed
+      summary: Check to see what changes need to be made for a file
+      parameters:
+        - name: name
+        - name: source
+        - name: source_hash
+        - name: source_hash_name
+        - name: user
+        - name: group
+        - name: mode
+        - name: attrs
+        - name: template
+        - name: context
+        - name: defaults
+        - name: saltenv
+        - name: contents
+          default: None
+        - name: skip_verify
+          default: "False"
+        - name: seuser
+          default: None
+        - name: serole
+          default: None
+        - name: setype
+          default: None
+        - name: serange
+          default: None
+        - name: follow_symlinks
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: check_managed_changes
+      source:
+        path: salt/modules/file.py
+        symbol: check_managed_changes
+      summary: Return a dictionary of what changes need to be made for a file
+      parameters:
+        - name: name
+        - name: source
+        - name: source_hash
+        - name: source_hash_name
+        - name: user
+        - name: group
+        - name: mode
+        - name: attrs
+        - name: template
+        - name: context
+        - name: defaults
+        - name: saltenv
+        - name: contents
+          default: None
+        - name: skip_verify
+          default: "False"
+        - name: keep_mode
+          default: "False"
+        - name: seuser
+          default: None
+        - name: serole
+          default: None
+        - name: setype
+          default: None
+        - name: serange
+          default: None
+        - name: verify_ssl
+          default: "True"
+        - name: follow_symlinks
+          default: "False"
+        - name: ignore_ordering
+          default: "False"
+        - name: ignore_whitespace
+          default: "False"
+        - name: ignore_comment_characters
+          default: None
+        - name: new_file_diff
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: check_file_meta
+      source:
+        path: salt/modules/file.py
+        symbol: check_file_meta
+      summary: Check for the changes in the file metadata.
+      parameters:
+        - name: name
+        - name: sfn
+        - name: source
+        - name: source_sum
+        - name: user
+        - name: group
+        - name: mode
+        - name: attrs
+        - name: saltenv
+        - name: contents
+          default: None
+        - name: seuser
+          default: None
+        - name: serole
+          default: None
+        - name: setype
+          default: None
+        - name: serange
+          default: None
+        - name: verify_ssl
+          default: "True"
+        - name: follow_symlinks
+          default: "False"
+        - name: ignore_ordering
+          default: "False"
+        - name: ignore_whitespace
+          default: "False"
+        - name: ignore_comment_characters
+          default: None
+        - name: new_file_diff
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - config.option
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_diff
+    - function: get_diff
+      source:
+        path: salt/modules/file.py
+        symbol: get_diff
+      summary: Return unified diff of two files
+      parameters:
+        - name: file1
+        - name: file2
+        - name: saltenv
+          default: '"base"'
+        - name: show_filenames
+          default: "True"
+        - name: show_changes
+          default: "True"
+        - name: template
+          default: "False"
+        - name: source_hash_file1
+          default: None
+        - name: source_hash_file2
+          default: None
+        - name: ignore_ordering
+          default: "False"
+        - name: ignore_whitespace
+          default: "False"
+        - name: ignore_comment_characters
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - config.option
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_conditional_diff
+        - stringutils.get_diff
+    - function: manage_file
+      source:
+        path: salt/modules/file.py
+        symbol: manage_file
+      summary: Checks the destination against what was retrieved with get_managed and
+      parameters:
+        - name: name
+        - name: sfn
+        - name: ret
+        - name: source
+        - name: source_sum
+        - name: user
+        - name: group
+        - name: mode
+        - name: attrs
+        - name: saltenv
+        - name: backup
+        - name: makedirs
+          default: "False"
+        - name: template
+          default: None
+        - name: '# pylint: disable'
+          default: |-
+            W0613
+                show_changes=True
+        - name: contents
+          default: None
+        - name: dir_mode
+          default: None
+        - name: follow_symlinks
+          default: "True"
+        - name: skip_verify
+          default: "False"
+        - name: keep_mode
+          default: "False"
+        - name: encoding
+          default: None
+        - name: encoding_errors
+          default: '"strict"'
+        - name: seuser
+          default: None
+        - name: serole
+          default: None
+        - name: setype
+          default: None
+        - name: serange
+          default: None
+        - name: verify_ssl
+          default: "True"
+        - name: use_etag
+          default: "False"
+        - name: signature
+          default: None
+        - name: source_hash_sig
+          default: None
+        - name: signed_by_any
+          default: None
+        - name: signed_by_all
+          default: None
+        - name: keyring
+          default: None
+        - name: gnupghome
+          default: None
+        - name: ignore_ordering
+          default: "False"
+        - name: ignore_whitespace
+          default: "False"
+        - name: ignore_comment_characters
+          default: None
+        - name: new_file_diff
+          default: "False"
+        - name: sig_backend
+          default: '"gpg"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.backup_mode
+        - config.get
+        - config.option
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_conditional_diff
+        - stringutils.get_diff
+    - function: mkdir
+      source:
+        path: salt/modules/file.py
+        symbol: mkdir
+      summary: Ensure that a directory is available.
+      parameters:
+        - name: dir_path
+        - name: user
+          default: None
+        - name: group
+          default: None
+        - name: mode
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.backup_mode
+        - config.get
+        - config.option
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_conditional_diff
+        - stringutils.get_diff
+    - function: makedirs_
+      source:
+        path: salt/modules/file.py
+        symbol: makedirs_
+      summary: Ensure that the directory containing this path is available.
+      parameters:
+        - name: path
+        - name: user
+          default: None
+        - name: group
+          default: None
+        - name: mode
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.backup_mode
+        - config.get
+        - config.option
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_conditional_diff
+        - stringutils.get_diff
+    - function: makedirs_perms
+      source:
+        path: salt/modules/file.py
+        symbol: makedirs_perms
+      summary: Taken and modified from os.makedirs to set user, group and mode for each
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: group
+          default: None
+        - name: mode
+          default: '"0755"'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.backup_mode
+        - config.get
+        - config.option
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_conditional_diff
+        - stringutils.get_diff
+    - function: get_devmm
+      source:
+        path: salt/modules/file.py
+        symbol: get_devmm
+      summary: Get major/minor info from a device
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.backup_mode
+        - config.get
+        - config.option
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_conditional_diff
+        - stringutils.get_diff
+    - function: is_chrdev
+      source:
+        path: salt/modules/file.py
+        symbol: is_chrdev
+      summary: Check if a file exists and is a character device.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.backup_mode
+        - config.get
+        - config.option
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_conditional_diff
+        - stringutils.get_diff
+    - function: mknod_chrdev
+      source:
+        path: salt/modules/file.py
+        symbol: mknod_chrdev
+      summary: '.. versionadded:: 0.17.0'
+      parameters:
+        - name: name
+        - name: major
+        - name: minor
+        - name: user
+          default: None
+        - name: group
+          default: None
+        - name: mode
+          default: '"0660"'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.backup_mode
+        - config.get
+        - config.option
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_conditional_diff
+        - stringutils.get_diff
+    - function: is_blkdev
+      source:
+        path: salt/modules/file.py
+        symbol: is_blkdev
+      summary: Check if a file exists and is a block device.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.backup_mode
+        - config.get
+        - config.option
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_conditional_diff
+        - stringutils.get_diff
+    - function: mknod_blkdev
+      source:
+        path: salt/modules/file.py
+        symbol: mknod_blkdev
+      summary: '.. versionadded:: 0.17.0'
+      parameters:
+        - name: name
+        - name: major
+        - name: minor
+        - name: user
+          default: None
+        - name: group
+          default: None
+        - name: mode
+          default: '"0660"'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.backup_mode
+        - config.get
+        - config.option
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_conditional_diff
+        - stringutils.get_diff
+    - function: is_fifo
+      source:
+        path: salt/modules/file.py
+        symbol: is_fifo
+      summary: Check if a file exists and is a FIFO.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.backup_mode
+        - config.get
+        - config.option
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_conditional_diff
+        - stringutils.get_diff
+    - function: mknod_fifo
+      source:
+        path: salt/modules/file.py
+        symbol: mknod_fifo
+      summary: '.. versionadded:: 0.17.0'
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: group
+          default: None
+        - name: mode
+          default: '"0660"'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.backup_mode
+        - config.get
+        - config.option
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_conditional_diff
+        - stringutils.get_diff
+    - function: mknod
+      source:
+        path: salt/modules/file.py
+        symbol: mknod
+      summary: '.. versionadded:: 0.17.0'
+      parameters:
+        - name: name
+        - name: ntype
+        - name: major
+          default: "0"
+        - name: minor
+          default: "0"
+        - name: user
+          default: None
+        - name: group
+          default: None
+        - name: mode
+          default: '"0600"'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.backup_mode
+        - config.get
+        - config.option
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_conditional_diff
+        - stringutils.get_diff
+    - function: list_backups
+      source:
+        path: salt/modules/file.py
+        symbol: list_backups
+      summary: '.. versionadded:: 0.17.0'
+      parameters:
+        - name: path
+        - name: limit
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.backup_mode
+        - config.get
+        - config.option
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_conditional_diff
+        - stringutils.get_diff
+    - function: list_backups_dir
+      source:
+        path: salt/modules/file.py
+        symbol: list_backups_dir
+      summary: Lists the previous versions of a directory backed up using Salt's :ref:`file
+      parameters:
+        - name: path
+        - name: limit
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.backup_mode
+        - config.get
+        - config.option
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_conditional_diff
+        - stringutils.get_diff
+    - function: restore_backup
+      source:
+        path: salt/modules/file.py
+        symbol: restore_backup
+      summary: '.. versionadded:: 0.17.0'
+      parameters:
+        - name: path
+        - name: backup_id
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.backup_mode
+        - config.get
+        - config.option
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_conditional_diff
+        - stringutils.get_diff
+    - function: delete_backup
+      source:
+        path: salt/modules/file.py
+        symbol: delete_backup
+      summary: '.. versionadded:: 0.17.0'
+      parameters:
+        - name: path
+        - name: backup_id
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.backup_mode
+        - config.get
+        - config.option
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_conditional_diff
+        - stringutils.get_diff
+    - function: grep
+      source:
+        path: salt/modules/file.py
+        symbol: grep
+      summary: Grep for a string in the specified file
+      parameters:
+        - name: path
+        - name: pattern
+        - name: opts
+          kind: '*'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.backup_mode
+        - config.get
+        - config.option
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_conditional_diff
+        - stringutils.get_diff
+    - function: open_files
+      source:
+        path: salt/modules/file.py
+        symbol: open_files
+      summary: Return a list of all physical open files on the system.
+      parameters:
+        - name: by_pid
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.backup_mode
+        - config.get
+        - config.option
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_conditional_diff
+        - stringutils.get_diff
+    - function: pardir
+      source:
+        path: salt/modules/file.py
+        symbol: pardir
+      summary: Return the relative parent directory path symbol for underlying OS
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.backup_mode
+        - config.get
+        - config.option
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_conditional_diff
+        - stringutils.get_diff
+    - function: normpath
+      source:
+        path: salt/modules/file.py
+        symbol: normpath
+      summary: Returns Normalize path, eliminating double slashes, etc.
+      parameters:
+        - name: path
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.backup_mode
+        - config.get
+        - config.option
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_conditional_diff
+        - stringutils.get_diff
+    - function: basename
+      source:
+        path: salt/modules/file.py
+        symbol: basename
+      summary: Returns the final component of a pathname
+      parameters:
+        - name: path
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.backup_mode
+        - config.get
+        - config.option
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_conditional_diff
+        - stringutils.get_diff
+    - function: dirname
+      source:
+        path: salt/modules/file.py
+        symbol: dirname
+      summary: Returns the directory component of a pathname
+      parameters:
+        - name: path
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.backup_mode
+        - config.get
+        - config.option
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_conditional_diff
+        - stringutils.get_diff
+    - function: join
+      source:
+        path: salt/modules/file.py
+        symbol: join
+      summary: Return a normalized file system path for the underlying OS
+      parameters:
+        - name: args
+          kind: '*'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.backup_mode
+        - config.get
+        - config.option
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_conditional_diff
+        - stringutils.get_diff
+    - function: move
+      source:
+        path: salt/modules/file.py
+        symbol: move
+      summary: Move a file or directory
+      parameters:
+        - name: src
+        - name: dst
+        - name: disallow_copy_and_unlink
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.backup_mode
+        - config.get
+        - config.option
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_conditional_diff
+        - stringutils.get_diff
+    - function: diskusage
+      source:
+        path: salt/modules/file.py
+        symbol: diskusage
+      summary: Recursively calculate disk usage of path and return it
+      parameters:
+        - name: path
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.backup_mode
+        - config.get
+        - config.option
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.stat_file
+        - selinux.fcontext_add_policy
+      utility_dependencies:
+        - files.get_encoding
+        - files.is_binary
+        - files.is_text
+        - stringutils.get_conditional_diff
+        - stringutils.get_diff

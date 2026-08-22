@@ -1,0 +1,296 @@
+kind: exec
+module: ip
+source_module: win_ip
+virtual: true
+path: salt/modules/win_ip.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _normalize_gateway_fields
+      source:
+        path: salt/modules/win_ip.py
+        symbol: _normalize_gateway_fields
+      summary: Ensure ``ipv4_gateways`` and ``ipv6_gateways`` are always lists.
+      parameters:
+        - name: data
+      tests:
+        - path: tests/pytests/unit/modules/test_win_ip.py
+          functions: 1
+    - function: _get_interfaces_legacy_format
+      source:
+        path: salt/modules/win_ip.py
+        symbol: _get_interfaces_legacy_format
+      summary: Returns interface data using the legacy netsh-style key names to avoid
+      parameters:
+        - name: name
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_win_ip.py
+          functions: 1
+    - function: raw_interface_configs
+      source:
+        path: salt/modules/win_ip.py
+        symbol: raw_interface_configs
+      summary: Return raw configs for all interfaces as returned by netsh. This command is
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_ip.py
+          functions: 1
+    - function: get_all_interfaces
+      source:
+        path: salt/modules/win_ip.py
+        symbol: get_all_interfaces
+      summary: Return IP configuration for all network interfaces using the legacy
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_ip.py
+          functions: 1
+    - function: get_interface
+      source:
+        path: salt/modules/win_ip.py
+        symbol: get_interface
+      summary: Return the IP configuration of a single network interface
+      parameters:
+        - name: iface
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_ip.py
+          functions: 1
+    - function: is_enabled
+      source:
+        path: salt/modules/win_ip.py
+        symbol: is_enabled
+      summary: Returns ``True`` if interface is enabled, otherwise ``False``
+      parameters:
+        - name: iface
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_ip.py
+          functions: 1
+    - function: is_disabled
+      source:
+        path: salt/modules/win_ip.py
+        symbol: is_disabled
+      summary: Returns ``True`` if interface is disabled, otherwise ``False``
+      parameters:
+        - name: iface
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_ip.py
+          functions: 1
+    - function: enable
+      source:
+        path: salt/modules/win_ip.py
+        symbol: enable
+      summary: Enable an interface
+      parameters:
+        - name: iface
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_ip.py
+          functions: 1
+    - function: disable
+      source:
+        path: salt/modules/win_ip.py
+        symbol: disable
+      summary: Disable an interface
+      parameters:
+        - name: iface
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_ip.py
+          functions: 1
+    - function: get_subnet_length
+      source:
+        path: salt/modules/win_ip.py
+        symbol: get_subnet_length
+      summary: Convenience function to convert the netmask to the CIDR subnet length
+      parameters:
+        - name: mask
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_ip.py
+          functions: 1
+    - function: set_static_ip
+      source:
+        path: salt/modules/win_ip.py
+        symbol: set_static_ip
+      summary: Set static IP configuration on a Windows NIC
+      parameters:
+        - name: iface
+        - name: addr
+        - name: gateway
+          default: None
+        - name: append
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_ip.py
+          functions: 1
+    - function: set_dhcp_ip
+      source:
+        path: salt/modules/win_ip.py
+        symbol: set_dhcp_ip
+      summary: Set Windows NIC to get IP from DHCP
+      parameters:
+        - name: iface
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_ip.py
+          functions: 1
+    - function: set_static_dns
+      source:
+        path: salt/modules/win_ip.py
+        symbol: set_static_dns
+      summary: Set static DNS configuration on a Windows NIC
+      parameters:
+        - name: iface
+        - name: addrs
+          kind: '*'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_ip.py
+          functions: 1
+    - function: set_dhcp_dns
+      source:
+        path: salt/modules/win_ip.py
+        symbol: set_dhcp_dns
+      summary: Set DNS source to DHCP on Windows
+      parameters:
+        - name: iface
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_ip.py
+          functions: 1
+    - function: set_dhcp_all
+      source:
+        path: salt/modules/win_ip.py
+        symbol: set_dhcp_all
+      summary: Set both IP Address and DNS to DHCP
+      parameters:
+        - name: iface
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_ip.py
+          functions: 1
+    - function: get_default_gateway
+      source:
+        path: salt/modules/win_ip.py
+        symbol: get_default_gateway
+      summary: Get the Default Gateway on Windows.
+      parameters:
+        - name: iface
+          default: None
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_ip.py
+          functions: 1
+    - function: get_interface_index
+      source:
+        path: salt/modules/win_ip.py
+        symbol: get_interface_index
+      summary: Return the integer ``ifIndex`` for the named interface.
+      parameters:
+        - name: iface
+        - name: session
+          default: None
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_ip.py
+          functions: 1
+    - function: set_interface
+      source:
+        path: salt/modules/win_ip.py
+        symbol: set_interface
+      summary: Configures a network interface on Windows.
+      parameters:
+        - name: iface
+        - name: alias
+          default: None
+        - name: enabled
+          default: None
+        - name: ipv4_enabled
+          default: None
+        - name: ipv4_address
+          default: None
+        - name: ipv4_dhcp
+          default: None
+        - name: ipv4_dns
+          default: None
+        - name: ipv4_forwarding
+          default: None
+        - name: ipv4_gateways
+          default: None
+        - name: ipv4_metric
+          default: None
+        - name: ipv4_wins
+          default: None
+        - name: ipv4_netbios
+          default: None
+        - name: ipv6_enabled
+          default: None
+        - name: ipv6_address
+          default: None
+        - name: ipv6_dhcp
+          default: None
+        - name: ipv6_dns
+          default: None
+        - name: ipv6_forwarding
+          default: None
+        - name: ipv6_gateways
+          default: None
+        - name: ipv6_metric
+          default: None
+        - name: dns_register
+          default: None
+        - name: dns_suffix
+          default: None
+        - name: mtu
+          default: None
+        - name: append
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_ip.py
+          functions: 1
+    - function: get_interface_new
+      source:
+        path: salt/modules/win_ip.py
+        symbol: get_interface_new
+      summary: Retrieves the current configuration of a network interface on Windows.
+      parameters:
+        - name: iface
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_ip.py
+          functions: 1
+    - function: list_interfaces
+      source:
+        path: salt/modules/win_ip.py
+        symbol: list_interfaces
+      summary: Lists the available network interfaces on the system.
+      parameters:
+        - name: full
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_ip.py
+          functions: 1

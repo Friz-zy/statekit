@@ -1,0 +1,54 @@
+kind: state
+module: makeconf
+source_module: makeconf
+path: salt/states/makeconf.py
+functions:
+    - function: _make_set
+      source:
+        path: salt/states/makeconf.py
+        symbol: _make_set
+      summary: Force var to be a set
+      parameters:
+        - name: var
+      execution_dependencies:
+        - makeconf.get_var
+      tests:
+        - path: tests/pytests/unit/states/test_makeconf.py
+          functions: 2
+    - function: present
+      source:
+        path: salt/states/makeconf.py
+        symbol: present
+      summary: Verify that the variable is in the ``make.conf`` and has the provided
+      parameters:
+        - name: name
+        - name: value
+          default: None
+        - name: contains
+          default: None
+        - name: excludes
+          default: None
+      execution_dependencies:
+        - makeconf.append_var
+        - makeconf.get_var
+        - makeconf.set_var
+        - makeconf.trim_var
+      tests:
+        - path: tests/pytests/unit/states/test_makeconf.py
+          functions: 2
+    - function: absent
+      source:
+        path: salt/states/makeconf.py
+        symbol: absent
+      summary: Verify that the variable is not in the ``make.conf``.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - makeconf.append_var
+        - makeconf.get_var
+        - makeconf.remove_var
+        - makeconf.set_var
+        - makeconf.trim_var
+      tests:
+        - path: tests/pytests/unit/states/test_makeconf.py
+          functions: 2

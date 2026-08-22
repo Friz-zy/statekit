@@ -1,0 +1,147 @@
+kind: state
+module: lvm
+source_module: lvm
+path: salt/states/lvm.py
+functions:
+    - function: _convert_to_mb
+      source:
+        path: salt/states/lvm.py
+        symbol: _convert_to_mb
+      parameters:
+        - name: size
+      tests:
+        - path: tests/pytests/unit/states/test_lvm.py
+          functions: 14
+    - function: pv_present
+      source:
+        path: salt/states/lvm.py
+        symbol: pv_present
+      summary: Set a Physical Device to be used as an LVM Physical Volume
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - lvm.pvcreate
+        - lvm.pvdisplay
+      tests:
+        - path: tests/pytests/unit/states/test_lvm.py
+          functions: 14
+    - function: pv_absent
+      source:
+        path: salt/states/lvm.py
+        symbol: pv_absent
+      summary: Ensure that a Physical Device is not being used by lvm
+      parameters:
+        - name: name
+      execution_dependencies:
+        - lvm.pvcreate
+        - lvm.pvdisplay
+        - lvm.pvremove
+      tests:
+        - path: tests/pytests/unit/states/test_lvm.py
+          functions: 14
+    - function: vg_present
+      source:
+        path: salt/states/lvm.py
+        symbol: vg_present
+      summary: Create an LVM Volume Group
+      parameters:
+        - name: name
+        - name: devices
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - lvm.pvcreate
+        - lvm.pvdisplay
+        - lvm.pvremove
+        - lvm.vgcreate
+        - lvm.vgdisplay
+        - lvm.vgextend
+      tests:
+        - path: tests/pytests/unit/states/test_lvm.py
+          functions: 14
+    - function: vg_absent
+      source:
+        path: salt/states/lvm.py
+        symbol: vg_absent
+      summary: Remove an LVM volume group
+      parameters:
+        - name: name
+      execution_dependencies:
+        - lvm.pvcreate
+        - lvm.pvdisplay
+        - lvm.pvremove
+        - lvm.vgcreate
+        - lvm.vgdisplay
+        - lvm.vgextend
+        - lvm.vgremove
+      tests:
+        - path: tests/pytests/unit/states/test_lvm.py
+          functions: 14
+    - function: lv_present
+      source:
+        path: salt/states/lvm.py
+        symbol: lv_present
+      summary: Ensure that a Logical Volume is present, creating it if absent.
+      parameters:
+        - name: name
+        - name: vgname
+          default: None
+        - name: size
+          default: None
+        - name: extents
+          default: None
+        - name: snapshot
+          default: None
+        - name: pv
+          default: '""'
+        - name: thinvolume
+          default: "False"
+        - name: thinpool
+          default: "False"
+        - name: force
+          default: "False"
+        - name: resizefs
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - lvm.lvcreate
+        - lvm.lvdisplay
+        - lvm.lvresize
+        - lvm.pvcreate
+        - lvm.pvdisplay
+        - lvm.pvremove
+        - lvm.vgcreate
+        - lvm.vgdisplay
+        - lvm.vgextend
+        - lvm.vgremove
+      tests:
+        - path: tests/pytests/unit/states/test_lvm.py
+          functions: 14
+    - function: lv_absent
+      source:
+        path: salt/states/lvm.py
+        symbol: lv_absent
+      summary: Remove a given existing Logical Volume from a named existing volume group
+      parameters:
+        - name: name
+        - name: vgname
+          default: None
+      execution_dependencies:
+        - lvm.lvcreate
+        - lvm.lvdisplay
+        - lvm.lvremove
+        - lvm.lvresize
+        - lvm.pvcreate
+        - lvm.pvdisplay
+        - lvm.pvremove
+        - lvm.vgcreate
+        - lvm.vgdisplay
+        - lvm.vgextend
+        - lvm.vgremove
+      tests:
+        - path: tests/pytests/unit/states/test_lvm.py
+          functions: 14

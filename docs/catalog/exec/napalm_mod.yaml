@@ -1,0 +1,1160 @@
+kind: exec
+module: napalm
+source_module: napalm_mod
+virtual: true
+path: salt/modules/napalm_mod.py
+functions:
+    - function: _get_netmiko_args
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: _get_netmiko_args
+      summary: Check for Netmiko arguments that were passed in as NAPALM optional arguments.
+      parameters:
+        - name: optional_args
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: _inject_junos_proxy
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: _inject_junos_proxy
+      summary: Inject the junos.conn key into the __proxy__, reusing the existing NAPALM
+      parameters:
+        - name: napalm_device
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: _junos_prep_fun
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: _junos_prep_fun
+      summary: Prepare the Junos function.
+      parameters:
+        - name: napalm_device
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: _netmiko_conn
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: _netmiko_conn
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - netmiko.get_connection
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: _pyeapi_conn
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: _pyeapi_conn
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - netmiko.get_connection
+        - pyeapi.get_connection
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: alive
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: alive
+      summary: Returns the alive status of the connection layer.
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - netmiko.get_connection
+        - pyeapi.get_connection
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: reconnect
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: reconnect
+      summary: Reconnect the NAPALM proxy when the connection
+      parameters:
+        - name: force
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - netmiko.get_connection
+        - pyeapi.get_connection
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: call
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: call
+      summary: Execute arbitrary methods from the NAPALM library.
+      parameters:
+        - name: method
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - netmiko.get_connection
+        - pyeapi.get_connection
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: compliance_report
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: compliance_report
+      summary: Return the compliance report.
+      parameters:
+        - name: filepath
+          default: None
+        - name: string
+          default: None
+        - name: renderer
+          default: '"jinja|yaml"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - netmiko.get_connection
+        - pyeapi.get_connection
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: netmiko_args
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: netmiko_args
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - netmiko.get_connection
+        - pyeapi.get_connection
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: netmiko_fun
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: netmiko_fun
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: fun
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - netmiko.get_connection
+        - pyeapi.get_connection
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: netmiko_call
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: netmiko_call
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: method
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - netmiko.call
+        - netmiko.get_connection
+        - pyeapi.get_connection
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: netmiko_multi_call
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: netmiko_multi_call
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: methods
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - pyeapi.get_connection
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: netmiko_commands
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: netmiko_commands
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: commands
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - pyeapi.get_connection
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: netmiko_config
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: netmiko_config
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: config_commands
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - pyeapi.get_connection
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: junos_rpc
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: junos_rpc
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: cmd
+          default: None
+        - name: dest
+          default: None
+        - name: format
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - junos.rpc
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - pyeapi.get_connection
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: junos_commit
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: junos_commit
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - junos.commit
+        - junos.rpc
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - pyeapi.get_connection
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: junos_install_os
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: junos_install_os
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: path
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - junos.commit
+        - junos.install_os
+        - junos.rpc
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - pyeapi.get_connection
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: junos_facts
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: junos_facts
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - junos.commit
+        - junos.install_os
+        - junos.rpc
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - pyeapi.get_connection
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: junos_cli
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: junos_cli
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: command
+        - name: format
+          default: None
+        - name: dev_timeout
+          default: None
+        - name: dest
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - junos.cli
+        - junos.commit
+        - junos.install_os
+        - junos.rpc
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - pyeapi.get_connection
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: junos_copy_file
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: junos_copy_file
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: src
+        - name: dst
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - cp.cache_file
+        - junos.cli
+        - junos.commit
+        - junos.file_copy
+        - junos.install_os
+        - junos.rpc
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - pyeapi.get_connection
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: junos_call
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: junos_call
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: fun
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - cp.cache_file
+        - junos.cli
+        - junos.commit
+        - junos.file_copy
+        - junos.install_os
+        - junos.rpc
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - pyeapi.get_connection
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: pyeapi_nxos_api_args
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: pyeapi_nxos_api_args
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: prev_kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - cp.cache_file
+        - junos.cli
+        - junos.commit
+        - junos.file_copy
+        - junos.install_os
+        - junos.rpc
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - pyeapi.get_connection
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: pyeapi_run_commands
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: pyeapi_run_commands
+      summary: Execute a list of commands on the Arista switch, via the ``pyeapi`` library.
+      parameters:
+        - name: commands
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - cp.cache_file
+        - junos.cli
+        - junos.commit
+        - junos.file_copy
+        - junos.install_os
+        - junos.rpc
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - pyeapi.get_connection
+        - pyeapi.run_commands
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: pyeapi_call
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: pyeapi_call
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: method
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - cp.cache_file
+        - junos.cli
+        - junos.commit
+        - junos.file_copy
+        - junos.install_os
+        - junos.rpc
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - pyeapi.call
+        - pyeapi.get_connection
+        - pyeapi.run_commands
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: pyeapi_config
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: pyeapi_config
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: commands
+          default: None
+        - name: config_file
+          default: None
+        - name: template_engine
+          default: '"jinja"'
+        - name: context
+          default: None
+        - name: defaults
+          default: None
+        - name: saltenv
+          default: '"base"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - cp.cache_file
+        - junos.cli
+        - junos.commit
+        - junos.file_copy
+        - junos.install_os
+        - junos.rpc
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - pyeapi.call
+        - pyeapi.config
+        - pyeapi.get_connection
+        - pyeapi.run_commands
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: nxos_api_rpc
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: nxos_api_rpc
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: commands
+        - name: method
+          default: '"cli"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - cp.cache_file
+        - junos.cli
+        - junos.commit
+        - junos.file_copy
+        - junos.install_os
+        - junos.rpc
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - nxos_api.rpc
+        - pyeapi.call
+        - pyeapi.config
+        - pyeapi.get_connection
+        - pyeapi.run_commands
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: nxos_api_config
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: nxos_api_config
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: commands
+          default: None
+        - name: config_file
+          default: None
+        - name: template_engine
+          default: '"jinja"'
+        - name: context
+          default: None
+        - name: defaults
+          default: None
+        - name: saltenv
+          default: '"base"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - cp.cache_file
+        - junos.cli
+        - junos.commit
+        - junos.file_copy
+        - junos.install_os
+        - junos.rpc
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - nxos_api.config
+        - nxos_api.rpc
+        - pyeapi.call
+        - pyeapi.config
+        - pyeapi.get_connection
+        - pyeapi.run_commands
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: nxos_api_show
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: nxos_api_show
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: commands
+        - name: raw_text
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - cp.cache_file
+        - junos.cli
+        - junos.commit
+        - junos.file_copy
+        - junos.install_os
+        - junos.rpc
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - nxos_api.config
+        - nxos_api.rpc
+        - nxos_api.show
+        - pyeapi.call
+        - pyeapi.config
+        - pyeapi.get_connection
+        - pyeapi.run_commands
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: rpc
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: rpc
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: command
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - cp.cache_file
+        - junos.cli
+        - junos.commit
+        - junos.file_copy
+        - junos.install_os
+        - junos.rpc
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - nxos_api.config
+        - nxos_api.rpc
+        - nxos_api.show
+        - pyeapi.call
+        - pyeapi.config
+        - pyeapi.get_connection
+        - pyeapi.run_commands
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: config_find_lines
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: config_find_lines
+      parameters:
+        - name: regex
+        - name: source
+          default: '"running"'
+      execution_dependencies:
+        - ciscoconfparse.find_lines
+        - config.get
+        - cp.cache_file
+        - junos.cli
+        - junos.commit
+        - junos.file_copy
+        - junos.install_os
+        - junos.rpc
+        - net.config
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - nxos_api.config
+        - nxos_api.rpc
+        - nxos_api.show
+        - pyeapi.call
+        - pyeapi.config
+        - pyeapi.get_connection
+        - pyeapi.run_commands
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: config_lines_w_child
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: config_lines_w_child
+      parameters:
+        - name: parent_regex
+        - name: child_regex
+        - name: source
+          default: '"running"'
+      execution_dependencies:
+        - ciscoconfparse.find_lines
+        - ciscoconfparse.find_lines_w_child
+        - config.get
+        - cp.cache_file
+        - junos.cli
+        - junos.commit
+        - junos.file_copy
+        - junos.install_os
+        - junos.rpc
+        - net.config
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - nxos_api.config
+        - nxos_api.rpc
+        - nxos_api.show
+        - pyeapi.call
+        - pyeapi.config
+        - pyeapi.get_connection
+        - pyeapi.run_commands
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: config_lines_wo_child
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: config_lines_wo_child
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: parent_regex
+        - name: child_regex
+        - name: source
+          default: '"running"'
+      execution_dependencies:
+        - ciscoconfparse.find_lines
+        - ciscoconfparse.find_lines_w_child
+        - ciscoconfparse.find_lines_wo_child
+        - config.get
+        - cp.cache_file
+        - junos.cli
+        - junos.commit
+        - junos.file_copy
+        - junos.install_os
+        - junos.rpc
+        - net.config
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - nxos_api.config
+        - nxos_api.rpc
+        - nxos_api.show
+        - pyeapi.call
+        - pyeapi.config
+        - pyeapi.get_connection
+        - pyeapi.run_commands
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: config_filter_lines
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: config_filter_lines
+      parameters:
+        - name: parent_regex
+        - name: child_regex
+        - name: source
+          default: '"running"'
+      execution_dependencies:
+        - ciscoconfparse.filter_lines
+        - ciscoconfparse.find_lines
+        - ciscoconfparse.find_lines_w_child
+        - ciscoconfparse.find_lines_wo_child
+        - config.get
+        - cp.cache_file
+        - junos.cli
+        - junos.commit
+        - junos.file_copy
+        - junos.install_os
+        - junos.rpc
+        - net.config
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - nxos_api.config
+        - nxos_api.rpc
+        - nxos_api.show
+        - pyeapi.call
+        - pyeapi.config
+        - pyeapi.get_connection
+        - pyeapi.run_commands
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: config_tree
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: config_tree
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: source
+          default: '"running"'
+        - name: with_tags
+          default: "False"
+      execution_dependencies:
+        - ciscoconfparse.filter_lines
+        - ciscoconfparse.find_lines
+        - ciscoconfparse.find_lines_w_child
+        - ciscoconfparse.find_lines_wo_child
+        - config.get
+        - cp.cache_file
+        - iosconfig.tree
+        - junos.cli
+        - junos.commit
+        - junos.file_copy
+        - junos.install_os
+        - junos.rpc
+        - net.config
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - nxos_api.config
+        - nxos_api.rpc
+        - nxos_api.show
+        - pyeapi.call
+        - pyeapi.config
+        - pyeapi.get_connection
+        - pyeapi.run_commands
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: config_merge_tree
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: config_merge_tree
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: source
+          default: '"running"'
+        - name: merge_config
+          default: None
+        - name: merge_path
+          default: None
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - ciscoconfparse.filter_lines
+        - ciscoconfparse.find_lines
+        - ciscoconfparse.find_lines_w_child
+        - ciscoconfparse.find_lines_wo_child
+        - config.get
+        - cp.cache_file
+        - iosconfig.merge_tree
+        - iosconfig.tree
+        - junos.cli
+        - junos.commit
+        - junos.file_copy
+        - junos.install_os
+        - junos.rpc
+        - net.config
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - nxos_api.config
+        - nxos_api.rpc
+        - nxos_api.show
+        - pyeapi.call
+        - pyeapi.config
+        - pyeapi.get_connection
+        - pyeapi.run_commands
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: config_merge_text
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: config_merge_text
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: source
+          default: '"running"'
+        - name: merge_config
+          default: None
+        - name: merge_path
+          default: None
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - ciscoconfparse.filter_lines
+        - ciscoconfparse.find_lines
+        - ciscoconfparse.find_lines_w_child
+        - ciscoconfparse.find_lines_wo_child
+        - config.get
+        - cp.cache_file
+        - iosconfig.merge_text
+        - iosconfig.merge_tree
+        - iosconfig.tree
+        - junos.cli
+        - junos.commit
+        - junos.file_copy
+        - junos.install_os
+        - junos.rpc
+        - net.config
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - nxos_api.config
+        - nxos_api.rpc
+        - nxos_api.show
+        - pyeapi.call
+        - pyeapi.config
+        - pyeapi.get_connection
+        - pyeapi.run_commands
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: config_merge_diff
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: config_merge_diff
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: source
+          default: '"running"'
+        - name: merge_config
+          default: None
+        - name: merge_path
+          default: None
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - ciscoconfparse.filter_lines
+        - ciscoconfparse.find_lines
+        - ciscoconfparse.find_lines_w_child
+        - ciscoconfparse.find_lines_wo_child
+        - config.get
+        - cp.cache_file
+        - iosconfig.merge_diff
+        - iosconfig.merge_text
+        - iosconfig.merge_tree
+        - iosconfig.tree
+        - junos.cli
+        - junos.commit
+        - junos.file_copy
+        - junos.install_os
+        - junos.rpc
+        - net.config
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - nxos_api.config
+        - nxos_api.rpc
+        - nxos_api.show
+        - pyeapi.call
+        - pyeapi.config
+        - pyeapi.get_connection
+        - pyeapi.run_commands
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: config_diff_tree
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: config_diff_tree
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: source1
+          default: '"candidate"'
+        - name: candidate_path
+          default: None
+        - name: source2
+          default: '"running"'
+        - name: running_path
+          default: None
+      execution_dependencies:
+        - ciscoconfparse.filter_lines
+        - ciscoconfparse.find_lines
+        - ciscoconfparse.find_lines_w_child
+        - ciscoconfparse.find_lines_wo_child
+        - config.get
+        - cp.cache_file
+        - iosconfig.diff_tree
+        - iosconfig.merge_diff
+        - iosconfig.merge_text
+        - iosconfig.merge_tree
+        - iosconfig.tree
+        - junos.cli
+        - junos.commit
+        - junos.file_copy
+        - junos.install_os
+        - junos.rpc
+        - net.config
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - nxos_api.config
+        - nxos_api.rpc
+        - nxos_api.show
+        - pyeapi.call
+        - pyeapi.config
+        - pyeapi.get_connection
+        - pyeapi.run_commands
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: config_diff_text
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: config_diff_text
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: source1
+          default: '"candidate"'
+        - name: candidate_path
+          default: None
+        - name: source2
+          default: '"running"'
+        - name: running_path
+          default: None
+      execution_dependencies:
+        - ciscoconfparse.filter_lines
+        - ciscoconfparse.find_lines
+        - ciscoconfparse.find_lines_w_child
+        - ciscoconfparse.find_lines_wo_child
+        - config.get
+        - cp.cache_file
+        - iosconfig.diff_text
+        - iosconfig.diff_tree
+        - iosconfig.merge_diff
+        - iosconfig.merge_text
+        - iosconfig.merge_tree
+        - iosconfig.tree
+        - junos.cli
+        - junos.commit
+        - junos.file_copy
+        - junos.install_os
+        - junos.rpc
+        - net.config
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - nxos_api.config
+        - nxos_api.rpc
+        - nxos_api.show
+        - pyeapi.call
+        - pyeapi.config
+        - pyeapi.get_connection
+        - pyeapi.run_commands
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: scp_get
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: scp_get
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: remote_path
+        - name: local_path
+          default: '""'
+        - name: recursive
+          default: "False"
+        - name: preserve_times
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - ciscoconfparse.filter_lines
+        - ciscoconfparse.find_lines
+        - ciscoconfparse.find_lines_w_child
+        - ciscoconfparse.find_lines_wo_child
+        - config.get
+        - cp.cache_file
+        - iosconfig.diff_text
+        - iosconfig.diff_tree
+        - iosconfig.merge_diff
+        - iosconfig.merge_text
+        - iosconfig.merge_tree
+        - iosconfig.tree
+        - junos.cli
+        - junos.commit
+        - junos.file_copy
+        - junos.install_os
+        - junos.rpc
+        - net.config
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - nxos_api.config
+        - nxos_api.rpc
+        - nxos_api.show
+        - pyeapi.call
+        - pyeapi.config
+        - pyeapi.get_connection
+        - pyeapi.run_commands
+        - scp.get
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: scp_put
+      source:
+        path: salt/modules/napalm_mod.py
+        symbol: scp_put
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: files
+        - name: remote_path
+          default: None
+        - name: recursive
+          default: "False"
+        - name: preserve_times
+          default: "False"
+        - name: saltenv
+          default: '"base"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - ciscoconfparse.filter_lines
+        - ciscoconfparse.find_lines
+        - ciscoconfparse.find_lines_w_child
+        - ciscoconfparse.find_lines_wo_child
+        - config.get
+        - cp.cache_file
+        - iosconfig.diff_text
+        - iosconfig.diff_tree
+        - iosconfig.merge_diff
+        - iosconfig.merge_text
+        - iosconfig.merge_tree
+        - iosconfig.tree
+        - junos.cli
+        - junos.commit
+        - junos.file_copy
+        - junos.install_os
+        - junos.rpc
+        - net.config
+        - netmiko.call
+        - netmiko.get_connection
+        - netmiko.multi_call
+        - netmiko.send_config
+        - nxos_api.config
+        - nxos_api.rpc
+        - nxos_api.show
+        - pyeapi.call
+        - pyeapi.config
+        - pyeapi.get_connection
+        - pyeapi.run_commands
+        - scp.get
+        - scp.put
+        - slsutil.renderer
+      utility_dependencies:
+        - args.get_function_argspec

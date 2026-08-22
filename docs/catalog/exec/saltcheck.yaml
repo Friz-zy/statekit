@@ -1,0 +1,215 @@
+kind: exec
+module: saltcheck
+source_module: saltcheck
+virtual: true
+path: salt/modules/saltcheck.py
+functions:
+    - function: run_test
+      source:
+        path: salt/modules/saltcheck.py
+        symbol: run_test
+      summary: Execute one saltcheck test and return result
+      parameters:
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/unit/modules/test_saltcheck.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_saltcheck.py
+          functions: 2
+    - function: state_apply
+      source:
+        path: salt/modules/saltcheck.py
+        symbol: state_apply
+      summary: Runs :py:func:`state.apply <salt.modules.state.apply>` with given options to set up test data.
+      parameters:
+        - name: state_name
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/unit/modules/test_saltcheck.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_saltcheck.py
+          functions: 2
+    - function: report_highstate_tests
+      source:
+        path: salt/modules/saltcheck.py
+        symbol: report_highstate_tests
+      summary: Report on tests for states assigned to the minion through highstate.
+      parameters:
+        - name: saltenv
+          default: None
+      tests:
+        - path: tests/unit/modules/test_saltcheck.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_saltcheck.py
+          functions: 2
+    - function: run_state_tests
+      source:
+        path: salt/modules/saltcheck.py
+        symbol: run_state_tests
+      summary: Execute tests for a salt state and return results
+      parameters:
+        - name: state
+        - name: saltenv
+          default: None
+        - name: check_all
+          default: "False"
+        - name: only_fails
+          default: "False"
+        - name: junit
+          default: "False"
+      execution_dependencies:
+        - config.get
+      tests:
+        - path: tests/unit/modules/test_saltcheck.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_saltcheck.py
+          functions: 2
+    - function: parallel_scheck
+      source:
+        path: salt/modules/saltcheck.py
+        symbol: parallel_scheck
+      summary: triggers salt-call in parallel
+      parameters:
+        - name: data
+      execution_dependencies:
+        - config.get
+      tests:
+        - path: tests/unit/modules/test_saltcheck.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_saltcheck.py
+          functions: 2
+    - function: run_highstate_tests
+      source:
+        path: salt/modules/saltcheck.py
+        symbol: run_highstate_tests
+      summary: Execute all tests for states assigned to the minion through highstate and return results
+      parameters:
+        - name: saltenv
+          default: None
+        - name: only_fails
+          default: "False"
+        - name: junit
+          default: "False"
+      execution_dependencies:
+        - config.get
+      tests:
+        - path: tests/unit/modules/test_saltcheck.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_saltcheck.py
+          functions: 2
+    - function: _eval_failure_only_print
+      source:
+        path: salt/modules/saltcheck.py
+        symbol: _eval_failure_only_print
+      summary: For given results, only return failures if desired
+      parameters:
+        - name: state_name
+        - name: results
+        - name: only_fails
+      execution_dependencies:
+        - config.get
+      tests:
+        - path: tests/unit/modules/test_saltcheck.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_saltcheck.py
+          functions: 2
+    - function: _generate_out_list
+      source:
+        path: salt/modules/saltcheck.py
+        symbol: _generate_out_list
+      summary: generate test results output list
+      parameters:
+        - name: results
+        - name: only_fails
+          default: "False"
+      execution_dependencies:
+        - config.get
+      tests:
+        - path: tests/unit/modules/test_saltcheck.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_saltcheck.py
+          functions: 2
+    - function: _generate_junit_out_list
+      source:
+        path: salt/modules/saltcheck.py
+        symbol: _generate_junit_out_list
+      summary: generates test results output list in JUnit format
+      parameters:
+        - name: results
+      execution_dependencies:
+        - config.get
+      tests:
+        - path: tests/unit/modules/test_saltcheck.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_saltcheck.py
+          functions: 2
+    - function: _render_file
+      source:
+        path: salt/modules/saltcheck.py
+        symbol: _render_file
+      summary: call the salt utility to render a file
+      parameters:
+        - name: file_path
+      execution_dependencies:
+        - config.get
+        - slsutil.renderer
+      tests:
+        - path: tests/unit/modules/test_saltcheck.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_saltcheck.py
+          functions: 2
+    - function: _is_valid_module
+      source:
+        path: salt/modules/saltcheck.py
+        symbol: _is_valid_module
+      summary: Return a list of all modules available on minion
+      parameters:
+        - name: module
+      execution_dependencies:
+        - config.get
+        - slsutil.renderer
+        - sys.list_modules
+      tests:
+        - path: tests/unit/modules/test_saltcheck.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_saltcheck.py
+          functions: 2
+    - function: _is_valid_function
+      source:
+        path: salt/modules/saltcheck.py
+        symbol: _is_valid_function
+      summary: Determine if a function is valid for a module
+      parameters:
+        - name: module_name
+        - name: function
+      execution_dependencies:
+        - config.get
+        - slsutil.renderer
+        - sys.list_functions
+        - sys.list_modules
+      tests:
+        - path: tests/unit/modules/test_saltcheck.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_saltcheck.py
+          functions: 2
+    - function: _get_top_states
+      source:
+        path: salt/modules/saltcheck.py
+        symbol: _get_top_states
+      summary: 'Equivalent to a salt cli: salt web state.show_top'
+      parameters:
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - config.get
+        - slsutil.renderer
+        - state.show_top
+        - sys.list_functions
+        - sys.list_modules
+      tests:
+        - path: tests/unit/modules/test_saltcheck.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_saltcheck.py
+          functions: 2

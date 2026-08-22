@@ -1,0 +1,675 @@
+kind: exec
+module: service
+source_module: systemd_service
+virtual: true
+path: salt/modules/systemd_service.py
+platform_markers:
+    - is_linux
+functions:
+    - function: _root
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: _root
+      summary: Relocate an absolute path to a new root directory.
+      parameters:
+        - name: path
+        - name: root
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: _canonical_unit_name
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: _canonical_unit_name
+      summary: Build a canonical unit name treating unit names without one
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: _check_available
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: _check_available
+      summary: Returns boolean telling whether or not the named service is available
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: _check_for_unit_changes
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: _check_for_unit_changes
+      summary: Check for modified/updated unit files, and run a daemon-reload if any are
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: _check_unmask
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: _check_unmask
+      summary: Common code for conditionally removing masks before making changes to a
+      parameters:
+        - name: name
+        - name: unmask
+        - name: unmask_runtime
+        - name: root
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: _default_runlevel
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: _default_runlevel
+      summary: Try to figure out the default runlevel.  It is kept in
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: _get_systemd_services
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: _get_systemd_services
+      summary: Use os.listdir() to get all the unit files
+      parameters:
+        - name: root
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: _get_sysv_services
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: _get_sysv_services
+      summary: Use os.listdir() and os.access() to get all the initscripts
+      parameters:
+        - name: root
+        - name: systemd_services
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: _get_service_exec
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: _get_service_exec
+      summary: Returns the path to the sysv service manager (either update-rc.d or
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: _runlevel
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: _runlevel
+      summary: Return the current runlevel
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: _strip_scope
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: _strip_scope
+      summary: Strip unnecessary message about running the command with --scope from
+      parameters:
+        - name: msg
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: _systemctl_cmd
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: _systemctl_cmd
+      summary: Build a systemctl command line. Treat unit names without one
+      parameters:
+        - name: action
+        - name: name
+          default: None
+        - name: systemd_scope
+          default: "False"
+        - name: no_block
+          default: "False"
+        - name: root
+          default: None
+        - name: extra_args
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: _systemctl_status
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: _systemctl_status
+      summary: Helper function to run 'systemctl status'.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: _sysv_enabled
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: _sysv_enabled
+      summary: A System-V style service is assumed disabled if the "startup" symlink
+      parameters:
+        - name: name
+        - name: root
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: _untracked_custom_unit_found
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: _untracked_custom_unit_found
+      summary: If the passed service name is not available, but a unit file exist in
+      parameters:
+        - name: name
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: _unit_file_changed
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: _unit_file_changed
+      summary: Returns True if systemctl reports that the unit file has changed, otherwise
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: _salt_minion_service
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: _salt_minion_service
+      summary: Returns True if the service name is the salt-minion service, otherwise
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: _no_block_default
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: _no_block_default
+      summary: Return the default value for no_block if it is not set.
+      parameters:
+        - name: name
+        - name: no_block
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: systemctl_reload
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: systemctl_reload
+      summary: '.. versionadded:: 0.15.0'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: get_running
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: get_running
+      summary: Return a list of all running services, so far as systemd is concerned
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: get_enabled
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: get_enabled
+      summary: Return a list of all enabled services
+      parameters:
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: get_disabled
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: get_disabled
+      summary: Return a list of all disabled services
+      parameters:
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: get_static
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: get_static
+      summary: '.. versionadded:: 2015.8.5'
+      parameters:
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: get_all
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: get_all
+      summary: Return a list of all available services
+      parameters:
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: available
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: available
+      summary: '.. versionadded:: 0.10.4'
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: missing
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: missing
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: unmask_
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: unmask_
+      summary: '.. versionadded:: 2015.5.0'
+      parameters:
+        - name: name
+        - name: runtime
+          default: "False"
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: mask
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: mask
+      summary: '.. versionadded:: 2015.5.0'
+      parameters:
+        - name: name
+        - name: runtime
+          default: "False"
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: masked
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: masked
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: name
+        - name: runtime
+          default: "False"
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: start
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: start
+      summary: '.. versionchanged:: 2015.8.12,2016.3.3,2016.11.0'
+      parameters:
+        - name: name
+        - name: no_block
+          default: "False"
+        - name: unmask
+          default: "False"
+        - name: unmask_runtime
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: stop
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: stop
+      summary: '.. versionchanged:: 2015.8.12,2016.3.3,2016.11.0'
+      parameters:
+        - name: name
+        - name: no_block
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: restart
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: restart
+      summary: '.. versionchanged:: 2015.8.12,2016.3.3,2016.11.0'
+      parameters:
+        - name: name
+        - name: no_block
+          default: None
+        - name: unmask
+          default: "False"
+        - name: unmask_runtime
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: reload_
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: reload_
+      summary: '.. versionchanged:: 2015.8.12,2016.3.3,2016.11.0'
+      parameters:
+        - name: name
+        - name: no_block
+          default: "False"
+        - name: unmask
+          default: "False"
+        - name: unmask_runtime
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: force_reload
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: force_reload
+      summary: '.. versionchanged:: 2015.8.12,2016.3.3,2016.11.0'
+      parameters:
+        - name: name
+        - name: no_block
+          default: "True"
+        - name: unmask
+          default: "False"
+        - name: unmask_runtime
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: status
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: status
+      summary: Return the status for a service via systemd.
+      parameters:
+        - name: name
+        - name: sig
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: enable
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: enable
+      summary: '.. versionchanged:: 2015.8.12,2016.3.3,2016.11.0'
+      parameters:
+        - name: name
+        - name: no_block
+          default: "False"
+        - name: unmask
+          default: "False"
+        - name: unmask_runtime
+          default: "False"
+        - name: root
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: disable
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: disable
+      summary: '.. versionchanged:: 2015.8.12,2016.3.3,2016.11.0'
+      parameters:
+        - name: name
+        - name: no_block
+          default: "False"
+        - name: root
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: enabled
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: enabled
+      summary: Return if the named service is enabled to start on boot
+      parameters:
+        - name: name
+        - name: root
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: disabled
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: disabled
+      summary: Return if the named service is disabled from starting on boot
+      parameters:
+        - name: name
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: show
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: show
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: execs
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: execs
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: firstboot
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: firstboot
+      summary: '.. versionadded:: 3001'
+      parameters:
+        - name: locale
+          default: None
+        - name: locale_message
+          default: None
+        - name: keymap
+          default: None
+        - name: timezone
+          default: None
+        - name: hostname
+          default: None
+        - name: machine_id
+          default: None
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16
+    - function: offline
+      source:
+        path: salt/modules/systemd_service.py
+        symbol: offline
+      summary: '.. versionadded:: 3004'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_systemd_service.py
+          functions: 16

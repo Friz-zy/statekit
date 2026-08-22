@@ -1,0 +1,65 @@
+kind: state
+module: postgres_extension
+source_module: postgres_extension
+path: salt/states/postgres_extension.py
+functions:
+    - function: present
+      source:
+        path: salt/states/postgres_extension.py
+        symbol: present
+      summary: Ensure that the named extension is present.
+      parameters:
+        - name: name
+        - name: if_not_exists
+          default: None
+        - name: schema
+          default: None
+        - name: ext_version
+          default: None
+        - name: from_version
+          default: None
+        - name: user
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: db_user
+          default: None
+        - name: db_password
+          default: None
+        - name: db_host
+          default: None
+        - name: db_port
+          default: None
+      execution_dependencies:
+        - postgres.create_extension
+        - postgres.create_metadata
+    - function: absent
+      source:
+        path: salt/states/postgres_extension.py
+        symbol: absent
+      summary: Ensure that the named extension is absent.
+      parameters:
+        - name: name
+        - name: if_exists
+          default: None
+        - name: restrict
+          default: None
+        - name: cascade
+          default: None
+        - name: user
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: db_user
+          default: None
+        - name: db_password
+          default: None
+        - name: db_host
+          default: None
+        - name: db_port
+          default: None
+      execution_dependencies:
+        - postgres.create_extension
+        - postgres.create_metadata
+        - postgres.drop_extension
+        - postgres.is_installed_extension

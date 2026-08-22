@@ -1,0 +1,169 @@
+kind: exec
+module: win_wua
+source_module: win_wua
+path: salt/modules/win_wua.py
+platform_markers:
+    - is_windows
+functions:
+    - function: available
+      source:
+        path: salt/modules/win_wua.py
+        symbol: available
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: software
+          default: "True"
+        - name: drivers
+          default: "True"
+        - name: summary
+          default: "False"
+        - name: skip_installed
+          default: "True"
+        - name: skip_hidden
+          default: "True"
+        - name: skip_mandatory
+          default: "False"
+        - name: skip_reboot
+          default: "False"
+        - name: categories
+          default: None
+        - name: severities
+          default: None
+        - name: online
+          default: "True"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_wua.py
+          functions: 12
+    - function: get
+      source:
+        path: salt/modules/win_wua.py
+        symbol: get
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: name
+        - name: download
+          default: "False"
+        - name: install
+          default: "False"
+        - name: online
+          default: "True"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_wua.py
+          functions: 12
+    - function: list
+      source:
+        path: salt/modules/win_wua.py
+        symbol: list
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: software
+          default: "True"
+        - name: drivers
+          default: "False"
+        - name: summary
+          default: "False"
+        - name: skip_installed
+          default: "True"
+        - name: categories
+          default: None
+        - name: severities
+          default: None
+        - name: download
+          default: "False"
+        - name: install
+          default: "False"
+        - name: online
+          default: "True"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_wua.py
+          functions: 12
+    - function: installed
+      source:
+        path: salt/modules/win_wua.py
+        symbol: installed
+      summary: '.. versionadded:: 3001'
+      parameters:
+        - name: summary
+          default: "False"
+        - name: kbs_only
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_wua.py
+          functions: 12
+    - function: download
+      source:
+        path: salt/modules/win_wua.py
+        symbol: download
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: names
+      tests:
+        - path: tests/pytests/unit/modules/test_win_wua.py
+          functions: 12
+    - function: install
+      source:
+        path: salt/modules/win_wua.py
+        symbol: install
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: names
+      tests:
+        - path: tests/pytests/unit/modules/test_win_wua.py
+          functions: 12
+    - function: uninstall
+      source:
+        path: salt/modules/win_wua.py
+        symbol: uninstall
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: names
+      tests:
+        - path: tests/pytests/unit/modules/test_win_wua.py
+          functions: 12
+    - function: set_wu_settings
+      source:
+        path: salt/modules/win_wua.py
+        symbol: set_wu_settings
+      summary: Change Windows Update settings. If no parameters are passed, the current
+      parameters:
+        - name: level
+          default: None
+        - name: recommended
+          default: None
+        - name: featured
+          default: None
+        - name: elevated
+          default: None
+        - name: msupdate
+          default: None
+        - name: day
+          default: None
+        - name: time
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_win_wua.py
+          functions: 12
+    - function: get_wu_settings
+      source:
+        path: salt/modules/win_wua.py
+        symbol: get_wu_settings
+      summary: Get current Windows Update settings.
+      tests:
+        - path: tests/pytests/unit/modules/test_win_wua.py
+          functions: 12
+    - function: _get_msupdate_status
+      source:
+        path: salt/modules/win_wua.py
+        symbol: _get_msupdate_status
+      summary: Check to see if Microsoft Update is Enabled
+      tests:
+        - path: tests/pytests/unit/modules/test_win_wua.py
+          functions: 12
+    - function: get_needs_reboot
+      source:
+        path: salt/modules/win_wua.py
+        symbol: get_needs_reboot
+      summary: Determines if the system needs to be rebooted.
+      tests:
+        - path: tests/pytests/unit/modules/test_win_wua.py
+          functions: 12

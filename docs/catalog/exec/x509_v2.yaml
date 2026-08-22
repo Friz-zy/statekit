@@ -1,0 +1,630 @@
+kind: exec
+module: x509
+source_module: x509_v2
+virtual: true
+path: salt/modules/x509_v2.py
+functions:
+    - function: create_certificate
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: create_certificate
+      summary: Create an X.509 certificate and return an encoded version of it.
+      parameters:
+        - name: ca_server
+          default: None
+        - name: signing_policy
+          default: None
+        - name: encoding
+          default: '"pem"'
+        - name: append_certs
+          default: None
+        - name: pkcs12_passphrase
+          default: None
+        - name: pkcs12_encryption_compat
+          default: "False"
+        - name: pkcs12_friendlyname
+          default: None
+        - name: path
+          default: None
+        - name: overwrite
+          default: "True"
+        - name: raw
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: _create_certificate_remote
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: _create_certificate_remote
+      parameters:
+        - name: ca_server
+        - name: signing_policy
+        - name: private_key
+          default: None
+        - name: private_key_passphrase
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: _create_certificate_local
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: _create_certificate_local
+      parameters:
+        - name: digest
+          default: '"sha256"'
+        - name: copypath
+          default: None
+        - name: prepend_cn
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: encode_certificate
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: encode_certificate
+      summary: Create an encoded representation of a certificate, optionally including
+      parameters:
+        - name: certificate
+        - name: encoding
+          default: '"pem"'
+        - name: append_certs
+          default: None
+        - name: private_key
+          default: None
+        - name: private_key_passphrase
+          default: None
+        - name: pkcs12_passphrase
+          default: None
+        - name: pkcs12_encryption_compat
+          default: "False"
+        - name: pkcs12_friendlyname
+          default: None
+        - name: raw
+          default: "False"
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: create_crl
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: create_crl
+      summary: Create a certificate revocation list.
+      parameters:
+        - name: signing_private_key
+        - name: revoked
+        - name: signing_cert
+          default: None
+        - name: signing_private_key_passphrase
+          default: None
+        - name: include_expired
+          default: "False"
+        - name: days_valid
+          default: None
+        - name: digest
+          default: '"sha256"'
+        - name: encoding
+          default: '"pem"'
+        - name: extensions
+          default: None
+        - name: path
+          default: None
+        - name: raw
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: encode_crl
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: encode_crl
+      summary: Create an encoded representation of a certificate revocation list.
+      parameters:
+        - name: crl
+        - name: encoding
+          default: '"pem"'
+        - name: raw
+          default: "False"
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: create_csr
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: create_csr
+      summary: Create a certificate signing request.
+      parameters:
+        - name: private_key
+        - name: private_key_passphrase
+          default: None
+        - name: digest
+          default: '"sha256"'
+        - name: encoding
+          default: '"pem"'
+        - name: path
+          default: None
+        - name: raw
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: encode_csr
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: encode_csr
+      summary: Create an encoded representation of a certificate signing request.
+      parameters:
+        - name: csr
+        - name: encoding
+          default: '"pem"'
+        - name: raw
+          default: "False"
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: create_private_key
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: create_private_key
+      summary: Create a private key.
+      parameters:
+        - name: algo
+          default: '"rsa"'
+        - name: keysize
+          default: None
+        - name: passphrase
+          default: None
+        - name: encoding
+          default: '"pem"'
+        - name: pkcs12_encryption_compat
+          default: "False"
+        - name: path
+          default: None
+        - name: raw
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: encode_private_key
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: encode_private_key
+      summary: Create an encoded representation of a private key.
+      parameters:
+        - name: private_key
+        - name: encoding
+          default: '"pem"'
+        - name: passphrase
+          default: None
+        - name: private_key_passphrase
+          default: None
+        - name: pkcs12_encryption_compat
+          default: "False"
+        - name: raw
+          default: "False"
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: expires
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: expires
+      summary: Determine whether a certificate will expire or has expired already.
+      parameters:
+        - name: certificate
+        - name: days
+          default: "0"
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: expired
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: expired
+      summary: Returns a dict containing limited details of a
+      parameters:
+        - name: certificate
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: get_pem_entries
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: get_pem_entries
+      summary: Returns a dict containing PEM entries in files matching a glob.
+      parameters:
+        - name: glob_path
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: get_pem_entry
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: get_pem_entry
+      summary: Returns a properly formatted PEM string from the input text,
+      parameters:
+        - name: text
+        - name: pem_type
+          default: None
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: get_private_key_size
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: get_private_key_size
+      summary: Return information about the keysize of a private key (RSA/EC).
+      parameters:
+        - name: private_key
+        - name: passphrase
+          default: None
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: get_public_key
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: get_public_key
+      summary: Returns a PEM-encoded public key derived from some reference.
+      parameters:
+        - name: key
+        - name: passphrase
+          default: None
+        - name: asObj
+          default: None
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: get_signing_policy
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: get_signing_policy
+      summary: Returns the specified named signing policy.
+      parameters:
+        - name: signing_policy
+        - name: ca_server
+          default: None
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: read_certificate
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: read_certificate
+      summary: Returns a dict containing details of a certificate.
+      parameters:
+        - name: certificate
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: read_certificates
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: read_certificates
+      summary: Returns a dict containing details of all certificates matching a glob.
+      parameters:
+        - name: glob_path
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: read_crl
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: read_crl
+      summary: Returns a dict containing details of a certificate revocation list.
+      parameters:
+        - name: crl
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: read_csr
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: read_csr
+      summary: Returns a dict containing details of a certificate signing request.
+      parameters:
+        - name: csr
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: sign_remote_certificate
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: sign_remote_certificate
+      summary: Request a certificate to be remotely signed according to a signing policy.
+      parameters:
+        - name: signing_policy
+        - name: kwargs
+        - name: get_signing_policy_only
+          default: "False"
+        - name: more_kwargs
+          kind: '**'
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: _query_remote
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: _query_remote
+      parameters:
+        - name: ca_server
+        - name: signing_policy
+        - name: kwargs
+        - name: get_signing_policy_only
+          default: "False"
+      execution_dependencies:
+        - file.file_exists
+        - publish.publish
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: verify_crl
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: verify_crl
+      summary: Verify that a signature on a certificate revocation list was made
+      parameters:
+        - name: crl
+        - name: cert
+      execution_dependencies:
+        - file.file_exists
+        - publish.publish
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: verify_private_key
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: verify_private_key
+      summary: Verify that a private key belongs to the specified public key.
+      parameters:
+        - name: private_key
+        - name: public_key
+        - name: passphrase
+          default: None
+      execution_dependencies:
+        - file.file_exists
+        - publish.publish
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: verify_signature
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: verify_signature
+      summary: Verify that a signature on a certificate was made
+      parameters:
+        - name: certificate
+        - name: signing_pub_key
+          default: None
+        - name: signing_pub_key_passphrase
+          default: None
+      execution_dependencies:
+        - file.file_exists
+        - publish.publish
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: will_expire
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: will_expire
+      summary: Returns a dict containing details of a certificate and whether
+      parameters:
+        - name: certificate
+        - name: days
+      execution_dependencies:
+        - file.file_exists
+        - publish.publish
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: write_pem
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: write_pem
+      summary: Writes out a PEM string, fixing any formatting or whitespace
+      parameters:
+        - name: text
+        - name: path
+        - name: overwrite
+          default: "True"
+        - name: pem_type
+          default: None
+      execution_dependencies:
+        - file.file_exists
+        - publish.publish
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: _make_pem_regex
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: _make_pem_regex
+      summary: Dynamically generate a regex to match pem_type
+      parameters:
+        - name: pem_type
+      execution_dependencies:
+        - file.file_exists
+        - publish.publish
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: _valid_pem
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: _valid_pem
+      parameters:
+        - name: pem
+        - name: pem_type
+          default: None
+      execution_dependencies:
+        - file.file_exists
+        - publish.publish
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: _generate_pk
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: _generate_pk
+      parameters:
+        - name: algo
+          default: '"rsa"'
+        - name: keysize
+          default: None
+      execution_dependencies:
+        - file.file_exists
+        - publish.publish
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: _get_signing_policy
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: _get_signing_policy
+      parameters:
+        - name: name
+      execution_dependencies:
+        - config.get
+        - file.file_exists
+        - pillar.get
+        - publish.publish
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: _parse_dn
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: _parse_dn
+      summary: Returns a dict containing all values in an X509 Subject
+      parameters:
+        - name: subject
+      execution_dependencies:
+        - config.get
+        - file.file_exists
+        - pillar.get
+        - publish.publish
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: _get_name_hash
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: _get_name_hash
+      summary: Returns the OpenSSL name hash.
+      parameters:
+        - name: name
+        - name: digest
+          default: '"sha1"'
+      execution_dependencies:
+        - config.get
+        - file.file_exists
+        - pillar.get
+        - publish.publish
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: _parse_extensions
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: _parse_extensions
+      parameters:
+        - name: extensions
+      execution_dependencies:
+        - config.get
+        - file.file_exists
+        - pillar.get
+        - publish.publish
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: _parse_crl_entry_extensions
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: _parse_crl_entry_extensions
+      parameters:
+        - name: extensions
+      execution_dependencies:
+        - config.get
+        - file.file_exists
+        - pillar.get
+        - publish.publish
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2
+    - function: _match_minions
+      source:
+        path: salt/modules/x509_v2.py
+        symbol: _match_minions
+      parameters:
+        - name: test
+        - name: minion
+      execution_dependencies:
+        - config.get
+        - file.file_exists
+        - match.glob
+        - pillar.get
+        - publish.publish
+        - publish.runner
+      tests:
+        - path: tests/pytests/unit/modules/test_x509_v2.py
+          functions: 2

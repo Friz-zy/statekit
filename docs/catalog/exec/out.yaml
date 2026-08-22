@@ -1,0 +1,45 @@
+kind: exec
+module: out
+source_module: out
+virtual: true
+path: salt/modules/out.py
+functions:
+    - function: out_format
+      source:
+        path: salt/modules/out.py
+        symbol: out_format
+      summary: Return the formatted outputter string for the Python object.
+      parameters:
+        - name: data
+        - name: out
+          default: '"nested"'
+        - name: opts
+          default: None
+        - name: kwargs
+          kind: '**'
+    - function: string_format
+      source:
+        path: salt/modules/out.py
+        symbol: string_format
+      summary: Return the outputter formatted string, removing the ANSI escape sequences.
+      parameters:
+        - name: data
+        - name: out
+          default: '"nested"'
+        - name: opts
+          default: None
+        - name: kwargs
+          kind: '**'
+    - function: html_format
+      source:
+        path: salt/modules/out.py
+        symbol: html_format
+      summary: Return the formatted string as HTML.
+      parameters:
+        - name: data
+        - name: out
+          default: '"nested"'
+        - name: opts
+          default: None
+        - name: kwargs
+          kind: '**'

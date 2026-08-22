@@ -1,0 +1,63 @@
+kind: exec
+module: scp
+source_module: scp_mod
+virtual: true
+path: salt/modules/scp_mod.py
+functions:
+    - function: _select_kwargs
+      source:
+        path: salt/modules/scp_mod.py
+        symbol: _select_kwargs
+      parameters:
+        - name: kwargs
+          kind: '**'
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: _prepare_connection
+      source:
+        path: salt/modules/scp_mod.py
+        symbol: _prepare_connection
+      summary: Prepare the underlying SSH connection with the remote target.
+      parameters:
+        - name: kwargs
+          kind: '**'
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: get
+      source:
+        path: salt/modules/scp_mod.py
+        symbol: get
+      summary: Transfer files and directories from remote host to the localhost of the
+      parameters:
+        - name: remote_path
+        - name: local_path
+          default: '""'
+        - name: recursive
+          default: "False"
+        - name: preserve_times
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      utility_dependencies:
+        - args.get_function_argspec
+    - function: put
+      source:
+        path: salt/modules/scp_mod.py
+        symbol: put
+      summary: Transfer files and directories to remote host.
+      parameters:
+        - name: files
+        - name: remote_path
+          default: None
+        - name: recursive
+          default: "False"
+        - name: preserve_times
+          default: "False"
+        - name: saltenv
+          default: '"base"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+      utility_dependencies:
+        - args.get_function_argspec

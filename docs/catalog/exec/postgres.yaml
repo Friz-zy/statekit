@@ -1,0 +1,2194 @@
+kind: exec
+module: postgres
+source_module: postgres
+path: salt/modules/postgres.py
+functions:
+    - function: _find_pg_binary
+      source:
+        path: salt/modules/postgres.py
+        symbol: _find_pg_binary
+      summary: '.. versionadded:: 2016.3.2'
+      parameters:
+        - name: util
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: _run_psql
+      source:
+        path: salt/modules/postgres.py
+        symbol: _run_psql
+      summary: Helper function to call psql, because the password requirement
+      parameters:
+        - name: cmd
+        - name: runas
+          default: None
+        - name: password
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: user
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: _run_initdb
+      source:
+        path: salt/modules/postgres.py
+        symbol: _run_initdb
+      summary: Helper function to call initdb
+      parameters:
+        - name: name
+        - name: auth
+          default: '"password"'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: encoding
+          default: '"UTF8"'
+        - name: locale
+          default: None
+        - name: runas
+          default: None
+        - name: waldir
+          default: None
+        - name: checksums
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: version
+      source:
+        path: salt/modules/postgres.py
+        symbol: version
+      summary: Return the version of a Postgres server.
+      parameters:
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: _parsed_version
+      source:
+        path: salt/modules/postgres.py
+        symbol: _parsed_version
+      summary: Returns the server version properly parsed and int casted for internal use.
+      parameters:
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: _connection_defaults
+      source:
+        path: salt/modules/postgres.py
+        symbol: _connection_defaults
+      summary: Returns a tuple of (user, host, port, db) with config, pillar, or default
+      parameters:
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: _psql_cmd
+      source:
+        path: salt/modules/postgres.py
+        symbol: _psql_cmd
+      summary: Return string with fully composed psql command.
+      parameters:
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: _psql_prepare_and_run
+      source:
+        path: salt/modules/postgres.py
+        symbol: _psql_prepare_and_run
+      parameters:
+        - name: cmd
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+        - name: user
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: psql_query
+      source:
+        path: salt/modules/postgres.py
+        symbol: psql_query
+      summary: Run an SQL-Query and return the results as a list. This command
+      parameters:
+        - name: query
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+        - name: write
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: db_list
+      source:
+        path: salt/modules/postgres.py
+        symbol: db_list
+      summary: Return dictionary with information about databases of a Postgres server.
+      parameters:
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: db_exists
+      source:
+        path: salt/modules/postgres.py
+        symbol: db_exists
+      summary: Checks if a database exists on the Postgres server.
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: _quote_ddl_value
+      source:
+        path: salt/modules/postgres.py
+        symbol: _quote_ddl_value
+      parameters:
+        - name: value
+        - name: quote
+          default: '"''"'
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: db_create
+      source:
+        path: salt/modules/postgres.py
+        symbol: db_create
+      summary: Adds a databases to the Postgres server.
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: tablespace
+          default: None
+        - name: encoding
+          default: None
+        - name: lc_collate
+          default: None
+        - name: lc_ctype
+          default: None
+        - name: owner
+          default: None
+        - name: template
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: db_alter
+      source:
+        path: salt/modules/postgres.py
+        symbol: db_alter
+      summary: Change tablespace or/and owner of database.
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: tablespace
+          default: None
+        - name: owner
+          default: None
+        - name: owner_recurse
+          default: "False"
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: db_remove
+      source:
+        path: salt/modules/postgres.py
+        symbol: db_remove
+      summary: Removes a databases from the Postgres server.
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: tablespace_list
+      source:
+        path: salt/modules/postgres.py
+        symbol: tablespace_list
+      summary: Return dictionary with information about tablespaces of a Postgres server.
+      parameters:
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: tablespace_exists
+      source:
+        path: salt/modules/postgres.py
+        symbol: tablespace_exists
+      summary: Checks if a tablespace exists on the Postgres server.
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: tablespace_create
+      source:
+        path: salt/modules/postgres.py
+        symbol: tablespace_create
+      summary: Adds a tablespace to the Postgres server.
+      parameters:
+        - name: name
+        - name: location
+        - name: options
+          default: None
+        - name: owner
+          default: None
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: tablespace_alter
+      source:
+        path: salt/modules/postgres.py
+        symbol: tablespace_alter
+      summary: Change tablespace name, owner, or options.
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: new_name
+          default: None
+        - name: new_owner
+          default: None
+        - name: set_option
+          default: None
+        - name: reset_option
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: tablespace_remove
+      source:
+        path: salt/modules/postgres.py
+        symbol: tablespace_remove
+      summary: Removes a tablespace from the Postgres server.
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: user_list
+      source:
+        path: salt/modules/postgres.py
+        symbol: user_list
+      summary: Return a dict with information about users of a Postgres server.
+      parameters:
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+        - name: return_password
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: role_get
+      source:
+        path: salt/modules/postgres.py
+        symbol: role_get
+      summary: Return a dict with information about users of a Postgres server.
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+        - name: return_password
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: user_exists
+      source:
+        path: salt/modules/postgres.py
+        symbol: user_exists
+      summary: Checks if a user exists on the Postgres server.
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: _add_role_flag
+      source:
+        path: salt/modules/postgres.py
+        symbol: _add_role_flag
+      parameters:
+        - name: string
+        - name: test
+        - name: flag
+        - name: cond
+          default: None
+        - name: prefix
+          default: '"NO"'
+        - name: addtxt
+          default: '""'
+        - name: skip
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: _maybe_encrypt_password
+      source:
+        path: salt/modules/postgres.py
+        symbol: _maybe_encrypt_password
+      parameters:
+        - name: role
+        - name: password
+        - name: encrypted
+          default: _DEFAULT_PASSWORDS_ENCRYPTION
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: _verify_password
+      source:
+        path: salt/modules/postgres.py
+        symbol: _verify_password
+      summary: Test the given password against the verifier.
+      parameters:
+        - name: role
+        - name: password
+        - name: verifier
+        - name: method
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: _md5_password
+      source:
+        path: salt/modules/postgres.py
+        symbol: _md5_password
+      parameters:
+        - name: role
+        - name: password
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: _scram_sha_256
+      source:
+        path: salt/modules/postgres.py
+        symbol: _scram_sha_256
+      summary: Build a SCRAM-SHA-256 password verifier.
+      parameters:
+        - name: password
+        - name: salt_bytes
+          default: None
+        - name: iterations
+          default: "4096"
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: _role_cmd_args
+      source:
+        path: salt/modules/postgres.py
+        symbol: _role_cmd_args
+      parameters:
+        - name: name
+        - name: sub_cmd
+          default: '""'
+        - name: typ_
+          default: '"role"'
+        - name: encrypted
+          default: None
+        - name: login
+          default: None
+        - name: connlimit
+          default: None
+        - name: inherit
+          default: None
+        - name: createdb
+          default: None
+        - name: createroles
+          default: None
+        - name: superuser
+          default: None
+        - name: groups
+          default: None
+        - name: replication
+          default: None
+        - name: rolepassword
+          default: None
+        - name: valid_until
+          default: None
+        - name: db_role
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: _role_create
+      source:
+        path: salt/modules/postgres.py
+        symbol: _role_create
+      summary: Creates a Postgres role. Users and Groups are both roles in postgres.
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: createdb
+          default: None
+        - name: createroles
+          default: None
+        - name: encrypted
+          default: None
+        - name: superuser
+          default: None
+        - name: login
+          default: None
+        - name: connlimit
+          default: None
+        - name: inherit
+          default: None
+        - name: replication
+          default: None
+        - name: rolepassword
+          default: None
+        - name: valid_until
+          default: None
+        - name: typ_
+          default: '"role"'
+        - name: groups
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: user_create
+      source:
+        path: salt/modules/postgres.py
+        symbol: user_create
+      summary: Creates a Postgres user.
+      parameters:
+        - name: username
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: createdb
+          default: None
+        - name: createroles
+          default: None
+        - name: inherit
+          default: None
+        - name: login
+          default: None
+        - name: connlimit
+          default: None
+        - name: encrypted
+          default: None
+        - name: superuser
+          default: None
+        - name: replication
+          default: None
+        - name: rolepassword
+          default: None
+        - name: valid_until
+          default: None
+        - name: groups
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: _role_update
+      source:
+        path: salt/modules/postgres.py
+        symbol: _role_update
+      summary: Updates a postgres role.
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: createdb
+          default: None
+        - name: typ_
+          default: '"role"'
+        - name: createroles
+          default: None
+        - name: inherit
+          default: None
+        - name: login
+          default: None
+        - name: connlimit
+          default: None
+        - name: encrypted
+          default: None
+        - name: superuser
+          default: None
+        - name: replication
+          default: None
+        - name: rolepassword
+          default: None
+        - name: valid_until
+          default: None
+        - name: groups
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: user_update
+      source:
+        path: salt/modules/postgres.py
+        symbol: user_update
+      summary: Updates a Postgres user.
+      parameters:
+        - name: username
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: createdb
+          default: None
+        - name: createroles
+          default: None
+        - name: encrypted
+          default: None
+        - name: superuser
+          default: None
+        - name: inherit
+          default: None
+        - name: login
+          default: None
+        - name: connlimit
+          default: None
+        - name: replication
+          default: None
+        - name: rolepassword
+          default: None
+        - name: valid_until
+          default: None
+        - name: groups
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: _role_remove
+      source:
+        path: salt/modules/postgres.py
+        symbol: _role_remove
+      summary: Removes a role from the Postgres Server
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: available_extensions
+      source:
+        path: salt/modules/postgres.py
+        symbol: available_extensions
+      summary: List available postgresql extensions
+      parameters:
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: installed_extensions
+      source:
+        path: salt/modules/postgres.py
+        symbol: installed_extensions
+      summary: List installed postgresql extensions
+      parameters:
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: get_available_extension
+      source:
+        path: salt/modules/postgres.py
+        symbol: get_available_extension
+      summary: Get info about an available postgresql extension
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: get_installed_extension
+      source:
+        path: salt/modules/postgres.py
+        symbol: get_installed_extension
+      summary: Get info about an installed postgresql extension
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: is_available_extension
+      source:
+        path: salt/modules/postgres.py
+        symbol: is_available_extension
+      summary: Test if a specific extension is available
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: _pg_is_older_ext_ver
+      source:
+        path: salt/modules/postgres.py
+        symbol: _pg_is_older_ext_ver
+      summary: Compare versions of extensions using `looseversion.LooseVersion`.
+      parameters:
+        - name: a
+        - name: b
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: is_installed_extension
+      source:
+        path: salt/modules/postgres.py
+        symbol: is_installed_extension
+      summary: Test if a specific extension is installed
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: create_metadata
+      source:
+        path: salt/modules/postgres.py
+        symbol: create_metadata
+      summary: Get lifecycle information about an extension
+      parameters:
+        - name: name
+        - name: ext_version
+          default: None
+        - name: schema
+          default: None
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: drop_extension
+      source:
+        path: salt/modules/postgres.py
+        symbol: drop_extension
+      summary: Drop an installed postgresql extension
+      parameters:
+        - name: name
+        - name: if_exists
+          default: None
+        - name: restrict
+          default: None
+        - name: cascade
+          default: None
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: create_extension
+      source:
+        path: salt/modules/postgres.py
+        symbol: create_extension
+      summary: Install a postgresql extension
+      parameters:
+        - name: name
+        - name: if_not_exists
+          default: None
+        - name: schema
+          default: None
+        - name: ext_version
+          default: None
+        - name: from_version
+          default: None
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: user_remove
+      source:
+        path: salt/modules/postgres.py
+        symbol: user_remove
+      summary: Removes a user from the Postgres server.
+      parameters:
+        - name: username
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: group_create
+      source:
+        path: salt/modules/postgres.py
+        symbol: group_create
+      summary: Creates a Postgres group. A group is postgres is similar to a user, but
+      parameters:
+        - name: groupname
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: createdb
+          default: None
+        - name: createroles
+          default: None
+        - name: encrypted
+          default: None
+        - name: login
+          default: None
+        - name: inherit
+          default: None
+        - name: superuser
+          default: None
+        - name: replication
+          default: None
+        - name: rolepassword
+          default: None
+        - name: groups
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: group_update
+      source:
+        path: salt/modules/postgres.py
+        symbol: group_update
+      summary: Updates a postgres group
+      parameters:
+        - name: groupname
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: createdb
+          default: None
+        - name: createroles
+          default: None
+        - name: encrypted
+          default: None
+        - name: inherit
+          default: None
+        - name: login
+          default: None
+        - name: superuser
+          default: None
+        - name: replication
+          default: None
+        - name: rolepassword
+          default: None
+        - name: groups
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: group_remove
+      source:
+        path: salt/modules/postgres.py
+        symbol: group_remove
+      summary: Removes a group from the Postgres server.
+      parameters:
+        - name: groupname
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: owner_to
+      source:
+        path: salt/modules/postgres.py
+        symbol: owner_to
+      summary: Set the owner of all schemas, functions, tables, views and sequences to
+      parameters:
+        - name: dbname
+        - name: ownername
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: schema_create
+      source:
+        path: salt/modules/postgres.py
+        symbol: schema_create
+      summary: Creates a Postgres schema.
+      parameters:
+        - name: dbname
+        - name: name
+        - name: owner
+          default: None
+        - name: user
+          default: None
+        - name: db_user
+          default: None
+        - name: db_password
+          default: None
+        - name: db_host
+          default: None
+        - name: db_port
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: schema_remove
+      source:
+        path: salt/modules/postgres.py
+        symbol: schema_remove
+      summary: Removes a schema from the Postgres server.
+      parameters:
+        - name: dbname
+        - name: name
+        - name: user
+          default: None
+        - name: db_user
+          default: None
+        - name: db_password
+          default: None
+        - name: db_host
+          default: None
+        - name: db_port
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: schema_exists
+      source:
+        path: salt/modules/postgres.py
+        symbol: schema_exists
+      summary: Checks if a schema exists on the Postgres server.
+      parameters:
+        - name: dbname
+        - name: name
+        - name: user
+          default: None
+        - name: db_user
+          default: None
+        - name: db_password
+          default: None
+        - name: db_host
+          default: None
+        - name: db_port
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: schema_get
+      source:
+        path: salt/modules/postgres.py
+        symbol: schema_get
+      summary: Return a dict with information about schemas in a database.
+      parameters:
+        - name: dbname
+        - name: name
+        - name: user
+          default: None
+        - name: db_user
+          default: None
+        - name: db_password
+          default: None
+        - name: db_host
+          default: None
+        - name: db_port
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: schema_list
+      source:
+        path: salt/modules/postgres.py
+        symbol: schema_list
+      summary: Return a dict with information about schemas in a Postgres database.
+      parameters:
+        - name: dbname
+        - name: user
+          default: None
+        - name: db_user
+          default: None
+        - name: db_password
+          default: None
+        - name: db_host
+          default: None
+        - name: db_port
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: language_list
+      source:
+        path: salt/modules/postgres.py
+        symbol: language_list
+      summary: '.. versionadded:: 2016.3.0'
+      parameters:
+        - name: maintenance_db
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: language_exists
+      source:
+        path: salt/modules/postgres.py
+        symbol: language_exists
+      summary: '.. versionadded:: 2016.3.0'
+      parameters:
+        - name: name
+        - name: maintenance_db
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: language_create
+      source:
+        path: salt/modules/postgres.py
+        symbol: language_create
+      summary: '.. versionadded:: 2016.3.0'
+      parameters:
+        - name: name
+        - name: maintenance_db
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: language_remove
+      source:
+        path: salt/modules/postgres.py
+        symbol: language_remove
+      summary: '.. versionadded:: 2016.3.0'
+      parameters:
+        - name: name
+        - name: maintenance_db
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: _make_default_privileges_list_query
+      source:
+        path: salt/modules/postgres.py
+        symbol: _make_default_privileges_list_query
+      summary: Generate the SQL required for specific object type
+      parameters:
+        - name: name
+        - name: object_type
+        - name: prepend
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: _make_privileges_list_query
+      source:
+        path: salt/modules/postgres.py
+        symbol: _make_privileges_list_query
+      summary: Generate the SQL required for specific object type
+      parameters:
+        - name: name
+        - name: object_type
+        - name: prepend
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: _get_object_owner
+      source:
+        path: salt/modules/postgres.py
+        symbol: _get_object_owner
+      summary: Return the owner of a postgres object
+      parameters:
+        - name: name
+        - name: object_type
+        - name: prepend
+          default: '"public"'
+        - name: maintenance_db
+          default: None
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: _validate_default_privileges
+      source:
+        path: salt/modules/postgres.py
+        symbol: _validate_default_privileges
+      summary: Validate the supplied privileges
+      parameters:
+        - name: object_type
+        - name: defprivs
+        - name: defprivileges
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: _mod_defpriv_opts
+      source:
+        path: salt/modules/postgres.py
+        symbol: _mod_defpriv_opts
+      summary: Format options
+      parameters:
+        - name: object_type
+        - name: defprivileges
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: _process_defpriv_part
+      source:
+        path: salt/modules/postgres.py
+        symbol: _process_defpriv_part
+      summary: Process part
+      parameters:
+        - name: defperms
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: _validate_privileges
+      source:
+        path: salt/modules/postgres.py
+        symbol: _validate_privileges
+      summary: Validate the supplied privileges
+      parameters:
+        - name: object_type
+        - name: privs
+        - name: privileges
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: _mod_priv_opts
+      source:
+        path: salt/modules/postgres.py
+        symbol: _mod_priv_opts
+      summary: Format options
+      parameters:
+        - name: object_type
+        - name: privileges
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: _process_priv_part
+      source:
+        path: salt/modules/postgres.py
+        symbol: _process_priv_part
+      summary: Process part
+      parameters:
+        - name: perms
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: default_privileges_list
+      source:
+        path: salt/modules/postgres.py
+        symbol: default_privileges_list
+      summary: '.. versionadded:: 3009.0'
+      parameters:
+        - name: name
+        - name: object_type
+        - name: prepend
+          default: '"public"'
+        - name: maintenance_db
+          default: None
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: privileges_list
+      source:
+        path: salt/modules/postgres.py
+        symbol: privileges_list
+      summary: '.. versionadded:: 2016.3.0'
+      parameters:
+        - name: name
+        - name: object_type
+        - name: prepend
+          default: '"public"'
+        - name: maintenance_db
+          default: None
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: has_default_privileges
+      source:
+        path: salt/modules/postgres.py
+        symbol: has_default_privileges
+      summary: '.. versionadded:: 3009.0'
+      parameters:
+        - name: name
+        - name: object_name
+        - name: object_type
+        - name: defprivileges
+          default: None
+        - name: grant_option
+          default: None
+        - name: prepend
+          default: '"public"'
+        - name: maintenance_db
+          default: None
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: has_privileges
+      source:
+        path: salt/modules/postgres.py
+        symbol: has_privileges
+      summary: '.. versionadded:: 2016.3.0'
+      parameters:
+        - name: name
+        - name: object_name
+        - name: object_type
+        - name: privileges
+          default: None
+        - name: grant_option
+          default: None
+        - name: prepend
+          default: '"public"'
+        - name: maintenance_db
+          default: None
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: default_privileges_grant
+      source:
+        path: salt/modules/postgres.py
+        symbol: default_privileges_grant
+      summary: '.. versionadded:: 3009.0'
+      parameters:
+        - name: name
+        - name: object_name
+        - name: object_type
+        - name: defprivileges
+          default: None
+        - name: grant_option
+          default: None
+        - name: prepend
+          default: '"public"'
+        - name: maintenance_db
+          default: None
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: default_privileges_revoke
+      source:
+        path: salt/modules/postgres.py
+        symbol: default_privileges_revoke
+      summary: '.. versionadded:: 3009.0'
+      parameters:
+        - name: name
+        - name: object_name
+        - name: object_type
+        - name: defprivileges
+          default: None
+        - name: prepend
+          default: '"public"'
+        - name: maintenance_db
+          default: None
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: privileges_grant
+      source:
+        path: salt/modules/postgres.py
+        symbol: privileges_grant
+      summary: '.. versionadded:: 2016.3.0'
+      parameters:
+        - name: name
+        - name: object_name
+        - name: object_type
+        - name: privileges
+          default: None
+        - name: grant_option
+          default: None
+        - name: prepend
+          default: '"public"'
+        - name: maintenance_db
+          default: None
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: privileges_revoke
+      source:
+        path: salt/modules/postgres.py
+        symbol: privileges_revoke
+      summary: '.. versionadded:: 2016.3.0'
+      parameters:
+        - name: name
+        - name: object_name
+        - name: object_type
+        - name: privileges
+          default: None
+        - name: prepend
+          default: '"public"'
+        - name: maintenance_db
+          default: None
+        - name: user
+          default: None
+        - name: host
+          default: None
+        - name: port
+          default: None
+        - name: password
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: datadir_init
+      source:
+        path: salt/modules/postgres.py
+        symbol: datadir_init
+      summary: '.. versionadded:: 2016.3.0'
+      parameters:
+        - name: name
+        - name: auth
+          default: '"password"'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: encoding
+          default: '"UTF8"'
+        - name: locale
+          default: None
+        - name: waldir
+          default: None
+        - name: checksums
+          default: "False"
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72
+    - function: datadir_exists
+      source:
+        path: salt/modules/postgres.py
+        symbol: datadir_exists
+      summary: '.. versionadded:: 2016.3.0'
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - config.option
+        - file.chown
+        - file.remove
+        - postgres.psql_query
+      tests:
+        - path: tests/pytests/unit/modules/test_postgres.py
+          functions: 72

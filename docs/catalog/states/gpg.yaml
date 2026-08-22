@@ -1,0 +1,114 @@
+kind: state
+module: gpg
+source_module: gpg
+path: salt/states/gpg.py
+functions:
+    - function: _expired_subkeys
+      source:
+        path: salt/states/gpg.py
+        symbol: _expired_subkeys
+      summary: From a single key of the output of gpg.list_keys, iterate over
+      parameters:
+        - name: key
+        - name: max_days
+          default: "100"
+      tests:
+        - path: tests/pytests/unit/states/test_gpg.py
+          functions: 4
+    - function: present
+      source:
+        path: salt/states/gpg.py
+        symbol: present
+      summary: Ensure a GPG public key is present in the GPG keychain and
+      parameters:
+        - name: name
+        - name: keys
+          default: None
+        - name: user
+          default: None
+        - name: keyserver
+          default: None
+        - name: gnupghome
+          default: None
+        - name: trust
+          default: None
+        - name: keyring
+          default: None
+        - name: source
+          default: None
+        - name: skip_keyserver
+          default: "False"
+        - name: text
+          default: None
+        - name: subkey_maxage
+          default: "100"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+        - gpg.get_key
+        - gpg.list_keys
+        - gpg.receive_keys
+        - gpg.trust_key
+      tests:
+        - path: tests/pytests/unit/states/test_gpg.py
+          functions: 4
+    - function: absent
+      source:
+        path: salt/states/gpg.py
+        symbol: absent
+      summary: Ensure a GPG public key is absent from the keychain.
+      parameters:
+        - name: name
+        - name: keys
+          default: None
+        - name: user
+          default: None
+        - name: gnupghome
+          default: None
+        - name: keyring
+          default: None
+        - name: keyring_absent_if_empty
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+        - file.file_exists
+        - file.remove
+        - gpg.delete_key
+        - gpg.get_key
+        - gpg.list_keys
+        - gpg.receive_keys
+        - gpg.trust_key
+      tests:
+        - path: tests/pytests/unit/states/test_gpg.py
+          functions: 4
+    - function: _import_data
+      source:
+        path: salt/states/gpg.py
+        symbol: _import_data
+      parameters:
+        - name: key
+        - name: refresh
+        - name: user
+        - name: gnupghome
+        - name: keyring
+        - name: text
+          default: None
+        - name: path
+          default: None
+      execution_dependencies:
+        - cp.cache_file
+        - file.file_exists
+        - file.remove
+        - gpg.delete_key
+        - gpg.get_key
+        - gpg.import_key
+        - gpg.list_keys
+        - gpg.read_key
+        - gpg.receive_keys
+        - gpg.trust_key
+      tests:
+        - path: tests/pytests/unit/states/test_gpg.py
+          functions: 4

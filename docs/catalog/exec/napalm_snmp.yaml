@@ -1,0 +1,58 @@
+kind: exec
+module: snmp
+source_module: napalm_snmp
+virtual: true
+path: salt/modules/napalm_snmp.py
+functions:
+    - function: config
+      source:
+        path: salt/modules/napalm_snmp.py
+        symbol: config
+      summary: Returns the SNMP configuration
+      parameters:
+        - name: kwargs
+          kind: '**'
+    - function: remove_config
+      source:
+        path: salt/modules/napalm_snmp.py
+        symbol: remove_config
+      summary: Removes a configuration element from the SNMP configuration.
+      parameters:
+        - name: chassis_id
+          default: None
+        - name: community
+          default: None
+        - name: contact
+          default: None
+        - name: location
+          default: None
+        - name: test
+          default: "False"
+        - name: commit
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - net.load_template
+    - function: update_config
+      source:
+        path: salt/modules/napalm_snmp.py
+        symbol: update_config
+      summary: Updates the SNMP configuration.
+      parameters:
+        - name: chassis_id
+          default: None
+        - name: community
+          default: None
+        - name: contact
+          default: None
+        - name: location
+          default: None
+        - name: test
+          default: "False"
+        - name: commit
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - net.load_template

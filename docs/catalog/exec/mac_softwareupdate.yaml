@@ -1,0 +1,172 @@
+kind: exec
+module: softwareupdate
+source_module: mac_softwareupdate
+virtual: true
+path: salt/modules/mac_softwareupdate.py
+platform_markers:
+    - is_darwin
+functions:
+    - function: _get_available
+      source:
+        path: salt/modules/mac_softwareupdate.py
+        symbol: _get_available
+      summary: Utility function to get all available update packages.
+      parameters:
+        - name: recommended
+          default: "False"
+        - name: restart
+          default: "False"
+        - name: shut_down
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_softwareupdate.py
+          functions: 13
+    - function: list_available
+      source:
+        path: salt/modules/mac_softwareupdate.py
+        symbol: list_available
+      summary: List all available updates.
+      parameters:
+        - name: recommended
+          default: "False"
+        - name: restart
+          default: "False"
+        - name: shut_down
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_softwareupdate.py
+          functions: 13
+    - function: ignore
+      source:
+        path: salt/modules/mac_softwareupdate.py
+        symbol: ignore
+      summary: Ignore a specific program update. When an update is ignored the '-' and
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_softwareupdate.py
+          functions: 13
+    - function: list_ignored
+      source:
+        path: salt/modules/mac_softwareupdate.py
+        symbol: list_ignored
+      summary: List all updates that have been ignored. Ignored updates are shown
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_softwareupdate.py
+          functions: 13
+    - function: reset_ignored
+      source:
+        path: salt/modules/mac_softwareupdate.py
+        symbol: reset_ignored
+      summary: Make sure the ignored updates are not ignored anymore,
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_softwareupdate.py
+          functions: 13
+    - function: schedule_enabled
+      source:
+        path: salt/modules/mac_softwareupdate.py
+        symbol: schedule_enabled
+      summary: Check the status of automatic update scheduling.
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_softwareupdate.py
+          functions: 13
+    - function: schedule_enable
+      source:
+        path: salt/modules/mac_softwareupdate.py
+        symbol: schedule_enable
+      summary: Enable/disable automatic update scheduling.
+      parameters:
+        - name: enable
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_softwareupdate.py
+          functions: 13
+    - function: update_all
+      source:
+        path: salt/modules/mac_softwareupdate.py
+        symbol: update_all
+      summary: Install all available updates. Returns a dictionary containing the name
+      parameters:
+        - name: recommended
+          default: "False"
+        - name: restart
+          default: "True"
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_softwareupdate.py
+          functions: 13
+    - function: update
+      source:
+        path: salt/modules/mac_softwareupdate.py
+        symbol: update
+      summary: Install a named update.
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_softwareupdate.py
+          functions: 13
+    - function: update_available
+      source:
+        path: salt/modules/mac_softwareupdate.py
+        symbol: update_available
+      summary: Check whether or not an update is available with a given name.
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_softwareupdate.py
+          functions: 13
+    - function: list_downloads
+      source:
+        path: salt/modules/mac_softwareupdate.py
+        symbol: list_downloads
+      summary: Return a list of all updates that have been downloaded locally.
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_softwareupdate.py
+          functions: 13
+    - function: download
+      source:
+        path: salt/modules/mac_softwareupdate.py
+        symbol: download
+      summary: Download a named update so that it can be installed later with the
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_softwareupdate.py
+          functions: 13
+    - function: download_all
+      source:
+        path: salt/modules/mac_softwareupdate.py
+        symbol: download_all
+      summary: Download all available updates so that they can be installed later with the
+      parameters:
+        - name: recommended
+          default: "False"
+        - name: restart
+          default: "True"
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_softwareupdate.py
+          functions: 13
+    - function: get_catalog
+      source:
+        path: salt/modules/mac_softwareupdate.py
+        symbol: get_catalog
+      summary: '.. versionadded:: 2016.3.0'
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_softwareupdate.py
+          functions: 13
+    - function: set_catalog
+      source:
+        path: salt/modules/mac_softwareupdate.py
+        symbol: set_catalog
+      summary: '.. versionadded:: 2016.3.0'
+      parameters:
+        - name: url
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_softwareupdate.py
+          functions: 13
+    - function: reset_catalog
+      source:
+        path: salt/modules/mac_softwareupdate.py
+        symbol: reset_catalog
+      summary: '.. versionadded:: 2016.3.0'
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_softwareupdate.py
+          functions: 13

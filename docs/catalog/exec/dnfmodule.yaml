@@ -1,0 +1,208 @@
+kind: exec
+module: dnfmodule
+source_module: dnfmodule
+virtual: true
+path: salt/modules/dnfmodule.py
+functions:
+    - function: _dnf
+      source:
+        path: salt/modules/dnfmodule.py
+        symbol: _dnf
+      summary: Return the path to the ``dnf`` binary, or ``None`` if it is not available.
+      tests:
+        - path: tests/pytests/unit/modules/test_dnfmodule.py
+          functions: 17
+    - function: _call_dnf
+      source:
+        path: salt/modules/dnfmodule.py
+        symbol: _call_dnf
+      summary: Run a ``dnf`` command and return the ``cmd.run_all`` result dictionary.
+      parameters:
+        - name: args
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_dnfmodule.py
+          functions: 17
+    - function: _parse_module_list
+      source:
+        path: salt/modules/dnfmodule.py
+        symbol: _parse_module_list
+      summary: Parse the table produced by ``dnf module list`` into a list of dicts.
+      parameters:
+        - name: output
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_dnfmodule.py
+          functions: 17
+    - function: list_
+      source:
+        path: salt/modules/dnfmodule.py
+        symbol: list_
+      summary: Return the modules known to DNF as a list of dictionaries.
+      parameters:
+        - name: name
+          default: None
+        - name: enabled
+          default: "False"
+        - name: disabled
+          default: "False"
+        - name: installed
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_dnfmodule.py
+          functions: 17
+    - function: _split_name
+      source:
+        path: salt/modules/dnfmodule.py
+        symbol: _split_name
+      summary: Split ``module[:stream]`` into a ``(module, stream)`` tuple. ``stream`` is
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_dnfmodule.py
+          functions: 17
+    - function: is_enabled
+      source:
+        path: salt/modules/dnfmodule.py
+        symbol: is_enabled
+      summary: Return ``True`` if the given module (and stream, if specified) currently has
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_dnfmodule.py
+          functions: 17
+    - function: is_disabled
+      source:
+        path: salt/modules/dnfmodule.py
+        symbol: is_disabled
+      summary: Return ``True`` if the given module currently has a disabled stream.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_dnfmodule.py
+          functions: 17
+    - function: is_installed
+      source:
+        path: salt/modules/dnfmodule.py
+        symbol: is_installed
+      summary: Return ``True`` if the given module currently has an installed profile.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_dnfmodule.py
+          functions: 17
+    - function: enabled_stream
+      source:
+        path: salt/modules/dnfmodule.py
+        symbol: enabled_stream
+      summary: Return the stream that is currently enabled for the given module, or
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_dnfmodule.py
+          functions: 17
+    - function: _run_action
+      source:
+        path: salt/modules/dnfmodule.py
+        symbol: _run_action
+      summary: Run ``dnf -y module <action> <name>`` and return ``True`` on success.
+      parameters:
+        - name: action
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_dnfmodule.py
+          functions: 17
+    - function: enable
+      source:
+        path: salt/modules/dnfmodule.py
+        symbol: enable
+      summary: Enable a module stream. Enabling a stream makes the packages from that
+      parameters:
+        - name: name
+        - name: switch
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_dnfmodule.py
+          functions: 17
+    - function: disable
+      source:
+        path: salt/modules/dnfmodule.py
+        symbol: disable
+      summary: Disable a module. All of the module's streams become unavailable and any
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_dnfmodule.py
+          functions: 17
+    - function: install
+      source:
+        path: salt/modules/dnfmodule.py
+        symbol: install
+      summary: Install a module profile. This enables the corresponding stream (if it is
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_dnfmodule.py
+          functions: 17
+    - function: remove
+      source:
+        path: salt/modules/dnfmodule.py
+        symbol: remove
+      summary: Remove the installed packages of a module profile. The stream remains
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_dnfmodule.py
+          functions: 17
+    - function: reset
+      source:
+        path: salt/modules/dnfmodule.py
+        symbol: reset
+      summary: Reset a module to its initial state, neither enabled nor disabled. The
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_dnfmodule.py
+          functions: 17

@@ -1,0 +1,63 @@
+kind: exec
+module: sysctl
+source_module: mac_sysctl
+virtual: true
+path: salt/modules/mac_sysctl.py
+functions:
+    - function: show
+      source:
+        path: salt/modules/mac_sysctl.py
+        symbol: show
+      summary: Return a list of sysctl parameters for this minion
+      parameters:
+        - name: config_file
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_sysctl.py
+          functions: 6
+    - function: get
+      source:
+        path: salt/modules/mac_sysctl.py
+        symbol: get
+      summary: Return a single sysctl parameter for this minion
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_sysctl.py
+          functions: 6
+    - function: assign
+      source:
+        path: salt/modules/mac_sysctl.py
+        symbol: assign
+      summary: Assign a single sysctl parameter for this minion
+      parameters:
+        - name: name
+        - name: value
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_sysctl.py
+          functions: 6
+    - function: persist
+      source:
+        path: salt/modules/mac_sysctl.py
+        symbol: persist
+      summary: Assign and persist a simple sysctl parameter for this minion
+      parameters:
+        - name: name
+        - name: value
+        - name: config
+          default: '"/etc/sysctl.conf"'
+        - name: apply_change
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_sysctl.py
+          functions: 6

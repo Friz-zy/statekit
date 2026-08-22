@@ -1,0 +1,241 @@
+kind: exec
+module: sys
+source_module: sysmod
+virtual: true
+path: salt/modules/sysmod.py
+functions:
+    - function: doc
+      source:
+        path: salt/modules/sysmod.py
+        symbol: doc
+      summary: Return the docstrings for all modules. Optionally, specify a module or a
+      parameters:
+        - name: args
+          kind: '*'
+      tests:
+        - path: tests/unit/modules/test_sysmod.py
+          functions: 0
+    - function: state_doc
+      source:
+        path: salt/modules/sysmod.py
+        symbol: state_doc
+      summary: Return the docstrings for all states. Optionally, specify a state or a
+      parameters:
+        - name: args
+          kind: '*'
+      tests:
+        - path: tests/unit/modules/test_sysmod.py
+          functions: 0
+    - function: runner_doc
+      source:
+        path: salt/modules/sysmod.py
+        symbol: runner_doc
+      summary: Return the docstrings for all runners. Optionally, specify a runner or a
+      parameters:
+        - name: args
+          kind: '*'
+      tests:
+        - path: tests/unit/modules/test_sysmod.py
+          functions: 0
+    - function: returner_doc
+      source:
+        path: salt/modules/sysmod.py
+        symbol: returner_doc
+      summary: Return the docstrings for all returners. Optionally, specify a returner or a
+      parameters:
+        - name: args
+          kind: '*'
+      tests:
+        - path: tests/unit/modules/test_sysmod.py
+          functions: 0
+    - function: renderer_doc
+      source:
+        path: salt/modules/sysmod.py
+        symbol: renderer_doc
+      summary: Return the docstrings for all renderers. Optionally, specify a renderer or a
+      parameters:
+        - name: args
+          kind: '*'
+      tests:
+        - path: tests/unit/modules/test_sysmod.py
+          functions: 0
+    - function: list_functions
+      source:
+        path: salt/modules/sysmod.py
+        symbol: list_functions
+      summary: List the functions for all modules. Optionally, specify a module or modules
+      parameters:
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/unit/modules/test_sysmod.py
+          functions: 0
+    - function: list_modules
+      source:
+        path: salt/modules/sysmod.py
+        symbol: list_modules
+      summary: List the modules loaded on the minion
+      parameters:
+        - name: args
+          kind: '*'
+      tests:
+        - path: tests/unit/modules/test_sysmod.py
+          functions: 0
+    - function: reload_modules
+      source:
+        path: salt/modules/sysmod.py
+        symbol: reload_modules
+      summary: Tell the minion to reload the execution modules
+      tests:
+        - path: tests/unit/modules/test_sysmod.py
+          functions: 0
+    - function: argspec
+      source:
+        path: salt/modules/sysmod.py
+        symbol: argspec
+      summary: Return the argument specification of functions in Salt execution
+      parameters:
+        - name: module
+          default: '""'
+      tests:
+        - path: tests/unit/modules/test_sysmod.py
+          functions: 0
+    - function: state_argspec
+      source:
+        path: salt/modules/sysmod.py
+        symbol: state_argspec
+      summary: Return the argument specification of functions in Salt state
+      parameters:
+        - name: module
+          default: '""'
+      tests:
+        - path: tests/unit/modules/test_sysmod.py
+          functions: 0
+    - function: returner_argspec
+      source:
+        path: salt/modules/sysmod.py
+        symbol: returner_argspec
+      summary: Return the argument specification of functions in Salt returner
+      parameters:
+        - name: module
+          default: '""'
+      tests:
+        - path: tests/unit/modules/test_sysmod.py
+          functions: 0
+    - function: runner_argspec
+      source:
+        path: salt/modules/sysmod.py
+        symbol: runner_argspec
+      summary: Return the argument specification of functions in Salt runner
+      parameters:
+        - name: module
+          default: '""'
+      tests:
+        - path: tests/unit/modules/test_sysmod.py
+          functions: 0
+    - function: list_state_functions
+      source:
+        path: salt/modules/sysmod.py
+        symbol: list_state_functions
+      summary: List the functions for all state modules. Optionally, specify a state
+      parameters:
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/unit/modules/test_sysmod.py
+          functions: 0
+    - function: list_state_modules
+      source:
+        path: salt/modules/sysmod.py
+        symbol: list_state_modules
+      summary: List the modules loaded on the minion
+      parameters:
+        - name: args
+          kind: '*'
+      tests:
+        - path: tests/unit/modules/test_sysmod.py
+          functions: 0
+    - function: list_runners
+      source:
+        path: salt/modules/sysmod.py
+        symbol: list_runners
+      summary: List the runners loaded on the minion
+      parameters:
+        - name: args
+          kind: '*'
+      tests:
+        - path: tests/unit/modules/test_sysmod.py
+          functions: 0
+    - function: list_runner_functions
+      source:
+        path: salt/modules/sysmod.py
+        symbol: list_runner_functions
+      summary: List the functions for all runner modules. Optionally, specify a runner
+      parameters:
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/unit/modules/test_sysmod.py
+          functions: 0
+    - function: list_returners
+      source:
+        path: salt/modules/sysmod.py
+        symbol: list_returners
+      summary: List the returners loaded on the minion
+      parameters:
+        - name: args
+          kind: '*'
+      tests:
+        - path: tests/unit/modules/test_sysmod.py
+          functions: 0
+    - function: list_returner_functions
+      source:
+        path: salt/modules/sysmod.py
+        symbol: list_returner_functions
+      summary: List the functions for all returner modules. Optionally, specify a returner
+      parameters:
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/unit/modules/test_sysmod.py
+          functions: 0
+    - function: list_renderers
+      source:
+        path: salt/modules/sysmod.py
+        symbol: list_renderers
+      summary: List the renderers loaded on the minion
+      parameters:
+        - name: args
+          kind: '*'
+      tests:
+        - path: tests/unit/modules/test_sysmod.py
+          functions: 0
+    - function: _argspec_to_schema
+      source:
+        path: salt/modules/sysmod.py
+        symbol: _argspec_to_schema
+      parameters:
+        - name: mod
+        - name: spec
+      tests:
+        - path: tests/unit/modules/test_sysmod.py
+          functions: 0
+    - function: state_schema
+      source:
+        path: salt/modules/sysmod.py
+        symbol: state_schema
+      summary: Return a JSON Schema for the given state function(s)
+      parameters:
+        - name: module
+          default: '""'
+      tests:
+        - path: tests/unit/modules/test_sysmod.py
+          functions: 0

@@ -1,0 +1,162 @@
+kind: exec
+module: highstate_doc
+source_module: highstate_doc
+virtual: true
+path: salt/modules/highstate_doc.py
+functions:
+    - function: markdown_basic_jinja_template
+      source:
+        path: salt/modules/highstate_doc.py
+        symbol: markdown_basic_jinja_template
+      summary: Return text for a simple markdown jinja template
+      parameters:
+        - name: kwargs
+          kind: '**'
+    - function: markdown_default_jinja_template
+      source:
+        path: salt/modules/highstate_doc.py
+        symbol: markdown_default_jinja_template
+      summary: Return text for a markdown jinja template that included a header
+      parameters:
+        - name: kwargs
+          kind: '**'
+    - function: markdown_full_jinja_template
+      source:
+        path: salt/modules/highstate_doc.py
+        symbol: markdown_full_jinja_template
+      summary: Return text for an advanced markdown jinja template
+      parameters:
+        - name: kwargs
+          kind: '**'
+    - function: _get_config
+      source:
+        path: salt/modules/highstate_doc.py
+        symbol: _get_config
+      summary: Return configuration
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+    - function: read_file
+      source:
+        path: salt/modules/highstate_doc.py
+        symbol: read_file
+      summary: 'output the contents of a file:'
+      parameters:
+        - name: name
+      execution_dependencies:
+        - config.get
+    - function: render
+      source:
+        path: salt/modules/highstate_doc.py
+        symbol: render
+      summary: Render highstate to a text format (default Markdown)
+      parameters:
+        - name: jinja_template_text
+          default: None
+        - name: jinja_template_function
+          default: '"highstate_doc.markdown_default_jinja_template"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+    - function: _blacklist_filter
+      source:
+        path: salt/modules/highstate_doc.py
+        symbol: _blacklist_filter
+      parameters:
+        - name: s
+        - name: config
+      execution_dependencies:
+        - config.get
+    - function: process_lowstates
+      source:
+        path: salt/modules/highstate_doc.py
+        symbol: process_lowstates
+      summary: return processed lowstate data that was not blacklisted
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - state.show_lowstate
+    - function: _state_data_to_yaml_string
+      source:
+        path: salt/modules/highstate_doc.py
+        symbol: _state_data_to_yaml_string
+      summary: return a data dict in yaml string format.
+      parameters:
+        - name: data
+        - name: whitelist
+          default: None
+        - name: blacklist
+          default: None
+      execution_dependencies:
+        - config.get
+        - state.show_lowstate
+    - function: _md_fix
+      source:
+        path: salt/modules/highstate_doc.py
+        symbol: _md_fix
+      summary: sanitize text data that is to be displayed in a markdown code block
+      parameters:
+        - name: text
+      execution_dependencies:
+        - config.get
+        - state.show_lowstate
+    - function: _format_markdown_system_file
+      source:
+        path: salt/modules/highstate_doc.py
+        symbol: _format_markdown_system_file
+      parameters:
+        - name: filename
+        - name: config
+      execution_dependencies:
+        - cmd.shell
+        - config.get
+        - file.stats
+        - state.show_lowstate
+    - function: _format_markdown_link
+      source:
+        path: salt/modules/highstate_doc.py
+        symbol: _format_markdown_link
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.shell
+        - config.get
+        - file.stats
+        - state.show_lowstate
+    - function: _format_markdown_requisite
+      source:
+        path: salt/modules/highstate_doc.py
+        symbol: _format_markdown_requisite
+      summary: format requisite as a link users can click
+      parameters:
+        - name: state
+        - name: stateid
+        - name: makelink
+          default: "True"
+      execution_dependencies:
+        - cmd.shell
+        - config.get
+        - file.stats
+        - state.show_lowstate
+    - function: processor_markdown
+      source:
+        path: salt/modules/highstate_doc.py
+        symbol: processor_markdown
+      summary: Takes low state data and returns a dict of processed data
+      parameters:
+        - name: lowstate_item
+        - name: config
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.shell
+        - config.get
+        - cp.get_file_str
+        - file.find
+        - file.stats
+        - state.show_lowstate

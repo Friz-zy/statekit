@@ -1,0 +1,117 @@
+kind: exec
+module: rbac
+source_module: rbac_solaris
+virtual: true
+path: salt/modules/rbac_solaris.py
+functions:
+    - function: profile_list
+      source:
+        path: salt/modules/rbac_solaris.py
+        symbol: profile_list
+      summary: List all available profiles
+      parameters:
+        - name: default_only
+          default: "False"
+    - function: profile_get
+      source:
+        path: salt/modules/rbac_solaris.py
+        symbol: profile_get
+      summary: List profiles for user
+      parameters:
+        - name: user
+        - name: default_hidden
+          default: "True"
+    - function: profile_add
+      source:
+        path: salt/modules/rbac_solaris.py
+        symbol: profile_add
+      summary: Add profile to user
+      parameters:
+        - name: user
+        - name: profile
+      execution_dependencies:
+        - cmd.run_all
+    - function: profile_rm
+      source:
+        path: salt/modules/rbac_solaris.py
+        symbol: profile_rm
+      summary: Remove profile from user
+      parameters:
+        - name: user
+        - name: profile
+      execution_dependencies:
+        - cmd.run_all
+    - function: role_list
+      source:
+        path: salt/modules/rbac_solaris.py
+        symbol: role_list
+      summary: List all available roles
+      execution_dependencies:
+        - cmd.run_all
+    - function: role_get
+      source:
+        path: salt/modules/rbac_solaris.py
+        symbol: role_get
+      summary: List roles for user
+      parameters:
+        - name: user
+      execution_dependencies:
+        - cmd.run_all
+    - function: role_add
+      source:
+        path: salt/modules/rbac_solaris.py
+        symbol: role_add
+      summary: Add role to user
+      parameters:
+        - name: user
+        - name: role
+      execution_dependencies:
+        - cmd.run_all
+    - function: role_rm
+      source:
+        path: salt/modules/rbac_solaris.py
+        symbol: role_rm
+      summary: Remove role from user
+      parameters:
+        - name: user
+        - name: role
+      execution_dependencies:
+        - cmd.run_all
+    - function: auth_list
+      source:
+        path: salt/modules/rbac_solaris.py
+        symbol: auth_list
+      summary: List all available authorization
+      execution_dependencies:
+        - cmd.run_all
+    - function: auth_get
+      source:
+        path: salt/modules/rbac_solaris.py
+        symbol: auth_get
+      summary: List authorization for user
+      parameters:
+        - name: user
+        - name: computed
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+    - function: auth_add
+      source:
+        path: salt/modules/rbac_solaris.py
+        symbol: auth_add
+      summary: Add authorization to user
+      parameters:
+        - name: user
+        - name: auth
+      execution_dependencies:
+        - cmd.run_all
+    - function: auth_rm
+      source:
+        path: salt/modules/rbac_solaris.py
+        symbol: auth_rm
+      summary: Remove authorization from user
+      parameters:
+        - name: user
+        - name: auth
+      execution_dependencies:
+        - cmd.run_all

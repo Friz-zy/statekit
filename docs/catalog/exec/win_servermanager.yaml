@@ -1,0 +1,64 @@
+kind: exec
+module: win_servermanager
+source_module: win_servermanager
+virtual: true
+path: salt/modules/win_servermanager.py
+platform_markers:
+    - is_windows
+functions:
+    - function: list_available
+      source:
+        path: salt/modules/win_servermanager.py
+        symbol: list_available
+      summary: List available features to install
+      execution_dependencies:
+        - cmd.shell
+      tests:
+        - path: tests/pytests/unit/modules/test_win_servermanager.py
+          functions: 2
+    - function: list_installed
+      source:
+        path: salt/modules/win_servermanager.py
+        symbol: list_installed
+      summary: List installed features. Supported on Windows Server 2008 and Windows 8 and
+      execution_dependencies:
+        - cmd.shell
+      tests:
+        - path: tests/pytests/unit/modules/test_win_servermanager.py
+          functions: 2
+    - function: install
+      source:
+        path: salt/modules/win_servermanager.py
+        symbol: install
+      parameters:
+        - name: feature
+        - name: recurse
+          default: "False"
+        - name: restart
+          default: "False"
+        - name: source
+          default: None
+        - name: exclude
+          default: None
+      execution_dependencies:
+        - cmd.shell
+        - system.reboot
+      tests:
+        - path: tests/pytests/unit/modules/test_win_servermanager.py
+          functions: 2
+    - function: remove
+      source:
+        path: salt/modules/win_servermanager.py
+        symbol: remove
+      parameters:
+        - name: feature
+        - name: remove_payload
+          default: "False"
+        - name: restart
+          default: "False"
+      execution_dependencies:
+        - cmd.shell
+        - system.reboot
+      tests:
+        - path: tests/pytests/unit/modules/test_win_servermanager.py
+          functions: 2

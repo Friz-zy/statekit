@@ -1,0 +1,120 @@
+kind: exec
+module: win_smtp_server
+source_module: win_smtp_server
+virtual: true
+path: salt/modules/win_smtp_server.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _get_wmi_setting
+      source:
+        path: salt/modules/win_smtp_server.py
+        symbol: _get_wmi_setting
+      summary: Get the value of the setting for the provided class.
+      parameters:
+        - name: wmi_class_name
+        - name: setting
+        - name: server
+    - function: _set_wmi_setting
+      source:
+        path: salt/modules/win_smtp_server.py
+        symbol: _set_wmi_setting
+      summary: Set the value of the setting for the provided class.
+      parameters:
+        - name: wmi_class_name
+        - name: setting
+        - name: value
+        - name: server
+    - function: _normalize_server_settings
+      source:
+        path: salt/modules/win_smtp_server.py
+        symbol: _normalize_server_settings
+      summary: Convert setting values that had been improperly converted to a dict back to a string.
+      parameters:
+        - name: settings
+          kind: '**'
+    - function: get_log_format_types
+      source:
+        path: salt/modules/win_smtp_server.py
+        symbol: get_log_format_types
+      summary: Get all available log format names and ids.
+    - function: get_servers
+      source:
+        path: salt/modules/win_smtp_server.py
+        symbol: get_servers
+      summary: Get the SMTP virtual server names.
+    - function: get_server_setting
+      source:
+        path: salt/modules/win_smtp_server.py
+        symbol: get_server_setting
+      summary: Get the value of the setting for the SMTP virtual server.
+      parameters:
+        - name: settings
+        - name: server
+          default: _DEFAULT_SERVER
+    - function: set_server_setting
+      source:
+        path: salt/modules/win_smtp_server.py
+        symbol: set_server_setting
+      summary: Set the value of the setting for the SMTP virtual server.
+      parameters:
+        - name: settings
+        - name: server
+          default: _DEFAULT_SERVER
+    - function: get_log_format
+      source:
+        path: salt/modules/win_smtp_server.py
+        symbol: get_log_format
+      summary: Get the active log format for the SMTP virtual server.
+      parameters:
+        - name: server
+          default: _DEFAULT_SERVER
+    - function: set_log_format
+      source:
+        path: salt/modules/win_smtp_server.py
+        symbol: set_log_format
+      summary: Set the active log format for the SMTP virtual server.
+      parameters:
+        - name: log_format
+        - name: server
+          default: _DEFAULT_SERVER
+    - function: get_connection_ip_list
+      source:
+        path: salt/modules/win_smtp_server.py
+        symbol: get_connection_ip_list
+      summary: Get the IPGrant list for the SMTP virtual server.
+      parameters:
+        - name: as_wmi_format
+          default: "False"
+        - name: server
+          default: _DEFAULT_SERVER
+    - function: set_connection_ip_list
+      source:
+        path: salt/modules/win_smtp_server.py
+        symbol: set_connection_ip_list
+      summary: Set the IPGrant list for the SMTP virtual server.
+      parameters:
+        - name: addresses
+          default: None
+        - name: grant_by_default
+          default: "False"
+        - name: server
+          default: _DEFAULT_SERVER
+    - function: get_relay_ip_list
+      source:
+        path: salt/modules/win_smtp_server.py
+        symbol: get_relay_ip_list
+      summary: Get the RelayIpList list for the SMTP virtual server.
+      parameters:
+        - name: server
+          default: _DEFAULT_SERVER
+    - function: set_relay_ip_list
+      source:
+        path: salt/modules/win_smtp_server.py
+        symbol: set_relay_ip_list
+      summary: Set the RelayIpList list for the SMTP virtual server.
+      parameters:
+        - name: addresses
+          default: None
+        - name: server
+          default: _DEFAULT_SERVER

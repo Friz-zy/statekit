@@ -1,0 +1,78 @@
+kind: state
+module: rabbitmq_user
+source_module: rabbitmq_user
+path: salt/states/rabbitmq_user.py
+functions:
+    - function: _check_perms_changes
+      source:
+        path: salt/states/rabbitmq_user.py
+        symbol: _check_perms_changes
+      summary: Check whether Rabbitmq user's permissions need to be changed.
+      parameters:
+        - name: name
+        - name: newperms
+        - name: runas
+          default: None
+        - name: existing
+          default: None
+      execution_dependencies:
+        - rabbitmq.list_user_permissions
+    - function: _get_current_tags
+      source:
+        path: salt/states/rabbitmq_user.py
+        symbol: _get_current_tags
+      summary: Whether Rabbitmq user's tags need to be changed
+      parameters:
+        - name: name
+        - name: runas
+          default: None
+      execution_dependencies:
+        - rabbitmq.list_user_permissions
+        - rabbitmq.list_users
+    - function: present
+      source:
+        path: salt/states/rabbitmq_user.py
+        symbol: present
+      summary: Ensure the RabbitMQ user exists.
+      parameters:
+        - name: name
+        - name: password
+          default: None
+        - name: force
+          default: "False"
+        - name: tags
+          default: None
+        - name: perms
+          default: ()
+        - name: runas
+          default: None
+      execution_dependencies:
+        - rabbitmq.add_user
+        - rabbitmq.change_password
+        - rabbitmq.check_password
+        - rabbitmq.clear_password
+        - rabbitmq.list_user_permissions
+        - rabbitmq.list_users
+        - rabbitmq.set_permissions
+        - rabbitmq.set_user_tags
+        - rabbitmq.user_exists
+    - function: absent
+      source:
+        path: salt/states/rabbitmq_user.py
+        symbol: absent
+      summary: Ensure the named user is absent
+      parameters:
+        - name: name
+        - name: runas
+          default: None
+      execution_dependencies:
+        - rabbitmq.add_user
+        - rabbitmq.change_password
+        - rabbitmq.check_password
+        - rabbitmq.clear_password
+        - rabbitmq.delete_user
+        - rabbitmq.list_user_permissions
+        - rabbitmq.list_users
+        - rabbitmq.set_permissions
+        - rabbitmq.set_user_tags
+        - rabbitmq.user_exists

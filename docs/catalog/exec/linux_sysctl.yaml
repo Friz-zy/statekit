@@ -1,0 +1,96 @@
+kind: exec
+module: sysctl
+source_module: linux_sysctl
+virtual: true
+path: salt/modules/linux_sysctl.py
+functions:
+    - function: _which
+      source:
+        path: salt/modules/linux_sysctl.py
+        symbol: _which
+      summary: Utility function wrapper to error out early if a command is not found
+      parameters:
+        - name: cmd
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_sysctl.py
+          functions: 19
+    - function: default_config
+      source:
+        path: salt/modules/linux_sysctl.py
+        symbol: default_config
+      summary: Linux hosts using systemd 207 or later ignore ``/etc/sysctl.conf`` and only
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_sysctl.py
+          functions: 19
+    - function: show
+      source:
+        path: salt/modules/linux_sysctl.py
+        symbol: show
+      summary: Return a list of sysctl parameters for this minion
+      parameters:
+        - name: config_file
+          default: "False"
+      execution_dependencies:
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_sysctl.py
+          functions: 19
+    - function: get
+      source:
+        path: salt/modules/linux_sysctl.py
+        symbol: get
+      summary: Return a single sysctl parameter for this minion
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_sysctl.py
+          functions: 19
+    - function: assign
+      source:
+        path: salt/modules/linux_sysctl.py
+        symbol: assign
+      summary: Assign a single sysctl parameter for this minion
+      parameters:
+        - name: name
+        - name: value
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_sysctl.py
+          functions: 19
+    - function: _sanitize_sysctl_value
+      source:
+        path: salt/modules/linux_sysctl.py
+        symbol: _sanitize_sysctl_value
+      summary: Replace separating whitespaces by exactly one tab.
+      parameters:
+        - name: value
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_sysctl.py
+          functions: 19
+    - function: persist
+      source:
+        path: salt/modules/linux_sysctl.py
+        symbol: persist
+      summary: Assign and persist a simple sysctl parameter for this minion. If ``config``
+      parameters:
+        - name: name
+        - name: value
+        - name: config
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_sysctl.py
+          functions: 19

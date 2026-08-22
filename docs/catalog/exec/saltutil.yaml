@@ -1,0 +1,983 @@
+kind: exec
+module: saltutil
+source_module: saltutil
+path: salt/modules/saltutil.py
+functions:
+    - function: _get_top_file_envs
+      source:
+        path: salt/modules/saltutil.py
+        symbol: _get_top_file_envs
+      summary: Get all environments from the top file
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: _sync
+      source:
+        path: salt/modules/saltutil.py
+        symbol: _sync
+      summary: Sync the given directory in the given environment
+      parameters:
+        - name: form
+        - name: saltenv
+          default: None
+        - name: extmod_whitelist
+          default: None
+        - name: extmod_blacklist
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: update
+      source:
+        path: salt/modules/saltutil.py
+        symbol: update
+      summary: Update the salt minion from the URL defined in opts['update_url']
+      parameters:
+        - name: version
+          default: None
+      execution_dependencies:
+        - config.option
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: sync_beacons
+      source:
+        path: salt/modules/saltutil.py
+        symbol: sync_beacons
+      summary: '.. versionadded:: 2015.5.1'
+      parameters:
+        - name: saltenv
+          default: None
+        - name: refresh
+          default: "True"
+        - name: extmod_whitelist
+          default: None
+        - name: extmod_blacklist
+          default: None
+      execution_dependencies:
+        - config.option
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: sync_sdb
+      source:
+        path: salt/modules/saltutil.py
+        symbol: sync_sdb
+      summary: '.. versionadded:: 2015.5.8,2015.8.3'
+      parameters:
+        - name: saltenv
+          default: None
+        - name: extmod_whitelist
+          default: None
+        - name: extmod_blacklist
+          default: None
+      execution_dependencies:
+        - config.option
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: sync_modules
+      source:
+        path: salt/modules/saltutil.py
+        symbol: sync_modules
+      summary: '.. versionadded:: 0.10.0'
+      parameters:
+        - name: saltenv
+          default: None
+        - name: refresh
+          default: "True"
+        - name: extmod_whitelist
+          default: None
+        - name: extmod_blacklist
+          default: None
+      execution_dependencies:
+        - config.option
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: sync_states
+      source:
+        path: salt/modules/saltutil.py
+        symbol: sync_states
+      summary: '.. versionadded:: 0.10.0'
+      parameters:
+        - name: saltenv
+          default: None
+        - name: refresh
+          default: "True"
+        - name: extmod_whitelist
+          default: None
+        - name: extmod_blacklist
+          default: None
+      execution_dependencies:
+        - config.option
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: refresh_grains
+      source:
+        path: salt/modules/saltutil.py
+        symbol: refresh_grains
+      summary: '.. versionadded:: 2016.3.6,2016.11.4,2017.7.0'
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: refresh_resources
+      source:
+        path: salt/modules/saltutil.py
+        symbol: refresh_resources
+      summary: Signal the minion to re-discover its managed resources from current pillar
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: sync_resources
+      source:
+        path: salt/modules/saltutil.py
+        symbol: sync_resources
+      summary: Sync custom resource-type modules from ``salt://_resources`` to the minion
+      parameters:
+        - name: saltenv
+          default: None
+        - name: refresh
+          default: "True"
+        - name: extmod_whitelist
+          default: None
+        - name: extmod_blacklist
+          default: None
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: sync_grains
+      source:
+        path: salt/modules/saltutil.py
+        symbol: sync_grains
+      summary: '.. versionadded:: 0.10.0'
+      parameters:
+        - name: saltenv
+          default: None
+        - name: refresh
+          default: "True"
+        - name: extmod_whitelist
+          default: None
+        - name: extmod_blacklist
+          default: None
+        - name: clean_pillar_cache
+          default: "False"
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: sync_renderers
+      source:
+        path: salt/modules/saltutil.py
+        symbol: sync_renderers
+      summary: '.. versionadded:: 0.10.0'
+      parameters:
+        - name: saltenv
+          default: None
+        - name: refresh
+          default: "True"
+        - name: extmod_whitelist
+          default: None
+        - name: extmod_blacklist
+          default: None
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: sync_returners
+      source:
+        path: salt/modules/saltutil.py
+        symbol: sync_returners
+      summary: '.. versionadded:: 0.10.0'
+      parameters:
+        - name: saltenv
+          default: None
+        - name: refresh
+          default: "True"
+        - name: extmod_whitelist
+          default: None
+        - name: extmod_blacklist
+          default: None
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: sync_proxymodules
+      source:
+        path: salt/modules/saltutil.py
+        symbol: sync_proxymodules
+      summary: '.. versionadded:: 2015.8.2'
+      parameters:
+        - name: saltenv
+          default: None
+        - name: refresh
+          default: "False"
+        - name: extmod_whitelist
+          default: None
+        - name: extmod_blacklist
+          default: None
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: sync_matchers
+      source:
+        path: salt/modules/saltutil.py
+        symbol: sync_matchers
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: saltenv
+          default: None
+        - name: refresh
+          default: "False"
+        - name: extmod_whitelist
+          default: None
+        - name: extmod_blacklist
+          default: None
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: sync_engines
+      source:
+        path: salt/modules/saltutil.py
+        symbol: sync_engines
+      summary: '.. versionadded:: 2016.3.0'
+      parameters:
+        - name: saltenv
+          default: None
+        - name: refresh
+          default: "False"
+        - name: extmod_whitelist
+          default: None
+        - name: extmod_blacklist
+          default: None
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: sync_thorium
+      source:
+        path: salt/modules/saltutil.py
+        symbol: sync_thorium
+      summary: '.. versionadded:: 2018.3.0'
+      parameters:
+        - name: saltenv
+          default: None
+        - name: refresh
+          default: "False"
+        - name: extmod_whitelist
+          default: None
+        - name: extmod_blacklist
+          default: None
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: sync_output
+      source:
+        path: salt/modules/saltutil.py
+        symbol: sync_output
+      summary: Sync outputters from ``salt://_output`` to the minion
+      parameters:
+        - name: saltenv
+          default: None
+        - name: refresh
+          default: "True"
+        - name: extmod_whitelist
+          default: None
+        - name: extmod_blacklist
+          default: None
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: sync_clouds
+      source:
+        path: salt/modules/saltutil.py
+        symbol: sync_clouds
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: saltenv
+          default: None
+        - name: refresh
+          default: "True"
+        - name: extmod_whitelist
+          default: None
+        - name: extmod_blacklist
+          default: None
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: sync_utils
+      source:
+        path: salt/modules/saltutil.py
+        symbol: sync_utils
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: saltenv
+          default: None
+        - name: refresh
+          default: "True"
+        - name: extmod_whitelist
+          default: None
+        - name: extmod_blacklist
+          default: None
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: sync_serializers
+      source:
+        path: salt/modules/saltutil.py
+        symbol: sync_serializers
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: saltenv
+          default: None
+        - name: refresh
+          default: "True"
+        - name: extmod_whitelist
+          default: None
+        - name: extmod_blacklist
+          default: None
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: list_extmods
+      source:
+        path: salt/modules/saltutil.py
+        symbol: list_extmods
+      summary: '.. versionadded:: 2017.7.0'
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: sync_log_handlers
+      source:
+        path: salt/modules/saltutil.py
+        symbol: sync_log_handlers
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: saltenv
+          default: None
+        - name: refresh
+          default: "True"
+        - name: extmod_whitelist
+          default: None
+        - name: extmod_blacklist
+          default: None
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: sync_pillar
+      source:
+        path: salt/modules/saltutil.py
+        symbol: sync_pillar
+      summary: '.. versionadded:: 2015.8.11,2016.3.2'
+      parameters:
+        - name: saltenv
+          default: None
+        - name: refresh
+          default: "True"
+        - name: extmod_whitelist
+          default: None
+        - name: extmod_blacklist
+          default: None
+        - name: clean_pillar_cache
+          default: "False"
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: sync_tops
+      source:
+        path: salt/modules/saltutil.py
+        symbol: sync_tops
+      summary: '.. versionadded:: 3007.0'
+      parameters:
+        - name: saltenv
+          default: None
+        - name: refresh
+          default: "True"
+        - name: extmod_whitelist
+          default: None
+        - name: extmod_blacklist
+          default: None
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: sync_executors
+      source:
+        path: salt/modules/saltutil.py
+        symbol: sync_executors
+      summary: '.. versionadded:: 3000'
+      parameters:
+        - name: saltenv
+          default: None
+        - name: refresh
+          default: "True"
+        - name: extmod_whitelist
+          default: None
+        - name: extmod_blacklist
+          default: None
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: sync_wrapper
+      source:
+        path: salt/modules/saltutil.py
+        symbol: sync_wrapper
+      summary: '.. versionadded:: 3007.0'
+      parameters:
+        - name: saltenv
+          default: None
+        - name: refresh
+          default: "True"
+        - name: extmod_whitelist
+          default: None
+        - name: extmod_blacklist
+          default: None
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: sync_all
+      source:
+        path: salt/modules/saltutil.py
+        symbol: sync_all
+      summary: '.. versionchanged:: 3007.0'
+      parameters:
+        - name: saltenv
+          default: None
+        - name: refresh
+          default: "True"
+        - name: extmod_whitelist
+          default: None
+        - name: extmod_blacklist
+          default: None
+        - name: clean_pillar_cache
+          default: "False"
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: refresh_beacons
+      source:
+        path: salt/modules/saltutil.py
+        symbol: refresh_beacons
+      summary: Signal the minion to refresh the beacons.
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: refresh_matchers
+      source:
+        path: salt/modules/saltutil.py
+        symbol: refresh_matchers
+      summary: Signal the minion to refresh its matchers.
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: refresh_pillar
+      source:
+        path: salt/modules/saltutil.py
+        symbol: refresh_pillar
+      summary: Signal the minion to refresh the in-memory pillar data. See :ref:`pillar-in-memory`.
+      parameters:
+        - name: wait
+          default: "False"
+        - name: timeout
+          default: "30"
+        - name: clean_cache
+          default: "True"
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: refresh_modules
+      source:
+        path: salt/modules/saltutil.py
+        symbol: refresh_modules
+      summary: Signal the minion to refresh the module and grain data
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: is_running
+      source:
+        path: salt/modules/saltutil.py
+        symbol: is_running
+      summary: If the named function is running return the data associated with it/them.
+      parameters:
+        - name: fun
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: running
+      source:
+        path: salt/modules/saltutil.py
+        symbol: running
+      summary: Return the data on all running salt processes on the minion
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: clear_cache
+      source:
+        path: salt/modules/saltutil.py
+        symbol: clear_cache
+      summary: Forcibly removes all caches on a minion.
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: clear_job_cache
+      source:
+        path: salt/modules/saltutil.py
+        symbol: clear_job_cache
+      summary: Forcibly removes job cache folders and files on a minion.
+      parameters:
+        - name: hours
+          default: "24"
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: find_job
+      source:
+        path: salt/modules/saltutil.py
+        symbol: find_job
+      summary: Return the data for a specific job id that is currently running.
+      parameters:
+        - name: jid
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: find_cached_job
+      source:
+        path: salt/modules/saltutil.py
+        symbol: find_cached_job
+      summary: Return the data for a specific cached job id. Note this only works if
+      parameters:
+        - name: jid
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: signal_job
+      source:
+        path: salt/modules/saltutil.py
+        symbol: signal_job
+      summary: Sends a signal to the named salt job's process
+      parameters:
+        - name: jid
+        - name: sig
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: term_job
+      source:
+        path: salt/modules/saltutil.py
+        symbol: term_job
+      summary: Sends a termination signal (SIGTERM 15) to the named salt job's process
+      parameters:
+        - name: jid
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: term_all_jobs
+      source:
+        path: salt/modules/saltutil.py
+        symbol: term_all_jobs
+      summary: Sends a termination signal (SIGTERM 15) to all currently running jobs
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: kill_job
+      source:
+        path: salt/modules/saltutil.py
+        symbol: kill_job
+      summary: Sends a kill signal (SIGKILL 9) to the named salt job's process
+      parameters:
+        - name: jid
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: kill_all_jobs
+      source:
+        path: salt/modules/saltutil.py
+        symbol: kill_all_jobs
+      summary: Sends a kill signal (SIGKILL 9) to all currently running jobs
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: regen_keys
+      source:
+        path: salt/modules/saltutil.py
+        symbol: regen_keys
+      summary: Used to regenerate the minion keys.
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: revoke_auth
+      source:
+        path: salt/modules/saltutil.py
+        symbol: revoke_auth
+      summary: The minion sends a request to the master to revoke its own key.
+      parameters:
+        - name: preserve_minion_cache
+          default: "False"
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: _get_ssh_or_api_client
+      source:
+        path: salt/modules/saltutil.py
+        symbol: _get_ssh_or_api_client
+      parameters:
+        - name: cfgfile
+        - name: ssh
+          default: "False"
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: _exec
+      source:
+        path: salt/modules/saltutil.py
+        symbol: _exec
+      parameters:
+        - name: client
+        - name: tgt
+        - name: fun
+        - name: arg
+        - name: timeout
+        - name: tgt_type
+        - name: ret
+        - name: kwarg
+        - name: batch
+          default: "False"
+        - name: subset
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: cmd
+      source:
+        path: salt/modules/saltutil.py
+        symbol: cmd
+      summary: '.. versionchanged:: 2017.7.0'
+      parameters:
+        - name: tgt
+        - name: fun
+        - name: arg
+          default: ()
+        - name: timeout
+          default: None
+        - name: tgt_type
+          default: '"glob"'
+        - name: ret
+          default: '""'
+        - name: kwarg
+          default: None
+        - name: ssh
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: cmd_iter
+      source:
+        path: salt/modules/saltutil.py
+        symbol: cmd_iter
+      summary: '.. versionchanged:: 2017.7.0'
+      parameters:
+        - name: tgt
+        - name: fun
+        - name: arg
+          default: ()
+        - name: timeout
+          default: None
+        - name: tgt_type
+          default: '"glob"'
+        - name: ret
+          default: '""'
+        - name: kwarg
+          default: None
+        - name: ssh
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: _master_user_runas
+      source:
+        path: salt/modules/saltutil.py
+        symbol: _master_user_runas
+      summary: Return the master's configured user to drop to before running a master-side
+      parameters:
+        - name: opts
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: _align_runas_environment
+      source:
+        path: salt/modules/saltutil.py
+        symbol: _align_runas_environment
+      summary: Align the process environment with ``runas`` after dropping privileges.
+      parameters:
+        - name: runas
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: _client_cmd_as
+      source:
+        path: salt/modules/saltutil.py
+        symbol: _client_cmd_as
+      summary: Run ``client.cmd(name, **cmd_kwargs)`` in a child process that has dropped
+      parameters:
+        - name: runas
+        - name: client
+        - name: name
+        - name: cmd_kwargs
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: runner
+      source:
+        path: salt/modules/saltutil.py
+        symbol: runner
+      summary: Execute a runner function. This function must be run on the master,
+      parameters:
+        - name: name
+        - name: arg
+          default: None
+        - name: kwarg
+          default: None
+        - name: full_return
+          default: "False"
+        - name: saltenv
+          default: '"base"'
+        - name: jid
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: wheel
+      source:
+        path: salt/modules/saltutil.py
+        symbol: wheel
+      summary: Execute a wheel module and function. This function must be run against a
+      parameters:
+        - name: name
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31
+    - function: mmodule
+      source:
+        path: salt/modules/saltutil.py
+        symbol: mmodule
+      summary: Loads minion modules from an environment so that they can be used in pillars
+      parameters:
+        - name: saltenv
+        - name: fun
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.option
+        - event.fire
+        - service.restart
+      tests:
+        - path: tests/pytests/unit/modules/test_saltutil.py
+          functions: 31

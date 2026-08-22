@@ -1,0 +1,712 @@
+kind: exec
+module: pkg
+source_module: win_pkg
+virtual: true
+path: salt/modules/win_pkg.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _floats_equal
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: _floats_equal
+      summary: Return True if ``version_str`` parses to a float equal to
+      parameters:
+        - name: version_str
+        - name: version_float
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: latest_version
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: latest_version
+      summary: Return the latest version of the named package available for upgrade or
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: upgrade_available
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: upgrade_available
+      summary: Check whether an upgrade is available for a given package
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: list_upgrades
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: list_upgrades
+      summary: List all available package upgrades on this system
+      parameters:
+        - name: refresh
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: list_available
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: list_available
+      summary: Return a list of available versions of the specified package.
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: list_repo_pkgs
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: list_repo_pkgs
+      summary: '.. versionadded:: 3007.2'
+      parameters:
+        - name: args
+          kind: '*'
+        - name: saltenv
+          default: '"base"'
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: version
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: version
+      summary: Returns a string representing the package version or an empty string if not
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: list_pkgs
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: list_pkgs
+      summary: List the packages currently installed.
+      parameters:
+        - name: versions_as_list
+          default: "False"
+        - name: include_components
+          default: "True"
+        - name: include_updates
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: _uninstall_string_is_orphan
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: _uninstall_string_is_orphan
+      summary: Return True if ``uninstall_string`` references an absolute executable
+      parameters:
+        - name: uninstall_string
+      execution_dependencies:
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: _get_reg_software
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: _get_reg_software
+      summary: This searches the uninstall keys in the registry to find a match in the sub
+      parameters:
+        - name: include_components
+          default: "True"
+        - name: include_updates
+          default: "True"
+      execution_dependencies:
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      utility_dependencies:
+        - reg.key_exists
+        - reg.list_keys
+        - reg.read_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: _refresh_db_conditional
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: _refresh_db_conditional
+      summary: Internal use only in this module, has a different set of defaults and
+      parameters:
+        - name: saltenv
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      utility_dependencies:
+        - reg.key_exists
+        - reg.list_keys
+        - reg.read_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: refresh_db
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: refresh_db
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_dir
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      utility_dependencies:
+        - reg.key_exists
+        - reg.list_keys
+        - reg.read_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: _get_repo_details
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: _get_repo_details
+      summary: Return repo details for the specified saltenv as a namedtuple
+      parameters:
+        - name: saltenv
+      execution_dependencies:
+        - cp.cache_dir
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      utility_dependencies:
+        - reg.key_exists
+        - reg.list_keys
+        - reg.read_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: genrepo
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: genrepo
+      summary: Generate package metadata db based on files within the winrepo_source_dir
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_dir
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      utility_dependencies:
+        - reg.key_exists
+        - reg.list_keys
+        - reg.read_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: _repo_process_pkg_sls
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: _repo_process_pkg_sls
+      parameters:
+        - name: filename
+        - name: short_path_name
+        - name: ret
+        - name: successful_verbose
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cp.cache_dir
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      utility_dependencies:
+        - reg.key_exists
+        - reg.list_keys
+        - reg.read_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: _get_source_sum
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: _get_source_sum
+      summary: Extract the hash sum, whether it is in a remote hash file, or just a string.
+      parameters:
+        - name: source_hash
+        - name: file_path
+        - name: saltenv
+        - name: verify_ssl
+          default: "True"
+      execution_dependencies:
+        - cp.cache_dir
+        - cp.cache_file
+        - file.extract_hash
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      utility_dependencies:
+        - reg.key_exists
+        - reg.list_keys
+        - reg.read_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: _get_msiexec
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: _get_msiexec
+      summary: Return if msiexec.exe will be used and the command to invoke it.
+      parameters:
+        - name: use_msiexec
+      execution_dependencies:
+        - cp.cache_dir
+        - cp.cache_file
+        - file.extract_hash
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      utility_dependencies:
+        - reg.key_exists
+        - reg.list_keys
+        - reg.read_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: normalize_name
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: normalize_name
+      summary: Nothing to do on Windows. We need this function so that Salt doesn't go
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cp.cache_dir
+        - cp.cache_file
+        - file.extract_hash
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      utility_dependencies:
+        - reg.key_exists
+        - reg.list_keys
+        - reg.read_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: install
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: install
+      parameters:
+        - name: name
+          default: None
+        - name: refresh
+          default: "False"
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.valid_fileproto
+        - cp.cache_dir
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - file.extract_hash
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - system.set_reboot_required_witnessed
+        - task.create_task
+        - task.run
+        - task.run_wait
+        - task.status
+      utility_dependencies:
+        - reg.key_exists
+        - reg.list_keys
+        - reg.read_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: upgrade
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: upgrade
+      summary: Upgrade all software. Currently not implemented
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.valid_fileproto
+        - cp.cache_dir
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - file.extract_hash
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - system.set_reboot_required_witnessed
+        - task.create_task
+        - task.run
+        - task.run_wait
+        - task.status
+      utility_dependencies:
+        - reg.key_exists
+        - reg.list_keys
+        - reg.read_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: remove
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: remove
+      summary: Remove the passed package(s) from the system using winrepo
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.valid_fileproto
+        - cp.cache_dir
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - file.extract_hash
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - system.set_reboot_required_witnessed
+        - task.create_task
+        - task.run
+        - task.run_wait
+        - task.status
+      utility_dependencies:
+        - reg.key_exists
+        - reg.list_keys
+        - reg.read_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: purge
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: purge
+      summary: Package purges are not supported on Windows, this function is identical to
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.valid_fileproto
+        - cp.cache_dir
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - file.extract_hash
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - system.set_reboot_required_witnessed
+        - task.create_task
+        - task.run
+        - task.run_wait
+        - task.status
+      utility_dependencies:
+        - reg.key_exists
+        - reg.list_keys
+        - reg.read_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: get_repo_data
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: get_repo_data
+      summary: Returns the existing package metadata db. Will create it, if it does not
+      parameters:
+        - name: saltenv
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.valid_fileproto
+        - cp.cache_dir
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - file.extract_hash
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - system.set_reboot_required_witnessed
+        - task.create_task
+        - task.run
+        - task.run_wait
+        - task.status
+      utility_dependencies:
+        - reg.key_exists
+        - reg.list_keys
+        - reg.read_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: _get_name_map
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: _get_name_map
+      summary: Return a reverse map of full pkg names to the names recognized by winrepo.
+      parameters:
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cmd.run_all
+        - config.valid_fileproto
+        - cp.cache_dir
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - file.extract_hash
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - system.set_reboot_required_witnessed
+        - task.create_task
+        - task.run
+        - task.run_wait
+        - task.status
+      utility_dependencies:
+        - reg.key_exists
+        - reg.list_keys
+        - reg.read_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: get_package_info
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: get_package_info
+      summary: Get information about the package as found in the winrepo database
+      parameters:
+        - name: name
+        - name: saltenv
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.valid_fileproto
+        - cp.cache_dir
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - file.extract_hash
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - system.set_reboot_required_witnessed
+        - task.create_task
+        - task.run
+        - task.run_wait
+        - task.status
+      utility_dependencies:
+        - reg.key_exists
+        - reg.list_keys
+        - reg.read_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: _get_package_info
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: _get_package_info
+      summary: Return package info. Returns empty map if package not available
+      parameters:
+        - name: name
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cmd.run_all
+        - config.valid_fileproto
+        - cp.cache_dir
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - file.extract_hash
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - system.set_reboot_required_witnessed
+        - task.create_task
+        - task.run
+        - task.run_wait
+        - task.status
+      utility_dependencies:
+        - reg.key_exists
+        - reg.list_keys
+        - reg.read_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: _reverse_cmp_pkg_versions
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: _reverse_cmp_pkg_versions
+      summary: Compare software package versions
+      parameters:
+        - name: pkg1
+        - name: pkg2
+      execution_dependencies:
+        - cmd.run_all
+        - config.valid_fileproto
+        - cp.cache_dir
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - file.extract_hash
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - system.set_reboot_required_witnessed
+        - task.create_task
+        - task.run
+        - task.run_wait
+        - task.status
+      utility_dependencies:
+        - reg.key_exists
+        - reg.list_keys
+        - reg.read_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: _get_latest_pkg_version
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: _get_latest_pkg_version
+      summary: Returns the latest version of the package.
+      parameters:
+        - name: pkginfo
+      execution_dependencies:
+        - cmd.run_all
+        - config.valid_fileproto
+        - cp.cache_dir
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - file.extract_hash
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - system.set_reboot_required_witnessed
+        - task.create_task
+        - task.run
+        - task.run_wait
+        - task.status
+      utility_dependencies:
+        - reg.key_exists
+        - reg.list_keys
+        - reg.read_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32
+    - function: compare_versions
+      source:
+        path: salt/modules/win_pkg.py
+        symbol: compare_versions
+      summary: Compare software package versions. Made public for use with Jinja
+      parameters:
+        - name: ver1
+          default: '""'
+        - name: oper
+          default: '"=="'
+        - name: ver2
+          default: '""'
+      execution_dependencies:
+        - cmd.run_all
+        - config.valid_fileproto
+        - cp.cache_dir
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - file.extract_hash
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - system.set_reboot_required_witnessed
+        - task.create_task
+        - task.run
+        - task.run_wait
+        - task.status
+      utility_dependencies:
+        - reg.key_exists
+        - reg.list_keys
+        - reg.read_value
+        - reg.value_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_win_pkg.py
+          functions: 32

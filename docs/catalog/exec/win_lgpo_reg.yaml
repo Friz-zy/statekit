@@ -1,0 +1,132 @@
+kind: exec
+module: lgpo_reg
+source_module: win_lgpo_reg
+virtual: true
+path: salt/modules/win_lgpo_reg.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _find_value
+      source:
+        path: salt/modules/win_lgpo_reg.py
+        symbol: _find_value
+      summary: Helper function to find the value in the registry.pol file. Sometimes the
+      parameters:
+        - name: pol_data
+        - name: key
+        - name: v_name
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo_reg.py
+          functions: 50
+    - function: read_reg_pol
+      source:
+        path: salt/modules/win_lgpo_reg.py
+        symbol: read_reg_pol
+      parameters:
+        - name: policy_class
+          default: '"Machine"'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo_reg.py
+          functions: 50
+    - function: write_reg_pol
+      source:
+        path: salt/modules/win_lgpo_reg.py
+        symbol: write_reg_pol
+      parameters:
+        - name: data
+        - name: policy_class
+          default: '"Machine"'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo_reg.py
+          functions: 50
+    - function: get_value
+      source:
+        path: salt/modules/win_lgpo_reg.py
+        symbol: get_value
+      parameters:
+        - name: key
+        - name: v_name
+        - name: policy_class
+          default: '"Machine"'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo_reg.py
+          functions: 50
+    - function: get_key
+      source:
+        path: salt/modules/win_lgpo_reg.py
+        symbol: get_key
+      parameters:
+        - name: key
+        - name: policy_class
+          default: '"Machine"'
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo_reg.py
+          functions: 50
+    - function: get_rsop_value
+      source:
+        path: salt/modules/win_lgpo_reg.py
+        symbol: get_rsop_value
+      parameters:
+        - name: key
+        - name: v_name
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo_reg.py
+          functions: 50
+    - function: set_value
+      source:
+        path: salt/modules/win_lgpo_reg.py
+        symbol: set_value
+      parameters:
+        - name: key
+        - name: v_name
+        - name: v_data
+        - name: v_type
+          default: '"REG_DWORD"'
+        - name: policy_class
+          default: '"Machine"'
+        - name: write_registry
+          default: None
+        - name: refresh_policy
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo_reg.py
+          functions: 50
+    - function: disable_value
+      source:
+        path: salt/modules/win_lgpo_reg.py
+        symbol: disable_value
+      parameters:
+        - name: key
+        - name: v_name
+        - name: policy_class
+          default: '"machine"'
+        - name: write_registry
+          default: None
+        - name: refresh_policy
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo_reg.py
+          functions: 50
+    - function: delete_value
+      source:
+        path: salt/modules/win_lgpo_reg.py
+        symbol: delete_value
+      parameters:
+        - name: key
+        - name: v_name
+        - name: policy_class
+          default: '"Machine"'
+        - name: write_registry
+          default: None
+        - name: refresh_policy
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo_reg.py
+          functions: 50
+    - function: refresh_policy
+      source:
+        path: salt/modules/win_lgpo_reg.py
+        symbol: refresh_policy
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo_reg.py
+          functions: 50

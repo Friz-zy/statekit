@@ -1,0 +1,1249 @@
+kind: exec
+module: pkg
+source_module: yumpkg
+virtual: true
+path: salt/modules/yumpkg.py
+functions:
+    - function: _strip_headers
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: _strip_headers
+      parameters:
+        - name: output
+        - name: args
+          kind: '*'
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: _get_copr_repo
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: _get_copr_repo
+      parameters:
+        - name: copr
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: _get_hold
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: _get_hold
+      summary: Resolve a package name from a line containing the hold expression. If the
+      parameters:
+        - name: line
+        - name: pattern
+          default: __HOLD_PATTERN
+        - name: full
+          default: "True"
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: _yum
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: _yum
+      summary: Determine package manager name (yum or dnf[5]),
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: _call_yum
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: _call_yum
+      summary: Call yum/dnf.
+      parameters:
+        - name: args
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: _yum_pkginfo
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: _yum_pkginfo
+      summary: Parse yum/dnf output (which could contain irregular line breaks if package
+      parameters:
+        - name: output
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: _versionlock_pkg
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: _versionlock_pkg
+      summary: Determine versionlock plugin package name
+      parameters:
+        - name: grains
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: _check_versionlock
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: _check_versionlock
+      summary: Ensure that the appropriate versionlock plugin is present
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: _get_options
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: _get_options
+      summary: Returns a list of options to be used in the yum/dnf[5] command, based on the
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: _get_yum_config
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: _get_yum_config
+      summary: Returns a dict representing the yum config options and values.
+      parameters:
+        - name: strict_parser
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: _get_yum_config_value
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: _get_yum_config_value
+      summary: Look for a specific config variable and return its value
+      parameters:
+        - name: name
+        - name: strict_config
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: _normalize_basedir
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: _normalize_basedir
+      summary: Takes a basedir argument as a string or a list. If the string or list is
+      parameters:
+        - name: basedir
+          default: None
+        - name: strict_config
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: normalize_name
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: normalize_name
+      summary: Strips the architecture from the specified package name, if necessary.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: parse_arch
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: parse_arch
+      summary: Parse name and architecture from the specified package name.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: latest_version
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: latest_version
+      summary: Return the latest version of the named package available for upgrade or
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: upgrade_available
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: upgrade_available
+      summary: Check whether or not an upgrade is available for a given package
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: version
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: version
+      summary: Returns a string representing the package version or an empty string if not
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: version_cmp
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: version_cmp
+      summary: '.. versionadded:: 2015.5.4'
+      parameters:
+        - name: pkg1
+        - name: pkg2
+        - name: ignore_epoch
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - lowpkg.version_cmp
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: _list_pkgs_from_context
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: _list_pkgs_from_context
+      summary: Use pkg list from __context__
+      parameters:
+        - name: versions_as_list
+        - name: contextkey
+        - name: attr
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - lowpkg.version_cmp
+        - pkg_resource.format_pkg_list
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: list_pkgs
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: list_pkgs
+      summary: List the packages currently installed as a dict. By default, the dict
+      parameters:
+        - name: versions_as_list
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: list_repo_pkgs
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: list_repo_pkgs
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: list_upgrades
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: list_upgrades
+      summary: Check whether or not an upgrade is available for all packages
+      parameters:
+        - name: refresh
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: list_downloaded
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: list_downloaded
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: info_installed
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: info_installed
+      summary: '.. versionadded:: 2015.8.1'
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: refresh_db
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: refresh_db
+      summary: Check the yum repos for updated packages
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: clean_metadata
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: clean_metadata
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: install
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: install
+      summary: '.. versionchanged:: 2015.8.12,2016.3.3,2016.11.0'
+      parameters:
+        - name: name
+          default: None
+        - name: refresh
+          default: "False"
+        - name: skip_verify
+          default: "False"
+        - name: pkgs
+          default: None
+        - name: sources
+          default: None
+        - name: downloadonly
+          default: "False"
+        - name: reinstall
+          default: "False"
+        - name: normalize
+          default: "True"
+        - name: update_holds
+          default: "False"
+        - name: saltenv
+          default: '"base"'
+        - name: ignore_epoch
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: upgrade
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: upgrade
+      summary: Run a full system upgrade (a ``yum upgrade`` or ``dnf upgrade``), or
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: refresh
+          default: "True"
+        - name: skip_verify
+          default: "False"
+        - name: normalize
+          default: "True"
+        - name: minimal
+          default: "False"
+        - name: obsoletes
+          default: "True"
+        - name: diff_attr
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: update
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: update
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: refresh
+          default: "True"
+        - name: skip_verify
+          default: "False"
+        - name: normalize
+          default: "True"
+        - name: minimal
+          default: "False"
+        - name: obsoletes
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: remove
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: remove
+      summary: '.. versionchanged:: 2015.8.12,2016.3.3,2016.11.0'
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: purge
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: purge
+      summary: '.. versionchanged:: 2015.8.12,2016.3.3,2016.11.0'
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: hold
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: hold
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: sources
+          default: None
+        - name: normalize
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: unhold
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: unhold
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: sources
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: list_holds
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: list_holds
+      parameters:
+        - name: pattern
+          default: __HOLD_PATTERN
+        - name: full
+          default: "True"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: _list_holds_dnf5
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: _list_holds_dnf5
+      summary: Parse ``/etc/dnf/versionlock.toml`` to enumerate dnf5 version locks.
+      parameters:
+        - name: full
+          default: "True"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.info
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: verify
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: verify
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.info
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: group_list
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: group_list
+      summary: '.. versionadded:: 2014.1.0'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.info
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: group_info
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: group_info
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: name
+        - name: expand
+          default: "False"
+        - name: ignore_groups
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.info
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: group_diff
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: group_diff
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.info
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: group_install
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: group_install
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: name
+        - name: skip
+          default: ()
+        - name: include
+          default: ()
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.info
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: list_repos
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: list_repos
+      summary: 'Lists all repos in <basedir> (default: all dirs in `reposdir` yum option).'
+      parameters:
+        - name: basedir
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.info
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: get_repo
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: get_repo
+      summary: 'Display a repo from <basedir> (default basedir: all dirs in ``reposdir``'
+      parameters:
+        - name: repo
+        - name: basedir
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.info
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: del_repo
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: del_repo
+      summary: 'Delete a repo from <basedir> (default basedir: all dirs in `reposdir` yum'
+      parameters:
+        - name: repo
+        - name: basedir
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.info
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: mod_repo
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: mod_repo
+      summary: Modify one or more values for a repo. If the repo does not exist, it will
+      parameters:
+        - name: repo
+        - name: basedir
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.info
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: _parse_repo_file
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: _parse_repo_file
+      summary: Turn a single repo file into a dict
+      parameters:
+        - name: filename
+        - name: strict_config
+          default: "True"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.info
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: file_list
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: file_list
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: packages
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: file_dict
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: file_dict
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: packages
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: owner
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: owner
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: paths
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: modified
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: modified
+      summary: List the modified files that belong to a package. Not specifying any packages
+      parameters:
+        - name: packages
+          kind: '*'
+        - name: flags
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.modified
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: download
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: download
+      summary: '.. versionadded:: 2015.5.0'
+      parameters:
+        - name: packages
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.modified
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: diff
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: diff
+      summary: Return a formatted diff between current files and original in a package.
+      parameters:
+        - name: paths
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.diff
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.modified
+        - lowpkg.owner
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg.download
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: _get_patches
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: _get_patches
+      summary: List all known patches in repos.
+      parameters:
+        - name: installed_only
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.diff
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.modified
+        - lowpkg.owner
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg.download
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: list_patches
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: list_patches
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: refresh
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.diff
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.modified
+        - lowpkg.owner
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg.download
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: list_installed_patches
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: list_installed_patches
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.diff
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.modified
+        - lowpkg.owner
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg.download
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115
+    - function: services_need_restart
+      source:
+        path: salt/modules/yumpkg.py
+        symbol: services_need_restart
+      summary: '.. versionadded:: 3003'
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - config.get
+        - lowpkg.bin_pkg_info
+        - lowpkg.diff
+        - lowpkg.file_dict
+        - lowpkg.file_list
+        - lowpkg.info
+        - lowpkg.modified
+        - lowpkg.owner
+        - lowpkg.verify
+        - lowpkg.version_cmp
+        - pkg.download
+        - pkg_resource.add_pkg
+        - pkg_resource.format_pkg_list
+        - pkg_resource.parse_targets
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_yumpkg.py
+          functions: 115

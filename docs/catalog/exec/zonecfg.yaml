@@ -1,0 +1,250 @@
+kind: exec
+module: zonecfg
+source_module: zonecfg
+virtual: true
+path: salt/modules/zonecfg.py
+functions:
+    - function: _is_globalzone
+      source:
+        path: salt/modules/zonecfg.py
+        symbol: _is_globalzone
+      summary: Check if we are running in the globalzone
+      execution_dependencies:
+        - cmd.run_all
+    - function: _clean_message
+      source:
+        path: salt/modules/zonecfg.py
+        symbol: _clean_message
+      summary: Internal helper to sanitize message output
+      parameters:
+        - name: message
+      execution_dependencies:
+        - cmd.run_all
+    - function: _parse_value
+      source:
+        path: salt/modules/zonecfg.py
+        symbol: _parse_value
+      summary: Internal helper for parsing configuration values into python values
+      parameters:
+        - name: value
+      execution_dependencies:
+        - cmd.run_all
+    - function: _sanitize_value
+      source:
+        path: salt/modules/zonecfg.py
+        symbol: _sanitize_value
+      summary: Internal helper for converting pythonic values to configuration file values
+      parameters:
+        - name: value
+      execution_dependencies:
+        - cmd.run_all
+    - function: _dump_cfg
+      source:
+        path: salt/modules/zonecfg.py
+        symbol: _dump_cfg
+      summary: Internal helper for debugging cfg files
+      parameters:
+        - name: cfg_file
+      execution_dependencies:
+        - cmd.run_all
+        - file.file_exists
+    - function: create
+      source:
+        path: salt/modules/zonecfg.py
+        symbol: create
+      summary: Create an in-memory configuration for the specified zone.
+      parameters:
+        - name: zone
+        - name: brand
+        - name: zonepath
+        - name: force
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+        - file.directory_exists
+        - file.file_exists
+        - file.makedirs_perms
+        - file.remove
+    - function: create_from_template
+      source:
+        path: salt/modules/zonecfg.py
+        symbol: create_from_template
+      summary: Create an in-memory configuration from a template for the specified zone.
+      parameters:
+        - name: zone
+        - name: template
+      execution_dependencies:
+        - cmd.run_all
+        - file.directory_exists
+        - file.file_exists
+        - file.makedirs_perms
+        - file.remove
+    - function: delete
+      source:
+        path: salt/modules/zonecfg.py
+        symbol: delete
+      summary: Delete the specified configuration from memory and stable storage.
+      parameters:
+        - name: zone
+      execution_dependencies:
+        - cmd.run_all
+        - file.directory_exists
+        - file.file_exists
+        - file.makedirs_perms
+        - file.remove
+    - function: export
+      source:
+        path: salt/modules/zonecfg.py
+        symbol: export
+      summary: Export the configuration from memory to stable storage.
+      parameters:
+        - name: zone
+        - name: path
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - file.directory_exists
+        - file.file_exists
+        - file.makedirs_perms
+        - file.remove
+    - function: import_
+      source:
+        path: salt/modules/zonecfg.py
+        symbol: import_
+      summary: Import the configuration to memory from stable storage.
+      parameters:
+        - name: zone
+        - name: path
+      execution_dependencies:
+        - cmd.run_all
+        - file.directory_exists
+        - file.file_exists
+        - file.makedirs_perms
+        - file.remove
+    - function: _property
+      source:
+        path: salt/modules/zonecfg.py
+        symbol: _property
+      summary: internal handler for set and clear_property
+      parameters:
+        - name: methode
+        - name: zone
+        - name: key
+        - name: value
+      execution_dependencies:
+        - cmd.run_all
+        - file.directory_exists
+        - file.file_exists
+        - file.makedirs_perms
+        - file.remove
+    - function: set_property
+      source:
+        path: salt/modules/zonecfg.py
+        symbol: set_property
+      summary: Set a property
+      parameters:
+        - name: zone
+        - name: key
+        - name: value
+      execution_dependencies:
+        - cmd.run_all
+        - file.directory_exists
+        - file.file_exists
+        - file.makedirs_perms
+        - file.remove
+    - function: clear_property
+      source:
+        path: salt/modules/zonecfg.py
+        symbol: clear_property
+      summary: Clear a property
+      parameters:
+        - name: zone
+        - name: key
+      execution_dependencies:
+        - cmd.run_all
+        - file.directory_exists
+        - file.file_exists
+        - file.makedirs_perms
+        - file.remove
+    - function: _resource
+      source:
+        path: salt/modules/zonecfg.py
+        symbol: _resource
+      summary: internal resource hanlder
+      parameters:
+        - name: methode
+        - name: zone
+        - name: resource_type
+        - name: resource_selector
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - file.directory_exists
+        - file.file_exists
+        - file.makedirs_perms
+        - file.remove
+    - function: add_resource
+      source:
+        path: salt/modules/zonecfg.py
+        symbol: add_resource
+      summary: Add a resource
+      parameters:
+        - name: zone
+        - name: resource_type
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - file.directory_exists
+        - file.file_exists
+        - file.makedirs_perms
+        - file.remove
+    - function: update_resource
+      source:
+        path: salt/modules/zonecfg.py
+        symbol: update_resource
+      summary: Add a resource
+      parameters:
+        - name: zone
+        - name: resource_type
+        - name: resource_selector
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - file.directory_exists
+        - file.file_exists
+        - file.makedirs_perms
+        - file.remove
+    - function: remove_resource
+      source:
+        path: salt/modules/zonecfg.py
+        symbol: remove_resource
+      summary: Remove a resource
+      parameters:
+        - name: zone
+        - name: resource_type
+        - name: resource_key
+        - name: resource_value
+      execution_dependencies:
+        - cmd.run_all
+        - file.directory_exists
+        - file.file_exists
+        - file.makedirs_perms
+        - file.remove
+    - function: info
+      source:
+        path: salt/modules/zonecfg.py
+        symbol: info
+      summary: Display the configuration from memory
+      parameters:
+        - name: zone
+        - name: show_all
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+        - file.directory_exists
+        - file.file_exists
+        - file.makedirs_perms
+        - file.remove

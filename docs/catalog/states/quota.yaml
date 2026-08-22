@@ -1,0 +1,19 @@
+kind: state
+module: quota
+source_module: quota
+path: salt/states/quota.py
+functions:
+    - function: mode
+      source:
+        path: salt/states/quota.py
+        symbol: mode
+      summary: Set the quota for the system
+      parameters:
+        - name: name
+        - name: mode
+        - name: quotatype
+      execution_dependencies:
+        - quota.get_mode
+      tests:
+        - path: tests/pytests/unit/states/test_quota.py
+          functions: 1

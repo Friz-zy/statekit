@@ -1,0 +1,215 @@
+kind: exec
+module: network
+source_module: win_network
+virtual: true
+path: salt/modules/win_network.py
+platform_markers:
+    - is_windows
+functions:
+    - function: ping
+      source:
+        path: salt/modules/win_network.py
+        symbol: ping
+      summary: Performs a ping to a host
+      parameters:
+        - name: host
+        - name: timeout
+          default: "False"
+        - name: return_boolean
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_network.py
+          functions: 12
+    - function: netstat
+      source:
+        path: salt/modules/win_network.py
+        symbol: netstat
+      summary: Return information on open ports and states
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_network.py
+          functions: 12
+    - function: traceroute
+      source:
+        path: salt/modules/win_network.py
+        symbol: traceroute
+      summary: Performs a traceroute to a 3rd party host
+      parameters:
+        - name: host
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_network.py
+          functions: 12
+    - function: nslookup
+      source:
+        path: salt/modules/win_network.py
+        symbol: nslookup
+      summary: Query DNS for information about a domain or ip address
+      parameters:
+        - name: host
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_network.py
+          functions: 12
+    - function: get_route
+      source:
+        path: salt/modules/win_network.py
+        symbol: get_route
+      summary: Return routing information for given destination ip
+      parameters:
+        - name: ip
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_network.py
+          functions: 12
+    - function: dig
+      source:
+        path: salt/modules/win_network.py
+        symbol: dig
+      summary: Performs a DNS lookup with dig
+      parameters:
+        - name: host
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_network.py
+          functions: 12
+    - function: interfaces_names
+      source:
+        path: salt/modules/win_network.py
+        symbol: interfaces_names
+      summary: Return a list of all the interfaces names
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_network.py
+          functions: 12
+    - function: interfaces
+      source:
+        path: salt/modules/win_network.py
+        symbol: interfaces
+      summary: Return a dictionary of information about all the interfaces on the minion
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_network.py
+          functions: 12
+    - function: hw_addr
+      source:
+        path: salt/modules/win_network.py
+        symbol: hw_addr
+      summary: Return the hardware address (a.k.a. MAC address) for a given interface
+      parameters:
+        - name: iface
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_network.py
+          functions: 12
+    - function: subnets
+      source:
+        path: salt/modules/win_network.py
+        symbol: subnets
+      summary: Returns a list of subnets to which the host belongs
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_network.py
+          functions: 12
+    - function: in_subnet
+      source:
+        path: salt/modules/win_network.py
+        symbol: in_subnet
+      summary: Determine if a host is within a subnet
+      parameters:
+        - name: cidr
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_network.py
+          functions: 12
+    - function: ip_addrs
+      source:
+        path: salt/modules/win_network.py
+        symbol: ip_addrs
+      summary: Returns a list of IPv4 addresses assigned to the host.
+      parameters:
+        - name: interface
+          default: None
+        - name: include_loopback
+          default: "False"
+        - name: cidr
+          default: None
+        - name: type
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_network.py
+          functions: 12
+    - function: ip_addrs6
+      source:
+        path: salt/modules/win_network.py
+        symbol: ip_addrs6
+      summary: Returns a list of IPv6 addresses assigned to the host.
+      parameters:
+        - name: interface
+          default: None
+        - name: include_loopback
+          default: "False"
+        - name: cidr
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_network.py
+          functions: 12
+    - function: connect
+      source:
+        path: salt/modules/win_network.py
+        symbol: connect
+      summary: Test connectivity to a host using a particular
+      parameters:
+        - name: host
+        - name: port
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_network.py
+          functions: 12
+    - function: is_private
+      source:
+        path: salt/modules/win_network.py
+        symbol: is_private
+      summary: Check if the given IP address is a private address
+      parameters:
+        - name: ip_addr
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_network.py
+          functions: 12

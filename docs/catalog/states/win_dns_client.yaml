@@ -1,0 +1,66 @@
+kind: state
+module: win_dns_client
+source_module: win_dns_client
+path: salt/states/win_dns_client.py
+functions:
+    - function: dns_exists
+      source:
+        path: salt/states/win_dns_client.py
+        symbol: dns_exists
+      summary: Configure the DNS server list in the specified interface
+      parameters:
+        - name: name
+        - name: servers
+          default: None
+        - name: interface
+          default: '"Local Area Connection"'
+        - name: replace
+          default: "False"
+      execution_dependencies:
+        - win_dns_client.add_dns
+        - win_dns_client.get_dns_servers
+        - win_dns_client.rm_dns
+      tests:
+        - path: tests/pytests/unit/states/test_win_dns_client.py
+          functions: 3
+    - function: dns_dhcp
+      source:
+        path: salt/states/win_dns_client.py
+        symbol: dns_dhcp
+      summary: Configure the DNS server list from DHCP Server
+      parameters:
+        - name: name
+        - name: interface
+          default: '"Local Area Connection"'
+      execution_dependencies:
+        - win_dns_client.add_dns
+        - win_dns_client.dns_dhcp
+        - win_dns_client.get_dns_config
+        - win_dns_client.get_dns_servers
+        - win_dns_client.rm_dns
+      tests:
+        - path: tests/pytests/unit/states/test_win_dns_client.py
+          functions: 3
+    - function: primary_suffix
+      source:
+        path: salt/states/win_dns_client.py
+        symbol: primary_suffix
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+        - name: suffix
+          default: None
+        - name: updates
+          default: "False"
+      execution_dependencies:
+        - win_dns_client.add_dns
+        - win_dns_client.dns_dhcp
+        - win_dns_client.get_dns_config
+        - win_dns_client.get_dns_servers
+        - win_dns_client.rm_dns
+      utility_dependencies:
+        - reg.read_value
+        - reg.set_value
+      tests:
+        - path: tests/pytests/unit/states/test_win_dns_client.py
+          functions: 3

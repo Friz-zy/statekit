@@ -1,0 +1,170 @@
+kind: exec
+module: seed
+source_module: seed
+path: salt/modules/seed.py
+functions:
+    - function: _file_or_content
+      source:
+        path: salt/modules/seed.py
+        symbol: _file_or_content
+      parameters:
+        - name: file_
+      tests:
+        - path: tests/pytests/unit/modules/test_seed.py
+          functions: 3
+    - function: prep_bootstrap
+      source:
+        path: salt/modules/seed.py
+        symbol: prep_bootstrap
+      summary: Update and get the random script to a random place
+      parameters:
+        - name: mpt
+      execution_dependencies:
+        - config.gather_bootstrap_script
+      tests:
+        - path: tests/pytests/unit/modules/test_seed.py
+          functions: 3
+    - function: _mount
+      source:
+        path: salt/modules/seed.py
+        symbol: _mount
+      parameters:
+        - name: path
+        - name: ftype
+        - name: root
+          default: None
+      execution_dependencies:
+        - config.gather_bootstrap_script
+        - mount.mount
+      tests:
+        - path: tests/pytests/unit/modules/test_seed.py
+          functions: 3
+    - function: _umount
+      source:
+        path: salt/modules/seed.py
+        symbol: _umount
+      parameters:
+        - name: mpt
+        - name: disk
+        - name: ftype
+      execution_dependencies:
+        - config.gather_bootstrap_script
+        - mount.mount
+        - mount.umount
+      tests:
+        - path: tests/pytests/unit/modules/test_seed.py
+          functions: 3
+    - function: apply_
+      source:
+        path: salt/modules/seed.py
+        symbol: apply_
+      summary: Seed a location (disk image, directory, or block device) with the
+      parameters:
+        - name: path
+        - name: id_
+          default: None
+        - name: config
+          default: None
+        - name: approve_key
+          default: "True"
+        - name: install
+          default: "True"
+        - name: prep_install
+          default: "False"
+        - name: pub_key
+          default: None
+        - name: priv_key
+          default: None
+        - name: mount_point
+          default: None
+      execution_dependencies:
+        - config.gather_bootstrap_script
+        - file.makedirs
+        - file.stats
+        - mount.mount
+        - mount.umount
+      tests:
+        - path: tests/pytests/unit/modules/test_seed.py
+          functions: 3
+    - function: mkconfig
+      source:
+        path: salt/modules/seed.py
+        symbol: mkconfig
+      summary: Generate keys and config and put them in a tmp directory.
+      parameters:
+        - name: config
+          default: None
+        - name: tmp
+          default: None
+        - name: id_
+          default: None
+        - name: approve_key
+          default: "True"
+        - name: pub_key
+          default: None
+        - name: priv_key
+          default: None
+      execution_dependencies:
+        - config.gather_bootstrap_script
+        - file.makedirs
+        - file.stats
+        - mount.mount
+        - mount.umount
+        - pillar.ext
+      tests:
+        - path: tests/pytests/unit/modules/test_seed.py
+          functions: 3
+    - function: _install
+      source:
+        path: salt/modules/seed.py
+        symbol: _install
+      summary: Determine whether salt-minion is installed and, if not,
+      parameters:
+        - name: mpt
+      execution_dependencies:
+        - cmd.run_chroot
+        - config.gather_bootstrap_script
+        - file.makedirs
+        - file.stats
+        - mount.mount
+        - mount.umount
+        - pillar.ext
+      tests:
+        - path: tests/pytests/unit/modules/test_seed.py
+          functions: 3
+    - function: _check_resolv
+      source:
+        path: salt/modules/seed.py
+        symbol: _check_resolv
+      summary: Check that the resolv.conf is present and populated
+      parameters:
+        - name: mpt
+      execution_dependencies:
+        - cmd.run_chroot
+        - config.gather_bootstrap_script
+        - file.makedirs
+        - file.stats
+        - mount.mount
+        - mount.umount
+        - pillar.ext
+      tests:
+        - path: tests/pytests/unit/modules/test_seed.py
+          functions: 3
+    - function: _check_install
+      source:
+        path: salt/modules/seed.py
+        symbol: _check_install
+      parameters:
+        - name: root
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_chroot
+        - config.gather_bootstrap_script
+        - file.makedirs
+        - file.stats
+        - mount.mount
+        - mount.umount
+        - pillar.ext
+      tests:
+        - path: tests/pytests/unit/modules/test_seed.py
+          functions: 3

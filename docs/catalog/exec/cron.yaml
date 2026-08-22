@@ -1,0 +1,338 @@
+kind: exec
+module: cron
+source_module: cron
+path: salt/modules/cron.py
+functions:
+    - function: _ensure_string
+      source:
+        path: salt/modules/cron.py
+        symbol: _ensure_string
+      parameters:
+        - name: val
+      tests:
+        - path: tests/unit/modules/test_cron.py
+          functions: 0
+    - function: _cron_id
+      source:
+        path: salt/modules/cron.py
+        symbol: _cron_id
+      summary: SAFETYBELT, Only set if we really have an identifier
+      parameters:
+        - name: cron
+      tests:
+        - path: tests/unit/modules/test_cron.py
+          functions: 0
+    - function: _cron_matched
+      source:
+        path: salt/modules/cron.py
+        symbol: _cron_matched
+      summary: 'Check if:'
+      parameters:
+        - name: cron
+        - name: cmd
+        - name: identifier
+          default: None
+      tests:
+        - path: tests/unit/modules/test_cron.py
+          functions: 0
+    - function: _needs_change
+      source:
+        path: salt/modules/cron.py
+        symbol: _needs_change
+      parameters:
+        - name: old
+        - name: new
+      tests:
+        - path: tests/unit/modules/test_cron.py
+          functions: 0
+    - function: _render_tab
+      source:
+        path: salt/modules/cron.py
+        symbol: _render_tab
+      summary: Takes a tab list structure and renders it to a list for applying it to
+      parameters:
+        - name: lst
+      tests:
+        - path: tests/unit/modules/test_cron.py
+          functions: 0
+    - function: _get_cron_cmdstr
+      source:
+        path: salt/modules/cron.py
+        symbol: _get_cron_cmdstr
+      summary: Returns a format string, to be used to build a crontab command.
+      parameters:
+        - name: path
+        - name: user
+          default: None
+      tests:
+        - path: tests/unit/modules/test_cron.py
+          functions: 0
+    - function: _check_instance_uid_match
+      source:
+        path: salt/modules/cron.py
+        symbol: _check_instance_uid_match
+      summary: Returns true if running instance's UID matches the specified user UID
+      parameters:
+        - name: user
+      execution_dependencies:
+        - file.user_to_uid
+      tests:
+        - path: tests/unit/modules/test_cron.py
+          functions: 0
+    - function: write_cron_file
+      source:
+        path: salt/modules/cron.py
+        symbol: write_cron_file
+      summary: Writes the contents of a file to a user's crontab
+      parameters:
+        - name: user
+        - name: path
+      execution_dependencies:
+        - cmd.retcode
+        - file.user_to_uid
+      tests:
+        - path: tests/unit/modules/test_cron.py
+          functions: 0
+    - function: write_cron_file_verbose
+      source:
+        path: salt/modules/cron.py
+        symbol: write_cron_file_verbose
+      summary: Writes the contents of a file to a user's crontab and return error message on error
+      parameters:
+        - name: user
+        - name: path
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - file.user_to_uid
+      tests:
+        - path: tests/unit/modules/test_cron.py
+          functions: 0
+    - function: _write_cron_lines
+      source:
+        path: salt/modules/cron.py
+        symbol: _write_cron_lines
+      summary: Takes a list of lines to be committed to a user's crontab and writes it
+      parameters:
+        - name: user
+        - name: lines
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - file.user_to_uid
+      tests:
+        - path: tests/unit/modules/test_cron.py
+          functions: 0
+    - function: _date_time_match
+      source:
+        path: salt/modules/cron.py
+        symbol: _date_time_match
+      summary: Returns true if the minute, hour, etc. params match their counterparts from
+      parameters:
+        - name: cron
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - file.user_to_uid
+      tests:
+        - path: tests/unit/modules/test_cron.py
+          functions: 0
+    - function: raw_cron
+      source:
+        path: salt/modules/cron.py
+        symbol: raw_cron
+      summary: Return the contents of the user's crontab
+      parameters:
+        - name: user
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.user_to_uid
+      tests:
+        - path: tests/unit/modules/test_cron.py
+          functions: 0
+    - function: list_tab
+      source:
+        path: salt/modules/cron.py
+        symbol: list_tab
+      summary: Return the contents of the specified user's crontab
+      parameters:
+        - name: user
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.user_to_uid
+      tests:
+        - path: tests/unit/modules/test_cron.py
+          functions: 0
+    - function: get_entry
+      source:
+        path: salt/modules/cron.py
+        symbol: get_entry
+      summary: Return the specified entry from user's crontab.
+      parameters:
+        - name: user
+        - name: identifier
+          default: None
+        - name: cmd
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.user_to_uid
+      tests:
+        - path: tests/unit/modules/test_cron.py
+          functions: 0
+    - function: set_special
+      source:
+        path: salt/modules/cron.py
+        symbol: set_special
+      summary: Set up a special command in the crontab.
+      parameters:
+        - name: user
+        - name: special
+        - name: cmd
+        - name: commented
+          default: "False"
+        - name: comment
+          default: None
+        - name: identifier
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.user_to_uid
+      tests:
+        - path: tests/unit/modules/test_cron.py
+          functions: 0
+    - function: _get_cron_date_time
+      source:
+        path: salt/modules/cron.py
+        symbol: _get_cron_date_time
+      summary: Returns a dict of date/time values to be used in a cron entry
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.user_to_uid
+      tests:
+        - path: tests/unit/modules/test_cron.py
+          functions: 0
+    - function: set_job
+      source:
+        path: salt/modules/cron.py
+        symbol: set_job
+      summary: Sets a cron job up for a specified user.
+      parameters:
+        - name: user
+        - name: minute
+        - name: hour
+        - name: daymonth
+        - name: month
+        - name: dayweek
+        - name: cmd
+        - name: commented
+          default: "False"
+        - name: comment
+          default: None
+        - name: identifier
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.user_to_uid
+      tests:
+        - path: tests/unit/modules/test_cron.py
+          functions: 0
+    - function: rm_special
+      source:
+        path: salt/modules/cron.py
+        symbol: rm_special
+      summary: Remove a special cron job for a specified user.
+      parameters:
+        - name: user
+        - name: cmd
+        - name: special
+          default: None
+        - name: identifier
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.user_to_uid
+      tests:
+        - path: tests/unit/modules/test_cron.py
+          functions: 0
+    - function: rm_job
+      source:
+        path: salt/modules/cron.py
+        symbol: rm_job
+      summary: Remove a cron job for a specified user. If any of the day/time params are
+      parameters:
+        - name: user
+        - name: cmd
+        - name: minute
+          default: None
+        - name: hour
+          default: None
+        - name: daymonth
+          default: None
+        - name: month
+          default: None
+        - name: dayweek
+          default: None
+        - name: identifier
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.user_to_uid
+      tests:
+        - path: tests/unit/modules/test_cron.py
+          functions: 0
+    - function: set_env
+      source:
+        path: salt/modules/cron.py
+        symbol: set_env
+      summary: Set up an environment variable in the crontab.
+      parameters:
+        - name: user
+        - name: name
+        - name: value
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.user_to_uid
+      tests:
+        - path: tests/unit/modules/test_cron.py
+          functions: 0
+    - function: rm_env
+      source:
+        path: salt/modules/cron.py
+        symbol: rm_env
+      summary: Remove cron environment variable for a specified user.
+      parameters:
+        - name: user
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.user_to_uid
+      tests:
+        - path: tests/unit/modules/test_cron.py
+          functions: 0

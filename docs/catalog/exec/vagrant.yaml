@@ -1,0 +1,364 @@
+kind: exec
+module: vagrant
+source_module: vagrant
+virtual: true
+path: salt/modules/vagrant.py
+functions:
+    - function: _build_sdb_uri
+      source:
+        path: salt/modules/vagrant.py
+        symbol: _build_sdb_uri
+      summary: returns string used to fetch data for "key" from the sdb store.
+      parameters:
+        - name: key
+      tests:
+        - path: tests/pytests/unit/modules/test_vagrant.py
+          functions: 8
+    - function: _build_machine_uri
+      source:
+        path: salt/modules/vagrant.py
+        symbol: _build_machine_uri
+      summary: returns string used to fetch id names from the sdb store.
+      parameters:
+        - name: machine
+        - name: cwd
+      tests:
+        - path: tests/pytests/unit/modules/test_vagrant.py
+          functions: 8
+    - function: _update_vm_info
+      source:
+        path: salt/modules/vagrant.py
+        symbol: _update_vm_info
+      summary: store the vm_ information keyed by name
+      parameters:
+        - name: name
+        - name: vm_
+      utility_dependencies:
+        - sdb.sdb_set
+      tests:
+        - path: tests/pytests/unit/modules/test_vagrant.py
+          functions: 8
+    - function: get_vm_info
+      source:
+        path: salt/modules/vagrant.py
+        symbol: get_vm_info
+      summary: get the information for a VM.
+      parameters:
+        - name: name
+      utility_dependencies:
+        - sdb.sdb_get
+        - sdb.sdb_set
+      tests:
+        - path: tests/pytests/unit/modules/test_vagrant.py
+          functions: 8
+    - function: get_machine_id
+      source:
+        path: salt/modules/vagrant.py
+        symbol: get_machine_id
+      summary: returns the salt_id name of the Vagrant VM
+      parameters:
+        - name: machine
+        - name: cwd
+      utility_dependencies:
+        - sdb.sdb_get
+        - sdb.sdb_set
+      tests:
+        - path: tests/pytests/unit/modules/test_vagrant.py
+          functions: 8
+    - function: _erase_vm_info
+      source:
+        path: salt/modules/vagrant.py
+        symbol: _erase_vm_info
+      summary: erase the information for a VM the we are destroying.
+      parameters:
+        - name: name
+      utility_dependencies:
+        - sdb.sdb_delete
+        - sdb.sdb_get
+        - sdb.sdb_set
+      tests:
+        - path: tests/pytests/unit/modules/test_vagrant.py
+          functions: 8
+    - function: _vagrant_ssh_config
+      source:
+        path: salt/modules/vagrant.py
+        symbol: _vagrant_ssh_config
+      summary: get the information for ssh communication from the new VM
+      parameters:
+        - name: vm_
+      execution_dependencies:
+        - cmd.shell
+      utility_dependencies:
+        - sdb.sdb_delete
+        - sdb.sdb_get
+        - sdb.sdb_set
+      tests:
+        - path: tests/pytests/unit/modules/test_vagrant.py
+          functions: 8
+    - function: version
+      source:
+        path: salt/modules/vagrant.py
+        symbol: version
+      summary: Return the version of Vagrant on the minion
+      execution_dependencies:
+        - cmd.shell
+      utility_dependencies:
+        - sdb.sdb_delete
+        - sdb.sdb_get
+        - sdb.sdb_set
+      tests:
+        - path: tests/pytests/unit/modules/test_vagrant.py
+          functions: 8
+    - function: list_domains
+      source:
+        path: salt/modules/vagrant.py
+        symbol: list_domains
+      summary: Return a list of the salt_id names of all available Vagrant VMs on
+      execution_dependencies:
+        - cmd.shell
+      utility_dependencies:
+        - sdb.sdb_delete
+        - sdb.sdb_get
+        - sdb.sdb_set
+      tests:
+        - path: tests/pytests/unit/modules/test_vagrant.py
+          functions: 8
+    - function: list_active_vms
+      source:
+        path: salt/modules/vagrant.py
+        symbol: list_active_vms
+      summary: Return a list of machine names for active virtual machine on the host,
+      parameters:
+        - name: cwd
+          default: None
+      execution_dependencies:
+        - cmd.shell
+      utility_dependencies:
+        - sdb.sdb_delete
+        - sdb.sdb_get
+        - sdb.sdb_set
+      tests:
+        - path: tests/pytests/unit/modules/test_vagrant.py
+          functions: 8
+    - function: list_inactive_vms
+      source:
+        path: salt/modules/vagrant.py
+        symbol: list_inactive_vms
+      summary: Return a list of machine names for inactive virtual machine on the host,
+      parameters:
+        - name: cwd
+          default: None
+      execution_dependencies:
+        - cmd.shell
+      utility_dependencies:
+        - sdb.sdb_delete
+        - sdb.sdb_get
+        - sdb.sdb_set
+      tests:
+        - path: tests/pytests/unit/modules/test_vagrant.py
+          functions: 8
+    - function: vm_state
+      source:
+        path: salt/modules/vagrant.py
+        symbol: vm_state
+      summary: Return list of information for all the vms indicating their state.
+      parameters:
+        - name: name
+          default: '""'
+        - name: cwd
+          default: None
+      execution_dependencies:
+        - cmd.shell
+      utility_dependencies:
+        - sdb.sdb_delete
+        - sdb.sdb_get
+        - sdb.sdb_set
+      tests:
+        - path: tests/pytests/unit/modules/test_vagrant.py
+          functions: 8
+    - function: init
+      source:
+        path: salt/modules/vagrant.py
+        symbol: init
+      summary: Initialize a new Vagrant VM.
+      parameters:
+        - name: name
+        - name: |-
+            # Salt_id for created VM
+                cwd
+          default: None
+        - name: |-
+            # path to find Vagrantfile
+                machine
+          default: '""'
+        - name: |-
+            # name of machine in Vagrantfile
+                runas
+          default: None
+        - name: |-
+            # username who owns Vagrant box
+                start
+          default: "False"
+        - name: |-
+            # start the machine when initialized
+                vagrant_provider
+          default: '""'
+        - name: |-
+            # vagrant provider (default=virtualbox)
+                vm
+          default: None
+        - name: '# a dictionary of VM configuration settings'
+      execution_dependencies:
+        - cmd.shell
+      utility_dependencies:
+        - sdb.sdb_delete
+        - sdb.sdb_get
+        - sdb.sdb_set
+      tests:
+        - path: tests/pytests/unit/modules/test_vagrant.py
+          functions: 8
+    - function: start
+      source:
+        path: salt/modules/vagrant.py
+        symbol: start
+      summary: Start (vagrant up) a virtual machine defined by salt_id name.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.shell
+      utility_dependencies:
+        - sdb.sdb_delete
+        - sdb.sdb_get
+        - sdb.sdb_set
+      tests:
+        - path: tests/pytests/unit/modules/test_vagrant.py
+          functions: 8
+    - function: _start
+      source:
+        path: salt/modules/vagrant.py
+        symbol: _start
+      parameters:
+        - name: name
+        - name: vm_
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell
+      utility_dependencies:
+        - sdb.sdb_delete
+        - sdb.sdb_get
+        - sdb.sdb_set
+      tests:
+        - path: tests/pytests/unit/modules/test_vagrant.py
+          functions: 8
+    - function: shutdown
+      source:
+        path: salt/modules/vagrant.py
+        symbol: shutdown
+      summary: Send a soft shutdown (vagrant halt) signal to the named vm.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell
+      utility_dependencies:
+        - sdb.sdb_delete
+        - sdb.sdb_get
+        - sdb.sdb_set
+      tests:
+        - path: tests/pytests/unit/modules/test_vagrant.py
+          functions: 8
+    - function: stop
+      source:
+        path: salt/modules/vagrant.py
+        symbol: stop
+      summary: Hard shutdown the virtual machine. (vagrant halt)
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.shell
+      utility_dependencies:
+        - sdb.sdb_delete
+        - sdb.sdb_get
+        - sdb.sdb_set
+      tests:
+        - path: tests/pytests/unit/modules/test_vagrant.py
+          functions: 8
+    - function: pause
+      source:
+        path: salt/modules/vagrant.py
+        symbol: pause
+      summary: Pause (vagrant suspend) the named VM.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.shell
+      utility_dependencies:
+        - sdb.sdb_delete
+        - sdb.sdb_get
+        - sdb.sdb_set
+      tests:
+        - path: tests/pytests/unit/modules/test_vagrant.py
+          functions: 8
+    - function: reboot
+      source:
+        path: salt/modules/vagrant.py
+        symbol: reboot
+      summary: Reboot a VM. (vagrant reload)
+      parameters:
+        - name: name
+        - name: provision
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.shell
+      utility_dependencies:
+        - sdb.sdb_delete
+        - sdb.sdb_get
+        - sdb.sdb_set
+      tests:
+        - path: tests/pytests/unit/modules/test_vagrant.py
+          functions: 8
+    - function: destroy
+      source:
+        path: salt/modules/vagrant.py
+        symbol: destroy
+      summary: Destroy and delete a virtual machine. (vagrant destroy -f)
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.shell
+      utility_dependencies:
+        - sdb.sdb_delete
+        - sdb.sdb_get
+        - sdb.sdb_set
+      tests:
+        - path: tests/pytests/unit/modules/test_vagrant.py
+          functions: 8
+    - function: get_ssh_config
+      source:
+        path: salt/modules/vagrant.py
+        symbol: get_ssh_config
+      parameters:
+        - name: name
+        - name: network_mask
+          default: '""'
+        - name: get_private_key
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.shell
+      utility_dependencies:
+        - sdb.sdb_delete
+        - sdb.sdb_get
+        - sdb.sdb_set
+      tests:
+        - path: tests/pytests/unit/modules/test_vagrant.py
+          functions: 8

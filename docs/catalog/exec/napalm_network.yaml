@@ -1,0 +1,997 @@
+kind: exec
+module: net
+source_module: napalm_network
+virtual: true
+path: salt/modules/napalm_network.py
+functions:
+    - function: _filter_list
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: _filter_list
+      summary: Filters a list of dictionary by a set of key-value pair.
+      parameters:
+        - name: input_list
+        - name: search_key
+        - name: search_value
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: _filter_dict
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: _filter_dict
+      summary: Filters a dictionary of dictionaries by a key-value pair.
+      parameters:
+        - name: input_dict
+        - name: search_key
+        - name: search_value
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: _safe_commit_config
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: _safe_commit_config
+      parameters:
+        - name: loaded_result
+        - name: napalm_device
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: _safe_dicard_config
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: _safe_dicard_config
+      parameters:
+        - name: loaded_result
+        - name: napalm_device
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: _explicit_close
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: _explicit_close
+      summary: Will explicily close the config session with the network device,
+      parameters:
+        - name: napalm_device
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: _config_logic
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: _config_logic
+      summary: Builds the config logic for `load_config` and `load_template` functions.
+      parameters:
+        - name: napalm_device
+        - name: loaded_result
+        - name: test
+          default: "False"
+        - name: debug
+          default: "False"
+        - name: replace
+          default: "False"
+        - name: commit_config
+          default: "True"
+        - name: loaded_config
+          default: None
+        - name: commit_in
+          default: None
+        - name: commit_at
+          default: None
+        - name: revert_in
+          default: None
+        - name: revert_at
+          default: None
+        - name: commit_jid
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - schedule.add
+        - schedule.save
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: connected
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: connected
+      summary: Specifies if the connection to the device succeeded.
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - schedule.add
+        - schedule.save
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: facts
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: facts
+      summary: Returns characteristics of the network device.
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - schedule.add
+        - schedule.save
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: environment
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: environment
+      summary: Returns the environment of the device.
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - schedule.add
+        - schedule.save
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: cli
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: cli
+      summary: Returns a dictionary with the raw output of all commands passed as arguments.
+      parameters:
+        - name: commands
+          kind: '*'
+        - name: cli_kwargs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - schedule.add
+        - schedule.save
+        - textfsm.extract
+        - textfsm.index
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: traceroute
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: traceroute
+      summary: Calls the method traceroute from the NAPALM driver object and returns a dictionary with the result of the traceroute
+      parameters:
+        - name: destination
+        - name: source
+          default: None
+        - name: ttl
+          default: None
+        - name: timeout
+          default: None
+        - name: vrf
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - schedule.add
+        - schedule.save
+        - textfsm.extract
+        - textfsm.index
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: ping
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: ping
+      summary: Executes a ping on the network device and returns a dictionary as a result.
+      parameters:
+        - name: destination
+        - name: source
+          default: None
+        - name: ttl
+          default: None
+        - name: timeout
+          default: None
+        - name: size
+          default: None
+        - name: count
+          default: None
+        - name: vrf
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - schedule.add
+        - schedule.save
+        - textfsm.extract
+        - textfsm.index
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: arp
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: arp
+      summary: NAPALM returns a list of dictionaries with details of the ARP entries.
+      parameters:
+        - name: interface
+          default: '""'
+        - name: ipaddr
+          default: '""'
+        - name: macaddr
+          default: '""'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - schedule.add
+        - schedule.save
+        - textfsm.extract
+        - textfsm.index
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: ipaddrs
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: ipaddrs
+      summary: Returns IP addresses configured on the device.
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - schedule.add
+        - schedule.save
+        - textfsm.extract
+        - textfsm.index
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: interfaces
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: interfaces
+      summary: Returns details of the interfaces on the device.
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - schedule.add
+        - schedule.save
+        - textfsm.extract
+        - textfsm.index
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: lldp
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: lldp
+      summary: Returns a detailed view of the LLDP neighbors.
+      parameters:
+        - name: interface
+          default: '""'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - schedule.add
+        - schedule.save
+        - textfsm.extract
+        - textfsm.index
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: mac
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: mac
+      summary: Returns the MAC Address Table on the device.
+      parameters:
+        - name: address
+          default: '""'
+        - name: interface
+          default: '""'
+        - name: vlan
+          default: "0"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - schedule.add
+        - schedule.save
+        - textfsm.extract
+        - textfsm.index
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: config
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: config
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: source
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - schedule.add
+        - schedule.save
+        - textfsm.extract
+        - textfsm.index
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: optics
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: optics
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - schedule.add
+        - schedule.save
+        - textfsm.extract
+        - textfsm.index
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: load_config
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: load_config
+      summary: Applies configuration changes on the device. It can be loaded from a file or from inline string.
+      parameters:
+        - name: filename
+          default: None
+        - name: text
+          default: None
+        - name: test
+          default: "False"
+        - name: commit
+          default: "True"
+        - name: debug
+          default: "False"
+        - name: replace
+          default: "False"
+        - name: commit_in
+          default: None
+        - name: commit_at
+          default: None
+        - name: revert_in
+          default: None
+        - name: revert_at
+          default: None
+        - name: commit_jid
+          default: None
+        - name: inherit_napalm_device
+          default: None
+        - name: saltenv
+          default: '"base"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_file_str
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - schedule.add
+        - schedule.save
+        - textfsm.extract
+        - textfsm.index
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: load_template
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: load_template
+      summary: 'Renders a configuration template (default: Jinja) and loads the result on the device.'
+      parameters:
+        - name: template_name
+          default: None
+        - name: template_source
+          default: None
+        - name: context
+          default: None
+        - name: defaults
+          default: None
+        - name: template_engine
+          default: '"jinja"'
+        - name: saltenv
+          default: '"base"'
+        - name: template_hash
+          default: None
+        - name: template_hash_name
+          default: None
+        - name: skip_verify
+          default: "False"
+        - name: test
+          default: "False"
+        - name: commit
+          default: "True"
+        - name: debug
+          default: "False"
+        - name: replace
+          default: "False"
+        - name: commit_in
+          default: None
+        - name: commit_at
+          default: None
+        - name: revert_in
+          default: None
+        - name: revert_at
+          default: None
+        - name: inherit_napalm_device
+          default: None
+        - name: '# pylint: disable'
+          default: |-
+            unused-argument
+                **template_vars
+      execution_dependencies:
+        - cp.get_file_str
+        - file.apply_template_on_contents
+        - file.file_exists
+        - file.get_managed
+        - file.join
+        - file.read
+        - file.remove
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - random.hash
+        - schedule.add
+        - schedule.save
+        - textfsm.extract
+        - textfsm.index
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: commit
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: commit
+      summary: Commits the configuration changes made on the network device.
+      parameters:
+        - name: inherit_napalm_device
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_file_str
+        - file.apply_template_on_contents
+        - file.file_exists
+        - file.get_managed
+        - file.join
+        - file.read
+        - file.remove
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - random.hash
+        - schedule.add
+        - schedule.save
+        - textfsm.extract
+        - textfsm.index
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: discard_config
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: discard_config
+      summary: Discards the changes applied.
+      parameters:
+        - name: inherit_napalm_device
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_file_str
+        - file.apply_template_on_contents
+        - file.file_exists
+        - file.get_managed
+        - file.join
+        - file.read
+        - file.remove
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - random.hash
+        - schedule.add
+        - schedule.save
+        - textfsm.extract
+        - textfsm.index
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: compare_config
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: compare_config
+      summary: Returns the difference between the running config and the candidate config.
+      parameters:
+        - name: inherit_napalm_device
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_file_str
+        - file.apply_template_on_contents
+        - file.file_exists
+        - file.get_managed
+        - file.join
+        - file.read
+        - file.remove
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - random.hash
+        - schedule.add
+        - schedule.save
+        - textfsm.extract
+        - textfsm.index
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: rollback
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: rollback
+      summary: Rollbacks the configuration.
+      parameters:
+        - name: inherit_napalm_device
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_file_str
+        - file.apply_template_on_contents
+        - file.file_exists
+        - file.get_managed
+        - file.join
+        - file.read
+        - file.remove
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - random.hash
+        - schedule.add
+        - schedule.save
+        - textfsm.extract
+        - textfsm.index
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: config_changed
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: config_changed
+      summary: Will prompt if the configuration has been changed.
+      parameters:
+        - name: inherit_napalm_device
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_file_str
+        - file.apply_template_on_contents
+        - file.file_exists
+        - file.get_managed
+        - file.join
+        - file.read
+        - file.remove
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - random.hash
+        - schedule.add
+        - schedule.save
+        - textfsm.extract
+        - textfsm.index
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: config_control
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: config_control
+      summary: Will check if the configuration was changed.
+      parameters:
+        - name: inherit_napalm_device
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_file_str
+        - file.apply_template_on_contents
+        - file.file_exists
+        - file.get_managed
+        - file.join
+        - file.read
+        - file.remove
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - random.hash
+        - schedule.add
+        - schedule.save
+        - textfsm.extract
+        - textfsm.index
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: cancel_commit
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: cancel_commit
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: jid
+      execution_dependencies:
+        - cp.get_file_str
+        - file.apply_template_on_contents
+        - file.file_exists
+        - file.get_managed
+        - file.join
+        - file.read
+        - file.remove
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - random.hash
+        - schedule.add
+        - schedule.delete
+        - schedule.save
+        - textfsm.extract
+        - textfsm.index
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: confirm_commit
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: confirm_commit
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: jid
+      execution_dependencies:
+        - cp.get_file_str
+        - file.apply_template_on_contents
+        - file.file_exists
+        - file.get_managed
+        - file.join
+        - file.read
+        - file.remove
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - random.hash
+        - schedule.add
+        - schedule.delete
+        - schedule.save
+        - textfsm.extract
+        - textfsm.index
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: save_config
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: save_config
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: source
+          default: None
+        - name: path
+          default: None
+      execution_dependencies:
+        - cp.get_file_str
+        - file.apply_template_on_contents
+        - file.file_exists
+        - file.get_managed
+        - file.join
+        - file.read
+        - file.remove
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - random.hash
+        - schedule.add
+        - schedule.delete
+        - schedule.save
+        - textfsm.extract
+        - textfsm.index
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: replace_pattern
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: replace_pattern
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: pattern
+        - name: repl
+        - name: count
+          default: "0"
+        - name: flags
+          default: "8"
+        - name: bufsize
+          default: "1"
+        - name: append_if_not_found
+          default: "False"
+        - name: prepend_if_not_found
+          default: "False"
+        - name: not_found_content
+          default: None
+        - name: search_only
+          default: "False"
+        - name: show_changes
+          default: "True"
+        - name: backslash_literal
+          default: "False"
+        - name: source
+          default: None
+        - name: path
+          default: None
+        - name: test
+          default: "False"
+        - name: replace
+          default: "True"
+        - name: debug
+          default: "False"
+        - name: commit
+          default: "True"
+      execution_dependencies:
+        - cp.get_file_str
+        - file.apply_template_on_contents
+        - file.file_exists
+        - file.get_managed
+        - file.join
+        - file.read
+        - file.remove
+        - file.replace
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - random.hash
+        - schedule.add
+        - schedule.delete
+        - schedule.save
+        - textfsm.extract
+        - textfsm.index
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: blockreplace
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: blockreplace
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: marker_start
+        - name: marker_end
+        - name: content
+          default: '""'
+        - name: append_if_not_found
+          default: "False"
+        - name: prepend_if_not_found
+          default: "False"
+        - name: show_changes
+          default: "True"
+        - name: append_newline
+          default: "False"
+        - name: source
+          default: '"running"'
+        - name: path
+          default: None
+        - name: test
+          default: "False"
+        - name: commit
+          default: "True"
+        - name: debug
+          default: "False"
+        - name: replace
+          default: "True"
+      execution_dependencies:
+        - cp.get_file_str
+        - file.apply_template_on_contents
+        - file.blockreplace
+        - file.file_exists
+        - file.get_managed
+        - file.join
+        - file.read
+        - file.remove
+        - file.replace
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - random.hash
+        - schedule.add
+        - schedule.delete
+        - schedule.save
+        - textfsm.extract
+        - textfsm.index
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2
+    - function: patch
+      source:
+        path: salt/modules/napalm_network.py
+        symbol: patch
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: patchfile
+        - name: options
+          default: '""'
+        - name: saltenv
+          default: '"base"'
+        - name: source_hash
+          default: None
+        - name: show_changes
+          default: "True"
+        - name: source
+          default: '"running"'
+        - name: path
+          default: None
+        - name: test
+          default: "False"
+        - name: commit
+          default: "True"
+        - name: debug
+          default: "False"
+        - name: replace
+          default: "True"
+      execution_dependencies:
+        - cp.cache_file
+        - cp.get_file_str
+        - file.apply_template_on_contents
+        - file.blockreplace
+        - file.file_exists
+        - file.get_managed
+        - file.join
+        - file.patch
+        - file.read
+        - file.remove
+        - file.replace
+        - napalm.junos_commit
+        - net.config
+        - net.load_config
+        - random.hash
+        - schedule.add
+        - schedule.delete
+        - schedule.save
+        - textfsm.extract
+        - textfsm.index
+      utility_dependencies:
+        - timeutil.get_time_at
+        - timeutil.get_timestamp_at
+      tests:
+        - path: tests/pytests/unit/modules/test_napalm_network.py
+          functions: 2

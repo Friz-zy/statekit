@@ -1,0 +1,3194 @@
+kind: state
+module: file
+source_module: file
+path: salt/states/file.py
+platform_markers:
+    - is_linux
+    - is_windows
+functions:
+    - function: _http_ftp_check
+      source:
+        path: salt/states/file.py
+        symbol: _http_ftp_check
+      summary: Check if source or sources is http, https or ftp.
+      parameters:
+        - name: source
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _get_accumulator_filepath
+      source:
+        path: salt/states/file.py
+        symbol: _get_accumulator_filepath
+      summary: Return accumulator data path.
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _load_accumulators
+      source:
+        path: salt/states/file.py
+        symbol: _load_accumulators
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _persist_accummulators
+      source:
+        path: salt/states/file.py
+        symbol: _persist_accummulators
+      parameters:
+        - name: accumulators
+        - name: accumulators_deps
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _check_user
+      source:
+        path: salt/states/file.py
+        symbol: _check_user
+      summary: Checks if the named user and group are present on the minion
+      parameters:
+        - name: user
+        - name: group
+      execution_dependencies:
+        - file.group_to_gid
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _is_valid_relpath
+      source:
+        path: salt/states/file.py
+        symbol: _is_valid_relpath
+      summary: Performs basic sanity checks on a relative path.
+      parameters:
+        - name: relpath
+        - name: maxdepth
+          default: None
+      execution_dependencies:
+        - file.group_to_gid
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _salt_to_os_path
+      source:
+        path: salt/states/file.py
+        symbol: _salt_to_os_path
+      summary: Converts a path from the form received via salt master to the OS's native
+      parameters:
+        - name: path
+      execution_dependencies:
+        - file.group_to_gid
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _filter_recurse_sources
+      source:
+        path: salt/states/file.py
+        symbol: _filter_recurse_sources
+      summary: Adaptation of ``file.source_list`` for file.recurse. Returns a list
+      parameters:
+        - name: sources
+      execution_dependencies:
+        - cp.list_master_dirs
+        - file.group_to_gid
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _gen_recurse_managed_files
+      source:
+        path: salt/states/file.py
+        symbol: _gen_recurse_managed_files
+      summary: Generate the list of files managed by a recurse state
+      parameters:
+        - name: name
+        - name: sources
+        - name: keep_symlinks
+          default: "False"
+        - name: include_pat
+          default: None
+        - name: exclude_pat
+          default: None
+        - name: maxdepth
+          default: None
+        - name: include_empty
+          default: "False"
+        - name: merge
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.group_to_gid
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _gen_keep_files
+      source:
+        path: salt/states/file.py
+        symbol: _gen_keep_files
+      summary: Generate the list of files that need to be kept when a dir based function
+      parameters:
+        - name: name
+        - name: require
+        - name: walk_d
+          default: None
+      execution_dependencies:
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.group_to_gid
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _check_file
+      source:
+        path: salt/states/file.py
+        symbol: _check_file
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.group_to_gid
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _find_keep_files
+      source:
+        path: salt/states/file.py
+        symbol: _find_keep_files
+      summary: Compile a list of valid keep files (and directories).
+      parameters:
+        - name: root
+        - name: keep
+      execution_dependencies:
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.group_to_gid
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _clean_dir
+      source:
+        path: salt/states/file.py
+        symbol: _clean_dir
+      summary: Clean out all of the files and directories in a directory (root) while
+      parameters:
+        - name: root
+        - name: keep
+        - name: exclude_pat
+      execution_dependencies:
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.group_to_gid
+        - file.remove
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _error
+      source:
+        path: salt/states/file.py
+        symbol: _error
+      parameters:
+        - name: ret
+        - name: err_msg
+      execution_dependencies:
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.group_to_gid
+        - file.remove
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _check_directory
+      source:
+        path: salt/states/file.py
+        symbol: _check_directory
+      summary: Check what changes need to be made on a directory
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: group
+          default: None
+        - name: recurse
+          default: "False"
+        - name: dir_mode
+          default: None
+        - name: file_mode
+          default: None
+        - name: clean
+          default: "False"
+        - name: require
+          default: "False"
+        - name: exclude_pat
+          default: None
+        - name: max_depth
+          default: None
+        - name: follow_symlinks
+          default: "False"
+        - name: children_only
+          default: "False"
+      execution_dependencies:
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.group_to_gid
+        - file.remove
+        - file.stats
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _check_directory_win
+      source:
+        path: salt/states/file.py
+        symbol: _check_directory_win
+      summary: Check what changes need to be made on a directory
+      parameters:
+        - name: name
+        - name: win_owner
+          default: None
+        - name: win_perms
+          default: None
+        - name: win_deny_perms
+          default: None
+        - name: win_inheritance
+          default: None
+        - name: win_perms_reset
+          default: None
+      execution_dependencies:
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.group_to_gid
+        - file.remove
+        - file.stats
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _check_dir_meta
+      source:
+        path: salt/states/file.py
+        symbol: _check_dir_meta
+      summary: Check the changes in directory metadata
+      parameters:
+        - name: name
+        - name: user
+        - name: group
+        - name: mode
+        - name: follow_symlinks
+          default: "False"
+      execution_dependencies:
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.group_to_gid
+        - file.remove
+        - file.stats
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _check_touch
+      source:
+        path: salt/states/file.py
+        symbol: _check_touch
+      summary: Check to see if a file needs to be updated or created
+      parameters:
+        - name: name
+        - name: atime
+        - name: mtime
+      execution_dependencies:
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.group_to_gid
+        - file.remove
+        - file.stats
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _get_symlink_ownership
+      source:
+        path: salt/states/file.py
+        symbol: _get_symlink_ownership
+      parameters:
+        - name: path
+      execution_dependencies:
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.get_group
+        - file.get_user
+        - file.group_to_gid
+        - file.remove
+        - file.stats
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _check_symlink_ownership
+      source:
+        path: salt/states/file.py
+        symbol: _check_symlink_ownership
+      summary: Check if the symlink ownership matches the specified user and group
+      parameters:
+        - name: path
+        - name: user
+        - name: group
+        - name: win_owner
+      execution_dependencies:
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.get_group
+        - file.get_user
+        - file.group_to_gid
+        - file.remove
+        - file.stats
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _set_symlink_ownership
+      source:
+        path: salt/states/file.py
+        symbol: _set_symlink_ownership
+      summary: Set the ownership of a symlink and return a boolean indicating
+      parameters:
+        - name: path
+        - name: user
+        - name: group
+        - name: win_owner
+      execution_dependencies:
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.get_group
+        - file.get_user
+        - file.group_to_gid
+        - file.lchown
+        - file.remove
+        - file.stats
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _symlink_check
+      source:
+        path: salt/states/file.py
+        symbol: _symlink_check
+      summary: Check the symlink function
+      parameters:
+        - name: name
+        - name: target
+        - name: force
+        - name: user
+        - name: group
+        - name: win_owner
+        - name: follow_symlinks
+          default: "False"
+      execution_dependencies:
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.get_group
+        - file.get_user
+        - file.group_to_gid
+        - file.is_link
+        - file.lchown
+        - file.readlink
+        - file.remove
+        - file.stats
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _hardlink_same
+      source:
+        path: salt/states/file.py
+        symbol: _hardlink_same
+      summary: Check to see if the inodes match for the name and the target
+      parameters:
+        - name: name
+        - name: target
+      execution_dependencies:
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.get_group
+        - file.get_user
+        - file.group_to_gid
+        - file.is_link
+        - file.lchown
+        - file.readlink
+        - file.remove
+        - file.stats
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _hardlink_check
+      source:
+        path: salt/states/file.py
+        symbol: _hardlink_check
+      summary: Check the hardlink function
+      parameters:
+        - name: name
+        - name: target
+        - name: force
+      execution_dependencies:
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.get_group
+        - file.get_user
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.readlink
+        - file.remove
+        - file.stats
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _test_owner
+      source:
+        path: salt/states/file.py
+        symbol: _test_owner
+      summary: Convert owner to user, since other config management tools use owner,
+      parameters:
+        - name: kwargs
+        - name: user
+          default: None
+      execution_dependencies:
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.get_group
+        - file.get_user
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.readlink
+        - file.remove
+        - file.stats
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _unify_sources_and_hashes
+      source:
+        path: salt/states/file.py
+        symbol: _unify_sources_and_hashes
+      summary: Silly little function to give us a standard tuple list for sources and
+      parameters:
+        - name: source
+          default: None
+        - name: source_hash
+          default: None
+        - name: sources
+          default: None
+        - name: source_hashes
+          default: None
+      execution_dependencies:
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.get_group
+        - file.get_user
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.readlink
+        - file.remove
+        - file.stats
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _get_template_texts
+      source:
+        path: salt/states/file.py
+        symbol: _get_template_texts
+      summary: Iterate a list of sources and process them as templates.
+      parameters:
+        - name: source_list
+          default: None
+        - name: template
+          default: '"jinja"'
+        - name: defaults
+          default: None
+        - name: context
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_template
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.get_group
+        - file.get_user
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.readlink
+        - file.remove
+        - file.stats
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _validate_str_list
+      source:
+        path: salt/states/file.py
+        symbol: _validate_str_list
+      summary: ensure ``arg`` is a list of strings
+      parameters:
+        - name: arg
+        - name: encoding
+          default: None
+      execution_dependencies:
+        - cp.get_template
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.get_group
+        - file.get_user
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.readlink
+        - file.remove
+        - file.stats
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _get_shortcut_ownership
+      source:
+        path: salt/states/file.py
+        symbol: _get_shortcut_ownership
+      parameters:
+        - name: path
+      execution_dependencies:
+        - cp.get_template
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.get_group
+        - file.get_user
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.readlink
+        - file.remove
+        - file.stats
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _check_shortcut_ownership
+      source:
+        path: salt/states/file.py
+        symbol: _check_shortcut_ownership
+      summary: Check if the shortcut ownership matches the specified user
+      parameters:
+        - name: path
+        - name: user
+      execution_dependencies:
+        - cp.get_template
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.get_group
+        - file.get_user
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.readlink
+        - file.remove
+        - file.stats
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _set_shortcut_ownership
+      source:
+        path: salt/states/file.py
+        symbol: _set_shortcut_ownership
+      summary: Set the ownership of a shortcut and return a boolean indicating
+      parameters:
+        - name: path
+        - name: user
+      execution_dependencies:
+        - cp.get_template
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.get_group
+        - file.get_user
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.readlink
+        - file.remove
+        - file.stats
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _shortcut_check
+      source:
+        path: salt/states/file.py
+        symbol: _shortcut_check
+      summary: Check the shortcut function
+      parameters:
+        - name: name
+        - name: target
+        - name: arguments
+        - name: working_dir
+        - name: description
+        - name: icon_location
+        - name: force
+        - name: user
+      execution_dependencies:
+        - cp.get_template
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.get_group
+        - file.get_user
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.readlink
+        - file.remove
+        - file.stats
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _makedirs
+      source:
+        path: salt/states/file.py
+        symbol: _makedirs
+      summary: Helper function for creating directories when the ``makedirs`` option is set
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: group
+          default: None
+        - name: dir_mode
+          default: None
+        - name: win_owner
+          default: None
+        - name: win_perms
+          default: None
+        - name: win_deny_perms
+          default: None
+        - name: win_inheritance
+          default: None
+      execution_dependencies:
+        - cp.get_template
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.get_group
+        - file.get_user
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.makedirs
+        - file.readlink
+        - file.remove
+        - file.stats
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: hardlink
+      source:
+        path: salt/states/file.py
+        symbol: hardlink
+      summary: Create a hard link
+      parameters:
+        - name: name
+        - name: target
+        - name: force
+          default: "False"
+        - name: makedirs
+          default: "False"
+        - name: user
+          default: None
+        - name: group
+          default: None
+        - name: dir_mode
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_template
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.get_group
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.link
+        - file.makedirs
+        - file.readlink
+        - file.remove
+        - file.stats
+        - file.user_to_uid
+        - user.info
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: symlink
+      source:
+        path: salt/states/file.py
+        symbol: symlink
+      summary: Create a symbolic link (symlink, soft link)
+      parameters:
+        - name: name
+        - name: target
+        - name: force
+          default: "False"
+        - name: backupname
+          default: None
+        - name: makedirs
+          default: "False"
+        - name: user
+          default: None
+        - name: group
+          default: None
+        - name: mode
+          default: None
+        - name: win_owner
+          default: None
+        - name: win_perms
+          default: None
+        - name: win_deny_perms
+          default: None
+        - name: win_inheritance
+          default: None
+        - name: atomic
+          default: "False"
+        - name: disallow_copy_and_unlink
+          default: "False"
+        - name: inherit_user_and_group
+          default: "False"
+        - name: follow_symlinks
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_template
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.get_group
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.link
+        - file.makedirs
+        - file.move
+        - file.readlink
+        - file.remove
+        - file.stats
+        - file.symlink
+        - file.user_to_uid
+        - user.current
+        - user.info
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: absent
+      source:
+        path: salt/states/file.py
+        symbol: absent
+      summary: Make sure that the named file or directory is absent. If it exists, it will
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_template
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.get_group
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.link
+        - file.makedirs
+        - file.move
+        - file.readlink
+        - file.remove
+        - file.stats
+        - file.symlink
+        - file.user_to_uid
+        - user.current
+        - user.info
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: tidied
+      source:
+        path: salt/states/file.py
+        symbol: tidied
+      summary: '.. versionchanged:: 3005,3006.0'
+      parameters:
+        - name: name
+        - name: age
+          default: "0"
+        - name: matches
+          default: None
+        - name: rmdirs
+          default: "False"
+        - name: size
+          default: "0"
+        - name: exclude
+          default: None
+        - name: full_path_match
+          default: "False"
+        - name: followlinks
+          default: "False"
+        - name: time_comparison
+          default: '"atime"'
+        - name: age_size_logical_operator
+          default: '"OR"'
+        - name: age_size_only
+          default: None
+        - name: rmlinks
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_template
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.get_group
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.link
+        - file.makedirs
+        - file.move
+        - file.readlink
+        - file.remove
+        - file.stats
+        - file.symlink
+        - file.user_to_uid
+        - user.current
+        - user.info
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: exists
+      source:
+        path: salt/states/file.py
+        symbol: exists
+      summary: Verify that the named file or directory is present or exists.
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_template
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.get_group
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.link
+        - file.makedirs
+        - file.move
+        - file.readlink
+        - file.remove
+        - file.stats
+        - file.symlink
+        - file.user_to_uid
+        - user.current
+        - user.info
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: missing
+      source:
+        path: salt/states/file.py
+        symbol: missing
+      summary: Verify that the named file or directory is missing, this returns True only
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_template
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.get_group
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.link
+        - file.makedirs
+        - file.move
+        - file.readlink
+        - file.remove
+        - file.stats
+        - file.symlink
+        - file.user_to_uid
+        - user.current
+        - user.info
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: managed
+      source:
+        path: salt/states/file.py
+        symbol: managed
+      parameters:
+        - name: name
+        - name: source
+          default: None
+        - name: source_hash
+          default: '""'
+        - name: source_hash_name
+          default: None
+        - name: keep_source
+          default: "True"
+        - name: user
+          default: None
+        - name: group
+          default: None
+        - name: mode
+          default: None
+        - name: attrs
+          default: None
+        - name: template
+          default: None
+        - name: makedirs
+          default: "False"
+        - name: dir_mode
+          default: None
+        - name: context
+          default: None
+        - name: replace
+          default: "True"
+        - name: defaults
+          default: None
+        - name: backup
+          default: '""'
+        - name: show_changes
+          default: "True"
+        - name: create
+          default: "True"
+        - name: contents
+          default: None
+        - name: tmp_dir
+          default: None
+        - name: tmp_ext
+          default: '""'
+        - name: contents_pillar
+          default: None
+        - name: contents_grains
+          default: None
+        - name: contents_newline
+          default: "True"
+        - name: contents_delimiter
+          default: '":"'
+        - name: encoding
+          default: None
+        - name: encoding_errors
+          default: '"strict"'
+        - name: allow_empty
+          default: "True"
+        - name: follow_symlinks
+          default: "True"
+        - name: check_cmd
+          default: None
+        - name: skip_verify
+          default: "False"
+        - name: selinux
+          default: None
+        - name: win_owner
+          default: None
+        - name: win_perms
+          default: None
+        - name: win_deny_perms
+          default: None
+        - name: win_inheritance
+          default: "True"
+        - name: win_perms_reset
+          default: "False"
+        - name: verify_ssl
+          default: "True"
+        - name: use_etag
+          default: "False"
+        - name: signature
+          default: None
+        - name: source_hash_sig
+          default: None
+        - name: signed_by_any
+          default: None
+        - name: signed_by_all
+          default: None
+        - name: keyring
+          default: None
+        - name: gnupghome
+          default: None
+        - name: ignore_ordering
+          default: "False"
+        - name: ignore_whitespace
+          default: "False"
+        - name: ignore_comment_characters
+          default: None
+        - name: new_file_diff
+          default: "False"
+        - name: sig_backend
+          default: '"gpg"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.apply_template_on_contents
+        - file.check_managed_changes
+        - file.check_perms
+        - file.copy
+        - file.file_exists
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.link
+        - file.makedirs
+        - file.manage_file
+        - file.move
+        - file.readlink
+        - file.remove
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.user_to_uid
+        - grains.get
+        - pillar.get
+        - user.current
+        - user.info
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _get_recurse_set
+      source:
+        path: salt/states/file.py
+        symbol: _get_recurse_set
+      summary: Converse *recurse* definition to a set of strings.
+      parameters:
+        - name: recurse
+      execution_dependencies:
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.apply_template_on_contents
+        - file.check_managed_changes
+        - file.check_perms
+        - file.copy
+        - file.file_exists
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.link
+        - file.makedirs
+        - file.manage_file
+        - file.move
+        - file.readlink
+        - file.remove
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.user_to_uid
+        - grains.get
+        - pillar.get
+        - user.current
+        - user.info
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: _depth_limited_walk
+      source:
+        path: salt/states/file.py
+        symbol: _depth_limited_walk
+      summary: Walk the directory tree under root up till reaching max_depth.
+      parameters:
+        - name: top
+        - name: max_depth
+          default: None
+      execution_dependencies:
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.apply_template_on_contents
+        - file.check_managed_changes
+        - file.check_perms
+        - file.copy
+        - file.file_exists
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.link
+        - file.makedirs
+        - file.manage_file
+        - file.move
+        - file.readlink
+        - file.remove
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.user_to_uid
+        - grains.get
+        - pillar.get
+        - user.current
+        - user.info
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: directory
+      source:
+        path: salt/states/file.py
+        symbol: directory
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: group
+          default: None
+        - name: recurse
+          default: None
+        - name: max_depth
+          default: None
+        - name: dir_mode
+          default: None
+        - name: file_mode
+          default: None
+        - name: makedirs
+          default: "False"
+        - name: clean
+          default: "False"
+        - name: require
+          default: None
+        - name: exclude_pat
+          default: None
+        - name: follow_symlinks
+          default: "False"
+        - name: force
+          default: "False"
+        - name: backupname
+          default: None
+        - name: allow_symlink
+          default: "True"
+        - name: children_only
+          default: "False"
+        - name: win_owner
+          default: None
+        - name: win_perms
+          default: None
+        - name: win_deny_perms
+          default: None
+        - name: win_inheritance
+          default: "True"
+        - name: win_perms_reset
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.apply_template_on_contents
+        - file.check_managed_changes
+        - file.check_perms
+        - file.copy
+        - file.file_exists
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.link
+        - file.makedirs
+        - file.manage_file
+        - file.mkdir
+        - file.move
+        - file.readlink
+        - file.remove
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.user_to_uid
+        - grains.get
+        - pillar.get
+        - user.current
+        - user.info
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: recurse
+      source:
+        path: salt/states/file.py
+        symbol: recurse
+      summary: Recurse through a subdirectory on the master and copy said subdirectory
+      parameters:
+        - name: name
+        - name: source
+        - name: keep_source
+          default: "True"
+        - name: clean
+          default: "False"
+        - name: require
+          default: None
+        - name: user
+          default: None
+        - name: group
+          default: None
+        - name: dir_mode
+          default: None
+        - name: file_mode
+          default: None
+        - name: sym_mode
+          default: None
+        - name: template
+          default: None
+        - name: context
+          default: None
+        - name: replace
+          default: "True"
+        - name: defaults
+          default: None
+        - name: include_empty
+          default: "False"
+        - name: backup
+          default: '""'
+        - name: include_pat
+          default: None
+        - name: exclude_pat
+          default: None
+        - name: maxdepth
+          default: None
+        - name: keep_symlinks
+          default: "False"
+        - name: force_symlinks
+          default: "False"
+        - name: win_owner
+          default: None
+        - name: win_perms
+          default: None
+        - name: win_deny_perms
+          default: None
+        - name: win_inheritance
+          default: "True"
+        - name: merge
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.apply_template_on_contents
+        - file.check_managed_changes
+        - file.check_perms
+        - file.copy
+        - file.file_exists
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.link
+        - file.makedirs
+        - file.makedirs_perms
+        - file.manage_file
+        - file.mkdir
+        - file.move
+        - file.readlink
+        - file.remove
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.user_to_uid
+        - grains.get
+        - pillar.get
+        - user.current
+        - user.info
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: retention_schedule
+      source:
+        path: salt/states/file.py
+        symbol: retention_schedule
+      summary: Apply retention scheduling to backup storage directory.
+      parameters:
+        - name: name
+        - name: retain
+        - name: strptime_format
+          default: None
+        - name: timezone
+          default: None
+      execution_dependencies:
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.apply_template_on_contents
+        - file.check_managed_changes
+        - file.check_perms
+        - file.copy
+        - file.file_exists
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.link
+        - file.lstat
+        - file.makedirs
+        - file.makedirs_perms
+        - file.manage_file
+        - file.mkdir
+        - file.move
+        - file.readdir
+        - file.readlink
+        - file.remove
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.user_to_uid
+        - grains.get
+        - pillar.get
+        - user.current
+        - user.info
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: line
+      source:
+        path: salt/states/file.py
+        symbol: line
+      summary: Line-focused editing of a file.
+      parameters:
+        - name: name
+        - name: content
+          default: None
+        - name: match
+          default: None
+        - name: mode
+          default: None
+        - name: location
+          default: None
+        - name: before
+          default: None
+        - name: after
+          default: None
+        - name: show_changes
+          default: "True"
+        - name: backup
+          default: "False"
+        - name: quiet
+          default: "False"
+        - name: indent
+          default: "True"
+        - name: create
+          default: "False"
+        - name: user
+          default: None
+        - name: group
+          default: None
+        - name: file_mode
+          default: None
+      execution_dependencies:
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.apply_template_on_contents
+        - file.check_managed_changes
+        - file.check_perms
+        - file.copy
+        - file.file_exists
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.line
+        - file.link
+        - file.lstat
+        - file.makedirs
+        - file.makedirs_perms
+        - file.manage_file
+        - file.mkdir
+        - file.move
+        - file.readdir
+        - file.readlink
+        - file.remove
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.user_to_uid
+        - grains.get
+        - pillar.get
+        - user.current
+        - user.info
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: replace
+      source:
+        path: salt/states/file.py
+        symbol: replace
+      parameters:
+        - name: name
+        - name: pattern
+        - name: repl
+        - name: count
+          default: "0"
+        - name: flags
+          default: "8"
+        - name: bufsize
+          default: "1"
+        - name: append_if_not_found
+          default: "False"
+        - name: prepend_if_not_found
+          default: "False"
+        - name: not_found_content
+          default: None
+        - name: backup
+          default: '".bak"'
+        - name: show_changes
+          default: "True"
+        - name: ignore_if_missing
+          default: "False"
+        - name: backslash_literal
+          default: "False"
+        - name: encoding
+          default: None
+      execution_dependencies:
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.apply_template_on_contents
+        - file.check_managed_changes
+        - file.check_perms
+        - file.copy
+        - file.file_exists
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.line
+        - file.link
+        - file.lstat
+        - file.makedirs
+        - file.makedirs_perms
+        - file.manage_file
+        - file.mkdir
+        - file.move
+        - file.readdir
+        - file.readlink
+        - file.remove
+        - file.replace
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.user_to_uid
+        - grains.get
+        - pillar.get
+        - user.current
+        - user.info
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: keyvalue
+      source:
+        path: salt/states/file.py
+        symbol: keyvalue
+      summary: Key/Value based editing of a file.
+      parameters:
+        - name: name
+        - name: key
+          default: None
+        - name: value
+          default: None
+        - name: key_values
+          default: None
+        - name: separator
+          default: '"="'
+        - name: append_if_not_found
+          default: "False"
+        - name: prepend_if_not_found
+          default: "False"
+        - name: search_only
+          default: "False"
+        - name: show_changes
+          default: "True"
+        - name: ignore_if_missing
+          default: "False"
+        - name: count
+          default: "1"
+        - name: uncomment
+          default: None
+        - name: key_ignore_case
+          default: "False"
+        - name: value_ignore_case
+          default: "False"
+        - name: create_if_missing
+          default: "False"
+        - name: prune
+          default: "False"
+      execution_dependencies:
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.apply_template_on_contents
+        - file.check_managed_changes
+        - file.check_perms
+        - file.copy
+        - file.file_exists
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.line
+        - file.link
+        - file.lstat
+        - file.makedirs
+        - file.makedirs_perms
+        - file.manage_file
+        - file.mkdir
+        - file.move
+        - file.readdir
+        - file.readlink
+        - file.remove
+        - file.replace
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.user_to_uid
+        - grains.get
+        - pillar.get
+        - user.current
+        - user.info
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: blockreplace
+      source:
+        path: salt/states/file.py
+        symbol: blockreplace
+      summary: Maintain an edit in a file in a zone delimited by two line markers
+      parameters:
+        - name: name
+        - name: marker_start
+          default: '"#-- start managed zone --"'
+        - name: marker_end
+          default: '"#-- end managed zone --"'
+        - name: source
+          default: None
+        - name: source_hash
+          default: None
+        - name: template
+          default: '"jinja"'
+        - name: sources
+          default: None
+        - name: source_hashes
+          default: None
+        - name: defaults
+          default: None
+        - name: context
+          default: None
+        - name: content
+          default: '""'
+        - name: append_if_not_found
+          default: "False"
+        - name: prepend_if_not_found
+          default: "False"
+        - name: backup
+          default: '".bak"'
+        - name: show_changes
+          default: "True"
+        - name: append_newline
+          default: None
+        - name: insert_before_match
+          default: None
+        - name: insert_after_match
+          default: None
+      execution_dependencies:
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.apply_template_on_contents
+        - file.blockreplace
+        - file.check_managed_changes
+        - file.check_perms
+        - file.copy
+        - file.file_exists
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.line
+        - file.link
+        - file.lstat
+        - file.makedirs
+        - file.makedirs_perms
+        - file.manage_file
+        - file.mkdir
+        - file.move
+        - file.readdir
+        - file.readlink
+        - file.remove
+        - file.replace
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.user_to_uid
+        - grains.get
+        - pillar.get
+        - user.current
+        - user.info
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: comment
+      source:
+        path: salt/states/file.py
+        symbol: comment
+      summary: '.. versionadded:: 0.9.5'
+      parameters:
+        - name: name
+        - name: regex
+        - name: char
+          default: '"#"'
+        - name: backup
+          default: '".bak"'
+        - name: ignore_missing
+          default: "False"
+      execution_dependencies:
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.apply_template_on_contents
+        - file.blockreplace
+        - file.check_managed_changes
+        - file.check_perms
+        - file.comment_line
+        - file.copy
+        - file.file_exists
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.line
+        - file.link
+        - file.lstat
+        - file.makedirs
+        - file.makedirs_perms
+        - file.manage_file
+        - file.mkdir
+        - file.move
+        - file.readdir
+        - file.readlink
+        - file.remove
+        - file.replace
+        - file.search
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.user_to_uid
+        - grains.get
+        - pillar.get
+        - user.current
+        - user.info
+      utility_dependencies:
+        - files.is_text
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: uncomment
+      source:
+        path: salt/states/file.py
+        symbol: uncomment
+      summary: Uncomment specified commented lines in a file
+      parameters:
+        - name: name
+        - name: regex
+        - name: char
+          default: '"#"'
+        - name: backup
+          default: '".bak"'
+      execution_dependencies:
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.apply_template_on_contents
+        - file.blockreplace
+        - file.check_managed_changes
+        - file.check_perms
+        - file.comment_line
+        - file.copy
+        - file.file_exists
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.line
+        - file.link
+        - file.lstat
+        - file.makedirs
+        - file.makedirs_perms
+        - file.manage_file
+        - file.mkdir
+        - file.move
+        - file.readdir
+        - file.readlink
+        - file.remove
+        - file.replace
+        - file.search
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.user_to_uid
+        - grains.get
+        - pillar.get
+        - user.current
+        - user.info
+      utility_dependencies:
+        - files.is_text
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: append
+      source:
+        path: salt/states/file.py
+        symbol: append
+      summary: Ensure that some text appears at the end of a file.
+      parameters:
+        - name: name
+        - name: text
+          default: None
+        - name: makedirs
+          default: "False"
+        - name: source
+          default: None
+        - name: source_hash
+          default: None
+        - name: template
+          default: '"jinja"'
+        - name: sources
+          default: None
+        - name: source_hashes
+          default: None
+        - name: defaults
+          default: None
+        - name: context
+          default: None
+        - name: ignore_whitespace
+          default: "True"
+        - name: show_changes
+          default: "True"
+      execution_dependencies:
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.append
+        - file.apply_template_on_contents
+        - file.blockreplace
+        - file.check_managed_changes
+        - file.check_perms
+        - file.comment_line
+        - file.copy
+        - file.directory_exists
+        - file.file_exists
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.line
+        - file.link
+        - file.lstat
+        - file.makedirs
+        - file.makedirs_perms
+        - file.manage_file
+        - file.mkdir
+        - file.move
+        - file.readdir
+        - file.readlink
+        - file.remove
+        - file.replace
+        - file.search
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.user_to_uid
+        - grains.get
+        - pillar.get
+        - user.current
+        - user.info
+      utility_dependencies:
+        - files.is_text
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: prepend
+      source:
+        path: salt/states/file.py
+        symbol: prepend
+      summary: Ensure that some text appears at the beginning of a file
+      parameters:
+        - name: name
+        - name: text
+          default: None
+        - name: makedirs
+          default: "False"
+        - name: source
+          default: None
+        - name: source_hash
+          default: None
+        - name: template
+          default: '"jinja"'
+        - name: sources
+          default: None
+        - name: source_hashes
+          default: None
+        - name: defaults
+          default: None
+        - name: context
+          default: None
+        - name: header
+          default: None
+        - name: show_changes
+          default: "True"
+      execution_dependencies:
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.append
+        - file.apply_template_on_contents
+        - file.blockreplace
+        - file.check_managed_changes
+        - file.check_perms
+        - file.comment_line
+        - file.copy
+        - file.directory_exists
+        - file.file_exists
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.line
+        - file.link
+        - file.lstat
+        - file.makedirs
+        - file.makedirs_perms
+        - file.manage_file
+        - file.mkdir
+        - file.move
+        - file.prepend
+        - file.readdir
+        - file.readlink
+        - file.remove
+        - file.replace
+        - file.search
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.user_to_uid
+        - grains.get
+        - pillar.get
+        - user.current
+        - user.info
+      utility_dependencies:
+        - files.is_text
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: patch
+      source:
+        path: salt/states/file.py
+        symbol: patch
+      summary: Ensure that a patch has been applied to the specified file or directory
+      parameters:
+        - name: name
+        - name: source
+          default: None
+        - name: source_hash
+          default: None
+        - name: source_hash_name
+          default: None
+        - name: skip_verify
+          default: "False"
+        - name: template
+          default: None
+        - name: context
+          default: None
+        - name: defaults
+          default: None
+        - name: options
+          default: '""'
+        - name: reject_file
+          default: None
+        - name: strip
+          default: None
+        - name: saltenv
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.append
+        - file.apply_template_on_contents
+        - file.blockreplace
+        - file.check_managed_changes
+        - file.check_perms
+        - file.comment_line
+        - file.copy
+        - file.directory_exists
+        - file.file_exists
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.line
+        - file.link
+        - file.lstat
+        - file.makedirs
+        - file.makedirs_perms
+        - file.manage_file
+        - file.mkdir
+        - file.move
+        - file.patch
+        - file.prepend
+        - file.readdir
+        - file.readlink
+        - file.remove
+        - file.replace
+        - file.search
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.user_to_uid
+        - grains.get
+        - pillar.get
+        - user.current
+        - user.info
+      utility_dependencies:
+        - files.is_text
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: touch
+      source:
+        path: salt/states/file.py
+        symbol: touch
+      summary: Replicate the 'nix "touch" command to create a new empty
+      parameters:
+        - name: name
+        - name: atime
+          default: None
+        - name: mtime
+          default: None
+        - name: makedirs
+          default: "False"
+      execution_dependencies:
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.append
+        - file.apply_template_on_contents
+        - file.blockreplace
+        - file.check_managed_changes
+        - file.check_perms
+        - file.comment_line
+        - file.copy
+        - file.directory_exists
+        - file.file_exists
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.line
+        - file.link
+        - file.lstat
+        - file.makedirs
+        - file.makedirs_perms
+        - file.manage_file
+        - file.mkdir
+        - file.move
+        - file.patch
+        - file.prepend
+        - file.readdir
+        - file.readlink
+        - file.remove
+        - file.replace
+        - file.search
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.touch
+        - file.user_to_uid
+        - grains.get
+        - pillar.get
+        - user.current
+        - user.info
+      utility_dependencies:
+        - files.is_text
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: copy_
+      source:
+        path: salt/states/file.py
+        symbol: copy_
+      summary: If the file defined by the ``source`` option exists on the minion, copy it
+      parameters:
+        - name: name
+        - name: source
+        - name: force
+          default: "False"
+        - name: makedirs
+          default: "False"
+        - name: preserve
+          default: "False"
+        - name: user
+          default: None
+        - name: group
+          default: None
+        - name: mode
+          default: None
+        - name: dir_mode
+          default: None
+        - name: subdir
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.append
+        - file.apply_template_on_contents
+        - file.blockreplace
+        - file.check_managed_changes
+        - file.check_perms
+        - file.comment_line
+        - file.copy
+        - file.directory_exists
+        - file.file_exists
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_mode
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.line
+        - file.link
+        - file.lstat
+        - file.makedirs
+        - file.makedirs_perms
+        - file.manage_file
+        - file.mkdir
+        - file.move
+        - file.patch
+        - file.prepend
+        - file.readdir
+        - file.readlink
+        - file.remove
+        - file.replace
+        - file.search
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.touch
+        - file.user_to_uid
+        - grains.get
+        - pillar.get
+        - user.current
+        - user.info
+      utility_dependencies:
+        - files.is_text
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: rename
+      source:
+        path: salt/states/file.py
+        symbol: rename
+      summary: If the source file exists on the system, rename it to the named file. The
+      parameters:
+        - name: name
+        - name: source
+        - name: force
+          default: "False"
+        - name: makedirs
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.append
+        - file.apply_template_on_contents
+        - file.blockreplace
+        - file.check_managed_changes
+        - file.check_perms
+        - file.comment_line
+        - file.copy
+        - file.directory_exists
+        - file.file_exists
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_mode
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.line
+        - file.link
+        - file.lstat
+        - file.makedirs
+        - file.makedirs_perms
+        - file.manage_file
+        - file.mkdir
+        - file.move
+        - file.patch
+        - file.prepend
+        - file.readdir
+        - file.readlink
+        - file.remove
+        - file.replace
+        - file.search
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.touch
+        - file.user_to_uid
+        - grains.get
+        - pillar.get
+        - user.current
+        - user.info
+      utility_dependencies:
+        - files.is_text
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: accumulated
+      source:
+        path: salt/states/file.py
+        symbol: accumulated
+      summary: Prepare accumulator which can be used in template in file.managed state.
+      parameters:
+        - name: name
+        - name: filename
+        - name: text
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.append
+        - file.apply_template_on_contents
+        - file.blockreplace
+        - file.check_managed_changes
+        - file.check_perms
+        - file.comment_line
+        - file.copy
+        - file.directory_exists
+        - file.file_exists
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_mode
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.line
+        - file.link
+        - file.lstat
+        - file.makedirs
+        - file.makedirs_perms
+        - file.manage_file
+        - file.mkdir
+        - file.move
+        - file.patch
+        - file.prepend
+        - file.readdir
+        - file.readlink
+        - file.remove
+        - file.replace
+        - file.search
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.touch
+        - file.user_to_uid
+        - grains.get
+        - pillar.get
+        - user.current
+        - user.info
+      utility_dependencies:
+        - files.is_text
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: serialize
+      source:
+        path: salt/states/file.py
+        symbol: serialize
+      summary: Serializes dataset and store it into managed file. Useful for sharing
+      parameters:
+        - name: name
+        - name: dataset
+          default: None
+        - name: dataset_pillar
+          default: None
+        - name: user
+          default: None
+        - name: group
+          default: None
+        - name: mode
+          default: None
+        - name: backup
+          default: '""'
+        - name: makedirs
+          default: "False"
+        - name: show_changes
+          default: "True"
+        - name: create
+          default: "True"
+        - name: merge_if_exists
+          default: "False"
+        - name: encoding
+          default: None
+        - name: encoding_errors
+          default: '"strict"'
+        - name: serializer
+          default: None
+        - name: serializer_opts
+          default: None
+        - name: deserializer_opts
+          default: None
+        - name: check_cmd
+          default: None
+        - name: tmp_dir
+          default: None
+        - name: tmp_ext
+          default: '""'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.append
+        - file.apply_template_on_contents
+        - file.blockreplace
+        - file.check_managed_changes
+        - file.check_perms
+        - file.comment_line
+        - file.copy
+        - file.directory_exists
+        - file.file_exists
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_mode
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.line
+        - file.link
+        - file.lstat
+        - file.makedirs
+        - file.makedirs_perms
+        - file.manage_file
+        - file.mkdir
+        - file.move
+        - file.patch
+        - file.prepend
+        - file.readdir
+        - file.readlink
+        - file.remove
+        - file.replace
+        - file.search
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.touch
+        - file.user_to_uid
+        - grains.get
+        - pillar.get
+        - user.current
+        - user.info
+      utility_dependencies:
+        - files.is_text
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: mknod
+      source:
+        path: salt/states/file.py
+        symbol: mknod
+      summary: Create a special file similar to the 'nix mknod command. The supported
+      parameters:
+        - name: name
+        - name: ntype
+        - name: major
+          default: "0"
+        - name: minor
+          default: "0"
+        - name: user
+          default: None
+        - name: group
+          default: None
+        - name: mode
+          default: '"0600"'
+      execution_dependencies:
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.append
+        - file.apply_template_on_contents
+        - file.blockreplace
+        - file.check_managed_changes
+        - file.check_perms
+        - file.comment_line
+        - file.copy
+        - file.directory_exists
+        - file.file_exists
+        - file.get_devmm
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_mode
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_blkdev
+        - file.is_chrdev
+        - file.is_fifo
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.line
+        - file.link
+        - file.lstat
+        - file.makedirs
+        - file.makedirs_perms
+        - file.manage_file
+        - file.mkdir
+        - file.mknod
+        - file.move
+        - file.patch
+        - file.prepend
+        - file.readdir
+        - file.readlink
+        - file.remove
+        - file.replace
+        - file.search
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.touch
+        - file.user_to_uid
+        - grains.get
+        - pillar.get
+        - user.current
+        - user.info
+      utility_dependencies:
+        - files.is_text
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: mod_run_check_cmd
+      source:
+        path: salt/states/file.py
+        symbol: mod_run_check_cmd
+      summary: Execute the check_cmd logic.
+      parameters:
+        - name: cmd
+        - name: filename
+        - name: check_cmd_opts
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.append
+        - file.apply_template_on_contents
+        - file.blockreplace
+        - file.check_managed_changes
+        - file.check_perms
+        - file.comment_line
+        - file.copy
+        - file.directory_exists
+        - file.file_exists
+        - file.get_devmm
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_mode
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_blkdev
+        - file.is_chrdev
+        - file.is_fifo
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.line
+        - file.link
+        - file.lstat
+        - file.makedirs
+        - file.makedirs_perms
+        - file.manage_file
+        - file.mkdir
+        - file.mknod
+        - file.move
+        - file.patch
+        - file.prepend
+        - file.readdir
+        - file.readlink
+        - file.remove
+        - file.replace
+        - file.search
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.touch
+        - file.user_to_uid
+        - grains.get
+        - pillar.get
+        - user.current
+        - user.info
+      utility_dependencies:
+        - files.is_text
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: decode
+      source:
+        path: salt/states/file.py
+        symbol: decode
+      summary: Decode an encoded file and write it to disk
+      parameters:
+        - name: name
+        - name: encoded_data
+          default: None
+        - name: contents_pillar
+          default: None
+        - name: encoding_type
+          default: '"base64"'
+        - name: checksum
+          default: '"md5"'
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.append
+        - file.apply_template_on_contents
+        - file.blockreplace
+        - file.check_managed_changes
+        - file.check_perms
+        - file.comment_line
+        - file.copy
+        - file.directory_exists
+        - file.file_exists
+        - file.get_devmm
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_mode
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_blkdev
+        - file.is_chrdev
+        - file.is_fifo
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.line
+        - file.link
+        - file.lstat
+        - file.makedirs
+        - file.makedirs_perms
+        - file.manage_file
+        - file.mkdir
+        - file.mknod
+        - file.move
+        - file.patch
+        - file.prepend
+        - file.readdir
+        - file.readlink
+        - file.remove
+        - file.replace
+        - file.search
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.touch
+        - file.user_to_uid
+        - grains.get
+        - hashutil.base64_decodefile
+        - hashutil.base64_decodestring
+        - hashutil.digest
+        - hashutil.digest_file
+        - pillar.get
+        - user.current
+        - user.info
+      utility_dependencies:
+        - files.is_text
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: shortcut
+      source:
+        path: salt/states/file.py
+        symbol: shortcut
+      summary: Create a Windows shortcut
+      parameters:
+        - name: name
+        - name: target
+        - name: arguments
+          default: None
+        - name: working_dir
+          default: None
+        - name: description
+          default: None
+        - name: icon_location
+          default: None
+        - name: force
+          default: "False"
+        - name: backupname
+          default: None
+        - name: makedirs
+          default: "False"
+        - name: user
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.append
+        - file.apply_template_on_contents
+        - file.blockreplace
+        - file.check_managed_changes
+        - file.check_perms
+        - file.comment_line
+        - file.copy
+        - file.directory_exists
+        - file.file_exists
+        - file.get_devmm
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_mode
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_blkdev
+        - file.is_chrdev
+        - file.is_fifo
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.line
+        - file.link
+        - file.lstat
+        - file.makedirs
+        - file.makedirs_perms
+        - file.manage_file
+        - file.mkdir
+        - file.mknod
+        - file.move
+        - file.patch
+        - file.prepend
+        - file.readdir
+        - file.readlink
+        - file.remove
+        - file.replace
+        - file.search
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.touch
+        - file.user_to_uid
+        - grains.get
+        - hashutil.base64_decodefile
+        - hashutil.base64_decodestring
+        - hashutil.digest
+        - hashutil.digest_file
+        - pillar.get
+        - user.current
+        - user.info
+      utility_dependencies:
+        - files.is_text
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: cached
+      source:
+        path: salt/states/file.py
+        symbol: cached
+      summary: '.. versionadded:: 2017.7.3'
+      parameters:
+        - name: name
+        - name: source_hash
+          default: '""'
+        - name: source_hash_name
+          default: None
+        - name: skip_verify
+          default: "False"
+        - name: saltenv
+          default: '"base"'
+        - name: use_etag
+          default: "False"
+        - name: source_hash_sig
+          default: None
+        - name: signed_by_any
+          default: None
+        - name: signed_by_all
+          default: None
+        - name: keyring
+          default: None
+        - name: gnupghome
+          default: None
+        - name: sig_backend
+          default: '"gpg"'
+      execution_dependencies:
+        - cmd.run_all
+        - cp.cache_file
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.append
+        - file.apply_template_on_contents
+        - file.blockreplace
+        - file.check_managed_changes
+        - file.check_perms
+        - file.comment_line
+        - file.copy
+        - file.directory_exists
+        - file.file_exists
+        - file.get_devmm
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_mode
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_blkdev
+        - file.is_chrdev
+        - file.is_fifo
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.line
+        - file.link
+        - file.lstat
+        - file.makedirs
+        - file.makedirs_perms
+        - file.manage_file
+        - file.mkdir
+        - file.mknod
+        - file.move
+        - file.patch
+        - file.prepend
+        - file.readdir
+        - file.readlink
+        - file.remove
+        - file.replace
+        - file.search
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.touch
+        - file.user_to_uid
+        - grains.get
+        - hashutil.base64_decodefile
+        - hashutil.base64_decodestring
+        - hashutil.digest
+        - hashutil.digest_file
+        - pillar.get
+        - user.current
+        - user.info
+      utility_dependencies:
+        - files.is_text
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: not_cached
+      source:
+        path: salt/states/file.py
+        symbol: not_cached
+      summary: '.. versionadded:: 2017.7.3'
+      parameters:
+        - name: name
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cmd.run_all
+        - cp.cache_file
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.append
+        - file.apply_template_on_contents
+        - file.blockreplace
+        - file.check_managed_changes
+        - file.check_perms
+        - file.comment_line
+        - file.copy
+        - file.directory_exists
+        - file.file_exists
+        - file.get_devmm
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_mode
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_blkdev
+        - file.is_chrdev
+        - file.is_fifo
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.line
+        - file.link
+        - file.lstat
+        - file.makedirs
+        - file.makedirs_perms
+        - file.manage_file
+        - file.mkdir
+        - file.mknod
+        - file.move
+        - file.patch
+        - file.prepend
+        - file.readdir
+        - file.readlink
+        - file.remove
+        - file.replace
+        - file.search
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.touch
+        - file.user_to_uid
+        - grains.get
+        - hashutil.base64_decodefile
+        - hashutil.base64_decodestring
+        - hashutil.digest
+        - hashutil.digest_file
+        - pillar.get
+        - user.current
+        - user.info
+      utility_dependencies:
+        - files.is_text
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: mod_beacon
+      source:
+        path: salt/states/file.py
+        symbol: mod_beacon
+      summary: Create a beacon to monitor a file based on a beacon state argument.
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - cp.cache_file
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.append
+        - file.apply_template_on_contents
+        - file.blockreplace
+        - file.check_managed_changes
+        - file.check_perms
+        - file.comment_line
+        - file.copy
+        - file.directory_exists
+        - file.file_exists
+        - file.get_devmm
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_mode
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_blkdev
+        - file.is_chrdev
+        - file.is_fifo
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.line
+        - file.link
+        - file.lstat
+        - file.makedirs
+        - file.makedirs_perms
+        - file.manage_file
+        - file.mkdir
+        - file.mknod
+        - file.move
+        - file.patch
+        - file.prepend
+        - file.readdir
+        - file.readlink
+        - file.remove
+        - file.replace
+        - file.search
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.touch
+        - file.user_to_uid
+        - grains.get
+        - hashutil.base64_decodefile
+        - hashutil.base64_decodestring
+        - hashutil.digest
+        - hashutil.digest_file
+        - pillar.get
+        - user.current
+        - user.info
+      utility_dependencies:
+        - files.is_text
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4
+    - function: pruned
+      source:
+        path: salt/states/file.py
+        symbol: pruned
+      summary: '.. versionadded:: 3006.0'
+      parameters:
+        - name: name
+        - name: recurse
+          default: "False"
+        - name: ignore_errors
+          default: "False"
+        - name: older_than
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.cache_file
+        - cp.get_template
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - file.append
+        - file.apply_template_on_contents
+        - file.blockreplace
+        - file.check_managed_changes
+        - file.check_perms
+        - file.comment_line
+        - file.copy
+        - file.directory_exists
+        - file.file_exists
+        - file.get_devmm
+        - file.get_group
+        - file.get_hash
+        - file.get_managed
+        - file.get_mode
+        - file.get_source_sum
+        - file.get_user
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.is_blkdev
+        - file.is_chrdev
+        - file.is_fifo
+        - file.is_hardlink
+        - file.is_link
+        - file.lchown
+        - file.line
+        - file.link
+        - file.lstat
+        - file.makedirs
+        - file.makedirs_perms
+        - file.manage_file
+        - file.mkdir
+        - file.mknod
+        - file.move
+        - file.patch
+        - file.prepend
+        - file.readdir
+        - file.readlink
+        - file.remove
+        - file.replace
+        - file.rmdir
+        - file.search
+        - file.source_list
+        - file.stats
+        - file.symlink
+        - file.touch
+        - file.user_to_uid
+        - grains.get
+        - hashutil.base64_decodefile
+        - hashutil.base64_decodestring
+        - hashutil.digest
+        - hashutil.digest_file
+        - pillar.get
+        - user.current
+        - user.info
+      utility_dependencies:
+        - files.is_text
+      tests:
+        - path: tests/pytests/unit/states/test_file.py
+          functions: 4

@@ -1,0 +1,29 @@
+kind: state
+module: logrotate
+source_module: logrotate
+virtual: true
+path: salt/states/logrotate.py
+functions:
+    - function: _convert_if_int
+      source:
+        path: salt/states/logrotate.py
+        symbol: _convert_if_int
+      summary: Convert to an int if necessary.
+      parameters:
+        - name: value
+    - function: set_
+      source:
+        path: salt/states/logrotate.py
+        symbol: set_
+      summary: Set a new value for a specific configuration line.
+      parameters:
+        - name: name
+        - name: key
+        - name: value
+        - name: setting
+          default: None
+        - name: conf_file
+          default: _DEFAULT_CONF
+      execution_dependencies:
+        - logrotate.get
+        - logrotate.set

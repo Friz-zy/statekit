@@ -1,0 +1,1156 @@
+kind: exec
+module: lgpo
+source_module: win_lgpo
+virtual: true
+path: salt/modules/win_lgpo.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _updateNamespace
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _updateNamespace
+      summary: helper function to recursively update the namespaces of an item
+      parameters:
+        - name: item
+        - name: new_namespace
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _updatePolicyElements
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _updatePolicyElements
+      summary: helper function to add the reg key to each policies element definitions if
+      parameters:
+        - name: policy_item
+        - name: regkey
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _remove_unicode_encoding
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _remove_unicode_encoding
+      summary: attempts to remove the "encoding='unicode'" from an xml file
+      parameters:
+        - name: xml_file
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _remove_invalid_xmlns
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _remove_invalid_xmlns
+      summary: Attempts to remove an invalid xmlns entry in newer versions of
+      parameters:
+        - name: xml_file
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _encode_xmlns_url
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _encode_xmlns_url
+      summary: Escape spaces in xmlns urls
+      parameters:
+        - name: match
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _parse_xml
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _parse_xml
+      summary: Parse the admx/adml file. There are 3 scenarios (so far) that we'll likely
+      parameters:
+        - name: adm_file
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _load_policy_definitions
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _load_policy_definitions
+      summary: helper function to process all ADMX files in the specified policy_def_path
+      parameters:
+        - name: path
+          default: '"c:\\Windows\\PolicyDefinitions"'
+        - name: language
+          default: '"en-US"'
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _get_policy_definitions
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _get_policy_definitions
+      parameters:
+        - name: path
+          default: '"c:\\Windows\\PolicyDefinitions"'
+        - name: language
+          default: '"en-US"'
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: clear_policy_cache
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: clear_policy_cache
+      summary: Clears the policy definitions and resource stored in ``__context__``. They
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _get_policy_resources
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _get_policy_resources
+      parameters:
+        - name: path
+          default: '"c:\\Windows\\PolicyDefinitions"'
+        - name: language
+          default: '"en-US"'
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _buildElementNsmap
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _buildElementNsmap
+      summary: build a namespace map for an ADMX element
+      parameters:
+        - name: using_elements
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _get_advaudit_defaults
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _get_advaudit_defaults
+      summary: Loads audit.csv defaults into a dict in __context__ called
+      parameters:
+        - name: option
+          default: None
+      execution_dependencies:
+        - file.file_exists
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _advaudit_check_csv
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _advaudit_check_csv
+      summary: 'This function checks for the existence of the `audit.csv` file here:'
+      execution_dependencies:
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _get_advaudit_value
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _get_advaudit_value
+      summary: Get the Advanced Auditing policy as configured in
+      parameters:
+        - name: option
+        - name: refresh
+          default: "False"
+      execution_dependencies:
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _set_advaudit_file_data
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _set_advaudit_file_data
+      summary: Helper function that sets the Advanced Audit settings in the two .csv files
+      parameters:
+        - name: option
+        - name: value
+      execution_dependencies:
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _set_advaudit_pol_data
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _set_advaudit_pol_data
+      summary: Helper function that updates the current applied settings to match what has
+      parameters:
+        - name: option
+        - name: value
+      execution_dependencies:
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _set_advaudit_value
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _set_advaudit_value
+      summary: Helper function to update the Advanced Audit policy on the machine. This
+      parameters:
+        - name: option
+        - name: value
+      execution_dependencies:
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _get_netsh_value
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _get_netsh_value
+      parameters:
+        - name: profile
+        - name: option
+      execution_dependencies:
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _set_netsh_value
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _set_netsh_value
+      parameters:
+        - name: profile
+        - name: section
+        - name: option
+        - name: value
+      execution_dependencies:
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _load_secedit_data
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _load_secedit_data
+      summary: Helper function that loads secedit data. It runs `secedit /export /cfg
+      execution_dependencies:
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _get_secedit_data
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _get_secedit_data
+      summary: Helper function that returns the secedit data in __context__ if it exists
+      parameters:
+        - name: refresh
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _get_secedit_value
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _get_secedit_value
+      summary: Helper function that looks for the passed option in the secedit data
+      parameters:
+        - name: option
+      execution_dependencies:
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _write_secedit_data
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _write_secedit_data
+      summary: Helper function to write secedit data to the database
+      parameters:
+        - name: inf_data
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _transform_value
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _transform_value
+      summary: helper function to transform the policy value into something that more
+      parameters:
+        - name: value
+        - name: policy
+        - name: transform_type
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _validateSetting
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _validateSetting
+      summary: helper function to validate specified value is appropriate for the policy
+      parameters:
+        - name: value
+        - name: policy
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _addAccountRights
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _addAccountRights
+      summary: helper function to add an account right to a user
+      parameters:
+        - name: sidObject
+        - name: user_right
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _delAccountRights
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _delAccountRights
+      summary: helper function to remove an account right from a user
+      parameters:
+        - name: sidObject
+        - name: user_right
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _getRightsAssignments
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _getRightsAssignments
+      summary: helper function to return all the user rights assignments/users
+      parameters:
+        - name: user_right
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _getAdmlDisplayName
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _getAdmlDisplayName
+      summary: helper function to take the 'displayName' attribute of an element and find
+      parameters:
+        - name: adml_xml_data
+        - name: display_name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _getAdmlPresentationRefId
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _getAdmlPresentationRefId
+      summary: helper function to check for a presentation label for a policy element
+      parameters:
+        - name: adml_data
+        - name: ref_id
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _getFullPolicyName
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _getFullPolicyName
+      summary: helper function to retrieve the full policy name if needed
+      parameters:
+        - name: policy_item
+        - name: policy_name
+        - name: return_full_policy_names
+        - name: adml_language
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _getDataFromRegPolData
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _getDataFromRegPolData
+      summary: helper function to do a search of Policy data from a registry.pol file
+      parameters:
+        - name: search_string
+        - name: policy_data
+        - name: return_value_name
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _checkListItem
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _checkListItem
+      summary: helper function to process an enabled/disabled/true/falseList set
+      parameters:
+        - name: policy_element
+        - name: policy_name
+        - name: policy_key
+        - name: xpath_object
+        - name: policy_file_data
+        - name: test_items
+          default: "True"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _checkValueItemParent
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _checkValueItemParent
+      summary: helper function to process the parent of a value item object
+      parameters:
+        - name: policy_element
+        - name: policy_name
+        - name: policy_key
+        - name: policy_valueName
+        - name: xpath_object
+        - name: policy_file_data
+        - name: check_deleted
+          default: "False"
+        - name: test_item
+          default: "True"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _encode_string
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _encode_string
+      parameters:
+        - name: value
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _buildKnownDataSearchString
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _buildKnownDataSearchString
+      summary: helper function similar to _processValueItem to build a search string for a
+      parameters:
+        - name: reg_key
+        - name: reg_valueName
+        - name: reg_vtype
+        - name: reg_data
+        - name: check_deleted
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _processValueItem
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _processValueItem
+      summary: helper function to process a value type item and generate the expected
+      parameters:
+        - name: element
+        - name: reg_key
+        - name: reg_valuename
+        - name: policy
+        - name: parent_element
+        - name: check_deleted
+          default: "False"
+        - name: this_element_value
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _checkAllAdmxPolicies
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _checkAllAdmxPolicies
+      summary: rewrite of _getAllAdminTemplateSettingsFromRegPolFile where instead of
+      parameters:
+        - name: policy_class
+        - name: adml_language
+          default: '"en-US"'
+        - name: return_full_policy_names
+          default: "False"
+        - name: hierarchical_return
+          default: "False"
+        - name: return_not_configured
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _build_parent_list
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _build_parent_list
+      summary: helper function to build a list containing parent elements of the ADMX
+      parameters:
+        - name: policy_definition
+        - name: return_full_policy_names
+        - name: adml_language
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _admx_policy_parent_walk
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _admx_policy_parent_walk
+      summary: helper function to recursively walk up the ADMX namespaces and build the
+      parameters:
+        - name: path
+        - name: policy_namespace
+        - name: parent_category
+        - name: policy_nsmap
+        - name: return_full_policy_names
+        - name: adml_language
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _regexSearchKeyValueCombo
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _regexSearchKeyValueCombo
+      summary: helper function to do a search of Policy data from a registry.pol file
+      parameters:
+        - name: policy_data
+        - name: policy_regpath
+        - name: policy_regkey
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _policyFileReplaceOrAppendList
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _policyFileReplaceOrAppendList
+      summary: helper function to take a list of strings for registry.pol file data and
+      parameters:
+        - name: string_list
+        - name: policy_data
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _policyFileReplaceOrAppend
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _policyFileReplaceOrAppend
+      summary: helper function to take a ADMX policy string for registry.pol file data and
+      parameters:
+        - name: this_string
+        - name: policy_data
+        - name: append_only
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _writeAdminTemplateRegPolFile
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _writeAdminTemplateRegPolFile
+      parameters:
+        - name: admtemplate_data
+        - name: adml_language
+          default: '"en-US"'
+        - name: registry_class
+          default: '"Machine"'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _getScriptSettingsFromIniFile
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _getScriptSettingsFromIniFile
+      summary: helper function to parse/read a GPO Startup/Shutdown script file
+      parameters:
+        - name: policy_info
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _writeGpoScript
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _writeGpoScript
+      summary: helper function to write local GPO startup/shutdown script
+      parameters:
+        - name: psscript
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _lookup_admin_template
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _lookup_admin_template
+      summary: (success_flag, policy_xml_item, policy_name_list, message)
+      parameters:
+        - name: policy_name
+        - name: policy_class
+        - name: adml_language
+          default: '"en-US"'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: get_policy_info
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: get_policy_info
+      parameters:
+        - name: policy_name
+        - name: policy_class
+        - name: adml_language
+          default: '"en-US"'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: get
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: get
+      summary: Get a policy value
+      parameters:
+        - name: policy_class
+          default: None
+        - name: return_full_policy_names
+          default: "True"
+        - name: hierarchical_return
+          default: "False"
+        - name: adml_language
+          default: '"en-US"'
+        - name: return_not_configured
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _get_policy_info_setting
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _get_policy_info_setting
+      summary: Some policies are defined in this module and others by the ADMX/ADML files
+      parameters:
+        - name: policy_definition
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+        - reg.read_value
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: _get_policy_adm_setting
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: _get_policy_adm_setting
+      summary: Get the current setting for polices set via the policy templates (ADMX/ADML)
+      parameters:
+        - name: admx_policy
+        - name: policy_class
+        - name: adml_language
+          default: '"en-US"'
+        - name: return_full_policy_names
+          default: "False"
+        - name: hierarchical_return
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+        - reg.read_value
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: get_policy
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: get_policy
+      parameters:
+        - name: policy_name
+        - name: policy_class
+        - name: adml_language
+          default: '"en-US"'
+        - name: return_value_only
+          default: "True"
+        - name: return_full_policy_names
+          default: "True"
+        - name: hierarchical_return
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+        - reg.read_value
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: set_computer_policy
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: set_computer_policy
+      summary: Set a single computer policy
+      parameters:
+        - name: name
+        - name: setting
+        - name: cumulative_rights_assignments
+          default: "True"
+        - name: adml_language
+          default: '"en-US"'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+        - reg.read_value
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: set_user_policy
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: set_user_policy
+      summary: Set a single user policy
+      parameters:
+        - name: name
+        - name: setting
+        - name: adml_language
+          default: '"en-US"'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+        - reg.read_value
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2
+    - function: set_
+      source:
+        path: salt/modules/win_lgpo.py
+        symbol: set_
+      summary: Set a local server policy.
+      parameters:
+        - name: computer_policy
+          default: None
+        - name: user_policy
+          default: None
+        - name: cumulative_rights_assignments
+          default: "True"
+        - name: adml_language
+          default: '"en-US"'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - file.copy
+        - file.file_exists
+        - file.makedirs
+        - file.remove
+        - file.write
+      utility_dependencies:
+        - auditpol.get_advaudit_policy_rows
+        - auditpol.set_setting
+        - reg.delete_value
+        - reg.read_value
+        - reg.set_value
+      tests:
+        - path: tests/pytests/unit/modules/test_win_lgpo.py
+          functions: 2

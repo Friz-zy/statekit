@@ -1,0 +1,156 @@
+kind: exec
+module: macpackage
+source_module: macpackage
+virtual: true
+path: salt/modules/macpackage.py
+platform_markers:
+    - is_darwin
+functions:
+    - function: install
+      source:
+        path: salt/modules/macpackage.py
+        symbol: install
+      summary: Install a pkg file
+      parameters:
+        - name: pkg
+        - name: target
+          default: '"LocalSystem"'
+        - name: store
+          default: "False"
+        - name: allow_untrusted
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_macpackage.py
+          functions: 17
+    - function: install_app
+      source:
+        path: salt/modules/macpackage.py
+        symbol: install_app
+      summary: Install an app file by moving it into the specified Applications directory
+      parameters:
+        - name: app
+        - name: target
+          default: '"/Applications/"'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_macpackage.py
+          functions: 17
+    - function: uninstall_app
+      source:
+        path: salt/modules/macpackage.py
+        symbol: uninstall_app
+      summary: Uninstall an app file by removing it from the Applications directory
+      parameters:
+        - name: app
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.remove
+      tests:
+        - path: tests/pytests/unit/modules/test_macpackage.py
+          functions: 17
+    - function: mount
+      source:
+        path: salt/modules/macpackage.py
+        symbol: mount
+      summary: Attempt to mount a dmg file to a temporary location and return the
+      parameters:
+        - name: dmg
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.remove
+        - temp.dir
+      tests:
+        - path: tests/pytests/unit/modules/test_macpackage.py
+          functions: 17
+    - function: unmount
+      source:
+        path: salt/modules/macpackage.py
+        symbol: unmount
+      summary: Attempt to unmount a dmg file from a temporary location
+      parameters:
+        - name: mountpoint
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.remove
+        - temp.dir
+      tests:
+        - path: tests/pytests/unit/modules/test_macpackage.py
+          functions: 17
+    - function: installed_pkgs
+      source:
+        path: salt/modules/macpackage.py
+        symbol: installed_pkgs
+      summary: Return the list of installed packages on the machine
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.remove
+        - temp.dir
+      tests:
+        - path: tests/pytests/unit/modules/test_macpackage.py
+          functions: 17
+    - function: get_pkg_id
+      source:
+        path: salt/modules/macpackage.py
+        symbol: get_pkg_id
+      summary: Attempt to get the package ID from a .pkg file
+      parameters:
+        - name: pkg
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.remove
+        - temp.dir
+      tests:
+        - path: tests/pytests/unit/modules/test_macpackage.py
+          functions: 17
+    - function: get_mpkg_ids
+      source:
+        path: salt/modules/macpackage.py
+        symbol: get_mpkg_ids
+      summary: Attempt to get the package IDs from a mounted .mpkg file
+      parameters:
+        - name: mpkg
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.remove
+        - temp.dir
+      tests:
+        - path: tests/pytests/unit/modules/test_macpackage.py
+          functions: 17
+    - function: _get_pkg_id_from_pkginfo
+      source:
+        path: salt/modules/macpackage.py
+        symbol: _get_pkg_id_from_pkginfo
+      parameters:
+        - name: pkginfo
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.remove
+        - temp.dir
+      tests:
+        - path: tests/pytests/unit/modules/test_macpackage.py
+          functions: 17
+    - function: _get_pkg_id_dir
+      source:
+        path: salt/modules/macpackage.py
+        symbol: _get_pkg_id_dir
+      parameters:
+        - name: path
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.remove
+        - temp.dir
+      tests:
+        - path: tests/pytests/unit/modules/test_macpackage.py
+          functions: 17

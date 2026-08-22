@@ -1,0 +1,331 @@
+kind: exec
+module: ps
+source_module: ps
+path: salt/modules/ps.py
+functions:
+    - function: _get_proc_cmdline
+      source:
+        path: salt/modules/ps.py
+        symbol: _get_proc_cmdline
+      summary: Returns the cmdline of a Process instance.
+      parameters:
+        - name: proc
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: _get_proc_create_time
+      source:
+        path: salt/modules/ps.py
+        symbol: _get_proc_create_time
+      summary: Returns the create_time of a Process instance.
+      parameters:
+        - name: proc
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: _get_proc_name
+      source:
+        path: salt/modules/ps.py
+        symbol: _get_proc_name
+      summary: Returns the name of a Process instance.
+      parameters:
+        - name: proc
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: _get_proc_status
+      source:
+        path: salt/modules/ps.py
+        symbol: _get_proc_status
+      summary: Returns the status of a Process instance.
+      parameters:
+        - name: proc
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: _get_proc_username
+      source:
+        path: salt/modules/ps.py
+        symbol: _get_proc_username
+      summary: Returns the username of a Process instance.
+      parameters:
+        - name: proc
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: _get_proc_pid
+      source:
+        path: salt/modules/ps.py
+        symbol: _get_proc_pid
+      summary: Returns the pid of a Process instance.
+      parameters:
+        - name: proc
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: top
+      source:
+        path: salt/modules/ps.py
+        symbol: top
+      summary: Return a list of top CPU consuming processes during the interval.
+      parameters:
+        - name: num_processes
+          default: "5"
+        - name: interval
+          default: "3"
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: get_pid_list
+      source:
+        path: salt/modules/ps.py
+        symbol: get_pid_list
+      summary: Return a list of process ids (PIDs) for all running processes.
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: proc_info
+      source:
+        path: salt/modules/ps.py
+        symbol: proc_info
+      summary: Return a dictionary of information for a process id (PID).
+      parameters:
+        - name: pid
+        - name: attrs
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: kill_pid
+      source:
+        path: salt/modules/ps.py
+        symbol: kill_pid
+      summary: Kill a process by PID.
+      parameters:
+        - name: pid
+        - name: signal
+          default: "15"
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: pkill
+      source:
+        path: salt/modules/ps.py
+        symbol: pkill
+      summary: Kill processes matching a pattern.
+      parameters:
+        - name: pattern
+        - name: user
+          default: None
+        - name: signal
+          default: "15"
+        - name: full
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: pgrep
+      source:
+        path: salt/modules/ps.py
+        symbol: pgrep
+      summary: Return the pids for processes matching a pattern.
+      parameters:
+        - name: pattern
+        - name: user
+          default: None
+        - name: full
+          default: "False"
+        - name: pattern_is_regex
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: cpu_percent
+      source:
+        path: salt/modules/ps.py
+        symbol: cpu_percent
+      summary: Return the percent of time the CPU is busy.
+      parameters:
+        - name: interval
+          default: "0.1"
+        - name: per_cpu
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: cpu_times
+      source:
+        path: salt/modules/ps.py
+        symbol: cpu_times
+      summary: Return the percent of time the CPU spends in each state,
+      parameters:
+        - name: per_cpu
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: virtual_memory
+      source:
+        path: salt/modules/ps.py
+        symbol: virtual_memory
+      summary: '.. versionadded:: 2014.7.0'
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: swap_memory
+      source:
+        path: salt/modules/ps.py
+        symbol: swap_memory
+      summary: '.. versionadded:: 2014.7.0'
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: disk_partitions
+      source:
+        path: salt/modules/ps.py
+        symbol: disk_partitions
+      summary: Return a list of disk partitions and their device, mount point, and
+      parameters:
+        - name: all
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: disk_usage
+      source:
+        path: salt/modules/ps.py
+        symbol: disk_usage
+      summary: Given a path, return a dict listing the total available space as well as
+      parameters:
+        - name: path
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: disk_partition_usage
+      source:
+        path: salt/modules/ps.py
+        symbol: disk_partition_usage
+      summary: Return a list of disk partitions plus the mount point, filesystem and usage
+      parameters:
+        - name: all
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: total_physical_memory
+      source:
+        path: salt/modules/ps.py
+        symbol: total_physical_memory
+      summary: Return the total number of bytes of physical memory.
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: num_cpus
+      source:
+        path: salt/modules/ps.py
+        symbol: num_cpus
+      summary: Return the number of CPUs.
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: boot_time
+      source:
+        path: salt/modules/ps.py
+        symbol: boot_time
+      summary: Return the boot time in number of seconds since the epoch began.
+      parameters:
+        - name: time_format
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: network_io_counters
+      source:
+        path: salt/modules/ps.py
+        symbol: network_io_counters
+      summary: Return network I/O statistics.
+      parameters:
+        - name: interface
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: disk_io_counters
+      source:
+        path: salt/modules/ps.py
+        symbol: disk_io_counters
+      summary: Return disk I/O statistics.
+      parameters:
+        - name: device
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: get_users
+      source:
+        path: salt/modules/ps.py
+        symbol: get_users
+      summary: Return logged-in users.
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: lsof
+      source:
+        path: salt/modules/ps.py
+        symbol: lsof
+      summary: Retrieve the lsof information of the given process name.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: netstat
+      source:
+        path: salt/modules/ps.py
+        symbol: netstat
+      summary: Retrieve the netstat information of the given process name.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: ss
+      source:
+        path: salt/modules/ps.py
+        symbol: ss
+      summary: Retrieve the ss information of the given process name.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: psaux
+      source:
+        path: salt/modules/ps.py
+        symbol: psaux
+      summary: Retrieve information corresponding to a "ps aux" filtered
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41
+    - function: status
+      source:
+        path: salt/modules/ps.py
+        symbol: status
+      summary: '.. versionadded:: 3006.0'
+      parameters:
+        - name: status
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_ps.py
+          functions: 41

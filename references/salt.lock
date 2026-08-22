@@ -1,0 +1,3 @@
+repository: https://github.com/saltstack/salt
+commit: 8b63e700637e40d76f80a00d95c60471797c73b9
+version: v3008.2-180-g8b63e70063

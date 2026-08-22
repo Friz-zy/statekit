@@ -1,0 +1,382 @@
+kind: exec
+module: service
+source_module: mac_service
+virtual: true
+path: salt/modules/mac_service.py
+platform_markers:
+    - is_darwin
+functions:
+    - function: _name_in_services
+      source:
+        path: salt/modules/mac_service.py
+        symbol: _name_in_services
+      summary: Checks to see if the given service is in the given services.
+      parameters:
+        - name: name
+        - name: services
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_service.py
+          functions: 32
+    - function: _get_service
+      source:
+        path: salt/modules/mac_service.py
+        symbol: _get_service
+      summary: Get information about a service.  If the service is not found, raise an
+      parameters:
+        - name: name
+      utility_dependencies:
+        - mac_utils.available_services
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_service.py
+          functions: 32
+    - function: _always_running_service
+      source:
+        path: salt/modules/mac_service.py
+        symbol: _always_running_service
+      summary: Check if the service should always be running based on the KeepAlive Key
+      parameters:
+        - name: name
+      utility_dependencies:
+        - mac_utils.available_services
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_service.py
+          functions: 32
+    - function: _get_domain_target
+      source:
+        path: salt/modules/mac_service.py
+        symbol: _get_domain_target
+      summary: Returns the domain/service target and path for a service. This is used to
+      parameters:
+        - name: name
+        - name: service_target
+          default: "False"
+      utility_dependencies:
+        - mac_utils.available_services
+        - mac_utils.console_user
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_service.py
+          functions: 32
+    - function: _launch_agent
+      source:
+        path: salt/modules/mac_service.py
+        symbol: _launch_agent
+      summary: Checks to see if the provided service is a LaunchAgent
+      parameters:
+        - name: name
+      utility_dependencies:
+        - mac_utils.available_services
+        - mac_utils.console_user
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_service.py
+          functions: 32
+    - function: show
+      source:
+        path: salt/modules/mac_service.py
+        symbol: show
+      summary: Show properties of a launchctl service
+      parameters:
+        - name: name
+      utility_dependencies:
+        - mac_utils.available_services
+        - mac_utils.console_user
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_service.py
+          functions: 32
+    - function: launchctl
+      source:
+        path: salt/modules/mac_service.py
+        symbol: launchctl
+      summary: Run a launchctl command and raise an error if it fails
+      parameters:
+        - name: sub_cmd
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      utility_dependencies:
+        - mac_utils.available_services
+        - mac_utils.console_user
+        - mac_utils.launchctl
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_service.py
+          functions: 32
+    - function: list_
+      source:
+        path: salt/modules/mac_service.py
+        symbol: list_
+      summary: Run launchctl list and return the output
+      parameters:
+        - name: name
+          default: None
+        - name: runas
+          default: None
+      utility_dependencies:
+        - mac_utils.available_services
+        - mac_utils.console_user
+        - mac_utils.launchctl
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_service.py
+          functions: 32
+    - function: enable
+      source:
+        path: salt/modules/mac_service.py
+        symbol: enable
+      summary: Enable a launchd service. Raises an error if the service fails to be enabled
+      parameters:
+        - name: name
+        - name: runas
+          default: None
+      utility_dependencies:
+        - mac_utils.available_services
+        - mac_utils.console_user
+        - mac_utils.launchctl
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_service.py
+          functions: 32
+    - function: disable
+      source:
+        path: salt/modules/mac_service.py
+        symbol: disable
+      summary: Disable a launchd service. Raises an error if the service fails to be
+      parameters:
+        - name: name
+        - name: runas
+          default: None
+      utility_dependencies:
+        - mac_utils.available_services
+        - mac_utils.console_user
+        - mac_utils.launchctl
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_service.py
+          functions: 32
+    - function: start
+      source:
+        path: salt/modules/mac_service.py
+        symbol: start
+      summary: Start a launchd service.  Raises an error if the service fails to start
+      parameters:
+        - name: name
+        - name: runas
+          default: None
+      utility_dependencies:
+        - mac_utils.available_services
+        - mac_utils.console_user
+        - mac_utils.launchctl
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_service.py
+          functions: 32
+    - function: stop
+      source:
+        path: salt/modules/mac_service.py
+        symbol: stop
+      summary: Stop a launchd service.  Raises an error if the service fails to stop
+      parameters:
+        - name: name
+        - name: runas
+          default: None
+      utility_dependencies:
+        - mac_utils.available_services
+        - mac_utils.console_user
+        - mac_utils.launchctl
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_service.py
+          functions: 32
+    - function: restart
+      source:
+        path: salt/modules/mac_service.py
+        symbol: restart
+      summary: Unloads and reloads a launchd service.  Raises an error if the service
+      parameters:
+        - name: name
+        - name: runas
+          default: None
+      execution_dependencies:
+        - service.loaded
+        - service.start
+        - service.stop
+      utility_dependencies:
+        - mac_utils.available_services
+        - mac_utils.console_user
+        - mac_utils.launchctl
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_service.py
+          functions: 32
+    - function: status
+      source:
+        path: salt/modules/mac_service.py
+        symbol: status
+      summary: Return the status for a service.
+      parameters:
+        - name: name
+        - name: sig
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - service.list
+        - service.loaded
+        - service.start
+        - service.stop
+        - status.pid
+      utility_dependencies:
+        - mac_utils.available_services
+        - mac_utils.console_user
+        - mac_utils.launchctl
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_service.py
+          functions: 32
+    - function: available
+      source:
+        path: salt/modules/mac_service.py
+        symbol: available
+      summary: Check that the given service is available.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - service.list
+        - service.loaded
+        - service.start
+        - service.stop
+        - status.pid
+      utility_dependencies:
+        - mac_utils.available_services
+        - mac_utils.console_user
+        - mac_utils.launchctl
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_service.py
+          functions: 32
+    - function: missing
+      source:
+        path: salt/modules/mac_service.py
+        symbol: missing
+      summary: The inverse of service.available
+      parameters:
+        - name: name
+      execution_dependencies:
+        - service.list
+        - service.loaded
+        - service.start
+        - service.stop
+        - status.pid
+      utility_dependencies:
+        - mac_utils.available_services
+        - mac_utils.console_user
+        - mac_utils.launchctl
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_service.py
+          functions: 32
+    - function: enabled
+      source:
+        path: salt/modules/mac_service.py
+        symbol: enabled
+      summary: Check if the specified service is enabled (not disabled, capable of being
+      parameters:
+        - name: name
+        - name: runas
+          default: None
+      execution_dependencies:
+        - service.disabled
+        - service.list
+        - service.loaded
+        - service.start
+        - service.stop
+        - status.pid
+      utility_dependencies:
+        - mac_utils.available_services
+        - mac_utils.console_user
+        - mac_utils.launchctl
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_service.py
+          functions: 32
+    - function: disabled
+      source:
+        path: salt/modules/mac_service.py
+        symbol: disabled
+      summary: Check if the specified service is not enabled. This is the opposite of
+      parameters:
+        - name: name
+        - name: runas
+          default: None
+        - name: domain
+          default: '"system"'
+      execution_dependencies:
+        - service.disabled
+        - service.list
+        - service.loaded
+        - service.start
+        - service.stop
+        - status.pid
+      utility_dependencies:
+        - mac_utils.available_services
+        - mac_utils.console_user
+        - mac_utils.launchctl
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_service.py
+          functions: 32
+    - function: get_all
+      source:
+        path: salt/modules/mac_service.py
+        symbol: get_all
+      summary: Return a list of services that are enabled or available. Can be used to
+      parameters:
+        - name: runas
+          default: None
+      execution_dependencies:
+        - service.disabled
+        - service.list
+        - service.loaded
+        - service.start
+        - service.stop
+        - status.pid
+      utility_dependencies:
+        - mac_utils.available_services
+        - mac_utils.console_user
+        - mac_utils.launchctl
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_service.py
+          functions: 32
+    - function: get_enabled
+      source:
+        path: salt/modules/mac_service.py
+        symbol: get_enabled
+      summary: Return a list of all services that are enabled. Can be used to find the
+      parameters:
+        - name: runas
+          default: None
+      execution_dependencies:
+        - service.disabled
+        - service.list
+        - service.loaded
+        - service.start
+        - service.stop
+        - status.pid
+      utility_dependencies:
+        - mac_utils.available_services
+        - mac_utils.console_user
+        - mac_utils.launchctl
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_service.py
+          functions: 32
+    - function: loaded
+      source:
+        path: salt/modules/mac_service.py
+        symbol: loaded
+      summary: Check if the specified service is loaded.
+      parameters:
+        - name: name
+        - name: runas
+          default: None
+      execution_dependencies:
+        - service.disabled
+        - service.list
+        - service.loaded
+        - service.start
+        - service.stop
+        - status.pid
+      utility_dependencies:
+        - mac_utils.available_services
+        - mac_utils.console_user
+        - mac_utils.launchctl
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_service.py
+          functions: 32

@@ -1,0 +1,148 @@
+kind: state
+module: lgpo_reg
+source_module: win_lgpo_reg
+virtual: true
+path: salt/states/win_lgpo_reg.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _get_domain_gpo_warning
+      source:
+        path: salt/states/win_lgpo_reg.py
+        symbol: _get_domain_gpo_warning
+      summary: Return a warning string if a Domain GPO manages the given key/value, else None.
+      parameters:
+        - name: key
+        - name: name
+        - name: policy_class
+      execution_dependencies:
+        - lgpo_reg.get_rsop_value
+        - lgpo_reg.get_value
+      tests:
+        - path: tests/pytests/unit/states/test_win_lgpo_reg.py
+          functions: 48
+    - function: _append_domain_warning
+      source:
+        path: salt/states/win_lgpo_reg.py
+        symbol: _append_domain_warning
+      summary: Append a domain GPO warning to ret['comment'] if a Domain GPO manages the
+      parameters:
+        - name: ret
+        - name: key
+        - name: name
+        - name: policy_class
+      execution_dependencies:
+        - lgpo_reg.get_rsop_value
+        - lgpo_reg.get_value
+      tests:
+        - path: tests/pytests/unit/states/test_win_lgpo_reg.py
+          functions: 48
+    - function: _get_current
+      source:
+        path: salt/states/win_lgpo_reg.py
+        symbol: _get_current
+      summary: Helper function to get the current state of the policy
+      parameters:
+        - name: key
+        - name: name
+        - name: policy_class
+        - name: write_registry
+          default: "True"
+      execution_dependencies:
+        - lgpo_reg.get_rsop_value
+        - lgpo_reg.get_value
+      utility_dependencies:
+        - reg.read_value
+      tests:
+        - path: tests/pytests/unit/states/test_win_lgpo_reg.py
+          functions: 48
+    - function: value_present
+      source:
+        path: salt/states/win_lgpo_reg.py
+        symbol: value_present
+      parameters:
+        - name: name
+        - name: key
+        - name: v_data
+        - name: v_type
+          default: '"REG_DWORD"'
+        - name: policy_class
+          default: '"Machine"'
+        - name: write_registry
+          default: None
+        - name: refresh_policy
+          default: "False"
+      execution_dependencies:
+        - lgpo_reg.get_rsop_value
+        - lgpo_reg.get_value
+        - lgpo_reg.set_value
+      utility_dependencies:
+        - reg.read_value
+      tests:
+        - path: tests/pytests/unit/states/test_win_lgpo_reg.py
+          functions: 48
+    - function: value_disabled
+      source:
+        path: salt/states/win_lgpo_reg.py
+        symbol: value_disabled
+      parameters:
+        - name: name
+        - name: key
+        - name: policy_class
+          default: '"Machine"'
+        - name: write_registry
+          default: None
+        - name: refresh_policy
+          default: "False"
+      execution_dependencies:
+        - lgpo_reg.disable_value
+        - lgpo_reg.get_rsop_value
+        - lgpo_reg.get_value
+        - lgpo_reg.set_value
+      utility_dependencies:
+        - reg.read_value
+      tests:
+        - path: tests/pytests/unit/states/test_win_lgpo_reg.py
+          functions: 48
+    - function: value_absent
+      source:
+        path: salt/states/win_lgpo_reg.py
+        symbol: value_absent
+      parameters:
+        - name: name
+        - name: key
+        - name: policy_class
+          default: '"Machine"'
+        - name: write_registry
+          default: None
+        - name: refresh_policy
+          default: "False"
+      execution_dependencies:
+        - lgpo_reg.delete_value
+        - lgpo_reg.disable_value
+        - lgpo_reg.get_rsop_value
+        - lgpo_reg.get_value
+        - lgpo_reg.set_value
+      utility_dependencies:
+        - reg.read_value
+      tests:
+        - path: tests/pytests/unit/states/test_win_lgpo_reg.py
+          functions: 48
+    - function: refresh_policy
+      source:
+        path: salt/states/win_lgpo_reg.py
+        symbol: refresh_policy
+      parameters:
+        - name: name
+      execution_dependencies:
+        - lgpo_reg.delete_value
+        - lgpo_reg.disable_value
+        - lgpo_reg.get_rsop_value
+        - lgpo_reg.get_value
+        - lgpo_reg.refresh_policy
+        - lgpo_reg.set_value
+      utility_dependencies:
+        - reg.read_value
+      tests:
+        - path: tests/pytests/unit/states/test_win_lgpo_reg.py
+          functions: 48

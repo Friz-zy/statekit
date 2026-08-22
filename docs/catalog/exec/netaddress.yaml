@@ -1,0 +1,34 @@
+kind: exec
+module: netaddress
+source_module: netaddress
+virtual: true
+path: salt/modules/netaddress.py
+functions:
+    - function: list_cidr_ips
+      source:
+        path: salt/modules/netaddress.py
+        symbol: list_cidr_ips
+      summary: Get a list of IP addresses from a CIDR.
+      parameters:
+        - name: cidr
+    - function: list_cidr_ips_ipv6
+      source:
+        path: salt/modules/netaddress.py
+        symbol: list_cidr_ips_ipv6
+      summary: Get a list of IPv6 addresses from a CIDR.
+      parameters:
+        - name: cidr
+    - function: cidr_netmask
+      source:
+        path: salt/modules/netaddress.py
+        symbol: cidr_netmask
+      summary: Get the netmask address associated with a CIDR address.
+      parameters:
+        - name: cidr
+    - function: cidr_broadcast
+      source:
+        path: salt/modules/netaddress.py
+        symbol: cidr_broadcast
+      summary: Get the broadcast address associated with a CIDR address.
+      parameters:
+        - name: cidr

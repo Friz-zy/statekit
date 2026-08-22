@@ -1,0 +1,242 @@
+kind: exec
+module: pkgbuild
+source_module: rpmbuild_pkgbuild
+virtual: true
+path: salt/modules/rpmbuild_pkgbuild.py
+functions:
+    - function: _create_rpmmacros
+      source:
+        path: salt/modules/rpmbuild_pkgbuild.py
+        symbol: _create_rpmmacros
+      summary: Create the .rpmmacros file in user's home directory
+      parameters:
+        - name: runas
+          default: '"root"'
+      execution_dependencies:
+        - file.makedirs_perms
+    - function: _mk_tree
+      source:
+        path: salt/modules/rpmbuild_pkgbuild.py
+        symbol: _mk_tree
+      summary: Create the rpm build tree
+      parameters:
+        - name: runas
+          default: '"root"'
+      execution_dependencies:
+        - file.makedirs_perms
+    - function: _get_spec
+      source:
+        path: salt/modules/rpmbuild_pkgbuild.py
+        symbol: _get_spec
+      summary: Get the spec file and place it in the SPECS dir
+      parameters:
+        - name: tree_base
+        - name: spec
+        - name: template
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cp.get_url
+        - file.makedirs_perms
+    - function: _get_src
+      source:
+        path: salt/modules/rpmbuild_pkgbuild.py
+        symbol: _get_src
+      summary: Get the named sources and place them into the tree_base
+      parameters:
+        - name: tree_base
+        - name: source
+        - name: saltenv
+          default: '"base"'
+        - name: runas
+          default: '"root"'
+      execution_dependencies:
+        - cp.get_url
+        - file.chown
+        - file.makedirs_perms
+    - function: _get_distset
+      source:
+        path: salt/modules/rpmbuild_pkgbuild.py
+        symbol: _get_distset
+      summary: Get the distribution string for use with rpmbuild and mock
+      parameters:
+        - name: tgt
+      execution_dependencies:
+        - cp.get_url
+        - file.chown
+        - file.makedirs_perms
+    - function: _get_deps
+      source:
+        path: salt/modules/rpmbuild_pkgbuild.py
+        symbol: _get_deps
+      summary: Get include string for list of dependent rpms to build package
+      parameters:
+        - name: deps
+        - name: tree_base
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cp.get_url
+        - file.chown
+        - file.makedirs_perms
+    - function: _check_repo_gpg_phrase_utils
+      source:
+        path: salt/modules/rpmbuild_pkgbuild.py
+        symbol: _check_repo_gpg_phrase_utils
+      summary: Check for /usr/libexec/gpg-preset-passphrase is installed
+      execution_dependencies:
+        - cp.get_url
+        - file.chown
+        - file.file_exists
+        - file.makedirs_perms
+    - function: _get_gpg_key_resources
+      source:
+        path: salt/modules/rpmbuild_pkgbuild.py
+        symbol: _get_gpg_key_resources
+      summary: Obtain gpg key resource infomation to sign repo files with
+      parameters:
+        - name: keyid
+        - name: env
+        - name: use_passphrase
+        - name: gnupghome
+        - name: runas
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cp.get_url
+        - file.chown
+        - file.file_exists
+        - file.makedirs_perms
+        - gpg.import_key
+        - gpg.list_keys
+        - pillar.get
+    - function: _sign_file
+      source:
+        path: salt/modules/rpmbuild_pkgbuild.py
+        symbol: _sign_file
+      summary: Sign file with provided key and definition
+      parameters:
+        - name: runas
+        - name: define_gpg_name
+        - name: phrase
+        - name: abs_file
+        - name: timeout
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cp.get_url
+        - file.chown
+        - file.file_exists
+        - file.makedirs_perms
+        - gpg.import_key
+        - gpg.list_keys
+        - pillar.get
+    - function: _sign_files_with_gpg_agent
+      source:
+        path: salt/modules/rpmbuild_pkgbuild.py
+        symbol: _sign_files_with_gpg_agent
+      summary: Sign file with provided key utilizing gpg-agent
+      parameters:
+        - name: runas
+        - name: local_keyid
+        - name: abs_file
+        - name: repodir
+        - name: env
+        - name: timeout
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cp.get_url
+        - file.chown
+        - file.file_exists
+        - file.makedirs_perms
+        - gpg.import_key
+        - gpg.list_keys
+        - pillar.get
+    - function: make_src_pkg
+      source:
+        path: salt/modules/rpmbuild_pkgbuild.py
+        symbol: make_src_pkg
+      summary: Create a source rpm from the given spec file and sources
+      parameters:
+        - name: dest_dir
+        - name: spec
+        - name: sources
+        - name: env
+          default: None
+        - name: template
+          default: None
+        - name: saltenv
+          default: '"base"'
+        - name: runas
+          default: '"root"'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cp.get_url
+        - file.chown
+        - file.file_exists
+        - file.makedirs_perms
+        - gpg.import_key
+        - gpg.list_keys
+        - pillar.get
+    - function: build
+      source:
+        path: salt/modules/rpmbuild_pkgbuild.py
+        symbol: build
+      summary: Given the package destination directory, the spec file source and package
+      parameters:
+        - name: runas
+        - name: tgt
+        - name: dest_dir
+        - name: spec
+        - name: sources
+        - name: deps
+        - name: env
+        - name: template
+        - name: saltenv
+          default: '"base"'
+        - name: log_dir
+          default: '"/var/log/salt/pkgbuild"'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+        - cp.get_url
+        - file.chown
+        - file.file_exists
+        - file.makedirs_perms
+        - gpg.import_key
+        - gpg.list_keys
+        - pillar.get
+    - function: make_repo
+      source:
+        path: salt/modules/rpmbuild_pkgbuild.py
+        symbol: make_repo
+      summary: Make a package repository and optionally sign packages present
+      parameters:
+        - name: repodir
+        - name: keyid
+          default: None
+        - name: env
+          default: None
+        - name: use_passphrase
+          default: "False"
+        - name: gnupghome
+          default: '"/etc/salt/gpgkeys"'
+        - name: runas
+          default: '"root"'
+        - name: timeout
+          default: "15.0"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - cp.get_url
+        - file.chown
+        - file.file_exists
+        - file.makedirs_perms
+        - gpg.import_key
+        - gpg.list_keys
+        - pillar.get

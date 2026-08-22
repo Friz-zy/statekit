@@ -1,0 +1,582 @@
+kind: exec
+module: user
+source_module: useradd
+virtual: true
+path: salt/modules/useradd.py
+functions:
+    - function: _quote_username
+      source:
+        path: salt/modules/useradd.py
+        symbol: _quote_username
+      summary: Usernames can only contain ascii chars, so make sure we return a str type
+      parameters:
+        - name: name
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: _get_gecos
+      source:
+        path: salt/modules/useradd.py
+        symbol: _get_gecos
+      summary: Retrieve GECOS field info and return it in dictionary form
+      parameters:
+        - name: name
+        - name: root
+          default: None
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: _build_gecos
+      source:
+        path: salt/modules/useradd.py
+        symbol: _build_gecos
+      summary: Accepts a dictionary entry containing GECOS field names and their values,
+      parameters:
+        - name: gecos_dict
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: _which
+      source:
+        path: salt/modules/useradd.py
+        symbol: _which
+      summary: Utility function wrapper to error out early if a command is not found
+      parameters:
+        - name: cmd
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: _update_gecos
+      source:
+        path: salt/modules/useradd.py
+        symbol: _update_gecos
+      summary: Common code to change a user's GECOS information
+      parameters:
+        - name: name
+        - name: key
+        - name: value
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: add
+      source:
+        path: salt/modules/useradd.py
+        symbol: add
+      summary: Add a user to the minion
+      parameters:
+        - name: name
+        - name: uid
+          default: None
+        - name: gid
+          default: None
+        - name: groups
+          default: None
+        - name: home
+          default: None
+        - name: shell
+          default: None
+        - name: unique
+          default: "True"
+        - name: system
+          default: "False"
+        - name: fullname
+          default: '""'
+        - name: roomnumber
+          default: '""'
+        - name: workphone
+          default: '""'
+        - name: homephone
+          default: '""'
+        - name: other
+          default: '""'
+        - name: createhome
+          default: "True"
+        - name: loginclass
+          default: None
+        - name: nologinit
+          default: "False"
+        - name: root
+          default: None
+        - name: usergroup
+          default: None
+        - name: local
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: delete
+      source:
+        path: salt/modules/useradd.py
+        symbol: delete
+      summary: Remove a user from the minion
+      parameters:
+        - name: name
+        - name: remove
+          default: "False"
+        - name: force
+          default: "False"
+        - name: root
+          default: None
+        - name: local
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: getent
+      source:
+        path: salt/modules/useradd.py
+        symbol: getent
+      summary: Return the list of all info for all users
+      parameters:
+        - name: refresh
+          default: "False"
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: _chattrib
+      source:
+        path: salt/modules/useradd.py
+        symbol: _chattrib
+      summary: Change an attribute for a named user
+      parameters:
+        - name: name
+        - name: key
+        - name: value
+        - name: param
+        - name: persist
+          default: "False"
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: chuid
+      source:
+        path: salt/modules/useradd.py
+        symbol: chuid
+      summary: Change the uid for a named user
+      parameters:
+        - name: name
+        - name: uid
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: chgid
+      source:
+        path: salt/modules/useradd.py
+        symbol: chgid
+      summary: Change the default group of the user
+      parameters:
+        - name: name
+        - name: gid
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: chshell
+      source:
+        path: salt/modules/useradd.py
+        symbol: chshell
+      summary: Change the default shell of the user
+      parameters:
+        - name: name
+        - name: shell
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: chhome
+      source:
+        path: salt/modules/useradd.py
+        symbol: chhome
+      summary: Change the home directory of the user, pass True for persist to move files
+      parameters:
+        - name: name
+        - name: home
+        - name: persist
+          default: "False"
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: chgroups
+      source:
+        path: salt/modules/useradd.py
+        symbol: chgroups
+      summary: Change the groups to which this user belongs
+      parameters:
+        - name: name
+        - name: groups
+        - name: append
+          default: "False"
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: chfullname
+      source:
+        path: salt/modules/useradd.py
+        symbol: chfullname
+      summary: Change the user's Full Name
+      parameters:
+        - name: name
+        - name: fullname
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: chroomnumber
+      source:
+        path: salt/modules/useradd.py
+        symbol: chroomnumber
+      summary: Change the user's Room Number
+      parameters:
+        - name: name
+        - name: roomnumber
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: chworkphone
+      source:
+        path: salt/modules/useradd.py
+        symbol: chworkphone
+      summary: Change the user's Work Phone
+      parameters:
+        - name: name
+        - name: workphone
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: chhomephone
+      source:
+        path: salt/modules/useradd.py
+        symbol: chhomephone
+      summary: Change the user's Home Phone
+      parameters:
+        - name: name
+        - name: homephone
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: chother
+      source:
+        path: salt/modules/useradd.py
+        symbol: chother
+      summary: Change the user's other GECOS attribute
+      parameters:
+        - name: name
+        - name: other
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: chloginclass
+      source:
+        path: salt/modules/useradd.py
+        symbol: chloginclass
+      summary: Change the default login class of the user
+      parameters:
+        - name: name
+        - name: loginclass
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: info
+      source:
+        path: salt/modules/useradd.py
+        symbol: info
+      summary: Return user information
+      parameters:
+        - name: name
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: get_loginclass
+      source:
+        path: salt/modules/useradd.py
+        symbol: get_loginclass
+      summary: Get the login class of the user
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: _format_info
+      source:
+        path: salt/modules/useradd.py
+        symbol: _format_info
+      summary: Return user information in a pretty way
+      parameters:
+        - name: data
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: primary_group
+      source:
+        path: salt/modules/useradd.py
+        symbol: primary_group
+      summary: Return the primary group of the named user
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: list_groups
+      source:
+        path: salt/modules/useradd.py
+        symbol: list_groups
+      summary: Return a list of groups the named user belongs to
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: list_users
+      source:
+        path: salt/modules/useradd.py
+        symbol: list_users
+      summary: Return a list of all users
+      parameters:
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: rename
+      source:
+        path: salt/modules/useradd.py
+        symbol: rename
+      summary: Change the username for a named user
+      parameters:
+        - name: name
+        - name: new_name
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: _getpwnam
+      source:
+        path: salt/modules/useradd.py
+        symbol: _getpwnam
+      summary: Alternative implementation for getpwnam, that use only /etc/passwd
+      parameters:
+        - name: name
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20
+    - function: _getpwall
+      source:
+        path: salt/modules/useradd.py
+        symbol: _getpwall
+      summary: Alternative implemetantion for getpwall, that use only /etc/passwd
+      parameters:
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.group_to_gid
+      tests:
+        - path: tests/unit/modules/test_useradd.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_useradd.py
+          functions: 20

@@ -1,0 +1,122 @@
+kind: state
+module: etcd
+source_module: etcd_mod
+virtual: true
+path: salt/states/etcd_mod.py
+functions:
+    - function: _etcd_action
+      source:
+        path: salt/states/etcd_mod.py
+        symbol: _etcd_action
+      parameters:
+        - name: '*'
+          kind: '*'
+        - name: action
+        - name: key
+        - name: profile
+        - name: value
+          default: None
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/states/test_etcd_mod.py
+          functions: 6
+    - function: set_
+      source:
+        path: salt/states/etcd_mod.py
+        symbol: set_
+      summary: Set a key in etcd
+      parameters:
+        - name: name
+        - name: value
+        - name: profile
+          default: None
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/states/test_etcd_mod.py
+          functions: 6
+    - function: wait_set
+      source:
+        path: salt/states/etcd_mod.py
+        symbol: wait_set
+      summary: Set a key in etcd only if the watch statement calls it. This function is
+      parameters:
+        - name: name
+        - name: value
+        - name: profile
+          default: None
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/states/test_etcd_mod.py
+          functions: 6
+    - function: directory
+      source:
+        path: salt/states/etcd_mod.py
+        symbol: directory
+      summary: Create a directory in etcd.
+      parameters:
+        - name: name
+        - name: profile
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - etcd.set
+      tests:
+        - path: tests/pytests/unit/states/test_etcd_mod.py
+          functions: 6
+    - function: rm
+      source:
+        path: salt/states/etcd_mod.py
+        symbol: rm
+      summary: Deletes a key from etcd
+      parameters:
+        - name: name
+        - name: recurse
+          default: "False"
+        - name: profile
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - etcd.rm
+        - etcd.set
+      tests:
+        - path: tests/pytests/unit/states/test_etcd_mod.py
+          functions: 6
+    - function: wait_rm
+      source:
+        path: salt/states/etcd_mod.py
+        symbol: wait_rm
+      summary: Deletes a key from etcd only if the watch statement calls it.
+      parameters:
+        - name: name
+        - name: recurse
+          default: "False"
+        - name: profile
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - etcd.rm
+        - etcd.set
+      tests:
+        - path: tests/pytests/unit/states/test_etcd_mod.py
+          functions: 6
+    - function: mod_watch
+      source:
+        path: salt/states/etcd_mod.py
+        symbol: mod_watch
+      summary: The etcd watcher, called to invoke the watch command.
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - etcd.rm
+        - etcd.set
+      tests:
+        - path: tests/pytests/unit/states/test_etcd_mod.py
+          functions: 6

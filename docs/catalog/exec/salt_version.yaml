@@ -1,0 +1,56 @@
+kind: exec
+module: salt_version
+source_module: salt_version
+virtual: true
+path: salt/modules/salt_version.py
+functions:
+    - function: get_release_number
+      source:
+        path: salt/modules/salt_version.py
+        symbol: get_release_number
+      summary: Returns the release number of a given release code name in a
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_salt_version.py
+          functions: 27
+    - function: equal
+      source:
+        path: salt/modules/salt_version.py
+        symbol: equal
+      summary: Returns a boolean (True) if the minion's current version
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_salt_version.py
+          functions: 27
+    - function: greater_than
+      source:
+        path: salt/modules/salt_version.py
+        symbol: greater_than
+      summary: Returns a boolean (True) if the minion's current
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_salt_version.py
+          functions: 27
+    - function: less_than
+      source:
+        path: salt/modules/salt_version.py
+        symbol: less_than
+      summary: Returns a boolean (True) if the minion's current
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_salt_version.py
+          functions: 27
+    - function: _check_release_cmp
+      source:
+        path: salt/modules/salt_version.py
+        symbol: _check_release_cmp
+      summary: Helper function to compare the minion's current
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_salt_version.py
+          functions: 27

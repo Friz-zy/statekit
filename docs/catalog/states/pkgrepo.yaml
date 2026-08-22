@@ -1,0 +1,46 @@
+kind: state
+module: pkgrepo
+source_module: pkgrepo
+path: salt/states/pkgrepo.py
+functions:
+    - function: managed
+      source:
+        path: salt/states/pkgrepo.py
+        symbol: managed
+      summary: This state manages software package repositories. Currently, :mod:`yum
+      parameters:
+        - name: name
+        - name: ppa
+          default: None
+        - name: copr
+          default: None
+        - name: aptkey
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - pkg.get_repo
+        - pkg.mod_repo
+        - test.ping
+      tests:
+        - path: tests/pytests/unit/states/test_pkgrepo.py
+          functions: 6
+    - function: absent
+      source:
+        path: salt/states/pkgrepo.py
+        symbol: absent
+      summary: This function deletes the specified repo on the system, if it exists. It
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - pkg.del_repo
+        - pkg.del_repo_key
+        - pkg.get_repo
+        - pkg.list_repos
+        - pkg.mod_repo
+        - test.ping
+      tests:
+        - path: tests/pytests/unit/states/test_pkgrepo.py
+          functions: 6

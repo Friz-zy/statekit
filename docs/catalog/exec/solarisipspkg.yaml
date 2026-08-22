@@ -1,0 +1,345 @@
+kind: exec
+module: pkg
+source_module: solarisipspkg
+virtual: true
+path: salt/modules/solarisipspkg.py
+functions:
+    - function: _ips_get_pkgname
+      source:
+        path: salt/modules/solarisipspkg.py
+        symbol: _ips_get_pkgname
+      summary: Extracts package name from "pkg list -v" output.
+      parameters:
+        - name: line
+      tests:
+        - path: tests/unit/modules/test_solarisipspkg.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_solarisipspkg.py
+          functions: 10
+    - function: _ips_get_pkgversion
+      source:
+        path: salt/modules/solarisipspkg.py
+        symbol: _ips_get_pkgversion
+      summary: Extracts package version from "pkg list -v" output.
+      parameters:
+        - name: line
+      tests:
+        - path: tests/unit/modules/test_solarisipspkg.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_solarisipspkg.py
+          functions: 10
+    - function: refresh_db
+      source:
+        path: salt/modules/solarisipspkg.py
+        symbol: refresh_db
+      summary: Updates the remote repos database.
+      parameters:
+        - name: full
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+      tests:
+        - path: tests/unit/modules/test_solarisipspkg.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_solarisipspkg.py
+          functions: 10
+    - function: upgrade_available
+      source:
+        path: salt/modules/solarisipspkg.py
+        symbol: upgrade_available
+      summary: Check if there is an upgrade available for a certain package
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_solarisipspkg.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_solarisipspkg.py
+          functions: 10
+    - function: list_upgrades
+      source:
+        path: salt/modules/solarisipspkg.py
+        symbol: list_upgrades
+      summary: Lists all packages available for update.
+      parameters:
+        - name: refresh
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_solarisipspkg.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_solarisipspkg.py
+          functions: 10
+    - function: upgrade
+      source:
+        path: salt/modules/solarisipspkg.py
+        symbol: upgrade
+      summary: Upgrade all packages to the latest possible version.
+      parameters:
+        - name: refresh
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_solarisipspkg.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_solarisipspkg.py
+          functions: 10
+    - function: _list_pkgs_from_context
+      source:
+        path: salt/modules/solarisipspkg.py
+        symbol: _list_pkgs_from_context
+      summary: Use pkg list from __context__
+      parameters:
+        - name: versions_as_list
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - pkg_resource.stringify
+      tests:
+        - path: tests/unit/modules/test_solarisipspkg.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_solarisipspkg.py
+          functions: 10
+    - function: list_pkgs
+      source:
+        path: salt/modules/solarisipspkg.py
+        symbol: list_pkgs
+      summary: 'List the currently installed packages as a dict::'
+      parameters:
+        - name: versions_as_list
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      tests:
+        - path: tests/unit/modules/test_solarisipspkg.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_solarisipspkg.py
+          functions: 10
+    - function: version
+      source:
+        path: salt/modules/solarisipspkg.py
+        symbol: version
+      summary: Common interface for obtaining the version of installed packages.
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      tests:
+        - path: tests/unit/modules/test_solarisipspkg.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_solarisipspkg.py
+          functions: 10
+    - function: latest_version
+      source:
+        path: salt/modules/solarisipspkg.py
+        symbol: latest_version
+      summary: The available version of packages in the repository.
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      tests:
+        - path: tests/unit/modules/test_solarisipspkg.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_solarisipspkg.py
+          functions: 10
+    - function: get_fmri
+      source:
+        path: salt/modules/solarisipspkg.py
+        symbol: get_fmri
+      summary: Returns FMRI from partial name. Returns empty string ('') if not found.
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      tests:
+        - path: tests/unit/modules/test_solarisipspkg.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_solarisipspkg.py
+          functions: 10
+    - function: normalize_name
+      source:
+        path: salt/modules/solarisipspkg.py
+        symbol: normalize_name
+      summary: Internal function. Normalizes pkg name to full FMRI before running
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      tests:
+        - path: tests/unit/modules/test_solarisipspkg.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_solarisipspkg.py
+          functions: 10
+    - function: is_installed
+      source:
+        path: salt/modules/solarisipspkg.py
+        symbol: is_installed
+      summary: Returns True if the package is installed. Otherwise returns False.
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      tests:
+        - path: tests/unit/modules/test_solarisipspkg.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_solarisipspkg.py
+          functions: 10
+    - function: search
+      source:
+        path: salt/modules/solarisipspkg.py
+        symbol: search
+      summary: Searches the repository for given pkg name.
+      parameters:
+        - name: name
+        - name: versions_as_list
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      tests:
+        - path: tests/unit/modules/test_solarisipspkg.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_solarisipspkg.py
+          functions: 10
+    - function: install
+      source:
+        path: salt/modules/solarisipspkg.py
+        symbol: install
+      summary: Install the named package using the IPS pkg command.
+      parameters:
+        - name: name
+          default: None
+        - name: refresh
+          default: "False"
+        - name: pkgs
+          default: None
+        - name: version
+          default: None
+        - name: test
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      tests:
+        - path: tests/unit/modules/test_solarisipspkg.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_solarisipspkg.py
+          functions: 10
+    - function: remove
+      source:
+        path: salt/modules/solarisipspkg.py
+        symbol: remove
+      summary: Remove specified package. Accepts full or partial FMRI.
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      tests:
+        - path: tests/unit/modules/test_solarisipspkg.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_solarisipspkg.py
+          functions: 10
+    - function: purge
+      source:
+        path: salt/modules/solarisipspkg.py
+        symbol: purge
+      summary: Remove specified package. Accepts full or partial FMRI.
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      tests:
+        - path: tests/unit/modules/test_solarisipspkg.py
+          functions: 0
+        - path: tests/pytests/unit/modules/test_solarisipspkg.py
+          functions: 10

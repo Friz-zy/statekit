@@ -1,0 +1,37 @@
+kind: exec
+module: ntp
+source_module: win_ntp
+virtual: true
+path: salt/modules/win_ntp.py
+platform_markers:
+    - is_windows
+functions:
+    - function: set_servers
+      source:
+        path: salt/modules/win_ntp.py
+        symbol: set_servers
+      summary: Set Windows to use a list of NTP servers
+      parameters:
+        - name: servers
+          kind: '*'
+      execution_dependencies:
+        - cmd.run
+        - service.restart
+        - service.start
+        - service.status
+      tests:
+        - path: tests/pytests/unit/modules/test_win_ntp.py
+          functions: 2
+    - function: get_servers
+      source:
+        path: salt/modules/win_ntp.py
+        symbol: get_servers
+      summary: Get list of configured NTP servers
+      execution_dependencies:
+        - cmd.run
+        - service.restart
+        - service.start
+        - service.status
+      tests:
+        - path: tests/pytests/unit/modules/test_win_ntp.py
+          functions: 2

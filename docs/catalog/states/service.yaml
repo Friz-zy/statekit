@@ -1,0 +1,356 @@
+kind: state
+module: service
+source_module: service
+virtual: true
+path: salt/states/service.py
+platform_markers:
+    - is_darwin
+    - is_windows
+functions:
+    - function: _get_systemd_only
+      source:
+        path: salt/states/service.py
+        symbol: _get_systemd_only
+      parameters:
+        - name: func
+        - name: kwargs
+      execution_dependencies:
+        - service.start
+      tests:
+        - path: tests/pytests/unit/states/test_service.py
+          functions: 14
+    - function: _add_warnings
+      source:
+        path: salt/states/service.py
+        symbol: _add_warnings
+      parameters:
+        - name: ret
+        - name: warnings
+      execution_dependencies:
+        - service.start
+      tests:
+        - path: tests/pytests/unit/states/test_service.py
+          functions: 14
+    - function: _enabled_used_error
+      source:
+        path: salt/states/service.py
+        symbol: _enabled_used_error
+      summary: Warn of potential typo.
+      parameters:
+        - name: ret
+      execution_dependencies:
+        - service.start
+      tests:
+        - path: tests/pytests/unit/states/test_service.py
+          functions: 14
+    - function: _enable
+      source:
+        path: salt/states/service.py
+        symbol: _enable
+      summary: Enable the service
+      parameters:
+        - name: name
+        - name: started
+        - name: result
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - service.enable
+        - service.enabled
+        - service.start
+      tests:
+        - path: tests/pytests/unit/states/test_service.py
+          functions: 14
+    - function: _disable
+      source:
+        path: salt/states/service.py
+        symbol: _disable
+      summary: Disable the service
+      parameters:
+        - name: name
+        - name: started
+        - name: result
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - service.disable
+        - service.disabled
+        - service.enable
+        - service.enabled
+        - service.info
+        - service.start
+      tests:
+        - path: tests/pytests/unit/states/test_service.py
+          functions: 14
+    - function: _offline
+      source:
+        path: salt/states/service.py
+        symbol: _offline
+      execution_dependencies:
+        - service.disable
+        - service.disabled
+        - service.enable
+        - service.enabled
+        - service.info
+        - service.offline
+        - service.start
+      tests:
+        - path: tests/pytests/unit/states/test_service.py
+          functions: 14
+    - function: _available
+      source:
+        path: salt/states/service.py
+        symbol: _available
+      summary: Check if the service is available
+      parameters:
+        - name: name
+        - name: ret
+      execution_dependencies:
+        - service.available
+        - service.disable
+        - service.disabled
+        - service.enable
+        - service.enabled
+        - service.get_all
+        - service.info
+        - service.offline
+        - service.start
+      tests:
+        - path: tests/pytests/unit/states/test_service.py
+          functions: 14
+    - function: running
+      source:
+        path: salt/states/service.py
+        symbol: running
+      summary: Ensure that the service is running
+      parameters:
+        - name: name
+        - name: enable
+          default: None
+        - name: sig
+          default: None
+        - name: init_delay
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - service.available
+        - service.disable
+        - service.disabled
+        - service.enable
+        - service.enabled
+        - service.get_all
+        - service.info
+        - service.offline
+        - service.start
+        - service.status
+      tests:
+        - path: tests/pytests/unit/states/test_service.py
+          functions: 14
+    - function: dead
+      source:
+        path: salt/states/service.py
+        symbol: dead
+      summary: Ensure that the named service is dead by stopping the service if it is running
+      parameters:
+        - name: name
+        - name: enable
+          default: None
+        - name: sig
+          default: None
+        - name: init_delay
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - service.available
+        - service.disable
+        - service.disabled
+        - service.enable
+        - service.enabled
+        - service.get_all
+        - service.info
+        - service.offline
+        - service.start
+        - service.status
+        - service.stop
+      tests:
+        - path: tests/pytests/unit/states/test_service.py
+          functions: 14
+    - function: enabled
+      source:
+        path: salt/states/service.py
+        symbol: enabled
+      summary: Ensure that the service is enabled on boot, only use this state if you
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - service.available
+        - service.disable
+        - service.disabled
+        - service.enable
+        - service.enabled
+        - service.get_all
+        - service.info
+        - service.offline
+        - service.start
+        - service.status
+        - service.stop
+      tests:
+        - path: tests/pytests/unit/states/test_service.py
+          functions: 14
+    - function: disabled
+      source:
+        path: salt/states/service.py
+        symbol: disabled
+      summary: Ensure that the service is disabled on boot, only use this state if you
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - service.available
+        - service.disable
+        - service.disabled
+        - service.enable
+        - service.enabled
+        - service.get_all
+        - service.info
+        - service.offline
+        - service.start
+        - service.status
+        - service.stop
+      tests:
+        - path: tests/pytests/unit/states/test_service.py
+          functions: 14
+    - function: masked
+      source:
+        path: salt/states/service.py
+        symbol: masked
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: name
+        - name: runtime
+          default: "False"
+      execution_dependencies:
+        - service.available
+        - service.disable
+        - service.disabled
+        - service.enable
+        - service.enabled
+        - service.get_all
+        - service.info
+        - service.mask
+        - service.masked
+        - service.offline
+        - service.start
+        - service.status
+        - service.stop
+      tests:
+        - path: tests/pytests/unit/states/test_service.py
+          functions: 14
+    - function: unmasked
+      source:
+        path: salt/states/service.py
+        symbol: unmasked
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: name
+        - name: runtime
+          default: "False"
+      execution_dependencies:
+        - service.available
+        - service.disable
+        - service.disabled
+        - service.enable
+        - service.enabled
+        - service.get_all
+        - service.info
+        - service.mask
+        - service.masked
+        - service.offline
+        - service.start
+        - service.status
+        - service.stop
+        - service.unmask
+      tests:
+        - path: tests/pytests/unit/states/test_service.py
+          functions: 14
+    - function: mod_watch
+      source:
+        path: salt/states/service.py
+        symbol: mod_watch
+      summary: The service watcher, called to invoke the watch command.
+      parameters:
+        - name: name
+        - name: sfun
+          default: None
+        - name: sig
+          default: None
+        - name: reload
+          default: "False"
+        - name: full_restart
+          default: "False"
+        - name: init_delay
+          default: None
+        - name: force
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - service.available
+        - service.disable
+        - service.disabled
+        - service.enable
+        - service.enabled
+        - service.force_reload
+        - service.full_restart
+        - service.get_all
+        - service.info
+        - service.mask
+        - service.masked
+        - service.offline
+        - service.reload
+        - service.restart
+        - service.start
+        - service.status
+        - service.stop
+        - service.unmask
+      tests:
+        - path: tests/pytests/unit/states/test_service.py
+          functions: 14
+    - function: mod_beacon
+      source:
+        path: salt/states/service.py
+        symbol: mod_beacon
+      summary: Create a beacon to monitor a service based on a beacon state argument.
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - service.available
+        - service.disable
+        - service.disabled
+        - service.enable
+        - service.enabled
+        - service.force_reload
+        - service.full_restart
+        - service.get_all
+        - service.info
+        - service.mask
+        - service.masked
+        - service.offline
+        - service.reload
+        - service.restart
+        - service.start
+        - service.status
+        - service.stop
+        - service.unmask
+      tests:
+        - path: tests/pytests/unit/states/test_service.py
+          functions: 14

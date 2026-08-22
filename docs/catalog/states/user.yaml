@@ -1,0 +1,271 @@
+kind: state
+module: user
+source_module: user
+path: salt/states/user.py
+platform_markers:
+    - is_darwin
+    - is_windows
+functions:
+    - function: _group_changes
+      source:
+        path: salt/states/user.py
+        symbol: _group_changes
+      summary: Determine if the groups need to be changed
+      parameters:
+        - name: cur
+        - name: wanted
+        - name: remove
+          default: "False"
+      execution_dependencies:
+        - group.info
+      tests:
+        - path: tests/pytests/unit/states/test_user.py
+          functions: 14
+    - function: _get_root_args
+      source:
+        path: salt/states/user.py
+        symbol: _get_root_args
+      summary: Retrieve args to use for user.info calls depending on platform and the local flag
+      parameters:
+        - name: local
+      execution_dependencies:
+        - group.info
+      tests:
+        - path: tests/pytests/unit/states/test_user.py
+          functions: 14
+    - function: _changes
+      source:
+        path: salt/states/user.py
+        symbol: _changes
+      summary: Return a dict of the changes required for a user if the user is present,
+      parameters:
+        - name: name
+        - name: uid
+          default: None
+        - name: gid
+          default: None
+        - name: groups
+          default: None
+        - name: optional_groups
+          default: None
+        - name: remove_groups
+          default: "True"
+        - name: home
+          default: None
+        - name: createhome
+          default: "True"
+        - name: password
+          default: None
+        - name: enforce_password
+          default: "True"
+        - name: empty_password
+          default: "False"
+        - name: shell
+          default: None
+        - name: fullname
+          default: '""'
+        - name: roomnumber
+          default: '""'
+        - name: workphone
+          default: '""'
+        - name: homephone
+          default: '""'
+        - name: other
+          default: '""'
+        - name: loginclass
+          default: None
+        - name: date
+          default: None
+        - name: mindays
+          default: "0"
+        - name: maxdays
+          default: "999999"
+        - name: inactdays
+          default: "0"
+        - name: warndays
+          default: "7"
+        - name: expire
+          default: None
+        - name: win_homedrive
+          default: None
+        - name: win_profile
+          default: None
+        - name: win_logonscript
+          default: None
+        - name: win_description
+          default: None
+        - name: allow_uid_change
+          default: "False"
+        - name: allow_gid_change
+          default: "False"
+        - name: password_lock
+          default: None
+        - name: local
+          default: "False"
+      execution_dependencies:
+        - file.gid_to_group
+        - file.group_to_gid
+        - group.info
+        - shadow.default_hash
+        - shadow.info
+        - shadow.verify_password
+        - user.get_loginclass
+        - user.info
+      tests:
+        - path: tests/pytests/unit/states/test_user.py
+          functions: 14
+    - function: present
+      source:
+        path: salt/states/user.py
+        symbol: present
+      summary: Ensure that the named user is present with the specified properties
+      parameters:
+        - name: name
+        - name: uid
+          default: None
+        - name: gid
+          default: None
+        - name: usergroup
+          default: None
+        - name: groups
+          default: None
+        - name: optional_groups
+          default: None
+        - name: remove_groups
+          default: "True"
+        - name: home
+          default: None
+        - name: createhome
+          default: "True"
+        - name: persist_home
+          default: "False"
+        - name: password
+          default: None
+        - name: hash_password
+          default: "False"
+        - name: enforce_password
+          default: "True"
+        - name: empty_password
+          default: "False"
+        - name: shell
+          default: None
+        - name: unique
+          default: "True"
+        - name: system
+          default: "False"
+        - name: fullname
+          default: None
+        - name: roomnumber
+          default: None
+        - name: workphone
+          default: None
+        - name: homephone
+          default: None
+        - name: other
+          default: None
+        - name: loginclass
+          default: None
+        - name: date
+          default: None
+        - name: mindays
+          default: None
+        - name: maxdays
+          default: None
+        - name: inactdays
+          default: None
+        - name: warndays
+          default: None
+        - name: expire
+          default: None
+        - name: win_homedrive
+          default: None
+        - name: win_profile
+          default: None
+        - name: win_logonscript
+          default: None
+        - name: win_description
+          default: None
+        - name: nologinit
+          default: "False"
+        - name: allow_uid_change
+          default: "False"
+        - name: allow_gid_change
+          default: "False"
+        - name: password_lock
+          default: None
+        - name: local
+          default: "False"
+      execution_dependencies:
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.mkdir
+        - group.info
+        - shadow.default_hash
+        - shadow.del_password
+        - shadow.gen_password
+        - shadow.info
+        - shadow.lock_password
+        - shadow.set_date
+        - shadow.set_expire
+        - shadow.set_inactdays
+        - shadow.set_maxdays
+        - shadow.set_mindays
+        - shadow.set_password
+        - shadow.set_warndays
+        - shadow.unlock_account
+        - shadow.unlock_password
+        - shadow.verify_password
+        - user.add
+        - user.chgroups
+        - user.chhome
+        - user.get_loginclass
+        - user.info
+        - user.setpassword
+        - user.update
+      tests:
+        - path: tests/pytests/unit/states/test_user.py
+          functions: 14
+    - function: absent
+      source:
+        path: salt/states/user.py
+        symbol: absent
+      summary: Ensure that the named user is absent
+      parameters:
+        - name: name
+        - name: purge
+          default: "False"
+        - name: force
+          default: "False"
+        - name: local
+          default: "False"
+      execution_dependencies:
+        - file.gid_to_group
+        - file.group_to_gid
+        - file.mkdir
+        - group.info
+        - shadow.default_hash
+        - shadow.del_password
+        - shadow.gen_password
+        - shadow.info
+        - shadow.lock_password
+        - shadow.set_date
+        - shadow.set_expire
+        - shadow.set_inactdays
+        - shadow.set_maxdays
+        - shadow.set_mindays
+        - shadow.set_password
+        - shadow.set_warndays
+        - shadow.unlock_account
+        - shadow.unlock_password
+        - shadow.verify_password
+        - user.add
+        - user.chgroups
+        - user.chhome
+        - user.delete
+        - user.get_loginclass
+        - user.info
+        - user.setpassword
+        - user.update
+      tests:
+        - path: tests/pytests/unit/states/test_user.py
+          functions: 14

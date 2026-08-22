@@ -1,0 +1,47 @@
+kind: exec
+module: ret
+source_module: ret
+path: salt/modules/ret.py
+functions:
+    - function: get_jid
+      source:
+        path: salt/modules/ret.py
+        symbol: get_jid
+      summary: Return the information for a specified job id
+      parameters:
+        - name: returner
+        - name: jid
+      tests:
+        - path: tests/pytests/unit/modules/test_ret.py
+          functions: 4
+    - function: get_fun
+      source:
+        path: salt/modules/ret.py
+        symbol: get_fun
+      summary: Return info about last time fun was called on each minion
+      parameters:
+        - name: returner
+        - name: fun
+      tests:
+        - path: tests/pytests/unit/modules/test_ret.py
+          functions: 4
+    - function: get_jids
+      source:
+        path: salt/modules/ret.py
+        symbol: get_jids
+      summary: Return a list of all job ids
+      parameters:
+        - name: returner
+      tests:
+        - path: tests/pytests/unit/modules/test_ret.py
+          functions: 4
+    - function: get_minions
+      source:
+        path: salt/modules/ret.py
+        symbol: get_minions
+      summary: Return a list of all minions
+      parameters:
+        - name: returner
+      tests:
+        - path: tests/pytests/unit/modules/test_ret.py
+          functions: 4

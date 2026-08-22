@@ -1,0 +1,49 @@
+kind: state
+module: win_path
+source_module: win_path
+path: salt/states/win_path.py
+functions:
+    - function: _format_comments
+      source:
+        path: salt/states/win_path.py
+        symbol: _format_comments
+      parameters:
+        - name: ret
+        - name: comments
+      execution_dependencies:
+        - win_path.rehash
+      tests:
+        - path: tests/pytests/unit/states/test_win_path.py
+          functions: 17
+    - function: absent
+      source:
+        path: salt/states/win_path.py
+        symbol: absent
+      summary: Remove the directory from the SYSTEM path
+      parameters:
+        - name: name
+      execution_dependencies:
+        - win_path.exists
+        - win_path.rehash
+        - win_path.remove
+      tests:
+        - path: tests/pytests/unit/states/test_win_path.py
+          functions: 17
+    - function: exists
+      source:
+        path: salt/states/win_path.py
+        symbol: exists
+      summary: Add the directory to the system PATH at index location
+      parameters:
+        - name: name
+        - name: index
+          default: None
+      execution_dependencies:
+        - win_path.add
+        - win_path.exists
+        - win_path.get_path
+        - win_path.rehash
+        - win_path.remove
+      tests:
+        - path: tests/pytests/unit/states/test_win_path.py
+          functions: 17

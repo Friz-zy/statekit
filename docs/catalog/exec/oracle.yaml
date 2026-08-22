@@ -1,0 +1,109 @@
+kind: exec
+module: oracle
+source_module: oracle
+virtual: true
+path: salt/modules/oracle.py
+functions:
+    - function: _cx_oracle_req
+      source:
+        path: salt/modules/oracle.py
+        symbol: _cx_oracle_req
+      summary: Fallback function stub
+      tests:
+        - path: tests/pytests/unit/modules/test_oracle.py
+          functions: 6
+    - function: _unicode_output
+      source:
+        path: salt/modules/oracle.py
+        symbol: _unicode_output
+      summary: Return strings values as python unicode string
+      parameters:
+        - name: cursor
+        - name: name
+        - name: default_type
+        - name: size
+        - name: precision
+        - name: scale
+      tests:
+        - path: tests/pytests/unit/modules/test_oracle.py
+          functions: 6
+    - function: _connect
+      source:
+        path: salt/modules/oracle.py
+        symbol: _connect
+      summary: uri = user/password@host[:port]/sid[ as {sysdba|sysoper}]
+      parameters:
+        - name: uri
+      tests:
+        - path: tests/pytests/unit/modules/test_oracle.py
+          functions: 6
+    - function: run_query
+      source:
+        path: salt/modules/oracle.py
+        symbol: run_query
+      summary: Run SQL query and return result
+      parameters:
+        - name: db
+        - name: query
+      tests:
+        - path: tests/pytests/unit/modules/test_oracle.py
+          functions: 6
+    - function: show_dbs
+      source:
+        path: salt/modules/oracle.py
+        symbol: show_dbs
+      summary: Show databases configuration from pillar. Filter by `*args`
+      parameters:
+        - name: dbs
+          kind: '*'
+      execution_dependencies:
+        - pillar.get
+      tests:
+        - path: tests/pytests/unit/modules/test_oracle.py
+          functions: 6
+    - function: version
+      source:
+        path: salt/modules/oracle.py
+        symbol: version
+      summary: Server Version (select banner  from v$version)
+      parameters:
+        - name: dbs
+          kind: '*'
+      execution_dependencies:
+        - pillar.get
+      tests:
+        - path: tests/pytests/unit/modules/test_oracle.py
+          functions: 6
+    - function: client_version
+      source:
+        path: salt/modules/oracle.py
+        symbol: client_version
+      summary: Oracle Client Version
+      execution_dependencies:
+        - pillar.get
+      tests:
+        - path: tests/pytests/unit/modules/test_oracle.py
+          functions: 6
+    - function: show_pillar
+      source:
+        path: salt/modules/oracle.py
+        symbol: show_pillar
+      summary: Show Pillar segment oracle.* and subitem with notation "item:subitem"
+      parameters:
+        - name: item
+          default: None
+      execution_dependencies:
+        - pillar.get
+      tests:
+        - path: tests/pytests/unit/modules/test_oracle.py
+          functions: 6
+    - function: show_env
+      source:
+        path: salt/modules/oracle.py
+        symbol: show_env
+      summary: Show Environment used by Oracle Client
+      execution_dependencies:
+        - pillar.get
+      tests:
+        - path: tests/pytests/unit/modules/test_oracle.py
+          functions: 6

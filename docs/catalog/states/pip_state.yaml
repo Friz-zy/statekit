@@ -1,0 +1,289 @@
+kind: state
+module: pip
+source_module: pip_state
+virtual: true
+path: salt/states/pip_state.py
+functions:
+    - function: purge_pip
+      source:
+        path: salt/states/pip_state.py
+        symbol: purge_pip
+      summary: Purge pip and its sub-modules
+      tests:
+        - path: tests/unit/states/test_pip_state.py
+          functions: 0
+    - function: pip_has_internal_exceptions_mod
+      source:
+        path: salt/states/pip_state.py
+        symbol: pip_has_internal_exceptions_mod
+      summary: True when the pip version has the `pip._internal.exceptions` module
+      parameters:
+        - name: ver
+      tests:
+        - path: tests/unit/states/test_pip_state.py
+          functions: 0
+    - function: pip_has_exceptions_mod
+      source:
+        path: salt/states/pip_state.py
+        symbol: pip_has_exceptions_mod
+      summary: True when the pip version has the `pip.exceptions` module
+      parameters:
+        - name: ver
+      tests:
+        - path: tests/unit/states/test_pip_state.py
+          functions: 0
+    - function: _from_line
+      source:
+        path: salt/states/pip_state.py
+        symbol: _from_line
+      parameters:
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/unit/states/test_pip_state.py
+          functions: 0
+    - function: _fulfills_version_spec
+      source:
+        path: salt/states/pip_state.py
+        symbol: _fulfills_version_spec
+      summary: Check version number against version specification info and return a
+      parameters:
+        - name: version
+        - name: version_spec
+      execution_dependencies:
+        - pip.list
+      tests:
+        - path: tests/unit/states/test_pip_state.py
+          functions: 0
+    - function: _check_pkg_version_format
+      source:
+        path: salt/states/pip_state.py
+        symbol: _check_pkg_version_format
+      summary: Takes a package name and version specification (if any) and checks it using
+      parameters:
+        - name: pkg
+      execution_dependencies:
+        - pip.list
+        - pip.normalize
+      tests:
+        - path: tests/unit/states/test_pip_state.py
+          functions: 0
+    - function: _check_if_installed
+      source:
+        path: salt/states/pip_state.py
+        symbol: _check_if_installed
+      summary: Takes a package name and version specification (if any) and checks it is
+      parameters:
+        - name: prefix
+        - name: state_pkg_name
+        - name: version_spec
+        - name: ignore_installed
+        - name: force_reinstall
+        - name: upgrade
+        - name: user
+        - name: cwd
+        - name: bin_env
+        - name: env_vars
+        - name: index_url
+        - name: extra_index_url
+        - name: pip_list
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - pip.list
+        - pip.list_all_versions
+        - pip.normalize
+      tests:
+        - path: tests/unit/states/test_pip_state.py
+          functions: 0
+    - function: _pep440_version_cmp
+      source:
+        path: salt/states/pip_state.py
+        symbol: _pep440_version_cmp
+      summary: Compares two version strings using packaging.version.Version.
+      parameters:
+        - name: pkg1
+        - name: pkg2
+        - name: ignore_epoch
+          default: "False"
+      execution_dependencies:
+        - pip.list
+        - pip.list_all_versions
+        - pip.normalize
+      tests:
+        - path: tests/unit/states/test_pip_state.py
+          functions: 0
+    - function: installed
+      source:
+        path: salt/states/pip_state.py
+        symbol: installed
+      summary: Make sure the package is installed
+      parameters:
+        - name: name
+        - name: pkgs
+          default: None
+        - name: pip_bin
+          default: None
+        - name: requirements
+          default: None
+        - name: bin_env
+          default: None
+        - name: use_wheel
+          default: "False"
+        - name: no_use_wheel
+          default: "False"
+        - name: log
+          default: None
+        - name: proxy
+          default: None
+        - name: timeout
+          default: None
+        - name: repo
+          default: None
+        - name: editable
+          default: None
+        - name: find_links
+          default: None
+        - name: index_url
+          default: None
+        - name: extra_index_url
+          default: None
+        - name: no_index
+          default: "False"
+        - name: mirrors
+          default: None
+        - name: build
+          default: None
+        - name: target
+          default: None
+        - name: download
+          default: None
+        - name: download_cache
+          default: None
+        - name: source
+          default: None
+        - name: upgrade
+          default: "False"
+        - name: force_reinstall
+          default: "False"
+        - name: ignore_installed
+          default: "False"
+        - name: exists_action
+          default: None
+        - name: no_deps
+          default: "False"
+        - name: no_install
+          default: "False"
+        - name: no_download
+          default: "False"
+        - name: install_options
+          default: None
+        - name: global_options
+          default: None
+        - name: user
+          default: None
+        - name: cwd
+          default: None
+        - name: pre_releases
+          default: "False"
+        - name: cert
+          default: None
+        - name: allow_all_external
+          default: "False"
+        - name: allow_external
+          default: None
+        - name: allow_unverified
+          default: None
+        - name: process_dependency_links
+          default: "False"
+        - name: env_vars
+          default: None
+        - name: use_vt
+          default: "False"
+        - name: trusted_host
+          default: None
+        - name: no_cache_dir
+          default: "False"
+        - name: cache_dir
+          default: None
+        - name: no_binary
+          default: None
+        - name: extra_args
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - pip.install
+        - pip.list
+        - pip.list_all_versions
+        - pip.normalize
+        - pip.version
+        - user.info
+      tests:
+        - path: tests/unit/states/test_pip_state.py
+          functions: 0
+    - function: removed
+      source:
+        path: salt/states/pip_state.py
+        symbol: removed
+      summary: Make sure that a package is not installed.
+      parameters:
+        - name: name
+        - name: requirements
+          default: None
+        - name: bin_env
+          default: None
+        - name: log
+          default: None
+        - name: proxy
+          default: None
+        - name: timeout
+          default: None
+        - name: user
+          default: None
+        - name: cwd
+          default: None
+        - name: use_vt
+          default: "False"
+      execution_dependencies:
+        - pip.install
+        - pip.list
+        - pip.list_all_versions
+        - pip.normalize
+        - pip.uninstall
+        - pip.version
+        - user.info
+      tests:
+        - path: tests/unit/states/test_pip_state.py
+          functions: 0
+    - function: uptodate
+      source:
+        path: salt/states/pip_state.py
+        symbol: uptodate
+      summary: '.. versionadded:: 2015.5.0'
+      parameters:
+        - name: name
+        - name: bin_env
+          default: None
+        - name: user
+          default: None
+        - name: cwd
+          default: None
+        - name: use_vt
+          default: "False"
+      execution_dependencies:
+        - pip.install
+        - pip.list
+        - pip.list_all_versions
+        - pip.list_upgrades
+        - pip.normalize
+        - pip.uninstall
+        - pip.upgrade
+        - pip.version
+        - user.info
+      tests:
+        - path: tests/unit/states/test_pip_state.py
+          functions: 0

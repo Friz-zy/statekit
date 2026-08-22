@@ -1,0 +1,69 @@
+kind: state
+module: postgres_group
+source_module: postgres_group
+path: salt/states/postgres_group.py
+functions:
+    - function: present
+      source:
+        path: salt/states/postgres_group.py
+        symbol: present
+      summary: Ensure that the named group is present with the specified privileges
+      parameters:
+        - name: name
+        - name: createdb
+          default: None
+        - name: createroles
+          default: None
+        - name: encrypted
+          default: None
+        - name: superuser
+          default: None
+        - name: inherit
+          default: None
+        - name: login
+          default: None
+        - name: replication
+          default: None
+        - name: password
+          default: None
+        - name: refresh_password
+          default: None
+        - name: groups
+          default: None
+        - name: user
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: db_password
+          default: None
+        - name: db_host
+          default: None
+        - name: db_port
+          default: None
+        - name: db_user
+          default: None
+      execution_dependencies:
+        - postgres.role_get
+    - function: absent
+      source:
+        path: salt/states/postgres_group.py
+        symbol: absent
+      summary: Ensure that the named group is absent
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: db_password
+          default: None
+        - name: db_host
+          default: None
+        - name: db_port
+          default: None
+        - name: db_user
+          default: None
+      execution_dependencies:
+        - postgres.group_remove
+        - postgres.role_get
+        - postgres.user_exists

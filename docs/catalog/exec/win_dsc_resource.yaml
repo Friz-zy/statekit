@@ -1,0 +1,71 @@
+kind: exec
+module: dsc_resource
+source_module: win_dsc_resource
+virtual: true
+path: salt/modules/win_dsc_resource.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _ps_value
+      source:
+        path: salt/modules/win_dsc_resource.py
+        symbol: _ps_value
+      summary: Convert a single Python value to its PowerShell literal representation.
+      parameters:
+        - name: value
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dsc_resource.py
+          functions: 0
+    - function: _dict_to_ps_hashtable
+      source:
+        path: salt/modules/win_dsc_resource.py
+        symbol: _dict_to_ps_hashtable
+      summary: Convert a Python dict to a PowerShell ``@{Key = Value}`` hashtable string.
+      parameters:
+        - name: data
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dsc_resource.py
+          functions: 0
+    - function: _ps_quote
+      source:
+        path: salt/modules/win_dsc_resource.py
+        symbol: _ps_quote
+      summary: Escape a string for safe interpolation inside a PowerShell single-quoted
+      parameters:
+        - name: s
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dsc_resource.py
+          functions: 0
+    - function: get
+      source:
+        path: salt/modules/win_dsc_resource.py
+        symbol: get
+      parameters:
+        - name: name
+        - name: module_name
+        - name: properties
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dsc_resource.py
+          functions: 0
+    - function: test
+      source:
+        path: salt/modules/win_dsc_resource.py
+        symbol: test
+      parameters:
+        - name: name
+        - name: module_name
+        - name: properties
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dsc_resource.py
+          functions: 0
+    - function: set_
+      source:
+        path: salt/modules/win_dsc_resource.py
+        symbol: set_
+      parameters:
+        - name: name
+        - name: module_name
+        - name: properties
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dsc_resource.py
+          functions: 0

@@ -1,0 +1,582 @@
+kind: exec
+module: pip
+source_module: pip
+path: salt/modules/pip.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _pip_bin_env
+      source:
+        path: salt/modules/pip.py
+        symbol: _pip_bin_env
+      summary: Binary builds need to have the 'cwd' set when using pip on Windows. This will
+      parameters:
+        - name: cwd
+        - name: bin_env
+      tests:
+        - path: tests/pytests/unit/modules/test_pip.py
+          functions: 68
+    - function: _clear_context
+      source:
+        path: salt/modules/pip.py
+        symbol: _clear_context
+      summary: Remove the cached pip version
+      parameters:
+        - name: bin_env
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_pip.py
+          functions: 68
+    - function: _check_bundled
+      source:
+        path: salt/modules/pip.py
+        symbol: _check_bundled
+      summary: Gather run-time information to indicate if we are running from source or bundled.
+      tests:
+        - path: tests/pytests/unit/modules/test_pip.py
+          functions: 68
+    - function: _get_pip_bin
+      source:
+        path: salt/modules/pip.py
+        symbol: _get_pip_bin
+      summary: Locate the pip binary, either from `bin_env` as a virtualenv, as the
+      parameters:
+        - name: bin_env
+      tests:
+        - path: tests/pytests/unit/modules/test_pip.py
+          functions: 68
+    - function: _get_cached_requirements
+      source:
+        path: salt/modules/pip.py
+        symbol: _get_cached_requirements
+      summary: Get the location of a cached requirements file; caching if necessary.
+      parameters:
+        - name: requirements
+        - name: saltenv
+      execution_dependencies:
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+      tests:
+        - path: tests/pytests/unit/modules/test_pip.py
+          functions: 68
+    - function: _get_env_activate
+      source:
+        path: salt/modules/pip.py
+        symbol: _get_env_activate
+      summary: Return the path to the activate binary
+      parameters:
+        - name: bin_env
+      execution_dependencies:
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+      tests:
+        - path: tests/pytests/unit/modules/test_pip.py
+          functions: 68
+    - function: _find_req
+      source:
+        path: salt/modules/pip.py
+        symbol: _find_req
+      parameters:
+        - name: link
+      execution_dependencies:
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+      tests:
+        - path: tests/pytests/unit/modules/test_pip.py
+          functions: 68
+    - function: _resolve_requirements_chain
+      source:
+        path: salt/modules/pip.py
+        symbol: _resolve_requirements_chain
+      summary: Return an array of requirements file paths that can be used to complete
+      parameters:
+        - name: requirements
+      execution_dependencies:
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+      tests:
+        - path: tests/pytests/unit/modules/test_pip.py
+          functions: 68
+    - function: _process_requirements
+      source:
+        path: salt/modules/pip.py
+        symbol: _process_requirements
+      summary: Process the requirements argument
+      parameters:
+        - name: requirements
+        - name: cmd
+        - name: cwd
+        - name: saltenv
+        - name: user
+      execution_dependencies:
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - file.chown
+        - file.copy
+      utility_dependencies:
+        - dacl.set_permissions
+      tests:
+        - path: tests/pytests/unit/modules/test_pip.py
+          functions: 68
+    - function: _format_env_vars
+      source:
+        path: salt/modules/pip.py
+        symbol: _format_env_vars
+      parameters:
+        - name: env_vars
+      execution_dependencies:
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - file.chown
+        - file.copy
+      utility_dependencies:
+        - dacl.set_permissions
+      tests:
+        - path: tests/pytests/unit/modules/test_pip.py
+          functions: 68
+    - function: normalize
+      source:
+        path: salt/modules/pip.py
+        symbol: normalize
+      summary: Normalize a package name according to the recommendations in PEP 503.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - file.chown
+        - file.copy
+      utility_dependencies:
+        - dacl.set_permissions
+      tests:
+        - path: tests/pytests/unit/modules/test_pip.py
+          functions: 68
+    - function: install
+      source:
+        path: salt/modules/pip.py
+        symbol: install
+      summary: Install packages with pip
+      parameters:
+        - name: pkgs
+          default: None
+        - name: '# pylint: disable'
+          default: R0912
+        - name: R0913
+        - name: |-
+            R0914
+                requirements
+          default: None
+        - name: bin_env
+          default: None
+        - name: use_wheel
+          default: "False"
+        - name: no_use_wheel
+          default: "False"
+        - name: log
+          default: None
+        - name: proxy
+          default: None
+        - name: timeout
+          default: None
+        - name: editable
+          default: None
+        - name: find_links
+          default: None
+        - name: index_url
+          default: None
+        - name: extra_index_url
+          default: None
+        - name: no_index
+          default: "False"
+        - name: mirrors
+          default: None
+        - name: build
+          default: None
+        - name: target
+          default: None
+        - name: download
+          default: None
+        - name: download_cache
+          default: None
+        - name: source
+          default: None
+        - name: upgrade
+          default: "False"
+        - name: force_reinstall
+          default: "False"
+        - name: ignore_installed
+          default: "False"
+        - name: exists_action
+          default: None
+        - name: no_deps
+          default: "False"
+        - name: no_install
+          default: "False"
+        - name: no_download
+          default: "False"
+        - name: global_options
+          default: None
+        - name: install_options
+          default: None
+        - name: user
+          default: None
+        - name: cwd
+          default: None
+        - name: pre_releases
+          default: "False"
+        - name: cert
+          default: None
+        - name: allow_all_external
+          default: "False"
+        - name: allow_external
+          default: None
+        - name: allow_unverified
+          default: None
+        - name: process_dependency_links
+          default: "False"
+        - name: saltenv
+          default: '"base"'
+        - name: env_vars
+          default: None
+        - name: use_vt
+          default: "False"
+        - name: trusted_host
+          default: None
+        - name: no_cache_dir
+          default: "False"
+        - name: extra_args
+          default: None
+        - name: cache_dir
+          default: None
+        - name: no_binary
+          default: None
+        - name: disable_version_check
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - file.chown
+        - file.copy
+      utility_dependencies:
+        - dacl.set_permissions
+      tests:
+        - path: tests/pytests/unit/modules/test_pip.py
+          functions: 68
+    - function: uninstall
+      source:
+        path: salt/modules/pip.py
+        symbol: uninstall
+      summary: Uninstall packages individually or from a pip requirements file
+      parameters:
+        - name: pkgs
+          default: None
+        - name: requirements
+          default: None
+        - name: bin_env
+          default: None
+        - name: log
+          default: None
+        - name: proxy
+          default: None
+        - name: timeout
+          default: None
+        - name: user
+          default: None
+        - name: cwd
+          default: None
+        - name: saltenv
+          default: '"base"'
+        - name: use_vt
+          default: "False"
+        - name: extra_args
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - file.chown
+        - file.copy
+      utility_dependencies:
+        - dacl.set_permissions
+      tests:
+        - path: tests/pytests/unit/modules/test_pip.py
+          functions: 68
+    - function: freeze
+      source:
+        path: salt/modules/pip.py
+        symbol: freeze
+      summary: Return a list of installed packages either globally or in the specified
+      parameters:
+        - name: bin_env
+          default: None
+        - name: user
+          default: None
+        - name: cwd
+          default: None
+        - name: use_vt
+          default: "False"
+        - name: env_vars
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - file.chown
+        - file.copy
+      utility_dependencies:
+        - dacl.set_permissions
+      tests:
+        - path: tests/pytests/unit/modules/test_pip.py
+          functions: 68
+    - function: list_freeze_parse
+      source:
+        path: salt/modules/pip.py
+        symbol: list_freeze_parse
+      summary: '.. versionadded:: 3006.0'
+      parameters:
+        - name: prefix
+          default: None
+        - name: bin_env
+          default: None
+        - name: user
+          default: None
+        - name: cwd
+          default: None
+        - name: env_vars
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - file.chown
+        - file.copy
+      utility_dependencies:
+        - dacl.set_permissions
+      tests:
+        - path: tests/pytests/unit/modules/test_pip.py
+          functions: 68
+    - function: list_
+      source:
+        path: salt/modules/pip.py
+        symbol: list_
+      summary: '.. versionchanged:: 3006.0'
+      parameters:
+        - name: prefix
+          default: None
+        - name: bin_env
+          default: None
+        - name: user
+          default: None
+        - name: cwd
+          default: None
+        - name: env_vars
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - file.chown
+        - file.copy
+      utility_dependencies:
+        - dacl.set_permissions
+      tests:
+        - path: tests/pytests/unit/modules/test_pip.py
+          functions: 68
+    - function: version
+      source:
+        path: salt/modules/pip.py
+        symbol: version
+      summary: '.. versionadded:: 0.17.0'
+      parameters:
+        - name: bin_env
+          default: None
+        - name: cwd
+          default: None
+        - name: user
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - file.chown
+        - file.copy
+      utility_dependencies:
+        - dacl.set_permissions
+      tests:
+        - path: tests/pytests/unit/modules/test_pip.py
+          functions: 68
+    - function: list_upgrades
+      source:
+        path: salt/modules/pip.py
+        symbol: list_upgrades
+      summary: Check whether or not an upgrade is available for all packages
+      parameters:
+        - name: bin_env
+          default: None
+        - name: user
+          default: None
+        - name: cwd
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - file.chown
+        - file.copy
+      utility_dependencies:
+        - dacl.set_permissions
+      tests:
+        - path: tests/pytests/unit/modules/test_pip.py
+          functions: 68
+    - function: is_installed
+      source:
+        path: salt/modules/pip.py
+        symbol: is_installed
+      summary: '.. versionadded:: 2018.3.0'
+      parameters:
+        - name: pkgname
+        - name: bin_env
+          default: None
+        - name: user
+          default: None
+        - name: cwd
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - file.chown
+        - file.copy
+      utility_dependencies:
+        - dacl.set_permissions
+      tests:
+        - path: tests/pytests/unit/modules/test_pip.py
+          functions: 68
+    - function: upgrade_available
+      source:
+        path: salt/modules/pip.py
+        symbol: upgrade_available
+      summary: '.. versionadded:: 2015.5.0'
+      parameters:
+        - name: pkg
+        - name: bin_env
+          default: None
+        - name: user
+          default: None
+        - name: cwd
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - file.chown
+        - file.copy
+      utility_dependencies:
+        - dacl.set_permissions
+      tests:
+        - path: tests/pytests/unit/modules/test_pip.py
+          functions: 68
+    - function: upgrade
+      source:
+        path: salt/modules/pip.py
+        symbol: upgrade
+      summary: '.. versionadded:: 2015.5.0'
+      parameters:
+        - name: bin_env
+          default: None
+        - name: user
+          default: None
+        - name: cwd
+          default: None
+        - name: use_vt
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - file.chown
+        - file.copy
+      utility_dependencies:
+        - dacl.set_permissions
+      tests:
+        - path: tests/pytests/unit/modules/test_pip.py
+          functions: 68
+    - function: list_all_versions
+      source:
+        path: salt/modules/pip.py
+        symbol: list_all_versions
+      summary: '.. versionadded:: 2017.7.3'
+      parameters:
+        - name: pkg
+        - name: bin_env
+          default: None
+        - name: include_alpha
+          default: "False"
+        - name: include_beta
+          default: "False"
+        - name: include_rc
+          default: "False"
+        - name: user
+          default: None
+        - name: cwd
+          default: None
+        - name: index_url
+          default: None
+        - name: extra_index_url
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cp.cache_file
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - file.chown
+        - file.copy
+      utility_dependencies:
+        - dacl.set_permissions
+      tests:
+        - path: tests/pytests/unit/modules/test_pip.py
+          functions: 68

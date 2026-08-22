@@ -1,0 +1,110 @@
+kind: exec
+module: timezone
+source_module: mac_timezone
+virtual: true
+path: salt/modules/mac_timezone.py
+platform_markers:
+    - is_darwin
+functions:
+    - function: _get_date_time_format
+      source:
+        path: salt/modules/mac_timezone.py
+        symbol: _get_date_time_format
+      summary: Function that detects the date/time format for the string passed.
+      parameters:
+        - name: dt_string
+    - function: get_date
+      source:
+        path: salt/modules/mac_timezone.py
+        symbol: get_date
+      summary: Displays the current date
+    - function: set_date
+      source:
+        path: salt/modules/mac_timezone.py
+        symbol: set_date
+      summary: Set the current month, day, and year
+      parameters:
+        - name: date
+    - function: get_time
+      source:
+        path: salt/modules/mac_timezone.py
+        symbol: get_time
+      summary: Get the current system time.
+    - function: set_time
+      source:
+        path: salt/modules/mac_timezone.py
+        symbol: set_time
+      summary: Sets the current time. Must be in 24 hour format.
+      parameters:
+        - name: time
+    - function: get_zone
+      source:
+        path: salt/modules/mac_timezone.py
+        symbol: get_zone
+      summary: Displays the current time zone
+    - function: get_zonecode
+      source:
+        path: salt/modules/mac_timezone.py
+        symbol: get_zonecode
+      summary: Displays the current time zone abbreviated code
+    - function: get_offset
+      source:
+        path: salt/modules/mac_timezone.py
+        symbol: get_offset
+      summary: Displays the current time zone offset
+    - function: list_zones
+      source:
+        path: salt/modules/mac_timezone.py
+        symbol: list_zones
+      summary: Displays a list of available time zones. Use this list when setting a
+    - function: set_zone
+      source:
+        path: salt/modules/mac_timezone.py
+        symbol: set_zone
+      summary: Set the local time zone. Use ``timezone.list_zones`` to list valid time_zone
+      parameters:
+        - name: time_zone
+    - function: zone_compare
+      source:
+        path: salt/modules/mac_timezone.py
+        symbol: zone_compare
+      summary: Compares the given timezone name with the system timezone name.
+      parameters:
+        - name: time_zone
+    - function: get_using_network_time
+      source:
+        path: salt/modules/mac_timezone.py
+        symbol: get_using_network_time
+      summary: Display whether network time is on or off
+    - function: set_using_network_time
+      source:
+        path: salt/modules/mac_timezone.py
+        symbol: set_using_network_time
+      summary: Set whether network time is on or off.
+      parameters:
+        - name: enable
+    - function: get_time_server
+      source:
+        path: salt/modules/mac_timezone.py
+        symbol: get_time_server
+      summary: Display the currently set network time server.
+    - function: set_time_server
+      source:
+        path: salt/modules/mac_timezone.py
+        symbol: set_time_server
+      summary: Designates a network time server. Enter the IP address or DNS name for the
+      parameters:
+        - name: time_server
+          default: '"time.apple.com"'
+    - function: get_hwclock
+      source:
+        path: salt/modules/mac_timezone.py
+        symbol: get_hwclock
+      summary: Get current hardware clock setting (UTC or localtime)
+    - function: set_hwclock
+      source:
+        path: salt/modules/mac_timezone.py
+        symbol: set_hwclock
+      summary: Sets the hardware clock to be either UTC or localtime
+      parameters:
+        - name: clock

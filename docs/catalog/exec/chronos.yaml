@@ -1,0 +1,49 @@
+kind: exec
+module: chronos
+source_module: chronos
+path: salt/modules/chronos.py
+functions:
+    - function: _base_url
+      source:
+        path: salt/modules/chronos.py
+        symbol: _base_url
+      summary: Return the proxy configured base url.
+    - function: _jobs
+      source:
+        path: salt/modules/chronos.py
+        symbol: _jobs
+      summary: Return the currently configured jobs.
+    - function: jobs
+      source:
+        path: salt/modules/chronos.py
+        symbol: jobs
+      summary: Return a list of the currently installed job names.
+    - function: has_job
+      source:
+        path: salt/modules/chronos.py
+        symbol: has_job
+      summary: Return whether the given job is currently configured.
+      parameters:
+        - name: name
+    - function: job
+      source:
+        path: salt/modules/chronos.py
+        symbol: job
+      summary: Return the current server configuration for the specified job.
+      parameters:
+        - name: name
+    - function: update_job
+      source:
+        path: salt/modules/chronos.py
+        symbol: update_job
+      summary: Update the specified job with the given configuration.
+      parameters:
+        - name: name
+        - name: config
+    - function: rm_job
+      source:
+        path: salt/modules/chronos.py
+        symbol: rm_job
+      summary: Remove the specified job from the server.
+      parameters:
+        - name: name

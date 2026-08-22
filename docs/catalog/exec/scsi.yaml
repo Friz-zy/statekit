@@ -1,0 +1,31 @@
+kind: exec
+module: scsi
+source_module: scsi
+path: salt/modules/scsi.py
+functions:
+    - function: ls_
+      source:
+        path: salt/modules/scsi.py
+        symbol: ls_
+      summary: List SCSI devices, with details
+      parameters:
+        - name: get_size
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_scsi.py
+          functions: 2
+    - function: rescan_all
+      source:
+        path: salt/modules/scsi.py
+        symbol: rescan_all
+      summary: List scsi devices
+      parameters:
+        - name: host
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_scsi.py
+          functions: 2

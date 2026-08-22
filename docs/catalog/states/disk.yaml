@@ -1,0 +1,89 @@
+kind: state
+module: disk
+source_module: disk
+path: salt/states/disk.py
+functions:
+    - function: _validate_int
+      source:
+        path: salt/states/disk.py
+        symbol: _validate_int
+      summary: Validate the named integer within the supplied limits inclusive and
+      parameters:
+        - name: name
+        - name: value
+        - name: limits
+          default: ()
+        - name: strip
+          default: '"%"'
+      tests:
+        - path: tests/unit/states/test_disk.py
+          functions: 0
+    - function: _status_mount
+      source:
+        path: salt/states/disk.py
+        symbol: _status_mount
+      parameters:
+        - name: name
+        - name: ret
+        - name: minimum
+        - name: maximum
+        - name: absolute
+        - name: free
+        - name: data
+      tests:
+        - path: tests/unit/states/test_disk.py
+          functions: 0
+    - function: _status_path
+      source:
+        path: salt/states/disk.py
+        symbol: _status_path
+      parameters:
+        - name: directory
+        - name: ret
+        - name: minimum
+        - name: maximum
+        - name: absolute
+        - name: free
+      execution_dependencies:
+        - status.diskusage
+      tests:
+        - path: tests/unit/states/test_disk.py
+          functions: 0
+    - function: _check_min_max
+      source:
+        path: salt/states/disk.py
+        symbol: _check_min_max
+      parameters:
+        - name: absolute
+        - name: free
+        - name: available
+        - name: used
+        - name: maximum
+        - name: minimum
+        - name: ret
+      execution_dependencies:
+        - status.diskusage
+      tests:
+        - path: tests/unit/states/test_disk.py
+          functions: 0
+    - function: status
+      source:
+        path: salt/states/disk.py
+        symbol: status
+      summary: Return the current disk usage stats for the named mount point
+      parameters:
+        - name: name
+        - name: maximum
+          default: None
+        - name: minimum
+          default: None
+        - name: absolute
+          default: "False"
+        - name: free
+          default: "False"
+      execution_dependencies:
+        - disk.usage
+        - status.diskusage
+      tests:
+        - path: tests/unit/states/test_disk.py
+          functions: 0

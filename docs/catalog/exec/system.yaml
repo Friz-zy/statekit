@@ -1,0 +1,353 @@
+kind: exec
+module: system
+source_module: system
+virtual: true
+path: salt/modules/system.py
+platform_markers:
+    - is_darwin
+    - is_freebsd
+    - is_netbsd
+    - is_openbsd
+    - is_sunos
+    - is_windows
+functions:
+    - function: halt
+      source:
+        path: salt/modules/system.py
+        symbol: halt
+      summary: Halt a running system
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_system.py
+          functions: 9
+    - function: init
+      source:
+        path: salt/modules/system.py
+        symbol: init
+      summary: Change the system runlevel on sysV compatible systems
+      parameters:
+        - name: runlevel
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_system.py
+          functions: 9
+    - function: poweroff
+      source:
+        path: salt/modules/system.py
+        symbol: poweroff
+      summary: Poweroff a running system
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_system.py
+          functions: 9
+    - function: reboot
+      source:
+        path: salt/modules/system.py
+        symbol: reboot
+      summary: Reboot the system
+      parameters:
+        - name: at_time
+          default: None
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_system.py
+          functions: 9
+    - function: shutdown
+      source:
+        path: salt/modules/system.py
+        symbol: shutdown
+      summary: Shutdown a running system
+      parameters:
+        - name: at_time
+          default: None
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_system.py
+          functions: 9
+    - function: _date_bin_set_datetime
+      source:
+        path: salt/modules/system.py
+        symbol: _date_bin_set_datetime
+      summary: set the system date/time using the date command
+      parameters:
+        - name: new_date
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_system.py
+          functions: 9
+    - function: has_settable_hwclock
+      source:
+        path: salt/modules/system.py
+        symbol: has_settable_hwclock
+      summary: Returns ``True`` if the system has a hardware clock capable of being
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_system.py
+          functions: 9
+    - function: _swclock_to_hwclock
+      source:
+        path: salt/modules/system.py
+        symbol: _swclock_to_hwclock
+      summary: Set hardware clock to value of software clock.
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_system.py
+          functions: 9
+    - function: _try_parse_datetime
+      source:
+        path: salt/modules/system.py
+        symbol: _try_parse_datetime
+      summary: Attempts to parse the input ``time_str`` as a date.
+      parameters:
+        - name: time_str
+        - name: fmts
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_system.py
+          functions: 9
+    - function: _offset_to_min
+      source:
+        path: salt/modules/system.py
+        symbol: _offset_to_min
+      summary: Helper function that converts the UTC offset string into number of minutes
+      parameters:
+        - name: utc_offset
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_system.py
+          functions: 9
+    - function: _get_offset_time
+      source:
+        path: salt/modules/system.py
+        symbol: _get_offset_time
+      summary: Will return the current time adjusted using the input timezone offset.
+      parameters:
+        - name: utc_offset
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_system.py
+          functions: 9
+    - function: get_system_time
+      source:
+        path: salt/modules/system.py
+        symbol: get_system_time
+      summary: Get the system time.
+      parameters:
+        - name: utc_offset
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_system.py
+          functions: 9
+    - function: set_system_time
+      source:
+        path: salt/modules/system.py
+        symbol: set_system_time
+      summary: Set the system time.
+      parameters:
+        - name: newtime
+        - name: utc_offset
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_system.py
+          functions: 9
+    - function: get_system_date_time
+      source:
+        path: salt/modules/system.py
+        symbol: get_system_date_time
+      summary: Get the system date/time.
+      parameters:
+        - name: utc_offset
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_system.py
+          functions: 9
+    - function: set_system_date_time
+      source:
+        path: salt/modules/system.py
+        symbol: set_system_date_time
+      summary: Set the system date and time. Each argument is an element of the date, but
+      parameters:
+        - name: years
+          default: None
+        - name: months
+          default: None
+        - name: days
+          default: None
+        - name: hours
+          default: None
+        - name: minutes
+          default: None
+        - name: seconds
+          default: None
+        - name: utc_offset
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_system.py
+          functions: 9
+    - function: get_system_date
+      source:
+        path: salt/modules/system.py
+        symbol: get_system_date
+      summary: Get the system date
+      parameters:
+        - name: utc_offset
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_system.py
+          functions: 9
+    - function: set_system_date
+      source:
+        path: salt/modules/system.py
+        symbol: set_system_date
+      summary: Set the system date. Use ``<mm-dd-yy>`` format for the date.
+      parameters:
+        - name: newdate
+        - name: utc_offset
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_system.py
+          functions: 9
+    - function: _strip_quotes
+      source:
+        path: salt/modules/system.py
+        symbol: _strip_quotes
+      summary: Helper function to strip off the ``'`` or ``"`` off of a string
+      parameters:
+        - name: str_q
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_system.py
+          functions: 9
+    - function: get_computer_desc
+      source:
+        path: salt/modules/system.py
+        symbol: get_computer_desc
+      summary: Get ``PRETTY_HOSTNAME`` value stored in ``/etc/machine-info``
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_system.py
+          functions: 9
+    - function: set_computer_desc
+      source:
+        path: salt/modules/system.py
+        symbol: set_computer_desc
+      summary: Set ``PRETTY_HOSTNAME`` value stored in ``/etc/machine-info``
+      parameters:
+        - name: desc
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_system.py
+          functions: 9
+    - function: set_computer_name
+      source:
+        path: salt/modules/system.py
+        symbol: set_computer_name
+      summary: Modify hostname.
+      parameters:
+        - name: hostname
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - network.mod_hostname
+      tests:
+        - path: tests/pytests/unit/modules/test_system.py
+          functions: 9
+    - function: get_computer_name
+      source:
+        path: salt/modules/system.py
+        symbol: get_computer_name
+      summary: Get hostname.
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - network.get_hostname
+        - network.mod_hostname
+      tests:
+        - path: tests/pytests/unit/modules/test_system.py
+          functions: 9
+    - function: _is_nilrt_family
+      source:
+        path: salt/modules/system.py
+        symbol: _is_nilrt_family
+      summary: Determine whether the minion is running on NI Linux RT
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - network.get_hostname
+        - network.mod_hostname
+      tests:
+        - path: tests/pytests/unit/modules/test_system.py
+          functions: 9
+    - function: set_reboot_required_witnessed
+      source:
+        path: salt/modules/system.py
+        symbol: set_reboot_required_witnessed
+      summary: '.. note::'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - network.get_hostname
+        - network.mod_hostname
+      tests:
+        - path: tests/pytests/unit/modules/test_system.py
+          functions: 9
+    - function: get_reboot_required_witnessed
+      source:
+        path: salt/modules/system.py
+        symbol: get_reboot_required_witnessed
+      summary: '.. note::'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - network.get_hostname
+        - network.mod_hostname
+      tests:
+        - path: tests/pytests/unit/modules/test_system.py
+          functions: 9

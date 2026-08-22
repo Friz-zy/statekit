@@ -1,0 +1,176 @@
+kind: exec
+module: netacl
+source_module: napalm_netacl
+virtual: true
+path: salt/modules/napalm_netacl.py
+functions:
+    - function: _get_capirca_platform
+      source:
+        path: salt/modules/napalm_netacl.py
+        symbol: _get_capirca_platform
+      summary: 'Given the following NAPALM grains, we can determine the Capirca platform name:'
+    - function: load_term_config
+      source:
+        path: salt/modules/napalm_netacl.py
+        symbol: load_term_config
+      summary: Generate and load the configuration of a policy term.
+      parameters:
+        - name: filter_name
+        - name: term_name
+        - name: filter_options
+          default: None
+        - name: pillar_key
+          default: '"acl"'
+        - name: pillarenv
+          default: None
+        - name: saltenv
+          default: None
+        - name: merge_pillar
+          default: "True"
+        - name: revision_id
+          default: None
+        - name: revision_no
+          default: None
+        - name: revision_date
+          default: "True"
+        - name: revision_date_format
+          default: '"%Y/%m/%d"'
+        - name: test
+          default: "False"
+        - name: commit
+          default: "True"
+        - name: debug
+          default: "False"
+        - name: source_service
+          default: None
+        - name: destination_service
+          default: None
+        - name: term_fields
+          kind: '**'
+      execution_dependencies:
+        - capirca.get_term_config
+        - net.load_config
+    - function: load_filter_config
+      source:
+        path: salt/modules/napalm_netacl.py
+        symbol: load_filter_config
+      summary: Generate and load the configuration of a policy filter.
+      parameters:
+        - name: filter_name
+        - name: filter_options
+          default: None
+        - name: terms
+          default: None
+        - name: prepend
+          default: "True"
+        - name: pillar_key
+          default: '"acl"'
+        - name: pillarenv
+          default: None
+        - name: saltenv
+          default: None
+        - name: merge_pillar
+          default: "True"
+        - name: only_lower_merge
+          default: "False"
+        - name: revision_id
+          default: None
+        - name: revision_no
+          default: None
+        - name: revision_date
+          default: "True"
+        - name: revision_date_format
+          default: '"%Y/%m/%d"'
+        - name: test
+          default: "False"
+        - name: commit
+          default: "True"
+        - name: debug
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - capirca.get_filter_config
+        - capirca.get_term_config
+        - net.load_config
+    - function: load_policy_config
+      source:
+        path: salt/modules/napalm_netacl.py
+        symbol: load_policy_config
+      summary: Generate and load the configuration of the whole policy.
+      parameters:
+        - name: filters
+          default: None
+        - name: prepend
+          default: "True"
+        - name: pillar_key
+          default: '"acl"'
+        - name: pillarenv
+          default: None
+        - name: saltenv
+          default: None
+        - name: merge_pillar
+          default: "True"
+        - name: only_lower_merge
+          default: "False"
+        - name: revision_id
+          default: None
+        - name: revision_no
+          default: None
+        - name: revision_date
+          default: "True"
+        - name: revision_date_format
+          default: '"%Y/%m/%d"'
+        - name: test
+          default: "False"
+        - name: commit
+          default: "True"
+        - name: debug
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - capirca.get_filter_config
+        - capirca.get_policy_config
+        - capirca.get_term_config
+        - net.load_config
+    - function: get_filter_pillar
+      source:
+        path: salt/modules/napalm_netacl.py
+        symbol: get_filter_pillar
+      summary: Helper that can be used inside a state SLS,
+      parameters:
+        - name: filter_name
+        - name: pillar_key
+          default: '"acl"'
+        - name: pillarenv
+          default: None
+        - name: saltenv
+          default: None
+      execution_dependencies:
+        - capirca.get_filter_config
+        - capirca.get_filter_pillar
+        - capirca.get_policy_config
+        - capirca.get_term_config
+        - net.load_config
+    - function: get_term_pillar
+      source:
+        path: salt/modules/napalm_netacl.py
+        symbol: get_term_pillar
+      summary: Helper that can be used inside a state SLS,
+      parameters:
+        - name: filter_name
+        - name: term_name
+        - name: pillar_key
+          default: '"acl"'
+        - name: pillarenv
+          default: None
+        - name: saltenv
+          default: None
+      execution_dependencies:
+        - capirca.get_filter_config
+        - capirca.get_filter_pillar
+        - capirca.get_policy_config
+        - capirca.get_term_config
+        - capirca.get_term_pillar
+        - net.load_config

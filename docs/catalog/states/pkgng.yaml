@@ -1,0 +1,16 @@
+kind: state
+module: pkgng
+source_module: pkgng
+path: salt/states/pkgng.py
+functions:
+    - function: update_packaging_site
+      source:
+        path: salt/states/pkgng.py
+        symbol: update_packaging_site
+      parameters:
+        - name: name
+      execution_dependencies:
+        - pkgng.update_package_site
+      tests:
+        - path: tests/pytests/unit/states/test_pkgng.py
+          functions: 1

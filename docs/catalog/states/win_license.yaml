@@ -1,0 +1,22 @@
+kind: state
+module: license
+source_module: win_license
+virtual: true
+path: salt/states/win_license.py
+platform_markers:
+    - is_windows
+functions:
+    - function: activate
+      source:
+        path: salt/states/win_license.py
+        symbol: activate
+      summary: Install and activate the given product key
+      parameters:
+        - name: name
+      execution_dependencies:
+        - license.activate
+        - license.info
+        - license.install
+      tests:
+        - path: tests/pytests/unit/states/test_win_license.py
+          functions: 5

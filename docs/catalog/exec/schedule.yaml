@@ -1,0 +1,321 @@
+kind: exec
+module: schedule
+source_module: schedule
+path: salt/modules/schedule.py
+functions:
+    - function: _get_schedule_config_file
+      source:
+        path: salt/modules/schedule.py
+        symbol: _get_schedule_config_file
+      summary: Return the minion schedule configuration file
+      tests:
+        - path: tests/pytests/unit/modules/test_schedule.py
+          functions: 21
+    - function: list_
+      source:
+        path: salt/modules/schedule.py
+        symbol: list_
+      summary: List the jobs currently scheduled on the minion
+      parameters:
+        - name: show_all
+          default: "False"
+        - name: show_disabled
+          default: "True"
+        - name: where
+          default: None
+        - name: return_yaml
+          default: "True"
+        - name: offline
+          default: "False"
+      execution_dependencies:
+        - event.fire
+      tests:
+        - path: tests/pytests/unit/modules/test_schedule.py
+          functions: 21
+    - function: is_enabled
+      source:
+        path: salt/modules/schedule.py
+        symbol: is_enabled
+      summary: List a Job only if its enabled
+      parameters:
+        - name: name
+          default: None
+      execution_dependencies:
+        - event.fire
+        - schedule.list
+      tests:
+        - path: tests/pytests/unit/modules/test_schedule.py
+          functions: 21
+    - function: purge
+      source:
+        path: salt/modules/schedule.py
+        symbol: purge
+      summary: Purge all the jobs currently scheduled on the minion
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - event.fire
+        - schedule.list
+      tests:
+        - path: tests/pytests/unit/modules/test_schedule.py
+          functions: 21
+    - function: delete
+      source:
+        path: salt/modules/schedule.py
+        symbol: delete
+      summary: Delete a job from the minion's schedule
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - event.fire
+        - schedule.list
+      tests:
+        - path: tests/pytests/unit/modules/test_schedule.py
+          functions: 21
+    - function: build_schedule_item
+      source:
+        path: salt/modules/schedule.py
+        symbol: build_schedule_item
+      summary: Build a schedule job
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - event.fire
+        - schedule.list
+      tests:
+        - path: tests/pytests/unit/modules/test_schedule.py
+          functions: 21
+    - function: add
+      source:
+        path: salt/modules/schedule.py
+        symbol: add
+      summary: Add a job to the schedule
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - event.fire
+        - schedule.list
+      tests:
+        - path: tests/pytests/unit/modules/test_schedule.py
+          functions: 21
+    - function: modify
+      source:
+        path: salt/modules/schedule.py
+        symbol: modify
+      summary: Modify an existing job in the schedule
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - event.fire
+        - schedule.list
+      tests:
+        - path: tests/pytests/unit/modules/test_schedule.py
+          functions: 21
+    - function: run_job
+      source:
+        path: salt/modules/schedule.py
+        symbol: run_job
+      summary: Run a scheduled job on the minion immediately
+      parameters:
+        - name: name
+        - name: force
+          default: "False"
+      execution_dependencies:
+        - event.fire
+        - schedule.list
+      tests:
+        - path: tests/pytests/unit/modules/test_schedule.py
+          functions: 21
+    - function: enable_job
+      source:
+        path: salt/modules/schedule.py
+        symbol: enable_job
+      summary: Enable a job in the minion's schedule
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - event.fire
+        - schedule.list
+      tests:
+        - path: tests/pytests/unit/modules/test_schedule.py
+          functions: 21
+    - function: disable_job
+      source:
+        path: salt/modules/schedule.py
+        symbol: disable_job
+      summary: Disable a job in the minion's schedule
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - event.fire
+        - schedule.list
+      tests:
+        - path: tests/pytests/unit/modules/test_schedule.py
+          functions: 21
+    - function: save
+      source:
+        path: salt/modules/schedule.py
+        symbol: save
+      summary: Save all scheduled jobs on the minion
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - event.fire
+        - schedule.list
+      tests:
+        - path: tests/pytests/unit/modules/test_schedule.py
+          functions: 21
+    - function: enable
+      source:
+        path: salt/modules/schedule.py
+        symbol: enable
+      summary: Enable all scheduled jobs on the minion
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - event.fire
+        - schedule.list
+      tests:
+        - path: tests/pytests/unit/modules/test_schedule.py
+          functions: 21
+    - function: disable
+      source:
+        path: salt/modules/schedule.py
+        symbol: disable
+      summary: Disable all scheduled jobs on the minion
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - event.fire
+        - schedule.list
+      tests:
+        - path: tests/pytests/unit/modules/test_schedule.py
+          functions: 21
+    - function: reload_
+      source:
+        path: salt/modules/schedule.py
+        symbol: reload_
+      summary: Reload saved scheduled jobs on the minion
+      execution_dependencies:
+        - event.fire
+        - schedule.list
+      tests:
+        - path: tests/pytests/unit/modules/test_schedule.py
+          functions: 21
+    - function: move
+      source:
+        path: salt/modules/schedule.py
+        symbol: move
+      summary: Move scheduled job to another minion or minions.
+      parameters:
+        - name: name
+        - name: target
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - event.fire
+        - publish.publish
+        - schedule.list
+      tests:
+        - path: tests/pytests/unit/modules/test_schedule.py
+          functions: 21
+    - function: copy
+      source:
+        path: salt/modules/schedule.py
+        symbol: copy
+      summary: Copy scheduled job to another minion or minions.
+      parameters:
+        - name: name
+        - name: target
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - event.fire
+        - publish.publish
+        - schedule.list
+      tests:
+        - path: tests/pytests/unit/modules/test_schedule.py
+          functions: 21
+    - function: postpone_job
+      source:
+        path: salt/modules/schedule.py
+        symbol: postpone_job
+      summary: Postpone a job in the minion's schedule
+      parameters:
+        - name: name
+        - name: current_time
+        - name: new_time
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - event.fire
+        - publish.publish
+        - schedule.list
+      tests:
+        - path: tests/pytests/unit/modules/test_schedule.py
+          functions: 21
+    - function: skip_job
+      source:
+        path: salt/modules/schedule.py
+        symbol: skip_job
+      summary: Skip a job in the minion's schedule at specified time.
+      parameters:
+        - name: name
+        - name: current_time
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - event.fire
+        - publish.publish
+        - schedule.list
+      tests:
+        - path: tests/pytests/unit/modules/test_schedule.py
+          functions: 21
+    - function: show_next_fire_time
+      source:
+        path: salt/modules/schedule.py
+        symbol: show_next_fire_time
+      summary: Show the next fire time for scheduled job
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - event.fire
+        - publish.publish
+        - schedule.list
+      tests:
+        - path: tests/pytests/unit/modules/test_schedule.py
+          functions: 21
+    - function: job_status
+      source:
+        path: salt/modules/schedule.py
+        symbol: job_status
+      summary: Show the information for a particular job.
+      parameters:
+        - name: name
+        - name: time_fmt
+          default: '"%Y-%m-%dT%H:%M:%S"'
+      execution_dependencies:
+        - event.fire
+        - publish.publish
+        - schedule.list
+      tests:
+        - path: tests/pytests/unit/modules/test_schedule.py
+          functions: 21

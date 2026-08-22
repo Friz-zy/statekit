@@ -1,0 +1,49 @@
+kind: state
+module: postgres_language
+source_module: postgres_language
+path: salt/states/postgres_language.py
+functions:
+    - function: present
+      source:
+        path: salt/states/postgres_language.py
+        symbol: present
+      summary: Ensure that a named language is present in the specified
+      parameters:
+        - name: name
+        - name: maintenance_db
+        - name: user
+          default: None
+        - name: db_password
+          default: None
+        - name: db_host
+          default: None
+        - name: db_port
+          default: None
+        - name: db_user
+          default: None
+      execution_dependencies:
+        - postgres.language_create
+        - postgres.language_list
+    - function: absent
+      source:
+        path: salt/states/postgres_language.py
+        symbol: absent
+      summary: Ensure that a named language is absent in the specified
+      parameters:
+        - name: name
+        - name: maintenance_db
+        - name: user
+          default: None
+        - name: db_password
+          default: None
+        - name: db_host
+          default: None
+        - name: db_port
+          default: None
+        - name: db_user
+          default: None
+      execution_dependencies:
+        - postgres.language_create
+        - postgres.language_exists
+        - postgres.language_list
+        - postgres.language_remove

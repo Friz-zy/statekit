@@ -1,0 +1,114 @@
+kind: state
+module: grains
+source_module: grains
+path: salt/states/grains.py
+functions:
+    - function: exists
+      source:
+        path: salt/states/grains.py
+        symbol: exists
+      summary: Ensure that a grain is set
+      parameters:
+        - name: name
+        - name: delimiter
+          default: DEFAULT_TARGET_DELIM
+      execution_dependencies:
+        - grains.get
+      tests:
+        - path: tests/pytests/unit/states/test_grains.py
+          functions: 47
+    - function: present
+      source:
+        path: salt/states/grains.py
+        symbol: present
+      summary: Ensure that a grain is set
+      parameters:
+        - name: name
+        - name: value
+        - name: delimiter
+          default: DEFAULT_TARGET_DELIM
+        - name: force
+          default: "False"
+      execution_dependencies:
+        - grains.get
+        - grains.set
+      tests:
+        - path: tests/pytests/unit/states/test_grains.py
+          functions: 47
+    - function: list_present
+      source:
+        path: salt/states/grains.py
+        symbol: list_present
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: name
+        - name: value
+        - name: delimiter
+          default: DEFAULT_TARGET_DELIM
+      execution_dependencies:
+        - grains.append
+        - grains.get
+        - grains.set
+      tests:
+        - path: tests/pytests/unit/states/test_grains.py
+          functions: 47
+    - function: list_absent
+      source:
+        path: salt/states/grains.py
+        symbol: list_absent
+      summary: Delete a value from a grain formed as a list.
+      parameters:
+        - name: name
+        - name: value
+        - name: delimiter
+          default: DEFAULT_TARGET_DELIM
+      execution_dependencies:
+        - grains.append
+        - grains.get
+        - grains.remove
+        - grains.set
+      tests:
+        - path: tests/pytests/unit/states/test_grains.py
+          functions: 47
+    - function: absent
+      source:
+        path: salt/states/grains.py
+        symbol: absent
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+        - name: destructive
+          default: "False"
+        - name: delimiter
+          default: DEFAULT_TARGET_DELIM
+        - name: force
+          default: "False"
+      execution_dependencies:
+        - grains.append
+        - grains.get
+        - grains.remove
+        - grains.set
+      tests:
+        - path: tests/pytests/unit/states/test_grains.py
+          functions: 47
+    - function: append
+      source:
+        path: salt/states/grains.py
+        symbol: append
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+        - name: value
+        - name: convert
+          default: "False"
+        - name: delimiter
+          default: DEFAULT_TARGET_DELIM
+      execution_dependencies:
+        - grains.append
+        - grains.get
+        - grains.remove
+        - grains.set
+        - grains.setval
+      tests:
+        - path: tests/pytests/unit/states/test_grains.py
+          functions: 47

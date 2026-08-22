@@ -1,0 +1,180 @@
+kind: exec
+module: power
+source_module: mac_power
+virtual: true
+path: salt/modules/mac_power.py
+platform_markers:
+    - is_darwin
+functions:
+    - function: _validate_sleep
+      source:
+        path: salt/modules/mac_power.py
+        symbol: _validate_sleep
+      summary: Helper function that validates the minutes parameter. Can be any number
+      parameters:
+        - name: minutes
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_power.py
+          functions: 7
+    - function: get_sleep
+      source:
+        path: salt/modules/mac_power.py
+        symbol: get_sleep
+      summary: Displays the amount of idle time until the machine sleeps. Settings for
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_power.py
+          functions: 7
+    - function: set_sleep
+      source:
+        path: salt/modules/mac_power.py
+        symbol: set_sleep
+      summary: Sets the amount of idle time until the machine sleeps. Sets the same value
+      parameters:
+        - name: minutes
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_power.py
+          functions: 7
+    - function: get_computer_sleep
+      source:
+        path: salt/modules/mac_power.py
+        symbol: get_computer_sleep
+      summary: Display the amount of idle time until the computer sleeps.
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_power.py
+          functions: 7
+    - function: set_computer_sleep
+      source:
+        path: salt/modules/mac_power.py
+        symbol: set_computer_sleep
+      summary: Set the amount of idle time until the computer sleeps. Pass "Never" of "Off"
+      parameters:
+        - name: minutes
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_power.py
+          functions: 7
+    - function: get_display_sleep
+      source:
+        path: salt/modules/mac_power.py
+        symbol: get_display_sleep
+      summary: Display the amount of idle time until the display sleeps.
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_power.py
+          functions: 7
+    - function: set_display_sleep
+      source:
+        path: salt/modules/mac_power.py
+        symbol: set_display_sleep
+      summary: Set the amount of idle time until the display sleeps. Pass "Never" of "Off"
+      parameters:
+        - name: minutes
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_power.py
+          functions: 7
+    - function: get_harddisk_sleep
+      source:
+        path: salt/modules/mac_power.py
+        symbol: get_harddisk_sleep
+      summary: Display the amount of idle time until the hard disk sleeps.
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_power.py
+          functions: 7
+    - function: set_harddisk_sleep
+      source:
+        path: salt/modules/mac_power.py
+        symbol: set_harddisk_sleep
+      summary: Set the amount of idle time until the harddisk sleeps. Pass "Never" of "Off"
+      parameters:
+        - name: minutes
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_power.py
+          functions: 7
+    - function: get_wake_on_modem
+      source:
+        path: salt/modules/mac_power.py
+        symbol: get_wake_on_modem
+      summary: Displays whether 'wake on modem' is on or off if supported
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_power.py
+          functions: 7
+    - function: set_wake_on_modem
+      source:
+        path: salt/modules/mac_power.py
+        symbol: set_wake_on_modem
+      summary: Set whether or not the computer will wake from sleep when modem activity is
+      parameters:
+        - name: enabled
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_power.py
+          functions: 7
+    - function: get_wake_on_network
+      source:
+        path: salt/modules/mac_power.py
+        symbol: get_wake_on_network
+      summary: Displays whether 'wake on network' is on or off if supported
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_power.py
+          functions: 7
+    - function: set_wake_on_network
+      source:
+        path: salt/modules/mac_power.py
+        symbol: set_wake_on_network
+      summary: Set whether or not the computer will wake from sleep when network activity
+      parameters:
+        - name: enabled
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_power.py
+          functions: 7
+    - function: get_restart_power_failure
+      source:
+        path: salt/modules/mac_power.py
+        symbol: get_restart_power_failure
+      summary: Displays whether 'restart on power failure' is on or off if supported
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_power.py
+          functions: 7
+    - function: set_restart_power_failure
+      source:
+        path: salt/modules/mac_power.py
+        symbol: set_restart_power_failure
+      summary: Set whether or not the computer will automatically restart after a power
+      parameters:
+        - name: enabled
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_power.py
+          functions: 7
+    - function: get_restart_freeze
+      source:
+        path: salt/modules/mac_power.py
+        symbol: get_restart_freeze
+      summary: Displays whether 'restart on freeze' is on or off if supported
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_power.py
+          functions: 7
+    - function: set_restart_freeze
+      source:
+        path: salt/modules/mac_power.py
+        symbol: set_restart_freeze
+      summary: Specifies whether the server restarts automatically after a system freeze.
+      parameters:
+        - name: enabled
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_power.py
+          functions: 7
+    - function: get_sleep_on_power_button
+      source:
+        path: salt/modules/mac_power.py
+        symbol: get_sleep_on_power_button
+      summary: Displays whether 'allow power button to sleep computer' is on or off if
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_power.py
+          functions: 7
+    - function: set_sleep_on_power_button
+      source:
+        path: salt/modules/mac_power.py
+        symbol: set_sleep_on_power_button
+      summary: Set whether or not the power button can sleep the computer.
+      parameters:
+        - name: enabled
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_power.py
+          functions: 7

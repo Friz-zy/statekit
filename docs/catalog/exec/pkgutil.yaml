@@ -1,0 +1,219 @@
+kind: exec
+module: pkgutil
+source_module: pkgutil
+virtual: true
+path: salt/modules/pkgutil.py
+functions:
+    - function: refresh_db
+      source:
+        path: salt/modules/pkgutil.py
+        symbol: refresh_db
+      summary: Updates the pkgutil repo database (pkgutil -U)
+      execution_dependencies:
+        - cmd.retcode
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgutil.py
+          functions: 11
+    - function: upgrade_available
+      source:
+        path: salt/modules/pkgutil.py
+        symbol: upgrade_available
+      summary: Check if there is an upgrade available for a certain package
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgutil.py
+          functions: 11
+    - function: list_upgrades
+      source:
+        path: salt/modules/pkgutil.py
+        symbol: list_upgrades
+      summary: List all available package upgrades on this system
+      parameters:
+        - name: refresh
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgutil.py
+          functions: 11
+    - function: upgrade
+      source:
+        path: salt/modules/pkgutil.py
+        symbol: upgrade
+      summary: Upgrade all of the packages to the latest available version.
+      parameters:
+        - name: refresh
+          default: "True"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgutil.py
+          functions: 11
+    - function: _list_pkgs_from_context
+      source:
+        path: salt/modules/pkgutil.py
+        symbol: _list_pkgs_from_context
+      summary: Use pkg list from __context__
+      parameters:
+        - name: versions_as_list
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+        - cmd.run_stdout
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgutil.py
+          functions: 11
+    - function: list_pkgs
+      source:
+        path: salt/modules/pkgutil.py
+        symbol: list_pkgs
+      summary: 'List the packages currently installed as a dict::'
+      parameters:
+        - name: versions_as_list
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgutil.py
+          functions: 11
+    - function: version
+      source:
+        path: salt/modules/pkgutil.py
+        symbol: version
+      summary: Returns a version if the package is installed, else returns an empty string
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgutil.py
+          functions: 11
+    - function: latest_version
+      source:
+        path: salt/modules/pkgutil.py
+        symbol: latest_version
+      summary: Return the latest version of the named package available for upgrade or
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgutil.py
+          functions: 11
+    - function: install
+      source:
+        path: salt/modules/pkgutil.py
+        symbol: install
+      summary: Install packages using the pkgutil tool.
+      parameters:
+        - name: name
+          default: None
+        - name: refresh
+          default: "False"
+        - name: version
+          default: None
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgutil.py
+          functions: 11
+    - function: remove
+      source:
+        path: salt/modules/pkgutil.py
+        symbol: remove
+      summary: Remove a package and all its dependencies which are not in use by other
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgutil.py
+          functions: 11
+    - function: purge
+      source:
+        path: salt/modules/pkgutil.py
+        symbol: purge
+      summary: Package purges are not supported, this function is identical to
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgutil.py
+          functions: 11

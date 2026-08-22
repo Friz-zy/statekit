@@ -1,0 +1,158 @@
+kind: exec
+module: chroot
+source_module: chroot
+path: salt/modules/chroot.py
+functions:
+    - function: exist
+      source:
+        path: salt/modules/chroot.py
+        symbol: exist
+      summary: Return True if the chroot environment is present.
+      parameters:
+        - name: root
+      utility_dependencies:
+        - path.which
+      tests:
+        - path: tests/pytests/unit/modules/test_chroot.py
+          functions: 11
+    - function: create
+      source:
+        path: salt/modules/chroot.py
+        symbol: create
+      summary: Create a basic chroot environment.
+      parameters:
+        - name: root
+      utility_dependencies:
+        - path.which
+      tests:
+        - path: tests/pytests/unit/modules/test_chroot.py
+          functions: 11
+    - function: in_chroot
+      source:
+        path: salt/modules/chroot.py
+        symbol: in_chroot
+      summary: Return True if the process is inside a chroot jail
+      utility_dependencies:
+        - path.which
+      tests:
+        - path: tests/pytests/unit/modules/test_chroot.py
+          functions: 11
+    - function: call
+      source:
+        path: salt/modules/chroot.py
+        symbol: call
+      summary: Executes a Salt function inside a chroot environment.
+      parameters:
+        - name: root
+        - name: function
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_chroot
+        - config.option
+      utility_dependencies:
+        - files.rm_rf
+        - json.find_json
+        - path.which
+        - thin.gen_thin
+      tests:
+        - path: tests/pytests/unit/modules/test_chroot.py
+          functions: 11
+    - function: apply_
+      source:
+        path: salt/modules/chroot.py
+        symbol: apply_
+      summary: Apply an state inside a chroot.
+      parameters:
+        - name: root
+        - name: mods
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_chroot
+        - config.option
+      utility_dependencies:
+        - files.rm_rf
+        - json.find_json
+        - path.which
+        - thin.gen_thin
+      tests:
+        - path: tests/pytests/unit/modules/test_chroot.py
+          functions: 11
+    - function: _create_and_execute_salt_state
+      source:
+        path: salt/modules/chroot.py
+        symbol: _create_and_execute_salt_state
+      summary: Create the salt_state tarball, and execute in the chroot
+      parameters:
+        - name: root
+        - name: chunks
+        - name: file_refs
+        - name: test
+        - name: hash_type
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_chroot
+        - config.option
+      utility_dependencies:
+        - files.rm_rf
+        - json.find_json
+        - path.which
+        - thin.gen_thin
+      tests:
+        - path: tests/pytests/unit/modules/test_chroot.py
+          functions: 11
+    - function: sls
+      source:
+        path: salt/modules/chroot.py
+        symbol: sls
+      summary: Execute the states in one or more SLS files inside the chroot.
+      parameters:
+        - name: root
+        - name: mods
+        - name: saltenv
+          default: '"base"'
+        - name: test
+          default: None
+        - name: exclude
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_chroot
+        - config.option
+      utility_dependencies:
+        - files.rm_rf
+        - json.find_json
+        - path.which
+        - thin.gen_thin
+      tests:
+        - path: tests/pytests/unit/modules/test_chroot.py
+          functions: 11
+    - function: highstate
+      source:
+        path: salt/modules/chroot.py
+        symbol: highstate
+      summary: Retrieve the state data from the salt master for this minion and
+      parameters:
+        - name: root
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_chroot
+        - config.option
+      utility_dependencies:
+        - files.rm_rf
+        - json.find_json
+        - path.which
+        - thin.gen_thin
+      tests:
+        - path: tests/pytests/unit/modules/test_chroot.py
+          functions: 11

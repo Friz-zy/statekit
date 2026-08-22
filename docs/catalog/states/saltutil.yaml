@@ -1,0 +1,340 @@
+kind: state
+module: saltutil
+source_module: saltutil
+virtual: true
+path: salt/states/saltutil.py
+functions:
+    - function: _sync_single
+      source:
+        path: salt/states/saltutil.py
+        symbol: _sync_single
+      parameters:
+        - name: name
+        - name: module
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/states/test_saltutil.py
+          functions: 4
+    - function: sync_all
+      source:
+        path: salt/states/saltutil.py
+        symbol: sync_all
+      summary: Performs the same task as saltutil.sync_all module
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.sync_all
+      tests:
+        - path: tests/pytests/unit/states/test_saltutil.py
+          functions: 4
+    - function: sync_beacons
+      source:
+        path: salt/states/saltutil.py
+        symbol: sync_beacons
+      summary: Performs the same task as saltutil.sync_beacons module
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.sync_all
+      tests:
+        - path: tests/pytests/unit/states/test_saltutil.py
+          functions: 4
+    - function: sync_clouds
+      source:
+        path: salt/states/saltutil.py
+        symbol: sync_clouds
+      summary: Performs the same task as saltutil.sync_clouds module
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.sync_all
+      tests:
+        - path: tests/pytests/unit/states/test_saltutil.py
+          functions: 4
+    - function: sync_engines
+      source:
+        path: salt/states/saltutil.py
+        symbol: sync_engines
+      summary: Performs the same task as saltutil.sync_engines module
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.sync_all
+      tests:
+        - path: tests/pytests/unit/states/test_saltutil.py
+          functions: 4
+    - function: sync_grains
+      source:
+        path: salt/states/saltutil.py
+        symbol: sync_grains
+      summary: Performs the same task as saltutil.sync_grains module
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.sync_all
+      tests:
+        - path: tests/pytests/unit/states/test_saltutil.py
+          functions: 4
+    - function: sync_executors
+      source:
+        path: salt/states/saltutil.py
+        symbol: sync_executors
+      summary: Performs the same task as saltutil.sync_executors module
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.sync_all
+      tests:
+        - path: tests/pytests/unit/states/test_saltutil.py
+          functions: 4
+    - function: sync_log_handlers
+      source:
+        path: salt/states/saltutil.py
+        symbol: sync_log_handlers
+      summary: Performs the same task as saltutil.sync_log_handlers module
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.sync_all
+      tests:
+        - path: tests/pytests/unit/states/test_saltutil.py
+          functions: 4
+    - function: sync_modules
+      source:
+        path: salt/states/saltutil.py
+        symbol: sync_modules
+      summary: Performs the same task as saltutil.sync_modules module
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.sync_all
+      tests:
+        - path: tests/pytests/unit/states/test_saltutil.py
+          functions: 4
+    - function: sync_output
+      source:
+        path: salt/states/saltutil.py
+        symbol: sync_output
+      summary: Performs the same task as saltutil.sync_output module
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.sync_all
+      tests:
+        - path: tests/pytests/unit/states/test_saltutil.py
+          functions: 4
+    - function: sync_outputters
+      source:
+        path: salt/states/saltutil.py
+        symbol: sync_outputters
+      summary: Performs the same task as saltutil.sync_outputters module
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.sync_all
+      tests:
+        - path: tests/pytests/unit/states/test_saltutil.py
+          functions: 4
+    - function: sync_pillar
+      source:
+        path: salt/states/saltutil.py
+        symbol: sync_pillar
+      summary: Performs the same task as saltutil.sync_pillar module
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.sync_all
+      tests:
+        - path: tests/pytests/unit/states/test_saltutil.py
+          functions: 4
+    - function: sync_proxymodules
+      source:
+        path: salt/states/saltutil.py
+        symbol: sync_proxymodules
+      summary: Performs the same task as saltutil.sync_proxymodules module
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.sync_all
+      tests:
+        - path: tests/pytests/unit/states/test_saltutil.py
+          functions: 4
+    - function: sync_matchers
+      source:
+        path: salt/states/saltutil.py
+        symbol: sync_matchers
+      summary: Performs the same task as saltutil.sync_matchers module
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.sync_all
+      tests:
+        - path: tests/pytests/unit/states/test_saltutil.py
+          functions: 4
+    - function: sync_renderers
+      source:
+        path: salt/states/saltutil.py
+        symbol: sync_renderers
+      summary: Performs the same task as saltutil.sync_renderers module
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.sync_all
+      tests:
+        - path: tests/pytests/unit/states/test_saltutil.py
+          functions: 4
+    - function: sync_returners
+      source:
+        path: salt/states/saltutil.py
+        symbol: sync_returners
+      summary: Performs the same task as saltutil.sync_returners module
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.sync_all
+      tests:
+        - path: tests/pytests/unit/states/test_saltutil.py
+          functions: 4
+    - function: sync_sdb
+      source:
+        path: salt/states/saltutil.py
+        symbol: sync_sdb
+      summary: Performs the same task as saltutil.sync_sdb module
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.sync_all
+      tests:
+        - path: tests/pytests/unit/states/test_saltutil.py
+          functions: 4
+    - function: sync_states
+      source:
+        path: salt/states/saltutil.py
+        symbol: sync_states
+      summary: Performs the same task as saltutil.sync_states module
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.sync_all
+      tests:
+        - path: tests/pytests/unit/states/test_saltutil.py
+          functions: 4
+    - function: sync_tops
+      source:
+        path: salt/states/saltutil.py
+        symbol: sync_tops
+      summary: Performs the same task as saltutil.sync_tops module
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.sync_all
+      tests:
+        - path: tests/pytests/unit/states/test_saltutil.py
+          functions: 4
+    - function: sync_resources
+      source:
+        path: salt/states/saltutil.py
+        symbol: sync_resources
+      summary: Performs the same task as saltutil.sync_resources module
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.sync_all
+      tests:
+        - path: tests/pytests/unit/states/test_saltutil.py
+          functions: 4
+    - function: sync_thorium
+      source:
+        path: salt/states/saltutil.py
+        symbol: sync_thorium
+      summary: Performs the same task as saltutil.sync_thorium module
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.sync_all
+      tests:
+        - path: tests/pytests/unit/states/test_saltutil.py
+          functions: 4
+    - function: sync_utils
+      source:
+        path: salt/states/saltutil.py
+        symbol: sync_utils
+      summary: Performs the same task as saltutil.sync_utils module
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.sync_all
+      tests:
+        - path: tests/pytests/unit/states/test_saltutil.py
+          functions: 4
+    - function: sync_serializers
+      source:
+        path: salt/states/saltutil.py
+        symbol: sync_serializers
+      summary: Performs the same task as saltutil.sync_serializers module
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.sync_all
+      tests:
+        - path: tests/pytests/unit/states/test_saltutil.py
+          functions: 4
+    - function: sync_wrapper
+      source:
+        path: salt/states/saltutil.py
+        symbol: sync_wrapper
+      summary: '.. versionadded:: 3007.0'
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - saltutil.sync_all
+      tests:
+        - path: tests/pytests/unit/states/test_saltutil.py
+          functions: 4

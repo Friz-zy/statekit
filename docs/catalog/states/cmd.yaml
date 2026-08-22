@@ -1,0 +1,267 @@
+kind: state
+module: cmd
+source_module: cmd
+path: salt/states/cmd.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _reinterpreted_state
+      source:
+        path: salt/states/cmd.py
+        symbol: _reinterpreted_state
+      summary: Re-interpret the state returned by salt.state.run using our protocol.
+      parameters:
+        - name: state
+      tests:
+        - path: tests/pytests/unit/states/test_cmd.py
+          functions: 11
+    - function: _failout
+      source:
+        path: salt/states/cmd.py
+        symbol: _failout
+      parameters:
+        - name: state
+        - name: msg
+      tests:
+        - path: tests/pytests/unit/states/test_cmd.py
+          functions: 11
+    - function: _is_true
+      source:
+        path: salt/states/cmd.py
+        symbol: _is_true
+      parameters:
+        - name: val
+      tests:
+        - path: tests/pytests/unit/states/test_cmd.py
+          functions: 11
+    - function: wait
+      source:
+        path: salt/states/cmd.py
+        symbol: wait
+      summary: Run the given command only if the watch statement calls it.
+      parameters:
+        - name: name
+        - name: cwd
+          default: None
+        - name: root
+          default: None
+        - name: runas
+          default: None
+        - name: shell
+          default: None
+        - name: env
+          default: ()
+        - name: stateful
+          default: "False"
+        - name: output_loglevel
+          default: '"debug"'
+        - name: hide_output
+          default: "False"
+        - name: use_vt
+          default: "False"
+        - name: success_retcodes
+          default: None
+        - name: success_stdout
+          default: None
+        - name: success_stderr
+          default: None
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/states/test_cmd.py
+          functions: 11
+    - function: wait_script
+      source:
+        path: salt/states/cmd.py
+        symbol: wait_script
+      summary: Download a script from a remote source and execute it only if a watch
+      parameters:
+        - name: name
+        - name: source
+          default: None
+        - name: template
+          default: None
+        - name: cwd
+          default: None
+        - name: runas
+          default: None
+        - name: shell
+          default: None
+        - name: env
+          default: None
+        - name: stateful
+          default: "False"
+        - name: use_vt
+          default: "False"
+        - name: output_loglevel
+          default: '"debug"'
+        - name: hide_output
+          default: "False"
+        - name: success_retcodes
+          default: None
+        - name: success_stdout
+          default: None
+        - name: success_stderr
+          default: None
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/states/test_cmd.py
+          functions: 11
+    - function: run
+      source:
+        path: salt/states/cmd.py
+        symbol: run
+      summary: Run a command if certain circumstances are met.  Use ``cmd.wait`` if you
+      parameters:
+        - name: name
+        - name: cwd
+          default: None
+        - name: root
+          default: None
+        - name: runas
+          default: None
+        - name: password
+          default: None
+        - name: shell
+          default: None
+        - name: env
+          default: None
+        - name: prepend_path
+          default: None
+        - name: stateful
+          default: "False"
+        - name: output_loglevel
+          default: '"debug"'
+        - name: hide_output
+          default: "False"
+        - name: timeout
+          default: None
+        - name: ignore_timeout
+          default: "False"
+        - name: use_vt
+          default: "False"
+        - name: success_retcodes
+          default: None
+        - name: success_stdout
+          default: None
+        - name: success_stderr
+          default: None
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/states/test_cmd.py
+          functions: 11
+    - function: script
+      source:
+        path: salt/states/cmd.py
+        symbol: script
+      summary: Download a script and execute it with specified arguments.
+      parameters:
+        - name: name
+        - name: source
+          default: None
+        - name: template
+          default: None
+        - name: cwd
+          default: None
+        - name: runas
+          default: None
+        - name: password
+          default: None
+        - name: shell
+          default: None
+        - name: env
+          default: None
+        - name: stateful
+          default: "False"
+        - name: timeout
+          default: None
+        - name: use_vt
+          default: "False"
+        - name: output_loglevel
+          default: '"debug"'
+        - name: hide_output
+          default: "False"
+        - name: defaults
+          default: None
+        - name: context
+          default: None
+        - name: success_retcodes
+          default: None
+        - name: success_stdout
+          default: None
+        - name: success_stderr
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.script
+      tests:
+        - path: tests/pytests/unit/states/test_cmd.py
+          functions: 11
+    - function: call
+      source:
+        path: salt/states/cmd.py
+        symbol: call
+      summary: Invoke a pre-defined Python function with arguments specified in the state
+      parameters:
+        - name: name
+        - name: func
+        - name: args
+          default: ()
+        - name: kws
+          default: None
+        - name: output_loglevel
+          default: '"debug"'
+        - name: hide_output
+          default: "False"
+        - name: use_vt
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.script
+      tests:
+        - path: tests/pytests/unit/states/test_cmd.py
+          functions: 11
+    - function: wait_call
+      source:
+        path: salt/states/cmd.py
+        symbol: wait_call
+      parameters:
+        - name: name
+        - name: func
+        - name: args
+          default: ()
+        - name: kws
+          default: None
+        - name: stateful
+          default: "False"
+        - name: use_vt
+          default: "False"
+        - name: output_loglevel
+          default: '"debug"'
+        - name: hide_output
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.script
+      tests:
+        - path: tests/pytests/unit/states/test_cmd.py
+          functions: 11
+    - function: mod_watch
+      source:
+        path: salt/states/cmd.py
+        symbol: mod_watch
+      summary: Execute a cmd function based on a watch call
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.script
+      tests:
+        - path: tests/pytests/unit/states/test_cmd.py
+          functions: 11

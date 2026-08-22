@@ -1,0 +1,218 @@
+kind: exec
+module: pillar
+source_module: pillar
+path: salt/modules/pillar.py
+functions:
+    - function: get
+      source:
+        path: salt/modules/pillar.py
+        symbol: get
+      summary: '.. versionadded:: 0.14.0'
+      parameters:
+        - name: key
+        - name: default
+          default: NOT_SET
+        - name: merge
+          default: "False"
+        - name: merge_nested_lists
+          default: None
+        - name: delimiter
+          default: DEFAULT_TARGET_DELIM
+        - name: pillarenv
+          default: None
+        - name: saltenv
+          default: None
+        - name: unmask
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_pillar.py
+          functions: 17
+    - function: items
+      source:
+        path: salt/modules/pillar.py
+        symbol: items
+      summary: Calls the master for a fresh pillar and generates the pillar data on the
+      parameters:
+        - name: args
+          kind: '*'
+        - name: pillar
+          default: None
+        - name: pillar_enc
+          default: None
+        - name: pillarenv
+          default: None
+        - name: saltenv
+          default: None
+        - name: unmask
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_pillar.py
+          functions: 17
+    - function: data
+      source:
+        path: salt/modules/pillar.py
+        symbol: data
+      summary: Calls the master for a fresh pillar, generates the pillar data on the
+      parameters:
+        - name: args
+          kind: '*'
+        - name: pillar
+          default: None
+        - name: pillar_enc
+          default: None
+        - name: pillarenv
+          default: None
+        - name: saltenv
+          default: None
+        - name: unmask
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_pillar.py
+          functions: 17
+    - function: _obfuscate_inner
+      source:
+        path: salt/modules/pillar.py
+        symbol: _obfuscate_inner
+      summary: Recursive obfuscation of collection types.
+      parameters:
+        - name: var
+      tests:
+        - path: tests/pytests/unit/modules/test_pillar.py
+          functions: 17
+    - function: obfuscate
+      source:
+        path: salt/modules/pillar.py
+        symbol: obfuscate
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: args
+          kind: '*'
+        - name: pillar
+          default: None
+        - name: pillar_enc
+          default: None
+        - name: pillarenv
+          default: None
+        - name: saltenv
+          default: None
+        - name: unmask
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_pillar.py
+          functions: 17
+    - function: ls
+      source:
+        path: salt/modules/pillar.py
+        symbol: ls
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: args
+          kind: '*'
+        - name: pillar
+          default: None
+        - name: pillar_enc
+          default: None
+        - name: pillarenv
+          default: None
+        - name: saltenv
+          default: None
+        - name: unmask
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_pillar.py
+          functions: 17
+    - function: item
+      source:
+        path: salt/modules/pillar.py
+        symbol: item
+      summary: '.. versionadded:: 0.16.2'
+      parameters:
+        - name: args
+          kind: '*'
+        - name: default
+          default: None
+        - name: delimiter
+          default: None
+        - name: pillarenv
+          default: None
+        - name: saltenv
+          default: None
+        - name: unmask
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_pillar.py
+          functions: 17
+    - function: raw
+      source:
+        path: salt/modules/pillar.py
+        symbol: raw
+      summary: Return the raw pillar data that is currently loaded into the minion.
+      parameters:
+        - name: key
+          default: None
+        - name: unmask
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_pillar.py
+          functions: 17
+    - function: ext
+      source:
+        path: salt/modules/pillar.py
+        symbol: ext
+      summary: '.. versionchanged:: 2016.3.6,2016.11.3,2017.7.0'
+      parameters:
+        - name: external
+        - name: pillar
+          default: None
+        - name: unmask
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_pillar.py
+          functions: 17
+    - function: keys
+      source:
+        path: salt/modules/pillar.py
+        symbol: keys
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: key
+        - name: delimiter
+          default: DEFAULT_TARGET_DELIM
+        - name: unmask
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_pillar.py
+          functions: 17
+    - function: file_exists
+      source:
+        path: salt/modules/pillar.py
+        symbol: file_exists
+      summary: '.. versionadded:: 2016.3.0'
+      parameters:
+        - name: path
+        - name: saltenv
+          default: None
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_pillar.py
+          functions: 17
+    - function: filter_by
+      source:
+        path: salt/modules/pillar.py
+        symbol: filter_by
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: lookup_dict
+        - name: pillar
+        - name: merge
+          default: None
+        - name: default
+          default: '"default"'
+        - name: base
+          default: None
+      execution_dependencies:
+        - file.file_exists
+      tests:
+        - path: tests/pytests/unit/modules/test_pillar.py
+          functions: 17

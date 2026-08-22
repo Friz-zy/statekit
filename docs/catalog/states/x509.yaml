@@ -1,0 +1,265 @@
+kind: state
+module: x509
+source_module: x509
+path: salt/states/x509.py
+functions:
+    - function: _revoked_to_list
+      source:
+        path: salt/states/x509.py
+        symbol: _revoked_to_list
+      summary: Turn the mess of OrderedDicts and Lists into a list of dicts for
+      parameters:
+        - name: revs
+      execution_dependencies:
+        - x509.get_pem_entry
+      tests:
+        - path: tests/unit/states/test_x509.py
+          functions: 0
+    - function: _get_file_args
+      source:
+        path: salt/states/x509.py
+        symbol: _get_file_args
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - x509.get_pem_entry
+      tests:
+        - path: tests/unit/states/test_x509.py
+          functions: 0
+    - function: _check_private_key
+      source:
+        path: salt/states/x509.py
+        symbol: _check_private_key
+      parameters:
+        - name: name
+        - name: bits
+          default: "2048"
+        - name: passphrase
+          default: None
+        - name: new
+          default: "False"
+        - name: overwrite
+          default: "False"
+      execution_dependencies:
+        - x509.get_pem_entry
+        - x509.get_private_key_size
+      tests:
+        - path: tests/unit/states/test_x509.py
+          functions: 0
+    - function: private_key_managed
+      source:
+        path: salt/states/x509.py
+        symbol: private_key_managed
+      summary: Manage a private key's existence.
+      parameters:
+        - name: name
+        - name: bits
+          default: "2048"
+        - name: passphrase
+          default: None
+        - name: cipher
+          default: '"aes_128_cbc"'
+        - name: new
+          default: "False"
+        - name: overwrite
+          default: "False"
+        - name: verbose
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - x509.create_private_key
+        - x509.get_pem_entry
+        - x509.get_private_key_size
+      tests:
+        - path: tests/unit/states/test_x509.py
+          functions: 0
+    - function: csr_managed
+      source:
+        path: salt/states/x509.py
+        symbol: csr_managed
+      summary: Manage a Certificate Signing Request
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - x509.create_csr
+        - x509.create_private_key
+        - x509.get_pem_entry
+        - x509.get_private_key_size
+        - x509.read_csr
+      tests:
+        - path: tests/unit/states/test_x509.py
+          functions: 0
+    - function: _certificate_info_matches
+      source:
+        path: salt/states/x509.py
+        symbol: _certificate_info_matches
+      summary: Return true if the provided certificate information matches the
+      parameters:
+        - name: cert_info
+        - name: required_cert_info
+        - name: check_serial
+          default: "False"
+      execution_dependencies:
+        - x509.create_csr
+        - x509.create_private_key
+        - x509.get_pem_entry
+        - x509.get_private_key_size
+        - x509.read_csr
+      tests:
+        - path: tests/unit/states/test_x509.py
+          functions: 0
+    - function: _certificate_days_remaining
+      source:
+        path: salt/states/x509.py
+        symbol: _certificate_days_remaining
+      summary: Get the days remaining on a certificate, defaulting to 0 if an error occurs.
+      parameters:
+        - name: cert_info
+      execution_dependencies:
+        - x509.create_csr
+        - x509.create_private_key
+        - x509.get_pem_entry
+        - x509.get_private_key_size
+        - x509.read_csr
+      tests:
+        - path: tests/unit/states/test_x509.py
+          functions: 0
+    - function: _certificate_is_valid
+      source:
+        path: salt/states/x509.py
+        symbol: _certificate_is_valid
+      summary: Return True if the given certificate file exists, is a certificate, matches the given specification,
+      parameters:
+        - name: name
+        - name: days_remaining
+        - name: append_certs
+        - name: cert_spec
+          kind: '**'
+      execution_dependencies:
+        - x509.create_certificate
+        - x509.create_csr
+        - x509.create_private_key
+        - x509.get_pem_entry
+        - x509.get_private_key_size
+        - x509.read_certificate
+        - x509.read_csr
+        - x509.verify_signature
+      tests:
+        - path: tests/unit/states/test_x509.py
+          functions: 0
+    - function: _certificate_file_managed
+      source:
+        path: salt/states/x509.py
+        symbol: _certificate_file_managed
+      summary: Run file.managed and merge the result with an existing return dict.
+      parameters:
+        - name: ret
+        - name: file_args
+      execution_dependencies:
+        - x509.create_certificate
+        - x509.create_csr
+        - x509.create_private_key
+        - x509.get_pem_entry
+        - x509.get_private_key_size
+        - x509.read_certificate
+        - x509.read_csr
+        - x509.verify_signature
+      tests:
+        - path: tests/unit/states/test_x509.py
+          functions: 0
+    - function: certificate_managed
+      source:
+        path: salt/states/x509.py
+        symbol: certificate_managed
+      summary: Manage a Certificate
+      parameters:
+        - name: name
+        - name: days_remaining
+          default: "90"
+        - name: append_certs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - x509.create_certificate
+        - x509.create_csr
+        - x509.create_private_key
+        - x509.get_pem_entry
+        - x509.get_private_key_size
+        - x509.read_certificate
+        - x509.read_csr
+        - x509.verify_signature
+      tests:
+        - path: tests/unit/states/test_x509.py
+          functions: 0
+    - function: crl_managed
+      source:
+        path: salt/states/x509.py
+        symbol: crl_managed
+      summary: Manage a Certificate Revocation List
+      parameters:
+        - name: name
+        - name: signing_private_key
+        - name: signing_private_key_passphrase
+          default: None
+        - name: signing_cert
+          default: None
+        - name: revoked
+          default: None
+        - name: days_valid
+          default: "100"
+        - name: digest
+          default: '""'
+        - name: days_remaining
+          default: "30"
+        - name: include_expired
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - x509.create_certificate
+        - x509.create_crl
+        - x509.create_csr
+        - x509.create_private_key
+        - x509.get_pem_entry
+        - x509.get_private_key_size
+        - x509.read_certificate
+        - x509.read_crl
+        - x509.read_csr
+        - x509.verify_crl
+        - x509.verify_signature
+      tests:
+        - path: tests/unit/states/test_x509.py
+          functions: 0
+    - function: pem_managed
+      source:
+        path: salt/states/x509.py
+        symbol: pem_managed
+      summary: Manage the contents of a PEM file directly with the content in text, ensuring correct formatting.
+      parameters:
+        - name: name
+        - name: text
+        - name: backup
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - x509.create_certificate
+        - x509.create_crl
+        - x509.create_csr
+        - x509.create_private_key
+        - x509.get_pem_entry
+        - x509.get_private_key_size
+        - x509.read_certificate
+        - x509.read_crl
+        - x509.read_csr
+        - x509.verify_crl
+        - x509.verify_signature
+      tests:
+        - path: tests/unit/states/test_x509.py
+          functions: 0

@@ -1,0 +1,95 @@
+kind: state
+module: acl
+source_module: linux_acl
+virtual: true
+path: salt/states/linux_acl.py
+functions:
+    - function: present
+      source:
+        path: salt/states/linux_acl.py
+        symbol: present
+      summary: Ensure a Linux ACL is present
+      parameters:
+        - name: name
+        - name: acl_type
+        - name: acl_name
+          default: '""'
+        - name: perms
+          default: '""'
+        - name: recurse
+          default: "False"
+        - name: force
+          default: "False"
+      execution_dependencies:
+        - acl.getfacl
+        - acl.modfacl
+        - acl.wipefacls
+      tests:
+        - path: tests/pytests/unit/states/test_linux_acl.py
+          functions: 6
+    - function: absent
+      source:
+        path: salt/states/linux_acl.py
+        symbol: absent
+      summary: Ensure a Linux ACL does not exist
+      parameters:
+        - name: name
+        - name: acl_type
+        - name: acl_name
+          default: '""'
+        - name: perms
+          default: '""'
+        - name: recurse
+          default: "False"
+      execution_dependencies:
+        - acl.delfacl
+        - acl.getfacl
+        - acl.modfacl
+        - acl.wipefacls
+      tests:
+        - path: tests/pytests/unit/states/test_linux_acl.py
+          functions: 6
+    - function: list_present
+      source:
+        path: salt/states/linux_acl.py
+        symbol: list_present
+      summary: Ensure a Linux ACL list is present
+      parameters:
+        - name: name
+        - name: acl_type
+        - name: acl_names
+          default: None
+        - name: perms
+          default: '""'
+        - name: recurse
+          default: "False"
+        - name: force
+          default: "False"
+      execution_dependencies:
+        - acl.delfacl
+        - acl.getfacl
+        - acl.modfacl
+        - acl.wipefacls
+      tests:
+        - path: tests/pytests/unit/states/test_linux_acl.py
+          functions: 6
+    - function: list_absent
+      source:
+        path: salt/states/linux_acl.py
+        symbol: list_absent
+      summary: Ensure a Linux ACL list does not exist
+      parameters:
+        - name: name
+        - name: acl_type
+        - name: acl_names
+          default: None
+        - name: recurse
+          default: "False"
+      execution_dependencies:
+        - acl.delfacl
+        - acl.getfacl
+        - acl.modfacl
+        - acl.wipefacls
+      tests:
+        - path: tests/pytests/unit/states/test_linux_acl.py
+          functions: 6

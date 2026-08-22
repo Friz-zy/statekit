@@ -1,0 +1,58 @@
+kind: state
+module: pkgbuild
+source_module: pkgbuild
+path: salt/states/pkgbuild.py
+functions:
+    - function: _get_missing_results
+      source:
+        path: salt/states/pkgbuild.py
+        symbol: _get_missing_results
+      summary: Return a list of the filenames specified in the ``results`` argument, which
+      parameters:
+        - name: results
+        - name: dest_dir
+    - function: built
+      source:
+        path: salt/states/pkgbuild.py
+        symbol: built
+      summary: Ensure that the named package is built and exists in the named directory
+      parameters:
+        - name: name
+        - name: runas
+        - name: dest_dir
+        - name: spec
+        - name: sources
+        - name: tgt
+        - name: template
+          default: None
+        - name: deps
+          default: None
+        - name: env
+          default: None
+        - name: results
+          default: None
+        - name: force
+          default: "False"
+        - name: saltenv
+          default: '"base"'
+        - name: log_dir
+          default: '"/var/log/salt/pkgbuild"'
+    - function: repo
+      source:
+        path: salt/states/pkgbuild.py
+        symbol: repo
+      summary: Make a package repository and optionally sign it and packages present
+      parameters:
+        - name: name
+        - name: keyid
+          default: None
+        - name: env
+          default: None
+        - name: use_passphrase
+          default: "False"
+        - name: gnupghome
+          default: '"/etc/salt/gpgkeys"'
+        - name: runas
+          default: '"builder"'
+        - name: timeout
+          default: "15.0"

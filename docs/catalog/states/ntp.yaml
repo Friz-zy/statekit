@@ -1,0 +1,40 @@
+kind: state
+module: ntp
+source_module: ntp
+path: salt/states/ntp.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _check_servers
+      source:
+        path: salt/states/ntp.py
+        symbol: _check_servers
+      parameters:
+        - name: servers
+      tests:
+        - path: tests/pytests/unit/states/test_ntp.py
+          functions: 1
+    - function: _get_servers
+      source:
+        path: salt/states/ntp.py
+        symbol: _get_servers
+      execution_dependencies:
+        - ntp.get_servers
+      tests:
+        - path: tests/pytests/unit/states/test_ntp.py
+          functions: 1
+    - function: managed
+      source:
+        path: salt/states/ntp.py
+        symbol: managed
+      summary: Manage NTP servers
+      parameters:
+        - name: name
+        - name: servers
+          default: None
+      execution_dependencies:
+        - ntp.get_servers
+        - ntp.set_servers
+      tests:
+        - path: tests/pytests/unit/states/test_ntp.py
+          functions: 1

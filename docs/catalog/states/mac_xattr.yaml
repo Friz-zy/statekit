@@ -1,0 +1,37 @@
+kind: state
+module: xattr
+source_module: mac_xattr
+virtual: true
+path: salt/states/mac_xattr.py
+functions:
+    - function: exists
+      source:
+        path: salt/states/mac_xattr.py
+        symbol: exists
+      summary: Make sure the given attributes exist on the file/directory
+      parameters:
+        - name: name
+        - name: attributes
+      execution_dependencies:
+        - xattr.list
+        - xattr.read
+        - xattr.write
+      tests:
+        - path: tests/pytests/unit/states/test_mac_xattr.py
+          functions: 5
+    - function: delete
+      source:
+        path: salt/states/mac_xattr.py
+        symbol: delete
+      summary: Make sure the given attributes are deleted from the file/directory
+      parameters:
+        - name: name
+        - name: attributes
+      execution_dependencies:
+        - xattr.delete
+        - xattr.list
+        - xattr.read
+        - xattr.write
+      tests:
+        - path: tests/pytests/unit/states/test_mac_xattr.py
+          functions: 5

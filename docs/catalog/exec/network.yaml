@@ -1,0 +1,1433 @@
+kind: exec
+module: network
+source_module: network
+path: salt/modules/network.py
+platform_markers:
+    - is_aix
+    - is_sunos
+    - is_windows
+functions:
+    - function: wol
+      source:
+        path: salt/modules/network.py
+        symbol: wol
+      summary: Send Wake On Lan packet to a host
+      parameters:
+        - name: mac
+        - name: bcast
+          default: '"255.255.255.255"'
+        - name: destport
+          default: "9"
+      utility_dependencies:
+        - network.mac_str_to_bytes
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: ping
+      source:
+        path: salt/modules/network.py
+        symbol: ping
+      summary: Performs an ICMP ping to a host
+      parameters:
+        - name: host
+        - name: timeout
+          default: "False"
+        - name: return_boolean
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: _netstat_linux
+      source:
+        path: salt/modules/network.py
+        symbol: _netstat_linux
+      summary: Return netstat information for Linux distros
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: _ss_linux
+      source:
+        path: salt/modules/network.py
+        symbol: _ss_linux
+      summary: Return ss information for Linux distros
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: _netinfo_openbsd
+      source:
+        path: salt/modules/network.py
+        symbol: _netinfo_openbsd
+      summary: Get process information for network connections using fstat
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: _netinfo_freebsd_netbsd
+      source:
+        path: salt/modules/network.py
+        symbol: _netinfo_freebsd_netbsd
+      summary: Get process information for network connections using sockstat
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: _ppid
+      source:
+        path: salt/modules/network.py
+        symbol: _ppid
+      summary: Return a dict of pid to ppid mappings
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: _netstat_bsd
+      source:
+        path: salt/modules/network.py
+        symbol: _netstat_bsd
+      summary: Return netstat information for BSD flavors
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: _netstat_sunos
+      source:
+        path: salt/modules/network.py
+        symbol: _netstat_sunos
+      summary: Return netstat information for SunOS flavors
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: _netstat_aix
+      source:
+        path: salt/modules/network.py
+        symbol: _netstat_aix
+      summary: Return netstat information for SunOS flavors
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: _netstat_route_linux
+      source:
+        path: salt/modules/network.py
+        symbol: _netstat_route_linux
+      summary: Return netstat routing information for Linux distros
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: _ip_route_linux
+      source:
+        path: salt/modules/network.py
+        symbol: _ip_route_linux
+      summary: Return ip routing information for Linux distros
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: _netstat_route_freebsd
+      source:
+        path: salt/modules/network.py
+        symbol: _netstat_route_freebsd
+      summary: Return netstat routing information for FreeBSD and macOS
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: _netstat_route_netbsd
+      source:
+        path: salt/modules/network.py
+        symbol: _netstat_route_netbsd
+      summary: Return netstat routing information for NetBSD
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: _netstat_route_openbsd
+      source:
+        path: salt/modules/network.py
+        symbol: _netstat_route_openbsd
+      summary: Return netstat routing information for OpenBSD
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: _netstat_route_sunos
+      source:
+        path: salt/modules/network.py
+        symbol: _netstat_route_sunos
+      summary: Return netstat routing information for SunOS
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: _netstat_route_aix
+      source:
+        path: salt/modules/network.py
+        symbol: _netstat_route_aix
+      summary: Return netstat routing information for AIX
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: netstat
+      source:
+        path: salt/modules/network.py
+        symbol: netstat
+      summary: Return information on open ports and states
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - path.which
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: active_tcp
+      source:
+        path: salt/modules/network.py
+        symbol: active_tcp
+      summary: Return a dict containing information on all of the running TCP connections (currently linux and solaris only)
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.active_tcp
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - path.which
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: traceroute
+      source:
+        path: salt/modules/network.py
+        symbol: traceroute
+      summary: Performs a traceroute to a 3rd party host
+      parameters:
+        - name: host
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.active_tcp
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - path.which
+        - platform.is_aix
+        - platform.is_sunos
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: dig
+      source:
+        path: salt/modules/network.py
+        symbol: dig
+      summary: Performs a DNS lookup with dig
+      parameters:
+        - name: host
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.active_tcp
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - path.which
+        - platform.is_aix
+        - platform.is_sunos
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: arp
+      source:
+        path: salt/modules/network.py
+        symbol: arp
+      summary: Return the arp table from the minion
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.active_tcp
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - path.which
+        - platform.is_aix
+        - platform.is_sunos
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: interfaces
+      source:
+        path: salt/modules/network.py
+        symbol: interfaces
+      summary: Return a dictionary of information about all the interfaces on the minion
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.active_tcp
+        - network.interfaces
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - path.which
+        - platform.is_aix
+        - platform.is_sunos
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: hw_addr
+      source:
+        path: salt/modules/network.py
+        symbol: hw_addr
+      summary: Return the hardware address (a.k.a. MAC address) for a given interface
+      parameters:
+        - name: iface
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.active_tcp
+        - network.hw_addr
+        - network.interfaces
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - path.which
+        - platform.is_aix
+        - platform.is_sunos
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: interface
+      source:
+        path: salt/modules/network.py
+        symbol: interface
+      summary: Return the inet address for a given interface
+      parameters:
+        - name: iface
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.active_tcp
+        - network.hw_addr
+        - network.interface
+        - network.interfaces
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - path.which
+        - platform.is_aix
+        - platform.is_sunos
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: interface_ip
+      source:
+        path: salt/modules/network.py
+        symbol: interface_ip
+      summary: Return the inet address for a given interface
+      parameters:
+        - name: iface
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.active_tcp
+        - network.hw_addr
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - path.which
+        - platform.is_aix
+        - platform.is_sunos
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: subnets
+      source:
+        path: salt/modules/network.py
+        symbol: subnets
+      summary: Returns a list of IPv4 subnets to which the host belongs
+      parameters:
+        - name: interfaces
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.active_tcp
+        - network.hw_addr
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - path.which
+        - platform.is_aix
+        - platform.is_sunos
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: subnets6
+      source:
+        path: salt/modules/network.py
+        symbol: subnets6
+      summary: Returns a list of IPv6 subnets to which the host belongs
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.active_tcp
+        - network.hw_addr
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_sunos
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: in_subnet
+      source:
+        path: salt/modules/network.py
+        symbol: in_subnet
+      summary: Returns True if host is within specified subnet, otherwise False.
+      parameters:
+        - name: cidr
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.active_tcp
+        - network.hw_addr
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_sunos
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: ip_in_subnet
+      source:
+        path: salt/modules/network.py
+        symbol: ip_in_subnet
+      summary: Returns True if given IP is within specified subnet, otherwise False.
+      parameters:
+        - name: ip_addr
+        - name: cidr
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.active_tcp
+        - network.hw_addr
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_sunos
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: convert_cidr
+      source:
+        path: salt/modules/network.py
+        symbol: convert_cidr
+      summary: returns the network address, subnet mask and broadcast address of a cidr address
+      parameters:
+        - name: cidr
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.active_tcp
+        - network.hw_addr
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_sunos
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: calc_net
+      source:
+        path: salt/modules/network.py
+        symbol: calc_net
+      summary: Returns the CIDR of a subnet based on
+      parameters:
+        - name: ip_addr
+        - name: netmask
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.active_tcp
+        - network.calc_net
+        - network.hw_addr
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_sunos
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: ip_addrs
+      source:
+        path: salt/modules/network.py
+        symbol: ip_addrs
+      summary: Returns a list of IPv4 addresses assigned to the host. 127.0.0.1 is
+      parameters:
+        - name: interface
+          default: None
+        - name: include_loopback
+          default: "False"
+        - name: cidr
+          default: None
+        - name: type
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.active_tcp
+        - network.calc_net
+        - network.hw_addr
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.ip_addrs
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_sunos
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: ip_addrs6
+      source:
+        path: salt/modules/network.py
+        symbol: ip_addrs6
+      summary: Returns a list of IPv6 addresses assigned to the host. ::1 is ignored,
+      parameters:
+        - name: interface
+          default: None
+        - name: include_loopback
+          default: "False"
+        - name: cidr
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.active_tcp
+        - network.calc_net
+        - network.hw_addr
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.ip_addrs
+        - network.ip_addrs6
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_sunos
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: ip_neighs
+      source:
+        path: salt/modules/network.py
+        symbol: ip_neighs
+      summary: Return the ip neighbour (arp) table from the minion for IPv4 addresses
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.active_tcp
+        - network.calc_net
+        - network.hw_addr
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.ip_addrs
+        - network.ip_addrs6
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_sunos
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: ip_neighs6
+      source:
+        path: salt/modules/network.py
+        symbol: ip_neighs6
+      summary: Return the ip neighbour (arp) table from the minion for IPv6 addresses
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.active_tcp
+        - network.calc_net
+        - network.hw_addr
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.ip_addrs
+        - network.ip_addrs6
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_sunos
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: get_hostname
+      source:
+        path: salt/modules/network.py
+        symbol: get_hostname
+      summary: Get hostname
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.active_tcp
+        - network.calc_net
+        - network.hw_addr
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.ip_addrs
+        - network.ip_addrs6
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_sunos
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: get_fqdn
+      source:
+        path: salt/modules/network.py
+        symbol: get_fqdn
+      summary: Get fully qualified domain name
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      utility_dependencies:
+        - network.active_tcp
+        - network.calc_net
+        - network.hw_addr
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.ip_addrs
+        - network.ip_addrs6
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_sunos
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: mod_hostname
+      source:
+        path: salt/modules/network.py
+        symbol: mod_hostname
+      summary: Modify hostname
+      parameters:
+        - name: hostname
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - network.get_hostname
+      utility_dependencies:
+        - files.fopen
+        - network.active_tcp
+        - network.calc_net
+        - network.hw_addr
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.ip_addrs
+        - network.ip_addrs6
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_smartos
+        - platform.is_sunos
+        - stringutils.dequote
+        - stringutils.is_quoted
+        - stringutils.to_str
+        - stringutils.to_unicode
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: connect
+      source:
+        path: salt/modules/network.py
+        symbol: connect
+      summary: Test connectivity to a host using a particular
+      parameters:
+        - name: host
+        - name: port
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - network.get_hostname
+      utility_dependencies:
+        - files.fopen
+        - network.active_tcp
+        - network.calc_net
+        - network.hw_addr
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.ip_addrs
+        - network.ip_addrs6
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_smartos
+        - platform.is_sunos
+        - stringutils.dequote
+        - stringutils.is_quoted
+        - stringutils.to_str
+        - stringutils.to_unicode
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: is_private
+      source:
+        path: salt/modules/network.py
+        symbol: is_private
+      summary: Check if the given IP address is a private address
+      parameters:
+        - name: ip_addr
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - network.get_hostname
+      utility_dependencies:
+        - files.fopen
+        - network.active_tcp
+        - network.calc_net
+        - network.hw_addr
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.ip_addrs
+        - network.ip_addrs6
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_smartos
+        - platform.is_sunos
+        - stringutils.dequote
+        - stringutils.is_quoted
+        - stringutils.to_str
+        - stringutils.to_unicode
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: is_loopback
+      source:
+        path: salt/modules/network.py
+        symbol: is_loopback
+      summary: Check if the given IP address is a loopback address
+      parameters:
+        - name: ip_addr
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - network.get_hostname
+      utility_dependencies:
+        - files.fopen
+        - network.active_tcp
+        - network.calc_net
+        - network.hw_addr
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.ip_addrs
+        - network.ip_addrs6
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_smartos
+        - platform.is_sunos
+        - stringutils.dequote
+        - stringutils.is_quoted
+        - stringutils.to_str
+        - stringutils.to_unicode
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: reverse_ip
+      source:
+        path: salt/modules/network.py
+        symbol: reverse_ip
+      summary: Returns the reversed IP address
+      parameters:
+        - name: ip_addr
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - network.get_hostname
+      utility_dependencies:
+        - files.fopen
+        - network.active_tcp
+        - network.calc_net
+        - network.hw_addr
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.ip_addrs
+        - network.ip_addrs6
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_smartos
+        - platform.is_sunos
+        - stringutils.dequote
+        - stringutils.is_quoted
+        - stringutils.to_str
+        - stringutils.to_unicode
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: _get_bufsize_linux
+      source:
+        path: salt/modules/network.py
+        symbol: _get_bufsize_linux
+      summary: Return network interface buffer information using ethtool
+      parameters:
+        - name: iface
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - network.get_hostname
+      utility_dependencies:
+        - files.fopen
+        - network.active_tcp
+        - network.calc_net
+        - network.hw_addr
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.ip_addrs
+        - network.ip_addrs6
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_smartos
+        - platform.is_sunos
+        - stringutils.dequote
+        - stringutils.is_quoted
+        - stringutils.to_str
+        - stringutils.to_unicode
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: get_bufsize
+      source:
+        path: salt/modules/network.py
+        symbol: get_bufsize
+      summary: Return network buffer sizes as a dict (currently linux only)
+      parameters:
+        - name: iface
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - network.get_hostname
+      utility_dependencies:
+        - files.fopen
+        - network.active_tcp
+        - network.calc_net
+        - network.hw_addr
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.ip_addrs
+        - network.ip_addrs6
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_smartos
+        - platform.is_sunos
+        - stringutils.dequote
+        - stringutils.is_quoted
+        - stringutils.to_str
+        - stringutils.to_unicode
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: _mod_bufsize_linux
+      source:
+        path: salt/modules/network.py
+        symbol: _mod_bufsize_linux
+      summary: Modify network interface buffer sizes using ethtool
+      parameters:
+        - name: iface
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - network.get_hostname
+      utility_dependencies:
+        - files.fopen
+        - network.active_tcp
+        - network.calc_net
+        - network.hw_addr
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.ip_addrs
+        - network.ip_addrs6
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_smartos
+        - platform.is_sunos
+        - stringutils.dequote
+        - stringutils.is_quoted
+        - stringutils.to_str
+        - stringutils.to_unicode
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: mod_bufsize
+      source:
+        path: salt/modules/network.py
+        symbol: mod_bufsize
+      summary: Modify network interface buffers (currently linux only)
+      parameters:
+        - name: iface
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - network.get_hostname
+      utility_dependencies:
+        - files.fopen
+        - network.active_tcp
+        - network.calc_net
+        - network.hw_addr
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.ip_addrs
+        - network.ip_addrs6
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_smartos
+        - platform.is_sunos
+        - stringutils.dequote
+        - stringutils.is_quoted
+        - stringutils.to_str
+        - stringutils.to_unicode
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: routes
+      source:
+        path: salt/modules/network.py
+        symbol: routes
+      summary: Return currently configured routes from routing table
+      parameters:
+        - name: family
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - network.get_hostname
+      utility_dependencies:
+        - files.fopen
+        - network.active_tcp
+        - network.calc_net
+        - network.hw_addr
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.ip_addrs
+        - network.ip_addrs6
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_smartos
+        - platform.is_sunos
+        - stringutils.dequote
+        - stringutils.is_quoted
+        - stringutils.to_str
+        - stringutils.to_unicode
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: default_route
+      source:
+        path: salt/modules/network.py
+        symbol: default_route
+      summary: Return default route(s) from routing table
+      parameters:
+        - name: family
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - network.get_hostname
+      utility_dependencies:
+        - files.fopen
+        - network.active_tcp
+        - network.calc_net
+        - network.hw_addr
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.ip_addrs
+        - network.ip_addrs6
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_smartos
+        - platform.is_sunos
+        - stringutils.dequote
+        - stringutils.is_quoted
+        - stringutils.to_str
+        - stringutils.to_unicode
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: get_route
+      source:
+        path: salt/modules/network.py
+        symbol: get_route
+      summary: Return routing information for given destination ip
+      parameters:
+        - name: ip
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - network.get_hostname
+      utility_dependencies:
+        - files.fopen
+        - network.active_tcp
+        - network.calc_net
+        - network.hw_addr
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.ip_addrs
+        - network.ip_addrs6
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_smartos
+        - platform.is_sunos
+        - stringutils.dequote
+        - stringutils.is_quoted
+        - stringutils.to_str
+        - stringutils.to_unicode
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: ifacestartswith
+      source:
+        path: salt/modules/network.py
+        symbol: ifacestartswith
+      summary: Retrieve the interface name from a specific CIDR
+      parameters:
+        - name: cidr
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - network.get_hostname
+      utility_dependencies:
+        - files.fopen
+        - network.active_tcp
+        - network.calc_net
+        - network.hw_addr
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.ip_addrs
+        - network.ip_addrs6
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_smartos
+        - platform.is_sunos
+        - stringutils.dequote
+        - stringutils.is_quoted
+        - stringutils.to_str
+        - stringutils.to_unicode
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: iphexval
+      source:
+        path: salt/modules/network.py
+        symbol: iphexval
+      summary: Retrieve the hexadecimal representation of an IP address
+      parameters:
+        - name: ip
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - network.get_hostname
+      utility_dependencies:
+        - files.fopen
+        - network.active_tcp
+        - network.calc_net
+        - network.hw_addr
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.ip_addrs
+        - network.ip_addrs6
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_smartos
+        - platform.is_sunos
+        - stringutils.dequote
+        - stringutils.is_quoted
+        - stringutils.to_str
+        - stringutils.to_unicode
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: ip_networks
+      source:
+        path: salt/modules/network.py
+        symbol: ip_networks
+      summary: '.. versionadded:: 3001'
+      parameters:
+        - name: interface
+          default: None
+        - name: include_loopback
+          default: "False"
+        - name: verbose
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - network.get_hostname
+      utility_dependencies:
+        - files.fopen
+        - network.active_tcp
+        - network.calc_net
+        - network.hw_addr
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.ip_addrs
+        - network.ip_addrs6
+        - network.ip_networks
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_smartos
+        - platform.is_sunos
+        - stringutils.dequote
+        - stringutils.is_quoted
+        - stringutils.to_str
+        - stringutils.to_unicode
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: ip_networks6
+      source:
+        path: salt/modules/network.py
+        symbol: ip_networks6
+      summary: '.. versionadded:: 3001'
+      parameters:
+        - name: interface
+          default: None
+        - name: include_loopback
+          default: "False"
+        - name: verbose
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - network.get_hostname
+      utility_dependencies:
+        - files.fopen
+        - network.active_tcp
+        - network.calc_net
+        - network.hw_addr
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.ip_addrs
+        - network.ip_addrs6
+        - network.ip_networks
+        - network.ip_networks6
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_smartos
+        - platform.is_sunos
+        - stringutils.dequote
+        - stringutils.is_quoted
+        - stringutils.to_str
+        - stringutils.to_unicode
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39
+    - function: fqdns
+      source:
+        path: salt/modules/network.py
+        symbol: fqdns
+      summary: Return all known FQDNs for the system by enumerating all interfaces and
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - network.get_hostname
+      utility_dependencies:
+        - files.fopen
+        - network.active_tcp
+        - network.calc_net
+        - network.hw_addr
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.ip_addrs
+        - network.ip_addrs6
+        - network.ip_networks
+        - network.ip_networks6
+        - network.mac_str_to_bytes
+        - network.sanitize_host
+        - network.subnets
+        - network.subnets6
+        - path.which
+        - platform.is_aix
+        - platform.is_smartos
+        - platform.is_sunos
+        - stringutils.dequote
+        - stringutils.is_quoted
+        - stringutils.to_str
+        - stringutils.to_unicode
+      tests:
+        - path: tests/pytests/unit/modules/test_network.py
+          functions: 39

@@ -1,0 +1,67 @@
+kind: state
+module: postgres_database
+source_module: postgres_database
+path: salt/states/postgres_database.py
+functions:
+    - function: present
+      source:
+        path: salt/states/postgres_database.py
+        symbol: present
+      summary: Ensure that the named database is present with the specified properties.
+      parameters:
+        - name: name
+        - name: tablespace
+          default: None
+        - name: encoding
+          default: None
+        - name: lc_collate
+          default: None
+        - name: lc_ctype
+          default: None
+        - name: owner
+          default: None
+        - name: owner_recurse
+          default: "False"
+        - name: template
+          default: None
+        - name: user
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: db_password
+          default: None
+        - name: db_host
+          default: None
+        - name: db_port
+          default: None
+        - name: db_user
+          default: None
+      execution_dependencies:
+        - postgres.db_alter
+        - postgres.db_create
+        - postgres.db_list
+    - function: absent
+      source:
+        path: salt/states/postgres_database.py
+        symbol: absent
+      summary: Ensure that the named database is absent
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: maintenance_db
+          default: None
+        - name: db_password
+          default: None
+        - name: db_host
+          default: None
+        - name: db_port
+          default: None
+        - name: db_user
+          default: None
+      execution_dependencies:
+        - postgres.db_alter
+        - postgres.db_create
+        - postgres.db_exists
+        - postgres.db_list
+        - postgres.db_remove

@@ -1,0 +1,438 @@
+kind: state
+module: win_iis
+source_module: win_iis
+virtual: true
+path: salt/states/win_iis.py
+functions:
+    - function: _get_binding_info
+      source:
+        path: salt/states/win_iis.py
+        symbol: _get_binding_info
+      summary: Combine the host header, IP address, and TCP port into bindingInformation format.
+      parameters:
+        - name: hostheader
+          default: '""'
+        - name: ipaddress
+          default: '"*"'
+        - name: port
+          default: "80"
+      execution_dependencies:
+        - win_iis.create_site
+      tests:
+        - path: tests/pytests/unit/states/test_win_iis.py
+          functions: 6
+    - function: deployed
+      source:
+        path: salt/states/win_iis.py
+        symbol: deployed
+      summary: Ensure the website has been deployed.
+      parameters:
+        - name: name
+        - name: sourcepath
+        - name: apppool
+          default: '""'
+        - name: hostheader
+          default: '""'
+        - name: ipaddress
+          default: '"*"'
+        - name: port
+          default: "80"
+        - name: protocol
+          default: '"http"'
+      execution_dependencies:
+        - win_iis.create_site
+        - win_iis.list_sites
+      tests:
+        - path: tests/pytests/unit/states/test_win_iis.py
+          functions: 6
+    - function: remove_site
+      source:
+        path: salt/states/win_iis.py
+        symbol: remove_site
+      summary: Delete a website from IIS.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - win_iis.create_site
+        - win_iis.list_sites
+        - win_iis.remove_site
+      tests:
+        - path: tests/pytests/unit/states/test_win_iis.py
+          functions: 6
+    - function: create_binding
+      source:
+        path: salt/states/win_iis.py
+        symbol: create_binding
+      summary: Create an IIS binding.
+      parameters:
+        - name: name
+        - name: site
+        - name: hostheader
+          default: '""'
+        - name: ipaddress
+          default: '"*"'
+        - name: port
+          default: "80"
+        - name: protocol
+          default: '"http"'
+        - name: sslflags
+          default: "0"
+      execution_dependencies:
+        - win_iis.create_binding
+        - win_iis.create_site
+        - win_iis.list_bindings
+        - win_iis.list_sites
+        - win_iis.remove_site
+      tests:
+        - path: tests/pytests/unit/states/test_win_iis.py
+          functions: 6
+    - function: remove_binding
+      source:
+        path: salt/states/win_iis.py
+        symbol: remove_binding
+      summary: Remove an IIS binding.
+      parameters:
+        - name: name
+        - name: site
+        - name: hostheader
+          default: '""'
+        - name: ipaddress
+          default: '"*"'
+        - name: port
+          default: "80"
+      execution_dependencies:
+        - win_iis.create_binding
+        - win_iis.create_site
+        - win_iis.list_bindings
+        - win_iis.list_sites
+        - win_iis.remove_binding
+        - win_iis.remove_site
+      tests:
+        - path: tests/pytests/unit/states/test_win_iis.py
+          functions: 6
+    - function: create_cert_binding
+      source:
+        path: salt/states/win_iis.py
+        symbol: create_cert_binding
+      summary: Assign a certificate to an IIS binding.
+      parameters:
+        - name: name
+        - name: site
+        - name: hostheader
+          default: '""'
+        - name: ipaddress
+          default: '"*"'
+        - name: port
+          default: "443"
+        - name: sslflags
+          default: "0"
+      execution_dependencies:
+        - win_iis.create_binding
+        - win_iis.create_cert_binding
+        - win_iis.create_site
+        - win_iis.list_bindings
+        - win_iis.list_cert_bindings
+        - win_iis.list_sites
+        - win_iis.remove_binding
+        - win_iis.remove_site
+      tests:
+        - path: tests/pytests/unit/states/test_win_iis.py
+          functions: 6
+    - function: remove_cert_binding
+      source:
+        path: salt/states/win_iis.py
+        symbol: remove_cert_binding
+      summary: Remove a certificate from an IIS binding.
+      parameters:
+        - name: name
+        - name: site
+        - name: hostheader
+          default: '""'
+        - name: ipaddress
+          default: '"*"'
+        - name: port
+          default: "443"
+      execution_dependencies:
+        - win_iis.create_binding
+        - win_iis.create_cert_binding
+        - win_iis.create_site
+        - win_iis.list_bindings
+        - win_iis.list_cert_bindings
+        - win_iis.list_sites
+        - win_iis.remove_binding
+        - win_iis.remove_cert_binding
+        - win_iis.remove_site
+      tests:
+        - path: tests/pytests/unit/states/test_win_iis.py
+          functions: 6
+    - function: create_apppool
+      source:
+        path: salt/states/win_iis.py
+        symbol: create_apppool
+      summary: Create an IIS application pool.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - win_iis.create_apppool
+        - win_iis.create_binding
+        - win_iis.create_cert_binding
+        - win_iis.create_site
+        - win_iis.list_apppools
+        - win_iis.list_bindings
+        - win_iis.list_cert_bindings
+        - win_iis.list_sites
+        - win_iis.remove_binding
+        - win_iis.remove_cert_binding
+        - win_iis.remove_site
+      tests:
+        - path: tests/pytests/unit/states/test_win_iis.py
+          functions: 6
+    - function: remove_apppool
+      source:
+        path: salt/states/win_iis.py
+        symbol: remove_apppool
+      parameters:
+        - name: name
+      execution_dependencies:
+        - win_iis.create_apppool
+        - win_iis.create_binding
+        - win_iis.create_cert_binding
+        - win_iis.create_site
+        - win_iis.list_apppools
+        - win_iis.list_bindings
+        - win_iis.list_cert_bindings
+        - win_iis.list_sites
+        - win_iis.remove_apppool
+        - win_iis.remove_binding
+        - win_iis.remove_cert_binding
+        - win_iis.remove_site
+      tests:
+        - path: tests/pytests/unit/states/test_win_iis.py
+          functions: 6
+    - function: container_setting
+      source:
+        path: salt/states/win_iis.py
+        symbol: container_setting
+      summary: Set the value of the setting for an IIS container.
+      parameters:
+        - name: name
+        - name: container
+        - name: settings
+          default: None
+      execution_dependencies:
+        - win_iis.create_apppool
+        - win_iis.create_binding
+        - win_iis.create_cert_binding
+        - win_iis.create_site
+        - win_iis.get_container_setting
+        - win_iis.list_apppools
+        - win_iis.list_bindings
+        - win_iis.list_cert_bindings
+        - win_iis.list_sites
+        - win_iis.remove_apppool
+        - win_iis.remove_binding
+        - win_iis.remove_cert_binding
+        - win_iis.remove_site
+        - win_iis.set_container_setting
+      tests:
+        - path: tests/pytests/unit/states/test_win_iis.py
+          functions: 6
+    - function: create_app
+      source:
+        path: salt/states/win_iis.py
+        symbol: create_app
+      summary: Create an IIS application.
+      parameters:
+        - name: name
+        - name: site
+        - name: sourcepath
+        - name: apppool
+          default: None
+      execution_dependencies:
+        - win_iis.create_app
+        - win_iis.create_apppool
+        - win_iis.create_binding
+        - win_iis.create_cert_binding
+        - win_iis.create_site
+        - win_iis.get_container_setting
+        - win_iis.list_apppools
+        - win_iis.list_apps
+        - win_iis.list_bindings
+        - win_iis.list_cert_bindings
+        - win_iis.list_sites
+        - win_iis.remove_apppool
+        - win_iis.remove_binding
+        - win_iis.remove_cert_binding
+        - win_iis.remove_site
+        - win_iis.set_container_setting
+      tests:
+        - path: tests/pytests/unit/states/test_win_iis.py
+          functions: 6
+    - function: remove_app
+      source:
+        path: salt/states/win_iis.py
+        symbol: remove_app
+      summary: Remove an IIS application.
+      parameters:
+        - name: name
+        - name: site
+      execution_dependencies:
+        - win_iis.create_app
+        - win_iis.create_apppool
+        - win_iis.create_binding
+        - win_iis.create_cert_binding
+        - win_iis.create_site
+        - win_iis.get_container_setting
+        - win_iis.list_apppools
+        - win_iis.list_apps
+        - win_iis.list_bindings
+        - win_iis.list_cert_bindings
+        - win_iis.list_sites
+        - win_iis.remove_app
+        - win_iis.remove_apppool
+        - win_iis.remove_binding
+        - win_iis.remove_cert_binding
+        - win_iis.remove_site
+        - win_iis.set_container_setting
+      tests:
+        - path: tests/pytests/unit/states/test_win_iis.py
+          functions: 6
+    - function: create_vdir
+      source:
+        path: salt/states/win_iis.py
+        symbol: create_vdir
+      summary: Create an IIS virtual directory.
+      parameters:
+        - name: name
+        - name: site
+        - name: sourcepath
+        - name: app
+          default: '"/"'
+      execution_dependencies:
+        - win_iis.create_app
+        - win_iis.create_apppool
+        - win_iis.create_binding
+        - win_iis.create_cert_binding
+        - win_iis.create_site
+        - win_iis.create_vdir
+        - win_iis.get_container_setting
+        - win_iis.list_apppools
+        - win_iis.list_apps
+        - win_iis.list_bindings
+        - win_iis.list_cert_bindings
+        - win_iis.list_sites
+        - win_iis.list_vdirs
+        - win_iis.remove_app
+        - win_iis.remove_apppool
+        - win_iis.remove_binding
+        - win_iis.remove_cert_binding
+        - win_iis.remove_site
+        - win_iis.set_container_setting
+      tests:
+        - path: tests/pytests/unit/states/test_win_iis.py
+          functions: 6
+    - function: remove_vdir
+      source:
+        path: salt/states/win_iis.py
+        symbol: remove_vdir
+      summary: Remove an IIS virtual directory.
+      parameters:
+        - name: name
+        - name: site
+        - name: app
+          default: '"/"'
+      execution_dependencies:
+        - win_iis.create_app
+        - win_iis.create_apppool
+        - win_iis.create_binding
+        - win_iis.create_cert_binding
+        - win_iis.create_site
+        - win_iis.create_vdir
+        - win_iis.get_container_setting
+        - win_iis.list_apppools
+        - win_iis.list_apps
+        - win_iis.list_bindings
+        - win_iis.list_cert_bindings
+        - win_iis.list_sites
+        - win_iis.list_vdirs
+        - win_iis.remove_app
+        - win_iis.remove_apppool
+        - win_iis.remove_binding
+        - win_iis.remove_cert_binding
+        - win_iis.remove_site
+        - win_iis.remove_vdir
+        - win_iis.set_container_setting
+      tests:
+        - path: tests/pytests/unit/states/test_win_iis.py
+          functions: 6
+    - function: set_app
+      source:
+        path: salt/states/win_iis.py
+        symbol: set_app
+      parameters:
+        - name: name
+        - name: site
+        - name: settings
+          default: None
+      execution_dependencies:
+        - win_iis.create_app
+        - win_iis.create_apppool
+        - win_iis.create_binding
+        - win_iis.create_cert_binding
+        - win_iis.create_site
+        - win_iis.create_vdir
+        - win_iis.get_container_setting
+        - win_iis.get_webapp_settings
+        - win_iis.list_apppools
+        - win_iis.list_apps
+        - win_iis.list_bindings
+        - win_iis.list_cert_bindings
+        - win_iis.list_sites
+        - win_iis.list_vdirs
+        - win_iis.remove_app
+        - win_iis.remove_apppool
+        - win_iis.remove_binding
+        - win_iis.remove_cert_binding
+        - win_iis.remove_site
+        - win_iis.remove_vdir
+        - win_iis.set_container_setting
+        - win_iis.set_webapp_settings
+      tests:
+        - path: tests/pytests/unit/states/test_win_iis.py
+          functions: 6
+    - function: webconfiguration_settings
+      source:
+        path: salt/states/win_iis.py
+        symbol: webconfiguration_settings
+      parameters:
+        - name: name
+        - name: settings
+          default: None
+      execution_dependencies:
+        - win_iis.create_app
+        - win_iis.create_apppool
+        - win_iis.create_binding
+        - win_iis.create_cert_binding
+        - win_iis.create_site
+        - win_iis.create_vdir
+        - win_iis.get_container_setting
+        - win_iis.get_webapp_settings
+        - win_iis.get_webconfiguration_settings
+        - win_iis.list_apppools
+        - win_iis.list_apps
+        - win_iis.list_bindings
+        - win_iis.list_cert_bindings
+        - win_iis.list_sites
+        - win_iis.list_vdirs
+        - win_iis.remove_app
+        - win_iis.remove_apppool
+        - win_iis.remove_binding
+        - win_iis.remove_cert_binding
+        - win_iis.remove_site
+        - win_iis.remove_vdir
+        - win_iis.set_container_setting
+        - win_iis.set_webapp_settings
+        - win_iis.set_webconfiguration_settings
+      tests:
+        - path: tests/pytests/unit/states/test_win_iis.py
+          functions: 6

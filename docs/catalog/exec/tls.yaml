@@ -1,0 +1,552 @@
+kind: exec
+module: tls
+source_module: tls
+path: salt/modules/tls.py
+functions:
+    - function: _microtime
+      source:
+        path: salt/modules/tls.py
+        symbol: _microtime
+      summary: Return a Unix timestamp as a string of digits
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: _context_or_config
+      source:
+        path: salt/modules/tls.py
+        symbol: _context_or_config
+      summary: Return the value corresponding to the key in __context__ or if not present,
+      parameters:
+        - name: key
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: cert_base_path
+      source:
+        path: salt/modules/tls.py
+        symbol: cert_base_path
+      summary: Return the base path for certs from CLI or from options
+      parameters:
+        - name: cacert_path
+          default: None
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: _cert_base_path
+      source:
+        path: salt/modules/tls.py
+        symbol: _cert_base_path
+      summary: Retrocompatible wrapper
+      parameters:
+        - name: cacert_path
+          default: None
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: set_ca_path
+      source:
+        path: salt/modules/tls.py
+        symbol: set_ca_path
+      summary: If wanted, store the aforementioned cacert_path in context
+      parameters:
+        - name: cacert_path
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: _new_serial
+      source:
+        path: salt/modules/tls.py
+        symbol: _new_serial
+      summary: Return a serial number in hex using os.urandom() and a Unix timestamp
+      parameters:
+        - name: ca_name
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: _four_digit_year_to_two_digit
+      source:
+        path: salt/modules/tls.py
+        symbol: _four_digit_year_to_two_digit
+      parameters:
+        - name: datetimeObj
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: _get_basic_info
+      source:
+        path: salt/modules/tls.py
+        symbol: _get_basic_info
+      summary: Get basic info to write out to the index.txt
+      parameters:
+        - name: ca_name
+        - name: cert
+        - name: ca_dir
+          default: None
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: _write_cert_to_database
+      source:
+        path: salt/modules/tls.py
+        symbol: _write_cert_to_database
+      summary: write out the index.txt database file in the appropriate directory to
+      parameters:
+        - name: ca_name
+        - name: cert
+        - name: cacert_path
+          default: None
+        - name: status
+          default: '"V"'
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: maybe_fix_ssl_version
+      source:
+        path: salt/modules/tls.py
+        symbol: maybe_fix_ssl_version
+      summary: Check that the X509 version is correct
+      parameters:
+        - name: ca_name
+        - name: cacert_path
+          default: None
+        - name: ca_filename
+          default: None
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: ca_exists
+      source:
+        path: salt/modules/tls.py
+        symbol: ca_exists
+      summary: Verify whether a Certificate Authority (CA) already exists
+      parameters:
+        - name: ca_name
+        - name: cacert_path
+          default: None
+        - name: ca_filename
+          default: None
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: _ca_exists
+      source:
+        path: salt/modules/tls.py
+        symbol: _ca_exists
+      summary: Retrocompatible wrapper
+      parameters:
+        - name: ca_name
+        - name: cacert_path
+          default: None
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: get_ca
+      source:
+        path: salt/modules/tls.py
+        symbol: get_ca
+      summary: Get the certificate path or content
+      parameters:
+        - name: ca_name
+        - name: as_text
+          default: "False"
+        - name: cacert_path
+          default: None
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: get_ca_signed_cert
+      source:
+        path: salt/modules/tls.py
+        symbol: get_ca_signed_cert
+      summary: Get the certificate path or content
+      parameters:
+        - name: ca_name
+        - name: CN
+          default: '"localhost"'
+        - name: as_text
+          default: "False"
+        - name: cacert_path
+          default: None
+        - name: cert_filename
+          default: None
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: get_ca_signed_key
+      source:
+        path: salt/modules/tls.py
+        symbol: get_ca_signed_key
+      summary: Get the certificate path or content
+      parameters:
+        - name: ca_name
+        - name: CN
+          default: '"localhost"'
+        - name: as_text
+          default: "False"
+        - name: cacert_path
+          default: None
+        - name: key_filename
+          default: None
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: _read_cert
+      source:
+        path: salt/modules/tls.py
+        symbol: _read_cert
+      parameters:
+        - name: cert
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: validate
+      source:
+        path: salt/modules/tls.py
+        symbol: validate
+      summary: '.. versionadded:: 3000'
+      parameters:
+        - name: cert
+        - name: ca_name
+        - name: crl_file
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: _get_expiration_date
+      source:
+        path: salt/modules/tls.py
+        symbol: _get_expiration_date
+      summary: Returns a datetime.datetime object
+      parameters:
+        - name: cert
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: get_expiration_date
+      source:
+        path: salt/modules/tls.py
+        symbol: get_expiration_date
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: cert
+        - name: date_format
+          default: '"%Y-%m-%d"'
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: _check_onlyif_unless
+      source:
+        path: salt/modules/tls.py
+        symbol: _check_onlyif_unless
+      parameters:
+        - name: onlyif
+        - name: unless
+      execution_dependencies:
+        - cmd.retcode
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: create_ca
+      source:
+        path: salt/modules/tls.py
+        symbol: create_ca
+      summary: Create a Certificate Authority (CA)
+      parameters:
+        - name: ca_name
+        - name: bits
+          default: "2048"
+        - name: days
+          default: "365"
+        - name: CN
+          default: '"localhost"'
+        - name: C
+          default: '"US"'
+        - name: ST
+          default: '"Utah"'
+        - name: L
+          default: '"Salt Lake City"'
+        - name: O
+          default: '"SaltStack"'
+        - name: OU
+          default: None
+        - name: emailAddress
+          default: None
+        - name: fixmode
+          default: "False"
+        - name: cacert_path
+          default: None
+        - name: ca_filename
+          default: None
+        - name: digest
+          default: '"sha256"'
+        - name: onlyif
+          default: None
+        - name: unless
+          default: None
+        - name: replace
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: get_extensions
+      source:
+        path: salt/modules/tls.py
+        symbol: get_extensions
+      summary: 'Fetch X509 and CSR extension definitions from tls:extensions:'
+      parameters:
+        - name: cert_type
+      execution_dependencies:
+        - cmd.retcode
+        - config.option
+        - pillar.get
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: create_csr
+      source:
+        path: salt/modules/tls.py
+        symbol: create_csr
+      summary: Create a Certificate Signing Request (CSR) for a
+      parameters:
+        - name: ca_name
+        - name: bits
+          default: "2048"
+        - name: CN
+          default: '"localhost"'
+        - name: C
+          default: '"US"'
+        - name: ST
+          default: '"Utah"'
+        - name: L
+          default: '"Salt Lake City"'
+        - name: O
+          default: '"SaltStack"'
+        - name: OU
+          default: None
+        - name: emailAddress
+          default: None
+        - name: subjectAltName
+          default: None
+        - name: cacert_path
+          default: None
+        - name: ca_filename
+          default: None
+        - name: csr_path
+          default: None
+        - name: csr_filename
+          default: None
+        - name: digest
+          default: '"sha256"'
+        - name: type_ext
+          default: "False"
+        - name: cert_type
+          default: '"server"'
+        - name: replace
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - config.option
+        - pillar.get
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: create_self_signed_cert
+      source:
+        path: salt/modules/tls.py
+        symbol: create_self_signed_cert
+      summary: Create a Self-Signed Certificate (CERT)
+      parameters:
+        - name: tls_dir
+          default: '"tls"'
+        - name: bits
+          default: "2048"
+        - name: days
+          default: "365"
+        - name: CN
+          default: '"localhost"'
+        - name: C
+          default: '"US"'
+        - name: ST
+          default: '"Utah"'
+        - name: L
+          default: '"Salt Lake City"'
+        - name: O
+          default: '"SaltStack"'
+        - name: OU
+          default: None
+        - name: emailAddress
+          default: None
+        - name: cacert_path
+          default: None
+        - name: cert_filename
+          default: None
+        - name: digest
+          default: '"sha256"'
+        - name: replace
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - config.option
+        - pillar.get
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: create_ca_signed_cert
+      source:
+        path: salt/modules/tls.py
+        symbol: create_ca_signed_cert
+      summary: Create a Certificate (CERT) signed by a named Certificate Authority (CA)
+      parameters:
+        - name: ca_name
+        - name: CN
+        - name: days
+          default: "365"
+        - name: cacert_path
+          default: None
+        - name: ca_filename
+          default: None
+        - name: cert_path
+          default: None
+        - name: cert_filename
+          default: None
+        - name: digest
+          default: '"sha256"'
+        - name: cert_type
+          default: None
+        - name: type_ext
+          default: "False"
+        - name: replace
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - config.option
+        - pillar.get
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: create_pkcs12
+      source:
+        path: salt/modules/tls.py
+        symbol: create_pkcs12
+      summary: Create a PKCS#12 browser certificate for a particular Certificate (CN)
+      parameters:
+        - name: ca_name
+        - name: CN
+        - name: passphrase
+          default: '""'
+        - name: cacert_path
+          default: None
+        - name: replace
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - config.option
+        - pillar.get
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: cert_info
+      source:
+        path: salt/modules/tls.py
+        symbol: cert_info
+      summary: Return information for a particular certificate
+      parameters:
+        - name: cert
+        - name: digest
+          default: '"sha256"'
+      execution_dependencies:
+        - cmd.retcode
+        - config.option
+        - pillar.get
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: create_empty_crl
+      source:
+        path: salt/modules/tls.py
+        symbol: create_empty_crl
+      summary: Create an empty Certificate Revocation List.
+      parameters:
+        - name: ca_name
+        - name: cacert_path
+          default: None
+        - name: ca_filename
+          default: None
+        - name: crl_file
+          default: None
+        - name: digest
+          default: '"sha256"'
+      execution_dependencies:
+        - cmd.retcode
+        - config.option
+        - pillar.get
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24
+    - function: revoke_cert
+      source:
+        path: salt/modules/tls.py
+        symbol: revoke_cert
+      summary: Revoke a certificate.
+      parameters:
+        - name: ca_name
+        - name: CN
+        - name: cacert_path
+          default: None
+        - name: ca_filename
+          default: None
+        - name: cert_path
+          default: None
+        - name: cert_filename
+          default: None
+        - name: crl_file
+          default: None
+        - name: digest
+          default: '"sha256"'
+      execution_dependencies:
+        - cmd.retcode
+        - config.option
+        - file.replace
+        - pillar.get
+      tests:
+        - path: tests/pytests/unit/modules/test_tls.py
+          functions: 24

@@ -1,0 +1,51 @@
+kind: exec
+module: chef
+source_module: chef
+path: salt/modules/chef.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _default_logfile
+      source:
+        path: salt/modules/chef.py
+        symbol: _default_logfile
+      summary: Retrieve the logfile name
+      parameters:
+        - name: exe_name
+    - function: client
+      source:
+        path: salt/modules/chef.py
+        symbol: client
+      summary: Execute a chef client run and return a dict with the stderr, stdout,
+      parameters:
+        - name: whyrun
+          default: "False"
+        - name: localmode
+          default: "False"
+        - name: logfile
+          default: None
+        - name: kwargs
+          kind: '**'
+    - function: solo
+      source:
+        path: salt/modules/chef.py
+        symbol: solo
+      summary: Execute a chef solo run and return a dict with the stderr, stdout,
+      parameters:
+        - name: whyrun
+          default: "False"
+        - name: logfile
+          default: None
+        - name: kwargs
+          kind: '**'
+    - function: _exec_cmd
+      source:
+        path: salt/modules/chef.py
+        symbol: _exec_cmd
+      parameters:
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run_all

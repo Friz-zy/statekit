@@ -1,0 +1,57 @@
+kind: state
+module: kmod
+source_module: kmod
+path: salt/states/kmod.py
+functions:
+    - function: _append_comment
+      source:
+        path: salt/states/kmod.py
+        symbol: _append_comment
+      summary: append ``comment`` to ``ret['comment']``
+      parameters:
+        - name: ret
+        - name: comment
+      execution_dependencies:
+        - kmod.available
+      tests:
+        - path: tests/pytests/unit/states/test_kmod.py
+          functions: 4
+    - function: present
+      source:
+        path: salt/states/kmod.py
+        symbol: present
+      summary: Ensure that the specified kernel module is loaded
+      parameters:
+        - name: name
+        - name: persist
+          default: "False"
+        - name: mods
+          default: None
+      execution_dependencies:
+        - kmod.available
+        - kmod.load
+        - kmod.mod_list
+      tests:
+        - path: tests/pytests/unit/states/test_kmod.py
+          functions: 4
+    - function: absent
+      source:
+        path: salt/states/kmod.py
+        symbol: absent
+      summary: Verify that the named kernel module is not loaded
+      parameters:
+        - name: name
+        - name: persist
+          default: "False"
+        - name: comment
+          default: "True"
+        - name: mods
+          default: None
+      execution_dependencies:
+        - kmod.available
+        - kmod.load
+        - kmod.mod_list
+        - kmod.remove
+      tests:
+        - path: tests/pytests/unit/states/test_kmod.py
+          functions: 4

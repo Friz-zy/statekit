@@ -1,0 +1,47 @@
+kind: state
+module: event
+source_module: event
+path: salt/states/event.py
+functions:
+    - function: send
+      source:
+        path: salt/states/event.py
+        symbol: send
+      summary: Send an event to the Salt Master
+      parameters:
+        - name: name
+        - name: data
+          default: None
+        - name: preload
+          default: None
+        - name: with_env
+          default: "False"
+        - name: with_grains
+          default: "False"
+        - name: with_pillar
+          default: "False"
+        - name: show_changed
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - event.send
+      tests:
+        - path: tests/pytests/unit/states/test_event.py
+          functions: 2
+    - function: wait
+      source:
+        path: salt/states/event.py
+        symbol: wait
+      summary: Fire an event on the Salt master event bus if called from a watch statement
+      parameters:
+        - name: name
+        - name: sfun
+          default: None
+        - name: data
+          default: None
+      execution_dependencies:
+        - event.send
+      tests:
+        - path: tests/pytests/unit/states/test_event.py
+          functions: 2

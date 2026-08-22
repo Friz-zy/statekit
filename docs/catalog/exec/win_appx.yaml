@@ -1,0 +1,87 @@
+kind: exec
+module: appx
+source_module: win_appx
+virtual: true
+path: salt/modules/win_appx.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _pkg_list
+      source:
+        path: salt/modules/win_appx.py
+        symbol: _pkg_list
+      parameters:
+        - name: raw
+        - name: field
+          default: '"Name"'
+      execution_dependencies:
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_appx.py
+          functions: 17
+    - function: list_
+      source:
+        path: salt/modules/win_appx.py
+        symbol: list_
+      summary: Get a list of Microsoft Store packages installed on the system.
+      parameters:
+        - name: query
+          default: None
+        - name: field
+          default: '"Name"'
+        - name: include_store
+          default: "False"
+        - name: frameworks
+          default: "False"
+        - name: bundles
+          default: "True"
+      execution_dependencies:
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_appx.py
+          functions: 17
+    - function: remove
+      source:
+        path: salt/modules/win_appx.py
+        symbol: remove
+      summary: Removes Microsoft Store packages from the system. If the package is part of
+      parameters:
+        - name: query
+          default: None
+        - name: include_store
+          default: "False"
+        - name: frameworks
+          default: "False"
+        - name: deprovision_only
+          default: "False"
+      execution_dependencies:
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_appx.py
+          functions: 17
+    - function: list_deprovisioned
+      source:
+        path: salt/modules/win_appx.py
+        symbol: list_deprovisioned
+      summary: When an app is deprovisioned, a registry key is created that will keep it
+      parameters:
+        - name: query
+          default: None
+      execution_dependencies:
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_appx.py
+          functions: 17
+    - function: install
+      source:
+        path: salt/modules/win_appx.py
+        symbol: install
+      summary: This function uses ``dism`` to provision a package. This means that it will
+      parameters:
+        - name: package
+      execution_dependencies:
+        - cmd.shell_info
+        - dism.add_provisioned_package
+      tests:
+        - path: tests/pytests/unit/modules/test_win_appx.py
+          functions: 17

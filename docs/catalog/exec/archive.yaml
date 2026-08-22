@@ -1,0 +1,343 @@
+kind: exec
+module: archive
+source_module: archive
+path: salt/modules/archive.py
+platform_markers:
+    - is_windows
+functions:
+    - function: list_
+      source:
+        path: salt/modules/archive.py
+        symbol: list_
+      summary: '.. versionadded:: 2016.11.0'
+      parameters:
+        - name: name
+        - name: archive_format
+          default: None
+        - name: options
+          default: None
+        - name: strip_components
+          default: None
+        - name: clean
+          default: "False"
+        - name: verbose
+          default: "False"
+        - name: saltenv
+          default: '"base"'
+        - name: source_hash
+          default: None
+        - name: use_etag
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_archive.py
+          functions: 23
+    - function: _glob
+      source:
+        path: salt/modules/archive.py
+        symbol: _glob
+      summary: In case ``pathname`` contains glob wildcards, performs expansion and returns
+      parameters:
+        - name: pathname
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_archive.py
+          functions: 23
+    - function: _expand_sources
+      source:
+        path: salt/modules/archive.py
+        symbol: _expand_sources
+      summary: Expands a user-provided specification of source files into a list of paths.
+      parameters:
+        - name: sources
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_archive.py
+          functions: 23
+    - function: tar
+      source:
+        path: salt/modules/archive.py
+        symbol: tar
+      summary: '.. note::'
+      parameters:
+        - name: options
+        - name: tarfile
+        - name: sources
+          default: None
+        - name: dest
+          default: None
+        - name: cwd
+          default: None
+        - name: template
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_archive.py
+          functions: 23
+    - function: gzip
+      source:
+        path: salt/modules/archive.py
+        symbol: gzip
+      summary: Uses the gzip command to create gzip files
+      parameters:
+        - name: sourcefile
+        - name: template
+          default: None
+        - name: runas
+          default: None
+        - name: options
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_archive.py
+          functions: 23
+    - function: gunzip
+      source:
+        path: salt/modules/archive.py
+        symbol: gunzip
+      summary: Uses the gunzip command to unpack gzip files
+      parameters:
+        - name: gzipfile
+        - name: template
+          default: None
+        - name: runas
+          default: None
+        - name: options
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_archive.py
+          functions: 23
+    - function: cmd_zip
+      source:
+        path: salt/modules/archive.py
+        symbol: cmd_zip
+      summary: '.. versionadded:: 2015.5.0'
+      parameters:
+        - name: zip_file
+        - name: sources
+        - name: template
+          default: None
+        - name: cwd
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/modules/test_archive.py
+          functions: 23
+    - function: zip_
+      source:
+        path: salt/modules/archive.py
+        symbol: zip_
+      summary: Uses the ``zipfile`` Python module to create zip files
+      parameters:
+        - name: zip_file
+        - name: sources
+        - name: template
+          default: None
+        - name: cwd
+          default: None
+        - name: runas
+          default: None
+        - name: zip64
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cp.cache_file
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_archive.py
+          functions: 23
+    - function: cmd_unzip
+      source:
+        path: salt/modules/archive.py
+        symbol: cmd_unzip
+      summary: '.. versionadded:: 2015.5.0'
+      parameters:
+        - name: zip_file
+        - name: dest
+        - name: excludes
+          default: None
+        - name: options
+          default: None
+        - name: template
+          default: None
+        - name: runas
+          default: None
+        - name: trim_output
+          default: "False"
+        - name: password
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cp.cache_file
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_archive.py
+          functions: 23
+    - function: unzip
+      source:
+        path: salt/modules/archive.py
+        symbol: unzip
+      summary: Uses the ``zipfile`` Python module to unpack zip files
+      parameters:
+        - name: zip_file
+        - name: dest
+        - name: excludes
+          default: None
+        - name: options
+          default: None
+        - name: template
+          default: None
+        - name: runas
+          default: None
+        - name: trim_output
+          default: "False"
+        - name: password
+          default: None
+        - name: extract_perms
+          default: "True"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cp.cache_file
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_archive.py
+          functions: 23
+    - function: is_encrypted
+      source:
+        path: salt/modules/archive.py
+        symbol: is_encrypted
+      summary: '.. versionadded:: 2016.11.0'
+      parameters:
+        - name: name
+        - name: clean
+          default: "False"
+        - name: saltenv
+          default: '"base"'
+        - name: source_hash
+          default: None
+        - name: use_etag
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cp.cache_file
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_archive.py
+          functions: 23
+    - function: rar
+      source:
+        path: salt/modules/archive.py
+        symbol: rar
+      summary: Uses `rar for Linux`_ to create rar files
+      parameters:
+        - name: rarfile
+        - name: sources
+        - name: template
+          default: None
+        - name: cwd
+          default: None
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cp.cache_file
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_archive.py
+          functions: 23
+    - function: unrar
+      source:
+        path: salt/modules/archive.py
+        symbol: unrar
+      summary: Uses `rar for Linux`_ to unpack rar files
+      parameters:
+        - name: rarfile
+        - name: dest
+        - name: excludes
+          default: None
+        - name: template
+          default: None
+        - name: runas
+          default: None
+        - name: trim_output
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cp.cache_file
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_archive.py
+          functions: 23
+    - function: _render_filenames
+      source:
+        path: salt/modules/archive.py
+        symbol: _render_filenames
+      summary: Process markup in the :param:`filenames` and :param:`zipfile` variables (NOT the
+      parameters:
+        - name: filenames
+        - name: zip_file
+        - name: saltenv
+        - name: template
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cp.cache_file
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_archive.py
+          functions: 23
+    - function: _trim_files
+      source:
+        path: salt/modules/archive.py
+        symbol: _trim_files
+      summary: Trim the file list for output.
+      parameters:
+        - name: files
+        - name: trim_output
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cp.cache_file
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_archive.py
+          functions: 23

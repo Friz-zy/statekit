@@ -1,0 +1,18 @@
+kind: state
+module: salt_proxy
+source_module: salt_proxy
+path: salt/states/salt_proxy.py
+functions:
+    - function: configure_proxy
+      source:
+        path: salt/states/salt_proxy.py
+        symbol: configure_proxy
+      summary: Create the salt proxy file and start the proxy process
+      parameters:
+        - name: name
+        - name: proxyname
+          default: '"p8000"'
+        - name: start
+          default: "True"
+      execution_dependencies:
+        - salt_proxy.configure_proxy

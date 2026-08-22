@@ -1,0 +1,112 @@
+kind: exec
+module: shadow
+source_module: solaris_shadow
+virtual: true
+path: salt/modules/solaris_shadow.py
+functions:
+    - function: default_hash
+      source:
+        path: salt/modules/solaris_shadow.py
+        symbol: default_hash
+      summary: Returns the default hash used for unset passwords
+      tests:
+        - path: tests/pytests/unit/modules/test_solaris_shadow.py
+          functions: 9
+    - function: info
+      source:
+        path: salt/modules/solaris_shadow.py
+        symbol: info
+      summary: Return information for the specified user
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_solaris_shadow.py
+          functions: 9
+    - function: set_maxdays
+      source:
+        path: salt/modules/solaris_shadow.py
+        symbol: set_maxdays
+      summary: Set the maximum number of days during which a password is valid. See man
+      parameters:
+        - name: name
+        - name: maxdays
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_solaris_shadow.py
+          functions: 9
+    - function: set_mindays
+      source:
+        path: salt/modules/solaris_shadow.py
+        symbol: set_mindays
+      summary: Set the minimum number of days between password changes. See man passwd.
+      parameters:
+        - name: name
+        - name: mindays
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_solaris_shadow.py
+          functions: 9
+    - function: gen_password
+      source:
+        path: salt/modules/solaris_shadow.py
+        symbol: gen_password
+      summary: '.. versionadded:: 2015.8.8'
+      parameters:
+        - name: password
+        - name: crypt_salt
+          default: None
+        - name: algorithm
+          default: '"sha512"'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_solaris_shadow.py
+          functions: 9
+    - function: del_password
+      source:
+        path: salt/modules/solaris_shadow.py
+        symbol: del_password
+      summary: '.. versionadded:: 2015.8.8'
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_solaris_shadow.py
+          functions: 9
+    - function: set_password
+      source:
+        path: salt/modules/solaris_shadow.py
+        symbol: set_password
+      summary: Set the password for a named user. The password must be a properly defined
+      parameters:
+        - name: name
+        - name: password
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_solaris_shadow.py
+          functions: 9
+    - function: set_warndays
+      source:
+        path: salt/modules/solaris_shadow.py
+        symbol: set_warndays
+      summary: Set the number of days of warning before a password change is required.
+      parameters:
+        - name: name
+        - name: warndays
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_solaris_shadow.py
+          functions: 9

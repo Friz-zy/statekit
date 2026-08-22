@@ -1,0 +1,922 @@
+kind: exec
+module: pkg
+source_module: pkgng
+virtual: true
+path: salt/modules/pkgng.py
+functions:
+    - function: _pkg
+      source:
+        path: salt/modules/pkgng.py
+        symbol: _pkg
+      summary: Returns the prefix for a pkg command, using -j if a jail is specified, or
+      parameters:
+        - name: jail
+          default: None
+        - name: chroot
+          default: None
+        - name: root
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: _get_pkgng_version
+      source:
+        path: salt/modules/pkgng.py
+        symbol: _get_pkgng_version
+      summary: return the version of 'pkg'
+      parameters:
+        - name: jail
+          default: None
+        - name: chroot
+          default: None
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: _get_version
+      source:
+        path: salt/modules/pkgng.py
+        symbol: _get_version
+      summary: '``pkg search`` will return all packages for which the pattern is a match.'
+      parameters:
+        - name: name
+        - name: results
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: _contextkey
+      source:
+        path: salt/modules/pkgng.py
+        symbol: _contextkey
+      summary: As this module is designed to manipulate packages in jails and chroots, use
+      parameters:
+        - name: jail
+          default: None
+        - name: chroot
+          default: None
+        - name: root
+          default: None
+        - name: prefix
+          default: '"pkg.list_pkgs"'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: parse_config
+      source:
+        path: salt/modules/pkgng.py
+        symbol: parse_config
+      summary: Return dict of uncommented global variables.
+      parameters:
+        - name: file_name
+          default: '"/usr/local/etc/pkg.conf"'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: version
+      source:
+        path: salt/modules/pkgng.py
+        symbol: version
+      summary: Returns a string representing the package version or an empty string if not
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: refresh_db
+      source:
+        path: salt/modules/pkgng.py
+        symbol: refresh_db
+      summary: Refresh PACKAGESITE contents
+      parameters:
+        - name: jail
+          default: None
+        - name: chroot
+          default: None
+        - name: root
+          default: None
+        - name: force
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: latest_version
+      source:
+        path: salt/modules/pkgng.py
+        symbol: latest_version
+      summary: Return the latest version of the named package available for upgrade or
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: _list_pkgs_from_context
+      source:
+        path: salt/modules/pkgng.py
+        symbol: _list_pkgs_from_context
+      summary: Use pkg list from __context__
+      parameters:
+        - name: versions_as_list
+        - name: contextkey_pkg
+        - name: contextkey_origins
+        - name: with_origin
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: list_pkgs
+      source:
+        path: salt/modules/pkgng.py
+        symbol: list_pkgs
+      summary: 'List the packages currently installed as a dict::'
+      parameters:
+        - name: versions_as_list
+          default: "False"
+        - name: jail
+          default: None
+        - name: chroot
+          default: None
+        - name: root
+          default: None
+        - name: with_origin
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: update_package_site
+      source:
+        path: salt/modules/pkgng.py
+        symbol: update_package_site
+      summary: Updates remote package repo URL, PACKAGESITE var to be exact.
+      parameters:
+        - name: new_url
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+        - file.sed
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: stats
+      source:
+        path: salt/modules/pkgng.py
+        symbol: stats
+      summary: Return pkgng stats.
+      parameters:
+        - name: local
+          default: "False"
+        - name: remote
+          default: "False"
+        - name: jail
+          default: None
+        - name: chroot
+          default: None
+        - name: root
+          default: None
+        - name: bytes
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+        - file.sed
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: backup
+      source:
+        path: salt/modules/pkgng.py
+        symbol: backup
+      summary: Export installed packages into yaml+mtree file
+      parameters:
+        - name: file_name
+        - name: jail
+          default: None
+        - name: chroot
+          default: None
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+        - file.sed
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: restore
+      source:
+        path: salt/modules/pkgng.py
+        symbol: restore
+      summary: Reads archive created by pkg backup -d and recreates the database.
+      parameters:
+        - name: file_name
+        - name: jail
+          default: None
+        - name: chroot
+          default: None
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+        - file.sed
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: audit
+      source:
+        path: salt/modules/pkgng.py
+        symbol: audit
+      summary: Audits installed packages against known vulnerabilities
+      parameters:
+        - name: jail
+          default: None
+        - name: chroot
+          default: None
+        - name: root
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+        - file.sed
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: install
+      source:
+        path: salt/modules/pkgng.py
+        symbol: install
+      summary: Install package(s) from a repository
+      parameters:
+        - name: name
+          default: None
+        - name: fromrepo
+          default: None
+        - name: pkgs
+          default: None
+        - name: sources
+          default: None
+        - name: jail
+          default: None
+        - name: chroot
+          default: None
+        - name: root
+          default: None
+        - name: orphan
+          default: "False"
+        - name: force
+          default: "False"
+        - name: glob
+          default: "False"
+        - name: local
+          default: "False"
+        - name: dryrun
+          default: "False"
+        - name: quiet
+          default: "False"
+        - name: reinstall_requires
+          default: "False"
+        - name: regex
+          default: "False"
+        - name: pcre
+          default: "False"
+        - name: batch
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.sed
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: remove
+      source:
+        path: salt/modules/pkgng.py
+        symbol: remove
+      summary: Remove a package from the database and system
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: jail
+          default: None
+        - name: chroot
+          default: None
+        - name: root
+          default: None
+        - name: all_installed
+          default: "False"
+        - name: force
+          default: "False"
+        - name: glob
+          default: "False"
+        - name: dryrun
+          default: "False"
+        - name: recurse
+          default: "False"
+        - name: regex
+          default: "False"
+        - name: pcre
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.sed
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: upgrade
+      source:
+        path: salt/modules/pkgng.py
+        symbol: upgrade
+      summary: Upgrade named or all packages (run a ``pkg upgrade``). If <package name> is
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.sed
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: clean
+      source:
+        path: salt/modules/pkgng.py
+        symbol: clean
+      summary: Cleans the local cache of fetched remote packages
+      parameters:
+        - name: jail
+          default: None
+        - name: chroot
+          default: None
+        - name: root
+          default: None
+        - name: clean_all
+          default: "False"
+        - name: dryrun
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.sed
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: autoremove
+      source:
+        path: salt/modules/pkgng.py
+        symbol: autoremove
+      summary: Delete packages which were automatically installed as dependencies and are
+      parameters:
+        - name: jail
+          default: None
+        - name: chroot
+          default: None
+        - name: root
+          default: None
+        - name: dryrun
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.sed
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: check
+      source:
+        path: salt/modules/pkgng.py
+        symbol: check
+      summary: Sanity checks installed packages
+      parameters:
+        - name: jail
+          default: None
+        - name: chroot
+          default: None
+        - name: root
+          default: None
+        - name: depends
+          default: "False"
+        - name: recompute
+          default: "False"
+        - name: checksum
+          default: "False"
+        - name: checklibs
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.sed
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: which
+      source:
+        path: salt/modules/pkgng.py
+        symbol: which
+      summary: Displays which package installed a specific file
+      parameters:
+        - name: path
+        - name: jail
+          default: None
+        - name: chroot
+          default: None
+        - name: root
+          default: None
+        - name: origin
+          default: "False"
+        - name: quiet
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.sed
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: search
+      source:
+        path: salt/modules/pkgng.py
+        symbol: search
+      summary: Searches in remote package repositories
+      parameters:
+        - name: name
+        - name: jail
+          default: None
+        - name: chroot
+          default: None
+        - name: root
+          default: None
+        - name: exact
+          default: "False"
+        - name: glob
+          default: "False"
+        - name: regex
+          default: "False"
+        - name: pcre
+          default: "False"
+        - name: comment
+          default: "False"
+        - name: desc
+          default: "False"
+        - name: full
+          default: "False"
+        - name: depends
+          default: "False"
+        - name: size
+          default: "False"
+        - name: quiet
+          default: "False"
+        - name: origin
+          default: "False"
+        - name: prefix
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.sed
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: fetch
+      source:
+        path: salt/modules/pkgng.py
+        symbol: fetch
+      summary: Fetches remote packages
+      parameters:
+        - name: name
+        - name: jail
+          default: None
+        - name: chroot
+          default: None
+        - name: root
+          default: None
+        - name: fetch_all
+          default: "False"
+        - name: quiet
+          default: "False"
+        - name: fromrepo
+          default: None
+        - name: glob
+          default: "True"
+        - name: regex
+          default: "False"
+        - name: pcre
+          default: "False"
+        - name: local
+          default: "False"
+        - name: depends
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.sed
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: updating
+      source:
+        path: salt/modules/pkgng.py
+        symbol: updating
+      summary: ''''
+      parameters:
+        - name: name
+        - name: jail
+          default: None
+        - name: chroot
+          default: None
+        - name: root
+          default: None
+        - name: filedate
+          default: None
+        - name: filename
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.sed
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: hold
+      source:
+        path: salt/modules/pkgng.py
+        symbol: hold
+      summary: Version-lock packages
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.sed
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: unhold
+      source:
+        path: salt/modules/pkgng.py
+        symbol: unhold
+      summary: Remove version locks
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.sed
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: list_locked
+      source:
+        path: salt/modules/pkgng.py
+        symbol: list_locked
+      summary: Query the package database those packages which are
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.sed
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: locked
+      source:
+        path: salt/modules/pkgng.py
+        symbol: locked
+      summary: Query the package database to determine if the named package
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.sed
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: lock
+      source:
+        path: salt/modules/pkgng.py
+        symbol: lock
+      summary: Lock the named package against reinstallation, modification or deletion.
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.sed
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: unlock
+      source:
+        path: salt/modules/pkgng.py
+        symbol: unlock
+      summary: Unlock the named package against reinstallation, modification or deletion.
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.sed
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: _lockcmd
+      source:
+        path: salt/modules/pkgng.py
+        symbol: _lockcmd
+      summary: Helper function for lock and unlock commands, because their syntax is identical.
+      parameters:
+        - name: subcmd
+        - name: pkgname
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.sed
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: list_upgrades
+      source:
+        path: salt/modules/pkgng.py
+        symbol: list_upgrades
+      summary: List those packages for which an upgrade is available
+      parameters:
+        - name: refresh
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.sed
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: _parse_upgrade
+      source:
+        path: salt/modules/pkgng.py
+        symbol: _parse_upgrade
+      summary: Parse the output from the ``pkg upgrade --dry-run`` command
+      parameters:
+        - name: stdout
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.sed
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44
+    - function: version_cmp
+      source:
+        path: salt/modules/pkgng.py
+        symbol: version_cmp
+      summary: Do a cmp-style comparison on two packages. Return -1 if pkg1 < pkg2, 0 if
+      parameters:
+        - name: pkg1
+        - name: pkg2
+        - name: ignore_epoch
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cmd.run_stdout
+        - file.sed
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgng.py
+          functions: 44

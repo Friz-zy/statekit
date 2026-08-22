@@ -1,0 +1,121 @@
+kind: exec
+module: acl
+source_module: linux_acl
+virtual: true
+path: salt/modules/linux_acl.py
+functions:
+    - function: version
+      source:
+        path: salt/modules/linux_acl.py
+        symbol: version
+      summary: Return facl version from getfacl --version
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_linux_acl.py
+          functions: 0
+    - function: _raise_on_no_files
+      source:
+        path: salt/modules/linux_acl.py
+        symbol: _raise_on_no_files
+      parameters:
+        - name: args
+          kind: '*'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_linux_acl.py
+          functions: 0
+    - function: getfacl
+      source:
+        path: salt/modules/linux_acl.py
+        symbol: getfacl
+      summary: Return (extremely verbose) map of FACLs on specified file(s)
+      parameters:
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_linux_acl.py
+          functions: 0
+    - function: _parse_acl
+      source:
+        path: salt/modules/linux_acl.py
+        symbol: _parse_acl
+      summary: Parse a single ACL rule
+      parameters:
+        - name: acl
+        - name: user
+        - name: group
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_linux_acl.py
+          functions: 0
+    - function: wipefacls
+      source:
+        path: salt/modules/linux_acl.py
+        symbol: wipefacls
+      summary: Remove all FACLs from the specified file(s)
+      parameters:
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_linux_acl.py
+          functions: 0
+    - function: _acl_prefix
+      source:
+        path: salt/modules/linux_acl.py
+        symbol: _acl_prefix
+      parameters:
+        - name: acl_type
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_linux_acl.py
+          functions: 0
+    - function: modfacl
+      source:
+        path: salt/modules/linux_acl.py
+        symbol: modfacl
+      summary: Add or modify a FACL for the specified file(s)
+      parameters:
+        - name: acl_type
+        - name: acl_name
+          default: '""'
+        - name: perms
+          default: '""'
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_linux_acl.py
+          functions: 0
+    - function: delfacl
+      source:
+        path: salt/modules/linux_acl.py
+        symbol: delfacl
+      summary: Remove specific FACL from the specified file(s)
+      parameters:
+        - name: acl_type
+        - name: acl_name
+          default: '""'
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_linux_acl.py
+          functions: 0

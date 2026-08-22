@@ -1,0 +1,64 @@
+kind: exec
+module: event
+source_module: event
+path: salt/modules/event.py
+functions:
+    - function: _dict_subset
+      source:
+        path: salt/modules/event.py
+        symbol: _dict_subset
+      summary: Return a dictionary of only the subset of keys/values specified in keys
+      parameters:
+        - name: keys
+        - name: master_dict
+      tests:
+        - path: tests/pytests/unit/modules/test_event.py
+          functions: 5
+    - function: fire_master
+      source:
+        path: salt/modules/event.py
+        symbol: fire_master
+      summary: Fire an event off up to the master server
+      parameters:
+        - name: data
+        - name: tag
+        - name: preload
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_event.py
+          functions: 5
+    - function: fire
+      source:
+        path: salt/modules/event.py
+        symbol: fire
+      summary: Fire an event on the local minion event bus. Data must be formed as a dict.
+      parameters:
+        - name: data
+        - name: tag
+      tests:
+        - path: tests/pytests/unit/modules/test_event.py
+          functions: 5
+    - function: send
+      source:
+        path: salt/modules/event.py
+        symbol: send
+      summary: Send an event to the Salt Master
+      parameters:
+        - name: tag
+        - name: data
+          default: None
+        - name: preload
+          default: None
+        - name: with_env
+          default: "False"
+        - name: with_grains
+          default: "False"
+        - name: with_pillar
+          default: "False"
+        - name: with_env_opts
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_event.py
+          functions: 5

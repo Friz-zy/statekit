@@ -1,0 +1,163 @@
+kind: exec
+module: ethtool
+source_module: ethtool
+virtual: true
+path: salt/modules/ethtool.py
+functions:
+    - function: show_ring
+      source:
+        path: salt/modules/ethtool.py
+        symbol: show_ring
+      summary: Queries the specified network device for rx/tx ring parameter information
+      parameters:
+        - name: devname
+      tests:
+        - path: tests/pytests/unit/modules/test_ethtool.py
+          functions: 8
+    - function: show_coalesce
+      source:
+        path: salt/modules/ethtool.py
+        symbol: show_coalesce
+      summary: Queries the specified network device for coalescing information
+      parameters:
+        - name: devname
+      tests:
+        - path: tests/pytests/unit/modules/test_ethtool.py
+          functions: 8
+    - function: show_driver
+      source:
+        path: salt/modules/ethtool.py
+        symbol: show_driver
+      summary: Queries the specified network device for associated driver information
+      parameters:
+        - name: devname
+      tests:
+        - path: tests/pytests/unit/modules/test_ethtool.py
+          functions: 8
+    - function: set_ring
+      source:
+        path: salt/modules/ethtool.py
+        symbol: set_ring
+      summary: Changes the rx/tx ring parameters of the specified network device
+      parameters:
+        - name: devname
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_ethtool.py
+          functions: 8
+    - function: set_coalesce
+      source:
+        path: salt/modules/ethtool.py
+        symbol: set_coalesce
+      summary: Changes the coalescing settings of the specified network device
+      parameters:
+        - name: devname
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_ethtool.py
+          functions: 8
+    - function: show_offload
+      source:
+        path: salt/modules/ethtool.py
+        symbol: show_offload
+      summary: Queries the specified network device for the state of protocol offload and other features
+      parameters:
+        - name: devname
+      tests:
+        - path: tests/pytests/unit/modules/test_ethtool.py
+          functions: 8
+    - function: set_offload
+      source:
+        path: salt/modules/ethtool.py
+        symbol: set_offload
+      summary: Changes the offload parameters and other features of the specified network device
+      parameters:
+        - name: devname
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_ethtool.py
+          functions: 8
+    - function: _ethtool_command
+      source:
+        path: salt/modules/ethtool.py
+        symbol: _ethtool_command
+      summary: Helper function to build an ethtool command
+      parameters:
+        - name: devname
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_ethtool.py
+          functions: 8
+    - function: _validate_params
+      source:
+        path: salt/modules/ethtool.py
+        symbol: _validate_params
+      summary: Helper function to validate parameters to ethtool commands. Boolean values
+      parameters:
+        - name: valid_params
+        - name: kwargs
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_ethtool.py
+          functions: 8
+    - function: show_pause
+      source:
+        path: salt/modules/ethtool.py
+        symbol: show_pause
+      summary: '.. versionadded:: 3006.0'
+      parameters:
+        - name: devname
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_ethtool.py
+          functions: 8
+    - function: set_pause
+      source:
+        path: salt/modules/ethtool.py
+        symbol: set_pause
+      summary: '.. versionadded:: 3006.0'
+      parameters:
+        - name: devname
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_ethtool.py
+          functions: 8
+    - function: show_features
+      source:
+        path: salt/modules/ethtool.py
+        symbol: show_features
+      summary: '.. versionadded:: 3006.0'
+      parameters:
+        - name: devname
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_ethtool.py
+          functions: 8
+    - function: set_feature
+      source:
+        path: salt/modules/ethtool.py
+        symbol: set_feature
+      summary: '.. versionadded:: 3006.0'
+      parameters:
+        - name: devname
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_ethtool.py
+          functions: 8

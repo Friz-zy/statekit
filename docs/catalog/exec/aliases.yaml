@@ -1,0 +1,70 @@
+kind: exec
+module: aliases
+source_module: aliases
+path: salt/modules/aliases.py
+functions:
+    - function: list_aliases
+      source:
+        path: salt/modules/aliases.py
+        symbol: list_aliases
+      summary: 'Return the aliases found in the aliases file in this format::'
+      execution_dependencies:
+        - cmd.run
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_aliases.py
+          functions: 16
+    - function: get_target
+      source:
+        path: salt/modules/aliases.py
+        symbol: get_target
+      summary: Return the target associated with an alias
+      parameters:
+        - name: alias
+      execution_dependencies:
+        - cmd.run
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_aliases.py
+          functions: 16
+    - function: has_target
+      source:
+        path: salt/modules/aliases.py
+        symbol: has_target
+      summary: Return true if the alias/target is set
+      parameters:
+        - name: alias
+        - name: target
+      execution_dependencies:
+        - cmd.run
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_aliases.py
+          functions: 16
+    - function: set_target
+      source:
+        path: salt/modules/aliases.py
+        symbol: set_target
+      summary: Set the entry in the aliases file for the given alias, this will overwrite
+      parameters:
+        - name: alias
+        - name: target
+      execution_dependencies:
+        - cmd.run
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_aliases.py
+          functions: 16
+    - function: rm_alias
+      source:
+        path: salt/modules/aliases.py
+        symbol: rm_alias
+      summary: Remove an entry from the aliases file
+      parameters:
+        - name: alias
+      execution_dependencies:
+        - cmd.run
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_aliases.py
+          functions: 16

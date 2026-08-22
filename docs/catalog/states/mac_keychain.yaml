@@ -1,0 +1,75 @@
+kind: state
+module: keychain
+source_module: mac_keychain
+virtual: true
+path: salt/states/mac_keychain.py
+platform_markers:
+    - is_darwin
+functions:
+    - function: installed
+      source:
+        path: salt/states/mac_keychain.py
+        symbol: installed
+      summary: Install a p12 certificate file into the macOS keychain
+      parameters:
+        - name: name
+        - name: password
+        - name: keychain
+          default: '"/Library/Keychains/System.keychain"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+        - keychain.get_friendly_name
+        - keychain.get_hash
+        - keychain.install
+        - keychain.list_certs
+        - keychain.uninstall
+      tests:
+        - path: tests/pytests/unit/states/test_mac_keychain.py
+          functions: 9
+    - function: uninstalled
+      source:
+        path: salt/states/mac_keychain.py
+        symbol: uninstalled
+      summary: Uninstall a p12 certificate file from the macOS keychain
+      parameters:
+        - name: name
+        - name: password
+        - name: keychain
+          default: '"/Library/Keychains/System.keychain"'
+        - name: keychain_password
+          default: None
+      execution_dependencies:
+        - cp.cache_file
+        - keychain.get_friendly_name
+        - keychain.get_hash
+        - keychain.install
+        - keychain.list_certs
+        - keychain.uninstall
+      tests:
+        - path: tests/pytests/unit/states/test_mac_keychain.py
+          functions: 9
+    - function: default_keychain
+      source:
+        path: salt/states/mac_keychain.py
+        symbol: default_keychain
+      summary: Set the default keychain to use
+      parameters:
+        - name: name
+        - name: domain
+          default: '"user"'
+        - name: user
+          default: None
+      execution_dependencies:
+        - cp.cache_file
+        - keychain.get_default_keychain
+        - keychain.get_friendly_name
+        - keychain.get_hash
+        - keychain.install
+        - keychain.list_certs
+        - keychain.set_default_keychain
+        - keychain.uninstall
+      tests:
+        - path: tests/pytests/unit/states/test_mac_keychain.py
+          functions: 9

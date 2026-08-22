@@ -1,0 +1,118 @@
+kind: exec
+module: environ
+source_module: environ
+path: salt/modules/environ.py
+platform_markers:
+    - is_windows
+functions:
+    - function: setval
+      source:
+        path: salt/modules/environ.py
+        symbol: setval
+      summary: Set a single salt process environment variable. Returns True
+      parameters:
+        - name: key
+        - name: val
+        - name: false_unsets
+          default: "False"
+        - name: permanent
+          default: "False"
+      utility_dependencies:
+        - reg.delete_value
+        - reg.set_value
+        - win_functions.broadcast_setting_change
+      tests:
+        - path: tests/pytests/unit/modules/test_environ.py
+          functions: 9
+    - function: setenv
+      source:
+        path: salt/modules/environ.py
+        symbol: setenv
+      summary: Set multiple salt process environment variables from a dict.
+      parameters:
+        - name: environ
+        - name: false_unsets
+          default: "False"
+        - name: clear_all
+          default: "False"
+        - name: update_minion
+          default: "False"
+        - name: permanent
+          default: "False"
+      execution_dependencies:
+        - event.fire
+      utility_dependencies:
+        - reg.delete_value
+        - reg.set_value
+        - win_functions.broadcast_setting_change
+      tests:
+        - path: tests/pytests/unit/modules/test_environ.py
+          functions: 9
+    - function: get
+      source:
+        path: salt/modules/environ.py
+        symbol: get
+      summary: Get a single salt process environment variable.
+      parameters:
+        - name: key
+        - name: default
+          default: '""'
+      execution_dependencies:
+        - event.fire
+      utility_dependencies:
+        - reg.delete_value
+        - reg.set_value
+        - win_functions.broadcast_setting_change
+      tests:
+        - path: tests/pytests/unit/modules/test_environ.py
+          functions: 9
+    - function: has_value
+      source:
+        path: salt/modules/environ.py
+        symbol: has_value
+      summary: Determine whether the key exists in the current salt process
+      parameters:
+        - name: key
+        - name: value
+          default: None
+      execution_dependencies:
+        - event.fire
+      utility_dependencies:
+        - reg.delete_value
+        - reg.set_value
+        - win_functions.broadcast_setting_change
+      tests:
+        - path: tests/pytests/unit/modules/test_environ.py
+          functions: 9
+    - function: item
+      source:
+        path: salt/modules/environ.py
+        symbol: item
+      summary: Get one or more salt process environment variables.
+      parameters:
+        - name: keys
+        - name: default
+          default: '""'
+      execution_dependencies:
+        - event.fire
+      utility_dependencies:
+        - reg.delete_value
+        - reg.set_value
+        - win_functions.broadcast_setting_change
+      tests:
+        - path: tests/pytests/unit/modules/test_environ.py
+          functions: 9
+    - function: items
+      source:
+        path: salt/modules/environ.py
+        symbol: items
+      summary: Return a dict of the entire environment set for the salt process
+      execution_dependencies:
+        - event.fire
+      utility_dependencies:
+        - reg.delete_value
+        - reg.set_value
+        - win_functions.broadcast_setting_change
+      tests:
+        - path: tests/pytests/unit/modules/test_environ.py
+          functions: 9

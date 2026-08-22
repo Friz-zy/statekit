@@ -1,0 +1,216 @@
+kind: state
+module: iptables
+source_module: iptables
+path: salt/states/iptables.py
+functions:
+    - function: chain_present
+      source:
+        path: salt/states/iptables.py
+        symbol: chain_present
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: name
+        - name: table
+          default: '"filter"'
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - iptables.check_chain
+        - iptables.new_chain
+      tests:
+        - path: tests/pytests/unit/states/test_iptables.py
+          functions: 8
+    - function: chain_absent
+      source:
+        path: salt/states/iptables.py
+        symbol: chain_absent
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: name
+        - name: table
+          default: '"filter"'
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - iptables.check_chain
+        - iptables.delete_chain
+        - iptables.flush
+        - iptables.new_chain
+      tests:
+        - path: tests/pytests/unit/states/test_iptables.py
+          functions: 8
+    - function: append
+      source:
+        path: salt/states/iptables.py
+        symbol: append
+      summary: '.. versionadded:: 0.17.0'
+      parameters:
+        - name: name
+        - name: table
+          default: '"filter"'
+        - name: family
+          default: '"ipv4"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - iptables.append
+        - iptables.build_rule
+        - iptables.check
+        - iptables.check_chain
+        - iptables.delete_chain
+        - iptables.flush
+        - iptables.get_rules
+        - iptables.get_saved_rules
+        - iptables.new_chain
+        - iptables.save
+      tests:
+        - path: tests/pytests/unit/states/test_iptables.py
+          functions: 8
+    - function: insert
+      source:
+        path: salt/states/iptables.py
+        symbol: insert
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: name
+        - name: table
+          default: '"filter"'
+        - name: family
+          default: '"ipv4"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - iptables.append
+        - iptables.build_rule
+        - iptables.check
+        - iptables.check_chain
+        - iptables.delete_chain
+        - iptables.flush
+        - iptables.get_rules
+        - iptables.get_saved_rules
+        - iptables.insert
+        - iptables.new_chain
+        - iptables.save
+      tests:
+        - path: tests/pytests/unit/states/test_iptables.py
+          functions: 8
+    - function: delete
+      source:
+        path: salt/states/iptables.py
+        symbol: delete
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: name
+        - name: table
+          default: '"filter"'
+        - name: family
+          default: '"ipv4"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - iptables.append
+        - iptables.build_rule
+        - iptables.check
+        - iptables.check_chain
+        - iptables.delete
+        - iptables.delete_chain
+        - iptables.flush
+        - iptables.get_rules
+        - iptables.get_saved_rules
+        - iptables.insert
+        - iptables.new_chain
+        - iptables.save
+      tests:
+        - path: tests/pytests/unit/states/test_iptables.py
+          functions: 8
+    - function: set_policy
+      source:
+        path: salt/states/iptables.py
+        symbol: set_policy
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: name
+        - name: table
+          default: '"filter"'
+        - name: family
+          default: '"ipv4"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - iptables.append
+        - iptables.build_rule
+        - iptables.check
+        - iptables.check_chain
+        - iptables.delete
+        - iptables.delete_chain
+        - iptables.flush
+        - iptables.get_policy
+        - iptables.get_rules
+        - iptables.get_saved_rules
+        - iptables.insert
+        - iptables.new_chain
+        - iptables.save
+        - iptables.set_policy
+      tests:
+        - path: tests/pytests/unit/states/test_iptables.py
+          functions: 8
+    - function: flush
+      source:
+        path: salt/states/iptables.py
+        symbol: flush
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: name
+        - name: table
+          default: '"filter"'
+        - name: family
+          default: '"ipv4"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - iptables.append
+        - iptables.build_rule
+        - iptables.check
+        - iptables.check_chain
+        - iptables.delete
+        - iptables.delete_chain
+        - iptables.flush
+        - iptables.get_policy
+        - iptables.get_rules
+        - iptables.get_saved_rules
+        - iptables.insert
+        - iptables.new_chain
+        - iptables.save
+        - iptables.set_policy
+      tests:
+        - path: tests/pytests/unit/states/test_iptables.py
+          functions: 8
+    - function: mod_aggregate
+      source:
+        path: salt/states/iptables.py
+        symbol: mod_aggregate
+      summary: The mod_aggregate function which looks up all rules in the available
+      parameters:
+        - name: low
+        - name: chunks
+        - name: running
+      execution_dependencies:
+        - iptables.append
+        - iptables.build_rule
+        - iptables.check
+        - iptables.check_chain
+        - iptables.delete
+        - iptables.delete_chain
+        - iptables.flush
+        - iptables.get_policy
+        - iptables.get_rules
+        - iptables.get_saved_rules
+        - iptables.insert
+        - iptables.new_chain
+        - iptables.save
+        - iptables.set_policy
+      utility_dependencies:
+        - state.gen_tag
+      tests:
+        - path: tests/pytests/unit/states/test_iptables.py
+          functions: 8

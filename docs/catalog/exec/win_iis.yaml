@@ -1,0 +1,628 @@
+kind: exec
+module: win_iis
+source_module: win_iis
+virtual: true
+path: salt/modules/win_iis.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _get_binding_info
+      source:
+        path: salt/modules/win_iis.py
+        symbol: _get_binding_info
+      summary: Combine the host header, IP address, and TCP port into bindingInformation
+      parameters:
+        - name: host_header
+          default: '""'
+        - name: ip_address
+          default: '"*"'
+        - name: port
+          default: "80"
+      execution_dependencies:
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: _list_certs
+      source:
+        path: salt/modules/win_iis.py
+        symbol: _list_certs
+      summary: List details of available certificates in the LocalMachine certificate
+      parameters:
+        - name: certificate_store
+          default: '"My"'
+      execution_dependencies:
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: _iisVersion
+      source:
+        path: salt/modules/win_iis.py
+        symbol: _iisVersion
+      execution_dependencies:
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: _srvmgr
+      source:
+        path: salt/modules/win_iis.py
+        symbol: _srvmgr
+      summary: Execute a powershell command from the WebAdministration PS module.
+      parameters:
+        - name: cmd
+        - name: return_json
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: _collection_match_to_index
+      source:
+        path: salt/modules/win_iis.py
+        symbol: _collection_match_to_index
+      summary: Returns index of collection item matching the match dictionary.
+      parameters:
+        - name: pspath
+        - name: colfilter
+        - name: name
+        - name: match
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: _prepare_settings
+      source:
+        path: salt/modules/win_iis.py
+        symbol: _prepare_settings
+      summary: Prepare settings before execution with get or set functions.
+      parameters:
+        - name: pspath
+        - name: settings
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: list_sites
+      source:
+        path: salt/modules/win_iis.py
+        symbol: list_sites
+      summary: List all the currently deployed websites.
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: create_site
+      source:
+        path: salt/modules/win_iis.py
+        symbol: create_site
+      summary: Create a basic website in IIS.
+      parameters:
+        - name: name
+        - name: sourcepath
+        - name: apppool
+          default: '""'
+        - name: hostheader
+          default: '""'
+        - name: ipaddress
+          default: '"*"'
+        - name: port
+          default: "80"
+        - name: protocol
+          default: '"http"'
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: modify_site
+      source:
+        path: salt/modules/win_iis.py
+        symbol: modify_site
+      summary: Modify a basic website in IIS.
+      parameters:
+        - name: name
+        - name: sourcepath
+          default: None
+        - name: apppool
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: remove_site
+      source:
+        path: salt/modules/win_iis.py
+        symbol: remove_site
+      summary: Delete a website from IIS.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: stop_site
+      source:
+        path: salt/modules/win_iis.py
+        symbol: stop_site
+      summary: Stop a Web Site in IIS.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: start_site
+      source:
+        path: salt/modules/win_iis.py
+        symbol: start_site
+      summary: Start a Web Site in IIS.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: restart_site
+      source:
+        path: salt/modules/win_iis.py
+        symbol: restart_site
+      summary: Restart a Web Site in IIS.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: list_bindings
+      source:
+        path: salt/modules/win_iis.py
+        symbol: list_bindings
+      summary: Get all configured IIS bindings for the specified site.
+      parameters:
+        - name: site
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: create_binding
+      source:
+        path: salt/modules/win_iis.py
+        symbol: create_binding
+      summary: Create an IIS Web Binding.
+      parameters:
+        - name: site
+        - name: hostheader
+          default: '""'
+        - name: ipaddress
+          default: '"*"'
+        - name: port
+          default: "80"
+        - name: protocol
+          default: '"http"'
+        - name: sslflags
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: modify_binding
+      source:
+        path: salt/modules/win_iis.py
+        symbol: modify_binding
+      summary: Modify an IIS Web Binding. Use ``site`` and ``binding`` to target the
+      parameters:
+        - name: site
+        - name: binding
+        - name: hostheader
+          default: None
+        - name: ipaddress
+          default: None
+        - name: port
+          default: None
+        - name: sslflags
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: remove_binding
+      source:
+        path: salt/modules/win_iis.py
+        symbol: remove_binding
+      summary: Remove an IIS binding.
+      parameters:
+        - name: site
+        - name: hostheader
+          default: '""'
+        - name: ipaddress
+          default: '"*"'
+        - name: port
+          default: "80"
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: list_cert_bindings
+      source:
+        path: salt/modules/win_iis.py
+        symbol: list_cert_bindings
+      summary: List certificate bindings for an IIS site.
+      parameters:
+        - name: site
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: create_cert_binding
+      source:
+        path: salt/modules/win_iis.py
+        symbol: create_cert_binding
+      summary: Assign a certificate to an IIS Web Binding.
+      parameters:
+        - name: name
+        - name: site
+        - name: hostheader
+          default: '""'
+        - name: ipaddress
+          default: '"*"'
+        - name: port
+          default: "443"
+        - name: sslflags
+          default: "0"
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: remove_cert_binding
+      source:
+        path: salt/modules/win_iis.py
+        symbol: remove_cert_binding
+      summary: Remove a certificate from an IIS Web Binding.
+      parameters:
+        - name: name
+        - name: site
+        - name: hostheader
+          default: '""'
+        - name: ipaddress
+          default: '"*"'
+        - name: port
+          default: "443"
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: list_apppools
+      source:
+        path: salt/modules/win_iis.py
+        symbol: list_apppools
+      summary: List all configured IIS application pools.
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: create_apppool
+      source:
+        path: salt/modules/win_iis.py
+        symbol: create_apppool
+      summary: Create an IIS application pool.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: remove_apppool
+      source:
+        path: salt/modules/win_iis.py
+        symbol: remove_apppool
+      summary: Remove an IIS application pool.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: stop_apppool
+      source:
+        path: salt/modules/win_iis.py
+        symbol: stop_apppool
+      summary: Stop an IIS application pool.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: start_apppool
+      source:
+        path: salt/modules/win_iis.py
+        symbol: start_apppool
+      summary: Start an IIS application pool.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: restart_apppool
+      source:
+        path: salt/modules/win_iis.py
+        symbol: restart_apppool
+      summary: Restart an IIS application pool.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: get_container_setting
+      source:
+        path: salt/modules/win_iis.py
+        symbol: get_container_setting
+      summary: Get the value of the setting for the IIS container.
+      parameters:
+        - name: name
+        - name: container
+        - name: settings
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: set_container_setting
+      source:
+        path: salt/modules/win_iis.py
+        symbol: set_container_setting
+      summary: Set the value of the setting for an IIS container.
+      parameters:
+        - name: name
+        - name: container
+        - name: settings
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: list_apps
+      source:
+        path: salt/modules/win_iis.py
+        symbol: list_apps
+      summary: Get all configured IIS applications for the specified site.
+      parameters:
+        - name: site
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: create_app
+      source:
+        path: salt/modules/win_iis.py
+        symbol: create_app
+      summary: Create an IIS application.
+      parameters:
+        - name: name
+        - name: site
+        - name: sourcepath
+        - name: apppool
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: remove_app
+      source:
+        path: salt/modules/win_iis.py
+        symbol: remove_app
+      summary: Remove an IIS application.
+      parameters:
+        - name: name
+        - name: site
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: list_vdirs
+      source:
+        path: salt/modules/win_iis.py
+        symbol: list_vdirs
+      summary: Get all configured IIS virtual directories for the specified site, or for
+      parameters:
+        - name: site
+        - name: app
+          default: _DEFAULT_APP
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: create_vdir
+      source:
+        path: salt/modules/win_iis.py
+        symbol: create_vdir
+      summary: Create an IIS virtual directory.
+      parameters:
+        - name: name
+        - name: site
+        - name: sourcepath
+        - name: app
+          default: _DEFAULT_APP
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: remove_vdir
+      source:
+        path: salt/modules/win_iis.py
+        symbol: remove_vdir
+      summary: Remove an IIS virtual directory.
+      parameters:
+        - name: name
+        - name: site
+        - name: app
+          default: _DEFAULT_APP
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: list_backups
+      source:
+        path: salt/modules/win_iis.py
+        symbol: list_backups
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: create_backup
+      source:
+        path: salt/modules/win_iis.py
+        symbol: create_backup
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: remove_backup
+      source:
+        path: salt/modules/win_iis.py
+        symbol: remove_backup
+      summary: Remove an IIS Configuration backup from the System.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: list_worker_processes
+      source:
+        path: salt/modules/win_iis.py
+        symbol: list_worker_processes
+      summary: Returns a list of worker processes that correspond to the passed
+      parameters:
+        - name: apppool
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: get_webapp_settings
+      source:
+        path: salt/modules/win_iis.py
+        symbol: get_webapp_settings
+      parameters:
+        - name: name
+        - name: site
+        - name: settings
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: set_webapp_settings
+      source:
+        path: salt/modules/win_iis.py
+        symbol: set_webapp_settings
+      parameters:
+        - name: name
+        - name: site
+        - name: settings
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: get_webconfiguration_settings
+      source:
+        path: salt/modules/win_iis.py
+        symbol: get_webconfiguration_settings
+      parameters:
+        - name: name
+        - name: settings
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37
+    - function: set_webconfiguration_settings
+      source:
+        path: salt/modules/win_iis.py
+        symbol: set_webconfiguration_settings
+      parameters:
+        - name: name
+        - name: settings
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_iis.py
+          functions: 37

@@ -1,0 +1,326 @@
+kind: exec
+module: ipset
+source_module: ipset
+virtual: true
+path: salt/modules/ipset.py
+functions:
+    - function: _ipset_cmd
+      source:
+        path: salt/modules/ipset.py
+        symbol: _ipset_cmd
+      summary: Return correct command
+      tests:
+        - path: tests/pytests/unit/modules/test_ipset.py
+          functions: 11
+    - function: version
+      source:
+        path: salt/modules/ipset.py
+        symbol: version
+      summary: Return version from ipset --version
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_ipset.py
+          functions: 11
+    - function: new_set
+      source:
+        path: salt/modules/ipset.py
+        symbol: new_set
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+          default: None
+        - name: set_type
+          default: None
+        - name: family
+          default: '"ipv4"'
+        - name: comment
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_ipset.py
+          functions: 11
+    - function: delete_set
+      source:
+        path: salt/modules/ipset.py
+        symbol: delete_set
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_ipset.py
+          functions: 11
+    - function: rename_set
+      source:
+        path: salt/modules/ipset.py
+        symbol: rename_set
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+          default: None
+        - name: new_set
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_ipset.py
+          functions: 11
+    - function: list_sets
+      source:
+        path: salt/modules/ipset.py
+        symbol: list_sets
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_ipset.py
+          functions: 11
+    - function: check_set
+      source:
+        path: salt/modules/ipset.py
+        symbol: check_set
+      summary: Check that given ipset set exists.
+      parameters:
+        - name: name
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_ipset.py
+          functions: 11
+    - function: add
+      source:
+        path: salt/modules/ipset.py
+        symbol: add
+      summary: Append an entry to the specified set.
+      parameters:
+        - name: name
+          default: None
+        - name: entry
+          default: None
+        - name: family
+          default: '"ipv4"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_ipset.py
+          functions: 11
+    - function: delete
+      source:
+        path: salt/modules/ipset.py
+        symbol: delete
+      summary: Delete an entry from the specified set.
+      parameters:
+        - name: name
+          default: None
+        - name: entry
+          default: None
+        - name: family
+          default: '"ipv4"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_ipset.py
+          functions: 11
+    - function: check
+      source:
+        path: salt/modules/ipset.py
+        symbol: check
+      summary: Check that an entry exists in the specified set.
+      parameters:
+        - name: name
+          default: None
+        - name: entry
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_ipset.py
+          functions: 11
+    - function: test
+      source:
+        path: salt/modules/ipset.py
+        symbol: test
+      summary: Test if an entry is in the specified set.
+      parameters:
+        - name: name
+          default: None
+        - name: entry
+          default: None
+        - name: family
+          default: '"ipv4"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_ipset.py
+          functions: 11
+    - function: flush
+      source:
+        path: salt/modules/ipset.py
+        symbol: flush
+      summary: Flush entries in the specified set,
+      parameters:
+        - name: name
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_ipset.py
+          functions: 11
+    - function: _find_set_members
+      source:
+        path: salt/modules/ipset.py
+        symbol: _find_set_members
+      summary: Return list of members for a set
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_ipset.py
+          functions: 11
+    - function: _find_set_info
+      source:
+        path: salt/modules/ipset.py
+        symbol: _find_set_info
+      summary: Return information about the set
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_ipset.py
+          functions: 11
+    - function: _find_set_type
+      source:
+        path: salt/modules/ipset.py
+        symbol: _find_set_type
+      summary: Find the type of the set
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_ipset.py
+          functions: 11
+    - function: _parse_members
+      source:
+        path: salt/modules/ipset.py
+        symbol: _parse_members
+      parameters:
+        - name: settype
+        - name: members
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_ipset.py
+          functions: 11
+    - function: _parse_member
+      source:
+        path: salt/modules/ipset.py
+        symbol: _parse_member
+      parameters:
+        - name: settype
+        - name: member
+        - name: strict
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_ipset.py
+          functions: 11
+    - function: _members_contain
+      source:
+        path: salt/modules/ipset.py
+        symbol: _members_contain
+      parameters:
+        - name: members
+        - name: entry
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_ipset.py
+          functions: 11
+    - function: _member_contains
+      source:
+        path: salt/modules/ipset.py
+        symbol: _member_contains
+      parameters:
+        - name: member
+        - name: entry
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_ipset.py
+          functions: 11
+    - function: _compare_member_parts
+      source:
+        path: salt/modules/ipset.py
+        symbol: _compare_member_parts
+      parameters:
+        - name: member_part
+        - name: entry_part
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_ipset.py
+          functions: 11
+    - function: _is_network
+      source:
+        path: salt/modules/ipset.py
+        symbol: _is_network
+      parameters:
+        - name: o
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_ipset.py
+          functions: 11
+    - function: _is_address
+      source:
+        path: salt/modules/ipset.py
+        symbol: _is_address
+      parameters:
+        - name: o
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_ipset.py
+          functions: 11

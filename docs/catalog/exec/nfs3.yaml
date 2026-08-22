@@ -1,0 +1,67 @@
+kind: exec
+module: nfs3
+source_module: nfs3
+path: salt/modules/nfs3.py
+functions:
+    - function: list_exports
+      source:
+        path: salt/modules/nfs3.py
+        symbol: list_exports
+      summary: List configured exports
+      parameters:
+        - name: exports
+          default: '"/etc/exports"'
+      tests:
+        - path: tests/pytests/unit/modules/test_nfs3.py
+          functions: 2
+    - function: del_export
+      source:
+        path: salt/modules/nfs3.py
+        symbol: del_export
+      summary: Remove an export
+      parameters:
+        - name: exports
+          default: '"/etc/exports"'
+        - name: path
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_nfs3.py
+          functions: 2
+    - function: add_export
+      source:
+        path: salt/modules/nfs3.py
+        symbol: add_export
+      summary: Add an export
+      parameters:
+        - name: exports
+          default: '"/etc/exports"'
+        - name: path
+          default: None
+        - name: hosts
+          default: None
+        - name: options
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_nfs3.py
+          functions: 2
+    - function: _write_exports
+      source:
+        path: salt/modules/nfs3.py
+        symbol: _write_exports
+      summary: Write an exports file to disk
+      parameters:
+        - name: exports
+        - name: edict
+      tests:
+        - path: tests/pytests/unit/modules/test_nfs3.py
+          functions: 2
+    - function: reload_exports
+      source:
+        path: salt/modules/nfs3.py
+        symbol: reload_exports
+      summary: Trigger a reload of the exports file to apply changes
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_nfs3.py
+          functions: 2

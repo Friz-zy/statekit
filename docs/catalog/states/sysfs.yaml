@@ -1,0 +1,21 @@
+kind: state
+module: sysfs
+source_module: sysfs
+path: salt/states/sysfs.py
+functions:
+    - function: present
+      source:
+        path: salt/states/sysfs.py
+        symbol: present
+      summary: Ensure that the named sysfs attribute is set with the defined value
+      parameters:
+        - name: name
+        - name: value
+        - name: config
+          default: None
+      execution_dependencies:
+        - sysfs.read
+        - sysfs.write
+      tests:
+        - path: tests/pytests/unit/states/test_sysfs.py
+          functions: 6

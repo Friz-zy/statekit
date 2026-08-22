@@ -1,0 +1,61 @@
+kind: exec
+module: webutil
+source_module: webutil
+virtual: true
+path: salt/modules/webutil.py
+functions:
+    - function: useradd
+      source:
+        path: salt/modules/webutil.py
+        symbol: useradd
+      summary: Add a user to htpasswd file using the htpasswd command. If the htpasswd
+      parameters:
+        - name: pwfile
+        - name: user
+        - name: password
+        - name: opts
+          default: '""'
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_webutil.py
+          functions: 3
+    - function: userdel
+      source:
+        path: salt/modules/webutil.py
+        symbol: userdel
+      summary: Delete a user from the specified htpasswd file.
+      parameters:
+        - name: pwfile
+        - name: user
+        - name: runas
+          default: None
+        - name: all_results
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_webutil.py
+          functions: 3
+    - function: verify
+      source:
+        path: salt/modules/webutil.py
+        symbol: verify
+      summary: Return True if the htpasswd file exists, the user has an entry, and their
+      parameters:
+        - name: pwfile
+        - name: user
+        - name: password
+        - name: opts
+          default: '""'
+        - name: runas
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_webutil.py
+          functions: 3

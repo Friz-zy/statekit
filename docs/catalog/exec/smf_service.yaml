@@ -1,0 +1,236 @@
+kind: exec
+module: service
+source_module: smf_service
+virtual: true
+path: salt/modules/smf_service.py
+functions:
+    - function: _get_enabled_disabled
+      source:
+        path: salt/modules/smf_service.py
+        symbol: _get_enabled_disabled
+      summary: 'DRY: Get all service FMRIs and their enabled property'
+      parameters:
+        - name: enabled_prop
+          default: '"true"'
+      execution_dependencies:
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_smf_service.py
+          functions: 16
+    - function: get_running
+      source:
+        path: salt/modules/smf_service.py
+        symbol: get_running
+      summary: Return the running services
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_smf_service.py
+          functions: 16
+    - function: get_stopped
+      source:
+        path: salt/modules/smf_service.py
+        symbol: get_stopped
+      summary: Return the stopped services
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_smf_service.py
+          functions: 16
+    - function: available
+      source:
+        path: salt/modules/smf_service.py
+        symbol: available
+      summary: Returns ``True`` if the specified service is available, otherwise returns
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_smf_service.py
+          functions: 16
+    - function: missing
+      source:
+        path: salt/modules/smf_service.py
+        symbol: missing
+      summary: The inverse of service.available.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_smf_service.py
+          functions: 16
+    - function: get_all
+      source:
+        path: salt/modules/smf_service.py
+        symbol: get_all
+      summary: Return all installed services
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_smf_service.py
+          functions: 16
+    - function: start
+      source:
+        path: salt/modules/smf_service.py
+        symbol: start
+      summary: Start the specified service
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_smf_service.py
+          functions: 16
+    - function: stop
+      source:
+        path: salt/modules/smf_service.py
+        symbol: stop
+      summary: Stop the specified service
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_smf_service.py
+          functions: 16
+    - function: restart
+      source:
+        path: salt/modules/smf_service.py
+        symbol: restart
+      summary: Restart the named service
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_smf_service.py
+          functions: 16
+    - function: reload_
+      source:
+        path: salt/modules/smf_service.py
+        symbol: reload_
+      summary: Reload the named service
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_smf_service.py
+          functions: 16
+    - function: status
+      source:
+        path: salt/modules/smf_service.py
+        symbol: status
+      summary: Return the status for a service.
+      parameters:
+        - name: name
+        - name: sig
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_smf_service.py
+          functions: 16
+    - function: enable
+      source:
+        path: salt/modules/smf_service.py
+        symbol: enable
+      summary: Enable the named service to start at boot
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_smf_service.py
+          functions: 16
+    - function: disable
+      source:
+        path: salt/modules/smf_service.py
+        symbol: disable
+      summary: Disable the named service to start at boot
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_smf_service.py
+          functions: 16
+    - function: enabled
+      source:
+        path: salt/modules/smf_service.py
+        symbol: enabled
+      summary: Check to see if the named service is enabled to start on boot
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_smf_service.py
+          functions: 16
+    - function: disabled
+      source:
+        path: salt/modules/smf_service.py
+        symbol: disabled
+      summary: Check to see if the named service is disabled to start on boot
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_smf_service.py
+          functions: 16
+    - function: get_enabled
+      source:
+        path: salt/modules/smf_service.py
+        symbol: get_enabled
+      summary: Return the enabled services
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_smf_service.py
+          functions: 16
+    - function: get_disabled
+      source:
+        path: salt/modules/smf_service.py
+        symbol: get_disabled
+      summary: Return the disabled services
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_smf_service.py
+          functions: 16

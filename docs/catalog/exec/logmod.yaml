@@ -1,0 +1,48 @@
+kind: exec
+module: log
+source_module: logmod
+virtual: true
+path: salt/modules/logmod.py
+functions:
+    - function: debug
+      source:
+        path: salt/modules/logmod.py
+        symbol: debug
+      summary: Log message at level DEBUG.
+      parameters:
+        - name: message
+    - function: info
+      source:
+        path: salt/modules/logmod.py
+        symbol: info
+      summary: Log message at level INFO.
+      parameters:
+        - name: message
+    - function: warning
+      source:
+        path: salt/modules/logmod.py
+        symbol: warning
+      summary: Log message at level WARNING.
+      parameters:
+        - name: message
+    - function: error
+      source:
+        path: salt/modules/logmod.py
+        symbol: error
+      summary: Log message at level ERROR.
+      parameters:
+        - name: message
+    - function: critical
+      source:
+        path: salt/modules/logmod.py
+        symbol: critical
+      summary: Log message at level CRITICAL.
+      parameters:
+        - name: message
+    - function: exception
+      source:
+        path: salt/modules/logmod.py
+        symbol: exception
+      summary: Log message at level EXCEPTION.
+      parameters:
+        - name: message

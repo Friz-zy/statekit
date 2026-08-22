@@ -1,0 +1,52 @@
+kind: exec
+module: sdb
+source_module: sdb
+path: salt/modules/sdb.py
+functions:
+    - function: get
+      source:
+        path: salt/modules/sdb.py
+        symbol: get
+      summary: Get a value from a db, using a uri in the form of ``sdb://<profile>/<key>``. If
+      parameters:
+        - name: uri
+        - name: strict
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_sdb.py
+          functions: 5
+    - function: set_
+      source:
+        path: salt/modules/sdb.py
+        symbol: set_
+      summary: Set a value in a db, using a uri in the form of ``sdb://<profile>/<key>``.
+      parameters:
+        - name: uri
+        - name: value
+      tests:
+        - path: tests/pytests/unit/modules/test_sdb.py
+          functions: 5
+    - function: delete
+      source:
+        path: salt/modules/sdb.py
+        symbol: delete
+      summary: Delete a value from a db, using a uri in the form of ``sdb://<profile>/<key>``.
+      parameters:
+        - name: uri
+      tests:
+        - path: tests/pytests/unit/modules/test_sdb.py
+          functions: 5
+    - function: get_or_set_hash
+      source:
+        path: salt/modules/sdb.py
+        symbol: get_or_set_hash
+      summary: Perform a one-time generation of a hash and write it to sdb.
+      parameters:
+        - name: uri
+        - name: length
+          default: "8"
+        - name: chars
+          default: '"abcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*(-_=+)"'
+      tests:
+        - path: tests/pytests/unit/modules/test_sdb.py
+          functions: 5

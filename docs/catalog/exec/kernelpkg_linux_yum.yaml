@@ -1,0 +1,172 @@
+kind: exec
+module: kernelpkg
+source_module: kernelpkg_linux_yum
+virtual: true
+path: salt/modules/kernelpkg_linux_yum.py
+functions:
+    - function: active
+      source:
+        path: salt/modules/kernelpkg_linux_yum.py
+        symbol: active
+      summary: Return the version of the running kernel.
+      execution_dependencies:
+        - pkg.normalize_name
+      tests:
+        - path: tests/unit/modules/test_kernelpkg_linux_yum.py
+          functions: 0
+    - function: list_installed
+      source:
+        path: salt/modules/kernelpkg_linux_yum.py
+        symbol: list_installed
+      summary: Return a list of all installed kernels.
+      execution_dependencies:
+        - pkg.normalize_name
+        - pkg.version
+      tests:
+        - path: tests/unit/modules/test_kernelpkg_linux_yum.py
+          functions: 0
+    - function: latest_available
+      source:
+        path: salt/modules/kernelpkg_linux_yum.py
+        symbol: latest_available
+      summary: Return the version of the latest kernel from the package repositories.
+      execution_dependencies:
+        - pkg.latest_version
+        - pkg.normalize_name
+        - pkg.version
+      tests:
+        - path: tests/unit/modules/test_kernelpkg_linux_yum.py
+          functions: 0
+    - function: latest_installed
+      source:
+        path: salt/modules/kernelpkg_linux_yum.py
+        symbol: latest_installed
+      summary: Return the version of the latest installed kernel.
+      execution_dependencies:
+        - pkg.latest_version
+        - pkg.normalize_name
+        - pkg.version
+      tests:
+        - path: tests/unit/modules/test_kernelpkg_linux_yum.py
+          functions: 0
+    - function: needs_reboot
+      source:
+        path: salt/modules/kernelpkg_linux_yum.py
+        symbol: needs_reboot
+      summary: Detect if a new kernel version has been installed but is not running.
+      execution_dependencies:
+        - pkg.latest_version
+        - pkg.normalize_name
+        - pkg.version
+      tests:
+        - path: tests/unit/modules/test_kernelpkg_linux_yum.py
+          functions: 0
+    - function: upgrade
+      source:
+        path: salt/modules/kernelpkg_linux_yum.py
+        symbol: upgrade
+      summary: Upgrade the kernel and optionally reboot the system.
+      parameters:
+        - name: reboot
+          default: "False"
+        - name: at_time
+          default: None
+      execution_dependencies:
+        - pkg.latest_version
+        - pkg.normalize_name
+        - pkg.upgrade
+        - pkg.version
+        - system.reboot
+      tests:
+        - path: tests/unit/modules/test_kernelpkg_linux_yum.py
+          functions: 0
+    - function: upgrade_available
+      source:
+        path: salt/modules/kernelpkg_linux_yum.py
+        symbol: upgrade_available
+      summary: Detect if a new kernel version is available in the repositories.
+      execution_dependencies:
+        - pkg.latest_version
+        - pkg.normalize_name
+        - pkg.upgrade
+        - pkg.version
+        - system.reboot
+      tests:
+        - path: tests/unit/modules/test_kernelpkg_linux_yum.py
+          functions: 0
+    - function: remove
+      source:
+        path: salt/modules/kernelpkg_linux_yum.py
+        symbol: remove
+      summary: Remove a specific version of the kernel.
+      parameters:
+        - name: release
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - pkg.latest_version
+        - pkg.list_pkgs
+        - pkg.normalize_name
+        - pkg.upgrade
+        - pkg.version
+        - system.reboot
+      tests:
+        - path: tests/unit/modules/test_kernelpkg_linux_yum.py
+          functions: 0
+    - function: cleanup
+      source:
+        path: salt/modules/kernelpkg_linux_yum.py
+        symbol: cleanup
+      summary: Remove all unused kernel packages from the system.
+      parameters:
+        - name: keep_latest
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - pkg.latest_version
+        - pkg.list_pkgs
+        - pkg.normalize_name
+        - pkg.upgrade
+        - pkg.version
+        - system.reboot
+      tests:
+        - path: tests/unit/modules/test_kernelpkg_linux_yum.py
+          functions: 0
+    - function: _package_name
+      source:
+        path: salt/modules/kernelpkg_linux_yum.py
+        symbol: _package_name
+      summary: Return static string for the package name
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - pkg.latest_version
+        - pkg.list_pkgs
+        - pkg.normalize_name
+        - pkg.upgrade
+        - pkg.version
+        - system.reboot
+      tests:
+        - path: tests/unit/modules/test_kernelpkg_linux_yum.py
+          functions: 0
+    - function: _cmp_version
+      source:
+        path: salt/modules/kernelpkg_linux_yum.py
+        symbol: _cmp_version
+      summary: Compare function for package version sorting
+      parameters:
+        - name: item1
+        - name: item2
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - pkg.latest_version
+        - pkg.list_pkgs
+        - pkg.normalize_name
+        - pkg.upgrade
+        - pkg.version
+        - system.reboot
+      tests:
+        - path: tests/unit/modules/test_kernelpkg_linux_yum.py
+          functions: 0

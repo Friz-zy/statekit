@@ -1,0 +1,73 @@
+kind: state
+module: lgpo
+source_module: win_lgpo
+virtual: true
+path: salt/states/win_lgpo.py
+functions:
+    - function: _compare_policies
+      source:
+        path: salt/states/win_lgpo.py
+        symbol: _compare_policies
+      summary: Helper function that returns ``True`` if the policies are the same,
+      parameters:
+        - name: new_policy
+        - name: current_policy
+      execution_dependencies:
+        - lgpo.set
+      tests:
+        - path: tests/pytests/unit/states/test_win_lgpo.py
+          functions: 12
+    - function: _normalize_element_names
+      source:
+        path: salt/states/win_lgpo.py
+        symbol: _normalize_element_names
+      summary: Helper function that returns a copy of ``policy_dict`` with its keys
+      parameters:
+        - name: policy_dict
+        - name: policy_elements
+      execution_dependencies:
+        - lgpo.set
+      tests:
+        - path: tests/pytests/unit/states/test_win_lgpo.py
+          functions: 12
+    - function: _convert_to_unicode
+      source:
+        path: salt/states/win_lgpo.py
+        symbol: _convert_to_unicode
+      summary: Helper function that makes sure all items in the dictionary are unicode for
+      parameters:
+        - name: data
+      execution_dependencies:
+        - lgpo.set
+      tests:
+        - path: tests/pytests/unit/states/test_win_lgpo.py
+          functions: 12
+    - function: set_
+      source:
+        path: salt/states/win_lgpo.py
+        symbol: set_
+      summary: Ensure the specified policy is set.
+      parameters:
+        - name: name
+        - name: setting
+          default: None
+        - name: policy_class
+          default: None
+        - name: computer_policy
+          default: None
+        - name: user_policy
+          default: None
+        - name: cumulative_rights_assignments
+          default: "True"
+        - name: adml_language
+          default: '"en-US"'
+        - name: refresh_cache
+          default: "False"
+      execution_dependencies:
+        - lgpo.clear_policy_cache
+        - lgpo.get_policy
+        - lgpo.get_policy_info
+        - lgpo.set
+      tests:
+        - path: tests/pytests/unit/states/test_win_lgpo.py
+          functions: 12

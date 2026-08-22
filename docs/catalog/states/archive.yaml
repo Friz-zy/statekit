@@ -1,0 +1,208 @@
+kind: state
+module: archive
+source_module: archive
+path: salt/states/archive.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _path_is_abs
+      source:
+        path: salt/states/archive.py
+        symbol: _path_is_abs
+      summary: Return a bool telling whether or ``path`` is absolute. If ``path`` is None,
+      parameters:
+        - name: path
+      tests:
+        - path: tests/pytests/unit/states/test_archive.py
+          functions: 8
+    - function: _add_explanation
+      source:
+        path: salt/states/archive.py
+        symbol: _add_explanation
+      summary: Common code to add additional explanation to the state's comment field,
+      parameters:
+        - name: ret
+        - name: source_hash_trigger
+        - name: contents_missing
+      tests:
+        - path: tests/pytests/unit/states/test_archive.py
+          functions: 8
+    - function: _gen_checksum
+      source:
+        path: salt/states/archive.py
+        symbol: _gen_checksum
+      parameters:
+        - name: path
+      tests:
+        - path: tests/pytests/unit/states/test_archive.py
+          functions: 8
+    - function: _checksum_file_path
+      source:
+        path: salt/states/archive.py
+        symbol: _checksum_file_path
+      parameters:
+        - name: path
+      tests:
+        - path: tests/pytests/unit/states/test_archive.py
+          functions: 8
+    - function: _update_checksum
+      source:
+        path: salt/states/archive.py
+        symbol: _update_checksum
+      parameters:
+        - name: path
+      tests:
+        - path: tests/pytests/unit/states/test_archive.py
+          functions: 8
+    - function: _read_cached_checksum
+      source:
+        path: salt/states/archive.py
+        symbol: _read_cached_checksum
+      parameters:
+        - name: path
+        - name: form
+          default: None
+      tests:
+        - path: tests/pytests/unit/states/test_archive.py
+          functions: 8
+    - function: _compare_checksum
+      source:
+        path: salt/states/archive.py
+        symbol: _compare_checksum
+      parameters:
+        - name: cached
+        - name: source_sum
+      tests:
+        - path: tests/pytests/unit/states/test_archive.py
+          functions: 8
+    - function: _is_bsdtar
+      source:
+        path: salt/states/archive.py
+        symbol: _is_bsdtar
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/states/test_archive.py
+          functions: 8
+    - function: _cleanup_destdir
+      source:
+        path: salt/states/archive.py
+        symbol: _cleanup_destdir
+      summary: Attempt to remove the specified directory
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/states/test_archive.py
+          functions: 8
+    - function: _check_sig
+      source:
+        path: salt/states/archive.py
+        symbol: _check_sig
+      parameters:
+        - name: on_file
+        - name: signature
+        - name: signed_by_any
+          default: None
+        - name: signed_by_all
+          default: None
+        - name: keyring
+          default: None
+        - name: gnupghome
+          default: None
+        - name: sig_backend
+          default: '"gpg"'
+      execution_dependencies:
+        - cmd.run
+        - cp.cache_file
+      tests:
+        - path: tests/pytests/unit/states/test_archive.py
+          functions: 8
+    - function: extracted
+      source:
+        path: salt/states/archive.py
+        symbol: extracted
+      summary: '.. versionadded:: 2014.1.0'
+      parameters:
+        - name: name
+        - name: source
+        - name: source_hash
+          default: None
+        - name: source_hash_name
+          default: None
+        - name: source_hash_update
+          default: "False"
+        - name: skip_files_list_verify
+          default: "False"
+        - name: skip_verify
+          default: "False"
+        - name: password
+          default: None
+        - name: options
+          default: None
+        - name: list_options
+          default: None
+        - name: force
+          default: "False"
+        - name: overwrite
+          default: "False"
+        - name: clean
+          default: "False"
+        - name: clean_parent
+          default: "False"
+        - name: user
+          default: None
+        - name: group
+          default: None
+        - name: if_missing
+          default: None
+        - name: trim_output
+          default: "False"
+        - name: use_cmd_unzip
+          default: None
+        - name: extract_perms
+          default: "True"
+        - name: enforce_toplevel
+          default: "True"
+        - name: enforce_ownership_on
+          default: None
+        - name: archive_format
+          default: None
+        - name: use_etag
+          default: "False"
+        - name: signature
+          default: None
+        - name: source_hash_sig
+          default: None
+        - name: signed_by_any
+          default: None
+        - name: signed_by_all
+          default: None
+        - name: keyring
+          default: None
+        - name: gnupghome
+          default: None
+        - name: sig_backend
+          default: '"gpg"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - archive.cmd_unzip
+        - archive.is_encrypted
+        - archive.list
+        - archive.unrar
+        - archive.unzip
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_all
+        - cp.cache_file
+        - cp.is_cached
+        - file.check_hash
+        - file.get_source_sum
+        - file.group_to_gid
+        - file.source_list
+        - file.user_to_uid
+      tests:
+        - path: tests/pytests/unit/states/test_archive.py
+          functions: 8

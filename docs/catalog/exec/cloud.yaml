@@ -1,0 +1,221 @@
+kind: exec
+module: cloud
+source_module: cloud
+path: salt/modules/cloud.py
+functions:
+    - function: _get_client
+      source:
+        path: salt/modules/cloud.py
+        symbol: _get_client
+      summary: Return a cloud client
+    - function: list_sizes
+      source:
+        path: salt/modules/cloud.py
+        symbol: list_sizes
+      summary: List cloud provider sizes for the given providers
+      parameters:
+        - name: provider
+          default: '"all"'
+    - function: list_images
+      source:
+        path: salt/modules/cloud.py
+        symbol: list_images
+      summary: List cloud provider images for the given providers
+      parameters:
+        - name: provider
+          default: '"all"'
+    - function: list_locations
+      source:
+        path: salt/modules/cloud.py
+        symbol: list_locations
+      summary: List cloud provider locations for the given providers
+      parameters:
+        - name: provider
+          default: '"all"'
+    - function: query
+      source:
+        path: salt/modules/cloud.py
+        symbol: query
+      summary: List cloud provider data for all providers
+      parameters:
+        - name: query_type
+          default: '"list_nodes"'
+    - function: full_query
+      source:
+        path: salt/modules/cloud.py
+        symbol: full_query
+      summary: List all available cloud provider data
+      parameters:
+        - name: query_type
+          default: '"list_nodes_full"'
+    - function: select_query
+      source:
+        path: salt/modules/cloud.py
+        symbol: select_query
+      summary: List selected nodes
+      parameters:
+        - name: query_type
+          default: '"list_nodes_select"'
+    - function: has_instance
+      source:
+        path: salt/modules/cloud.py
+        symbol: has_instance
+      summary: Return true if the instance is found on a provider
+      parameters:
+        - name: name
+        - name: provider
+          default: None
+    - function: get_instance
+      source:
+        path: salt/modules/cloud.py
+        symbol: get_instance
+      summary: Return details on an instance.
+      parameters:
+        - name: name
+        - name: provider
+          default: None
+    - function: profile_
+      source:
+        path: salt/modules/cloud.py
+        symbol: profile_
+      summary: Spin up an instance using Salt Cloud
+      parameters:
+        - name: profile
+        - name: names
+        - name: vm_overrides
+          default: None
+        - name: opts
+          default: None
+        - name: kwargs
+          kind: '**'
+    - function: map_run
+      source:
+        path: salt/modules/cloud.py
+        symbol: map_run
+      summary: Execute a salt cloud map file
+      parameters:
+        - name: path
+          default: None
+        - name: kwargs
+          kind: '**'
+    - function: destroy
+      source:
+        path: salt/modules/cloud.py
+        symbol: destroy
+      summary: Destroy the named VM(s)
+      parameters:
+        - name: names
+    - function: action
+      source:
+        path: salt/modules/cloud.py
+        symbol: action
+      summary: Execute a single action on the given provider/instance
+      parameters:
+        - name: fun
+          default: None
+        - name: cloudmap
+          default: None
+        - name: names
+          default: None
+        - name: provider
+          default: None
+        - name: instance
+          default: None
+        - name: kwargs
+          kind: '**'
+    - function: create
+      source:
+        path: salt/modules/cloud.py
+        symbol: create
+      summary: Create an instance using Salt Cloud
+      parameters:
+        - name: provider
+        - name: names
+        - name: opts
+          default: None
+        - name: kwargs
+          kind: '**'
+    - function: volume_list
+      source:
+        path: salt/modules/cloud.py
+        symbol: volume_list
+      summary: List block storage volumes
+      parameters:
+        - name: provider
+    - function: volume_delete
+      source:
+        path: salt/modules/cloud.py
+        symbol: volume_delete
+      summary: Delete volume
+      parameters:
+        - name: provider
+        - name: names
+        - name: kwargs
+          kind: '**'
+    - function: volume_create
+      source:
+        path: salt/modules/cloud.py
+        symbol: volume_create
+      summary: Create volume
+      parameters:
+        - name: provider
+        - name: names
+        - name: kwargs
+          kind: '**'
+    - function: volume_attach
+      source:
+        path: salt/modules/cloud.py
+        symbol: volume_attach
+      summary: Attach volume to a server
+      parameters:
+        - name: provider
+        - name: names
+        - name: kwargs
+          kind: '**'
+    - function: volume_detach
+      source:
+        path: salt/modules/cloud.py
+        symbol: volume_detach
+      summary: Detach volume from a server
+      parameters:
+        - name: provider
+        - name: names
+        - name: kwargs
+          kind: '**'
+    - function: network_list
+      source:
+        path: salt/modules/cloud.py
+        symbol: network_list
+      summary: List private networks
+      parameters:
+        - name: provider
+    - function: network_create
+      source:
+        path: salt/modules/cloud.py
+        symbol: network_create
+      summary: Create private network
+      parameters:
+        - name: provider
+        - name: names
+        - name: kwargs
+          kind: '**'
+    - function: virtual_interface_list
+      source:
+        path: salt/modules/cloud.py
+        symbol: virtual_interface_list
+      summary: List virtual interfaces on a server
+      parameters:
+        - name: provider
+        - name: names
+        - name: kwargs
+          kind: '**'
+    - function: virtual_interface_create
+      source:
+        path: salt/modules/cloud.py
+        symbol: virtual_interface_create
+      summary: Attach private interfaces to a server
+      parameters:
+        - name: provider
+        - name: names
+        - name: kwargs
+          kind: '**'

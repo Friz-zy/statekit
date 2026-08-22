@@ -1,0 +1,34 @@
+kind: exec
+module: jinja
+source_module: jinja
+path: salt/modules/jinja.py
+functions:
+    - function: _strip_odict
+      source:
+        path: salt/modules/jinja.py
+        symbol: _strip_odict
+      summary: dump to json and load it again, replaces OrderedDicts with regular ones
+      parameters:
+        - name: wrapped
+    - function: load_map
+      source:
+        path: salt/modules/jinja.py
+        symbol: load_map
+      summary: Loads the map at the specified path, and returns the specified value from
+      parameters:
+        - name: path
+        - name: value
+    - function: import_yaml
+      source:
+        path: salt/modules/jinja.py
+        symbol: import_yaml
+      summary: Loads YAML data from the specified path
+      parameters:
+        - name: path
+    - function: import_json
+      source:
+        path: salt/modules/jinja.py
+        symbol: import_json
+      summary: Loads JSON data from the specified path
+      parameters:
+        - name: path

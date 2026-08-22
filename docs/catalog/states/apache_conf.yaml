@@ -1,0 +1,26 @@
+kind: state
+module: apache_conf
+source_module: apache_conf
+path: salt/states/apache_conf.py
+functions:
+    - function: enabled
+      source:
+        path: salt/states/apache_conf.py
+        symbol: enabled
+      summary: Ensure an Apache conf is enabled.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - apache.a2enconf
+        - apache.check_conf_enabled
+    - function: disabled
+      source:
+        path: salt/states/apache_conf.py
+        symbol: disabled
+      summary: Ensure an Apache conf is disabled.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - apache.a2disconf
+        - apache.a2enconf
+        - apache.check_conf_enabled

@@ -1,0 +1,27 @@
+kind: exec
+module: devmap
+source_module: devmap
+path: salt/modules/devmap.py
+functions:
+    - function: multipath_list
+      source:
+        path: salt/modules/devmap.py
+        symbol: multipath_list
+      summary: Device-Mapper Multipath list
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_devmap.py
+          functions: 2
+    - function: multipath_flush
+      source:
+        path: salt/modules/devmap.py
+        symbol: multipath_flush
+      summary: Device-Mapper Multipath flush
+      parameters:
+        - name: device
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_devmap.py
+          functions: 2

@@ -1,0 +1,47 @@
+kind: state
+module: debconf
+source_module: debconfmod
+virtual: true
+path: salt/states/debconfmod.py
+functions:
+    - function: set_file
+      source:
+        path: salt/states/debconfmod.py
+        symbol: set_file
+      summary: Set debconf selections from a file or a template
+      parameters:
+        - name: name
+        - name: source
+        - name: template
+          default: None
+        - name: context
+          default: None
+        - name: defaults
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - debconf.set_file
+        - debconf.set_template
+        - debconf.show
+      tests:
+        - path: tests/pytests/unit/states/test_debconfmod.py
+          functions: 2
+    - function: set
+      source:
+        path: salt/states/debconfmod.py
+        symbol: set
+      summary: Set debconf selections
+      parameters:
+        - name: name
+        - name: data
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - debconf.set
+        - debconf.set_file
+        - debconf.set_template
+        - debconf.show
+      tests:
+        - path: tests/pytests/unit/states/test_debconfmod.py
+          functions: 2

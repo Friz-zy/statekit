@@ -1,0 +1,1205 @@
+kind: state
+module: pkg
+source_module: pkg
+path: salt/states/pkg.py
+platform_markers:
+    - is_freebsd
+    - is_windows
+functions:
+    - function: _get_comparison_spec
+      source:
+        path: salt/states/pkg.py
+        symbol: _get_comparison_spec
+      summary: Return a tuple containing the comparison operator and the version. If no
+      parameters:
+        - name: pkgver
+      execution_dependencies:
+        - pkg.install
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: _check_ignore_epoch
+      source:
+        path: salt/states/pkg.py
+        symbol: _check_ignore_epoch
+      summary: Conditionally ignore epoch, but only under all of the following
+      parameters:
+        - name: oper
+        - name: desired_version
+        - name: ignore_epoch
+          default: None
+      execution_dependencies:
+        - pkg.install
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: _parse_version_string
+      source:
+        path: salt/states/pkg.py
+        symbol: _parse_version_string
+      summary: Returns a list of two-tuples containing (operator, version).
+      parameters:
+        - name: version_conditions_string
+      execution_dependencies:
+        - pkg.install
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: _fulfills_version_string
+      source:
+        path: salt/states/pkg.py
+        symbol: _fulfills_version_string
+      summary: Returns True if any of the installed versions match the specified version conditions,
+      parameters:
+        - name: installed_versions
+        - name: version_conditions_string
+        - name: ignore_epoch
+          default: None
+        - name: allow_updates
+          default: "False"
+      execution_dependencies:
+        - pkg.install
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: _fulfills_version_spec
+      source:
+        path: salt/states/pkg.py
+        symbol: _fulfills_version_spec
+      summary: Returns True if any of the installed versions match the specified version,
+      parameters:
+        - name: versions
+        - name: oper
+        - name: desired_version
+        - name: ignore_epoch
+          default: None
+      execution_dependencies:
+        - pkg.install
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: _find_unpurge_targets
+      source:
+        path: salt/states/pkg.py
+        symbol: _find_unpurge_targets
+      summary: Find packages which are marked to be purged but can't yet be removed
+      parameters:
+        - name: desired
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - pkg.install
+        - pkg.list_pkgs
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: _find_download_targets
+      source:
+        path: salt/states/pkg.py
+        symbol: _find_download_targets
+      summary: Inspect the arguments to pkg.downloaded and discover what packages need to
+      parameters:
+        - name: name
+          default: None
+        - name: version
+          default: None
+        - name: pkgs
+          default: None
+        - name: normalize
+          default: "True"
+        - name: skip_suggestions
+          default: "False"
+        - name: ignore_epoch
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - pkg.install
+        - pkg.list_downloaded
+        - pkg.list_pkgs
+        - pkg.normalize_name
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: _find_advisory_targets
+      source:
+        path: salt/states/pkg.py
+        symbol: _find_advisory_targets
+      summary: Inspect the arguments to pkg.patch_installed and discover what advisory
+      parameters:
+        - name: name
+          default: None
+        - name: advisory_ids
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - pkg.install
+        - pkg.list_downloaded
+        - pkg.list_installed_patches
+        - pkg.list_pkgs
+        - pkg.normalize_name
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: _find_remove_targets
+      source:
+        path: salt/states/pkg.py
+        symbol: _find_remove_targets
+      summary: Inspect the arguments to pkg.removed and discover what packages need to
+      parameters:
+        - name: name
+          default: None
+        - name: version
+          default: None
+        - name: pkgs
+          default: None
+        - name: normalize
+          default: "True"
+        - name: ignore_epoch
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - pkg.install
+        - pkg.list_downloaded
+        - pkg.list_installed_patches
+        - pkg.list_pkgs
+        - pkg.normalize_name
+        - pkg_resource.version_clean
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: _find_install_targets
+      source:
+        path: salt/states/pkg.py
+        symbol: _find_install_targets
+      summary: Inspect the arguments to pkg.installed and discover what packages need to
+      parameters:
+        - name: name
+          default: None
+        - name: version
+          default: None
+        - name: pkgs
+          default: None
+        - name: sources
+          default: None
+        - name: skip_suggestions
+          default: "False"
+        - name: pkg_verify
+          default: "False"
+        - name: normalize
+          default: "True"
+        - name: ignore_epoch
+          default: None
+        - name: reinstall
+          default: "False"
+        - name: refresh
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+        - lowpkg.bin_pkg_info
+        - pkg.install
+        - pkg.latest_version
+        - pkg.list_downloaded
+        - pkg.list_installed_patches
+        - pkg.list_pkgs
+        - pkg.list_provides
+        - pkg.normalize_name
+        - pkg.verify
+        - pkg_resource.check_extra_requirements
+        - pkg_resource.pack_sources
+        - pkg_resource.version_clean
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: _verify_install
+      source:
+        path: salt/states/pkg.py
+        symbol: _verify_install
+      summary: Determine whether or not the installed packages match what was requested in
+      parameters:
+        - name: desired
+        - name: new_pkgs
+        - name: ignore_epoch
+          default: None
+        - name: new_caps
+          default: None
+      execution_dependencies:
+        - cp.cache_file
+        - lowpkg.bin_pkg_info
+        - pkg.install
+        - pkg.latest_version
+        - pkg.list_downloaded
+        - pkg.list_installed_patches
+        - pkg.list_pkgs
+        - pkg.list_provides
+        - pkg.normalize_name
+        - pkg.verify
+        - pkg_resource.check_extra_requirements
+        - pkg_resource.pack_sources
+        - pkg_resource.version_clean
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: _get_desired_pkg
+      source:
+        path: salt/states/pkg.py
+        symbol: _get_desired_pkg
+      summary: Helper function that retrieves and nicely formats the desired pkg (and
+      parameters:
+        - name: name
+        - name: desired
+      execution_dependencies:
+        - cp.cache_file
+        - lowpkg.bin_pkg_info
+        - pkg.install
+        - pkg.latest_version
+        - pkg.list_downloaded
+        - pkg.list_installed_patches
+        - pkg.list_pkgs
+        - pkg.list_provides
+        - pkg.normalize_name
+        - pkg.verify
+        - pkg_resource.check_extra_requirements
+        - pkg_resource.pack_sources
+        - pkg_resource.version_clean
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: _preflight_check
+      source:
+        path: salt/states/pkg.py
+        symbol: _preflight_check
+      summary: Perform platform-specific checks on desired packages
+      parameters:
+        - name: desired
+        - name: fromrepo
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+        - lowpkg.bin_pkg_info
+        - pkg.check_db
+        - pkg.install
+        - pkg.latest_version
+        - pkg.list_downloaded
+        - pkg.list_installed_patches
+        - pkg.list_pkgs
+        - pkg.list_provides
+        - pkg.normalize_name
+        - pkg.verify
+        - pkg_resource.check_extra_requirements
+        - pkg_resource.pack_sources
+        - pkg_resource.version_clean
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: _nested_output
+      source:
+        path: salt/states/pkg.py
+        symbol: _nested_output
+      summary: Serialize obj and format for output
+      parameters:
+        - name: obj
+      execution_dependencies:
+        - cp.cache_file
+        - lowpkg.bin_pkg_info
+        - pkg.check_db
+        - pkg.install
+        - pkg.latest_version
+        - pkg.list_downloaded
+        - pkg.list_installed_patches
+        - pkg.list_pkgs
+        - pkg.list_provides
+        - pkg.normalize_name
+        - pkg.verify
+        - pkg_resource.check_extra_requirements
+        - pkg_resource.pack_sources
+        - pkg_resource.version_clean
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: _resolve_capabilities
+      source:
+        path: salt/states/pkg.py
+        symbol: _resolve_capabilities
+      summary: Resolve capabilities in ``pkgs`` and exchange them with real package
+      parameters:
+        - name: pkgs
+        - name: refresh
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+        - lowpkg.bin_pkg_info
+        - pkg.check_db
+        - pkg.install
+        - pkg.latest_version
+        - pkg.list_downloaded
+        - pkg.list_installed_patches
+        - pkg.list_pkgs
+        - pkg.list_provides
+        - pkg.normalize_name
+        - pkg.resolve_capabilities
+        - pkg.verify
+        - pkg_resource.check_extra_requirements
+        - pkg_resource.pack_sources
+        - pkg_resource.version_clean
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: _get_installable_versions
+      source:
+        path: salt/states/pkg.py
+        symbol: _get_installable_versions
+      summary: '.. versionadded:: 3007.0'
+      parameters:
+        - name: targets
+        - name: current
+          default: None
+      execution_dependencies:
+        - cp.cache_file
+        - lowpkg.bin_pkg_info
+        - pkg.check_db
+        - pkg.install
+        - pkg.latest_version
+        - pkg.list_downloaded
+        - pkg.list_installed_patches
+        - pkg.list_pkgs
+        - pkg.list_provides
+        - pkg.list_repo_pkgs
+        - pkg.normalize_name
+        - pkg.resolve_capabilities
+        - pkg.verify
+        - pkg_resource.check_extra_requirements
+        - pkg_resource.pack_sources
+        - pkg_resource.version_clean
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: installed
+      source:
+        path: salt/states/pkg.py
+        symbol: installed
+      summary: '.. versionchanged:: 3007.0'
+      parameters:
+        - name: name
+        - name: version
+          default: None
+        - name: refresh
+          default: None
+        - name: fromrepo
+          default: None
+        - name: skip_verify
+          default: "False"
+        - name: skip_suggestions
+          default: "False"
+        - name: pkgs
+          default: None
+        - name: sources
+          default: None
+        - name: allow_updates
+          default: "False"
+        - name: pkg_verify
+          default: "False"
+        - name: normalize
+          default: "True"
+        - name: ignore_epoch
+          default: None
+        - name: reinstall
+          default: "False"
+        - name: update_holds
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.unpurge
+        - pkg.check_db
+        - pkg.hold
+        - pkg.install
+        - pkg.latest_version
+        - pkg.list_downloaded
+        - pkg.list_installed_patches
+        - pkg.list_pkgs
+        - pkg.list_provides
+        - pkg.list_repo_pkgs
+        - pkg.normalize_name
+        - pkg.resolve_capabilities
+        - pkg.unhold
+        - pkg.verify
+        - pkg_resource.check_extra_requirements
+        - pkg_resource.pack_sources
+        - pkg_resource.version_clean
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: downloaded
+      source:
+        path: salt/states/pkg.py
+        symbol: downloaded
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: name
+        - name: version
+          default: None
+        - name: pkgs
+          default: None
+        - name: fromrepo
+          default: None
+        - name: ignore_epoch
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.unpurge
+        - pkg.check_db
+        - pkg.hold
+        - pkg.install
+        - pkg.latest_version
+        - pkg.list_downloaded
+        - pkg.list_installed_patches
+        - pkg.list_pkgs
+        - pkg.list_provides
+        - pkg.list_repo_pkgs
+        - pkg.normalize_name
+        - pkg.resolve_capabilities
+        - pkg.unhold
+        - pkg.verify
+        - pkg_resource.check_extra_requirements
+        - pkg_resource.pack_sources
+        - pkg_resource.version_clean
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: patch_installed
+      source:
+        path: salt/states/pkg.py
+        symbol: patch_installed
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: name
+        - name: advisory_ids
+          default: None
+        - name: downloadonly
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.unpurge
+        - pkg.check_db
+        - pkg.hold
+        - pkg.install
+        - pkg.latest_version
+        - pkg.list_downloaded
+        - pkg.list_installed_patches
+        - pkg.list_pkgs
+        - pkg.list_provides
+        - pkg.list_repo_pkgs
+        - pkg.normalize_name
+        - pkg.resolve_capabilities
+        - pkg.unhold
+        - pkg.verify
+        - pkg_resource.check_extra_requirements
+        - pkg_resource.pack_sources
+        - pkg_resource.version_clean
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: patch_downloaded
+      source:
+        path: salt/states/pkg.py
+        symbol: patch_downloaded
+      summary: '.. versionadded:: 2017.7.0'
+      parameters:
+        - name: name
+        - name: advisory_ids
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.unpurge
+        - pkg.check_db
+        - pkg.hold
+        - pkg.install
+        - pkg.latest_version
+        - pkg.list_downloaded
+        - pkg.list_installed_patches
+        - pkg.list_pkgs
+        - pkg.list_provides
+        - pkg.list_repo_pkgs
+        - pkg.normalize_name
+        - pkg.resolve_capabilities
+        - pkg.unhold
+        - pkg.verify
+        - pkg_resource.check_extra_requirements
+        - pkg_resource.pack_sources
+        - pkg_resource.version_clean
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: latest
+      source:
+        path: salt/states/pkg.py
+        symbol: latest
+      summary: '.. versionchanged:: 3007.0'
+      parameters:
+        - name: name
+        - name: refresh
+          default: None
+        - name: fromrepo
+          default: None
+        - name: skip_verify
+          default: "False"
+        - name: pkgs
+          default: None
+        - name: watch_flags
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.unpurge
+        - pkg.check_db
+        - pkg.hold
+        - pkg.install
+        - pkg.latest_version
+        - pkg.list_downloaded
+        - pkg.list_installed_patches
+        - pkg.list_pkgs
+        - pkg.list_provides
+        - pkg.list_repo_pkgs
+        - pkg.normalize_name
+        - pkg.resolve_capabilities
+        - pkg.unhold
+        - pkg.verify
+        - pkg.version
+        - pkg_resource.check_extra_requirements
+        - pkg_resource.pack_sources
+        - pkg_resource.version_clean
+        - portage_config.is_changed_uses
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: _uninstall
+      source:
+        path: salt/states/pkg.py
+        symbol: _uninstall
+      summary: Common function for package removal
+      parameters:
+        - name: action
+          default: '"remove"'
+        - name: name
+          default: None
+        - name: version
+          default: None
+        - name: pkgs
+          default: None
+        - name: normalize
+          default: "True"
+        - name: ignore_epoch
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.unpurge
+        - pkg.check_db
+        - pkg.hold
+        - pkg.install
+        - pkg.latest_version
+        - pkg.list_downloaded
+        - pkg.list_installed_patches
+        - pkg.list_pkgs
+        - pkg.list_provides
+        - pkg.list_repo_pkgs
+        - pkg.normalize_name
+        - pkg.resolve_capabilities
+        - pkg.unhold
+        - pkg.verify
+        - pkg.version
+        - pkg_resource.check_extra_requirements
+        - pkg_resource.pack_sources
+        - pkg_resource.parse_targets
+        - pkg_resource.version_clean
+        - portage_config.is_changed_uses
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: removed
+      source:
+        path: salt/states/pkg.py
+        symbol: removed
+      summary: Verify that a package is not installed, calling ``pkg.remove`` if necessary
+      parameters:
+        - name: name
+        - name: version
+          default: None
+        - name: pkgs
+          default: None
+        - name: normalize
+          default: "True"
+        - name: ignore_epoch
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.unpurge
+        - pkg.check_db
+        - pkg.hold
+        - pkg.install
+        - pkg.latest_version
+        - pkg.list_downloaded
+        - pkg.list_installed_patches
+        - pkg.list_pkgs
+        - pkg.list_provides
+        - pkg.list_repo_pkgs
+        - pkg.normalize_name
+        - pkg.resolve_capabilities
+        - pkg.unhold
+        - pkg.verify
+        - pkg.version
+        - pkg_resource.check_extra_requirements
+        - pkg_resource.pack_sources
+        - pkg_resource.parse_targets
+        - pkg_resource.version_clean
+        - portage_config.is_changed_uses
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: purged
+      source:
+        path: salt/states/pkg.py
+        symbol: purged
+      summary: Verify that a package is not installed, calling ``pkg.purge`` if necessary
+      parameters:
+        - name: name
+        - name: version
+          default: None
+        - name: pkgs
+          default: None
+        - name: normalize
+          default: "True"
+        - name: ignore_epoch
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.unpurge
+        - pkg.check_db
+        - pkg.hold
+        - pkg.install
+        - pkg.latest_version
+        - pkg.list_downloaded
+        - pkg.list_installed_patches
+        - pkg.list_pkgs
+        - pkg.list_provides
+        - pkg.list_repo_pkgs
+        - pkg.normalize_name
+        - pkg.resolve_capabilities
+        - pkg.unhold
+        - pkg.verify
+        - pkg.version
+        - pkg_resource.check_extra_requirements
+        - pkg_resource.pack_sources
+        - pkg_resource.parse_targets
+        - pkg_resource.version_clean
+        - portage_config.is_changed_uses
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: uptodate
+      source:
+        path: salt/states/pkg.py
+        symbol: uptodate
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+        - name: refresh
+          default: "False"
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.unpurge
+        - pkg.check_db
+        - pkg.hold
+        - pkg.install
+        - pkg.latest_version
+        - pkg.list_downloaded
+        - pkg.list_installed_patches
+        - pkg.list_pkgs
+        - pkg.list_provides
+        - pkg.list_repo_pkgs
+        - pkg.list_upgrades
+        - pkg.normalize_name
+        - pkg.resolve_capabilities
+        - pkg.unhold
+        - pkg.upgrade
+        - pkg.verify
+        - pkg.version
+        - pkg_resource.check_extra_requirements
+        - pkg_resource.pack_sources
+        - pkg_resource.parse_targets
+        - pkg_resource.version_clean
+        - portage_config.is_changed_uses
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: group_installed
+      source:
+        path: salt/states/pkg.py
+        symbol: group_installed
+      summary: '.. versionadded:: 2015.8.0'
+      parameters:
+        - name: name
+        - name: skip
+          default: None
+        - name: include
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.unpurge
+        - pkg.check_db
+        - pkg.group_diff
+        - pkg.hold
+        - pkg.install
+        - pkg.latest_version
+        - pkg.list_downloaded
+        - pkg.list_installed_patches
+        - pkg.list_pkgs
+        - pkg.list_provides
+        - pkg.list_repo_pkgs
+        - pkg.list_upgrades
+        - pkg.normalize_name
+        - pkg.resolve_capabilities
+        - pkg.unhold
+        - pkg.upgrade
+        - pkg.verify
+        - pkg.version
+        - pkg_resource.check_extra_requirements
+        - pkg_resource.pack_sources
+        - pkg_resource.parse_targets
+        - pkg_resource.version_clean
+        - portage_config.is_changed_uses
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: mod_init
+      source:
+        path: salt/states/pkg.py
+        symbol: mod_init
+      summary: Set a flag to tell the install functions to refresh the package database.
+      parameters:
+        - name: low
+      execution_dependencies:
+        - cp.cache_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.unpurge
+        - pkg.check_db
+        - pkg.ex_mod_init
+        - pkg.group_diff
+        - pkg.hold
+        - pkg.install
+        - pkg.latest_version
+        - pkg.list_downloaded
+        - pkg.list_installed_patches
+        - pkg.list_pkgs
+        - pkg.list_provides
+        - pkg.list_repo_pkgs
+        - pkg.list_upgrades
+        - pkg.normalize_name
+        - pkg.resolve_capabilities
+        - pkg.unhold
+        - pkg.upgrade
+        - pkg.verify
+        - pkg.version
+        - pkg_resource.check_extra_requirements
+        - pkg_resource.pack_sources
+        - pkg_resource.parse_targets
+        - pkg_resource.version_clean
+        - portage_config.is_changed_uses
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: mod_aggregate
+      source:
+        path: salt/states/pkg.py
+        symbol: mod_aggregate
+      summary: The mod_aggregate function which looks up all packages in the available
+      parameters:
+        - name: low
+        - name: chunks
+        - name: running
+      execution_dependencies:
+        - cp.cache_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.unpurge
+        - pkg.check_db
+        - pkg.ex_mod_init
+        - pkg.group_diff
+        - pkg.hold
+        - pkg.install
+        - pkg.latest_version
+        - pkg.list_downloaded
+        - pkg.list_installed_patches
+        - pkg.list_pkgs
+        - pkg.list_provides
+        - pkg.list_repo_pkgs
+        - pkg.list_upgrades
+        - pkg.normalize_name
+        - pkg.resolve_capabilities
+        - pkg.unhold
+        - pkg.upgrade
+        - pkg.verify
+        - pkg.version
+        - pkg_resource.check_extra_requirements
+        - pkg_resource.pack_sources
+        - pkg_resource.parse_targets
+        - pkg_resource.version_clean
+        - portage_config.is_changed_uses
+      utility_dependencies:
+        - state.gen_tag
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: _combine_pkgs
+      source:
+        path: salt/states/pkg.py
+        symbol: _combine_pkgs
+      parameters:
+        - name: pkgs_dict
+        - name: additional_pkgs_list
+      execution_dependencies:
+        - cp.cache_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.unpurge
+        - pkg.check_db
+        - pkg.ex_mod_init
+        - pkg.group_diff
+        - pkg.hold
+        - pkg.install
+        - pkg.latest_version
+        - pkg.list_downloaded
+        - pkg.list_installed_patches
+        - pkg.list_pkgs
+        - pkg.list_provides
+        - pkg.list_repo_pkgs
+        - pkg.list_upgrades
+        - pkg.normalize_name
+        - pkg.resolve_capabilities
+        - pkg.unhold
+        - pkg.upgrade
+        - pkg.verify
+        - pkg.version
+        - pkg_resource.check_extra_requirements
+        - pkg_resource.pack_sources
+        - pkg_resource.parse_targets
+        - pkg_resource.version_clean
+        - portage_config.is_changed_uses
+      utility_dependencies:
+        - state.gen_tag
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: mod_watch
+      source:
+        path: salt/states/pkg.py
+        symbol: mod_watch
+      summary: Install/reinstall a package based on a watch requisite
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.unpurge
+        - pkg.check_db
+        - pkg.ex_mod_init
+        - pkg.group_diff
+        - pkg.hold
+        - pkg.install
+        - pkg.latest_version
+        - pkg.list_downloaded
+        - pkg.list_installed_patches
+        - pkg.list_pkgs
+        - pkg.list_provides
+        - pkg.list_repo_pkgs
+        - pkg.list_upgrades
+        - pkg.normalize_name
+        - pkg.resolve_capabilities
+        - pkg.unhold
+        - pkg.upgrade
+        - pkg.verify
+        - pkg.version
+        - pkg_resource.check_extra_requirements
+        - pkg_resource.pack_sources
+        - pkg_resource.parse_targets
+        - pkg_resource.version_clean
+        - portage_config.is_changed_uses
+      utility_dependencies:
+        - state.gen_tag
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: mod_beacon
+      source:
+        path: salt/states/pkg.py
+        symbol: mod_beacon
+      summary: Create a beacon to monitor a package or packages
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.unpurge
+        - pkg.check_db
+        - pkg.ex_mod_init
+        - pkg.group_diff
+        - pkg.hold
+        - pkg.install
+        - pkg.latest_version
+        - pkg.list_downloaded
+        - pkg.list_installed_patches
+        - pkg.list_pkgs
+        - pkg.list_provides
+        - pkg.list_repo_pkgs
+        - pkg.list_upgrades
+        - pkg.normalize_name
+        - pkg.resolve_capabilities
+        - pkg.unhold
+        - pkg.upgrade
+        - pkg.verify
+        - pkg.version
+        - pkg_resource.check_extra_requirements
+        - pkg_resource.pack_sources
+        - pkg_resource.parse_targets
+        - pkg_resource.version_clean
+        - portage_config.is_changed_uses
+      utility_dependencies:
+        - state.gen_tag
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: held
+      source:
+        path: salt/states/pkg.py
+        symbol: held
+      summary: '.. versionadded:: 3005'
+      parameters:
+        - name: name
+        - name: version
+          default: None
+        - name: pkgs
+          default: None
+        - name: replace
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.unpurge
+        - pkg.check_db
+        - pkg.ex_mod_init
+        - pkg.get_selections
+        - pkg.group_diff
+        - pkg.hold
+        - pkg.install
+        - pkg.latest_version
+        - pkg.list_downloaded
+        - pkg.list_holds
+        - pkg.list_installed_patches
+        - pkg.list_locks
+        - pkg.list_pkgs
+        - pkg.list_provides
+        - pkg.list_repo_pkgs
+        - pkg.list_upgrades
+        - pkg.normalize_name
+        - pkg.resolve_capabilities
+        - pkg.unhold
+        - pkg.upgrade
+        - pkg.verify
+        - pkg.version
+        - pkg_resource.check_extra_requirements
+        - pkg_resource.pack_sources
+        - pkg_resource.parse_targets
+        - pkg_resource.version_clean
+        - portage_config.is_changed_uses
+      utility_dependencies:
+        - state.gen_tag
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: trusted
+      source:
+        path: salt/states/pkg.py
+        symbol: trusted
+      summary: Ensure a package source or component is marked as trusted by the package
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.unpurge
+        - pkg.check_db
+        - pkg.ex_mod_init
+        - pkg.get_selections
+        - pkg.group_diff
+        - pkg.hold
+        - pkg.install
+        - pkg.is_trusted
+        - pkg.latest_version
+        - pkg.list_downloaded
+        - pkg.list_holds
+        - pkg.list_installed_patches
+        - pkg.list_locks
+        - pkg.list_pkgs
+        - pkg.list_provides
+        - pkg.list_repo_pkgs
+        - pkg.list_upgrades
+        - pkg.normalize_name
+        - pkg.resolve_capabilities
+        - pkg.trust
+        - pkg.unhold
+        - pkg.upgrade
+        - pkg.verify
+        - pkg.version
+        - pkg_resource.check_extra_requirements
+        - pkg_resource.pack_sources
+        - pkg_resource.parse_targets
+        - pkg_resource.version_clean
+        - portage_config.is_changed_uses
+      utility_dependencies:
+        - state.gen_tag
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: untrusted
+      source:
+        path: salt/states/pkg.py
+        symbol: untrusted
+      summary: Ensure a package source or component is not marked as trusted by the
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.unpurge
+        - pkg.check_db
+        - pkg.ex_mod_init
+        - pkg.get_selections
+        - pkg.group_diff
+        - pkg.hold
+        - pkg.install
+        - pkg.is_trusted
+        - pkg.latest_version
+        - pkg.list_downloaded
+        - pkg.list_holds
+        - pkg.list_installed_patches
+        - pkg.list_locks
+        - pkg.list_pkgs
+        - pkg.list_provides
+        - pkg.list_repo_pkgs
+        - pkg.list_upgrades
+        - pkg.normalize_name
+        - pkg.resolve_capabilities
+        - pkg.trust
+        - pkg.unhold
+        - pkg.untrust
+        - pkg.upgrade
+        - pkg.verify
+        - pkg.version
+        - pkg_resource.check_extra_requirements
+        - pkg_resource.pack_sources
+        - pkg_resource.parse_targets
+        - pkg_resource.version_clean
+        - portage_config.is_changed_uses
+      utility_dependencies:
+        - state.gen_tag
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42
+    - function: unheld
+      source:
+        path: salt/states/pkg.py
+        symbol: unheld
+      summary: '.. versionadded:: 3005'
+      parameters:
+        - name: name
+        - name: version
+          default: None
+        - name: pkgs
+          default: None
+        - name: all
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+        - lowpkg.bin_pkg_info
+        - lowpkg.unpurge
+        - pkg.check_db
+        - pkg.ex_mod_init
+        - pkg.get_selections
+        - pkg.group_diff
+        - pkg.hold
+        - pkg.install
+        - pkg.is_trusted
+        - pkg.latest_version
+        - pkg.list_downloaded
+        - pkg.list_holds
+        - pkg.list_installed_patches
+        - pkg.list_locks
+        - pkg.list_pkgs
+        - pkg.list_provides
+        - pkg.list_repo_pkgs
+        - pkg.list_upgrades
+        - pkg.normalize_name
+        - pkg.resolve_capabilities
+        - pkg.trust
+        - pkg.unhold
+        - pkg.untrust
+        - pkg.upgrade
+        - pkg.verify
+        - pkg.version
+        - pkg_resource.check_extra_requirements
+        - pkg_resource.pack_sources
+        - pkg_resource.parse_targets
+        - pkg_resource.version_clean
+        - portage_config.is_changed_uses
+      utility_dependencies:
+        - state.gen_tag
+      tests:
+        - path: tests/pytests/unit/states/test_pkg.py
+          functions: 42

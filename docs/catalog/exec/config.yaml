@@ -1,0 +1,133 @@
+kind: exec
+module: config
+source_module: config
+path: salt/modules/config.py
+platform_markers:
+    - is_windows
+functions:
+    - function: backup_mode
+      source:
+        path: salt/modules/config.py
+        symbol: backup_mode
+      summary: Return the backup mode
+      parameters:
+        - name: backup
+          default: '""'
+      tests:
+        - path: tests/pytests/unit/modules/test_config.py
+          functions: 3
+    - function: manage_mode
+      source:
+        path: salt/modules/config.py
+        symbol: manage_mode
+      summary: Return a mode value, normalized to a string
+      parameters:
+        - name: mode
+      tests:
+        - path: tests/pytests/unit/modules/test_config.py
+          functions: 3
+    - function: valid_fileproto
+      source:
+        path: salt/modules/config.py
+        symbol: valid_fileproto
+      summary: Returns a boolean value based on whether or not the URI passed has a valid
+      parameters:
+        - name: uri
+      tests:
+        - path: tests/pytests/unit/modules/test_config.py
+          functions: 3
+    - function: option
+      source:
+        path: salt/modules/config.py
+        symbol: option
+      summary: Returns the setting for the specified config value. The priority for
+      parameters:
+        - name: value
+        - name: default
+          default: None
+        - name: omit_opts
+          default: "False"
+        - name: omit_grains
+          default: "False"
+        - name: omit_pillar
+          default: "False"
+        - name: omit_master
+          default: "False"
+        - name: omit_all
+          default: "False"
+        - name: wildcard
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_config.py
+          functions: 3
+    - function: merge
+      source:
+        path: salt/modules/config.py
+        symbol: merge
+      summary: Retrieves an option based on key, merging all matches.
+      parameters:
+        - name: value
+        - name: default
+          default: '""'
+        - name: omit_opts
+          default: "False"
+        - name: omit_master
+          default: "False"
+        - name: omit_pillar
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_config.py
+          functions: 3
+    - function: get
+      source:
+        path: salt/modules/config.py
+        symbol: get
+      summary: '.. versionadded:: 0.14.0'
+      parameters:
+        - name: key
+        - name: default
+          default: '""'
+        - name: delimiter
+          default: '":"'
+        - name: merge
+          default: None
+        - name: omit_opts
+          default: "False"
+        - name: omit_pillar
+          default: "False"
+        - name: omit_master
+          default: "False"
+        - name: omit_grains
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_config.py
+          functions: 3
+    - function: dot_vals
+      source:
+        path: salt/modules/config.py
+        symbol: dot_vals
+      summary: Pass in a configuration value that should be preceded by the module name
+      parameters:
+        - name: value
+      tests:
+        - path: tests/pytests/unit/modules/test_config.py
+          functions: 3
+    - function: gather_bootstrap_script
+      source:
+        path: salt/modules/config.py
+        symbol: gather_bootstrap_script
+      summary: Download the salt-bootstrap script, and return its location
+      parameters:
+        - name: bootstrap
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_config.py
+          functions: 3
+    - function: items
+      source:
+        path: salt/modules/config.py
+        symbol: items
+      summary: Return the complete config from the currently running minion process.
+      tests:
+        - path: tests/pytests/unit/modules/test_config.py
+          functions: 3

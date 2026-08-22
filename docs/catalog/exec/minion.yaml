@@ -1,0 +1,148 @@
+kind: exec
+module: minion
+source_module: minion
+path: salt/modules/minion.py
+platform_markers:
+    - is_linux
+functions:
+    - function: _is_systemd_system
+      source:
+        path: salt/modules/minion.py
+        symbol: _is_systemd_system
+      summary: Check if the system uses systemd
+      tests:
+        - path: tests/pytests/unit/modules/test_minion.py
+          functions: 15
+    - function: _is_windows_system
+      source:
+        path: salt/modules/minion.py
+        symbol: _is_windows_system
+      summary: Check if the system is Windows
+      tests:
+        - path: tests/pytests/unit/modules/test_minion.py
+          functions: 15
+    - function: _schedule_retry_systemd
+      source:
+        path: salt/modules/minion.py
+        symbol: _schedule_retry_systemd
+      summary: Schedule a retry for the minion restart on systemd systems
+      parameters:
+        - name: retry_delay
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_minion.py
+          functions: 15
+    - function: _schedule_retry_windows
+      source:
+        path: salt/modules/minion.py
+        symbol: _schedule_retry_windows
+      summary: Schedule a retry for the minion restart on Windows systems
+      parameters:
+        - name: retry_delay
+      execution_dependencies:
+        - cmd.run_all
+        - task.create_task
+      tests:
+        - path: tests/pytests/unit/modules/test_minion.py
+          functions: 15
+    - function: _schedule_retry
+      source:
+        path: salt/modules/minion.py
+        symbol: _schedule_retry
+      summary: Schedule a retry for the minion restart
+      parameters:
+        - name: retry_delay
+      execution_dependencies:
+        - cmd.run_all
+        - task.create_task
+      tests:
+        - path: tests/pytests/unit/modules/test_minion.py
+          functions: 15
+    - function: _restart_service
+      source:
+        path: salt/modules/minion.py
+        symbol: _restart_service
+      summary: Helper function to restart a service with optional retry scheduling
+      parameters:
+        - name: service_name
+        - name: schedule_retry
+        - name: retry_delay
+        - name: comment
+        - name: no_block
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+        - service.restart
+        - task.create_task
+      tests:
+        - path: tests/pytests/unit/modules/test_minion.py
+          functions: 15
+    - function: list_
+      source:
+        path: salt/modules/minion.py
+        symbol: list_
+      summary: Return a list of accepted, denied, unaccepted and rejected keys.
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - service.restart
+        - task.create_task
+      tests:
+        - path: tests/pytests/unit/modules/test_minion.py
+          functions: 15
+    - function: _check_minions_directories
+      source:
+        path: salt/modules/minion.py
+        symbol: _check_minions_directories
+      summary: Return the minion keys directory paths.
+      parameters:
+        - name: pki_dir
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - service.restart
+        - task.create_task
+      tests:
+        - path: tests/pytests/unit/modules/test_minion.py
+          functions: 15
+    - function: kill
+      source:
+        path: salt/modules/minion.py
+        symbol: kill
+      summary: Kill the salt minion.
+      parameters:
+        - name: timeout
+          default: "15"
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - ps.kill_pid
+        - service.restart
+        - task.create_task
+      tests:
+        - path: tests/pytests/unit/modules/test_minion.py
+          functions: 15
+    - function: restart
+      source:
+        path: salt/modules/minion.py
+        symbol: restart
+      summary: Restart the salt minion.
+      parameters:
+        - name: systemd
+          default: "True"
+        - name: win_service
+          default: "True"
+        - name: schedule_retry
+          default: "False"
+        - name: retry_delay
+          default: "180"
+      execution_dependencies:
+        - cmd.run_all
+        - config.get
+        - ps.kill_pid
+        - service.restart
+        - task.create_task
+      tests:
+        - path: tests/pytests/unit/modules/test_minion.py
+          functions: 15

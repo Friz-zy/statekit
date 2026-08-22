@@ -1,0 +1,82 @@
+kind: exec
+module: probes
+source_module: napalm_probes
+virtual: true
+path: salt/modules/napalm_probes.py
+functions:
+    - function: config
+      source:
+        path: salt/modules/napalm_probes.py
+        symbol: config
+      summary: Returns the configuration of the RPM probes.
+      parameters:
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/unit/modules/test_napalm_probes.py
+          functions: 0
+    - function: results
+      source:
+        path: salt/modules/napalm_probes.py
+        symbol: results
+      summary: Provides the results of the measurements of the RPM/SLA probes.
+      parameters:
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/unit/modules/test_napalm_probes.py
+          functions: 0
+    - function: set_probes
+      source:
+        path: salt/modules/napalm_probes.py
+        symbol: set_probes
+      summary: Configures RPM/SLA probes on the device.
+      parameters:
+        - name: probes
+        - name: test
+          default: "False"
+        - name: commit
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - net.load_template
+      tests:
+        - path: tests/unit/modules/test_napalm_probes.py
+          functions: 0
+    - function: delete_probes
+      source:
+        path: salt/modules/napalm_probes.py
+        symbol: delete_probes
+      summary: Removes RPM/SLA probes from the network device.
+      parameters:
+        - name: probes
+        - name: test
+          default: "False"
+        - name: commit
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - net.load_template
+      tests:
+        - path: tests/unit/modules/test_napalm_probes.py
+          functions: 0
+    - function: schedule_probes
+      source:
+        path: salt/modules/napalm_probes.py
+        symbol: schedule_probes
+      summary: Will schedule the probes. On Cisco devices, it is not enough to define the
+      parameters:
+        - name: probes
+        - name: test
+          default: "False"
+        - name: commit
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - net.load_template
+      tests:
+        - path: tests/unit/modules/test_napalm_probes.py
+          functions: 0

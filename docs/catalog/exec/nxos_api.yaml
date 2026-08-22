@@ -1,0 +1,73 @@
+kind: exec
+module: nxos_api
+source_module: nxos_api
+virtual: true
+path: salt/modules/nxos_api.py
+functions:
+    - function: _cli_command
+      source:
+        path: salt/modules/nxos_api.py
+        symbol: _cli_command
+      summary: Execute a list of CLI commands.
+      parameters:
+        - name: commands
+        - name: method
+          default: '"cli"'
+        - name: kwargs
+          kind: '**'
+    - function: rpc
+      source:
+        path: salt/modules/nxos_api.py
+        symbol: rpc
+      summary: Execute an arbitrary RPC request via the Nexus API.
+      parameters:
+        - name: commands
+        - name: method
+          default: '"cli"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+      utility_dependencies:
+        - nxos_api.rpc
+    - function: show
+      source:
+        path: salt/modules/nxos_api.py
+        symbol: show
+      summary: Execute one or more show (non-configuration) commands.
+      parameters:
+        - name: commands
+        - name: raw_text
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+      utility_dependencies:
+        - nxos_api.rpc
+    - function: config
+      source:
+        path: salt/modules/nxos_api.py
+        symbol: config
+      summary: Configures the Nexus switch with the specified commands.
+      parameters:
+        - name: commands
+          default: None
+        - name: config_file
+          default: None
+        - name: template_engine
+          default: '"jinja"'
+        - name: context
+          default: None
+        - name: defaults
+          default: None
+        - name: saltenv
+          default: '"base"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - cp.get_file_str
+        - file.apply_template_on_contents
+      utility_dependencies:
+        - nxos_api.rpc

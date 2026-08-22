@@ -1,0 +1,56 @@
+kind: state
+module: wua
+source_module: win_wua
+virtual: true
+path: salt/states/win_wua.py
+platform_markers:
+    - is_windows
+functions:
+    - function: installed
+      source:
+        path: salt/states/win_wua.py
+        symbol: installed
+      summary: Ensure Microsoft Updates are installed. Updates will be downloaded if
+      parameters:
+        - name: name
+        - name: updates
+          default: None
+      tests:
+        - path: tests/pytests/unit/states/test_win_wua.py
+          functions: 9
+    - function: removed
+      source:
+        path: salt/states/win_wua.py
+        symbol: removed
+      summary: Ensure Microsoft Updates are uninstalled.
+      parameters:
+        - name: name
+        - name: updates
+          default: None
+      tests:
+        - path: tests/pytests/unit/states/test_win_wua.py
+          functions: 9
+    - function: uptodate
+      source:
+        path: salt/states/win_wua.py
+        symbol: uptodate
+      summary: Ensure Microsoft Updates that match the passed criteria are installed.
+      parameters:
+        - name: name
+        - name: software
+          default: "True"
+        - name: drivers
+          default: "False"
+        - name: skip_hidden
+          default: "False"
+        - name: skip_mandatory
+          default: "False"
+        - name: skip_reboot
+          default: "True"
+        - name: categories
+          default: None
+        - name: severities
+          default: None
+      tests:
+        - path: tests/pytests/unit/states/test_win_wua.py
+          functions: 9

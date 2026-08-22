@@ -1,0 +1,127 @@
+kind: state
+module: netsnmp
+source_module: netsnmp
+virtual: true
+path: salt/states/netsnmp.py
+functions:
+    - function: _ordered_dict_to_dict
+      source:
+        path: salt/states/netsnmp.py
+        symbol: _ordered_dict_to_dict
+      summary: Forced the datatype to dict, in case OrderedDict is used.
+      parameters:
+        - name: config
+    - function: _expand_config
+      source:
+        path: salt/states/netsnmp.py
+        symbol: _expand_config
+      summary: Completed the values of the expected config for the edge cases with the default values.
+      parameters:
+        - name: config
+        - name: defaults
+    - function: _valid_dict
+      source:
+        path: salt/states/netsnmp.py
+        symbol: _valid_dict
+      summary: Valid dictionary?
+      parameters:
+        - name: dic
+    - function: _valid_str
+      source:
+        path: salt/states/netsnmp.py
+        symbol: _valid_str
+      summary: Valid str?
+      parameters:
+        - name: value
+    - function: _community_defaults
+      source:
+        path: salt/states/netsnmp.py
+        symbol: _community_defaults
+      summary: Returns the default values of a community.
+    - function: _clear_community_details
+      source:
+        path: salt/states/netsnmp.py
+        symbol: _clear_community_details
+      summary: Clears community details.
+      parameters:
+        - name: community_details
+    - function: _str_elem
+      source:
+        path: salt/states/netsnmp.py
+        symbol: _str_elem
+      summary: Re-adds the value of a specific key in the dict, only in case of valid str value.
+      parameters:
+        - name: config
+        - name: key
+    - function: _check_config
+      source:
+        path: salt/states/netsnmp.py
+        symbol: _check_config
+      summary: Checks the desired config and clears interesting details.
+      parameters:
+        - name: config
+    - function: _retrieve_device_config
+      source:
+        path: salt/states/netsnmp.py
+        symbol: _retrieve_device_config
+      summary: Retrieves the SNMP config from the device.
+      execution_dependencies:
+        - snmp.config
+    - function: _create_diff_action
+      source:
+        path: salt/states/netsnmp.py
+        symbol: _create_diff_action
+      summary: DRY to build diff parts (added, removed, updated).
+      parameters:
+        - name: diff
+        - name: diff_key
+        - name: key
+        - name: value
+      execution_dependencies:
+        - snmp.config
+    - function: _create_diff
+      source:
+        path: salt/states/netsnmp.py
+        symbol: _create_diff
+      summary: Builds the diff dictionary.
+      parameters:
+        - name: diff
+        - name: fun
+        - name: key
+        - name: prev
+        - name: curr
+      execution_dependencies:
+        - snmp.config
+    - function: _compute_diff
+      source:
+        path: salt/states/netsnmp.py
+        symbol: _compute_diff
+      summary: Computes the differences between the existing and the expected SNMP config.
+      parameters:
+        - name: existing
+        - name: expected
+      execution_dependencies:
+        - snmp.config
+    - function: _configure
+      source:
+        path: salt/states/netsnmp.py
+        symbol: _configure
+      summary: Calls the configuration template to apply the configuration changes on the device.
+      parameters:
+        - name: changes
+      execution_dependencies:
+        - snmp.config
+    - function: managed
+      source:
+        path: salt/states/netsnmp.py
+        symbol: managed
+      summary: Configures the SNMP on the device as specified in the SLS file.
+      parameters:
+        - name: name
+        - name: config
+          default: None
+        - name: defaults
+          default: None
+      execution_dependencies:
+        - net.config_control
+        - snmp.config

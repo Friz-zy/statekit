@@ -1,0 +1,98 @@
+kind: state
+module: syslog_ng
+source_module: syslog_ng
+path: salt/states/syslog_ng.py
+functions:
+    - function: config
+      source:
+        path: salt/states/syslog_ng.py
+        symbol: config
+      summary: Builds syslog-ng configuration.
+      parameters:
+        - name: name
+        - name: config
+        - name: write
+          default: "True"
+      execution_dependencies:
+        - syslog_ng.config
+      tests:
+        - path: tests/unit/states/test_syslog_ng.py
+          functions: 0
+    - function: stopped
+      source:
+        path: salt/states/syslog_ng.py
+        symbol: stopped
+      summary: Kills syslog-ng.
+      parameters:
+        - name: name
+          default: None
+      execution_dependencies:
+        - syslog_ng.config
+        - syslog_ng.stop
+      tests:
+        - path: tests/unit/states/test_syslog_ng.py
+          functions: 0
+    - function: started
+      source:
+        path: salt/states/syslog_ng.py
+        symbol: started
+      summary: Ensures, that syslog-ng is started via the given parameters.
+      parameters:
+        - name: name
+          default: None
+        - name: user
+          default: None
+        - name: group
+          default: None
+        - name: chroot
+          default: None
+        - name: caps
+          default: None
+        - name: no_caps
+          default: "False"
+        - name: pidfile
+          default: None
+        - name: enable_core
+          default: "False"
+        - name: fd_limit
+          default: None
+        - name: verbose
+          default: "False"
+        - name: debug
+          default: "False"
+        - name: trace
+          default: "False"
+        - name: yydebug
+          default: "False"
+        - name: persist_file
+          default: None
+        - name: control
+          default: None
+        - name: worker_threads
+          default: None
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - syslog_ng.config
+        - syslog_ng.start
+        - syslog_ng.stop
+      tests:
+        - path: tests/unit/states/test_syslog_ng.py
+          functions: 0
+    - function: reloaded
+      source:
+        path: salt/states/syslog_ng.py
+        symbol: reloaded
+      summary: Reloads syslog-ng.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - syslog_ng.config
+        - syslog_ng.reload
+        - syslog_ng.start
+        - syslog_ng.stop
+      tests:
+        - path: tests/unit/states/test_syslog_ng.py
+          functions: 0

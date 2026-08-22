@@ -1,0 +1,262 @@
+kind: exec
+module: slsutil
+source_module: slsutil
+path: salt/modules/slsutil.py
+functions:
+    - function: update
+      source:
+        path: salt/modules/slsutil.py
+        symbol: update
+      summary: Merge ``upd`` recursively into ``dest``
+      parameters:
+        - name: dest
+        - name: upd
+        - name: recursive_update
+          default: "True"
+        - name: merge_lists
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_slsutil.py
+          functions: 14
+    - function: merge
+      source:
+        path: salt/modules/slsutil.py
+        symbol: merge
+      summary: Merge a data structure into another by choosing a merge strategy
+      parameters:
+        - name: obj_a
+        - name: obj_b
+        - name: strategy
+          default: '"smart"'
+        - name: renderer
+          default: '"yaml"'
+        - name: merge_lists
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_slsutil.py
+          functions: 14
+    - function: merge_all
+      source:
+        path: salt/modules/slsutil.py
+        symbol: merge_all
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: lst
+        - name: strategy
+          default: '"smart"'
+        - name: renderer
+          default: '"yaml"'
+        - name: merge_lists
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_slsutil.py
+          functions: 14
+    - function: renderer
+      source:
+        path: salt/modules/slsutil.py
+        symbol: renderer
+      summary: Parse a string or file through Salt's renderer system
+      parameters:
+        - name: path
+          default: None
+        - name: string
+          default: None
+        - name: default_renderer
+          default: '"jinja|yaml"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_url
+      utility_dependencies:
+        - stringio.is_readable
+      tests:
+        - path: tests/pytests/unit/modules/test_slsutil.py
+          functions: 14
+    - function: _get_serialize_fn
+      source:
+        path: salt/modules/slsutil.py
+        symbol: _get_serialize_fn
+      parameters:
+        - name: serializer
+        - name: fn_name
+      execution_dependencies:
+        - cp.get_url
+      utility_dependencies:
+        - stringio.is_readable
+      tests:
+        - path: tests/pytests/unit/modules/test_slsutil.py
+          functions: 14
+    - function: serialize
+      source:
+        path: salt/modules/slsutil.py
+        symbol: serialize
+      summary: Serialize a Python object using one of the available
+      parameters:
+        - name: serializer
+        - name: obj
+        - name: mod_kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_url
+      utility_dependencies:
+        - stringio.is_readable
+      tests:
+        - path: tests/pytests/unit/modules/test_slsutil.py
+          functions: 14
+    - function: deserialize
+      source:
+        path: salt/modules/slsutil.py
+        symbol: deserialize
+      summary: Deserialize a Python object using one of the available
+      parameters:
+        - name: serializer
+        - name: stream_or_string
+        - name: mod_kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_url
+      utility_dependencies:
+        - stringio.is_readable
+      tests:
+        - path: tests/pytests/unit/modules/test_slsutil.py
+          functions: 14
+    - function: banner
+      source:
+        path: salt/modules/slsutil.py
+        symbol: banner
+      summary: Create a standardized comment block to include in a templated file.
+      parameters:
+        - name: width
+          default: "72"
+        - name: commentchar
+          default: '"#"'
+        - name: borderchar
+          default: '"#"'
+        - name: blockstart
+          default: None
+        - name: blockend
+          default: None
+        - name: title
+          default: None
+        - name: text
+          default: None
+        - name: newline
+          default: "False"
+      execution_dependencies:
+        - cp.get_url
+      utility_dependencies:
+        - stringio.is_readable
+      tests:
+        - path: tests/pytests/unit/modules/test_slsutil.py
+          functions: 14
+    - function: boolstr
+      source:
+        path: salt/modules/slsutil.py
+        symbol: boolstr
+      summary: Convert a boolean value into a string. This function is
+      parameters:
+        - name: value
+        - name: "true"
+          default: '"true"'
+        - name: "false"
+          default: '"false"'
+      execution_dependencies:
+        - cp.get_url
+      utility_dependencies:
+        - stringio.is_readable
+      tests:
+        - path: tests/pytests/unit/modules/test_slsutil.py
+          functions: 14
+    - function: _set_context
+      source:
+        path: salt/modules/slsutil.py
+        symbol: _set_context
+      summary: Convenience function to set a value in the ``__context__`` dictionary.
+      parameters:
+        - name: keys
+        - name: function
+        - name: fun_args
+          default: None
+        - name: fun_kwargs
+          default: None
+        - name: force
+          default: "False"
+      execution_dependencies:
+        - cp.get_url
+      utility_dependencies:
+        - stringio.is_readable
+      tests:
+        - path: tests/pytests/unit/modules/test_slsutil.py
+          functions: 14
+    - function: file_exists
+      source:
+        path: salt/modules/slsutil.py
+        symbol: file_exists
+      summary: Return ``True`` if a file exists in the state tree, ``False`` otherwise.
+      parameters:
+        - name: path
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cp.get_url
+        - cp.list_master
+      utility_dependencies:
+        - stringio.is_readable
+      tests:
+        - path: tests/pytests/unit/modules/test_slsutil.py
+          functions: 14
+    - function: dir_exists
+      source:
+        path: salt/modules/slsutil.py
+        symbol: dir_exists
+      summary: Return ``True`` if a directory exists in the state tree, ``False`` otherwise.
+      parameters:
+        - name: path
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cp.get_url
+        - cp.list_master
+        - cp.list_master_dirs
+      utility_dependencies:
+        - stringio.is_readable
+      tests:
+        - path: tests/pytests/unit/modules/test_slsutil.py
+          functions: 14
+    - function: path_exists
+      source:
+        path: salt/modules/slsutil.py
+        symbol: path_exists
+      summary: Return ``True`` if a path exists in the state tree, ``False`` otherwise. The path
+      parameters:
+        - name: path
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cp.get_url
+        - cp.list_master
+        - cp.list_master_dirs
+      utility_dependencies:
+        - stringio.is_readable
+      tests:
+        - path: tests/pytests/unit/modules/test_slsutil.py
+          functions: 14
+    - function: findup
+      source:
+        path: salt/modules/slsutil.py
+        symbol: findup
+      summary: Find the first path matching a filename or list of filenames in a specified
+      parameters:
+        - name: startpath
+        - name: filenames
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cp.get_url
+        - cp.list_master
+        - cp.list_master_dirs
+      utility_dependencies:
+        - stringio.is_readable
+      tests:
+        - path: tests/pytests/unit/modules/test_slsutil.py
+          functions: 14

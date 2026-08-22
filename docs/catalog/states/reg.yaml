@@ -1,0 +1,54 @@
+kind: state
+module: reg
+source_module: reg
+path: salt/states/reg.py
+functions:
+    - function: _parse_key
+      source:
+        path: salt/states/reg.py
+        symbol: _parse_key
+      summary: split the hive from the key
+      parameters:
+        - name: key
+    - function: present
+      source:
+        path: salt/states/reg.py
+        symbol: present
+      parameters:
+        - name: name
+        - name: vname
+          default: None
+        - name: vdata
+          default: None
+        - name: vtype
+          default: '"REG_SZ"'
+        - name: use_32bit_registry
+          default: "False"
+        - name: win_owner
+          default: None
+        - name: win_perms
+          default: None
+        - name: win_deny_perms
+          default: None
+        - name: win_inheritance
+          default: "True"
+        - name: win_perms_reset
+          default: "False"
+    - function: absent
+      source:
+        path: salt/states/reg.py
+        symbol: absent
+      parameters:
+        - name: name
+        - name: vname
+          default: None
+        - name: use_32bit_registry
+          default: "False"
+    - function: key_absent
+      source:
+        path: salt/states/reg.py
+        symbol: key_absent
+      parameters:
+        - name: name
+        - name: use_32bit_registry
+          default: "False"

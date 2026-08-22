@@ -1,0 +1,59 @@
+kind: state
+module: blockdev
+source_module: blockdev
+virtual: true
+path: salt/states/blockdev.py
+functions:
+    - function: tuned
+      source:
+        path: salt/states/blockdev.py
+        symbol: tuned
+      summary: Manage options of block device
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - disk.dump
+        - disk.tune
+        - file.is_blkdev
+      tests:
+        - path: tests/pytests/unit/states/test_blockdev.py
+          functions: 3
+    - function: formatted
+      source:
+        path: salt/states/blockdev.py
+        symbol: formatted
+      summary: Manage filesystems of partitions.
+      parameters:
+        - name: name
+        - name: fs_type
+          default: '"ext4"'
+        - name: force
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - disk.dump
+        - disk.format
+        - disk.tune
+        - file.is_blkdev
+      tests:
+        - path: tests/pytests/unit/states/test_blockdev.py
+          functions: 3
+    - function: _checkblk
+      source:
+        path: salt/states/blockdev.py
+        symbol: _checkblk
+      summary: Check if the blk exists and return its fstype if ok
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+        - disk.dump
+        - disk.format
+        - disk.tune
+        - file.is_blkdev
+      tests:
+        - path: tests/pytests/unit/states/test_blockdev.py
+          functions: 3

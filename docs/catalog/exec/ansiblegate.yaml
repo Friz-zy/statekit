@@ -1,0 +1,157 @@
+kind: exec
+module: ansible
+source_module: ansiblegate
+virtual: true
+path: salt/modules/ansiblegate.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _set_callables
+      source:
+        path: salt/modules/ansiblegate.py
+        symbol: _set_callables
+      summary: Set all Ansible modules callables
+      parameters:
+        - name: modules
+      tests:
+        - path: tests/pytests/unit/modules/test_ansiblegate.py
+          functions: 10
+    - function: help
+      source:
+        path: salt/modules/ansiblegate.py
+        symbol: help
+      summary: Display help on Ansible standard module.
+      parameters:
+        - name: module
+          default: None
+        - name: args
+          kind: '*'
+      tests:
+        - path: tests/pytests/unit/modules/test_ansiblegate.py
+          functions: 10
+    - function: list_
+      source:
+        path: salt/modules/ansiblegate.py
+        symbol: list_
+      summary: Lists available modules.
+      parameters:
+        - name: pattern
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_ansiblegate.py
+          functions: 10
+    - function: call
+      source:
+        path: salt/modules/ansiblegate.py
+        symbol: call
+      summary: Call an Ansible module by invoking it.
+      parameters:
+        - name: module
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_ansiblegate.py
+          functions: 10
+    - function: playbooks
+      source:
+        path: salt/modules/ansiblegate.py
+        symbol: playbooks
+      summary: Run Ansible Playbooks
+      parameters:
+        - name: playbook
+        - name: rundir
+          default: None
+        - name: check
+          default: "False"
+        - name: diff
+          default: "False"
+        - name: extra_vars
+          default: None
+        - name: flush_cache
+          default: "False"
+        - name: forks
+          default: "5"
+        - name: inventory
+          default: None
+        - name: limit
+          default: None
+        - name: list_hosts
+          default: "False"
+        - name: list_tags
+          default: "False"
+        - name: list_tasks
+          default: "False"
+        - name: module_path
+          default: None
+        - name: skip_tags
+          default: None
+        - name: start_at_task
+          default: None
+        - name: syntax_check
+          default: "False"
+        - name: tags
+          default: None
+        - name: playbook_kwargs
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_ansiblegate.py
+          functions: 10
+    - function: targets
+      source:
+        path: salt/modules/ansiblegate.py
+        symbol: targets
+      summary: '.. versionadded:: 3005'
+      parameters:
+        - name: inventory
+          default: None
+        - name: inventories
+          default: None
+        - name: yaml
+          default: "False"
+        - name: export
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_ansiblegate.py
+          functions: 10
+    - function: discover_playbooks
+      source:
+        path: salt/modules/ansiblegate.py
+        symbol: discover_playbooks
+      summary: '.. versionadded:: 3005'
+      parameters:
+        - name: path
+          default: None
+        - name: locations
+          default: None
+        - name: playbook_extension
+          default: None
+        - name: hosts_filename
+          default: None
+        - name: syntax_check
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_ansiblegate.py
+          functions: 10
+    - function: _explore_path
+      source:
+        path: salt/modules/ansiblegate.py
+        symbol: _explore_path
+      parameters:
+        - name: path
+        - name: playbook_extension
+        - name: hosts_filename
+        - name: syntax_check
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_ansiblegate.py
+          functions: 10

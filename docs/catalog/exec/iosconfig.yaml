@@ -1,0 +1,209 @@
+kind: exec
+module: iosconfig
+source_module: iosconfig
+virtual: true
+path: salt/modules/iosconfig.py
+functions:
+    - function: _attach_data_to_path
+      source:
+        path: salt/modules/iosconfig.py
+        symbol: _attach_data_to_path
+      parameters:
+        - name: obj
+        - name: ele
+        - name: data
+      tests:
+        - path: tests/pytests/unit/modules/test_iosconfig.py
+          functions: 6
+    - function: _attach_data_to_path_tags
+      source:
+        path: salt/modules/iosconfig.py
+        symbol: _attach_data_to_path_tags
+      parameters:
+        - name: obj
+        - name: path
+        - name: data
+        - name: list_
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_iosconfig.py
+          functions: 6
+    - function: _parse_text_config
+      source:
+        path: salt/modules/iosconfig.py
+        symbol: _parse_text_config
+      parameters:
+        - name: config_lines
+        - name: with_tags
+          default: "False"
+        - name: current_indent
+          default: "0"
+        - name: nested
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_iosconfig.py
+          functions: 6
+    - function: _get_diff_text
+      source:
+        path: salt/modules/iosconfig.py
+        symbol: _get_diff_text
+      summary: Returns the diff of two text blobs.
+      parameters:
+        - name: old
+        - name: new
+      tests:
+        - path: tests/pytests/unit/modules/test_iosconfig.py
+          functions: 6
+    - function: _print_config_text
+      source:
+        path: salt/modules/iosconfig.py
+        symbol: _print_config_text
+      summary: Return the config as text from a config tree.
+      parameters:
+        - name: tree
+        - name: indentation
+          default: "0"
+      tests:
+        - path: tests/pytests/unit/modules/test_iosconfig.py
+          functions: 6
+    - function: tree
+      source:
+        path: salt/modules/iosconfig.py
+        symbol: tree
+      summary: Transform Cisco IOS style configuration to structured Python dictionary.
+      parameters:
+        - name: config
+          default: None
+        - name: path
+          default: None
+        - name: with_tags
+          default: "False"
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cp.get_file_str
+      tests:
+        - path: tests/pytests/unit/modules/test_iosconfig.py
+          functions: 6
+    - function: clean
+      source:
+        path: salt/modules/iosconfig.py
+        symbol: clean
+      summary: Return a clean version of the config, without any special signs (such as
+      parameters:
+        - name: config
+          default: None
+        - name: path
+          default: None
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cp.get_file_str
+      tests:
+        - path: tests/pytests/unit/modules/test_iosconfig.py
+          functions: 6
+    - function: merge_tree
+      source:
+        path: salt/modules/iosconfig.py
+        symbol: merge_tree
+      summary: Return the merge tree of the ``initial_config`` with the ``merge_config``,
+      parameters:
+        - name: initial_config
+          default: None
+        - name: initial_path
+          default: None
+        - name: merge_config
+          default: None
+        - name: merge_path
+          default: None
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cp.get_file_str
+      tests:
+        - path: tests/pytests/unit/modules/test_iosconfig.py
+          functions: 6
+    - function: merge_text
+      source:
+        path: salt/modules/iosconfig.py
+        symbol: merge_text
+      summary: Return the merge result of the ``initial_config`` with the ``merge_config``,
+      parameters:
+        - name: initial_config
+          default: None
+        - name: initial_path
+          default: None
+        - name: merge_config
+          default: None
+        - name: merge_path
+          default: None
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cp.get_file_str
+      tests:
+        - path: tests/pytests/unit/modules/test_iosconfig.py
+          functions: 6
+    - function: merge_diff
+      source:
+        path: salt/modules/iosconfig.py
+        symbol: merge_diff
+      summary: Return the merge diff, as text, after merging the merge config into the
+      parameters:
+        - name: initial_config
+          default: None
+        - name: initial_path
+          default: None
+        - name: merge_config
+          default: None
+        - name: merge_path
+          default: None
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cp.get_file_str
+      tests:
+        - path: tests/pytests/unit/modules/test_iosconfig.py
+          functions: 6
+    - function: diff_tree
+      source:
+        path: salt/modules/iosconfig.py
+        symbol: diff_tree
+      summary: Return the diff, as Python dictionary, between the candidate and the running
+      parameters:
+        - name: candidate_config
+          default: None
+        - name: candidate_path
+          default: None
+        - name: running_config
+          default: None
+        - name: running_path
+          default: None
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cp.get_file_str
+      tests:
+        - path: tests/pytests/unit/modules/test_iosconfig.py
+          functions: 6
+    - function: diff_text
+      source:
+        path: salt/modules/iosconfig.py
+        symbol: diff_text
+      summary: Return the diff, as text, between the candidate and the running config.
+      parameters:
+        - name: candidate_config
+          default: None
+        - name: candidate_path
+          default: None
+        - name: running_config
+          default: None
+        - name: running_path
+          default: None
+        - name: saltenv
+          default: '"base"'
+      execution_dependencies:
+        - cp.get_file_str
+      tests:
+        - path: tests/pytests/unit/modules/test_iosconfig.py
+          functions: 6

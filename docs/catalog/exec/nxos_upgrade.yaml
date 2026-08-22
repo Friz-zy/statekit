@@ -1,0 +1,70 @@
+kind: exec
+module: nxos
+source_module: nxos_upgrade
+virtual: true
+path: salt/modules/nxos_upgrade.py
+functions:
+    - function: check_upgrade_impact
+      source:
+        path: salt/modules/nxos_upgrade.py
+        symbol: check_upgrade_impact
+      summary: Display upgrade impact information without actually upgrading the device.
+      parameters:
+        - name: system_image
+        - name: kickstart_image
+          default: None
+        - name: issu
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - nxos.sendline
+      tests:
+        - path: tests/unit/modules/test_nxos_upgrade.py
+          functions: 0
+    - function: upgrade
+      source:
+        path: salt/modules/nxos_upgrade.py
+        symbol: upgrade
+      summary: Upgrade NX-OS switch.
+      parameters:
+        - name: system_image
+        - name: kickstart_image
+          default: None
+        - name: issu
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - nxos.sendline
+      tests:
+        - path: tests/unit/modules/test_nxos_upgrade.py
+          functions: 0
+    - function: _upgrade
+      source:
+        path: salt/modules/nxos_upgrade.py
+        symbol: _upgrade
+      summary: Helper method that does the heavy lifting for upgrades.
+      parameters:
+        - name: system_image
+        - name: kickstart_image
+        - name: issu
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - nxos.sendline
+      tests:
+        - path: tests/unit/modules/test_nxos_upgrade.py
+          functions: 0
+    - function: _parse_upgrade_data
+      source:
+        path: salt/modules/nxos_upgrade.py
+        symbol: _parse_upgrade_data
+      summary: Helper method to parse upgrade data from the NX-OS device.
+      parameters:
+        - name: data
+      execution_dependencies:
+        - nxos.sendline
+      tests:
+        - path: tests/unit/modules/test_nxos_upgrade.py
+          functions: 0

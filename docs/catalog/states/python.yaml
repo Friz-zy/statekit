@@ -1,0 +1,91 @@
+kind: state
+module: python
+source_module: python
+virtual: true
+path: salt/states/python.py
+functions:
+    - function: run
+      source:
+        path: salt/states/python.py
+        symbol: run
+      summary: Run a snippet of Python code, using the same interpreter that is
+      parameters:
+        - name: name
+        - name: args
+          default: None
+        - name: cwd
+          default: None
+        - name: runas
+          default: None
+        - name: password
+          default: None
+        - name: env
+          default: None
+        - name: output_loglevel
+          default: '"debug"'
+        - name: hide_output
+          default: "False"
+        - name: timeout
+          default: None
+        - name: ignore_timeout
+          default: "False"
+        - name: use_vt
+          default: "False"
+        - name: success_retcodes
+          default: None
+        - name: success_stdout
+          default: None
+        - name: success_stderr
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - python.run
+      tests:
+        - path: tests/pytests/unit/states/test_python.py
+          functions: 13
+    - function: script
+      source:
+        path: salt/states/python.py
+        symbol: script
+      summary: Download a Python script and execute it with the same interpreter that
+      parameters:
+        - name: name
+        - name: source
+          default: None
+        - name: template
+          default: None
+        - name: cwd
+          default: None
+        - name: runas
+          default: None
+        - name: password
+          default: None
+        - name: env
+          default: None
+        - name: timeout
+          default: None
+        - name: use_vt
+          default: "False"
+        - name: output_loglevel
+          default: '"debug"'
+        - name: hide_output
+          default: "False"
+        - name: defaults
+          default: None
+        - name: context
+          default: None
+        - name: success_retcodes
+          default: None
+        - name: success_stdout
+          default: None
+        - name: success_stderr
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - python.run
+        - python.script
+      tests:
+        - path: tests/pytests/unit/states/test_python.py
+          functions: 13

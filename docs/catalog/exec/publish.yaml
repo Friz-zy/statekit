@@ -1,0 +1,95 @@
+kind: exec
+module: publish
+source_module: publish
+virtual: true
+path: salt/modules/publish.py
+functions:
+    - function: _parse_args
+      source:
+        path: salt/modules/publish.py
+        symbol: _parse_args
+      summary: yamlify `arg` and ensure its outermost datatype is a list
+      parameters:
+        - name: arg
+      tests:
+        - path: tests/pytests/unit/modules/test_publish.py
+          functions: 3
+    - function: _publish
+      source:
+        path: salt/modules/publish.py
+        symbol: _publish
+      summary: Publish a command from the minion out to other minions, publications need
+      parameters:
+        - name: tgt
+        - name: fun
+        - name: arg
+          default: None
+        - name: tgt_type
+          default: '"glob"'
+        - name: returner
+          default: '""'
+        - name: timeout
+          default: "5"
+        - name: form
+          default: '"clean"'
+        - name: wait
+          default: "False"
+        - name: via_master
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_publish.py
+          functions: 3
+    - function: publish
+      source:
+        path: salt/modules/publish.py
+        symbol: publish
+      summary: Publish a command from the minion out to other minions.
+      parameters:
+        - name: tgt
+        - name: fun
+        - name: arg
+          default: None
+        - name: tgt_type
+          default: '"glob"'
+        - name: returner
+          default: '""'
+        - name: timeout
+          default: "5"
+        - name: via_master
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_publish.py
+          functions: 3
+    - function: full_data
+      source:
+        path: salt/modules/publish.py
+        symbol: full_data
+      summary: Return the full data about the publication, this is invoked in the same
+      parameters:
+        - name: tgt
+        - name: fun
+        - name: arg
+          default: None
+        - name: tgt_type
+          default: '"glob"'
+        - name: returner
+          default: '""'
+        - name: timeout
+          default: "5"
+      tests:
+        - path: tests/pytests/unit/modules/test_publish.py
+          functions: 3
+    - function: runner
+      source:
+        path: salt/modules/publish.py
+        symbol: runner
+      summary: Execute a runner on the master and return the data from the runner
+      parameters:
+        - name: fun
+        - name: arg
+          default: None
+        - name: timeout
+          default: "5"
+      tests:
+        - path: tests/pytests/unit/modules/test_publish.py
+          functions: 3

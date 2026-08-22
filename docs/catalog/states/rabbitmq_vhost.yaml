@@ -1,0 +1,26 @@
+kind: state
+module: rabbitmq_vhost
+source_module: rabbitmq_vhost
+path: salt/states/rabbitmq_vhost.py
+functions:
+    - function: present
+      source:
+        path: salt/states/rabbitmq_vhost.py
+        symbol: present
+      summary: Ensure the RabbitMQ VHost exists.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - rabbitmq.add_vhost
+        - rabbitmq.vhost_exists
+    - function: absent
+      source:
+        path: salt/states/rabbitmq_vhost.py
+        symbol: absent
+      summary: Ensure the RabbitMQ Virtual Host is absent
+      parameters:
+        - name: name
+      execution_dependencies:
+        - rabbitmq.add_vhost
+        - rabbitmq.delete_vhost
+        - rabbitmq.vhost_exists

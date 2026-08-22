@@ -1,0 +1,84 @@
+kind: state
+module: module
+source_module: module
+path: salt/states/module.py
+functions:
+    - function: wait
+      source:
+        path: salt/states/module.py
+        symbol: wait
+      summary: Run a single module function only if the watch statement calls it
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/states/test_module.py
+          functions: 23
+    - function: run
+      source:
+        path: salt/states/module.py
+        symbol: run
+      summary: Run a single module function or a range of module functions in a batch.
+      parameters:
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/states/test_module.py
+          functions: 23
+    - function: _run
+      source:
+        path: salt/states/module.py
+        symbol: _run
+      parameters:
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/states/test_module.py
+          functions: 23
+    - function: _call_function
+      source:
+        path: salt/states/module.py
+        symbol: _call_function
+      summary: Calls a function from the specified module.
+      parameters:
+        - name: name
+        - name: returner
+          default: None
+        - name: func_args
+          default: None
+        - name: func_kwargs
+          default: None
+      tests:
+        - path: tests/pytests/unit/states/test_module.py
+          functions: 23
+    - function: _legacy_run
+      source:
+        path: salt/states/module.py
+        symbol: _legacy_run
+      summary: '.. deprecated:: 2017.7.0'
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/states/test_module.py
+          functions: 23
+    - function: _get_result
+      source:
+        path: salt/states/module.py
+        symbol: _get_result
+      parameters:
+        - name: func_ret
+      tests:
+        - path: tests/pytests/unit/states/test_module.py
+          functions: 23
+    - function: _get_dict_result
+      source:
+        path: salt/states/module.py
+        symbol: _get_dict_result
+      parameters:
+        - name: node
+      tests:
+        - path: tests/pytests/unit/states/test_module.py
+          functions: 23

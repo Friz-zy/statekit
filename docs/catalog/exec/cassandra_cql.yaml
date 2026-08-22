@@ -1,0 +1,472 @@
+kind: exec
+module: cassandra_cql
+source_module: cassandra_cql
+virtual: true
+path: salt/modules/cassandra_cql.py
+functions:
+    - function: _async_log_errors
+      source:
+        path: salt/modules/cassandra_cql.py
+        symbol: _async_log_errors
+      parameters:
+        - name: errors
+      tests:
+        - path: tests/pytests/unit/modules/test_cassandra_cql.py
+          functions: 18
+    - function: _get_lbp_policy
+      source:
+        path: salt/modules/cassandra_cql.py
+        symbol: _get_lbp_policy
+      summary: Returns the Load Balancer Policy class by name
+      parameters:
+        - name: name
+        - name: policy_args
+          kind: '**'
+      tests:
+        - path: tests/pytests/unit/modules/test_cassandra_cql.py
+          functions: 18
+    - function: _load_properties
+      source:
+        path: salt/modules/cassandra_cql.py
+        symbol: _load_properties
+      summary: Load properties for the cassandra module from config or pillar.
+      parameters:
+        - name: property_name
+        - name: config_option
+        - name: set_default
+          default: "False"
+        - name: default
+          default: None
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_cassandra_cql.py
+          functions: 18
+    - function: _get_ssl_opts
+      source:
+        path: salt/modules/cassandra_cql.py
+        symbol: _get_ssl_opts
+      summary: Parse out ssl_options for Cassandra cluster connection.
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_cassandra_cql.py
+          functions: 18
+    - function: _connect
+      source:
+        path: salt/modules/cassandra_cql.py
+        symbol: _connect
+      summary: Connect to a Cassandra cluster.
+      parameters:
+        - name: contact_points
+          default: None
+        - name: port
+          default: None
+        - name: cql_user
+          default: None
+        - name: cql_pass
+          default: None
+        - name: protocol_version
+          default: None
+        - name: load_balancing_policy
+          default: None
+        - name: load_balancing_policy_args
+          default: None
+        - name: ssl_options
+          default: None
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_cassandra_cql.py
+          functions: 18
+    - function: cql_query
+      source:
+        path: salt/modules/cassandra_cql.py
+        symbol: cql_query
+      summary: Run a query on a Cassandra cluster and return a dictionary.
+      parameters:
+        - name: query
+        - name: contact_points
+          default: None
+        - name: port
+          default: None
+        - name: cql_user
+          default: None
+        - name: cql_pass
+          default: None
+        - name: protocol_version
+          default: None
+        - name: load_balancing_policy
+          default: None
+        - name: load_balancing_policy_args
+          default: None
+        - name: ssl_options
+          default: None
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_cassandra_cql.py
+          functions: 18
+    - function: cql_query_with_prepare
+      source:
+        path: salt/modules/cassandra_cql.py
+        symbol: cql_query_with_prepare
+      summary: Run a query on a Cassandra cluster and return a dictionary.
+      parameters:
+        - name: query
+        - name: statement_name
+        - name: statement_arguments
+        - name: asynchronous
+          default: "False"
+        - name: callback_errors
+          default: None
+        - name: contact_points
+          default: None
+        - name: port
+          default: None
+        - name: cql_user
+          default: None
+        - name: cql_pass
+          default: None
+        - name: protocol_version
+          default: None
+        - name: load_balancing_policy
+          default: None
+        - name: load_balancing_policy_args
+          default: None
+        - name: ssl_options
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_cassandra_cql.py
+          functions: 18
+    - function: version
+      source:
+        path: salt/modules/cassandra_cql.py
+        symbol: version
+      summary: Show the Cassandra version.
+      parameters:
+        - name: contact_points
+          default: None
+        - name: port
+          default: None
+        - name: cql_user
+          default: None
+        - name: cql_pass
+          default: None
+        - name: protocol_version
+          default: None
+        - name: load_balancing_policy
+          default: None
+        - name: load_balancing_policy_args
+          default: None
+        - name: ssl_options
+          default: None
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_cassandra_cql.py
+          functions: 18
+    - function: info
+      source:
+        path: salt/modules/cassandra_cql.py
+        symbol: info
+      summary: Show the Cassandra information for this cluster.
+      parameters:
+        - name: contact_points
+          default: None
+        - name: port
+          default: None
+        - name: cql_user
+          default: None
+        - name: cql_pass
+          default: None
+        - name: protocol_version
+          default: None
+        - name: load_balancing_policy
+          default: None
+        - name: load_balancing_policy_args
+          default: None
+        - name: ssl_options
+          default: None
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_cassandra_cql.py
+          functions: 18
+    - function: list_keyspaces
+      source:
+        path: salt/modules/cassandra_cql.py
+        symbol: list_keyspaces
+      summary: List keyspaces in a Cassandra cluster.
+      parameters:
+        - name: contact_points
+          default: None
+        - name: port
+          default: None
+        - name: cql_user
+          default: None
+        - name: cql_pass
+          default: None
+        - name: protocol_version
+          default: None
+        - name: load_balancing_policy
+          default: None
+        - name: load_balancing_policy_args
+          default: None
+        - name: ssl_options
+          default: None
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_cassandra_cql.py
+          functions: 18
+    - function: list_column_families
+      source:
+        path: salt/modules/cassandra_cql.py
+        symbol: list_column_families
+      summary: List column families in a Cassandra cluster for all keyspaces or just the provided one.
+      parameters:
+        - name: keyspace
+          default: None
+        - name: contact_points
+          default: None
+        - name: port
+          default: None
+        - name: cql_user
+          default: None
+        - name: cql_pass
+          default: None
+        - name: protocol_version
+          default: None
+        - name: load_balancing_policy
+          default: None
+        - name: load_balancing_policy_args
+          default: None
+        - name: ssl_options
+          default: None
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_cassandra_cql.py
+          functions: 18
+    - function: keyspace_exists
+      source:
+        path: salt/modules/cassandra_cql.py
+        symbol: keyspace_exists
+      summary: Check if a keyspace exists in a Cassandra cluster.
+      parameters:
+        - name: keyspace
+        - name: contact_points
+          default: None
+        - name: port
+          default: None
+        - name: cql_user
+          default: None
+        - name: cql_pass
+          default: None
+        - name: protocol_version
+          default: None
+        - name: load_balancing_policy
+          default: None
+        - name: load_balancing_policy_args
+          default: None
+        - name: ssl_options
+          default: None
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_cassandra_cql.py
+          functions: 18
+    - function: create_keyspace
+      source:
+        path: salt/modules/cassandra_cql.py
+        symbol: create_keyspace
+      summary: Create a new keyspace in Cassandra.
+      parameters:
+        - name: keyspace
+        - name: replication_strategy
+          default: '"SimpleStrategy"'
+        - name: replication_factor
+          default: "1"
+        - name: replication_datacenters
+          default: None
+        - name: contact_points
+          default: None
+        - name: port
+          default: None
+        - name: cql_user
+          default: None
+        - name: cql_pass
+          default: None
+        - name: protocol_version
+          default: None
+        - name: load_balancing_policy
+          default: None
+        - name: load_balancing_policy_args
+          default: None
+        - name: ssl_options
+          default: None
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_cassandra_cql.py
+          functions: 18
+    - function: drop_keyspace
+      source:
+        path: salt/modules/cassandra_cql.py
+        symbol: drop_keyspace
+      summary: Drop a keyspace if it exists in a Cassandra cluster.
+      parameters:
+        - name: keyspace
+        - name: contact_points
+          default: None
+        - name: port
+          default: None
+        - name: cql_user
+          default: None
+        - name: cql_pass
+          default: None
+        - name: protocol_version
+          default: None
+        - name: load_balancing_policy
+          default: None
+        - name: load_balancing_policy_args
+          default: None
+        - name: ssl_options
+          default: None
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_cassandra_cql.py
+          functions: 18
+    - function: list_users
+      source:
+        path: salt/modules/cassandra_cql.py
+        symbol: list_users
+      summary: List existing users in this Cassandra cluster.
+      parameters:
+        - name: contact_points
+          default: None
+        - name: port
+          default: None
+        - name: cql_user
+          default: None
+        - name: cql_pass
+          default: None
+        - name: protocol_version
+          default: None
+        - name: load_balancing_policy
+          default: None
+        - name: load_balancing_policy_args
+          default: None
+        - name: ssl_options
+          default: None
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_cassandra_cql.py
+          functions: 18
+    - function: create_user
+      source:
+        path: salt/modules/cassandra_cql.py
+        symbol: create_user
+      summary: Create a new cassandra user with credentials and superuser status.
+      parameters:
+        - name: username
+        - name: password
+        - name: superuser
+          default: "False"
+        - name: contact_points
+          default: None
+        - name: port
+          default: None
+        - name: cql_user
+          default: None
+        - name: cql_pass
+          default: None
+        - name: protocol_version
+          default: None
+        - name: load_balancing_policy
+          default: None
+        - name: load_balancing_policy_args
+          default: None
+        - name: ssl_options
+          default: None
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_cassandra_cql.py
+          functions: 18
+    - function: list_permissions
+      source:
+        path: salt/modules/cassandra_cql.py
+        symbol: list_permissions
+      summary: List permissions.
+      parameters:
+        - name: username
+          default: None
+        - name: resource
+          default: None
+        - name: resource_type
+          default: '"keyspace"'
+        - name: permission
+          default: None
+        - name: contact_points
+          default: None
+        - name: port
+          default: None
+        - name: cql_user
+          default: None
+        - name: cql_pass
+          default: None
+        - name: protocol_version
+          default: None
+        - name: load_balancing_policy
+          default: None
+        - name: load_balancing_policy_args
+          default: None
+        - name: ssl_options
+          default: None
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_cassandra_cql.py
+          functions: 18
+    - function: grant_permission
+      source:
+        path: salt/modules/cassandra_cql.py
+        symbol: grant_permission
+      summary: Grant permissions to a user.
+      parameters:
+        - name: username
+        - name: resource
+          default: None
+        - name: resource_type
+          default: '"keyspace"'
+        - name: permission
+          default: None
+        - name: contact_points
+          default: None
+        - name: port
+          default: None
+        - name: cql_user
+          default: None
+        - name: cql_pass
+          default: None
+        - name: protocol_version
+          default: None
+        - name: load_balancing_policy
+          default: None
+        - name: load_balancing_policy_args
+          default: None
+        - name: ssl_options
+          default: None
+      execution_dependencies:
+        - config.option
+      tests:
+        - path: tests/pytests/unit/modules/test_cassandra_cql.py
+          functions: 18

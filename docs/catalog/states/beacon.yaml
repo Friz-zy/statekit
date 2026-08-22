@@ -1,0 +1,83 @@
+kind: state
+module: beacon
+source_module: beacon
+path: salt/states/beacon.py
+functions:
+    - function: present
+      source:
+        path: salt/states/beacon.py
+        symbol: present
+      summary: Ensure beacon is configured with the included beacon data.
+      parameters:
+        - name: name
+        - name: save
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - beacons.add
+        - beacons.list
+        - beacons.modify
+        - beacons.save
+      tests:
+        - path: tests/pytests/unit/states/test_beacon.py
+          functions: 2
+    - function: absent
+      source:
+        path: salt/states/beacon.py
+        symbol: absent
+      summary: Ensure beacon is absent.
+      parameters:
+        - name: name
+        - name: save
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - beacons.add
+        - beacons.delete
+        - beacons.list
+        - beacons.modify
+        - beacons.save
+      tests:
+        - path: tests/pytests/unit/states/test_beacon.py
+          functions: 2
+    - function: enabled
+      source:
+        path: salt/states/beacon.py
+        symbol: enabled
+      summary: Enable a beacon.
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - beacons.add
+        - beacons.delete
+        - beacons.enable_beacon
+        - beacons.list
+        - beacons.modify
+        - beacons.save
+      tests:
+        - path: tests/pytests/unit/states/test_beacon.py
+          functions: 2
+    - function: disabled
+      source:
+        path: salt/states/beacon.py
+        symbol: disabled
+      summary: Disable a beacon.
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - beacons.add
+        - beacons.delete
+        - beacons.disable_beacon
+        - beacons.enable_beacon
+        - beacons.list
+        - beacons.modify
+        - beacons.save
+      tests:
+        - path: tests/pytests/unit/states/test_beacon.py
+          functions: 2

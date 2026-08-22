@@ -1,0 +1,40 @@
+kind: exec
+module: auditpol
+source_module: win_auditpol
+virtual: true
+path: salt/modules/win_auditpol.py
+platform_markers:
+    - is_windows
+functions:
+    - function: get_settings
+      source:
+        path: salt/modules/win_auditpol.py
+        symbol: get_settings
+      summary: Get the current configuration for all audit settings specified in the
+      parameters:
+        - name: category
+          default: '"All"'
+      utility_dependencies:
+        - auditpol.get_settings
+    - function: get_setting
+      source:
+        path: salt/modules/win_auditpol.py
+        symbol: get_setting
+      summary: Get the current configuration for the named audit setting
+      parameters:
+        - name: name
+      utility_dependencies:
+        - auditpol.get_setting
+        - auditpol.get_settings
+    - function: set_setting
+      source:
+        path: salt/modules/win_auditpol.py
+        symbol: set_setting
+      summary: Set the configuration for the named audit setting
+      parameters:
+        - name: name
+        - name: value
+      utility_dependencies:
+        - auditpol.get_setting
+        - auditpol.get_settings
+        - auditpol.set_setting

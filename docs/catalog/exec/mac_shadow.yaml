@@ -1,0 +1,217 @@
+kind: exec
+module: shadow
+source_module: mac_shadow
+virtual: true
+path: salt/modules/mac_shadow.py
+platform_markers:
+    - is_darwin
+functions:
+    - function: _get_account_policy
+      source:
+        path: salt/modules/mac_shadow.py
+        symbol: _get_account_policy
+      summary: Get the entire accountPolicy and return it as a dictionary. For use by this
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_shadow.py
+          functions: 12
+    - function: _set_account_policy
+      source:
+        path: salt/modules/mac_shadow.py
+        symbol: _set_account_policy
+      summary: Set a value in the user accountPolicy. For use by this module only
+      parameters:
+        - name: name
+        - name: policy
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_shadow.py
+          functions: 12
+    - function: _get_account_policy_data_value
+      source:
+        path: salt/modules/mac_shadow.py
+        symbol: _get_account_policy_data_value
+      summary: Return the value for a key in the accountPolicy section of the user's plist
+      parameters:
+        - name: name
+        - name: key
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_shadow.py
+          functions: 12
+    - function: _convert_to_datetime
+      source:
+        path: salt/modules/mac_shadow.py
+        symbol: _convert_to_datetime
+      summary: Converts a unix timestamp to a human readable date/time
+      parameters:
+        - name: unix_timestamp
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_shadow.py
+          functions: 12
+    - function: info
+      source:
+        path: salt/modules/mac_shadow.py
+        symbol: info
+      summary: Return information for the specified user
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_shadow.py
+          functions: 12
+    - function: get_account_created
+      source:
+        path: salt/modules/mac_shadow.py
+        symbol: get_account_created
+      summary: Get the date/time the account was created
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_shadow.py
+          functions: 12
+    - function: get_last_change
+      source:
+        path: salt/modules/mac_shadow.py
+        symbol: get_last_change
+      summary: Get the date/time the account was changed
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_shadow.py
+          functions: 12
+    - function: get_login_failed_count
+      source:
+        path: salt/modules/mac_shadow.py
+        symbol: get_login_failed_count
+      summary: Get the number of failed login attempts
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_shadow.py
+          functions: 12
+    - function: get_login_failed_last
+      source:
+        path: salt/modules/mac_shadow.py
+        symbol: get_login_failed_last
+      summary: Get the date/time of the last failed login attempt
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_shadow.py
+          functions: 12
+    - function: set_maxdays
+      source:
+        path: salt/modules/mac_shadow.py
+        symbol: set_maxdays
+      summary: Set the maximum age of the password in days
+      parameters:
+        - name: name
+        - name: days
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_shadow.py
+          functions: 12
+    - function: get_maxdays
+      source:
+        path: salt/modules/mac_shadow.py
+        symbol: get_maxdays
+      summary: Get the maximum age of the password
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_shadow.py
+          functions: 12
+    - function: set_mindays
+      source:
+        path: salt/modules/mac_shadow.py
+        symbol: set_mindays
+      summary: Set the minimum password age in days. Not available in macOS.
+      parameters:
+        - name: name
+        - name: days
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_shadow.py
+          functions: 12
+    - function: set_inactdays
+      source:
+        path: salt/modules/mac_shadow.py
+        symbol: set_inactdays
+      summary: Set the number if inactive days before the account is locked. Not available
+      parameters:
+        - name: name
+        - name: days
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_shadow.py
+          functions: 12
+    - function: set_warndays
+      source:
+        path: salt/modules/mac_shadow.py
+        symbol: set_warndays
+      summary: Set the number of days before the password expires that the user will start
+      parameters:
+        - name: name
+        - name: days
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_shadow.py
+          functions: 12
+    - function: set_change
+      source:
+        path: salt/modules/mac_shadow.py
+        symbol: set_change
+      summary: Sets the date on which the password expires. The user will be required to
+      parameters:
+        - name: name
+        - name: date
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_shadow.py
+          functions: 12
+    - function: get_change
+      source:
+        path: salt/modules/mac_shadow.py
+        symbol: get_change
+      summary: Gets the date on which the password expires
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_shadow.py
+          functions: 12
+    - function: set_expire
+      source:
+        path: salt/modules/mac_shadow.py
+        symbol: set_expire
+      summary: Sets the date on which the account expires. The user will not be able to
+      parameters:
+        - name: name
+        - name: date
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_shadow.py
+          functions: 12
+    - function: get_expire
+      source:
+        path: salt/modules/mac_shadow.py
+        symbol: get_expire
+      summary: Gets the date on which the account expires
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_shadow.py
+          functions: 12
+    - function: del_password
+      source:
+        path: salt/modules/mac_shadow.py
+        symbol: del_password
+      summary: Deletes the account password
+      parameters:
+        - name: name
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_shadow.py
+          functions: 12
+    - function: set_password
+      source:
+        path: salt/modules/mac_shadow.py
+        symbol: set_password
+      summary: Set the password for a named user (insecure, the password will be in the
+      parameters:
+        - name: name
+        - name: password
+      tests:
+        - path: tests/pytests/unit/modules/test_mac_shadow.py
+          functions: 12

@@ -1,0 +1,243 @@
+kind: state
+module: netconfig
+source_module: netconfig
+virtual: true
+path: salt/states/netconfig.py
+functions:
+    - function: _update_config
+      source:
+        path: salt/states/netconfig.py
+        symbol: _update_config
+      summary: Call the necessary functions in order to execute the state.
+      parameters:
+        - name: template_name
+        - name: template_source
+          default: None
+        - name: template_hash
+          default: None
+        - name: template_hash_name
+          default: None
+        - name: template_user
+          default: '"root"'
+        - name: template_group
+          default: '"root"'
+        - name: template_mode
+          default: '"755"'
+        - name: template_attrs
+          default: '"--------------e----"'
+        - name: saltenv
+          default: None
+        - name: template_engine
+          default: '"jinja"'
+        - name: skip_verify
+          default: "False"
+        - name: defaults
+          default: None
+        - name: test
+          default: "False"
+        - name: commit
+          default: "True"
+        - name: debug
+          default: "False"
+        - name: replace
+          default: "False"
+        - name: template_vars
+          kind: '**'
+      execution_dependencies:
+        - net.load_template
+      tests:
+        - path: tests/pytests/unit/states/test_netconfig.py
+          functions: 2
+    - function: replace_pattern
+      source:
+        path: salt/states/netconfig.py
+        symbol: replace_pattern
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: name
+        - name: pattern
+        - name: repl
+        - name: count
+          default: "0"
+        - name: flags
+          default: "8"
+        - name: bufsize
+          default: "1"
+        - name: append_if_not_found
+          default: "False"
+        - name: prepend_if_not_found
+          default: "False"
+        - name: not_found_content
+          default: None
+        - name: search_only
+          default: "False"
+        - name: show_changes
+          default: "True"
+        - name: backslash_literal
+          default: "False"
+        - name: source
+          default: '"running"'
+        - name: path
+          default: None
+        - name: test
+          default: "False"
+        - name: replace
+          default: "True"
+        - name: debug
+          default: "False"
+        - name: commit
+          default: "True"
+      execution_dependencies:
+        - config.merge
+        - net.load_template
+        - net.replace_pattern
+      tests:
+        - path: tests/pytests/unit/states/test_netconfig.py
+          functions: 2
+    - function: saved
+      source:
+        path: salt/states/netconfig.py
+        symbol: saved
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: name
+        - name: source
+          default: '"running"'
+        - name: user
+          default: None
+        - name: group
+          default: None
+        - name: mode
+          default: None
+        - name: attrs
+          default: None
+        - name: makedirs
+          default: "False"
+        - name: dir_mode
+          default: None
+        - name: replace
+          default: "True"
+        - name: backup
+          default: '""'
+        - name: show_changes
+          default: "True"
+        - name: create
+          default: "True"
+        - name: tmp_dir
+          default: '""'
+        - name: tmp_ext
+          default: '""'
+        - name: encoding
+          default: None
+        - name: encoding_errors
+          default: '"strict"'
+        - name: allow_empty
+          default: "False"
+        - name: follow_symlinks
+          default: "True"
+        - name: check_cmd
+          default: None
+        - name: win_owner
+          default: None
+        - name: win_perms
+          default: None
+        - name: win_deny_perms
+          default: None
+        - name: win_inheritance
+          default: "True"
+        - name: win_perms_reset
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.merge
+        - net.config
+        - net.load_template
+        - net.replace_pattern
+      tests:
+        - path: tests/pytests/unit/states/test_netconfig.py
+          functions: 2
+    - function: managed
+      source:
+        path: salt/states/netconfig.py
+        symbol: managed
+      summary: Manages the configuration on network devices.
+      parameters:
+        - name: name
+        - name: template_name
+          default: None
+        - name: template_source
+          default: None
+        - name: template_hash
+          default: None
+        - name: template_hash_name
+          default: None
+        - name: saltenv
+          default: '"base"'
+        - name: template_engine
+          default: '"jinja"'
+        - name: skip_verify
+          default: "False"
+        - name: context
+          default: None
+        - name: defaults
+          default: None
+        - name: test
+          default: "False"
+        - name: commit
+          default: "True"
+        - name: debug
+          default: "False"
+        - name: replace
+          default: "False"
+        - name: commit_in
+          default: None
+        - name: commit_at
+          default: None
+        - name: revert_in
+          default: None
+        - name: revert_at
+          default: None
+        - name: template_vars
+          kind: '**'
+      execution_dependencies:
+        - config.merge
+        - net.config
+        - net.load_template
+        - net.replace_pattern
+      tests:
+        - path: tests/pytests/unit/states/test_netconfig.py
+          functions: 2
+    - function: commit_cancelled
+      source:
+        path: salt/states/netconfig.py
+        symbol: commit_cancelled
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: name
+      execution_dependencies:
+        - config.merge
+        - net.cancel_commit
+        - net.config
+        - net.load_template
+        - net.replace_pattern
+      tests:
+        - path: tests/pytests/unit/states/test_netconfig.py
+          functions: 2
+    - function: commit_confirmed
+      source:
+        path: salt/states/netconfig.py
+        symbol: commit_confirmed
+      summary: '.. versionadded:: 2019.2.0'
+      parameters:
+        - name: name
+      execution_dependencies:
+        - config.merge
+        - net.cancel_commit
+        - net.config
+        - net.confirm_commit
+        - net.load_template
+        - net.replace_pattern
+      tests:
+        - path: tests/pytests/unit/states/test_netconfig.py
+          functions: 2

@@ -1,0 +1,88 @@
+kind: exec
+module: napalm_yang
+source_module: napalm_yang_mod
+virtual: true
+path: salt/modules/napalm_yang_mod.py
+functions:
+    - function: _get_root_object
+      source:
+        path: salt/modules/napalm_yang_mod.py
+        symbol: _get_root_object
+      summary: Read list of models and returns a Root object with the proper models added.
+      parameters:
+        - name: models
+      tests:
+        - path: tests/unit/modules/test_napalm_yang_mod.py
+          functions: 0
+    - function: diff
+      source:
+        path: salt/modules/napalm_yang_mod.py
+        symbol: diff
+      summary: Returns the difference between two configuration entities structured
+      parameters:
+        - name: candidate
+        - name: running
+        - name: models
+          kind: '*'
+      tests:
+        - path: tests/unit/modules/test_napalm_yang_mod.py
+          functions: 0
+    - function: parse
+      source:
+        path: salt/modules/napalm_yang_mod.py
+        symbol: parse
+      summary: Parse configuration from the device.
+      parameters:
+        - name: models
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/unit/modules/test_napalm_yang_mod.py
+          functions: 0
+    - function: get_config
+      source:
+        path: salt/modules/napalm_yang_mod.py
+        symbol: get_config
+      summary: Return the native config.
+      parameters:
+        - name: data
+        - name: models
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      tests:
+        - path: tests/unit/modules/test_napalm_yang_mod.py
+          functions: 0
+    - function: load_config
+      source:
+        path: salt/modules/napalm_yang_mod.py
+        symbol: load_config
+      summary: Generate and load the config on the device using the OpenConfig or IETF
+      parameters:
+        - name: data
+        - name: models
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - net.load_config
+      tests:
+        - path: tests/unit/modules/test_napalm_yang_mod.py
+          functions: 0
+    - function: compliance_report
+      source:
+        path: salt/modules/napalm_yang_mod.py
+        symbol: compliance_report
+      summary: Return the compliance report using YANG objects.
+      parameters:
+        - name: data
+        - name: models
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - net.load_config
+      tests:
+        - path: tests/unit/modules/test_napalm_yang_mod.py
+          functions: 0

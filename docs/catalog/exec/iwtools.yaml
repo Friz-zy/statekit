@@ -1,0 +1,51 @@
+kind: exec
+module: iwtools
+source_module: iwtools
+path: salt/modules/iwtools.py
+functions:
+    - function: scan
+      source:
+        path: salt/modules/iwtools.py
+        symbol: scan
+      summary: List networks on a wireless interface
+      parameters:
+        - name: iface
+        - name: style
+          default: None
+      execution_dependencies:
+        - cmd.run
+    - function: set_mode
+      source:
+        path: salt/modules/iwtools.py
+        symbol: set_mode
+      summary: List networks on a wireless interface
+      parameters:
+        - name: iface
+        - name: mode
+      execution_dependencies:
+        - cmd.run
+        - ip.down
+        - ip.up
+    - function: _valid_iface
+      source:
+        path: salt/modules/iwtools.py
+        symbol: _valid_iface
+      summary: Validate the specified interface
+      parameters:
+        - name: iface
+      execution_dependencies:
+        - cmd.run
+        - ip.down
+        - ip.up
+    - function: list_interfaces
+      source:
+        path: salt/modules/iwtools.py
+        symbol: list_interfaces
+      summary: List all of the wireless interfaces
+      parameters:
+        - name: style
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - ip.down
+        - ip.up

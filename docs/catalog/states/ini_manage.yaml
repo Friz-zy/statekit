@@ -1,0 +1,100 @@
+kind: state
+module: ini
+source_module: ini_manage
+virtual: true
+path: salt/states/ini_manage.py
+functions:
+    - function: options_present
+      source:
+        path: salt/states/ini_manage.py
+        symbol: options_present
+      summary: Set or create a key/value pair in an ``ini`` file. Options present in the
+      parameters:
+        - name: name
+        - name: sections
+          default: None
+        - name: separator
+          default: '"="'
+        - name: strict
+          default: "False"
+        - name: encoding
+          default: None
+        - name: no_spaces
+          default: "False"
+      execution_dependencies:
+        - ini.get_ini
+        - ini.remove_option
+        - ini.remove_section
+        - ini.set_option
+      tests:
+        - path: tests/pytests/unit/states/test_ini_manage.py
+          functions: 8
+    - function: options_absent
+      source:
+        path: salt/states/ini_manage.py
+        symbol: options_absent
+      summary: Remove a key/value pair from an ini file. Key/value pairs present in the ini
+      parameters:
+        - name: name
+        - name: sections
+          default: None
+        - name: separator
+          default: '"="'
+        - name: encoding
+          default: None
+      execution_dependencies:
+        - ini.get_ini
+        - ini.get_option
+        - ini.get_section
+        - ini.remove_option
+        - ini.remove_section
+        - ini.set_option
+      tests:
+        - path: tests/pytests/unit/states/test_ini_manage.py
+          functions: 8
+    - function: sections_present
+      source:
+        path: salt/states/ini_manage.py
+        symbol: sections_present
+      summary: Add sections to an ini file. This will only create empty sections. To also
+      parameters:
+        - name: name
+        - name: sections
+          default: None
+        - name: separator
+          default: '"="'
+        - name: encoding
+          default: None
+      execution_dependencies:
+        - ini.get_ini
+        - ini.get_option
+        - ini.get_section
+        - ini.remove_option
+        - ini.remove_section
+        - ini.set_option
+      tests:
+        - path: tests/pytests/unit/states/test_ini_manage.py
+          functions: 8
+    - function: sections_absent
+      source:
+        path: salt/states/ini_manage.py
+        symbol: sections_absent
+      summary: Remove sections from the ini file. All key/value pairs in the section will
+      parameters:
+        - name: name
+        - name: sections
+          default: None
+        - name: separator
+          default: '"="'
+        - name: encoding
+          default: None
+      execution_dependencies:
+        - ini.get_ini
+        - ini.get_option
+        - ini.get_section
+        - ini.remove_option
+        - ini.remove_section
+        - ini.set_option
+      tests:
+        - path: tests/pytests/unit/states/test_ini_manage.py
+          functions: 8

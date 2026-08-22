@@ -1,0 +1,25 @@
+kind: state
+module: assistive
+source_module: mac_assistive
+virtual: true
+path: salt/states/mac_assistive.py
+platform_markers:
+    - is_darwin
+functions:
+    - function: installed
+      source:
+        path: salt/states/mac_assistive.py
+        symbol: installed
+      summary: Make sure that we have the given bundle ID or path to command
+      parameters:
+        - name: name
+        - name: enabled
+          default: "True"
+      execution_dependencies:
+        - assistive.enable
+        - assistive.enabled
+        - assistive.install
+        - assistive.installed
+      tests:
+        - path: tests/pytests/unit/states/test_mac_assistive.py
+          functions: 4

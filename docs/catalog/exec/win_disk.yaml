@@ -1,0 +1,16 @@
+kind: exec
+module: disk
+source_module: win_disk
+virtual: true
+path: salt/modules/win_disk.py
+platform_markers:
+    - is_windows
+functions:
+    - function: usage
+      source:
+        path: salt/modules/win_disk.py
+        symbol: usage
+      summary: Return usage information for volumes mounted on this minion
+      tests:
+        - path: tests/pytests/unit/modules/test_win_disk.py
+          functions: 1

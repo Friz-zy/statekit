@@ -1,0 +1,285 @@
+kind: exec
+module: service
+source_module: upstart_service
+virtual: true
+path: salt/modules/upstart_service.py
+functions:
+    - function: _find_utmp
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: _find_utmp
+      summary: Figure out which utmp file to use when determining runlevel.
+    - function: _default_runlevel
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: _default_runlevel
+      summary: Try to figure out the default runlevel.  It is kept in
+    - function: _runlevel
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: _runlevel
+      summary: Return the current runlevel
+      execution_dependencies:
+        - cmd.run
+    - function: _is_symlink
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: _is_symlink
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+    - function: _service_is_upstart
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: _service_is_upstart
+      summary: From "Writing Jobs" at
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+    - function: _upstart_is_disabled
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: _upstart_is_disabled
+      summary: An Upstart service is assumed disabled if a manual stanza is
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+    - function: _upstart_is_enabled
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: _upstart_is_enabled
+      summary: Assume that if an Upstart service is not disabled then it must be
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+    - function: _service_is_sysv
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: _service_is_sysv
+      summary: A System-V style service will have a control script in
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+    - function: _sysv_is_disabled
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: _sysv_is_disabled
+      summary: A System-V style service is assumed disabled if there is no
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+    - function: _sysv_is_enabled
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: _sysv_is_enabled
+      summary: Assume that if a System-V style service is not disabled then it
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+    - function: _iter_service_names
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: _iter_service_names
+      summary: Detect all of the service names available to upstart via init configuration
+      execution_dependencies:
+        - cmd.run
+    - function: get_enabled
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: get_enabled
+      summary: Return the enabled services
+      execution_dependencies:
+        - cmd.run
+    - function: get_disabled
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: get_disabled
+      summary: Return the disabled services
+      execution_dependencies:
+        - cmd.run
+    - function: available
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: available
+      summary: Returns ``True`` if the specified service is available, otherwise returns
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+    - function: missing
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: missing
+      summary: The inverse of service.available.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+    - function: get_all
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: get_all
+      summary: Return all installed services
+      execution_dependencies:
+        - cmd.run
+    - function: start
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: start
+      summary: Start the specified service
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+    - function: stop
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: stop
+      summary: Stop the specified service
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+    - function: restart
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: restart
+      summary: Restart the named service
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+    - function: full_restart
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: full_restart
+      summary: Do a full restart (stop/start) of the named service
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+    - function: reload_
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: reload_
+      summary: Reload the named service
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+    - function: force_reload
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: force_reload
+      summary: Force-reload the named service
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+    - function: status
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: status
+      summary: Return the status for a service.
+      parameters:
+        - name: name
+        - name: sig
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - status.pid
+    - function: _get_service_exec
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: _get_service_exec
+      summary: Debian uses update-rc.d to manage System-V style services.
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - status.pid
+    - function: _upstart_disable
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: _upstart_disable
+      summary: Disable an Upstart service.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - status.pid
+    - function: _upstart_enable
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: _upstart_enable
+      summary: Enable an Upstart service.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - status.pid
+    - function: enable
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: enable
+      summary: Enable the named service to start at boot
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - status.pid
+    - function: disable
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: disable
+      summary: Disable the named service from starting on boot
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - status.pid
+    - function: enabled
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: enabled
+      summary: Check to see if the named service is enabled to start on boot
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - status.pid
+    - function: disabled
+      source:
+        path: salt/modules/upstart_service.py
+        symbol: disabled
+      summary: Check to see if the named service is disabled to start on boot
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - status.pid

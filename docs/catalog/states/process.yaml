@@ -1,0 +1,22 @@
+kind: state
+module: process
+source_module: process
+path: salt/states/process.py
+functions:
+    - function: absent
+      source:
+        path: salt/states/process.py
+        symbol: absent
+      summary: Ensures that the named command is not running.
+      parameters:
+        - name: name
+        - name: user
+          default: None
+        - name: signal
+          default: None
+      execution_dependencies:
+        - ps.pgrep
+        - ps.pkill
+      tests:
+        - path: tests/pytests/unit/states/test_process.py
+          functions: 1

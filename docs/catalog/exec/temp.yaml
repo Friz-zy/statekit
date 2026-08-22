@@ -1,0 +1,29 @@
+kind: exec
+module: temp
+source_module: temp
+path: salt/modules/temp.py
+functions:
+    - function: dir
+      source:
+        path: salt/modules/temp.py
+        symbol: dir
+      summary: Create a temporary directory
+      parameters:
+        - name: suffix
+          default: '""'
+        - name: prefix
+          default: '"tmp"'
+        - name: parent
+          default: None
+    - function: file
+      source:
+        path: salt/modules/temp.py
+        symbol: file
+      summary: Create a temporary file
+      parameters:
+        - name: suffix
+          default: '""'
+        - name: prefix
+          default: '"tmp"'
+        - name: parent
+          default: None

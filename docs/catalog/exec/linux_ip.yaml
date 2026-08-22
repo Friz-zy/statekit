@@ -1,0 +1,81 @@
+kind: exec
+module: ip
+source_module: linux_ip
+virtual: true
+path: salt/modules/linux_ip.py
+platform_markers:
+    - is_windows
+functions:
+    - function: down
+      source:
+        path: salt/modules/linux_ip.py
+        symbol: down
+      summary: Shutdown a network interface
+      parameters:
+        - name: iface
+        - name: iface_type
+          default: None
+      execution_dependencies:
+        - cmd.run
+    - function: get_interface
+      source:
+        path: salt/modules/linux_ip.py
+        symbol: get_interface
+      summary: Return the contents of an interface script
+      parameters:
+        - name: iface
+      execution_dependencies:
+        - cmd.run
+    - function: _ip_ifaces
+      source:
+        path: salt/modules/linux_ip.py
+        symbol: _ip_ifaces
+      summary: Parse output from 'ip a'
+      execution_dependencies:
+        - cmd.run
+    - function: up
+      source:
+        path: salt/modules/linux_ip.py
+        symbol: up
+      summary: Start up a network interface
+      parameters:
+        - name: iface
+        - name: iface_type
+          default: None
+      execution_dependencies:
+        - cmd.run
+    - function: get_routes
+      source:
+        path: salt/modules/linux_ip.py
+        symbol: get_routes
+      summary: Return the current routing table
+      parameters:
+        - name: iface
+          default: None
+      execution_dependencies:
+        - cmd.run
+    - function: _parse_routes
+      source:
+        path: salt/modules/linux_ip.py
+        symbol: _parse_routes
+      summary: Parse the contents of ``/proc/net/route``
+      execution_dependencies:
+        - cmd.run
+    - function: _hex_to_octets
+      source:
+        path: salt/modules/linux_ip.py
+        symbol: _hex_to_octets
+      summary: Convert hex fields from /proc/net/route to octects
+      parameters:
+        - name: addr
+      execution_dependencies:
+        - cmd.run
+    - function: _route_flags
+      source:
+        path: salt/modules/linux_ip.py
+        symbol: _route_flags
+      summary: https://github.com/torvalds/linux/blob/master/include/uapi/linux/route.h
+      parameters:
+        - name: rflags
+      execution_dependencies:
+        - cmd.run

@@ -1,0 +1,249 @@
+kind: exec
+module: artifactory
+source_module: artifactory
+virtual: true
+path: salt/modules/artifactory.py
+functions:
+    - function: set_basic_auth
+      source:
+        path: salt/modules/artifactory.py
+        symbol: set_basic_auth
+      summary: Sets the username and password for a specific url. Helper method.
+      parameters:
+        - name: url
+        - name: username
+        - name: password
+      tests:
+        - path: tests/pytests/unit/modules/test_artifactory.py
+          functions: 13
+    - function: get_latest_snapshot
+      source:
+        path: salt/modules/artifactory.py
+        symbol: get_latest_snapshot
+      summary: Gets latest snapshot of the given artifact
+      parameters:
+        - name: artifactory_url
+        - name: repository
+        - name: group_id
+        - name: artifact_id
+        - name: packaging
+        - name: target_dir
+          default: '"/tmp"'
+        - name: target_file
+          default: None
+        - name: classifier
+          default: None
+        - name: username
+          default: None
+        - name: password
+          default: None
+        - name: use_literal_group_id
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_artifactory.py
+          functions: 13
+    - function: get_snapshot
+      source:
+        path: salt/modules/artifactory.py
+        symbol: get_snapshot
+      summary: Gets snapshot of the desired version of the artifact
+      parameters:
+        - name: artifactory_url
+        - name: repository
+        - name: group_id
+        - name: artifact_id
+        - name: packaging
+        - name: version
+        - name: snapshot_version
+          default: None
+        - name: target_dir
+          default: '"/tmp"'
+        - name: target_file
+          default: None
+        - name: classifier
+          default: None
+        - name: username
+          default: None
+        - name: password
+          default: None
+        - name: use_literal_group_id
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_artifactory.py
+          functions: 13
+    - function: get_latest_release
+      source:
+        path: salt/modules/artifactory.py
+        symbol: get_latest_release
+      summary: Gets the latest release of the artifact
+      parameters:
+        - name: artifactory_url
+        - name: repository
+        - name: group_id
+        - name: artifact_id
+        - name: packaging
+        - name: target_dir
+          default: '"/tmp"'
+        - name: target_file
+          default: None
+        - name: classifier
+          default: None
+        - name: username
+          default: None
+        - name: password
+          default: None
+        - name: use_literal_group_id
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_artifactory.py
+          functions: 13
+    - function: get_release
+      source:
+        path: salt/modules/artifactory.py
+        symbol: get_release
+      summary: Gets the specified release of the artifact
+      parameters:
+        - name: artifactory_url
+        - name: repository
+        - name: group_id
+        - name: artifact_id
+        - name: packaging
+        - name: version
+        - name: target_dir
+          default: '"/tmp"'
+        - name: target_file
+          default: None
+        - name: classifier
+          default: None
+        - name: username
+          default: None
+        - name: password
+          default: None
+        - name: use_literal_group_id
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_artifactory.py
+          functions: 13
+    - function: _get_snapshot_url
+      source:
+        path: salt/modules/artifactory.py
+        symbol: _get_snapshot_url
+      parameters:
+        - name: artifactory_url
+        - name: repository
+        - name: group_id
+        - name: artifact_id
+        - name: version
+        - name: packaging
+        - name: snapshot_version
+          default: None
+        - name: classifier
+          default: None
+        - name: use_literal_group_id
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_artifactory.py
+          functions: 13
+    - function: _get_release_url
+      source:
+        path: salt/modules/artifactory.py
+        symbol: _get_release_url
+      parameters:
+        - name: repository
+        - name: group_id
+        - name: artifact_id
+        - name: packaging
+        - name: version
+        - name: artifactory_url
+        - name: classifier
+          default: None
+        - name: use_literal_group_id
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_artifactory.py
+          functions: 13
+    - function: _get_artifact_metadata_url
+      source:
+        path: salt/modules/artifactory.py
+        symbol: _get_artifact_metadata_url
+      parameters:
+        - name: artifactory_url
+        - name: repository
+        - name: group_id
+        - name: artifact_id
+        - name: use_literal_group_id
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_artifactory.py
+          functions: 13
+    - function: _get_artifact_metadata_xml
+      source:
+        path: salt/modules/artifactory.py
+        symbol: _get_artifact_metadata_xml
+      parameters:
+        - name: artifactory_url
+        - name: repository
+        - name: group_id
+        - name: artifact_id
+        - name: use_literal_group_id
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_artifactory.py
+          functions: 13
+    - function: _get_artifact_metadata
+      source:
+        path: salt/modules/artifactory.py
+        symbol: _get_artifact_metadata
+      parameters:
+        - name: artifactory_url
+        - name: repository
+        - name: group_id
+        - name: artifact_id
+        - name: use_literal_group_id
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_artifactory.py
+          functions: 13
+    - function: _get_snapshot_version_metadata_url
+      source:
+        path: salt/modules/artifactory.py
+        symbol: _get_snapshot_version_metadata_url
+      parameters:
+        - name: artifactory_url
+        - name: repository
+        - name: group_id
+        - name: artifact_id
+        - name: version
+        - name: use_literal_group_id
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_artifactory.py
+          functions: 13
+    - function: _get_snapshot_version_metadata_xml
+      source:
+        path: salt/modules/artifactory.py
+        symbol: _get_snapshot_version_metadata_xml
+      parameters:
+        - name: artifactory_url
+        - name: repository
+        - name: group_id
+        - name: artifact_id
+        - name: version
+        - name: use_literal_group_id
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_artifactory.py
+          functions: 13
+    - function: _get_snapshot_version_metadata
+      source:
+        path: salt/modules/artifactory.py
+        symbol: _get_snapshot_version_metadata
+      parameters:
+        - name: artifactory_url
+        - name: repository
+        - name: group_id
+        - name: artifact_id
+        - name: version
+      tests:
+        - path: tests/pytests/unit/modules/test_artifactory.py
+          functions: 13

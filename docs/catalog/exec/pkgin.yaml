@@ -1,0 +1,354 @@
+kind: exec
+module: pkg
+source_module: pkgin
+virtual: true
+path: salt/modules/pkgin.py
+functions:
+    - function: _check_pkgin
+      source:
+        path: salt/modules/pkgin.py
+        symbol: _check_pkgin
+      summary: Looks to see if pkgin is present on the system, return full path
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgin.py
+          functions: 3
+    - function: _get_version
+      source:
+        path: salt/modules/pkgin.py
+        symbol: _get_version
+      summary: Get the pkgin version
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgin.py
+          functions: 3
+    - function: _supports_regex
+      source:
+        path: salt/modules/pkgin.py
+        symbol: _supports_regex
+      summary: Check support of regexp
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgin.py
+          functions: 3
+    - function: _supports_parsing
+      source:
+        path: salt/modules/pkgin.py
+        symbol: _supports_parsing
+      summary: Check support of parsing
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgin.py
+          functions: 3
+    - function: _splitpkg
+      source:
+        path: salt/modules/pkgin.py
+        symbol: _splitpkg
+      summary: Split package name from versioned string
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgin.py
+          functions: 3
+    - function: search
+      source:
+        path: salt/modules/pkgin.py
+        symbol: search
+      summary: Searches for an exact match using pkgin ^package$
+      parameters:
+        - name: pkg_name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgin.py
+          functions: 3
+    - function: latest_version
+      source:
+        path: salt/modules/pkgin.py
+        symbol: latest_version
+      summary: '.. versionchanged:: 2016.3.0'
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgin.py
+          functions: 3
+    - function: version
+      source:
+        path: salt/modules/pkgin.py
+        symbol: version
+      summary: Returns a string representing the package version or an empty string if not
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgin.py
+          functions: 3
+    - function: refresh_db
+      source:
+        path: salt/modules/pkgin.py
+        symbol: refresh_db
+      summary: Use pkg update to get latest pkg_summary
+      parameters:
+        - name: force
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgin.py
+          functions: 3
+    - function: _list_pkgs_from_context
+      source:
+        path: salt/modules/pkgin.py
+        symbol: _list_pkgs_from_context
+      summary: Use pkg list from __context__
+      parameters:
+        - name: versions_as_list
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgin.py
+          functions: 3
+    - function: list_pkgs
+      source:
+        path: salt/modules/pkgin.py
+        symbol: list_pkgs
+      summary: '.. versionchanged:: 2016.3.0'
+      parameters:
+        - name: versions_as_list
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgin.py
+          functions: 3
+    - function: list_upgrades
+      source:
+        path: salt/modules/pkgin.py
+        symbol: list_upgrades
+      summary: List all available package upgrades.
+      parameters:
+        - name: refresh
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg_resource.add_pkg
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgin.py
+          functions: 3
+    - function: install
+      source:
+        path: salt/modules/pkgin.py
+        symbol: install
+      summary: Install the passed package
+      parameters:
+        - name: name
+          default: None
+        - name: refresh
+          default: "False"
+        - name: fromrepo
+          default: None
+        - name: pkgs
+          default: None
+        - name: sources
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgin.py
+          functions: 3
+    - function: upgrade
+      source:
+        path: salt/modules/pkgin.py
+        symbol: upgrade
+      summary: Run pkg upgrade, if pkgin used. Otherwise do nothing
+      parameters:
+        - name: refresh
+          default: "True"
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgin.py
+          functions: 3
+    - function: remove
+      source:
+        path: salt/modules/pkgin.py
+        symbol: remove
+      summary: name
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgin.py
+          functions: 3
+    - function: purge
+      source:
+        path: salt/modules/pkgin.py
+        symbol: purge
+      summary: Package purges are not supported, this function is identical to
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgin.py
+          functions: 3
+    - function: _rehash
+      source:
+        path: salt/modules/pkgin.py
+        symbol: _rehash
+      summary: Recomputes internal hash table for the PATH variable.
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - environ.get
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgin.py
+          functions: 3
+    - function: file_list
+      source:
+        path: salt/modules/pkgin.py
+        symbol: file_list
+      summary: List the files that belong to a package.
+      parameters:
+        - name: package
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - environ.get
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgin.py
+          functions: 3
+    - function: file_dict
+      source:
+        path: salt/modules/pkgin.py
+        symbol: file_dict
+      summary: '.. versionchanged:: 2016.3.0'
+      parameters:
+        - name: packages
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - environ.get
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgin.py
+          functions: 3
+    - function: normalize_name
+      source:
+        path: salt/modules/pkgin.py
+        symbol: normalize_name
+      summary: Normalize package names
+      parameters:
+        - name: pkgs
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - environ.get
+        - pkg_resource.add_pkg
+        - pkg_resource.parse_targets
+        - pkg_resource.sort_pkglist
+        - pkg_resource.stringify
+        - pkg_resource.version
+      tests:
+        - path: tests/pytests/unit/modules/test_pkgin.py
+          functions: 3

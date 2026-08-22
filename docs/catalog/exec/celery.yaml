@@ -1,0 +1,34 @@
+kind: exec
+module: celery
+source_module: celery
+path: salt/modules/celery.py
+functions:
+    - function: run_task
+      source:
+        path: salt/modules/celery.py
+        symbol: run_task
+      summary: Execute celery tasks. For celery specific parameters see celery documentation.
+      parameters:
+        - name: task_name
+        - name: args
+          default: None
+        - name: kwargs
+          default: None
+        - name: broker
+          default: None
+        - name: backend
+          default: None
+        - name: wait_for_result
+          default: "False"
+        - name: timeout
+          default: None
+        - name: propagate
+          default: "True"
+        - name: interval
+          default: "0.5"
+        - name: no_ack
+          default: "True"
+        - name: raise_timeout
+          default: "True"
+        - name: config
+          default: None

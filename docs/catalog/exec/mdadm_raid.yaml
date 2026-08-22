@@ -1,0 +1,155 @@
+kind: exec
+module: raid
+source_module: mdadm_raid
+virtual: true
+path: salt/modules/mdadm_raid.py
+functions:
+    - function: list_
+      source:
+        path: salt/modules/mdadm_raid.py
+        symbol: list_
+      summary: List the RAID devices.
+      execution_dependencies:
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_mdadm_raid.py
+          functions: 6
+    - function: detail
+      source:
+        path: salt/modules/mdadm_raid.py
+        symbol: detail
+      summary: Show detail for a specified RAID device
+      parameters:
+        - name: device
+          default: '"/dev/md0"'
+      execution_dependencies:
+        - cmd.run_stdout
+      tests:
+        - path: tests/pytests/unit/modules/test_mdadm_raid.py
+          functions: 6
+    - function: destroy
+      source:
+        path: salt/modules/mdadm_raid.py
+        symbol: destroy
+      summary: Destroy a RAID device.
+      parameters:
+        - name: device
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_stdout
+        - file.replace
+        - raid.list
+      tests:
+        - path: tests/pytests/unit/modules/test_mdadm_raid.py
+          functions: 6
+    - function: stop
+      source:
+        path: salt/modules/mdadm_raid.py
+        symbol: stop
+      summary: Shut down all arrays that can be shut down (i.e. are not currently in use).
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run_stdout
+        - file.replace
+        - raid.list
+      tests:
+        - path: tests/pytests/unit/modules/test_mdadm_raid.py
+          functions: 6
+    - function: create
+      source:
+        path: salt/modules/mdadm_raid.py
+        symbol: create
+      summary: Create a RAID device.
+      parameters:
+        - name: name
+        - name: level
+        - name: devices
+        - name: metadata
+          default: '"default"'
+        - name: test_mode
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+        - file.replace
+        - raid.list
+      tests:
+        - path: tests/pytests/unit/modules/test_mdadm_raid.py
+          functions: 6
+    - function: save_config
+      source:
+        path: salt/modules/mdadm_raid.py
+        symbol: save_config
+      summary: Save RAID configuration to config file.
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+        - file.replace
+        - file.write
+        - raid.list
+      tests:
+        - path: tests/pytests/unit/modules/test_mdadm_raid.py
+          functions: 6
+    - function: assemble
+      source:
+        path: salt/modules/mdadm_raid.py
+        symbol: assemble
+      summary: Assemble a RAID device.
+      parameters:
+        - name: name
+        - name: devices
+        - name: test_mode
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+        - file.replace
+        - file.write
+        - raid.list
+      tests:
+        - path: tests/pytests/unit/modules/test_mdadm_raid.py
+          functions: 6
+    - function: examine
+      source:
+        path: salt/modules/mdadm_raid.py
+        symbol: examine
+      summary: Show detail for a specified RAID component device
+      parameters:
+        - name: device
+        - name: quiet
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+        - file.replace
+        - file.write
+        - raid.list
+      tests:
+        - path: tests/pytests/unit/modules/test_mdadm_raid.py
+          functions: 6
+    - function: add
+      source:
+        path: salt/modules/mdadm_raid.py
+        symbol: add
+      summary: Add new device to RAID array.
+      parameters:
+        - name: name
+        - name: device
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.run
+        - cmd.run_stdout
+        - file.replace
+        - file.write
+        - raid.list
+      tests:
+        - path: tests/pytests/unit/modules/test_mdadm_raid.py
+          functions: 6

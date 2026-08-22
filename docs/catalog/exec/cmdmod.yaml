@@ -1,0 +1,1353 @@
+kind: exec
+module: cmd
+source_module: cmdmod
+virtual: true
+path: salt/modules/cmdmod.py
+platform_markers:
+    - is_darwin
+    - is_freebsd
+    - is_windows
+functions:
+    - function: _log_cmd
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: _log_cmd
+      parameters:
+        - name: cmd
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: _check_cb
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: _check_cb
+      summary: If the callback is None or is not callable, return a lambda that returns
+      parameters:
+        - name: cb_
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: _python_shell_default
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: _python_shell_default
+      summary: Set python_shell default based on the shell parameter and __opts__['cmd_safe']
+      parameters:
+        - name: python_shell
+        - name: __pub_jid
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: _chroot_pids
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: _chroot_pids
+      parameters:
+        - name: chroot
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: _render_cmd
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: _render_cmd
+      summary: If template is a valid template engine, process the cmd and cwd through
+      parameters:
+        - name: cmd
+        - name: cwd
+        - name: template
+        - name: saltenv
+          default: None
+        - name: pillarenv
+          default: None
+        - name: pillar_override
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: _check_loglevel
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: _check_loglevel
+      summary: Retrieve the level code for use in logging.Logger.log().
+      parameters:
+        - name: level
+          default: '"info"'
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: _parse_env
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: _parse_env
+      parameters:
+        - name: env
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: _ensure_env_str
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: _ensure_env_str
+      summary: Ensure that environment variables are strings
+      parameters:
+        - name: env
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: _gather_pillar
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: _gather_pillar
+      summary: Whenever a state run starts, gather the pillar data fresh
+      parameters:
+        - name: pillarenv
+        - name: pillar_override
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: _check_avail
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: _check_avail
+      summary: Check to see if the given command can be run
+      parameters:
+        - name: cmd
+      execution_dependencies:
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: _prep_powershell_cmd
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: _prep_powershell_cmd
+      summary: Prep cmd when shell is powershell.exe or pwsh.exe. If we were called by script(), then
+      parameters:
+        - name: win_shell
+        - name: cmd
+        - name: encoded_cmd
+      execution_dependencies:
+        - config.get
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: _run
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: _run
+      summary: Do the DRY thing and only call subprocess.Popen() once
+      parameters:
+        - name: cmd
+        - name: cwd
+          default: None
+        - name: stdin
+          default: None
+        - name: stdout
+          default: subprocess.PIPE
+        - name: stderr
+          default: subprocess.PIPE
+        - name: output_encoding
+          default: None
+        - name: output_loglevel
+          default: '"debug"'
+        - name: log_callback
+          default: None
+        - name: runas
+          default: None
+        - name: group
+          default: None
+        - name: shell
+          default: DEFAULT_SHELL
+        - name: python_shell
+          default: "False"
+        - name: env
+          default: None
+        - name: clean_env
+          default: "False"
+        - name: prepend_path
+          default: None
+        - name: rstrip
+          default: "True"
+        - name: template
+          default: None
+        - name: umask
+          default: None
+        - name: timeout
+          default: None
+        - name: with_communicate
+          default: "True"
+        - name: reset_system_locale
+          default: "True"
+        - name: ignore_retcode
+          default: "False"
+        - name: saltenv
+          default: None
+        - name: pillarenv
+          default: None
+        - name: pillar_override
+          default: None
+        - name: use_vt
+          default: "False"
+        - name: password
+          default: None
+        - name: bg
+          default: "False"
+        - name: encoded_cmd
+          default: "False"
+        - name: success_retcodes
+          default: None
+        - name: success_stdout
+          default: None
+        - name: success_stderr
+          default: None
+        - name: windows_codepage
+          default: "65001"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: _run_quiet
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: _run_quiet
+      summary: Helper for running commands quietly for minion startup
+      parameters:
+        - name: cmd
+        - name: cwd
+          default: None
+        - name: stdin
+          default: None
+        - name: output_encoding
+          default: None
+        - name: runas
+          default: None
+        - name: shell
+          default: DEFAULT_SHELL
+        - name: python_shell
+          default: "False"
+        - name: env
+          default: None
+        - name: template
+          default: None
+        - name: umask
+          default: None
+        - name: timeout
+          default: None
+        - name: reset_system_locale
+          default: "True"
+        - name: saltenv
+          default: None
+        - name: pillarenv
+          default: None
+        - name: pillar_override
+          default: None
+        - name: success_retcodes
+          default: None
+        - name: success_stdout
+          default: None
+        - name: success_stderr
+          default: None
+        - name: ignore_retcode
+          default: None
+      execution_dependencies:
+        - config.get
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: _run_all_quiet
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: _run_all_quiet
+      summary: Helper for running commands quietly for minion startup.
+      parameters:
+        - name: cmd
+        - name: cwd
+          default: None
+        - name: stdin
+          default: None
+        - name: runas
+          default: None
+        - name: shell
+          default: DEFAULT_SHELL
+        - name: python_shell
+          default: "False"
+        - name: env
+          default: None
+        - name: template
+          default: None
+        - name: umask
+          default: None
+        - name: timeout
+          default: None
+        - name: reset_system_locale
+          default: "True"
+        - name: saltenv
+          default: None
+        - name: pillarenv
+          default: None
+        - name: pillar_override
+          default: None
+        - name: output_encoding
+          default: None
+        - name: success_retcodes
+          default: None
+        - name: success_stdout
+          default: None
+        - name: success_stderr
+          default: None
+        - name: ignore_retcode
+          default: None
+      execution_dependencies:
+        - config.get
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: run
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: run
+      parameters:
+        - name: cmd
+        - name: cwd
+          default: None
+        - name: stdin
+          default: None
+        - name: runas
+          default: None
+        - name: group
+          default: None
+        - name: shell
+          default: DEFAULT_SHELL
+        - name: python_shell
+          default: None
+        - name: env
+          default: None
+        - name: clean_env
+          default: "False"
+        - name: template
+          default: None
+        - name: rstrip
+          default: "True"
+        - name: umask
+          default: None
+        - name: output_encoding
+          default: None
+        - name: output_loglevel
+          default: '"debug"'
+        - name: log_callback
+          default: None
+        - name: hide_output
+          default: "False"
+        - name: timeout
+          default: None
+        - name: reset_system_locale
+          default: "True"
+        - name: ignore_retcode
+          default: "False"
+        - name: saltenv
+          default: None
+        - name: use_vt
+          default: "False"
+        - name: redirect_stderr
+          default: "True"
+        - name: bg
+          default: "False"
+        - name: password
+          default: None
+        - name: encoded_cmd
+          default: "False"
+        - name: raise_err
+          default: "False"
+        - name: prepend_path
+          default: None
+        - name: success_retcodes
+          default: None
+        - name: success_stdout
+          default: None
+        - name: success_stderr
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: shell
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: shell
+      summary: Execute the passed command and return the output as a string.
+      parameters:
+        - name: cmd
+        - name: cwd
+          default: None
+        - name: stdin
+          default: None
+        - name: runas
+          default: None
+        - name: group
+          default: None
+        - name: shell
+          default: DEFAULT_SHELL
+        - name: env
+          default: None
+        - name: clean_env
+          default: "False"
+        - name: template
+          default: None
+        - name: rstrip
+          default: "True"
+        - name: umask
+          default: None
+        - name: output_encoding
+          default: None
+        - name: output_loglevel
+          default: '"debug"'
+        - name: log_callback
+          default: None
+        - name: hide_output
+          default: "False"
+        - name: timeout
+          default: None
+        - name: reset_system_locale
+          default: "True"
+        - name: ignore_retcode
+          default: "False"
+        - name: saltenv
+          default: None
+        - name: use_vt
+          default: "False"
+        - name: bg
+          default: "False"
+        - name: password
+          default: None
+        - name: prepend_path
+          default: None
+        - name: success_retcodes
+          default: None
+        - name: success_stdout
+          default: None
+        - name: success_stderr
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: run_stdout
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: run_stdout
+      summary: Execute a command, and only return the standard out
+      parameters:
+        - name: cmd
+        - name: cwd
+          default: None
+        - name: stdin
+          default: None
+        - name: runas
+          default: None
+        - name: group
+          default: None
+        - name: shell
+          default: DEFAULT_SHELL
+        - name: python_shell
+          default: None
+        - name: env
+          default: None
+        - name: clean_env
+          default: "False"
+        - name: template
+          default: None
+        - name: rstrip
+          default: "True"
+        - name: umask
+          default: None
+        - name: output_encoding
+          default: None
+        - name: output_loglevel
+          default: '"debug"'
+        - name: log_callback
+          default: None
+        - name: hide_output
+          default: "False"
+        - name: timeout
+          default: None
+        - name: reset_system_locale
+          default: "True"
+        - name: ignore_retcode
+          default: "False"
+        - name: saltenv
+          default: None
+        - name: use_vt
+          default: "False"
+        - name: password
+          default: None
+        - name: prepend_path
+          default: None
+        - name: success_retcodes
+          default: None
+        - name: success_stdout
+          default: None
+        - name: success_stderr
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: run_stderr
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: run_stderr
+      summary: Execute a command and only return the standard error
+      parameters:
+        - name: cmd
+        - name: cwd
+          default: None
+        - name: stdin
+          default: None
+        - name: runas
+          default: None
+        - name: group
+          default: None
+        - name: shell
+          default: DEFAULT_SHELL
+        - name: python_shell
+          default: None
+        - name: env
+          default: None
+        - name: clean_env
+          default: "False"
+        - name: template
+          default: None
+        - name: rstrip
+          default: "True"
+        - name: umask
+          default: None
+        - name: output_encoding
+          default: None
+        - name: output_loglevel
+          default: '"debug"'
+        - name: log_callback
+          default: None
+        - name: hide_output
+          default: "False"
+        - name: timeout
+          default: None
+        - name: reset_system_locale
+          default: "True"
+        - name: ignore_retcode
+          default: "False"
+        - name: saltenv
+          default: None
+        - name: use_vt
+          default: "False"
+        - name: password
+          default: None
+        - name: prepend_path
+          default: None
+        - name: success_retcodes
+          default: None
+        - name: success_stdout
+          default: None
+        - name: success_stderr
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: run_all
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: run_all
+      summary: Execute the passed command and return a dict of return data
+      parameters:
+        - name: cmd
+        - name: cwd
+          default: None
+        - name: stdin
+          default: None
+        - name: runas
+          default: None
+        - name: group
+          default: None
+        - name: shell
+          default: DEFAULT_SHELL
+        - name: python_shell
+          default: None
+        - name: env
+          default: None
+        - name: clean_env
+          default: "False"
+        - name: template
+          default: None
+        - name: rstrip
+          default: "True"
+        - name: umask
+          default: None
+        - name: output_encoding
+          default: None
+        - name: output_loglevel
+          default: '"debug"'
+        - name: log_callback
+          default: None
+        - name: hide_output
+          default: "False"
+        - name: timeout
+          default: None
+        - name: reset_system_locale
+          default: "True"
+        - name: ignore_retcode
+          default: "False"
+        - name: saltenv
+          default: None
+        - name: use_vt
+          default: "False"
+        - name: redirect_stderr
+          default: "False"
+        - name: password
+          default: None
+        - name: encoded_cmd
+          default: "False"
+        - name: prepend_path
+          default: None
+        - name: success_retcodes
+          default: None
+        - name: success_stdout
+          default: None
+        - name: success_stderr
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: retcode
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: retcode
+      summary: Execute a shell command and return the command's return code.
+      parameters:
+        - name: cmd
+        - name: cwd
+          default: None
+        - name: stdin
+          default: None
+        - name: runas
+          default: None
+        - name: group
+          default: None
+        - name: shell
+          default: DEFAULT_SHELL
+        - name: python_shell
+          default: None
+        - name: env
+          default: None
+        - name: clean_env
+          default: "False"
+        - name: template
+          default: None
+        - name: umask
+          default: None
+        - name: output_encoding
+          default: None
+        - name: output_loglevel
+          default: '"debug"'
+        - name: log_callback
+          default: None
+        - name: timeout
+          default: None
+        - name: reset_system_locale
+          default: "True"
+        - name: ignore_retcode
+          default: "False"
+        - name: saltenv
+          default: None
+        - name: use_vt
+          default: "False"
+        - name: password
+          default: None
+        - name: success_retcodes
+          default: None
+        - name: success_stdout
+          default: None
+        - name: success_stderr
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: _retcode_quiet
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: _retcode_quiet
+      summary: Helper for running commands quietly for minion startup. Returns same as
+      parameters:
+        - name: cmd
+        - name: cwd
+          default: None
+        - name: stdin
+          default: None
+        - name: runas
+          default: None
+        - name: group
+          default: None
+        - name: shell
+          default: DEFAULT_SHELL
+        - name: python_shell
+          default: "False"
+        - name: env
+          default: None
+        - name: clean_env
+          default: "False"
+        - name: template
+          default: None
+        - name: umask
+          default: None
+        - name: output_encoding
+          default: None
+        - name: log_callback
+          default: None
+        - name: timeout
+          default: None
+        - name: reset_system_locale
+          default: "True"
+        - name: ignore_retcode
+          default: "False"
+        - name: saltenv
+          default: None
+        - name: use_vt
+          default: "False"
+        - name: password
+          default: None
+        - name: success_retcodes
+          default: None
+        - name: success_stdout
+          default: None
+        - name: success_stderr
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: script
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: script
+      summary: Download a script from a remote location and execute the script locally.
+      parameters:
+        - name: source
+        - name: args
+          default: None
+        - name: cwd
+          default: None
+        - name: stdin
+          default: None
+        - name: runas
+          default: None
+        - name: group
+          default: None
+        - name: shell
+          default: DEFAULT_SHELL
+        - name: python_shell
+          default: None
+        - name: env
+          default: None
+        - name: template
+          default: None
+        - name: umask
+          default: None
+        - name: output_encoding
+          default: None
+        - name: output_loglevel
+          default: '"debug"'
+        - name: log_callback
+          default: None
+        - name: hide_output
+          default: "False"
+        - name: timeout
+          default: None
+        - name: reset_system_locale
+          default: "True"
+        - name: saltenv
+          default: None
+        - name: use_vt
+          default: "False"
+        - name: bg
+          default: "False"
+        - name: password
+          default: None
+        - name: success_retcodes
+          default: None
+        - name: success_stdout
+          default: None
+        - name: success_stderr
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - cp.cache_file
+        - cp.get_template
+        - file.remove
+        - file.user_to_uid
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: script_retcode
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: script_retcode
+      summary: Download a script from a remote location and execute the script locally.
+      parameters:
+        - name: source
+        - name: args
+          default: None
+        - name: cwd
+          default: None
+        - name: stdin
+          default: None
+        - name: runas
+          default: None
+        - name: group
+          default: None
+        - name: shell
+          default: DEFAULT_SHELL
+        - name: python_shell
+          default: None
+        - name: env
+          default: None
+        - name: template
+          default: '"jinja"'
+        - name: umask
+          default: None
+        - name: timeout
+          default: None
+        - name: reset_system_locale
+          default: "True"
+        - name: saltenv
+          default: None
+        - name: output_encoding
+          default: None
+        - name: output_loglevel
+          default: '"debug"'
+        - name: log_callback
+          default: None
+        - name: use_vt
+          default: "False"
+        - name: password
+          default: None
+        - name: success_retcodes
+          default: None
+        - name: success_stdout
+          default: None
+        - name: success_stderr
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - cp.cache_file
+        - cp.get_template
+        - file.remove
+        - file.user_to_uid
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: which
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: which
+      summary: Returns the path of an executable available on the minion, None otherwise
+      parameters:
+        - name: cmd
+      execution_dependencies:
+        - config.get
+        - cp.cache_file
+        - cp.get_template
+        - file.remove
+        - file.user_to_uid
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: which_bin
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: which_bin
+      summary: Returns the first command found in a list of commands
+      parameters:
+        - name: cmds
+      execution_dependencies:
+        - config.get
+        - cp.cache_file
+        - cp.get_template
+        - file.remove
+        - file.user_to_uid
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: has_exec
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: has_exec
+      summary: Returns true if the executable is available on the minion, false otherwise
+      parameters:
+        - name: cmd
+      execution_dependencies:
+        - config.get
+        - cp.cache_file
+        - cp.get_template
+        - file.remove
+        - file.user_to_uid
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: exec_code
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: exec_code
+      summary: Pass in two strings, the first naming the executable language, aka -
+      parameters:
+        - name: lang
+        - name: code
+        - name: cwd
+          default: None
+        - name: args
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - cp.cache_file
+        - cp.get_template
+        - file.remove
+        - file.user_to_uid
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: exec_code_all
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: exec_code_all
+      summary: Pass in two strings, the first naming the executable language, aka -
+      parameters:
+        - name: lang
+        - name: code
+        - name: cwd
+          default: None
+        - name: args
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - cp.cache_file
+        - cp.get_template
+        - file.remove
+        - file.user_to_uid
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: tty
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: tty
+      summary: Echo a string to a specific tty
+      parameters:
+        - name: device
+        - name: echo
+          default: '""'
+      execution_dependencies:
+        - config.get
+        - cp.cache_file
+        - cp.get_template
+        - file.remove
+        - file.user_to_uid
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: run_chroot
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: run_chroot
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: root
+        - name: cmd
+        - name: cwd
+          default: None
+        - name: stdin
+          default: None
+        - name: runas
+          default: None
+        - name: group
+          default: None
+        - name: shell
+          default: DEFAULT_SHELL
+        - name: python_shell
+          default: "True"
+        - name: binds
+          default: None
+        - name: env
+          default: None
+        - name: clean_env
+          default: "False"
+        - name: template
+          default: None
+        - name: rstrip
+          default: "True"
+        - name: umask
+          default: None
+        - name: output_encoding
+          default: None
+        - name: output_loglevel
+          default: '"quiet"'
+        - name: log_callback
+          default: None
+        - name: hide_output
+          default: "False"
+        - name: timeout
+          default: None
+        - name: reset_system_locale
+          default: "True"
+        - name: ignore_retcode
+          default: "False"
+        - name: saltenv
+          default: None
+        - name: use_vt
+          default: "False"
+        - name: bg
+          default: "False"
+        - name: success_retcodes
+          default: None
+        - name: success_stdout
+          default: None
+        - name: success_stderr
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - cp.cache_file
+        - cp.get_template
+        - file.remove
+        - file.user_to_uid
+        - mount.mount
+        - mount.umount
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: _is_valid_shell
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: _is_valid_shell
+      summary: Attempts to search for valid shells on a system and
+      parameters:
+        - name: shell
+      execution_dependencies:
+        - config.get
+        - cp.cache_file
+        - cp.get_template
+        - file.remove
+        - file.user_to_uid
+        - mount.mount
+        - mount.umount
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: shells
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: shells
+      summary: Lists the valid shells on this system via the /etc/shells file
+      execution_dependencies:
+        - config.get
+        - cp.cache_file
+        - cp.get_template
+        - file.remove
+        - file.user_to_uid
+        - mount.mount
+        - mount.umount
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: shell_info
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: shell_info
+      summary: '.. versionadded:: 2016.11.0'
+      parameters:
+        - name: shell
+        - name: list_modules
+          default: "False"
+      execution_dependencies:
+        - config.get
+        - cp.cache_file
+        - cp.get_template
+        - file.remove
+        - file.user_to_uid
+        - mount.mount
+        - mount.umount
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: powershell
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: powershell
+      summary: Execute the passed PowerShell command and return the output as a dictionary.
+      parameters:
+        - name: cmd
+        - name: cwd
+          default: None
+        - name: stdin
+          default: None
+        - name: runas
+          default: None
+        - name: shell
+          default: '"powershell"'
+        - name: env
+          default: None
+        - name: clean_env
+          default: "False"
+        - name: template
+          default: None
+        - name: rstrip
+          default: "True"
+        - name: umask
+          default: None
+        - name: output_encoding
+          default: None
+        - name: output_loglevel
+          default: '"debug"'
+        - name: hide_output
+          default: "False"
+        - name: timeout
+          default: None
+        - name: reset_system_locale
+          default: "True"
+        - name: ignore_retcode
+          default: "False"
+        - name: saltenv
+          default: None
+        - name: use_vt
+          default: "False"
+        - name: password
+          default: None
+        - name: depth
+          default: None
+        - name: encode_cmd
+          default: "False"
+        - name: success_retcodes
+          default: None
+        - name: success_stdout
+          default: None
+        - name: success_stderr
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - cp.cache_file
+        - cp.get_template
+        - file.remove
+        - file.user_to_uid
+        - mount.mount
+        - mount.umount
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: powershell_all
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: powershell_all
+      summary: Execute the passed PowerShell command and return a dictionary with a result
+      parameters:
+        - name: cmd
+        - name: cwd
+          default: None
+        - name: stdin
+          default: None
+        - name: runas
+          default: None
+        - name: shell
+          default: '"powershell"'
+        - name: env
+          default: None
+        - name: clean_env
+          default: "False"
+        - name: template
+          default: None
+        - name: rstrip
+          default: "True"
+        - name: umask
+          default: None
+        - name: output_encoding
+          default: None
+        - name: output_loglevel
+          default: '"debug"'
+        - name: quiet
+          default: "False"
+        - name: timeout
+          default: None
+        - name: reset_system_locale
+          default: "True"
+        - name: ignore_retcode
+          default: "False"
+        - name: saltenv
+          default: None
+        - name: use_vt
+          default: "False"
+        - name: password
+          default: None
+        - name: depth
+          default: None
+        - name: encode_cmd
+          default: "False"
+        - name: force_list
+          default: "False"
+        - name: success_retcodes
+          default: None
+        - name: success_stdout
+          default: None
+        - name: success_stderr
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - cp.cache_file
+        - cp.get_template
+        - file.remove
+        - file.user_to_uid
+        - mount.mount
+        - mount.umount
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: _prep_powershell_json
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: _prep_powershell_json
+      summary: Try to fix the output from OutputTo-JSON in powershell commands to make it
+      parameters:
+        - name: text
+      execution_dependencies:
+        - config.get
+        - cp.cache_file
+        - cp.get_template
+        - file.remove
+        - file.user_to_uid
+        - mount.mount
+        - mount.umount
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62
+    - function: run_bg
+      source:
+        path: salt/modules/cmdmod.py
+        symbol: run_bg
+      parameters:
+        - name: cmd
+        - name: cwd
+          default: None
+        - name: runas
+          default: None
+        - name: group
+          default: None
+        - name: shell
+          default: DEFAULT_SHELL
+        - name: python_shell
+          default: None
+        - name: env
+          default: None
+        - name: clean_env
+          default: "False"
+        - name: template
+          default: None
+        - name: umask
+          default: None
+        - name: timeout
+          default: None
+        - name: output_encoding
+          default: None
+        - name: output_loglevel
+          default: '"debug"'
+        - name: log_callback
+          default: None
+        - name: reset_system_locale
+          default: "True"
+        - name: ignore_retcode
+          default: "False"
+        - name: saltenv
+          default: None
+        - name: password
+          default: None
+        - name: prepend_path
+          default: None
+        - name: success_retcodes
+          default: None
+        - name: success_stdout
+          default: None
+        - name: success_stderr
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - cp.cache_file
+        - cp.get_template
+        - file.remove
+        - file.user_to_uid
+        - mount.mount
+        - mount.umount
+        - user.info
+      tests:
+        - path: tests/pytests/unit/modules/test_cmdmod.py
+          functions: 62

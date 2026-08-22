@@ -1,0 +1,61 @@
+kind: state
+module: host
+source_module: host
+path: salt/states/host.py
+functions:
+    - function: present
+      source:
+        path: salt/states/host.py
+        symbol: present
+      summary: Ensures that the named host is present with the given ip
+      parameters:
+        - name: name
+        - name: ip
+        - name: comment
+          default: '""'
+        - name: clean
+          default: "False"
+      execution_dependencies:
+        - hosts.add_host
+        - hosts.list_hosts
+        - hosts.rm_host
+        - hosts.set_comment
+      tests:
+        - path: tests/pytests/unit/states/test_host.py
+          functions: 9
+    - function: absent
+      source:
+        path: salt/states/host.py
+        symbol: absent
+      summary: Ensure that the named host is absent
+      parameters:
+        - name: name
+        - name: ip
+      execution_dependencies:
+        - hosts.add_host
+        - hosts.has_pair
+        - hosts.list_hosts
+        - hosts.rm_host
+        - hosts.set_comment
+      tests:
+        - path: tests/pytests/unit/states/test_host.py
+          functions: 9
+    - function: only
+      source:
+        path: salt/states/host.py
+        symbol: only
+      summary: Ensure that only the given hostnames are associated with the
+      parameters:
+        - name: name
+        - name: hostnames
+      execution_dependencies:
+        - hosts.add_host
+        - hosts.get_alias
+        - hosts.has_pair
+        - hosts.list_hosts
+        - hosts.rm_host
+        - hosts.set_comment
+        - hosts.set_host
+      tests:
+        - path: tests/pytests/unit/states/test_host.py
+          functions: 9

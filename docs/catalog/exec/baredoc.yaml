@@ -1,0 +1,122 @@
+kind: exec
+module: baredoc
+source_module: baredoc
+path: salt/modules/baredoc.py
+functions:
+    - function: _get_module_name
+      source:
+        path: salt/modules/baredoc.py
+        symbol: _get_module_name
+      summary: Returns the value of __virtual__ if found.
+      parameters:
+        - name: tree
+        - name: 'filename: str'
+      tests:
+        - path: tests/pytests/unit/modules/test_baredoc.py
+          functions: 12
+    - function: _get_func_aliases
+      source:
+        path: salt/modules/baredoc.py
+        symbol: _get_func_aliases
+      summary: Get __func_alias__ dict for mapping function names
+      parameters:
+        - name: tree
+      tests:
+        - path: tests/pytests/unit/modules/test_baredoc.py
+          functions: 12
+    - function: _get_args
+      source:
+        path: salt/modules/baredoc.py
+        symbol: _get_args
+      summary: Given a function def, returns arguments and defaults
+      parameters:
+        - name: 'function: str'
+      tests:
+        - path: tests/pytests/unit/modules/test_baredoc.py
+          functions: 12
+    - function: _parse_module_docs
+      source:
+        path: salt/modules/baredoc.py
+        symbol: _parse_module_docs
+      summary: Gather module docstrings or module.function doc string if requested
+      parameters:
+        - name: module_path
+        - name: mod_name
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_baredoc.py
+          functions: 12
+    - function: _parse_module_functions
+      source:
+        path: salt/modules/baredoc.py
+        symbol: _parse_module_functions
+      summary: Parse module files for proper module_name and function name, then gather
+      parameters:
+        - name: 'module_py: str'
+        - name: 'return_type: str'
+      tests:
+        - path: tests/pytests/unit/modules/test_baredoc.py
+          functions: 12
+    - function: _get_files
+      source:
+        path: salt/modules/baredoc.py
+        symbol: _get_files
+      summary: Determine if modules/states directories or files are requested
+      parameters:
+        - name: name
+          default: "False"
+        - name: type
+          default: '"states"'
+        - name: return_type
+          default: '"args"'
+      tests:
+        - path: tests/pytests/unit/modules/test_baredoc.py
+          functions: 12
+    - function: list_states
+      source:
+        path: salt/modules/baredoc.py
+        symbol: list_states
+      summary: Walk the Salt install tree for state modules and return a
+      parameters:
+        - name: name
+          default: "False"
+        - name: names_only
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_baredoc.py
+          functions: 12
+    - function: list_modules
+      source:
+        path: salt/modules/baredoc.py
+        symbol: list_modules
+      summary: Walk the Salt install tree for execution modules and return a
+      parameters:
+        - name: name
+          default: "False"
+        - name: names_only
+          default: "False"
+      tests:
+        - path: tests/pytests/unit/modules/test_baredoc.py
+          functions: 12
+    - function: state_docs
+      source:
+        path: salt/modules/baredoc.py
+        symbol: state_docs
+      summary: Return the docstrings for all state modules. Optionally, specify a state module or a
+      parameters:
+        - name: names
+          kind: '*'
+      tests:
+        - path: tests/pytests/unit/modules/test_baredoc.py
+          functions: 12
+    - function: module_docs
+      source:
+        path: salt/modules/baredoc.py
+        symbol: module_docs
+      summary: Return the docstrings for all modules. Optionally, specify a module or a
+      parameters:
+        - name: names
+          kind: '*'
+      tests:
+        - path: tests/pytests/unit/modules/test_baredoc.py
+          functions: 12

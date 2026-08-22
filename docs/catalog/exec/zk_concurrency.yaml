@@ -1,0 +1,138 @@
+kind: exec
+module: zk_concurrency
+source_module: zk_concurrency
+virtual: true
+path: salt/modules/zk_concurrency.py
+functions:
+    - function: _get_zk_conn
+      source:
+        path: salt/modules/zk_concurrency.py
+        symbol: _get_zk_conn
+      parameters:
+        - name: profile
+          default: None
+        - name: connection_args
+          kind: '**'
+      execution_dependencies:
+        - config.get
+        - zookeeper.make_digest_acl
+    - function: lock_holders
+      source:
+        path: salt/modules/zk_concurrency.py
+        symbol: lock_holders
+      summary: Return an un-ordered list of lock holders
+      parameters:
+        - name: path
+        - name: zk_hosts
+          default: None
+        - name: identifier
+          default: None
+        - name: max_concurrency
+          default: "1"
+        - name: timeout
+          default: None
+        - name: ephemeral_lease
+          default: "False"
+        - name: profile
+          default: None
+        - name: scheme
+          default: None
+        - name: username
+          default: None
+        - name: password
+          default: None
+        - name: default_acl
+          default: None
+      execution_dependencies:
+        - config.get
+        - zookeeper.make_digest_acl
+    - function: lock
+      source:
+        path: salt/modules/zk_concurrency.py
+        symbol: lock
+      summary: Get lock (with optional timeout)
+      parameters:
+        - name: path
+        - name: zk_hosts
+          default: None
+        - name: identifier
+          default: None
+        - name: max_concurrency
+          default: "1"
+        - name: timeout
+          default: None
+        - name: ephemeral_lease
+          default: "False"
+        - name: force
+          default: "False"
+        - name: |-
+            # foricble get the lock regardless of open slots
+                profile
+          default: None
+        - name: scheme
+          default: None
+        - name: username
+          default: None
+        - name: password
+          default: None
+        - name: default_acl
+          default: None
+      execution_dependencies:
+        - config.get
+        - zookeeper.make_digest_acl
+    - function: unlock
+      source:
+        path: salt/modules/zk_concurrency.py
+        symbol: unlock
+      summary: Remove lease from semaphore
+      parameters:
+        - name: path
+        - name: zk_hosts
+          default: None
+        - name: |-
+            # in case you need to unlock without having run lock (failed execution for example)
+                identifier
+          default: None
+        - name: max_concurrency
+          default: "1"
+        - name: ephemeral_lease
+          default: "False"
+        - name: scheme
+          default: None
+        - name: profile
+          default: None
+        - name: username
+          default: None
+        - name: password
+          default: None
+        - name: default_acl
+          default: None
+      execution_dependencies:
+        - config.get
+        - zookeeper.make_digest_acl
+    - function: party_members
+      source:
+        path: salt/modules/zk_concurrency.py
+        symbol: party_members
+      summary: Get the List of identifiers in a particular party, optionally waiting for the
+      parameters:
+        - name: path
+        - name: zk_hosts
+          default: None
+        - name: min_nodes
+          default: "1"
+        - name: blocking
+          default: "False"
+        - name: profile
+          default: None
+        - name: scheme
+          default: None
+        - name: username
+          default: None
+        - name: password
+          default: None
+        - name: default_acl
+          default: None
+      execution_dependencies:
+        - config.get
+        - zookeeper.make_digest_acl

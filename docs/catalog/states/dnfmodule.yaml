@@ -1,0 +1,74 @@
+kind: state
+module: dnfmodule
+source_module: dnfmodule
+path: salt/states/dnfmodule.py
+functions:
+    - function: enabled
+      source:
+        path: salt/states/dnfmodule.py
+        symbol: enabled
+      summary: Ensure that the named module stream is enabled.
+      parameters:
+        - name: name
+        - name: switch
+          default: "False"
+      execution_dependencies:
+        - dnfmodule.enable
+        - dnfmodule.enabled_stream
+        - dnfmodule.is_enabled
+      tests:
+        - path: tests/pytests/unit/states/test_dnfmodule.py
+          functions: 11
+    - function: disabled
+      source:
+        path: salt/states/dnfmodule.py
+        symbol: disabled
+      summary: Ensure that the named module is disabled.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - dnfmodule.disable
+        - dnfmodule.enable
+        - dnfmodule.enabled_stream
+        - dnfmodule.is_disabled
+        - dnfmodule.is_enabled
+      tests:
+        - path: tests/pytests/unit/states/test_dnfmodule.py
+          functions: 11
+    - function: installed
+      source:
+        path: salt/states/dnfmodule.py
+        symbol: installed
+      summary: Ensure that the named module profile is installed. Installing a profile
+      parameters:
+        - name: name
+      execution_dependencies:
+        - dnfmodule.disable
+        - dnfmodule.enable
+        - dnfmodule.enabled_stream
+        - dnfmodule.install
+        - dnfmodule.is_disabled
+        - dnfmodule.is_enabled
+        - dnfmodule.is_installed
+      tests:
+        - path: tests/pytests/unit/states/test_dnfmodule.py
+          functions: 11
+    - function: removed
+      source:
+        path: salt/states/dnfmodule.py
+        symbol: removed
+      summary: Ensure that the named module profile is not installed. The module's stream
+      parameters:
+        - name: name
+      execution_dependencies:
+        - dnfmodule.disable
+        - dnfmodule.enable
+        - dnfmodule.enabled_stream
+        - dnfmodule.install
+        - dnfmodule.is_disabled
+        - dnfmodule.is_enabled
+        - dnfmodule.is_installed
+        - dnfmodule.remove
+      tests:
+        - path: tests/pytests/unit/states/test_dnfmodule.py
+          functions: 11

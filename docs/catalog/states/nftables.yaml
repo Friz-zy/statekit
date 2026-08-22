@@ -1,0 +1,236 @@
+kind: state
+module: nftables
+source_module: nftables
+path: salt/states/nftables.py
+functions:
+    - function: chain_present
+      source:
+        path: salt/states/nftables.py
+        symbol: chain_present
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+        - name: table
+          default: '"filter"'
+        - name: table_type
+          default: None
+        - name: hook
+          default: None
+        - name: priority
+          default: None
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - nftables.check_chain
+        - nftables.new_chain
+      tests:
+        - path: tests/pytests/unit/states/test_nftables.py
+          functions: 9
+    - function: chain_absent
+      source:
+        path: salt/states/nftables.py
+        symbol: chain_absent
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+        - name: table
+          default: '"filter"'
+        - name: family
+          default: '"ipv4"'
+      execution_dependencies:
+        - nftables.check_chain
+        - nftables.delete_chain
+        - nftables.flush
+        - nftables.new_chain
+      tests:
+        - path: tests/pytests/unit/states/test_nftables.py
+          functions: 9
+    - function: append
+      source:
+        path: salt/states/nftables.py
+        symbol: append
+      summary: '.. versionadded:: 0.17.0'
+      parameters:
+        - name: name
+        - name: family
+          default: '"ipv4"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - nftables.append
+        - nftables.build_rule
+        - nftables.check
+        - nftables.check_chain
+        - nftables.delete_chain
+        - nftables.flush
+        - nftables.new_chain
+        - nftables.save
+      tests:
+        - path: tests/pytests/unit/states/test_nftables.py
+          functions: 9
+    - function: insert
+      source:
+        path: salt/states/nftables.py
+        symbol: insert
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+        - name: family
+          default: '"ipv4"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - nftables.append
+        - nftables.build_rule
+        - nftables.check
+        - nftables.check_chain
+        - nftables.delete_chain
+        - nftables.flush
+        - nftables.insert
+        - nftables.new_chain
+        - nftables.save
+      tests:
+        - path: tests/pytests/unit/states/test_nftables.py
+          functions: 9
+    - function: delete
+      source:
+        path: salt/states/nftables.py
+        symbol: delete
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+        - name: family
+          default: '"ipv4"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - nftables.append
+        - nftables.build_rule
+        - nftables.check
+        - nftables.check_chain
+        - nftables.delete
+        - nftables.delete_chain
+        - nftables.flush
+        - nftables.insert
+        - nftables.new_chain
+        - nftables.save
+      tests:
+        - path: tests/pytests/unit/states/test_nftables.py
+          functions: 9
+    - function: flush
+      source:
+        path: salt/states/nftables.py
+        symbol: flush
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+        - name: family
+          default: '"ipv4"'
+        - name: ignore_absence
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - nftables.append
+        - nftables.build_rule
+        - nftables.check
+        - nftables.check_chain
+        - nftables.check_table
+        - nftables.delete
+        - nftables.delete_chain
+        - nftables.flush
+        - nftables.insert
+        - nftables.new_chain
+        - nftables.save
+      tests:
+        - path: tests/pytests/unit/states/test_nftables.py
+          functions: 9
+    - function: set_policy
+      source:
+        path: salt/states/nftables.py
+        symbol: set_policy
+      summary: '.. versionadded:: 3002'
+      parameters:
+        - name: name
+        - name: table
+          default: '"filter"'
+        - name: family
+          default: '"ipv4"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - nftables.append
+        - nftables.build_rule
+        - nftables.check
+        - nftables.check_chain
+        - nftables.check_table
+        - nftables.delete
+        - nftables.delete_chain
+        - nftables.flush
+        - nftables.get_policy
+        - nftables.insert
+        - nftables.new_chain
+        - nftables.save
+        - nftables.set_policy
+      tests:
+        - path: tests/pytests/unit/states/test_nftables.py
+          functions: 9
+    - function: table_present
+      source:
+        path: salt/states/nftables.py
+        symbol: table_present
+      summary: '.. versionadded:: 3002'
+      parameters:
+        - name: name
+        - name: family
+          default: '"ipv4"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - nftables.append
+        - nftables.build_rule
+        - nftables.check
+        - nftables.check_chain
+        - nftables.check_table
+        - nftables.delete
+        - nftables.delete_chain
+        - nftables.flush
+        - nftables.get_policy
+        - nftables.insert
+        - nftables.new_chain
+        - nftables.new_table
+        - nftables.save
+        - nftables.set_policy
+      tests:
+        - path: tests/pytests/unit/states/test_nftables.py
+          functions: 9
+    - function: table_absent
+      source:
+        path: salt/states/nftables.py
+        symbol: table_absent
+      summary: '.. versionadded:: 3002'
+      parameters:
+        - name: name
+        - name: family
+          default: '"ipv4"'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - nftables.append
+        - nftables.build_rule
+        - nftables.check
+        - nftables.check_chain
+        - nftables.check_table
+        - nftables.delete
+        - nftables.delete_chain
+        - nftables.delete_table
+        - nftables.flush
+        - nftables.get_policy
+        - nftables.insert
+        - nftables.new_chain
+        - nftables.new_table
+        - nftables.save
+        - nftables.set_policy
+      tests:
+        - path: tests/pytests/unit/states/test_nftables.py
+          functions: 9

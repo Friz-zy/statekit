@@ -1,0 +1,130 @@
+kind: exec
+module: npm
+source_module: npm
+path: salt/modules/npm.py
+functions:
+    - function: _check_valid_version
+      source:
+        path: salt/modules/npm.py
+        symbol: _check_valid_version
+      summary: Check the version of npm to ensure this module will work. Currently
+      tests:
+        - path: tests/pytests/unit/modules/test_npm.py
+          functions: 6
+    - function: install
+      source:
+        path: salt/modules/npm.py
+        symbol: install
+      summary: Install an NPM package.
+      parameters:
+        - name: pkg
+          default: None
+        - name: pkgs
+          default: None
+        - name: dir
+          default: None
+        - name: runas
+          default: None
+        - name: registry
+          default: None
+        - name: env
+          default: None
+        - name: dry_run
+          default: "False"
+        - name: silent
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_npm.py
+          functions: 6
+    - function: uninstall
+      source:
+        path: salt/modules/npm.py
+        symbol: uninstall
+      summary: Uninstall an NPM package.
+      parameters:
+        - name: pkg
+        - name: dir
+          default: None
+        - name: runas
+          default: None
+        - name: env
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_npm.py
+          functions: 6
+    - function: list_
+      source:
+        path: salt/modules/npm.py
+        symbol: list_
+      summary: List installed NPM packages.
+      parameters:
+        - name: pkg
+          default: None
+        - name: dir
+          default: None
+        - name: runas
+          default: None
+        - name: env
+          default: None
+        - name: depth
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_npm.py
+          functions: 6
+    - function: cache_clean
+      source:
+        path: salt/modules/npm.py
+        symbol: cache_clean
+      summary: Clean cached NPM packages.
+      parameters:
+        - name: path
+          default: None
+        - name: runas
+          default: None
+        - name: env
+          default: None
+        - name: force
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_npm.py
+          functions: 6
+    - function: cache_list
+      source:
+        path: salt/modules/npm.py
+        symbol: cache_list
+      summary: List NPM cached packages.
+      parameters:
+        - name: path
+          default: None
+        - name: runas
+          default: None
+        - name: env
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_npm.py
+          functions: 6
+    - function: cache_path
+      source:
+        path: salt/modules/npm.py
+        symbol: cache_path
+      summary: List path of the NPM cache directory.
+      parameters:
+        - name: runas
+          default: None
+        - name: env
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_npm.py
+          functions: 6

@@ -1,0 +1,80 @@
+kind: exec
+module: defaults
+source_module: defaults
+virtual: true
+path: salt/modules/defaults.py
+functions:
+    - function: _mk_client
+      source:
+        path: salt/modules/defaults.py
+        symbol: _mk_client
+      summary: Create a file client and add it to the context
+      tests:
+        - path: tests/pytests/unit/modules/test_defaults.py
+          functions: 12
+    - function: _load
+      source:
+        path: salt/modules/defaults.py
+        symbol: _load
+      summary: Generates a list of salt://<formula>/defaults.(json|yaml) files
+      parameters:
+        - name: formula
+      tests:
+        - path: tests/pytests/unit/modules/test_defaults.py
+          functions: 12
+    - function: get
+      source:
+        path: salt/modules/defaults.py
+        symbol: get
+      summary: defaults.get is used much like pillar.get except that it will read
+      parameters:
+        - name: key
+        - name: default
+          default: '""'
+      tests:
+        - path: tests/pytests/unit/modules/test_defaults.py
+          functions: 12
+    - function: merge
+      source:
+        path: salt/modules/defaults.py
+        symbol: merge
+      summary: defaults.merge
+      parameters:
+        - name: dest
+        - name: src
+        - name: merge_lists
+          default: "False"
+        - name: in_place
+          default: "True"
+        - name: convert_none
+          default: "True"
+      tests:
+        - path: tests/pytests/unit/modules/test_defaults.py
+          functions: 12
+    - function: deepcopy
+      source:
+        path: salt/modules/defaults.py
+        symbol: deepcopy
+      summary: defaults.deepcopy
+      parameters:
+        - name: source
+      tests:
+        - path: tests/pytests/unit/modules/test_defaults.py
+          functions: 12
+    - function: update
+      source:
+        path: salt/modules/defaults.py
+        symbol: update
+      summary: defaults.update
+      parameters:
+        - name: dest
+        - name: defaults
+        - name: merge_lists
+          default: "True"
+        - name: in_place
+          default: "True"
+        - name: convert_none
+          default: "True"
+      tests:
+        - path: tests/pytests/unit/modules/test_defaults.py
+          functions: 12

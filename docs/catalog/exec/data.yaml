@@ -1,0 +1,112 @@
+kind: exec
+module: data
+source_module: data
+path: salt/modules/data.py
+functions:
+    - function: clear
+      source:
+        path: salt/modules/data.py
+        symbol: clear
+      summary: Clear out all of the data in the minion datastore, this function is
+      tests:
+        - path: tests/pytests/unit/modules/test_data.py
+          functions: 11
+    - function: load
+      source:
+        path: salt/modules/data.py
+        symbol: load
+      summary: Return all of the data in the minion datastore
+      tests:
+        - path: tests/pytests/unit/modules/test_data.py
+          functions: 11
+    - function: dump
+      source:
+        path: salt/modules/data.py
+        symbol: dump
+      summary: Replace the entire datastore with a passed data structure
+      parameters:
+        - name: new_data
+      tests:
+        - path: tests/pytests/unit/modules/test_data.py
+          functions: 11
+    - function: update
+      source:
+        path: salt/modules/data.py
+        symbol: update
+      summary: Update a key with a value in the minion datastore
+      parameters:
+        - name: key
+        - name: value
+      tests:
+        - path: tests/pytests/unit/modules/test_data.py
+          functions: 11
+    - function: cas
+      source:
+        path: salt/modules/data.py
+        symbol: cas
+      summary: Check and set a value in the minion datastore
+      parameters:
+        - name: key
+        - name: value
+        - name: old_value
+      tests:
+        - path: tests/pytests/unit/modules/test_data.py
+          functions: 11
+    - function: pop
+      source:
+        path: salt/modules/data.py
+        symbol: pop
+      summary: Pop (return & delete) a value from the minion datastore
+      parameters:
+        - name: key
+        - name: default
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_data.py
+          functions: 11
+    - function: get
+      source:
+        path: salt/modules/data.py
+        symbol: get
+      summary: Get a (list of) value(s) from the minion datastore
+      parameters:
+        - name: key
+        - name: default
+          default: None
+      tests:
+        - path: tests/pytests/unit/modules/test_data.py
+          functions: 11
+    - function: keys
+      source:
+        path: salt/modules/data.py
+        symbol: keys
+      summary: Get all keys from the minion datastore
+      tests:
+        - path: tests/pytests/unit/modules/test_data.py
+          functions: 11
+    - function: values
+      source:
+        path: salt/modules/data.py
+        symbol: values
+      summary: Get values from the minion datastore
+      tests:
+        - path: tests/pytests/unit/modules/test_data.py
+          functions: 11
+    - function: items
+      source:
+        path: salt/modules/data.py
+        symbol: items
+      summary: Get items from the minion datastore
+      tests:
+        - path: tests/pytests/unit/modules/test_data.py
+          functions: 11
+    - function: has_key
+      source:
+        path: salt/modules/data.py
+        symbol: has_key
+      summary: Check if key is in the minion datastore
+      parameters:
+        - name: key
+      tests:
+        - path: tests/pytests/unit/modules/test_data.py
+          functions: 11

@@ -1,0 +1,178 @@
+kind: exec
+module: zoneadm
+source_module: zoneadm
+virtual: true
+path: salt/modules/zoneadm.py
+functions:
+    - function: _is_globalzone
+      source:
+        path: salt/modules/zoneadm.py
+        symbol: _is_globalzone
+      summary: Check if we are running in the globalzone
+      execution_dependencies:
+        - cmd.run_all
+    - function: _is_uuid
+      source:
+        path: salt/modules/zoneadm.py
+        symbol: _is_uuid
+      summary: Check if zone is actually a UUID
+      parameters:
+        - name: zone
+      execution_dependencies:
+        - cmd.run_all
+    - function: list_zones
+      source:
+        path: salt/modules/zoneadm.py
+        symbol: list_zones
+      summary: List all zones
+      parameters:
+        - name: verbose
+          default: "True"
+        - name: installed
+          default: "False"
+        - name: configured
+          default: "False"
+        - name: hide_global
+          default: "True"
+      execution_dependencies:
+        - cmd.run_all
+    - function: boot
+      source:
+        path: salt/modules/zoneadm.py
+        symbol: boot
+      summary: Boot (or activate) the specified zone.
+      parameters:
+        - name: zone
+        - name: single
+          default: "False"
+        - name: altinit
+          default: None
+        - name: smf_options
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+    - function: reboot
+      source:
+        path: salt/modules/zoneadm.py
+        symbol: reboot
+      summary: Restart the zone. This is equivalent to a halt boot sequence.
+      parameters:
+        - name: zone
+        - name: single
+          default: "False"
+        - name: altinit
+          default: None
+        - name: smf_options
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+    - function: halt
+      source:
+        path: salt/modules/zoneadm.py
+        symbol: halt
+      summary: Halt the specified zone.
+      parameters:
+        - name: zone
+      execution_dependencies:
+        - cmd.run_all
+    - function: shutdown
+      source:
+        path: salt/modules/zoneadm.py
+        symbol: shutdown
+      summary: Gracefully shutdown the specified zone.
+      parameters:
+        - name: zone
+        - name: reboot
+          default: "False"
+        - name: single
+          default: "False"
+        - name: altinit
+          default: None
+        - name: smf_options
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+    - function: detach
+      source:
+        path: salt/modules/zoneadm.py
+        symbol: detach
+      summary: Detach the specified zone.
+      parameters:
+        - name: zone
+      execution_dependencies:
+        - cmd.run_all
+    - function: attach
+      source:
+        path: salt/modules/zoneadm.py
+        symbol: attach
+      summary: Attach the specified zone.
+      parameters:
+        - name: zone
+        - name: force
+          default: "False"
+        - name: brand_opts
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+    - function: ready
+      source:
+        path: salt/modules/zoneadm.py
+        symbol: ready
+      summary: Prepares a zone for running applications.
+      parameters:
+        - name: zone
+      execution_dependencies:
+        - cmd.run_all
+    - function: verify
+      source:
+        path: salt/modules/zoneadm.py
+        symbol: verify
+      summary: Check to make sure the configuration of the specified
+      parameters:
+        - name: zone
+      execution_dependencies:
+        - cmd.run_all
+    - function: move
+      source:
+        path: salt/modules/zoneadm.py
+        symbol: move
+      summary: Move zone to new zonepath.
+      parameters:
+        - name: zone
+        - name: zonepath
+      execution_dependencies:
+        - cmd.run_all
+    - function: uninstall
+      source:
+        path: salt/modules/zoneadm.py
+        symbol: uninstall
+      summary: Uninstall the specified zone from the system.
+      parameters:
+        - name: zone
+      execution_dependencies:
+        - cmd.run_all
+    - function: install
+      source:
+        path: salt/modules/zoneadm.py
+        symbol: install
+      summary: Install the specified zone from the system.
+      parameters:
+        - name: zone
+        - name: nodataset
+          default: "False"
+        - name: brand_opts
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+    - function: clone
+      source:
+        path: salt/modules/zoneadm.py
+        symbol: clone
+      summary: Install a zone by copying an existing installed zone.
+      parameters:
+        - name: zone
+        - name: source
+        - name: snapshot
+          default: None
+      execution_dependencies:
+        - cmd.run_all

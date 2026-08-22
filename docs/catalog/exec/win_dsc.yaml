@@ -1,0 +1,184 @@
+kind: exec
+module: dsc
+source_module: win_dsc
+virtual: true
+path: salt/modules/win_dsc.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _pshell
+      source:
+        path: salt/modules/win_dsc.py
+        symbol: _pshell
+      summary: Execute the desired PowerShell command and ensure that it returns data
+      parameters:
+        - name: cmd
+        - name: cwd
+          default: None
+        - name: json_depth
+          default: "2"
+        - name: ignore_retcode
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+    - function: run_config
+      source:
+        path: salt/modules/win_dsc.py
+        symbol: run_config
+      parameters:
+        - name: path
+        - name: source
+          default: None
+        - name: config_name
+          default: None
+        - name: config_data
+          default: None
+        - name: config_data_source
+          default: None
+        - name: script_parameters
+          default: None
+        - name: salt_env
+          default: '"base"'
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+    - function: compile_config
+      source:
+        path: salt/modules/win_dsc.py
+        symbol: compile_config
+      parameters:
+        - name: path
+        - name: source
+          default: None
+        - name: config_name
+          default: None
+        - name: config_data
+          default: None
+        - name: config_data_source
+          default: None
+        - name: script_parameters
+          default: None
+        - name: salt_env
+          default: '"base"'
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+        - cp.get_file
+    - function: apply_config
+      source:
+        path: salt/modules/win_dsc.py
+        symbol: apply_config
+      parameters:
+        - name: path
+        - name: source
+          default: None
+        - name: salt_env
+          default: '"base"'
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+        - cp.get_dir
+        - cp.get_file
+    - function: get_config
+      source:
+        path: salt/modules/win_dsc.py
+        symbol: get_config
+      summary: Get the current DSC Configuration
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+        - cp.get_dir
+        - cp.get_file
+    - function: remove_config
+      source:
+        path: salt/modules/win_dsc.py
+        symbol: remove_config
+      summary: Remove the current DSC Configuration. Removes current, pending, and previous
+      parameters:
+        - name: reset
+          default: "False"
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+        - cp.get_dir
+        - cp.get_file
+        - file.remove
+    - function: restore_config
+      source:
+        path: salt/modules/win_dsc.py
+        symbol: restore_config
+      summary: Reapplies the previous configuration.
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+        - cp.get_dir
+        - cp.get_file
+        - file.remove
+    - function: test_config
+      source:
+        path: salt/modules/win_dsc.py
+        symbol: test_config
+      summary: Tests the current applied DSC Configuration
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+        - cp.get_dir
+        - cp.get_file
+        - file.remove
+    - function: get_config_status
+      source:
+        path: salt/modules/win_dsc.py
+        symbol: get_config_status
+      summary: Get the status of the current DSC Configuration
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+        - cp.get_dir
+        - cp.get_file
+        - file.remove
+    - function: get_lcm_config
+      source:
+        path: salt/modules/win_dsc.py
+        symbol: get_lcm_config
+      summary: Get the current Local Configuration Manager settings
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+        - cp.get_dir
+        - cp.get_file
+        - file.remove
+    - function: set_lcm_config
+      source:
+        path: salt/modules/win_dsc.py
+        symbol: set_lcm_config
+      summary: 'For detailed descriptions of the parameters see:'
+      parameters:
+        - name: config_mode
+          default: None
+        - name: config_mode_freq
+          default: None
+        - name: refresh_freq
+          default: None
+        - name: reboot_if_needed
+          default: None
+        - name: action_after_reboot
+          default: None
+        - name: refresh_mode
+          default: None
+        - name: certificate_id
+          default: None
+        - name: configuration_id
+          default: None
+        - name: allow_module_overwrite
+          default: None
+        - name: debug_mode
+          default: None
+        - name: status_retention_days
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+        - cmd.shell_info
+        - cp.get_dir
+        - cp.get_file
+        - file.remove

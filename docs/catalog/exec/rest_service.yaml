@@ -1,0 +1,70 @@
+kind: exec
+module: service
+source_module: rest_service
+virtual: true
+path: salt/modules/rest_service.py
+functions:
+    - function: get_all
+      source:
+        path: salt/modules/rest_service.py
+        symbol: get_all
+      summary: Return a list of all available services
+    - function: list_
+      source:
+        path: salt/modules/rest_service.py
+        symbol: list_
+      summary: Return a list of all available services.
+    - function: start
+      source:
+        path: salt/modules/rest_service.py
+        symbol: start
+      summary: Start the specified service on the rest_sample
+      parameters:
+        - name: name
+        - name: sig
+          default: None
+    - function: stop
+      source:
+        path: salt/modules/rest_service.py
+        symbol: stop
+      summary: Stop the specified service on the rest_sample
+      parameters:
+        - name: name
+        - name: sig
+          default: None
+    - function: restart
+      source:
+        path: salt/modules/rest_service.py
+        symbol: restart
+      summary: Restart the specified service with rest_sample
+      parameters:
+        - name: name
+        - name: sig
+          default: None
+    - function: status
+      source:
+        path: salt/modules/rest_service.py
+        symbol: status
+      summary: Return the status for a service via rest_sample.
+      parameters:
+        - name: name
+        - name: sig
+          default: None
+    - function: running
+      source:
+        path: salt/modules/rest_service.py
+        symbol: running
+      summary: Return whether this service is running.
+      parameters:
+        - name: name
+        - name: sig
+          default: None
+    - function: enabled
+      source:
+        path: salt/modules/rest_service.py
+        symbol: enabled
+      summary: Only the 'redbull' service is 'enabled' in the test
+      parameters:
+        - name: name
+        - name: sig
+          default: None

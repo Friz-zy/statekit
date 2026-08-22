@@ -1,0 +1,40 @@
+kind: state
+module: environ
+source_module: environ
+path: salt/states/environ.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _norm_key
+      source:
+        path: salt/states/environ.py
+        symbol: _norm_key
+      summary: Normalize windows environment keys
+      parameters:
+        - name: key
+      tests:
+        - path: tests/pytests/unit/states/test_environ.py
+          functions: 9
+    - function: setenv
+      source:
+        path: salt/states/environ.py
+        symbol: setenv
+      summary: Set the salt process environment variables.
+      parameters:
+        - name: name
+        - name: value
+        - name: false_unsets
+          default: "False"
+        - name: clear_all
+          default: "False"
+        - name: update_minion
+          default: "False"
+        - name: permanent
+          default: "False"
+      execution_dependencies:
+        - environ.setenv
+      utility_dependencies:
+        - reg.read_value
+      tests:
+        - path: tests/pytests/unit/states/test_environ.py
+          functions: 9

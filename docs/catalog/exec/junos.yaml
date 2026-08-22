@@ -1,0 +1,660 @@
+kind: exec
+module: junos
+source_module: junos
+virtual: true
+path: salt/modules/junos.py
+platform_markers:
+    - is_junos
+functions:
+    - function: _timeout_decorator
+      source:
+        path: salt/modules/junos.py
+        symbol: _timeout_decorator
+      parameters:
+        - name: function
+      execution_dependencies:
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: _timeout_decorator_cleankwargs
+      source:
+        path: salt/modules/junos.py
+        symbol: _timeout_decorator_cleankwargs
+      parameters:
+        - name: function
+      execution_dependencies:
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: _restart_connection
+      source:
+        path: salt/modules/junos.py
+        symbol: _restart_connection
+      execution_dependencies:
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: facts_refresh
+      source:
+        path: salt/modules/junos.py
+        symbol: facts_refresh
+      summary: Reload the facts dictionary from the device. Usually only needed if,
+      execution_dependencies:
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: facts
+      source:
+        path: salt/modules/junos.py
+        symbol: facts
+      summary: Displays the facts gathered during the connection.
+      execution_dependencies:
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: rpc
+      source:
+        path: salt/modules/junos.py
+        symbol: rpc
+      summary: This function executes the RPC provided as arguments on the junos device.
+      parameters:
+        - name: cmd
+          default: None
+        - name: dest
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: set_hostname
+      source:
+        path: salt/modules/junos.py
+        symbol: set_hostname
+      summary: Set the device's hostname
+      parameters:
+        - name: hostname
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: commit
+      source:
+        path: salt/modules/junos.py
+        symbol: commit
+      summary: To commit the changes loaded in the candidate configuration.
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: rollback
+      source:
+        path: salt/modules/junos.py
+        symbol: rollback
+      summary: Roll back the last committed configuration changes and commit
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: diff
+      source:
+        path: salt/modules/junos.py
+        symbol: diff
+      summary: Returns the difference between the candidate and the current configuration
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: ping
+      source:
+        path: salt/modules/junos.py
+        symbol: ping
+      summary: Send a ping RPC to a device
+      parameters:
+        - name: dest_ip
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: cli
+      source:
+        path: salt/modules/junos.py
+        symbol: cli
+      summary: Executes the CLI commands and returns the output in specified format. \
+      parameters:
+        - name: command
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: shutdown
+      source:
+        path: salt/modules/junos.py
+        symbol: shutdown
+      summary: Shut down (power off) or reboot a device running Junos OS. This includes
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: install_config
+      source:
+        path: salt/modules/junos.py
+        symbol: install_config
+      summary: Installs the given configuration file into the candidate configuration.
+      parameters:
+        - name: path
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: zeroize
+      source:
+        path: salt/modules/junos.py
+        symbol: zeroize
+      summary: Resets the device to default factory settings
+      execution_dependencies:
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: install_os
+      source:
+        path: salt/modules/junos.py
+        symbol: install_os
+      summary: Installs the given image on the device. After the installation is complete
+      parameters:
+        - name: path
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: file_copy
+      source:
+        path: salt/modules/junos.py
+        symbol: file_copy
+      summary: Copies the file from the local device to the junos device
+      parameters:
+        - name: src
+        - name: dest
+      execution_dependencies:
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: lock
+      source:
+        path: salt/modules/junos.py
+        symbol: lock
+      summary: Attempts an exclusive lock on the candidate configuration. This
+      execution_dependencies:
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: unlock
+      source:
+        path: salt/modules/junos.py
+        symbol: unlock
+      summary: Unlocks the candidate configuration.
+      execution_dependencies:
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: load
+      source:
+        path: salt/modules/junos.py
+        symbol: load
+      summary: Loads the configuration from the file provided onto the device.
+      parameters:
+        - name: path
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: commit_check
+      source:
+        path: salt/modules/junos.py
+        symbol: commit_check
+      summary: Perform a commit check on the configuration
+      execution_dependencies:
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: get_table
+      source:
+        path: salt/modules/junos.py
+        symbol: get_table
+      summary: '.. versionadded:: 3001'
+      parameters:
+        - name: table
+        - name: table_file
+        - name: path
+          default: None
+        - name: target
+          default: None
+        - name: key
+          default: None
+        - name: key_items
+          default: None
+        - name: filters
+          default: None
+        - name: table_args
+          default: None
+      execution_dependencies:
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: _recursive_dict
+      source:
+        path: salt/modules/junos.py
+        symbol: _recursive_dict
+      summary: Convert an lxml.etree node tree into a dict.
+      parameters:
+        - name: node
+      execution_dependencies:
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: rpc_file_list
+      source:
+        path: salt/modules/junos.py
+        symbol: rpc_file_list
+      summary: Use the Junos RPC interface to get a list of files and return
+      parameters:
+        - name: path
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: _strip_newlines
+      source:
+        path: salt/modules/junos.py
+        symbol: _strip_newlines
+      parameters:
+        - name: str
+      execution_dependencies:
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: _make_source_list
+      source:
+        path: salt/modules/junos.py
+        symbol: _make_source_list
+      parameters:
+        - name: dir
+      execution_dependencies:
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: file_compare
+      source:
+        path: salt/modules/junos.py
+        symbol: file_compare
+      summary: Compare two files and return a dictionary indicating if they
+      parameters:
+        - name: file1
+        - name: file2
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: fsentry_exists
+      source:
+        path: salt/modules/junos.py
+        symbol: fsentry_exists
+      summary: Returns a dictionary indicating if `dir` refers to a file
+      parameters:
+        - name: dir
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: _find_routing_engines
+      source:
+        path: salt/modules/junos.py
+        symbol: _find_routing_engines
+      execution_dependencies:
+        - cmd.run
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: routing_engine
+      source:
+        path: salt/modules/junos.py
+        symbol: routing_engine
+      summary: Returns a dictionary containing the routing engines on the device and
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132
+    - function: dir_copy
+      source:
+        path: salt/modules/junos.py
+        symbol: dir_copy
+      summary: Copy a directory and recursively its contents from source to dest.
+      parameters:
+        - name: source
+        - name: dest
+        - name: force
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cp.get_template
+        - cp.hash_file
+        - cp.is_cached
+        - event.fire_master
+        - file.file_exists
+        - file.get_hash
+        - file.rmdir
+        - saltutil.sync_grains
+        - slsutil.renderer
+      tests:
+        - path: tests/pytests/unit/modules/test_junos.py
+          functions: 132

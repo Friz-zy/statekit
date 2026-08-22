@@ -1,0 +1,62 @@
+kind: exec
+module: wusa
+source_module: win_wusa
+virtual: true
+path: salt/modules/win_wusa.py
+platform_markers:
+    - is_windows
+functions:
+    - function: is_installed
+      source:
+        path: salt/modules/win_wusa.py
+        symbol: is_installed
+      summary: Check if a specific KB is installed.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_wusa.py
+          functions: 14
+    - function: install
+      source:
+        path: salt/modules/win_wusa.py
+        symbol: install
+      summary: Install a KB from a .msu file.
+      parameters:
+        - name: path
+        - name: restart
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_wusa.py
+          functions: 14
+    - function: uninstall
+      source:
+        path: salt/modules/win_wusa.py
+        symbol: uninstall
+      summary: Uninstall a specific KB.
+      parameters:
+        - name: path
+        - name: restart
+          default: "False"
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_wusa.py
+          functions: 14
+    - function: list_
+      source:
+        path: salt/modules/win_wusa.py
+        symbol: list_
+      summary: Get a list of updates installed on the machine.
+      execution_dependencies:
+        - cmd.retcode
+        - cmd.shell_info
+      tests:
+        - path: tests/pytests/unit/modules/test_win_wusa.py
+          functions: 14

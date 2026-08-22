@@ -1,0 +1,41 @@
+kind: state
+module: shortcut
+source_module: win_shortcut
+virtual: true
+path: salt/states/win_shortcut.py
+platform_markers:
+    - is_windows
+functions:
+    - function: present
+      source:
+        path: salt/states/win_shortcut.py
+        symbol: present
+      parameters:
+        - name: name
+        - name: arguments
+          default: '""'
+        - name: description
+          default: '""'
+        - name: hot_key
+          default: '""'
+        - name: icon_location
+          default: '""'
+        - name: icon_index
+          default: "0"
+        - name: target
+          default: '""'
+        - name: window_style
+          default: '"Normal"'
+        - name: working_dir
+          default: '""'
+        - name: backup
+          default: "False"
+        - name: force
+          default: "False"
+        - name: make_dirs
+          default: "False"
+        - name: user
+          default: None
+      execution_dependencies:
+        - shortcut.create
+        - shortcut.get

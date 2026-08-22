@@ -1,0 +1,14 @@
+kind: state
+module: apache
+source_module: apache
+path: salt/states/apache.py
+functions:
+    - function: configfile
+      source:
+        path: salt/states/apache.py
+        symbol: configfile
+      parameters:
+        - name: name
+        - name: config
+      execution_dependencies:
+        - apache.config

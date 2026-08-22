@@ -1,0 +1,254 @@
+kind: exec
+module: ssh_pki
+source_module: ssh_pki
+virtual: true
+path: salt/modules/ssh_pki.py
+functions:
+    - function: create_certificate
+      source:
+        path: salt/modules/ssh_pki.py
+        symbol: create_certificate
+      summary: Create an OpenSSH certificate and return an encoded version of it.
+      parameters:
+        - name: ca_server
+          default: None
+        - name: signing_policy
+          default: None
+        - name: path
+          default: None
+        - name: overwrite
+          default: "False"
+        - name: raw
+          default: "False"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - file.file_exists
+    - function: _create_certificate_remote
+      source:
+        path: salt/modules/ssh_pki.py
+        symbol: _create_certificate_remote
+      parameters:
+        - name: ca_server
+        - name: signing_policy
+        - name: private_key
+          default: None
+        - name: private_key_passphrase
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - file.file_exists
+    - function: _create_certificate_local
+      source:
+        path: salt/modules/ssh_pki.py
+        symbol: _create_certificate_local
+      parameters:
+        - name: copypath
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - file.file_exists
+    - function: create_private_key
+      source:
+        path: salt/modules/ssh_pki.py
+        symbol: create_private_key
+      summary: Create a private key.
+      parameters:
+        - name: algo
+          default: '"rsa"'
+        - name: keysize
+          default: None
+        - name: passphrase
+          default: None
+        - name: path
+          default: None
+        - name: pubkey_suffix
+          default: '".pub"'
+        - name: overwrite
+          default: "False"
+        - name: raw
+          default: "False"
+      execution_dependencies:
+        - file.file_exists
+    - function: encode_private_key
+      source:
+        path: salt/modules/ssh_pki.py
+        symbol: encode_private_key
+      summary: Create an encoded representation of a private key.
+      parameters:
+        - name: private_key
+        - name: private_key_passphrase
+          default: None
+        - name: passphrase
+          default: None
+        - name: raw
+          default: "False"
+      execution_dependencies:
+        - file.file_exists
+    - function: expires
+      source:
+        path: salt/modules/ssh_pki.py
+        symbol: expires
+      summary: Determine whether a certificate will expire or has expired already.
+      parameters:
+        - name: certificate
+        - name: ttl
+          default: "0"
+      execution_dependencies:
+        - file.file_exists
+    - function: get_private_key_size
+      source:
+        path: salt/modules/ssh_pki.py
+        symbol: get_private_key_size
+      summary: Return information about the key size of a private key (RSA/EC).
+      parameters:
+        - name: private_key
+        - name: passphrase
+          default: None
+      execution_dependencies:
+        - file.file_exists
+    - function: get_public_key
+      source:
+        path: salt/modules/ssh_pki.py
+        symbol: get_public_key
+      summary: Returns a public key derived from some reference.
+      parameters:
+        - name: key
+        - name: passphrase
+          default: None
+      execution_dependencies:
+        - file.file_exists
+    - function: get_signing_policy
+      source:
+        path: salt/modules/ssh_pki.py
+        symbol: get_signing_policy
+      summary: Returns the specified named signing policy.
+      parameters:
+        - name: signing_policy
+        - name: ca_server
+          default: None
+      execution_dependencies:
+        - file.file_exists
+    - function: read_certificate
+      source:
+        path: salt/modules/ssh_pki.py
+        symbol: read_certificate
+      summary: Returns a dict containing details of a certificate.
+      parameters:
+        - name: certificate
+      execution_dependencies:
+        - file.file_exists
+    - function: sign_remote_certificate
+      source:
+        path: salt/modules/ssh_pki.py
+        symbol: sign_remote_certificate
+      summary: Request a certificate to be remotely signed according to a signing policy.
+      parameters:
+        - name: signing_policy
+        - name: kwargs
+        - name: get_signing_policy_only
+          default: "False"
+        - name: more_kwargs
+          kind: '**'
+      execution_dependencies:
+        - file.file_exists
+    - function: _query_remote
+      source:
+        path: salt/modules/ssh_pki.py
+        symbol: _query_remote
+      parameters:
+        - name: ca_server
+        - name: signing_policy
+        - name: kwargs
+        - name: get_signing_policy_only
+          default: "False"
+      execution_dependencies:
+        - file.file_exists
+        - publish.publish
+    - function: verify_private_key
+      source:
+        path: salt/modules/ssh_pki.py
+        symbol: verify_private_key
+      summary: Verify that a private key belongs to the specified public key.
+      parameters:
+        - name: private_key
+        - name: public_key
+        - name: passphrase
+          default: None
+      execution_dependencies:
+        - file.file_exists
+        - publish.publish
+    - function: verify_signature
+      source:
+        path: salt/modules/ssh_pki.py
+        symbol: verify_signature
+      summary: Verify that a signature on a certificate was made
+      parameters:
+        - name: certificate
+        - name: signing_pub_key
+        - name: signing_pub_key_passphrase
+          default: None
+      execution_dependencies:
+        - file.file_exists
+        - publish.publish
+    - function: _generate_pk
+      source:
+        path: salt/modules/ssh_pki.py
+        symbol: _generate_pk
+      parameters:
+        - name: algo
+          default: '"rsa"'
+        - name: keysize
+          default: None
+      execution_dependencies:
+        - file.file_exists
+        - publish.publish
+    - function: _get_signing_policy
+      source:
+        path: salt/modules/ssh_pki.py
+        symbol: _get_signing_policy
+      parameters:
+        - name: name
+      execution_dependencies:
+        - config.get
+        - file.file_exists
+        - pillar.get
+        - publish.publish
+    - function: _parse_extensions
+      source:
+        path: salt/modules/ssh_pki.py
+        symbol: _parse_extensions
+      parameters:
+        - name: cert
+      execution_dependencies:
+        - config.get
+        - file.file_exists
+        - pillar.get
+        - publish.publish
+    - function: _parse_options
+      source:
+        path: salt/modules/ssh_pki.py
+        symbol: _parse_options
+      parameters:
+        - name: cert
+      execution_dependencies:
+        - config.get
+        - file.file_exists
+        - pillar.get
+        - publish.publish
+    - function: _match_minions
+      source:
+        path: salt/modules/ssh_pki.py
+        symbol: _match_minions
+      parameters:
+        - name: test
+        - name: minion
+      execution_dependencies:
+        - config.get
+        - file.file_exists
+        - match.glob
+        - pillar.get
+        - publish.publish
+        - publish.runner

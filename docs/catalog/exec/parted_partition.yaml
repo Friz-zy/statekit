@@ -1,0 +1,366 @@
+kind: exec
+module: partition
+source_module: parted_partition
+virtual: true
+path: salt/modules/parted_partition.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _validate_device
+      source:
+        path: salt/modules/parted_partition.py
+        symbol: _validate_device
+      summary: Ensure the device name supplied is valid in a manner similar to the
+      parameters:
+        - name: device
+      tests:
+        - path: tests/unit/modules/test_parted_partition.py
+          functions: 0
+    - function: _validate_partition_boundary
+      source:
+        path: salt/modules/parted_partition.py
+        symbol: _validate_partition_boundary
+      summary: Ensure valid partition boundaries are supplied.
+      parameters:
+        - name: boundary
+      tests:
+        - path: tests/unit/modules/test_parted_partition.py
+          functions: 0
+    - function: probe
+      source:
+        path: salt/modules/parted_partition.py
+        symbol: probe
+      summary: Ask the kernel to update its local partition data. When no args are
+      parameters:
+        - name: devices
+          kind: '*'
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/unit/modules/test_parted_partition.py
+          functions: 0
+    - function: list_
+      source:
+        path: salt/modules/parted_partition.py
+        symbol: list_
+      summary: Prints partition information of given <device>
+      parameters:
+        - name: device
+        - name: unit
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_parted_partition.py
+          functions: 0
+    - function: align_check
+      source:
+        path: salt/modules/parted_partition.py
+        symbol: align_check
+      summary: Check if partition satisfies the alignment constraint of part_type.
+      parameters:
+        - name: device
+        - name: part_type
+        - name: partition
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_parted_partition.py
+          functions: 0
+    - function: check
+      source:
+        path: salt/modules/parted_partition.py
+        symbol: check
+      summary: Checks if the file system on partition <minor> has any errors.
+      parameters:
+        - name: device
+        - name: minor
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_parted_partition.py
+          functions: 0
+    - function: cp
+      source:
+        path: salt/modules/parted_partition.py
+        symbol: cp
+      summary: Copies the file system on the partition <from-minor> to partition
+      parameters:
+        - name: device
+        - name: from_minor
+        - name: to_minor
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_parted_partition.py
+          functions: 0
+    - function: get_id
+      source:
+        path: salt/modules/parted_partition.py
+        symbol: get_id
+      summary: 'Prints the system ID for the partition. Some typical values are::'
+      parameters:
+        - name: device
+        - name: minor
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_parted_partition.py
+          functions: 0
+    - function: set_id
+      source:
+        path: salt/modules/parted_partition.py
+        symbol: set_id
+      summary: 'Sets the system ID for the partition. Some typical values are::'
+      parameters:
+        - name: device
+        - name: minor
+        - name: system_id
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_parted_partition.py
+          functions: 0
+    - function: system_types
+      source:
+        path: salt/modules/parted_partition.py
+        symbol: system_types
+      summary: List the system types that are supported by the installed version of sfdisk
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_parted_partition.py
+          functions: 0
+    - function: _is_fstype
+      source:
+        path: salt/modules/parted_partition.py
+        symbol: _is_fstype
+      summary: Check if file system type is supported in module
+      parameters:
+        - name: fs_type
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_parted_partition.py
+          functions: 0
+    - function: mkfs
+      source:
+        path: salt/modules/parted_partition.py
+        symbol: mkfs
+      summary: Makes a file system <fs_type> on partition <device>, destroying all data
+      parameters:
+        - name: device
+        - name: fs_type
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_parted_partition.py
+          functions: 0
+    - function: mklabel
+      source:
+        path: salt/modules/parted_partition.py
+        symbol: mklabel
+      summary: Create a new disklabel (partition table) of label_type.
+      parameters:
+        - name: device
+        - name: label_type
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_parted_partition.py
+          functions: 0
+    - function: mkpart
+      source:
+        path: salt/modules/parted_partition.py
+        symbol: mkpart
+      summary: Make a part_type partition for filesystem fs_type, beginning at start and
+      parameters:
+        - name: device
+        - name: part_type
+        - name: fs_type
+          default: None
+        - name: start
+          default: None
+        - name: end
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_parted_partition.py
+          functions: 0
+    - function: mkpartfs
+      source:
+        path: salt/modules/parted_partition.py
+        symbol: mkpartfs
+      summary: The mkpartfs actually is an alias to mkpart and is kept for compatibility.
+      parameters:
+        - name: device
+        - name: part_type
+        - name: fs_type
+          default: None
+        - name: start
+          default: None
+        - name: end
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_parted_partition.py
+          functions: 0
+    - function: name
+      source:
+        path: salt/modules/parted_partition.py
+        symbol: name
+      summary: Set the name of partition to name. This option works only on Mac, PC98, and
+      parameters:
+        - name: device
+        - name: partition
+        - name: name
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_parted_partition.py
+          functions: 0
+    - function: rescue
+      source:
+        path: salt/modules/parted_partition.py
+        symbol: rescue
+      summary: Rescue a lost partition that was located somewhere between start and end.
+      parameters:
+        - name: device
+        - name: start
+        - name: end
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_parted_partition.py
+          functions: 0
+    - function: resize
+      source:
+        path: salt/modules/parted_partition.py
+        symbol: resize
+      summary: Resizes the partition with number <minor>.
+      parameters:
+        - name: device
+        - name: minor
+        - name: start
+        - name: end
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_parted_partition.py
+          functions: 0
+    - function: rm
+      source:
+        path: salt/modules/parted_partition.py
+        symbol: rm
+      summary: Removes the partition with number <minor>.
+      parameters:
+        - name: device
+        - name: minor
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_parted_partition.py
+          functions: 0
+    - function: set_
+      source:
+        path: salt/modules/parted_partition.py
+        symbol: set_
+      summary: Changes a flag on the partition with number <minor>.
+      parameters:
+        - name: device
+        - name: minor
+        - name: flag
+        - name: state
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_parted_partition.py
+          functions: 0
+    - function: toggle
+      source:
+        path: salt/modules/parted_partition.py
+        symbol: toggle
+      summary: Toggle the state of <flag> on <partition>. Valid flags are the same as
+      parameters:
+        - name: device
+        - name: partition
+        - name: flag
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_parted_partition.py
+          functions: 0
+    - function: disk_set
+      source:
+        path: salt/modules/parted_partition.py
+        symbol: disk_set
+      summary: Changes a flag on selected device.
+      parameters:
+        - name: device
+        - name: flag
+        - name: state
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_parted_partition.py
+          functions: 0
+    - function: disk_toggle
+      source:
+        path: salt/modules/parted_partition.py
+        symbol: disk_toggle
+      summary: Toggle the state of <flag> on <device>. Valid flags are the same
+      parameters:
+        - name: device
+        - name: flag
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_parted_partition.py
+          functions: 0
+    - function: exists
+      source:
+        path: salt/modules/parted_partition.py
+        symbol: exists
+      summary: Check to see if the partition exists
+      parameters:
+        - name: device
+          default: '""'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_parted_partition.py
+          functions: 0
+    - function: get_block_device
+      source:
+        path: salt/modules/parted_partition.py
+        symbol: get_block_device
+      summary: Retrieve a list of disk devices
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_stdout
+      tests:
+        - path: tests/unit/modules/test_parted_partition.py
+          functions: 0

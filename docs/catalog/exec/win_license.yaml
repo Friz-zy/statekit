@@ -1,0 +1,54 @@
+kind: exec
+module: license
+source_module: win_license
+virtual: true
+path: salt/modules/win_license.py
+platform_markers:
+    - is_windows
+functions:
+    - function: installed
+      source:
+        path: salt/modules/win_license.py
+        symbol: installed
+      summary: Check to see if the product key is already installed.
+      parameters:
+        - name: product_key
+      execution_dependencies:
+        - cmd.run
+    - function: install
+      source:
+        path: salt/modules/win_license.py
+        symbol: install
+      summary: Install the given product key
+      parameters:
+        - name: product_key
+      execution_dependencies:
+        - cmd.run
+    - function: uninstall
+      source:
+        path: salt/modules/win_license.py
+        symbol: uninstall
+      summary: Uninstall the current product key
+      execution_dependencies:
+        - cmd.run
+    - function: activate
+      source:
+        path: salt/modules/win_license.py
+        symbol: activate
+      summary: Attempt to activate the current machine via Windows Activation
+      execution_dependencies:
+        - cmd.run
+    - function: licensed
+      source:
+        path: salt/modules/win_license.py
+        symbol: licensed
+      summary: Return true if the current machine is licensed correctly
+      execution_dependencies:
+        - cmd.run
+    - function: info
+      source:
+        path: salt/modules/win_license.py
+        symbol: info
+      summary: Return information about the license, if the license is not
+      execution_dependencies:
+        - cmd.run

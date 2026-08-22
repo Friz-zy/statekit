@@ -1,0 +1,137 @@
+kind: exec
+module: linux_service
+source_module: linux_service
+path: salt/modules/linux_service.py
+functions:
+    - function: run
+      source:
+        path: salt/modules/linux_service.py
+        symbol: run
+      summary: Run the specified service with an action.
+      parameters:
+        - name: name
+        - name: action
+      execution_dependencies:
+        - cmd.retcode
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_service.py
+          functions: 9
+    - function: start
+      source:
+        path: salt/modules/linux_service.py
+        symbol: start
+      summary: Start the specified service
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_service.py
+          functions: 9
+    - function: stop
+      source:
+        path: salt/modules/linux_service.py
+        symbol: stop
+      summary: Stop the specified service
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_service.py
+          functions: 9
+    - function: restart
+      source:
+        path: salt/modules/linux_service.py
+        symbol: restart
+      summary: Restart the specified service
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_service.py
+          functions: 9
+    - function: status
+      source:
+        path: salt/modules/linux_service.py
+        symbol: status
+      summary: Return the status for a service.
+      parameters:
+        - name: name
+        - name: sig
+          default: None
+      execution_dependencies:
+        - cmd.retcode
+        - status.pid
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_service.py
+          functions: 9
+    - function: reload_
+      source:
+        path: salt/modules/linux_service.py
+        symbol: reload_
+      summary: Refreshes config files by calling service reload. Does not perform a full
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - status.pid
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_service.py
+          functions: 9
+    - function: available
+      source:
+        path: salt/modules/linux_service.py
+        symbol: available
+      summary: Returns ``True`` if the specified service is available, otherwise returns
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - status.pid
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_service.py
+          functions: 9
+    - function: missing
+      source:
+        path: salt/modules/linux_service.py
+        symbol: missing
+      summary: The inverse of service.available.
+      parameters:
+        - name: name
+      execution_dependencies:
+        - cmd.retcode
+        - status.pid
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_service.py
+          functions: 9
+    - function: get_all
+      source:
+        path: salt/modules/linux_service.py
+        symbol: get_all
+      summary: Return a list of all available services
+      execution_dependencies:
+        - cmd.retcode
+        - status.pid
+      utility_dependencies:
+        - systemd.booted
+      tests:
+        - path: tests/pytests/unit/modules/test_linux_service.py
+          functions: 9

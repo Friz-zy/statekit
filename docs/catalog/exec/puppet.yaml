@@ -1,0 +1,135 @@
+kind: exec
+module: puppet
+source_module: puppet
+path: salt/modules/puppet.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _format_fact
+      source:
+        path: salt/modules/puppet.py
+        symbol: _format_fact
+      parameters:
+        - name: output
+      tests:
+        - path: tests/pytests/unit/modules/test_puppet.py
+          functions: 9
+    - function: run
+      source:
+        path: salt/modules/puppet.py
+        symbol: run
+      summary: Execute a puppet run and return a dict with the stderr, stdout,
+      parameters:
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_puppet.py
+          functions: 9
+    - function: noop
+      source:
+        path: salt/modules/puppet.py
+        symbol: noop
+      summary: Execute a puppet noop run and return a dict with the stderr, stdout,
+      parameters:
+        - name: args
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_puppet.py
+          functions: 9
+    - function: enable
+      source:
+        path: salt/modules/puppet.py
+        symbol: enable
+      summary: '.. versionadded:: 2014.7.0'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_puppet.py
+          functions: 9
+    - function: disable
+      source:
+        path: salt/modules/puppet.py
+        symbol: disable
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: message
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_puppet.py
+          functions: 9
+    - function: status
+      source:
+        path: salt/modules/puppet.py
+        symbol: status
+      summary: '.. versionadded:: 2014.7.0'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_puppet.py
+          functions: 9
+    - function: summary
+      source:
+        path: salt/modules/puppet.py
+        symbol: summary
+      summary: '.. versionadded:: 2014.7.0'
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_puppet.py
+          functions: 9
+    - function: plugin_sync
+      source:
+        path: salt/modules/puppet.py
+        symbol: plugin_sync
+      summary: Runs a plugin sync between the puppet master and agent
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_puppet.py
+          functions: 9
+    - function: facts
+      source:
+        path: salt/modules/puppet.py
+        symbol: facts
+      summary: Run facter and return the results
+      parameters:
+        - name: puppet
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_puppet.py
+          functions: 9
+    - function: fact
+      source:
+        path: salt/modules/puppet.py
+        symbol: fact
+      summary: Run facter for a specific fact
+      parameters:
+        - name: name
+        - name: puppet
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_puppet.py
+          functions: 9

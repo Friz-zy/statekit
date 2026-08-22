@@ -1,0 +1,225 @@
+kind: exec
+module: kmod
+source_module: kmod
+path: salt/modules/kmod.py
+functions:
+    - function: _new_mods
+      source:
+        path: salt/modules/kmod.py
+        symbol: _new_mods
+      summary: Return a list of the new modules, pass an lsmod dict before running
+      parameters:
+        - name: pre_mods
+        - name: post_mods
+      tests:
+        - path: tests/pytests/unit/modules/test_kmod.py
+          functions: 7
+    - function: _rm_mods
+      source:
+        path: salt/modules/kmod.py
+        symbol: _rm_mods
+      summary: Return a list of the new modules, pass an lsmod dict before running
+      parameters:
+        - name: pre_mods
+        - name: post_mods
+      tests:
+        - path: tests/pytests/unit/modules/test_kmod.py
+          functions: 7
+    - function: _get_modules_conf
+      source:
+        path: salt/modules/kmod.py
+        symbol: _get_modules_conf
+      summary: Return location of modules config file.
+      tests:
+        - path: tests/pytests/unit/modules/test_kmod.py
+          functions: 7
+    - function: _strip_module_name
+      source:
+        path: salt/modules/kmod.py
+        symbol: _strip_module_name
+      summary: Return module name and strip configuration. It is possible insert modules
+      parameters:
+        - name: mod
+      tests:
+        - path: tests/pytests/unit/modules/test_kmod.py
+          functions: 7
+    - function: _set_persistent_module
+      source:
+        path: salt/modules/kmod.py
+        symbol: _set_persistent_module
+      summary: Add module to configuration file to make it persistent. If module is
+      parameters:
+        - name: mod
+      execution_dependencies:
+        - file.append
+        - file.search
+        - file.touch
+        - file.uncomment
+      tests:
+        - path: tests/pytests/unit/modules/test_kmod.py
+          functions: 7
+    - function: _remove_persistent_module
+      source:
+        path: salt/modules/kmod.py
+        symbol: _remove_persistent_module
+      summary: Remove module from configuration file. If comment is true only comment line
+      parameters:
+        - name: mod
+        - name: comment
+      execution_dependencies:
+        - file.append
+        - file.comment
+        - file.search
+        - file.sed
+        - file.touch
+        - file.uncomment
+      tests:
+        - path: tests/pytests/unit/modules/test_kmod.py
+          functions: 7
+    - function: _which
+      source:
+        path: salt/modules/kmod.py
+        symbol: _which
+      summary: Utility function wrapper to error out early if a command is not found
+      parameters:
+        - name: cmd
+      execution_dependencies:
+        - file.append
+        - file.comment
+        - file.search
+        - file.sed
+        - file.touch
+        - file.uncomment
+      tests:
+        - path: tests/pytests/unit/modules/test_kmod.py
+          functions: 7
+    - function: available
+      source:
+        path: salt/modules/kmod.py
+        symbol: available
+      summary: Return a list of all available kernel modules
+      execution_dependencies:
+        - file.append
+        - file.comment
+        - file.search
+        - file.sed
+        - file.touch
+        - file.uncomment
+      tests:
+        - path: tests/pytests/unit/modules/test_kmod.py
+          functions: 7
+    - function: check_available
+      source:
+        path: salt/modules/kmod.py
+        symbol: check_available
+      summary: Check to see if the specified kernel module is available
+      parameters:
+        - name: mod
+      execution_dependencies:
+        - file.append
+        - file.comment
+        - file.search
+        - file.sed
+        - file.touch
+        - file.uncomment
+      tests:
+        - path: tests/pytests/unit/modules/test_kmod.py
+          functions: 7
+    - function: lsmod
+      source:
+        path: salt/modules/kmod.py
+        symbol: lsmod
+      summary: Return a dict containing information about currently loaded modules
+      execution_dependencies:
+        - cmd.run
+        - file.append
+        - file.comment
+        - file.search
+        - file.sed
+        - file.touch
+        - file.uncomment
+      tests:
+        - path: tests/pytests/unit/modules/test_kmod.py
+          functions: 7
+    - function: mod_list
+      source:
+        path: salt/modules/kmod.py
+        symbol: mod_list
+      summary: Return a list of the loaded module names
+      parameters:
+        - name: only_persist
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - file.append
+        - file.comment
+        - file.search
+        - file.sed
+        - file.touch
+        - file.uncomment
+      tests:
+        - path: tests/pytests/unit/modules/test_kmod.py
+          functions: 7
+    - function: load
+      source:
+        path: salt/modules/kmod.py
+        symbol: load
+      summary: Load the specified kernel module
+      parameters:
+        - name: mod
+        - name: persist
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.append
+        - file.comment
+        - file.search
+        - file.sed
+        - file.touch
+        - file.uncomment
+      tests:
+        - path: tests/pytests/unit/modules/test_kmod.py
+          functions: 7
+    - function: is_loaded
+      source:
+        path: salt/modules/kmod.py
+        symbol: is_loaded
+      summary: Check to see if the specified kernel module is loaded
+      parameters:
+        - name: mod
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.append
+        - file.comment
+        - file.search
+        - file.sed
+        - file.touch
+        - file.uncomment
+      tests:
+        - path: tests/pytests/unit/modules/test_kmod.py
+          functions: 7
+    - function: remove
+      source:
+        path: salt/modules/kmod.py
+        symbol: remove
+      summary: Remove the specified kernel module
+      parameters:
+        - name: mod
+        - name: persist
+          default: "False"
+        - name: comment
+          default: "True"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+        - file.append
+        - file.comment
+        - file.search
+        - file.sed
+        - file.touch
+        - file.uncomment
+      tests:
+        - path: tests/pytests/unit/modules/test_kmod.py
+          functions: 7

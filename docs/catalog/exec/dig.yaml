@@ -1,0 +1,134 @@
+kind: exec
+module: dig
+source_module: dig
+virtual: true
+path: salt/modules/dig.py
+functions:
+    - function: check_ip
+      source:
+        path: salt/modules/dig.py
+        symbol: check_ip
+      summary: Check if address is a valid IP. returns True if valid, otherwise False.
+      parameters:
+        - name: addr
+      tests:
+        - path: tests/pytests/unit/modules/test_dig.py
+          functions: 15
+    - function: A
+      source:
+        path: salt/modules/dig.py
+        symbol: A
+      summary: Return the A record for ``host``.
+      parameters:
+        - name: host
+        - name: nameserver
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_dig.py
+          functions: 15
+    - function: PTR
+      source:
+        path: salt/modules/dig.py
+        symbol: PTR
+      summary: '.. versionadded:: 3006.0'
+      parameters:
+        - name: host
+        - name: nameserver
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_dig.py
+          functions: 15
+    - function: AAAA
+      source:
+        path: salt/modules/dig.py
+        symbol: AAAA
+      summary: Return the AAAA record for ``host``.
+      parameters:
+        - name: host
+        - name: nameserver
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_dig.py
+          functions: 15
+    - function: CNAME
+      source:
+        path: salt/modules/dig.py
+        symbol: CNAME
+      summary: Return the CNAME record for ``host``.
+      parameters:
+        - name: host
+        - name: nameserver
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_dig.py
+          functions: 15
+    - function: NS
+      source:
+        path: salt/modules/dig.py
+        symbol: NS
+      summary: Return a list of IPs of the nameservers for ``domain``
+      parameters:
+        - name: domain
+        - name: resolve
+          default: "True"
+        - name: nameserver
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_dig.py
+          functions: 15
+    - function: SPF
+      source:
+        path: salt/modules/dig.py
+        symbol: SPF
+      summary: Return the allowed IPv4 ranges in the SPF record for ``domain``.
+      parameters:
+        - name: domain
+        - name: record
+          default: '"SPF"'
+        - name: nameserver
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_dig.py
+          functions: 15
+    - function: MX
+      source:
+        path: salt/modules/dig.py
+        symbol: MX
+      summary: Return a list of lists for the MX of ``domain``.
+      parameters:
+        - name: domain
+        - name: resolve
+          default: "False"
+        - name: nameserver
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_dig.py
+          functions: 15
+    - function: TXT
+      source:
+        path: salt/modules/dig.py
+        symbol: TXT
+      summary: Return the TXT record for ``host``.
+      parameters:
+        - name: host
+        - name: nameserver
+          default: None
+      execution_dependencies:
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_dig.py
+          functions: 15

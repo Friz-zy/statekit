@@ -1,0 +1,80 @@
+kind: exec
+module: ntp
+source_module: napalm_ntp
+virtual: true
+path: salt/modules/napalm_ntp.py
+functions:
+    - function: peers
+      source:
+        path: salt/modules/napalm_ntp.py
+        symbol: peers
+      summary: Returns a list the NTP peers configured on the network device.
+      parameters:
+        - name: kwargs
+          kind: '**'
+    - function: servers
+      source:
+        path: salt/modules/napalm_ntp.py
+        symbol: servers
+      summary: Returns a list of the configured NTP servers on the device.
+      parameters:
+        - name: kwargs
+          kind: '**'
+    - function: stats
+      source:
+        path: salt/modules/napalm_ntp.py
+        symbol: stats
+      summary: Returns a dictionary containing synchronization details of the NTP peers.
+      parameters:
+        - name: peer
+          default: None
+        - name: kwargs
+          kind: '**'
+    - function: set_peers
+      source:
+        path: salt/modules/napalm_ntp.py
+        symbol: set_peers
+      summary: Configures a list of NTP peers on the device.
+      parameters:
+        - name: peers
+          kind: '*'
+        - name: options
+          kind: '**'
+      execution_dependencies:
+        - net.load_template
+    - function: set_servers
+      source:
+        path: salt/modules/napalm_ntp.py
+        symbol: set_servers
+      summary: Configures a list of NTP servers on the device.
+      parameters:
+        - name: servers
+          kind: '*'
+        - name: options
+          kind: '**'
+      execution_dependencies:
+        - net.load_template
+    - function: delete_peers
+      source:
+        path: salt/modules/napalm_ntp.py
+        symbol: delete_peers
+      summary: Removes NTP peers configured on the device.
+      parameters:
+        - name: peers
+          kind: '*'
+        - name: options
+          kind: '**'
+      execution_dependencies:
+        - net.load_template
+    - function: delete_servers
+      source:
+        path: salt/modules/napalm_ntp.py
+        symbol: delete_servers
+      summary: Removes NTP servers configured on the device.
+      parameters:
+        - name: servers
+          kind: '*'
+        - name: options
+          kind: '**'
+      execution_dependencies:
+        - net.load_template

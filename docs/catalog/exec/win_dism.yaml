@@ -1,0 +1,321 @@
+kind: exec
+module: dism
+source_module: win_dism
+virtual: true
+path: salt/modules/win_dism.py
+platform_markers:
+    - is_windows
+functions:
+    - function: _get_components
+      source:
+        path: salt/modules/win_dism.py
+        symbol: _get_components
+      parameters:
+        - name: type_regex
+        - name: plural_type
+        - name: install_value
+        - name: image
+          default: None
+      execution_dependencies:
+        - cmd.run
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dism.py
+          functions: 20
+    - function: add_capability
+      source:
+        path: salt/modules/win_dism.py
+        symbol: add_capability
+      summary: Install a capability
+      parameters:
+        - name: capability
+        - name: source
+          default: None
+        - name: limit_access
+          default: "False"
+        - name: image
+          default: None
+        - name: restart
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dism.py
+          functions: 20
+    - function: remove_capability
+      source:
+        path: salt/modules/win_dism.py
+        symbol: remove_capability
+      summary: Uninstall a capability
+      parameters:
+        - name: capability
+        - name: image
+          default: None
+        - name: restart
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dism.py
+          functions: 20
+    - function: get_capabilities
+      source:
+        path: salt/modules/win_dism.py
+        symbol: get_capabilities
+      summary: List all capabilities on the system
+      parameters:
+        - name: image
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dism.py
+          functions: 20
+    - function: installed_capabilities
+      source:
+        path: salt/modules/win_dism.py
+        symbol: installed_capabilities
+      summary: List the capabilities installed on the system
+      parameters:
+        - name: image
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dism.py
+          functions: 20
+    - function: available_capabilities
+      source:
+        path: salt/modules/win_dism.py
+        symbol: available_capabilities
+      summary: List the capabilities available on the system
+      parameters:
+        - name: image
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dism.py
+          functions: 20
+    - function: add_feature
+      source:
+        path: salt/modules/win_dism.py
+        symbol: add_feature
+      summary: Install a feature using DISM
+      parameters:
+        - name: feature
+        - name: package
+          default: None
+        - name: source
+          default: None
+        - name: limit_access
+          default: "False"
+        - name: enable_parent
+          default: "False"
+        - name: image
+          default: None
+        - name: restart
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dism.py
+          functions: 20
+    - function: remove_feature
+      source:
+        path: salt/modules/win_dism.py
+        symbol: remove_feature
+      summary: Disables the feature.
+      parameters:
+        - name: feature
+        - name: remove_payload
+          default: "False"
+        - name: image
+          default: None
+        - name: restart
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dism.py
+          functions: 20
+    - function: get_features
+      source:
+        path: salt/modules/win_dism.py
+        symbol: get_features
+      summary: List features on the system or in a package
+      parameters:
+        - name: package
+          default: None
+        - name: image
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dism.py
+          functions: 20
+    - function: installed_features
+      source:
+        path: salt/modules/win_dism.py
+        symbol: installed_features
+      summary: List the features installed on the system
+      parameters:
+        - name: image
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dism.py
+          functions: 20
+    - function: available_features
+      source:
+        path: salt/modules/win_dism.py
+        symbol: available_features
+      summary: List the features available on the system
+      parameters:
+        - name: image
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dism.py
+          functions: 20
+    - function: add_package
+      source:
+        path: salt/modules/win_dism.py
+        symbol: add_package
+      summary: Install a package using DISM
+      parameters:
+        - name: package
+        - name: ignore_check
+          default: "False"
+        - name: prevent_pending
+          default: "False"
+        - name: image
+          default: None
+        - name: restart
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dism.py
+          functions: 20
+    - function: add_provisioned_package
+      source:
+        path: salt/modules/win_dism.py
+        symbol: add_provisioned_package
+      summary: Provision a package using DISM. A provisioned package will install for new
+      parameters:
+        - name: package
+        - name: image
+          default: None
+        - name: restart
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dism.py
+          functions: 20
+    - function: remove_package
+      source:
+        path: salt/modules/win_dism.py
+        symbol: remove_package
+      summary: Uninstall a package
+      parameters:
+        - name: package
+        - name: image
+          default: None
+        - name: restart
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dism.py
+          functions: 20
+    - function: get_kb_package_name
+      source:
+        path: salt/modules/win_dism.py
+        symbol: get_kb_package_name
+      summary: Get the actual package name on the system based on the KB name.
+      parameters:
+        - name: kb
+        - name: image
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dism.py
+          functions: 20
+    - function: remove_kb
+      source:
+        path: salt/modules/win_dism.py
+        symbol: remove_kb
+      summary: Remove a package by passing a KB number. This searches the installed
+      parameters:
+        - name: kb
+        - name: image
+          default: None
+        - name: restart
+          default: "False"
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dism.py
+          functions: 20
+    - function: installed_packages
+      source:
+        path: salt/modules/win_dism.py
+        symbol: installed_packages
+      summary: List the packages installed on the system
+      parameters:
+        - name: image
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dism.py
+          functions: 20
+    - function: provisioned_packages
+      source:
+        path: salt/modules/win_dism.py
+        symbol: provisioned_packages
+      summary: List the packages installed on the system
+      parameters:
+        - name: image
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dism.py
+          functions: 20
+    - function: package_info
+      source:
+        path: salt/modules/win_dism.py
+        symbol: package_info
+      summary: Display information about a package
+      parameters:
+        - name: package
+        - name: image
+          default: None
+      execution_dependencies:
+        - cmd.run
+        - cmd.run_all
+      tests:
+        - path: tests/pytests/unit/modules/test_win_dism.py
+          functions: 20

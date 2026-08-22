@@ -1,0 +1,84 @@
+kind: exec
+module: pkg
+source_module: rest_pkg
+virtual: true
+path: salt/modules/rest_pkg.py
+functions:
+    - function: list_pkgs
+      source:
+        path: salt/modules/rest_pkg.py
+        symbol: list_pkgs
+      parameters:
+        - name: versions_as_list
+          default: "False"
+        - name: kwargs
+          kind: '**'
+    - function: install
+      source:
+        path: salt/modules/rest_pkg.py
+        symbol: install
+      parameters:
+        - name: name
+          default: None
+        - name: refresh
+          default: "False"
+        - name: fromrepo
+          default: None
+        - name: pkgs
+          default: None
+        - name: sources
+          default: None
+        - name: kwargs
+          kind: '**'
+    - function: remove
+      source:
+        path: salt/modules/rest_pkg.py
+        symbol: remove
+      parameters:
+        - name: name
+          default: None
+        - name: pkgs
+          default: None
+        - name: kwargs
+          kind: '**'
+    - function: version
+      source:
+        path: salt/modules/rest_pkg.py
+        symbol: version
+      summary: Returns a string representing the package version or an empty string if not
+      parameters:
+        - name: names
+          kind: '*'
+        - name: kwargs
+          kind: '**'
+    - function: upgrade
+      source:
+        path: salt/modules/rest_pkg.py
+        symbol: upgrade
+      parameters:
+        - name: refresh
+          default: "True"
+        - name: skip_verify
+          default: "True"
+        - name: kwargs
+          kind: '**'
+    - function: installed
+      source:
+        path: salt/modules/rest_pkg.py
+        symbol: installed
+      parameters:
+        - name: name
+        - name: version
+          default: None
+        - name: refresh
+          default: "False"
+        - name: fromrepo
+          default: None
+        - name: skip_verify
+          default: "False"
+        - name: pkgs
+          default: None
+        - name: sources
+          default: None
+        - name: kwargs
+          kind: '**'

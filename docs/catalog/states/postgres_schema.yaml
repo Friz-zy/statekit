@@ -1,0 +1,52 @@
+kind: state
+module: postgres_schema
+source_module: postgres_schema
+path: salt/states/postgres_schema.py
+functions:
+    - function: present
+      source:
+        path: salt/states/postgres_schema.py
+        symbol: present
+      summary: Ensure that the named schema is present in the database.
+      parameters:
+        - name: dbname
+        - name: name
+        - name: owner
+          default: None
+        - name: user
+          default: None
+        - name: db_user
+          default: None
+        - name: db_password
+          default: None
+        - name: db_host
+          default: None
+        - name: db_port
+          default: None
+      execution_dependencies:
+        - postgres.schema_create
+        - postgres.schema_exists
+        - postgres.schema_get
+    - function: absent
+      source:
+        path: salt/states/postgres_schema.py
+        symbol: absent
+      summary: Ensure that the named schema is absent.
+      parameters:
+        - name: dbname
+        - name: name
+        - name: user
+          default: None
+        - name: db_user
+          default: None
+        - name: db_password
+          default: None
+        - name: db_host
+          default: None
+        - name: db_port
+          default: None
+      execution_dependencies:
+        - postgres.schema_create
+        - postgres.schema_exists
+        - postgres.schema_get
+        - postgres.schema_remove

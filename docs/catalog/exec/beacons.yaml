@@ -1,0 +1,174 @@
+kind: exec
+module: beacons
+source_module: beacons
+path: salt/modules/beacons.py
+functions:
+    - function: list_
+      source:
+        path: salt/modules/beacons.py
+        symbol: list_
+      summary: List the beacons currently configured on the minion
+      parameters:
+        - name: return_yaml
+          default: "True"
+        - name: include_pillar
+          default: "True"
+        - name: include_opts
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - event.fire
+      tests:
+        - path: tests/pytests/unit/modules/test_beacons.py
+          functions: 8
+    - function: list_available
+      source:
+        path: salt/modules/beacons.py
+        symbol: list_available
+      summary: List the beacons currently available on the minion
+      parameters:
+        - name: return_yaml
+          default: "True"
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - event.fire
+      tests:
+        - path: tests/pytests/unit/modules/test_beacons.py
+          functions: 8
+    - function: add
+      source:
+        path: salt/modules/beacons.py
+        symbol: add
+      summary: Add a beacon on the minion
+      parameters:
+        - name: name
+        - name: beacon_data
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - event.fire
+      tests:
+        - path: tests/pytests/unit/modules/test_beacons.py
+          functions: 8
+    - function: modify
+      source:
+        path: salt/modules/beacons.py
+        symbol: modify
+      summary: Modify an existing beacon
+      parameters:
+        - name: name
+        - name: beacon_data
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - event.fire
+      tests:
+        - path: tests/pytests/unit/modules/test_beacons.py
+          functions: 8
+    - function: delete
+      source:
+        path: salt/modules/beacons.py
+        symbol: delete
+      summary: Delete a beacon item
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - event.fire
+      tests:
+        - path: tests/pytests/unit/modules/test_beacons.py
+          functions: 8
+    - function: save
+      source:
+        path: salt/modules/beacons.py
+        symbol: save
+      summary: Save all configured beacons to the minion config
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - event.fire
+      tests:
+        - path: tests/pytests/unit/modules/test_beacons.py
+          functions: 8
+    - function: enable
+      source:
+        path: salt/modules/beacons.py
+        symbol: enable
+      summary: Enable all beacons on the minion
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - event.fire
+      tests:
+        - path: tests/pytests/unit/modules/test_beacons.py
+          functions: 8
+    - function: disable
+      source:
+        path: salt/modules/beacons.py
+        symbol: disable
+      summary: Disable all beacons jobs on the minion
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - event.fire
+      tests:
+        - path: tests/pytests/unit/modules/test_beacons.py
+          functions: 8
+    - function: _get_beacon_config_dict
+      source:
+        path: salt/modules/beacons.py
+        symbol: _get_beacon_config_dict
+      parameters:
+        - name: beacon_config
+      execution_dependencies:
+        - event.fire
+      tests:
+        - path: tests/pytests/unit/modules/test_beacons.py
+          functions: 8
+    - function: enable_beacon
+      source:
+        path: salt/modules/beacons.py
+        symbol: enable_beacon
+      summary: Enable beacon on the minion
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - event.fire
+      tests:
+        - path: tests/pytests/unit/modules/test_beacons.py
+          functions: 8
+    - function: disable_beacon
+      source:
+        path: salt/modules/beacons.py
+        symbol: disable_beacon
+      summary: Disable a beacon on the minion
+      parameters:
+        - name: name
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - event.fire
+      tests:
+        - path: tests/pytests/unit/modules/test_beacons.py
+          functions: 8
+    - function: reset
+      source:
+        path: salt/modules/beacons.py
+        symbol: reset
+      summary: Reset beacon configuration on the minion
+      parameters:
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - event.fire
+      tests:
+        - path: tests/pytests/unit/modules/test_beacons.py
+          functions: 8

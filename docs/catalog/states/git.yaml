@@ -1,0 +1,586 @@
+kind: state
+module: git
+source_module: git
+path: salt/states/git.py
+functions:
+    - function: _revs_equal
+      source:
+        path: salt/states/git.py
+        symbol: _revs_equal
+      summary: Shorthand helper function for comparing SHA1s. If rev_type == 'sha1' then
+      parameters:
+        - name: rev1
+        - name: rev2
+        - name: rev_type
+      execution_dependencies:
+        - git.version
+      tests:
+        - path: tests/pytests/unit/states/test_git.py
+          functions: 4
+    - function: _short_sha
+      source:
+        path: salt/states/git.py
+        symbol: _short_sha
+      parameters:
+        - name: sha1
+      execution_dependencies:
+        - git.version
+      tests:
+        - path: tests/pytests/unit/states/test_git.py
+          functions: 4
+    - function: _format_comments
+      source:
+        path: salt/states/git.py
+        symbol: _format_comments
+      summary: Return a joined list
+      parameters:
+        - name: comments
+      execution_dependencies:
+        - git.version
+      tests:
+        - path: tests/pytests/unit/states/test_git.py
+          functions: 4
+    - function: _need_branch_change
+      source:
+        path: salt/states/git.py
+        symbol: _need_branch_change
+      summary: Short hand for telling when a new branch is needed
+      parameters:
+        - name: branch
+        - name: local_branch
+      execution_dependencies:
+        - git.version
+      tests:
+        - path: tests/pytests/unit/states/test_git.py
+          functions: 4
+    - function: _get_branch_opts
+      source:
+        path: salt/states/git.py
+        symbol: _get_branch_opts
+      summary: DRY helper to build list of opts for git.branch, for the purposes of
+      parameters:
+        - name: branch
+        - name: local_branch
+        - name: all_local_branches
+        - name: desired_upstream
+        - name: git_ver
+          default: None
+      execution_dependencies:
+        - git.version
+      tests:
+        - path: tests/pytests/unit/states/test_git.py
+          functions: 4
+    - function: _get_local_rev_and_branch
+      source:
+        path: salt/states/git.py
+        symbol: _get_local_rev_and_branch
+      summary: Return the local revision for before/after comparisons
+      parameters:
+        - name: target
+        - name: user
+        - name: password
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - git.current_branch
+        - git.revision
+        - git.version
+      tests:
+        - path: tests/pytests/unit/states/test_git.py
+          functions: 4
+    - function: _strip_exc
+      source:
+        path: salt/states/git.py
+        symbol: _strip_exc
+      summary: Strip the actual command that was run from exc.strerror to leave just the
+      parameters:
+        - name: exc
+      execution_dependencies:
+        - git.current_branch
+        - git.revision
+        - git.version
+      tests:
+        - path: tests/pytests/unit/states/test_git.py
+          functions: 4
+    - function: _uptodate
+      source:
+        path: salt/states/git.py
+        symbol: _uptodate
+      parameters:
+        - name: ret
+        - name: target
+        - name: comments
+          default: None
+        - name: local_changes
+          default: "False"
+      execution_dependencies:
+        - git.current_branch
+        - git.revision
+        - git.version
+      tests:
+        - path: tests/pytests/unit/states/test_git.py
+          functions: 4
+    - function: _neutral_test
+      source:
+        path: salt/states/git.py
+        symbol: _neutral_test
+      parameters:
+        - name: ret
+        - name: comment
+      execution_dependencies:
+        - git.current_branch
+        - git.revision
+        - git.version
+      tests:
+        - path: tests/pytests/unit/states/test_git.py
+          functions: 4
+    - function: _fail
+      source:
+        path: salt/states/git.py
+        symbol: _fail
+      parameters:
+        - name: ret
+        - name: msg
+        - name: comments
+          default: None
+      execution_dependencies:
+        - git.current_branch
+        - git.revision
+        - git.version
+      tests:
+        - path: tests/pytests/unit/states/test_git.py
+          functions: 4
+    - function: _already_cloned
+      source:
+        path: salt/states/git.py
+        symbol: _already_cloned
+      parameters:
+        - name: ret
+        - name: target
+        - name: branch
+          default: None
+        - name: comments
+          default: None
+      execution_dependencies:
+        - git.current_branch
+        - git.revision
+        - git.version
+      tests:
+        - path: tests/pytests/unit/states/test_git.py
+          functions: 4
+    - function: _failed_fetch
+      source:
+        path: salt/states/git.py
+        symbol: _failed_fetch
+      parameters:
+        - name: ret
+        - name: exc
+        - name: comments
+          default: None
+      execution_dependencies:
+        - git.current_branch
+        - git.revision
+        - git.version
+      tests:
+        - path: tests/pytests/unit/states/test_git.py
+          functions: 4
+    - function: _failed_submodule_update
+      source:
+        path: salt/states/git.py
+        symbol: _failed_submodule_update
+      parameters:
+        - name: ret
+        - name: exc
+        - name: comments
+          default: None
+      execution_dependencies:
+        - git.current_branch
+        - git.revision
+        - git.version
+      tests:
+        - path: tests/pytests/unit/states/test_git.py
+          functions: 4
+    - function: _not_fast_forward
+      source:
+        path: salt/states/git.py
+        symbol: _not_fast_forward
+      parameters:
+        - name: ret
+        - name: rev
+        - name: pre
+        - name: post
+        - name: branch
+        - name: local_branch
+        - name: default_branch
+        - name: local_changes
+        - name: comments
+      execution_dependencies:
+        - git.current_branch
+        - git.revision
+        - git.version
+      tests:
+        - path: tests/pytests/unit/states/test_git.py
+          functions: 4
+    - function: latest
+      source:
+        path: salt/states/git.py
+        symbol: latest
+      summary: Make sure the repository is cloned to the given directory and is
+      parameters:
+        - name: name
+        - name: target
+        - name: rev
+          default: '"HEAD"'
+        - name: branch
+          default: None
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: update_head
+          default: "True"
+        - name: force_checkout
+          default: "False"
+        - name: force_clone
+          default: "False"
+        - name: force_fetch
+          default: "False"
+        - name: force_reset
+          default: "False"
+        - name: submodules
+          default: "False"
+        - name: bare
+          default: "False"
+        - name: mirror
+          default: "False"
+        - name: remote
+          default: '"origin"'
+        - name: fetch_tags
+          default: "True"
+        - name: sync_tags
+          default: "True"
+        - name: depth
+          default: None
+        - name: identity
+          default: None
+        - name: https_user
+          default: None
+        - name: https_pass
+          default: None
+        - name: refspec_branch
+          default: '"*"'
+        - name: refspec_tag
+          default: '"*"'
+        - name: output_encoding
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+        - git.branch
+        - git.checkout
+        - git.clone
+        - git.config_get_regexp
+        - git.current_branch
+        - git.diff
+        - git.discard_local_changes
+        - git.fetch
+        - git.is_worktree
+        - git.list_branches
+        - git.list_tags
+        - git.ls_remote
+        - git.merge
+        - git.merge_base
+        - git.remote_refs
+        - git.remote_set
+        - git.remotes
+        - git.reset
+        - git.rev_parse
+        - git.revision
+        - git.submodule
+        - git.symbolic_ref
+        - git.tag
+        - git.version
+      tests:
+        - path: tests/pytests/unit/states/test_git.py
+          functions: 4
+    - function: present
+      source:
+        path: salt/states/git.py
+        symbol: present
+      summary: Ensure that a repository exists in the given directory
+      parameters:
+        - name: name
+        - name: force
+          default: "False"
+        - name: bare
+          default: "True"
+        - name: template
+          default: None
+        - name: separate_git_dir
+          default: None
+        - name: shared
+          default: None
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cp.cache_file
+        - git.branch
+        - git.checkout
+        - git.clone
+        - git.config_get_regexp
+        - git.current_branch
+        - git.diff
+        - git.discard_local_changes
+        - git.fetch
+        - git.init
+        - git.is_worktree
+        - git.list_branches
+        - git.list_tags
+        - git.ls_remote
+        - git.merge
+        - git.merge_base
+        - git.remote_refs
+        - git.remote_set
+        - git.remotes
+        - git.reset
+        - git.rev_parse
+        - git.revision
+        - git.submodule
+        - git.symbolic_ref
+        - git.tag
+        - git.version
+      tests:
+        - path: tests/pytests/unit/states/test_git.py
+          functions: 4
+    - function: detached
+      source:
+        path: salt/states/git.py
+        symbol: detached
+      summary: '.. versionadded:: 2016.3.0'
+      parameters:
+        - name: name
+        - name: rev
+        - name: target
+        - name: remote
+          default: '"origin"'
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: force_clone
+          default: "False"
+        - name: force_checkout
+          default: "False"
+        - name: fetch_remote
+          default: "True"
+        - name: hard_reset
+          default: "False"
+        - name: submodules
+          default: "False"
+        - name: identity
+          default: None
+        - name: https_user
+          default: None
+        - name: https_pass
+          default: None
+        - name: output_encoding
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+        - git.branch
+        - git.checkout
+        - git.clone
+        - git.config_get_regexp
+        - git.current_branch
+        - git.describe
+        - git.diff
+        - git.discard_local_changes
+        - git.fetch
+        - git.init
+        - git.is_worktree
+        - git.list_branches
+        - git.list_tags
+        - git.ls_remote
+        - git.merge
+        - git.merge_base
+        - git.remote_refs
+        - git.remote_set
+        - git.remotes
+        - git.reset
+        - git.rev_parse
+        - git.revision
+        - git.submodule
+        - git.symbolic_ref
+        - git.tag
+        - git.version
+      tests:
+        - path: tests/pytests/unit/states/test_git.py
+          functions: 4
+    - function: cloned
+      source:
+        path: salt/states/git.py
+        symbol: cloned
+      summary: '.. versionadded:: 2018.3.3,2019.2.0'
+      parameters:
+        - name: name
+        - name: target
+        - name: branch
+          default: None
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: identity
+          default: None
+        - name: https_user
+          default: None
+        - name: https_pass
+          default: None
+        - name: output_encoding
+          default: None
+      execution_dependencies:
+        - cp.cache_file
+        - git.branch
+        - git.checkout
+        - git.clone
+        - git.config_get_regexp
+        - git.current_branch
+        - git.describe
+        - git.diff
+        - git.discard_local_changes
+        - git.fetch
+        - git.init
+        - git.is_worktree
+        - git.list_branches
+        - git.list_tags
+        - git.ls_remote
+        - git.merge
+        - git.merge_base
+        - git.remote_refs
+        - git.remote_set
+        - git.remotes
+        - git.reset
+        - git.rev_parse
+        - git.revision
+        - git.status
+        - git.submodule
+        - git.symbolic_ref
+        - git.tag
+        - git.version
+      tests:
+        - path: tests/pytests/unit/states/test_git.py
+          functions: 4
+    - function: config_unset
+      source:
+        path: salt/states/git.py
+        symbol: config_unset
+      parameters:
+        - name: name
+        - name: value_regex
+          default: None
+        - name: repo
+          default: None
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: output_encoding
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+        - git.branch
+        - git.checkout
+        - git.clone
+        - git.config_get_regexp
+        - git.config_unset
+        - git.current_branch
+        - git.describe
+        - git.diff
+        - git.discard_local_changes
+        - git.fetch
+        - git.init
+        - git.is_worktree
+        - git.list_branches
+        - git.list_tags
+        - git.ls_remote
+        - git.merge
+        - git.merge_base
+        - git.remote_refs
+        - git.remote_set
+        - git.remotes
+        - git.reset
+        - git.rev_parse
+        - git.revision
+        - git.status
+        - git.submodule
+        - git.symbolic_ref
+        - git.tag
+        - git.version
+      tests:
+        - path: tests/pytests/unit/states/test_git.py
+          functions: 4
+    - function: config_set
+      source:
+        path: salt/states/git.py
+        symbol: config_set
+      summary: '.. versionadded:: 2014.7.0'
+      parameters:
+        - name: name
+        - name: value
+          default: None
+        - name: multivar
+          default: None
+        - name: repo
+          default: None
+        - name: user
+          default: None
+        - name: password
+          default: None
+        - name: output_encoding
+          default: None
+        - name: kwargs
+          kind: '**'
+      execution_dependencies:
+        - cp.cache_file
+        - git.branch
+        - git.checkout
+        - git.clone
+        - git.config_get
+        - git.config_get_regexp
+        - git.config_set
+        - git.config_unset
+        - git.current_branch
+        - git.describe
+        - git.diff
+        - git.discard_local_changes
+        - git.fetch
+        - git.init
+        - git.is_worktree
+        - git.list_branches
+        - git.list_tags
+        - git.ls_remote
+        - git.merge
+        - git.merge_base
+        - git.remote_refs
+        - git.remote_set
+        - git.remotes
+        - git.reset
+        - git.rev_parse
+        - git.revision
+        - git.status
+        - git.submodule
+        - git.symbolic_ref
+        - git.tag
+        - git.version
+      tests:
+        - path: tests/pytests/unit/states/test_git.py
+          functions: 4

@@ -1,0 +1,68 @@
+kind: exec
+module: asymmetric
+source_module: asymmetric
+virtual: true
+path: salt/modules/asymmetric.py
+functions:
+    - function: sign
+      source:
+        path: salt/modules/asymmetric.py
+        symbol: sign
+      summary: Sign a file or text using an (RSA|ECDSA|Ed25519|Ed448) private key.
+      parameters:
+        - name: privkey
+        - name: passphrase
+          default: None
+        - name: text
+          default: None
+        - name: filename
+          default: None
+        - name: digest
+          default: None
+        - name: raw
+          default: None
+        - name: path
+          default: None
+    - function: verify
+      source:
+        path: salt/modules/asymmetric.py
+        symbol: verify
+      summary: Verify signatures on a specific input against (RSA|ECDSA|Ed25519|Ed448) public keys.
+      parameters:
+        - name: text
+          default: None
+        - name: filename
+          default: None
+        - name: pubkey
+          default: None
+        - name: signature
+          default: None
+        - name: digest
+          default: None
+        - name: signed_by_any
+          default: None
+        - name: signed_by_all
+          default: None
+        - name: kwargs
+          kind: '**'
+        - name: '# pylint: disable'
+          default: unused-argument
+    - function: _verify_pubkey_against_list
+      source:
+        path: salt/modules/asymmetric.py
+        symbol: _verify_pubkey_against_list
+      parameters:
+        - name: pub
+        - name: sigs
+        - name: data
+        - name: digest
+        - name: file_digest
+          default: None
+    - function: _fetch
+      source:
+        path: salt/modules/asymmetric.py
+        symbol: _fetch
+      parameters:
+        - name: url
+      execution_dependencies:
+        - cp.cache_file

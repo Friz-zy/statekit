@@ -1,0 +1,17 @@
+kind: state
+module: uptime
+source_module: uptime
+path: salt/states/uptime.py
+functions:
+    - function: monitored
+      source:
+        path: salt/states/uptime.py
+        symbol: monitored
+      summary: Makes sure an URL is monitored by uptime. Checks if URL is already
+      parameters:
+        - name: name
+        - name: params
+          kind: '**'
+      execution_dependencies:
+        - uptime.check_exists
+        - uptime.create

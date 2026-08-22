@@ -1,0 +1,33 @@
+kind: state
+module: keyboard
+source_module: keyboard
+path: salt/states/keyboard.py
+functions:
+    - function: system
+      source:
+        path: salt/states/keyboard.py
+        symbol: system
+      summary: Set the keyboard layout for the system
+      parameters:
+        - name: name
+      execution_dependencies:
+        - keyboard.get_sys
+        - keyboard.set_sys
+      tests:
+        - path: tests/pytests/unit/states/test_keyboard.py
+          functions: 2
+    - function: xorg
+      source:
+        path: salt/states/keyboard.py
+        symbol: xorg
+      summary: Set the keyboard layout for XOrg
+      parameters:
+        - name: name
+      execution_dependencies:
+        - keyboard.get_sys
+        - keyboard.get_x
+        - keyboard.set_sys
+        - keyboard.set_x
+      tests:
+        - path: tests/pytests/unit/states/test_keyboard.py
+          functions: 2
