@@ -96,14 +96,14 @@ func (runFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any,
 	return string(res.Stdout), nil
 }
 
-type runAllArgs runArgs
+type RunAllArgs runArgs
 
 type runAllFunc struct{}
 
 func (runAllFunc) Name() string { return "cmd.run_all" }
-func (runAllFunc) Args() any    { return runAllArgs{} }
+func (runAllFunc) Args() any    { return RunAllArgs{} }
 func (runAllFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*runAllArgs)
+	a := args.(*RunAllArgs)
 	base := runArgs(*a)
 	if err := validateRun(&base); err != nil {
 		return nil, err

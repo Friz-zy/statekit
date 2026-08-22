@@ -29,10 +29,14 @@ import (
 	exectest "github.com/friz-zy/statekit/modules/exec/test"
 	executimezone "github.com/friz-zy/statekit/modules/exec/timezone"
 	execuser "github.com/friz-zy/statekit/modules/exec/user"
+	statecmd "github.com/friz-zy/statekit/modules/state/cmd"
+	statecron "github.com/friz-zy/statekit/modules/state/cron"
 	statefile "github.com/friz-zy/statekit/modules/state/file"
 	stategroup "github.com/friz-zy/statekit/modules/state/group"
+	statehost "github.com/friz-zy/statekit/modules/state/host"
 	statepkg "github.com/friz-zy/statekit/modules/state/pkg"
 	stateservice "github.com/friz-zy/statekit/modules/state/service"
+	statesysctl "github.com/friz-zy/statekit/modules/state/sysctl"
 	statetest "github.com/friz-zy/statekit/modules/state/test"
 	stateuser "github.com/friz-zy/statekit/modules/state/user"
 	pkgprovider "github.com/friz-zy/statekit/providers/pkg"
@@ -91,6 +95,10 @@ func buildRuntime() (*runtime.Runtime, error) {
 		stateservice.Register,
 		stateuser.Register,
 		stategroup.Register,
+		statecmd.Register,
+		statecron.Register,
+		statehost.Register,
+		statesysctl.Register,
 	} {
 		if err := registerState(rt.States); err != nil {
 			return nil, err

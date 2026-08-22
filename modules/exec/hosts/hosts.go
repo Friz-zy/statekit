@@ -53,12 +53,12 @@ func appendUnique(list []string, value string) []string {
 	return append(list, value)
 }
 
-type listArgs struct{}
+type ListArgs struct{}
 
 type listFunc struct{}
 
 func (listFunc) Name() string { return "hosts.list_hosts" }
-func (listFunc) Args() any    { return listArgs{} }
+func (listFunc) Args() any    { return ListArgs{} }
 func (listFunc) Execute(_ context.Context, rt *runtime.Runtime, _ any) (any, error) {
 	data, err := rt.FS.ReadFile(hostsPath)
 	if err != nil {
@@ -72,7 +72,7 @@ func (listFunc) Execute(_ context.Context, rt *runtime.Runtime, _ any) (any, err
 	return out, nil
 }
 
-type addArgs struct {
+type AddArgs struct {
 	IP      string   `statekit:"required,name=ip"`
 	Aliases []string `statekit:"required,name=aliases"`
 }
@@ -80,9 +80,9 @@ type addArgs struct {
 type addFunc struct{}
 
 func (addFunc) Name() string { return "hosts.add_host" }
-func (addFunc) Args() any    { return addArgs{} }
+func (addFunc) Args() any    { return AddArgs{} }
 func (addFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*addArgs)
+	a := args.(*AddArgs)
 	data, err := rt.FS.ReadFile(hostsPath)
 	if err != nil {
 		return nil, err
@@ -139,7 +139,7 @@ func render(parsed parsedHosts) string {
 	return strings.TrimRight(strings.Join(lines, "\n"), "\n") + "\n"
 }
 
-type rmArgs struct {
+type RmArgs struct {
 	IP   string `statekit:"required,name=ip"`
 	Name string `statekit:"name=name"`
 }
@@ -147,9 +147,9 @@ type rmArgs struct {
 type rmFunc struct{}
 
 func (rmFunc) Name() string { return "hosts.rm_host" }
-func (rmFunc) Args() any    { return rmArgs{} }
+func (rmFunc) Args() any    { return RmArgs{} }
 func (rmFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*rmArgs)
+	a := args.(*RmArgs)
 	data, err := rt.FS.ReadFile(hostsPath)
 	if err != nil {
 		return false, nil
@@ -177,16 +177,16 @@ func (rmFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, er
 	return true, writeFile(rt, render(parsed), mode)
 }
 
-type getIPArgs struct {
+type GetIPArgs struct {
 	Name string `statekit:"required,name=name"`
 }
 
 type getIPFunc struct{}
 
 func (getIPFunc) Name() string { return "hosts.get_ip" }
-func (getIPFunc) Args() any    { return getIPArgs{} }
+func (getIPFunc) Args() any    { return GetIPArgs{} }
 func (getIPFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*getIPArgs)
+	a := args.(*GetIPArgs)
 	data, err := rt.FS.ReadFile(hostsPath)
 	if err != nil {
 		return "", nil
@@ -202,7 +202,7 @@ func (getIPFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any,
 	return "", nil
 }
 
-type hasPairArgs struct {
+type HasPairArgs struct {
 	IP    string `statekit:"required,name=ip"`
 	Alias string `statekit:"required,name=alias"`
 }
@@ -210,9 +210,9 @@ type hasPairArgs struct {
 type hasPairFunc struct{}
 
 func (hasPairFunc) Name() string { return "hosts.has_pair" }
-func (hasPairFunc) Args() any    { return hasPairArgs{} }
+func (hasPairFunc) Args() any    { return HasPairArgs{} }
 func (hasPairFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*hasPairArgs)
+	a := args.(*HasPairArgs)
 	data, err := rt.FS.ReadFile(hostsPath)
 	if err != nil {
 		return false, nil

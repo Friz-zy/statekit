@@ -27,7 +27,7 @@ func testRT() *runtime.Runtime {
 }
 
 func TestListHosts(t *testing.T) {
-	value, err := listFunc{}.Execute(context.Background(), testRT(), &listArgs{})
+	value, err := listFunc{}.Execute(context.Background(), testRT(), &ListArgs{})
 	if err != nil {
 		t.Fatalf("list_hosts: %v", err)
 	}
@@ -39,12 +39,12 @@ func TestListHosts(t *testing.T) {
 
 func TestAddAndHasPair(t *testing.T) {
 	rt := testRT()
-	if _, err := (addFunc{}).Execute(context.Background(), rt, &addArgs{
+	if _, err := (addFunc{}).Execute(context.Background(), rt, &AddArgs{
 		IP: "10.0.0.9", Aliases: []string{"db", "db.local"},
 	}); err != nil {
 		t.Fatalf("add_host: %v", err)
 	}
-	value, _ := hasPairFunc{}.Execute(context.Background(), rt, &hasPairArgs{IP: "10.0.0.9", Alias: "db"})
+	value, _ := hasPairFunc{}.Execute(context.Background(), rt, &HasPairArgs{IP: "10.0.0.9", Alias: "db"})
 	if value != true {
 		t.Fatal("has_pair must find new entry")
 	}
@@ -60,12 +60,12 @@ func TestAddAndHasPair(t *testing.T) {
 
 func TestRmHost(t *testing.T) {
 	rt := testRT()
-	rmFunc{}.Execute(context.Background(), rt, &rmArgs{IP: "10.0.0.5"})
+	rmFunc{}.Execute(context.Background(), rt, &RmArgs{IP: "10.0.0.5"})
 	data, _ := rt.FS.ReadFile("/etc/hosts")
 	if strings.Contains(string(data), "10.0.0.5") {
 		t.Fatalf("entry not removed:\n%s", data)
 	}
-	found, _ := rmFunc{}.Execute(context.Background(), rt, &rmArgs{IP: "10.9.9.9"})
+	found, _ := rmFunc{}.Execute(context.Background(), rt, &RmArgs{IP: "10.9.9.9"})
 	if found != false {
 		t.Fatal("removing absent ip must report false")
 	}
@@ -73,11 +73,11 @@ func TestRmHost(t *testing.T) {
 
 func TestGetIP(t *testing.T) {
 	rt := testRT()
-	value, _ := getIPFunc{}.Execute(context.Background(), rt, &getIPArgs{Name: "web"})
+	value, _ := getIPFunc{}.Execute(context.Background(), rt, &GetIPArgs{Name: "web"})
 	if value != "10.0.0.5" {
 		t.Fatalf("get_ip = %v", value)
 	}
-	value, _ = getIPFunc{}.Execute(context.Background(), rt, &getIPArgs{Name: "missing"})
+	value, _ = getIPFunc{}.Execute(context.Background(), rt, &GetIPArgs{Name: "missing"})
 	if value != "" {
 		t.Fatalf("unknown name must be empty, got %v", value)
 	}

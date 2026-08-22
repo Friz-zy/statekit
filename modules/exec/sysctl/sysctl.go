@@ -16,16 +16,16 @@ import (
 
 const defaultConfig = "/etc/sysctl.conf"
 
-type showArgs struct {
+type ShowArgs struct {
 	Name string `statekit:"required"`
 }
 
 type showFunc struct{}
 
 func (showFunc) Name() string { return "sysctl.show" }
-func (showFunc) Args() any    { return showArgs{} }
+func (showFunc) Args() any    { return ShowArgs{} }
 func (showFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*showArgs)
+	a := args.(*ShowArgs)
 	procPath := "/proc/sys/" + strings.ReplaceAll(a.Name, ".", "/")
 	data, err := rt.FS.ReadFile(procPath)
 	if err != nil {
@@ -34,7 +34,7 @@ func (showFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, 
 	return strings.TrimSpace(string(data)), nil
 }
 
-type assignArgs struct {
+type AssignArgs struct {
 	Name    string `statekit:"required"`
 	Value   string `statekit:"required,name=value"`
 	Config  string `statekit:"name=config"`
@@ -44,9 +44,9 @@ type assignArgs struct {
 type assignFunc struct{}
 
 func (assignFunc) Name() string { return "sysctl.assign" }
-func (assignFunc) Args() any    { return assignArgs{} }
+func (assignFunc) Args() any    { return AssignArgs{} }
 func (assignFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*assignArgs)
+	a := args.(*AssignArgs)
 	res := rt.Runner.Run(ctx, runtime.Command("sysctl", "-w",
 		fmt.Sprintf("%s=%s", a.Name, a.Value)))
 	if res.Err != nil {
@@ -96,12 +96,12 @@ func persistSetting(rt *runtime.Runtime, configPath, name, value string) error {
 	return rt.FS.WriteFile(configPath, []byte(out), mode)
 }
 
-type defaultConfigArgs struct{}
+type DefaultConfigArgs struct{}
 
 type defaultConfigFunc struct{}
 
 func (defaultConfigFunc) Name() string { return "sysctl.default_config" }
-func (defaultConfigFunc) Args() any    { return defaultConfigArgs{} }
+func (defaultConfigFunc) Args() any    { return DefaultConfigArgs{} }
 func (defaultConfigFunc) Execute(_ context.Context, _ *runtime.Runtime, _ any) (any, error) {
 	return path.Clean(defaultConfig), nil
 }

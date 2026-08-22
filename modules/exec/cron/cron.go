@@ -38,16 +38,16 @@ func writeTab(rt *runtime.Runtime, user string, lines []string) error {
 	return rt.FS.WriteFile(spoolPath(user), []byte(out), mode)
 }
 
-type listTabArgs struct {
+type ListTabArgs struct {
 	User string `statekit:"required,name=user"`
 }
 
 type listTabFunc struct{}
 
 func (listTabFunc) Name() string { return "cron.list_tab" }
-func (listTabFunc) Args() any    { return listTabArgs{} }
+func (listTabFunc) Args() any    { return ListTabArgs{} }
 func (listTabFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*listTabArgs)
+	a := args.(*ListTabArgs)
 	lines := readTab(rt, a.User)
 	if lines == nil {
 		return map[string]any{"crons": []any{}, "special": []any{}, "env": []any{}}, nil
@@ -82,7 +82,7 @@ func jobLine(minute, hour, daymonth, month, dayweek, command string) string {
 	return strings.Join(fields, " ") + " " + command
 }
 
-type addJobArgs struct {
+type AddJobArgs struct {
 	User     string `statekit:"required,name=user"`
 	Minute   string `statekit:"name=minute"`
 	Hour     string `statekit:"name=hour"`
@@ -96,9 +96,9 @@ type addJobArgs struct {
 type addJobFunc struct{}
 
 func (addJobFunc) Name() string { return "cron.add_job" }
-func (addJobFunc) Args() any    { return addJobArgs{} }
+func (addJobFunc) Args() any    { return AddJobArgs{} }
 func (addJobFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*addJobArgs)
+	a := args.(*AddJobArgs)
 	lines := readTab(rt, a.User)
 	job := jobLine(a.Minute, a.Hour, a.Daymonth, a.Month, a.Dayweek, a.Command)
 	for _, line := range lines {
@@ -117,7 +117,7 @@ func (addJobFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any
 	return "new", nil
 }
 
-type rmJobArgs struct {
+type RmJobArgs struct {
 	User     string `statekit:"required,name=user"`
 	Minute   string `statekit:"name=minute"`
 	Hour     string `statekit:"name=hour"`
@@ -130,9 +130,9 @@ type rmJobArgs struct {
 type rmJobFunc struct{}
 
 func (rmJobFunc) Name() string { return "cron.rm_job" }
-func (rmJobFunc) Args() any    { return rmJobArgs{} }
+func (rmJobFunc) Args() any    { return RmJobArgs{} }
 func (rmJobFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*rmJobArgs)
+	a := args.(*RmJobArgs)
 	lines := readTab(rt, a.User)
 	target := jobLine(a.Minute, a.Hour, a.Daymonth, a.Month, a.Dayweek, a.Command)
 	found := false
@@ -153,16 +153,16 @@ func (rmJobFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any,
 	return "removed", nil
 }
 
-type rawArgs struct {
+type RawArgs struct {
 	User string `statekit:"required,name=user"`
 }
 
 type rawFunc struct{}
 
 func (rawFunc) Name() string { return "cron.raw_tab" }
-func (rawFunc) Args() any    { return rawArgs{} }
+func (rawFunc) Args() any    { return RawArgs{} }
 func (rawFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*rawArgs)
+	a := args.(*RawArgs)
 	data, err := rt.FS.ReadFile(spoolPath(a.User))
 	if err != nil {
 		return "", nil
