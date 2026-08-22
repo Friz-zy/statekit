@@ -10,12 +10,15 @@ import (
 	"github.com/friz-zy/statekit/internal/runtime"
 
 	execarchive "github.com/friz-zy/statekit/modules/exec/archive"
+	execat "github.com/friz-zy/statekit/modules/exec/at"
 	execcmd "github.com/friz-zy/statekit/modules/exec/cmd"
 	execcron "github.com/friz-zy/statekit/modules/exec/cron"
 	execdisk "github.com/friz-zy/statekit/modules/exec/disk"
+	execenviron "github.com/friz-zy/statekit/modules/exec/environ"
 	execfile "github.com/friz-zy/statekit/modules/exec/file"
 	execgroup "github.com/friz-zy/statekit/modules/exec/group"
 	exechosts "github.com/friz-zy/statekit/modules/exec/hosts"
+	execkmod "github.com/friz-zy/statekit/modules/exec/kmod"
 	execlocale "github.com/friz-zy/statekit/modules/exec/locale"
 	execmount "github.com/friz-zy/statekit/modules/exec/mount"
 	execpkg "github.com/friz-zy/statekit/modules/exec/pkg"
@@ -66,6 +69,9 @@ func buildRuntime() (*runtime.Runtime, error) {
 		execpkg.Register,
 		execservice.Register,
 		execarchive.Register,
+		execat.Register,
+		execenviron.Register,
+		execkmod.Register,
 		execcron.Register,
 		execdisk.Register,
 		exechosts.Register,
