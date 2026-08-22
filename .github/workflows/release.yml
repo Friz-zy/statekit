@@ -1,0 +1,141 @@
+name: release
+
+# Release pipeline: tag push -> fast gate -> cross-built static binaries ->
+# packaged archives with checksums -> GitHub Releases publication.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  fast-gate:
+    name: fast tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+
+      - name: fmt + vet
+        run: |
+          unformatted=$(gofmt -l . | grep -v '^saltstack/' || true)
+          if [ -n "$unformatted" ]; then echo "$unformatted"; exit 1; fi
+          go vet ./...
+
+      - name: unit tests
+        run: go test ./... -count=1
+
+      - name: fixture schema validation
+        run: |
+          python3 -m pip install --quiet jsonschema==4.23.0 pyyaml==6.0.2
+          python3 tests/validate-fixtures.py
+
+      - name: host fixture smoke
+        run: |
+          go build -o dist/statekit ./cmd/statekit
+          go build -o dist/fixture-runner ./tools/fixture-runner
+          dist/fixture-runner \
+            --bin "$PWD/dist/statekit" \
+            --fixtures "$PWD/tests/fixtures" \
+            --suite cli --suite file --suite pkg --suite user-group \
+            --junit .junit/results.xml
+
+  build:
+    name: build ${{ matrix.os }}/${{ matrix.arch }}
+    needs: [fast-gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+          - os: linux
+            arch: arm64
+          - os: linux
+            arch: arm
+          - os: darwin
+            arch: amd64
+          - os: darwin
+            arch: arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+
+      - name: resolve version
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: echo "version=${TAG:-v0.0.0-dev}" >> "$GITHUB_OUTPUT"
+
+      - name: build static binary
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p dist
+          CGO_ENABLED=0 go build -trimpath \
+            -ldflags "-s -w -X main.version=${VERSION}" \
+            -o "dist/statekit-${VERSION}-${GOOS}-${GOARCH}" \
+            ./cmd/statekit
+
+      - name: package archives
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          chmod +x scripts/release/package.sh
+          scripts/release/package.sh "$VERSION" dist release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.os }}-${{ matrix.arch }}
+          path: release/
+          retention-days: 7
+          if-no-files-found: error
+
+  publish:
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: release-*
+          merge-multiple: true
+
+      - name: merge artifacts and verify checksums
+        run: |
+          mkdir -p release
+          find artifacts -name '*.tar.gz' -exec mv {} release/ \;
+          find artifacts -name 'SHA256SUMS' -exec cat {} \; | sort -u > release/SHA256SUMS
+          (cd release && sha256sum --check SHA256SUMS)
+          ls -la release/
+
+      - name: publish github release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "statekit $TAG" \
+            --generate-notes \
+            release/*

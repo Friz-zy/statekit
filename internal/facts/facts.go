@@ -19,7 +19,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 )
 
 const (
@@ -283,29 +282,6 @@ func OSFamily(id, idLike string) string {
 		}
 	}
 	return FamilyUnknown
-}
-
-func detectKernel() KernelFacts {
-	k := KernelFacts{Name: runtime.GOOS}
-	var uts syscall.Utsname
-	if err := syscall.Uname(&uts); err != nil {
-		return k
-	}
-	k.Name = int8SliceString(uts.Sysname[:])
-	k.Release = int8SliceString(uts.Release[:])
-	k.Machine = int8SliceString(uts.Machine[:])
-	return k
-}
-
-func int8SliceString(chars []int8) string {
-	b := make([]byte, 0, len(chars))
-	for _, c := range chars {
-		if c == 0 {
-			break
-		}
-		b = append(b, byte(c))
-	}
-	return string(b)
 }
 
 func detectHost() HostFacts {
