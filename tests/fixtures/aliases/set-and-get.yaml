@@ -1,0 +1,7 @@
+id: aliases.set-target.roundtrip
+command: [exec, aliases.set_target, --alias, statekit-test, --target, root]
+exit: 0
+stdout: "true\n"
+salt:
+  source: salt/modules/aliases.py
+  symbol: set_target

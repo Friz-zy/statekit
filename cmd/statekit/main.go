@@ -9,6 +9,7 @@ import (
 	"github.com/friz-zy/statekit/internal/process"
 	"github.com/friz-zy/statekit/internal/runtime"
 
+	execaliases "github.com/friz-zy/statekit/modules/exec/aliases"
 	execarchive "github.com/friz-zy/statekit/modules/exec/archive"
 	execat "github.com/friz-zy/statekit/modules/exec/at"
 	execcmd "github.com/friz-zy/statekit/modules/exec/cmd"
@@ -17,11 +18,15 @@ import (
 	execenviron "github.com/friz-zy/statekit/modules/exec/environ"
 	execfile "github.com/friz-zy/statekit/modules/exec/file"
 	execgroup "github.com/friz-zy/statekit/modules/exec/group"
+	exechashutil "github.com/friz-zy/statekit/modules/exec/hashutil"
 	exechosts "github.com/friz-zy/statekit/modules/exec/hosts"
+	execini "github.com/friz-zy/statekit/modules/exec/ini"
 	execkmod "github.com/friz-zy/statekit/modules/exec/kmod"
 	execlocale "github.com/friz-zy/statekit/modules/exec/locale"
 	execmount "github.com/friz-zy/statekit/modules/exec/mount"
 	execpkg "github.com/friz-zy/statekit/modules/exec/pkg"
+	execrandom "github.com/friz-zy/statekit/modules/exec/random"
+	execselinux "github.com/friz-zy/statekit/modules/exec/selinux"
 	execservice "github.com/friz-zy/statekit/modules/exec/service"
 	execshadow "github.com/friz-zy/statekit/modules/exec/shadow"
 	execstatus "github.com/friz-zy/statekit/modules/exec/status"
@@ -29,12 +34,15 @@ import (
 	exectest "github.com/friz-zy/statekit/modules/exec/test"
 	executimezone "github.com/friz-zy/statekit/modules/exec/timezone"
 	execuser "github.com/friz-zy/statekit/modules/exec/user"
+	statealiases "github.com/friz-zy/statekit/modules/state/aliases"
 	statecmd "github.com/friz-zy/statekit/modules/state/cmd"
 	statecron "github.com/friz-zy/statekit/modules/state/cron"
 	statefile "github.com/friz-zy/statekit/modules/state/file"
 	stategroup "github.com/friz-zy/statekit/modules/state/group"
 	statehost "github.com/friz-zy/statekit/modules/state/host"
+	stateini "github.com/friz-zy/statekit/modules/state/ini"
 	statepkg "github.com/friz-zy/statekit/modules/state/pkg"
+	stateselinux "github.com/friz-zy/statekit/modules/state/selinux"
 	stateservice "github.com/friz-zy/statekit/modules/state/service"
 	statesysctl "github.com/friz-zy/statekit/modules/state/sysctl"
 	statetest "github.com/friz-zy/statekit/modules/state/test"
@@ -80,6 +88,11 @@ func buildRuntime() (*runtime.Runtime, error) {
 		execdisk.Register,
 		exechosts.Register,
 		execlocale.Register,
+		execaliases.Register,
+		exechashutil.Register,
+		execini.Register,
+		execrandom.Register,
+		execselinux.Register,
 		execmount.Register,
 		execsysctl.Register,
 		executimezone.Register,
@@ -99,6 +112,9 @@ func buildRuntime() (*runtime.Runtime, error) {
 		statecron.Register,
 		statehost.Register,
 		statesysctl.Register,
+		statealiases.Register,
+		stateini.Register,
+		stateselinux.Register,
 	} {
 		if err := registerState(rt.States); err != nil {
 			return nil, err

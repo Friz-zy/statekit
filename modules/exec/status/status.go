@@ -98,10 +98,46 @@ func parseFloat(s string) float64 {
 
 // Register installs all status-module execution functions.
 func Register(reg *runtime.ExecRegistry) error {
-	for _, fn := range []runtime.ExecFunction{loadavgFunc{}, uptimeFunc{}, diskusageFunc{}} {
+	fns := []runtime.ExecFunction{loadavgFunc{}, uptimeFunc{}, diskusageFunc{}, meminfoFunc{}}
+	for _, fn := range fns {
 		if err := reg.Register(fn); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+type meminfoArgs struct{}
+
+type meminfoFunc struct{}
+
+func (meminfoFunc) Name() string { return "status.meminfo" }
+func (meminfoFunc) Args() any    { return meminfoArgs{} }
+func (meminfoFunc) Execute(_ context.Context, rt *runtime.Runtime, _ any) (any, error) {
+	data, err := rt.FS.ReadFile("/proc/meminfo")
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]any{}
+	for _, line := range strings.Split(string(data), "\n") {
+		key, rest, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		fields := strings.Fields(rest)
+		if len(fields) == 0 {
+			continue
+		}
+		value, parseErr := strconv.ParseUint(fields[0], 10, 64)
+		if parseErr != nil {
+			out[strings.TrimSpace(key)] = strings.TrimSpace(rest)
+			continue
+		}
+		entry := map[string]any{"value": value}
+		if len(fields) > 1 {
+			entry["unit"] = fields[1]
+		}
+		out[strings.TrimSpace(key)] = entry
+	}
+	return out, nil
 }
