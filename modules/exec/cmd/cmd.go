@@ -19,7 +19,7 @@ import (
 
 const defaultShell = "sh"
 
-type runArgs struct {
+type RunArgs struct {
 	Cmd     string   `statekit:"required"`
 	Cwd     string   `statekit:"name=cwd"`
 	Timeout int      `statekit:"name=timeout"` // seconds, matching Salt
@@ -28,14 +28,14 @@ type runArgs struct {
 	Runas   string   `statekit:"name=runas"`
 }
 
-func (a *runArgs) timeoutDuration() time.Duration {
+func (a *RunArgs) timeoutDuration() time.Duration {
 	if a.Timeout <= 0 {
 		return 0
 	}
 	return time.Duration(a.Timeout) * time.Second
 }
 
-func (a *runArgs) command() process.Command {
+func (a *RunArgs) command() process.Command {
 	return process.Command{
 		Name:    a.Cmd,
 		Dir:     a.Cwd,
@@ -68,7 +68,7 @@ func mergeEnv(extra []string) []string {
 }
 
 // validateRun rejects options StateKit intentionally does not implement.
-func validateRun(a *runArgs) error {
+func validateRun(a *RunArgs) error {
 	if strings.TrimSpace(a.Cmd) == "" {
 		return fmt.Errorf("command must not be empty")
 	}
@@ -83,9 +83,9 @@ func validateRun(a *runArgs) error {
 type runFunc struct{}
 
 func (runFunc) Name() string { return "cmd.run" }
-func (runFunc) Args() any    { return runArgs{} }
+func (runFunc) Args() any    { return RunArgs{} }
 func (runFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*runArgs)
+	a := args.(*RunArgs)
 	if err := validateRun(a); err != nil {
 		return nil, err
 	}
@@ -96,7 +96,7 @@ func (runFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any,
 	return string(res.Stdout), nil
 }
 
-type RunAllArgs runArgs
+type RunAllArgs RunArgs
 
 type runAllFunc struct{}
 
@@ -104,7 +104,7 @@ func (runAllFunc) Name() string { return "cmd.run_all" }
 func (runAllFunc) Args() any    { return RunAllArgs{} }
 func (runAllFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
 	a := args.(*RunAllArgs)
-	base := runArgs(*a)
+	base := RunArgs(*a)
 	if err := validateRun(&base); err != nil {
 		return nil, err
 	}
@@ -121,7 +121,7 @@ func (runAllFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (a
 	return ret, nil
 }
 
-type runStdoutArgs runArgs
+type runStdoutArgs RunArgs
 
 type runStdoutFunc struct{}
 
@@ -129,7 +129,7 @@ func (runStdoutFunc) Name() string { return "cmd.run_stdout" }
 func (runStdoutFunc) Args() any    { return runStdoutArgs{} }
 func (runStdoutFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
 	a := args.(*runStdoutArgs)
-	base := runArgs(*a)
+	base := RunArgs(*a)
 	if err := validateRun(&base); err != nil {
 		return nil, err
 	}
@@ -140,7 +140,7 @@ func (runStdoutFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any)
 	return string(res.Stdout), nil
 }
 
-type retcodeArgs runArgs
+type retcodeArgs RunArgs
 
 type retcodeFunc struct{}
 
@@ -148,7 +148,7 @@ func (retcodeFunc) Name() string { return "cmd.retcode" }
 func (retcodeFunc) Args() any    { return retcodeArgs{} }
 func (retcodeFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
 	a := args.(*retcodeArgs)
-	base := runArgs(*a)
+	base := RunArgs(*a)
 	if err := validateRun(&base); err != nil {
 		return nil, err
 	}

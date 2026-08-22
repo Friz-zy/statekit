@@ -25,7 +25,7 @@ func testRT(initial string) *runtime.Runtime {
 
 func TestListTabClassification(t *testing.T) {
 	tab := "# c\nMAILTO=admin@example.org\n0 2 * * * /usr/bin/backup\n@reboot /usr/bin/boot-job\n"
-	value, err := listTabFunc{}.Execute(context.Background(), testRT(tab), &listTabArgs{User: "root"})
+	value, err := listTabFunc{}.Execute(context.Background(), testRT(tab), &ListTabArgs{User: "root"})
 	if err != nil {
 		t.Fatalf("list_tab: %v", err)
 	}
@@ -44,34 +44,34 @@ func TestListTabClassification(t *testing.T) {
 
 func TestAddAndRmJob(t *testing.T) {
 	rt := testRT("")
-	addJobFunc{}.Execute(context.Background(), rt, &addJobArgs{
+	addJobFunc{}.Execute(context.Background(), rt, &AddJobArgs{
 		User: "root", Minute: "30", Hour: "4", Command: "/usr/bin/task",
 	})
-	raw, _ := rawFunc{}.Execute(context.Background(), rt, &rawArgs{User: "root"})
+	raw, _ := rawFunc{}.Execute(context.Background(), rt, &RawArgs{User: "root"})
 	if !strings.Contains(raw.(string), "30 4 * * * /usr/bin/task") {
 		t.Fatalf("job not written: %q", raw)
 	}
 
 	// Duplicate add is a no-op returning the same marker.
-	status, _ := addJobFunc{}.Execute(context.Background(), rt, &addJobArgs{
+	status, _ := addJobFunc{}.Execute(context.Background(), rt, &AddJobArgs{
 		User: "root", Minute: "30", Hour: "4", Command: "/usr/bin/task",
 	})
 	if status != "new" {
 		t.Fatalf("duplicate add status = %v", status)
 	}
-	raw, _ = rawFunc{}.Execute(context.Background(), rt, &rawArgs{User: "root"})
+	raw, _ = rawFunc{}.Execute(context.Background(), rt, &RawArgs{User: "root"})
 	if strings.Count(raw.(string), "/usr/bin/task") != 1 {
 		t.Fatalf("duplicate job appended:\n%s", raw)
 	}
 
-	rmJobFunc{}.Execute(context.Background(), rt, &rmJobArgs{
+	rmJobFunc{}.Execute(context.Background(), rt, &RmJobArgs{
 		User: "root", Minute: "30", Hour: "4", Command: "/usr/bin/task",
 	})
-	raw, _ = rawFunc{}.Execute(context.Background(), rt, &rawArgs{User: "root"})
+	raw, _ = rawFunc{}.Execute(context.Background(), rt, &RawArgs{User: "root"})
 	if strings.Contains(raw.(string), "/usr/bin/task") {
 		t.Fatalf("job not removed: %q", raw)
 	}
-	found, _ := rmJobFunc{}.Execute(context.Background(), rt, &rmJobArgs{
+	found, _ := rmJobFunc{}.Execute(context.Background(), rt, &RmJobArgs{
 		User: "root", Minute: "0", Hour: "0", Command: "/no/such",
 	})
 	if found != false {
@@ -80,7 +80,7 @@ func TestAddAndRmJob(t *testing.T) {
 }
 
 func TestMissingTabIsEmpty(t *testing.T) {
-	value, err := listTabFunc{}.Execute(context.Background(), testRT(""), &listTabArgs{User: "nobody"})
+	value, err := listTabFunc{}.Execute(context.Background(), testRT(""), &ListTabArgs{User: "nobody"})
 	if err != nil {
 		t.Fatalf("list on missing tab: %v", err)
 	}

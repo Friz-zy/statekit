@@ -39,7 +39,7 @@ func newRT() (*runtime.Runtime, *scriptRunner) {
 
 func TestShowMapsDotsToProcPath(t *testing.T) {
 	rt, _ := newRT()
-	value, err := showFunc{}.Execute(context.Background(), rt, &showArgs{Name: "net.ipv4.ip_forward"})
+	value, err := showFunc{}.Execute(context.Background(), rt, &ShowArgs{Name: "net.ipv4.ip_forward"})
 	if err != nil || value != "0" {
 		t.Fatalf("show = %v, %v", value, err)
 	}
@@ -50,7 +50,7 @@ func TestAssignRunsAndPersists(t *testing.T) {
 	rt.FS.MkdirAll("/etc", 0o755)
 	rt.FS.WriteFile("/etc/sysctl.conf", []byte("net.core.somaxconn = 128\n# keep me\n"), 0o644)
 
-	_, err := assignFunc{}.Execute(context.Background(), rt, &assignArgs{
+	_, err := assignFunc{}.Execute(context.Background(), rt, &AssignArgs{
 		Name: "net.ipv4.ip_forward", Value: "1", Persist: true,
 	})
 	if err != nil {
@@ -74,7 +74,7 @@ func TestPersistUpsertsExistingKey(t *testing.T) {
 	rt, _ := newRT()
 	rt.FS.MkdirAll("/etc", 0o755)
 	rt.FS.WriteFile("/etc/sysctl.conf", []byte("net.ipv4.ip_forward = 0\n"), 0o644)
-	assignFunc{}.Execute(context.Background(), rt, &assignArgs{
+	assignFunc{}.Execute(context.Background(), rt, &AssignArgs{
 		Name: "net.ipv4.ip_forward", Value: "2", Persist: true,
 	})
 	data, _ := rt.FS.ReadFile("/etc/sysctl.conf")

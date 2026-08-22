@@ -22,17 +22,17 @@ func testRuntime() *runtime.Runtime {
 }
 
 func TestRunEchoes(t *testing.T) {
-	value, err := runFunc{}.Execute(context.Background(), testRuntime(), &runArgs{Cmd: "printf hello"})
+	value, err := runFunc{}.Execute(context.Background(), testRuntime(), &RunArgs{Cmd: "printf hello"})
 	if err != nil || value != "hello" {
 		t.Fatalf("cmd.run = %v, %v", value, err)
 	}
 }
 
 func TestRunRejectsEmptyAndRunas(t *testing.T) {
-	if _, err := (runFunc{}).Execute(context.Background(), testRuntime(), &runArgs{Cmd: "  "}); err == nil {
+	if _, err := (runFunc{}).Execute(context.Background(), testRuntime(), &RunArgs{Cmd: "  "}); err == nil {
 		t.Fatal("empty command must fail")
 	}
-	if _, err := (runFunc{}).Execute(context.Background(), testRuntime(), &runArgs{Cmd: "id", Runas: "root"}); err == nil {
+	if _, err := (runFunc{}).Execute(context.Background(), testRuntime(), &RunArgs{Cmd: "id", Runas: "root"}); err == nil {
 		t.Fatal("runas must be rejected (plan section 39)")
 	}
 }
@@ -45,7 +45,7 @@ func TestRetcodeReturnsExitStatus(t *testing.T) {
 }
 
 func TestRunAllShape(t *testing.T) {
-	ret, err := runAllFunc{}.Execute(context.Background(), testRuntime(), &runAllArgs{Cmd: "echo data"})
+	ret, err := runAllFunc{}.Execute(context.Background(), testRuntime(), &RunAllArgs{Cmd: "echo data"})
 	if err != nil {
 		t.Fatalf("run_all: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestRunAllShape(t *testing.T) {
 }
 
 func TestTimeoutPropagates(t *testing.T) {
-	_, err := runFunc{}.Execute(context.Background(), testRuntime(), &runArgs{
+	_, err := runFunc{}.Execute(context.Background(), testRuntime(), &RunArgs{
 		Cmd: "sleep 5", Timeout: 1,
 	})
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
