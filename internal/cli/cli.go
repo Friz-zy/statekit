@@ -232,9 +232,39 @@ func (a *App) cmdFunction(kind string, argv []string) int {
 		usage(os.Stderr)
 		return ExitInvalidInput
 	}
-	module, function, ok := splitTarget(rest[0])
+
+	single := false
+	target := rest[0]
+	if kind == "state" && target == "single" {
+		// Plan section 35: statekit state single <fun> [args]
+		single = true
+		rest = rest[1:]
+		if len(rest) >= 1 && !strings.HasPrefix(rest[0], "-") {
+			target = rest[0]
+			rest = rest[1:]
+		} else {
+			// fun may arrive via structured input; resolved after loading.
+			target = ""
+		}
+		if len(rest) == 0 && target == "" {
+			usage(os.Stderr)
+			return ExitInvalidInput
+		}
+	}
+
+	functionArgv := rest[1:]
+	if single {
+		// "single" keyword and optional fun token already consumed above.
+		functionArgv = rest
+	}
+
+	module, function, ok := splitTarget(target)
 	if !ok {
-		return failf(ExitInvalidInput, "function must be <module>.<function>, got %q", rest[0])
+		if single && target == "" {
+			ok = false // deferred to structured "fun" key below
+		} else {
+			return failf(ExitInvalidInput, "function must be <module>.<function>, got %q", target)
+		}
 	}
 
 	format, err := formatFrom(namespaceFS)
@@ -249,14 +279,32 @@ func (a *App) cmdFunction(kind string, argv []string) int {
 
 	fullName := module + "." + function
 
-	template, code := resolveTemplate(kind, rt, fullName)
-	if template == nil {
-		return code
+	var template any
+	if ok {
+		template, code = resolveTemplate(kind, rt, fullName)
+		if template == nil {
+			return code
+		}
 	}
 
-	argsPtr, explicit, code := decodeArgs(fullName, template, rest[1:], channels(namespaceFS))
-	if argsPtr == nil {
+	argsPtr, explicit, structuredFun, code := decodeArgs(kind, fullName, template, functionArgv, channels(namespaceFS), single)
+	if argsPtr == nil && code != ExitOK {
 		return code
+	}
+	if structuredFun != "" {
+		fullName = structuredFun
+		template, code = resolveTemplate(kind, rt, fullName)
+		if template == nil {
+			return code
+		}
+		var exp string
+		argsPtr, exp, _, code = decodeArgs(kind, fullName, template, functionArgv, channels(namespaceFS), true)
+		if argsPtr == nil && code != ExitOK {
+			return code
+		}
+		if exp != "" {
+			explicit = exp
+		}
 	}
 	if explicit != "" {
 		format, err = output.ParseFormat(explicit)
@@ -282,10 +330,11 @@ func (a *App) cmdFunction(kind string, argv []string) int {
 		return execFailure(err)
 	}
 	res = res.Normalized()
+	metaModule, metaFunction, _ := splitTarget(fullName)
 	res.Meta = &result.ResultMeta{
 		Type:       "state",
-		Module:     module,
-		Function:   function,
+		Module:     metaModule,
+		Function:   metaFunction,
 		DurationMS: time.Since(started).Milliseconds(),
 	}
 
@@ -364,35 +413,61 @@ func parseOr(fs *flag.FlagSet, argv []string) bool {
 // flag set, merges namespace-level channel defaults, and decodes every input
 // channel into a fresh args pointer. It returns the args pointer, the
 // explicitly requested output format (empty when none), and an exit code.
-func decodeArgs(fullName string, template any, argv []string, base config.Channels) (any, string, int) {
+// decodeArgs parses function-level flags against the template's generated
+// flag set, merges namespace-level channel defaults, and decodes every input
+// channel into a fresh args pointer. For `state single` with a deferred
+// function name (template == nil) it only resolves structured channels and
+// returns the "fun" key. Returns the args pointer, the explicitly requested
+// output format (empty when none), the extracted fun key, and an exit code.
+func decodeArgs(kind, fullName string, template any, argv []string, base config.Channels, wantFun bool) (any, string, string, int) {
+	if template == nil {
+		bare := flag.NewFlagSet("state single", flag.ContinueOnError)
+		bare.SetOutput(io.Discard)
+		addOutputFlags(bare)
+		addChannelFlags(bare)
+		if !parseOr(bare, argv) {
+			return nil, "", "", ExitInvalidInput
+		}
+		structured, err := mergeChannels(base, bare).Load()
+		if err != nil {
+			return nil, "", "", failf(ExitInvalidInput, "%v", err)
+		}
+		fun, _ := structured["fun"].(string)
+		if strings.TrimSpace(fun) == "" {
+			usage(os.Stderr)
+			return nil, "", "", ExitInvalidInput
+		}
+		return nil, "", fun, ExitOK
+	}
+
 	names, err := config.ArgumentNames(template)
 	if err != nil {
-		return nil, "", failf(ExitInternal, "%v", err)
+		return nil, "", "", failf(ExitInternal, "%v", err)
 	}
 	for _, name := range names {
 		if globalFlagNames[name] {
-			return nil, "", failf(ExitInternal,
+			return nil, "", "", failf(ExitInternal,
 				"function %s declares reserved argument name %q", fullName, name)
 		}
 	}
 
 	normalized, err := config.NormalizeBoolArgs(argv, template)
 	if err != nil {
-		return nil, "", failf(ExitInvalidInput, "%v", err)
+		return nil, "", "", failf(ExitInvalidInput, "%v", err)
 	}
 
 	fnFS, err := config.NewFlagSet(fullName, template)
 	if err != nil {
-		return nil, "", failf(ExitInternal, "%v", err)
+		return nil, "", "", failf(ExitInternal, "%v", err)
 	}
 	addOutputFlags(fnFS)
 	addChannelFlags(fnFS)
 	if !parseOr(fnFS, normalized) {
-		return nil, "", ExitInvalidInput
+		return nil, "", "", ExitInvalidInput
 	}
 	for _, leftover := range fnFS.Args() {
 		if leftover != "-" {
-			return nil, "", failf(ExitInvalidInput, "unexpected positional argument %q", leftover)
+			return nil, "", "", failf(ExitInvalidInput, "unexpected positional argument %q", leftover)
 		}
 	}
 
@@ -418,7 +493,15 @@ func decodeArgs(fullName string, template any, argv []string, base config.Channe
 
 	structured, err := ch.Load()
 	if err != nil {
-		return nil, "", failf(ExitInvalidInput, "%v", err)
+		return nil, "", "", failf(ExitInvalidInput, "%v", err)
+	}
+
+	funKey := ""
+	if wantFun {
+		if f, ok := structured["fun"].(string); ok && f != "" {
+			funKey = f
+			delete(structured, "fun")
+		}
 	}
 
 	argsPtr := reflect.New(reflect.TypeOf(template)).Interface()
@@ -427,9 +510,9 @@ func decodeArgs(fullName string, template any, argv []string, base config.Channe
 		delete(provided, name)
 	}
 	if err := config.Decode(argsPtr, structured, provided); err != nil {
-		return nil, "", failf(ExitInvalidInput, "%v", err)
+		return nil, "", "", failf(ExitInvalidInput, "%v", err)
 	}
-	return argsPtr, explicit, ExitOK
+	return argsPtr, explicit, funKey, ExitOK
 }
 
 // mergeChannels layers function-level channel values over namespace-level

@@ -1,0 +1,6 @@
+id: state.single.fun-key
+command: [state, single, '--config', '{"fun":"test.nop","name":"single-example"}', -o, json]
+exit: 0
+json:
+  name: single-example
+  result: true

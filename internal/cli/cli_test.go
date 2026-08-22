@@ -139,6 +139,34 @@ func TestStateNopJSONShape(t *testing.T) {
 	}
 }
 
+func TestStateSingle(t *testing.T) {
+	code, out, _ := runApp(t, "state", "single", "test.nop", "--name", "example", "-o", "json")
+	var res map[string]any
+	if code != ExitOK || json.Unmarshal([]byte(out), &res) != nil || res["result"] != true {
+		t.Fatalf("single positional form: code=%d out=%q", code, out)
+	}
+	meta := res["meta"].(map[string]any)
+	if meta["module"] != "test" || meta["function"] != "nop" {
+		t.Fatalf("meta wrong: %v", meta)
+	}
+
+	code, out, _ = runApp(t, "state", "single", "--config",
+		`{"fun":"test.nop","name":"via-fun-key"}`, "-o", "json")
+	if code != ExitOK || json.Unmarshal([]byte(out), &res) != nil || res["name"] != "via-fun-key" {
+		t.Fatalf("single fun-key form: code=%d out=%q", code, out)
+	}
+
+	code, _, errS := runApp(t, "state", "single")
+	if code != ExitInvalidInput {
+		t.Fatalf("bare single must fail, got %d (%q)", code, errS)
+	}
+
+	code, _, errS = runApp(t, "exec", "single", "test.echo")
+	if code != ExitInvalidInput && code != ExitUnsupported {
+		t.Fatalf("single is state-only, got %d (%q)", code, errS)
+	}
+}
+
 func TestListCommands(t *testing.T) {
 	code, out, _ := runApp(t, "exec", "--list")
 	if code != ExitOK || !strings.Contains(out, "test.echo") || !strings.Contains(out, "test.ping") {
