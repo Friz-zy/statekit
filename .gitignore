@@ -33,3 +33,6 @@ go.work.sum
 
 # Local build artifacts
 .build/
+
+# stray tool binaries
+/salt-reference
