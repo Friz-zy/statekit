@@ -11,6 +11,7 @@ import (
 	"github.com/friz-zy/statekit/internal/process"
 	"github.com/friz-zy/statekit/internal/runtime"
 	exectest "github.com/friz-zy/statekit/modules/exec/test"
+	statefile "github.com/friz-zy/statekit/modules/state/file"
 	statetest "github.com/friz-zy/statekit/modules/state/test"
 )
 
@@ -52,6 +53,9 @@ func testRuntime() (*runtime.Runtime, error) {
 		return nil, err
 	}
 	if err := statetest.Register(rt.States); err != nil {
+		return nil, err
+	}
+	if err := statefile.Register(rt.States); err != nil {
 		return nil, err
 	}
 	return rt, nil

@@ -104,6 +104,8 @@ func (a *App) dispatch(argv []string) int {
 		return a.cmdFunction("exec", argv[1:])
 	case "state":
 		return a.cmdFunction("state", argv[1:])
+	case "apply":
+		return a.cmdApply(argv[1:])
 	case "-h", "--help", "help":
 		usage(os.Stdout)
 		return ExitOK

@@ -261,3 +261,68 @@ func sortStrings(s []string) {
 		}
 	}
 }
+
+// TestApplyEndToEnd runs the real binary against a generated operations
+// document covering success, global dry-run, and failure-stop semantics.
+func TestApplyEndToEnd(t *testing.T) {
+	bin := buildBinary(t)
+	dir := t.TempDir()
+	opsPath := dir + "/ops.yaml"
+
+	writeOps := func(content string) {
+		if err := os.WriteFile(opsPath, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run := func(args ...string) (string, int) {
+		var stdout bytes.Buffer
+		cmd := exec.Command(bin, args...)
+		cmd.Stdout = &stdout
+		cmd.Stderr = os.Stderr
+		err := cmd.Run()
+		code := 0
+		if err != nil {
+			var exitErr *exec.ExitError
+			if !errors.As(err, &exitErr) {
+				t.Fatalf("run: %v", err)
+			}
+			code = exitErr.ExitCode()
+		}
+		return stdout.String(), code
+	}
+
+	writeOps("operations:\n" +
+		"  - state: file.managed\n" +
+		"    args: {name: " + dir + "/a.conf, contents: A}\n" +
+		"  - state: test.nop\n" +
+		"    args: {name: mid}\n")
+	out, code := run("apply", opsPath)
+	if code != 0 || strings.Count(out, "result: true") != 2 {
+		t.Fatalf("success apply wrong: rc=%d out=%s", code, out)
+	}
+	data, _ := os.ReadFile(dir + "/a.conf")
+	if string(data) != "A" {
+		t.Fatalf("applied content = %q", data)
+	}
+
+	// Global --test leaves no mutations and reports null results.
+	os.Remove(dir + "/a.conf")
+	out, code = run("apply", opsPath, "--test", "-o", "json")
+	if code != 0 || !strings.Contains(out, `"result": null`) {
+		t.Fatalf("global dry-run wrong: rc=%d out=%s", code, out)
+	}
+	if _, statErr := os.Stat(dir + "/a.conf"); !os.IsNotExist(statErr) {
+		t.Fatal("global dry-run mutated the filesystem")
+	}
+
+	// Failure stops by default.
+	writeOps("operations:\n" +
+		"  - state: file.managed\n" +
+		"    args: {name: " + dir + "/broken.conf, source: /definitely/missing/src}\n" +
+		"  - state: test.nop\n" +
+		"    args: {name: never}\n")
+	_, code = run("apply", opsPath)
+	if code == 0 {
+		t.Fatal("failing apply must exit non-zero")
+	}
+}
