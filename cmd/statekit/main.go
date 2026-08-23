@@ -17,9 +17,11 @@ import (
 	execcmd "github.com/friz-zy/statekit/modules/exec/cmd"
 	execcron "github.com/friz-zy/statekit/modules/exec/cron"
 	execcryptdev "github.com/friz-zy/statekit/modules/exec/cryptdev"
+	execdevinfo "github.com/friz-zy/statekit/modules/exec/devinfo"
 	execdevmap "github.com/friz-zy/statekit/modules/exec/devmap"
 	execdisk "github.com/friz-zy/statekit/modules/exec/disk"
 	execenviron "github.com/friz-zy/statekit/modules/exec/environ"
+	execethtool "github.com/friz-zy/statekit/modules/exec/ethtool"
 	execextfs "github.com/friz-zy/statekit/modules/exec/extfs"
 	execfile "github.com/friz-zy/statekit/modules/exec/file"
 	execgit "github.com/friz-zy/statekit/modules/exec/git"
@@ -28,6 +30,7 @@ import (
 	exechosts "github.com/friz-zy/statekit/modules/exec/hosts"
 	exechttp "github.com/friz-zy/statekit/modules/exec/http"
 	execini "github.com/friz-zy/statekit/modules/exec/ini"
+	execiwtools "github.com/friz-zy/statekit/modules/exec/iwtools"
 	execkeyboard "github.com/friz-zy/statekit/modules/exec/keyboard"
 	execkmod "github.com/friz-zy/statekit/modules/exec/kmod"
 	execlocale "github.com/friz-zy/statekit/modules/exec/locale"
@@ -43,9 +46,11 @@ import (
 	execquota "github.com/friz-zy/statekit/modules/exec/quota"
 	execrandom "github.com/friz-zy/statekit/modules/exec/random"
 	execrsync "github.com/friz-zy/statekit/modules/exec/rsync"
+	execscsi "github.com/friz-zy/statekit/modules/exec/scsi"
 	execselinux "github.com/friz-zy/statekit/modules/exec/selinux"
 	execservice "github.com/friz-zy/statekit/modules/exec/service"
 	execshadow "github.com/friz-zy/statekit/modules/exec/shadow"
+	execsmbios "github.com/friz-zy/statekit/modules/exec/smbios"
 	execstatus "github.com/friz-zy/statekit/modules/exec/status"
 	execsysctl "github.com/friz-zy/statekit/modules/exec/sysctl"
 	execsysfs "github.com/friz-zy/statekit/modules/exec/sysfs"
@@ -113,17 +118,22 @@ func buildRuntime() (*runtime.Runtime, error) {
 		execat.Register,
 		execbcache.Register,
 		execenviron.Register,
+		execethtool.Register,
 		execkmod.Register,
 		execcron.Register,
+		execdevinfo.Register,
 		execdisk.Register,
 		exechosts.Register,
 		execlocale.Register,
 		execgit.Register,
 		exechttp.Register,
+		execiwtools.Register,
 		execkeyboard.Register,
 		execlogrotate.Register,
 		execblockdev.Register,
 		execrsync.Register,
+		execscsi.Register,
+		execsmbios.Register,
 		execnpm.Register,
 		execpip.Register,
 		execvirtualenv.Register,

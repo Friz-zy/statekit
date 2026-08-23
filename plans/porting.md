@@ -259,8 +259,29 @@ data.subdict_match, planned behind the data/util layer — family terminal
 state will be partial. Also fixed: .gitignore's coverage.* rule was
 swallowing docs/catalog/coverage.yaml, so the generated coverage ledger
 was never committed; now tracked (families 43→46 implemented /
-134→131 planned; exec 221→238, state 31→32). Enablers E1-E4 are
-complete: R6-R8 unblocked. Known gap
+134→131 planned; exec 221→238, state 31→32). R2.1 opened the hardware
+round with the small CLI batch: ethtool (11 exec functions — the six
+python-ethtool-backed queries/sets re-implemented over the ethtool CLI
+parsing into the same key shapes, documented mechanism divergence, plus
+the four CLI-native pause/features functions and verbatim "Not
+supported"/"Invalid arguments" failure strings), devinfo (filter via a
+/sys/block-derived disks hook and udev.info delegation, hwinfo with both
+hwinfo parsers ported fixture-exact including upstream's always-true
+stack-truncation quirk, grains side-sections filled from direct
+sysfs/procfs/resolv/net readers behind injectable hooks), scsi (ls with
+column pops incl. model skipping key/type/vendor, error strings and the
+invalid-option hint verbatim, rescan_all through the host sysfs tree),
+iwtools (scan/list_interfaces parsers, set_mode gated on ip.down/ip.up
+registry delegates → UnsupportedError until the ip family lands),
+smbios (get/records over dmidecode with the full _dmi_isclean bogus-value
+filters, canonical UUID v1-v4 validation, scalar-on-list insertion;
+upstream has no unit tests so the suite pins source-derived fixtures).
+Go Split does not interleave capture groups like Python re.split — the
+handle-record pairing walks FindAllStringSubmatchIndex. udev.info
+registered alongside env for devinfo's dependency; name/path/links/
+exportdb still pending their round (families 46→51 implemented /
+126→131→126 planned; exec 238→259). Enablers E1-E4 are complete:
+R6-R8 unblocked. Known gap
 parked for R8: statfs_unix.go (!windows tag) does not compile under
 GOOS=openbsd/netbsd (pre-existing, outside gated matrix). loop.until is
 excluded per docs/adr/0001-loop-until-excluded.md; until_no_eval waits
@@ -270,9 +291,11 @@ for the data/util layer. Remaining in R1, in order:
      differential catalog pass. With that, R1's function scope is
      exhausted — R1 closes after a differential-scope pass over its
      families (R1 ports → R2 differential per section 3).
-  2. Next rounds: R2-R5 remain parallelizable; R6-R8 unblocked via E1-E4;
-     R9 awaits the services tier (E5); R10 cloud; R11 netdev behind the
-     ADR gate.
+  2. Next rounds: R2 continues with the remaining network/hardware
+     families (ps 30, iptables/nftables/ipset ~23 each, bridge 24,
+     network 55); R3 pkg deep port; R4-R5 per plan; R6-R8 unblocked via
+     E1-E4; R9 awaits the services tier (E5); R10 cloud; R11 netdev
+     behind the ADR gate.
 
 Next in order: rounds R1-R5 (parallel), R6-R8 (enablers done),
 R9 after services tier (E5), R10 cloud, R11 netdev behind ADR gate.

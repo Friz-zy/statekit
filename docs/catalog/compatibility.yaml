@@ -4,10 +4,10 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 46
+    implemented: 51
     partial: 0
     excluded: 69
-    planned: 131
+    planned: 126
 implemented_families:
     - aliases
     - archive
@@ -16,10 +16,12 @@ implemented_families:
     - blockdev
     - cmd
     - cron
+    - devinfo
     - cryptdev
     - devmap
     - disk
     - environ
+    - ethtool
     - extfs
     - file
     - git
@@ -28,6 +30,7 @@ implemented_families:
     - hosts
     - http
     - ini
+    - iwtools
     - keyboard
     - kmod
     - locale
@@ -42,9 +45,11 @@ implemented_families:
     - quota
     - raid
     - rsync
+    - scsi
     - selinux
     - service
     - shadow
+    - smbios
     - status
     - sysctl
     - sysfs
@@ -157,11 +162,9 @@ planned:
     - 'debconf (planned: needs a dedicated porting round)'
     - 'defaults (planned: needs a dedicated porting round)'
     - 'desktop (planned: needs a dedicated porting round)'
-    - 'devinfo (planned: needs a dedicated porting round)'
     - 'dism (planned: needs a dedicated porting round)'
     - 'dsc (planned: needs a dedicated porting round)'
     - 'dsc_resource (planned: needs a dedicated porting round)'
-    - 'ethtool (planned: needs a dedicated porting round)'
     - 'firewall (planned: needs a dedicated porting round)'
     - 'firewalld (planned: needs a dedicated porting round)'
     - 'fmadm (planned: needs a dedicated porting round)'
@@ -173,7 +176,6 @@ planned:
     - 'ip (planned: needs a dedicated porting round)'
     - 'ipset (planned: needs a dedicated porting round)'
     - 'iptables (planned: needs a dedicated porting round)'
-    - 'iwtools (planned: needs a dedicated porting round)'
     - 'jinja (planned: needs a dedicated porting round)'
     - 'kernelpkg (planned: needs a dedicated porting round)'
     - 'lgpo (planned: needs a dedicated porting round)'
@@ -224,11 +226,9 @@ planned:
     - 'ret (planned: needs a dedicated porting round)'
     - 'route (planned: needs a dedicated porting round)'
     - 'scp (planned: needs a dedicated porting round)'
-    - 'scsi (planned: needs a dedicated porting round)'
     - 'seed (planned: needs a dedicated porting round)'
     - 'shortcut (planned: needs a dedicated porting round)'
     - 'slack (planned: needs a dedicated porting round)'
-    - 'smbios (planned: needs a dedicated porting round)'
     - 'snapper (planned: needs a dedicated porting round)'
     - 'softwareupdate (planned: needs a dedicated porting round)'
     - 'ssh (planned: needs a dedicated porting round)'

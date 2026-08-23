@@ -147,9 +147,14 @@ func TestRegisterNames(t *testing.T) {
 	if !names["udev.env"] {
 		t.Fatal("missing udev.env registration")
 	}
-	for _, unplanned := range []string{"udev.info", "udev.name", "udev.path", "udev.links", "udev.exportdb"} {
+	// info landed alongside devinfo's dependency; the rest wait for their
+	// round.
+	for _, unplanned := range []string{"udev.name", "udev.path", "udev.links", "udev.exportdb"} {
 		if names[unplanned] {
 			t.Fatalf("%s must stay unregistered this round", unplanned)
 		}
+	}
+	if !names["udev.info"] {
+		t.Fatal("missing udev.info registration")
 	}
 }

@@ -123,10 +123,48 @@ func (envFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any,
 	return devices[0]["E"], nil
 }
 
-// Register installs the udev-module execution functions shipped this round.
+// InfoArgs mirrors Salt's info signature.
+type InfoArgs struct {
+	Dev string `statekit:"required"`
+}
+
+type infoFunc struct {
+	linuxOnly
+}
+
+func (infoFunc) Name() string { return "udev.info" }
+func (infoFunc) Args() any    { return InfoArgs{} }
+
+// Execute extracts the full udevadm record for dev: sections P, N, S and
+// E keyed like Salt's parser output. Failures raise like Salt's
+// CommandExecutionError.
+func (infoFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a := args.(*InfoArgs)
+	qtype := "name"
+	if strings.Contains(a.Dev, "sys") {
+		// Salt probes `"sys" in dev` to pick the udevadm query type.
+		qtype = "path"
+	}
+	res := rt.Runner.Run(ctx, runtime.Command(
+		"udevadm", "info", "--export", "--query=all", "--"+qtype+"="+a.Dev))
+	if res.Err != nil {
+		return nil, res.Err
+	}
+	if res.ExitCode != 0 {
+		return nil, fmt.Errorf("%s", string(res.Stderr))
+	}
+	devices := parseInfo(string(res.Stdout))
+	if len(devices) == 0 {
+		return nil, fmt.Errorf("no device found for %s", a.Dev)
+	}
+	return devices[0], nil
+}
+
+// Register installs the udev-module execution functions shipped so far.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		envFunc{},
+		infoFunc{},
 	} {
 		if err := reg.Register(fn); err != nil {
 			return err
