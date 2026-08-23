@@ -48,18 +48,35 @@ func (versionFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (
 	return provider.Version(ctx, rt, a.Name)
 }
 
-type ListPkgsArgs struct{}
+// ListPkgsArgs mirrors Salt's pkg.list_pkgs signature; versions_as_list
+// reports each package's versions as a list instead of a joined string
+// (pkg_resource.version consumes the list form).
+type ListPkgsArgs struct {
+	VersionsAsList bool `statekit:"name=versions_as_list"`
+}
 
 type listFunc struct{}
 
 func (listFunc) Name() string { return "pkg.list_pkgs" }
 func (listFunc) Args() any    { return ListPkgsArgs{} }
-func (listFunc) Execute(ctx context.Context, rt *runtime.Runtime, _ any) (any, error) {
+func (listFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a := args.(*ListPkgsArgs)
 	provider, err := pkgprovider.Resolve(rt)
 	if err != nil {
 		return nil, err
 	}
-	return provider.List(ctx, rt)
+	listed, err := provider.List(ctx, rt)
+	if err != nil {
+		return nil, err
+	}
+	if !a.VersionsAsList {
+		return listed, nil
+	}
+	ret := make(map[string]any, len(listed))
+	for name, version := range listed {
+		ret[name] = []string{version}
+	}
+	return ret, nil
 }
 
 type InstallArgs struct {

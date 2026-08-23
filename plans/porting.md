@@ -211,24 +211,42 @@ prune/estimate/mkfs/modify/defragment; families 40→41, planned
 machine-format list parser incl. free-row and 7/8-column info variants,
 sfdisk system-id round-trip, full Salt validation message surface,
 block-device validation via injectable hook; families 41→42, planned
-136→135). Enablers E1-E4 are complete: R6-R8 unblocked. Known gap
+136→135), R1.5 pkg_resource family ported (11 registered exec functions
++ _repack_pkgs kept unexported like Salt's loader-hidden privates:
+repack_dictlist semantics with collision error carrying a Python-style
+repr, pack_sources empty-dict error paths, parse_targets branch order
+pkgs+sources → advisory_ids → pkgs → sources → name with the macOS
+sources-ignore mapped to GOOS darwin behind an injectable hook and the
+absolute-path invocation error verbatim, version with fnmatch glob
+semantics and bare-value single returns, LooseVersion/fnmatch.translate
+ports for version_compare returning false on invalid operators, and
+format_pkg_list attr-set algebra incl. arch-suffix folding via the
+optional pkg.parse_arch delegate; optional __salt__-style delegates
+(normalize_name/version_clean/parse_arch/check_extra_requirements)
+resolve through registry lookups and degrade exactly like Salt minions
+without them; remote sources surface UnsupportedError for cp.cache_file
+until the cp family lands, salt:// stays master-minion excluded; the
+decoder gains []any structured list args with safe_load-style YAML-string
+coercion and pkg.list_pkgs gains versions_as_list; intentional
+divergence pinned by test: sort_pkglist/stringify reject non-list scalar
+values instead of Python's silent char-decomposition; families 42→43,
+planned 135→134). Enablers E1-E4 are complete: R6-R8 unblocked. Known gap
 parked for R8: statfs_unix.go (!windows tag) does not compile under
 GOOS=openbsd/netbsd (pre-existing, outside gated matrix). Remaining
 in R1, in order:
-  1. pkg_resource (419 lines, pure helpers + pkg-module-backed calls;
-     head item for the next session).
-  2. bcache — blocked on the sysfs family: port sysfs.attr/interfaces/
-     read (+ minimal udev.env via udevadm --export parse) together with
-     bcache in one phase; _wait needs an injectable sleep hook.
-  3. loop state — OPEN DECISION for the user: loop.until eval()s
+  1. sysfs + bcache in one phase — bcache is blocked on the sysfs
+     family: port sysfs.attr/interfaces/read (+ minimal udev.env via
+     udevadm --export parse) together with bcache; _wait needs an
+     injectable sleep hook. Head item for the next session.
+  2. loop state — OPEN DECISION for the user: loop.until eval()s
      arbitrary Python conditions and is not honestly portable; proposal
      is to mark until excluded-by-ADR (code-eval contract) and port
      only until_no_eval restricted to builtin compare operators +
      data.subdict_match once the data/util layer lands. Do not port
      silently.
-blockdev "extensions": no catalog entry exists for blockdev.* (info
-was a pre-catalog extension); nothing to port without a differential
-catalog pass.
+  3. blockdev "extensions": no catalog entry exists for blockdev.*
+     (info was a pre-catalog extension); nothing to port without a
+     differential catalog pass.
 
 Next in order: rounds R1-R5 (parallel), R6-R8 (enablers done),
 R9 after services tier (E5), R10 cloud, R11 netdev behind ADR gate.

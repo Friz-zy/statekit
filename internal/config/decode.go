@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // tagKey is the single-source struct tag driving CLI flag generation,
@@ -87,10 +89,15 @@ func checkSupportedKind(t reflect.Type) error {
 		}
 		return fmt.Errorf("unsupported pointer type *%s (only *bool, *string)", t.Elem())
 	case reflect.Slice:
-		if t.Elem().Kind() == reflect.String {
+		switch t.Elem().Kind() {
+		case reflect.String:
+			return nil
+		case reflect.Interface:
+			// []any carries Salt's list-of-dicts schemas (pkgs, sources,
+			// attr packages); supplied exclusively through structured input.
 			return nil
 		}
-		return fmt.Errorf("unsupported slice element type %s (only []string)", t.Elem())
+		return fmt.Errorf("unsupported slice element type %s (only []string, []any)", t.Elem())
 	case reflect.Map:
 		if t.Key().Kind() == reflect.String &&
 			(t.Elem().Kind() == reflect.Interface || t.Elem().Kind() == reflect.String) {
@@ -151,6 +158,10 @@ func NewFlagSet(name string, argsTemplate any) (*flag.FlagSet, error) {
 		}
 		if fieldType.Kind() == reflect.Map {
 			// Maps are supplied exclusively through structured input.
+			continue
+		}
+		if fieldType.Kind() == reflect.Slice && fieldType.Elem().Kind() == reflect.Interface {
+			// []any list-of-dicts schemas are structured-input only.
 			continue
 		}
 		fs.String(s.name, "", usage)
@@ -338,6 +349,9 @@ func assignFromFlag(field reflect.Value, name, raw string) error {
 		}
 		field.SetFloat(f)
 	case reflect.Slice:
+		if field.Type().Elem().Kind() == reflect.Interface {
+			return fmt.Errorf("argument %q: list-of-dicts argument must be provided via structured input", name)
+		}
 		field.Set(reflect.ValueOf(splitList(raw)))
 	default:
 		return assignError(name, raw, field.Interface())
@@ -396,6 +410,14 @@ func assignFromValue(field reflect.Value, name string, v any) error {
 		}
 		field.SetFloat(f)
 	case reflect.Slice:
+		if field.Type().Elem().Kind() == reflect.Interface {
+			items, err := toAnySlice(v)
+			if err != nil {
+				return fmt.Errorf("argument %q: %w", name, err)
+			}
+			field.Set(reflect.ValueOf(items))
+			return nil
+		}
 		items, err := toStringSlice(v)
 		if err != nil {
 			return assignError(name, v, []string{})
@@ -527,6 +549,63 @@ func toFloatScalar(v any) (float64, error) {
 		return strconv.ParseFloat(strings.TrimSpace(t), 64)
 	default:
 		return 0, fmt.Errorf("not a number")
+	}
+}
+
+// toAnySlice converts a decoded YAML/JSON array into []any, normalizing
+// mappings to map[string]any so list-of-dicts schemas survive decoding.
+// A string input mirrors Salt's utils.yaml.safe_load coercion for
+// pkgs/sources schemas: valid YAML lists are used directly, anything else
+// degrades to a single-element list that downstream validation rejects the
+// same way Salt's invalid-element path does.
+func toAnySlice(v any) ([]any, error) {
+	switch t := v.(type) {
+	case []any:
+		out := make([]any, 0, len(t))
+		for _, item := range t {
+			item, err := normalizeAny(item)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, item)
+		}
+		return out, nil
+	case string:
+		var parsed any
+		if err := yaml.Unmarshal([]byte(t), &parsed); err != nil || parsed == nil {
+			return []any{t}, nil
+		}
+		if list, ok := parsed.([]any); ok {
+			return toAnySlice(list)
+		}
+		return []any{parsed}, nil
+	default:
+		return nil, fmt.Errorf("expected a list")
+	}
+}
+
+func normalizeAny(v any) (any, error) {
+	switch t := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for key, val := range t {
+			norm, err := normalizeAny(val)
+			if err != nil {
+				return nil, err
+			}
+			out[key] = norm
+		}
+		return out, nil
+	case []any:
+		return toAnySlice(t)
+	case []string:
+		out := make([]any, 0, len(t))
+		for _, item := range t {
+			out = append(out, item)
+		}
+		return out, nil
+	default:
+		return v, nil
 	}
 }
 

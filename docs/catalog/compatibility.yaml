@@ -4,10 +4,10 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 42
+    implemented: 43
     partial: 0
     excluded: 69
-    planned: 135
+    planned: 134
 implemented_families:
     - aliases
     - archive
@@ -37,6 +37,7 @@ implemented_families:
     - partition
     - pip
     - pkg
+    - pkg_resource
     - quota
     - raid
     - rsync
@@ -200,7 +201,6 @@ planned:
     - 'osquery (planned: needs a dedicated porting round)'
     - 'out (planned: needs a dedicated porting round)'
     - 'pam (planned: needs a dedicated porting round)'
-    - 'pkg_resource (planned: needs a dedicated porting round)'
     - 'pkgbuild (planned: needs a dedicated porting round)'
     - 'pkgrepo (planned: needs a dedicated porting round)'
     - 'pkgutil (planned: needs a dedicated porting round)'

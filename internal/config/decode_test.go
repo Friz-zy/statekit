@@ -258,3 +258,68 @@ func TestPointerStringTriState(t *testing.T) {
 		t.Fatalf("flag password = %+v", flagged.Password)
 	}
 }
+
+type anyListArgs struct {
+	Pkgs []any `statekit:"name=pkgs"`
+}
+
+func TestAnySliceStructured(t *testing.T) {
+	// Structured list-of-dicts survives decoding with map values intact.
+	structured := map[string]any{
+		"pkgs": []any{
+			map[string]any{"vim": "9.0"},
+			map[string]any{"curl": nil},
+			"plain",
+		},
+	}
+	args := &anyListArgs{}
+	if err := Decode(args, structured, nil); err != nil {
+		t.Fatalf("decode structured: %v", err)
+	}
+	want := []any{map[string]any{"vim": "9.0"}, map[string]any{"curl": nil}, "plain"}
+	if !reflect.DeepEqual(args.Pkgs, want) {
+		t.Fatalf("pkgs = %#v, want %#v", args.Pkgs, want)
+	}
+
+	// Omitted stays nil.
+	empty := &anyListArgs{}
+	if err := Decode(empty, nil, nil); err != nil || empty.Pkgs != nil {
+		t.Fatalf("omitted pkgs = %v, %v", empty.Pkgs, err)
+	}
+
+	// No CLI flag is generated; flags cannot express dict lists.
+	fs, err := NewFlagSet("anylist", anyListArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fs.Lookup("pkgs") != nil {
+		t.Fatal("[]any fields must not generate CLI flags")
+	}
+	if err := Decode(&anyListArgs{}, nil, map[string]string{"pkgs": "x"}); err == nil {
+		t.Fatal("flag-provided pkgs must be rejected")
+	}
+}
+
+func TestAnySliceYAMLStringCoercion(t *testing.T) {
+	// A YAML string mirrors salt.utils.yaml.safe_load coercion: valid lists
+	// parse into real elements...
+	args := &anyListArgs{}
+	structured := map[string]any{"pkgs": `[{"foo": "1"}]`}
+	if err := Decode(args, structured, nil); err != nil {
+		t.Fatalf("decode yaml string: %v", err)
+	}
+	want := []any{map[string]any{"foo": "1"}}
+	if !reflect.DeepEqual(args.Pkgs, want) {
+		t.Fatalf("coerced = %#v, want %#v", args.Pkgs, want)
+	}
+
+	// ...non-list YAML degrades to a single wrapped element that downstream
+	// validation rejects, mirroring Salt's invalid-element path.
+	degenerate := &anyListArgs{}
+	if err := Decode(degenerate, map[string]any{"pkgs": "sources"}, nil); err != nil {
+		t.Fatalf("decode degenerate string: %v", err)
+	}
+	if !reflect.DeepEqual(degenerate.Pkgs, []any{"sources"}) {
+		t.Fatalf("degenerate coercion = %#v", degenerate.Pkgs)
+	}
+}

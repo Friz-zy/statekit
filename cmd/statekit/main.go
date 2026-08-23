@@ -38,6 +38,7 @@ import (
 	execpart "github.com/friz-zy/statekit/modules/exec/partition"
 	execpip "github.com/friz-zy/statekit/modules/exec/pip"
 	execpkg "github.com/friz-zy/statekit/modules/exec/pkg"
+	execpkgresource "github.com/friz-zy/statekit/modules/exec/pkgresource"
 	execquota "github.com/friz-zy/statekit/modules/exec/quota"
 	execrandom "github.com/friz-zy/statekit/modules/exec/random"
 	execrsync "github.com/friz-zy/statekit/modules/exec/rsync"
@@ -102,6 +103,7 @@ func buildRuntime() (*runtime.Runtime, error) {
 		execgroup.Register,
 		execshadow.Register,
 		execpkg.Register,
+		execpkgresource.Register,
 		execservice.Register,
 		execarchive.Register,
 		execat.Register,
