@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/friz-zy/statekit/internal/runtime"
 )
@@ -68,32 +67,11 @@ func (diskusageFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (
 	if path == "" {
 		path = "/"
 	}
-	var stat syscall.Statfs_t
-	if err := syscall.Statfs(path, &stat); err != nil {
-		return nil, fmt.Errorf("could not stat filesystem for %q: %w", path, err)
-	}
-	total := int64(stat.Blocks) * int64(stat.Bsize)
-	free := int64(stat.Bfree) * int64(stat.Bsize)
-	available := int64(stat.Bavail) * int64(stat.Bsize)
-	used := total - free
-	usage := map[string]any{
-		"filesystem": path,
-		"1K-blocks":  total / 1024,
-		"used":       used / 1024,
-		"available":  available / 1024,
-	}
-	if total > 0 {
-		usage["capacity"] = fmt.Sprintf("%.0f%%", float64(used)/float64(total)*100)
+	usage, err := readDiskUsage(path)
+	if err != nil {
+		return nil, err
 	}
 	return map[string]any{path: usage}, nil
-}
-
-func parseFloat(s string) float64 {
-	v, err := strconv.ParseFloat(s, 64)
-	if err != nil {
-		return 0
-	}
-	return v
 }
 
 // Register installs all status-module execution functions.
@@ -140,4 +118,12 @@ func (meminfoFunc) Execute(_ context.Context, rt *runtime.Runtime, _ any) (any, 
 		out[strings.TrimSpace(key)] = entry
 	}
 	return out, nil
+}
+
+func parseFloat(s string) float64 {
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0
+	}
+	return v
 }
