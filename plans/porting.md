@@ -214,10 +214,21 @@ block-device validation via injectable hook; families 41→42, planned
 136→135). Enablers E1-E4 are complete: R6-R8 unblocked. Known gap
 parked for R8: statfs_unix.go (!windows tag) does not compile under
 GOOS=openbsd/netbsd (pre-existing, outside gated matrix). Remaining
-in R1: bcache (blocked on porting the sysfs family first — bcache
-depends on sysfs.attr/interfaces/read plus udev.env; port them as one
-phase with an injectable wait/sleep hook), blockdev extensions,
-pkg_resource helpers, loop state.
+in R1, in order:
+  1. pkg_resource (419 lines, pure helpers + pkg-module-backed calls;
+     head item for the next session).
+  2. bcache — blocked on the sysfs family: port sysfs.attr/interfaces/
+     read (+ minimal udev.env via udevadm --export parse) together with
+     bcache in one phase; _wait needs an injectable sleep hook.
+  3. loop state — OPEN DECISION for the user: loop.until eval()s
+     arbitrary Python conditions and is not honestly portable; proposal
+     is to mark until excluded-by-ADR (code-eval contract) and port
+     only until_no_eval restricted to builtin compare operators +
+     data.subdict_match once the data/util layer lands. Do not port
+     silently.
+blockdev "extensions": no catalog entry exists for blockdev.* (info
+was a pre-catalog extension); nothing to port without a differential
+catalog pass.
 
 Next in order: rounds R1-R5 (parallel), R6-R8 (enablers done),
 R9 after services tier (E5), R10 cloud, R11 netdev behind ADR gate.
