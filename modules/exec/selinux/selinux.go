@@ -13,11 +13,18 @@ import (
 	"github.com/friz-zy/statekit/internal/runtime"
 )
 
+// linuxOnly restricts every function of this module to linux.
+type linuxOnly struct{}
+
+func (linuxOnly) Platforms() []string { return []string{"linux"} }
+
 const configPath = "/etc/selinux/config"
 
 type FsPathArgs struct{}
 
-type fsPathFunc struct{}
+type fsPathFunc struct {
+	linuxOnly
+}
 
 func (fsPathFunc) Name() string { return "selinux.selinux_fs_path" }
 func (fsPathFunc) Args() any    { return FsPathArgs{} }
@@ -27,7 +34,9 @@ func (fsPathFunc) Execute(_ context.Context, _ *runtime.Runtime, _ any) (any, er
 
 type GetenforceArgs struct{}
 
-type getenforceFunc struct{}
+type getenforceFunc struct {
+	linuxOnly
+}
 
 func (getenforceFunc) Name() string { return "selinux.getenforce" }
 func (getenforceFunc) Args() any    { return GetenforceArgs{} }
@@ -46,7 +55,9 @@ func (getenforceFunc) Execute(ctx context.Context, rt *runtime.Runtime, _ any) (
 
 type GetConfigArgs struct{}
 
-type getConfigFunc struct{}
+type getConfigFunc struct {
+	linuxOnly
+}
 
 func (getConfigFunc) Name() string { return "selinux.getconfig" }
 func (getConfigFunc) Args() any    { return GetConfigArgs{} }
@@ -72,7 +83,9 @@ type SetenforceArgs struct {
 	Mode string `statekit:"required"`
 }
 
-type setenforceFunc struct{}
+type setenforceFunc struct {
+	linuxOnly
+}
 
 func (setenforceFunc) Name() string { return "selinux.setenforce" }
 func (setenforceFunc) Args() any    { return SetenforceArgs{} }

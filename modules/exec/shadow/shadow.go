@@ -13,13 +13,20 @@ import (
 	"github.com/friz-zy/statekit/internal/sysfiles"
 )
 
+// linuxOnly restricts every function of this module to linux.
+type linuxOnly struct{}
+
+func (linuxOnly) Platforms() []string { return []string{"linux"} }
+
 const shadowPath = "/etc/shadow"
 
 type infoArgs struct {
 	Name string `statekit:"required"`
 }
 
-type infoFunc struct{}
+type infoFunc struct {
+	linuxOnly
+}
 
 func (infoFunc) Name() string { return "shadow.info" }
 func (infoFunc) Args() any    { return infoArgs{} }

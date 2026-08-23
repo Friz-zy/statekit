@@ -13,6 +13,11 @@ import (
 	"github.com/friz-zy/statekit/internal/runtime"
 )
 
+// linuxOnly restricts every function of this module to linux.
+type linuxOnly struct{}
+
+func (linuxOnly) Platforms() []string { return []string{"linux"} }
+
 const procModules = "/proc/modules"
 
 func loadedModules(rt *runtime.Runtime) []string {
@@ -32,7 +37,9 @@ func loadedModules(rt *runtime.Runtime) []string {
 
 type lsmodArgs struct{}
 
-type lsmodFunc struct{}
+type lsmodFunc struct {
+	linuxOnly
+}
 
 func (lsmodFunc) Name() string { return "kmod.lsmod" }
 func (lsmodFunc) Args() any    { return lsmodArgs{} }
@@ -48,7 +55,9 @@ type isLoadedArgs struct {
 	Mod string `statekit:"required,name=mod"`
 }
 
-type isLoadedFunc struct{}
+type isLoadedFunc struct {
+	linuxOnly
+}
 
 func (isLoadedFunc) Name() string { return "kmod.is_loaded" }
 func (isLoadedFunc) Args() any    { return isLoadedArgs{} }
@@ -85,7 +94,9 @@ type loadArgs struct {
 	Persist bool   `statekit:"name=persist"`
 }
 
-type loadFunc struct{}
+type loadFunc struct {
+	linuxOnly
+}
 
 func (loadFunc) Name() string { return "kmod.load" }
 func (loadFunc) Args() any    { return loadArgs{} }
@@ -102,7 +113,9 @@ type removeArgs struct {
 	Persist bool   `statekit:"name=persist"`
 }
 
-type removeFunc struct{}
+type removeFunc struct {
+	linuxOnly
+}
 
 func (removeFunc) Name() string { return "kmod.remove" }
 func (removeFunc) Args() any    { return removeArgs{} }
