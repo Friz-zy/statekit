@@ -13,6 +13,11 @@ import (
 	"github.com/friz-zy/statekit/internal/runtime"
 )
 
+// linuxOnly restricts every function of this module to linux.
+type linuxOnly struct{}
+
+func (linuxOnly) Platforms() []string { return []string{"linux"} }
+
 const etcEnvironment = "/etc/environment"
 
 func readEnvironment(rt *runtime.Runtime) map[string]string {
@@ -37,7 +42,9 @@ type getArgs struct {
 	Name string `statekit:"required"`
 }
 
-type getFunc struct{}
+type getFunc struct {
+	linuxOnly
+}
 
 func (getFunc) Name() string { return "environ.get" }
 func (getFunc) Args() any    { return getArgs{} }
@@ -54,7 +61,9 @@ type setArgs struct {
 	Value string `statekit:"required,name=value"`
 }
 
-type setFunc struct{}
+type setFunc struct {
+	linuxOnly
+}
 
 func (setFunc) Name() string { return "environ.set" }
 func (setFunc) Args() any    { return setArgs{} }

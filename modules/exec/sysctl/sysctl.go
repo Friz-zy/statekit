@@ -14,13 +14,20 @@ import (
 	"github.com/friz-zy/statekit/internal/runtime"
 )
 
+// linuxOnly restricts every function of this module to linux.
+type linuxOnly struct{}
+
+func (linuxOnly) Platforms() []string { return []string{"linux"} }
+
 const defaultConfig = "/etc/sysctl.conf"
 
 type ShowArgs struct {
 	Name string `statekit:"required"`
 }
 
-type showFunc struct{}
+type showFunc struct {
+	linuxOnly
+}
 
 func (showFunc) Name() string { return "sysctl.show" }
 func (showFunc) Args() any    { return ShowArgs{} }
@@ -41,7 +48,9 @@ type AssignArgs struct {
 	Persist bool   `statekit:"name=persist"`
 }
 
-type assignFunc struct{}
+type assignFunc struct {
+	linuxOnly
+}
 
 func (assignFunc) Name() string { return "sysctl.assign" }
 func (assignFunc) Args() any    { return AssignArgs{} }
@@ -98,7 +107,9 @@ func persistSetting(rt *runtime.Runtime, configPath, name, value string) error {
 
 type DefaultConfigArgs struct{}
 
-type defaultConfigFunc struct{}
+type defaultConfigFunc struct {
+	linuxOnly
+}
 
 func (defaultConfigFunc) Name() string { return "sysctl.default_config" }
 func (defaultConfigFunc) Args() any    { return DefaultConfigArgs{} }

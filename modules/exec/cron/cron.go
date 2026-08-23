@@ -15,6 +15,11 @@ import (
 	"github.com/friz-zy/statekit/internal/runtime"
 )
 
+// linuxOnly restricts every function of this module to linux.
+type linuxOnly struct{}
+
+func (linuxOnly) Platforms() []string { return []string{"linux"} }
+
 var envLineRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
 
 func spoolPath(user string) string {
@@ -42,7 +47,9 @@ type ListTabArgs struct {
 	User string `statekit:"required,name=user"`
 }
 
-type listTabFunc struct{}
+type listTabFunc struct {
+	linuxOnly
+}
 
 func (listTabFunc) Name() string { return "cron.list_tab" }
 func (listTabFunc) Args() any    { return ListTabArgs{} }
@@ -93,7 +100,9 @@ type AddJobArgs struct {
 	Comment  string `statekit:"name=comment"`
 }
 
-type addJobFunc struct{}
+type addJobFunc struct {
+	linuxOnly
+}
 
 func (addJobFunc) Name() string { return "cron.add_job" }
 func (addJobFunc) Args() any    { return AddJobArgs{} }
@@ -127,7 +136,9 @@ type RmJobArgs struct {
 	Command  string `statekit:"required,name=name"`
 }
 
-type rmJobFunc struct{}
+type rmJobFunc struct {
+	linuxOnly
+}
 
 func (rmJobFunc) Name() string { return "cron.rm_job" }
 func (rmJobFunc) Args() any    { return RmJobArgs{} }
@@ -157,7 +168,9 @@ type RawArgs struct {
 	User string `statekit:"required,name=user"`
 }
 
-type rawFunc struct{}
+type rawFunc struct {
+	linuxOnly
+}
 
 func (rawFunc) Name() string { return "cron.raw_tab" }
 func (rawFunc) Args() any    { return RawArgs{} }
