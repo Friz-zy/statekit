@@ -80,13 +80,20 @@ type Runner interface {
 }
 
 // DefaultRunner is the production Runner backed by os/exec.
-type DefaultRunner struct{}
+type DefaultRunner struct {
+	model ShellModel
+}
 
-// NewRunner returns the default Runner implementation.
-func NewRunner() *DefaultRunner { return &DefaultRunner{} }
+// NewRunner returns the default Runner implementation using the compiling
+// platform's shell model.
+func NewRunner() *DefaultRunner { return &DefaultRunner{model: DefaultShellModel()} }
+
+// NewRunnerWithModel overrides the shell model (platform portability tests,
+// cross-OS tooling).
+func NewRunnerWithModel(m ShellModel) *DefaultRunner { return &DefaultRunner{model: m} }
 
 // Run executes cmd without a shell unless Shell is explicitly set.
-func (DefaultRunner) Run(ctx context.Context, c Command) CommandResult {
+func (r DefaultRunner) Run(ctx context.Context, c Command) CommandResult {
 	start := time.Now()
 	res := CommandResult{}
 	if ctx == nil {
@@ -106,8 +113,9 @@ func (DefaultRunner) Run(ctx context.Context, c Command) CommandResult {
 
 	name, argv := c.Name, append([]string{}, c.Args...)
 	if c.Shell {
-		name = "sh"
-		argv = append([]string{"-c", c.Name}, argv...)
+		shellName, shellArgv := r.model.WrapShell(c.Name)
+		name = shellName
+		argv = append(shellArgv, argv...)
 	}
 
 	cmd := exec.CommandContext(runCtx, name, argv...)
