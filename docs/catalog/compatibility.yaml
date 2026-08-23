@@ -4,10 +4,10 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 41
+    implemented: 42
     partial: 0
     excluded: 69
-    planned: 136
+    planned: 135
 implemented_families:
     - aliases
     - archive
@@ -34,6 +34,7 @@ implemented_families:
     - lvm
     - mount
     - npm
+    - partition
     - pip
     - pkg
     - quota
@@ -199,7 +200,6 @@ planned:
     - 'osquery (planned: needs a dedicated porting round)'
     - 'out (planned: needs a dedicated porting round)'
     - 'pam (planned: needs a dedicated porting round)'
-    - 'partition (planned: needs a dedicated porting round)'
     - 'pkg_resource (planned: needs a dedicated porting round)'
     - 'pkgbuild (planned: needs a dedicated porting round)'
     - 'pkgrepo (planned: needs a dedicated porting round)'

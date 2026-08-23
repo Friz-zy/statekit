@@ -207,11 +207,17 @@ R1.3 xfs family ported (9 exec functions: xfs_info kv-parser ported
 against Salt's verbatim fixture, blkid export blocks, xfsdump scalar
 fields, indentation-walk inventory parser replacing Salt's eval,
 prune/estimate/mkfs/modify/defragment; families 40→41, planned
-137→136). Enablers E1-E4 are complete: R6-R8 unblocked. Known gap
+137→136), R1.4 partition family ported (22 exec functions: parted
+machine-format list parser incl. free-row and 7/8-column info variants,
+sfdisk system-id round-trip, full Salt validation message surface,
+block-device validation via injectable hook; families 41→42, planned
+136→135). Enablers E1-E4 are complete: R6-R8 unblocked. Known gap
 parked for R8: statfs_unix.go (!windows tag) does not compile under
 GOOS=openbsd/netbsd (pre-existing, outside gated matrix). Remaining
-in R1: bcache, parted_partition, blockdev extensions, pkg_resource
-helpers, loop state.
+in R1: bcache (blocked on porting the sysfs family first — bcache
+depends on sysfs.attr/interfaces/read plus udev.env; port them as one
+phase with an injectable wait/sleep hook), blockdev extensions,
+pkg_resource helpers, loop state.
 
 Next in order: rounds R1-R5 (parallel), R6-R8 (enablers done),
 R9 after services tier (E5), R10 cloud, R11 netdev behind ADR gate.

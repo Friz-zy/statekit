@@ -35,6 +35,7 @@ import (
 	execmdadm "github.com/friz-zy/statekit/modules/exec/mdadm"
 	execmount "github.com/friz-zy/statekit/modules/exec/mount"
 	execnpm "github.com/friz-zy/statekit/modules/exec/npm"
+	execpart "github.com/friz-zy/statekit/modules/exec/partition"
 	execpip "github.com/friz-zy/statekit/modules/exec/pip"
 	execpkg "github.com/friz-zy/statekit/modules/exec/pkg"
 	execquota "github.com/friz-zy/statekit/modules/exec/quota"
@@ -127,6 +128,7 @@ func buildRuntime() (*runtime.Runtime, error) {
 		execlvm.Register,
 		execmdadm.Register,
 		execmount.Register,
+		execpart.Register,
 		execquota.Register,
 		execxfs.Register,
 		execsysctl.Register,
