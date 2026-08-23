@@ -3,7 +3,11 @@
   "title": "StateKit fixture",
   "description": "Language-independent scenario format driving Go harnesses and container runs (plans/init.md section 25, plans/testing.md).",
   "type": "object",
-  "required": ["id", "command", "exit"],
+  "required": [
+    "id",
+    "command",
+    "exit"
+  ],
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -14,7 +18,13 @@
     "command": {
       "type": "array",
       "minItems": 1,
-      "items": {"type": ["string", "number", "boolean"]},
+      "items": {
+        "type": [
+          "string",
+          "number",
+          "boolean"
+        ]
+      },
       "description": "argv passed to the statekit binary after the program name. The token __TMPDIR__ is substituted with a fresh temporary directory when tmpdir is true."
     },
     "stdin": {
@@ -33,12 +43,16 @@
     },
     "contains": {
       "type": "array",
-      "items": {"type": "string"},
+      "items": {
+        "type": "string"
+      },
       "description": "Every substring must appear in stdout."
     },
     "stderr-contains": {
       "type": "array",
-      "items": {"type": "string"},
+      "items": {
+        "type": "string"
+      },
       "description": "Every substring must appear in stderr."
     },
     "json": {
@@ -51,7 +65,9 @@
     },
     "salt": {
       "type": "object",
-      "required": ["source"],
+      "required": [
+        "source"
+      ],
       "additionalProperties": false,
       "properties": {
         "source": {
@@ -68,6 +84,10 @@
           "description": "Related Salt test file inside the pinned tree."
         }
       }
+    },
+    "requires-root": {
+      "type": "boolean",
+      "description": "Fixture needs root privileges; skipped by unprivileged harnesses, executed in root containers."
     }
   }
 }

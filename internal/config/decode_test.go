@@ -135,3 +135,46 @@ func TestFloatAndNumberCoercion(t *testing.T) {
 }
 
 func json_number(f float64) any { return f }
+
+type mapArgs struct {
+	Name    string            `statekit:"required"`
+	Labels  map[string]string `statekit:"name=labels"`
+	Payload map[string]any    `statekit:"name=payload"`
+}
+
+func TestMapFieldsFromStructuredInput(t *testing.T) {
+	args := &mapArgs{}
+	structured := map[string]any{
+		"name":    "x",
+		"labels":  map[string]any{"env": "prod", "tier": "1"},
+		"payload": map[string]any{"mode": "worker", "level": "info", "retries": 3},
+	}
+	if err := Decode(args, structured, nil); err != nil {
+		t.Fatalf("decode maps: %v", err)
+	}
+	if args.Labels["env"] != "prod" || args.Payload["level"] != "info" {
+		t.Fatalf("maps lost: %+v %+v", args.Labels, args.Payload)
+	}
+	if args.Payload["retries"] != float64(3) && args.Payload["retries"] != int(3) &&
+		args.Payload["retries"] != int64(3) {
+		t.Fatalf("numeric payload = %#v", args.Payload["retries"])
+	}
+
+	bad := &mapArgs{}
+	structuredBad := map[string]any{
+		"name": "x", "labels": map[string]any{"env": []any{"a"}},
+	}
+	if err := Decode(bad, structuredBad, nil); err == nil {
+		t.Fatal("non-scalar label must fail")
+	}
+}
+
+func TestMapFieldsHaveNoCLIFlag(t *testing.T) {
+	fs, err := NewFlagSet("maps", mapArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fs.Lookup("payload") != nil || fs.Lookup("labels") != nil {
+		t.Fatal("map fields must not generate CLI flags")
+	}
+}

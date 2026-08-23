@@ -488,6 +488,7 @@ func Register(reg *runtime.ExecRegistry) error {
 		fileExistsFunc{}, directoryExistsFunc{}, removeFunc{}, renameFunc{}, copyFunc{},
 		readFunc{}, writeFunc{}, containsFunc{}, appendFunc{}, mkdirFunc{},
 		touchFunc{}, statsFunc{}, readlinkFunc{},
+		searchFunc{}, containsRegexFunc{}, replaceFunc{}, chownFunc{}, chgrpFunc{},
 	} {
 		if err := reg.Register(fn); err != nil {
 			return err

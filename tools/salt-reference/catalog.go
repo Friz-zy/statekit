@@ -267,8 +267,25 @@ func familyCoverage(docs []ModuleDoc, implemented []string) FamilyCoverage {
 	return fc
 }
 
+// Compatibility is the generated family-classification manifest.
+type Compatibility struct {
+	Reference           ReferenceInfo `yaml:"reference"`
+	Summary             CompatSummary `yaml:"summary"`
+	ImplementedFamilies []string      `yaml:"implemented_families"`
+	NotApplicable       []string      `yaml:"not_applicable"`
+	Deferred            []string      `yaml:"deferred"`
+}
+
+// CompatSummary counts families per classification bucket.
+type CompatSummary struct {
+	FamiliesTotal int `yaml:"families_total"`
+	Implemented   int `yaml:"implemented"`
+	NotApplicable int `yaml:"not_applicable"`
+	Deferred      int `yaml:"deferred"`
+}
+
 // writeCatalog emits per-module YAML documents plus index and coverage.
-func writeCatalog(outDir string, ref ReferenceInfo, execDocs, stateDocs []ModuleDoc, cov Coverage) error {
+func writeCatalog(outDir string, ref ReferenceInfo, execDocs, stateDocs []ModuleDoc, cov Coverage, impl Implemented) error {
 	for _, group := range []struct {
 		dir  string
 		docs []ModuleDoc
@@ -298,6 +315,23 @@ func writeCatalog(outDir string, ref ReferenceInfo, execDocs, stateDocs []Module
 	index.Execution = FamilyModuleCounts{Modules: len(execDocs), Functions: countFunctions(execDocs)}
 	index.State = FamilyModuleCounts{Modules: len(stateDocs), Functions: countFunctions(stateDocs)}
 	if err := writeYAML(filepath.Join(outDir, "index.yaml"), &index); err != nil {
+		return err
+	}
+	classification := classifyFamilies(append(append([]ModuleDoc{}, execDocs...), stateDocs...), impl.Exec)
+	compat := Compatibility{
+		Reference: ref,
+		Summary: CompatSummary{
+			FamiliesTotal: len(classification["implemented"]) +
+				len(classification["not_applicable"]) + len(classification["deferred"]),
+			Implemented:   len(classification["implemented"]),
+			NotApplicable: len(classification["not_applicable"]),
+			Deferred:      len(classification["deferred"]),
+		},
+		ImplementedFamilies: classification["implemented"],
+		NotApplicable:       classification["not_applicable"],
+		Deferred:            classification["deferred"],
+	}
+	if err := writeYAML(filepath.Join(outDir, "compatibility.yaml"), &compat); err != nil {
 		return err
 	}
 	return writeYAML(filepath.Join(outDir, "coverage.yaml"), &cov)

@@ -84,6 +84,12 @@ func checkSupportedKind(t reflect.Type) error {
 			return nil
 		}
 		return fmt.Errorf("unsupported slice element type %s (only []string)", t.Elem())
+	case reflect.Map:
+		if t.Key().Kind() == reflect.String &&
+			(t.Elem().Kind() == reflect.Interface || t.Elem().Kind() == reflect.String) {
+			return nil
+		}
+		return fmt.Errorf("unsupported map type %s (only map[string]string / map[string]any)", t)
 	default:
 		return fmt.Errorf("unsupported argument type %s (supported: string, bool, int, int64, float64, []string)", t)
 	}
@@ -130,9 +136,13 @@ func NewFlagSet(name string, argsTemplate any) (*flag.FlagSet, error) {
 		if s.required {
 			usage += " (required)"
 		}
-		kind := templateType.Field(s.index).Type.Kind()
-		if kind == reflect.Bool {
+		fieldType := templateType.Field(s.index).Type
+		if fieldType.Kind() == reflect.Bool {
 			fs.Bool(s.name, false, usage)
+			continue
+		}
+		if fieldType.Kind() == reflect.Map {
+			// Maps are supplied exclusively through structured input.
 			continue
 		}
 		fs.String(s.name, "", usage)
@@ -356,10 +366,48 @@ func assignFromValue(field reflect.Value, name string, v any) error {
 			return assignError(name, v, []string{})
 		}
 		field.Set(reflect.ValueOf(items))
+	case reflect.Map:
+		m, err := toTypedMap(field.Type(), v)
+		if err != nil {
+			return fmt.Errorf("argument %q: %w", name, err)
+		}
+		field.Set(reflect.ValueOf(m))
 	default:
 		return assignError(name, v, field.Interface())
 	}
 	return nil
+}
+
+// toTypedMap converts a decoded YAML/JSON object into the field's concrete
+// map type (map[string]any or map[string]string).
+func toTypedMap(t reflect.Type, v any) (any, error) {
+	raw, ok := v.(map[string]any)
+	if !ok {
+		if m, isMap := v.(map[string]string); isMap && t.Elem().Kind() == reflect.String {
+			return m, nil
+		}
+		return nil, fmt.Errorf("expected an object")
+	}
+	switch t.Elem().Kind() {
+	case reflect.Interface:
+		out := make(map[string]any, len(raw))
+		for key, value := range raw {
+			out[key] = value
+		}
+		return out, nil
+	case reflect.String:
+		out := make(map[string]string, len(raw))
+		for key, value := range raw {
+			s, err := toStringScalar(value)
+			if err != nil {
+				return nil, fmt.Errorf("key %q: %w", key, err)
+			}
+			out[key] = s
+		}
+		return out, nil
+	default:
+		return nil, fmt.Errorf("unsupported map value type")
+	}
 }
 
 func toStringScalar(v any) (string, error) {

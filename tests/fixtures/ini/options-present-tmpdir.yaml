@@ -1,5 +1,11 @@
 id: ini.options-present.create-section
-command: [state, ini.options_present, '--name', '__TMPDIR__/app.ini', '--data', '{"app":{"mode":"worker","level":"info"}}', '-o', 'json']
+command:
+  - state
+  - ini.options_present
+  - '--config'
+  - '{"name":"__TMPDIR__/app.ini","data":{"app":{"mode":"worker","level":"info"}}}'
+  - -o
+  - json
 tmpdir: true
 exit: 0
 json:

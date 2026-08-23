@@ -155,7 +155,7 @@ func TestWriteCatalogAndCoverage(t *testing.T) {
 		t.Fatal(err)
 	}
 	cov := buildCoverage(ref, execDocs, stateDocs, impl)
-	if err := writeCatalog(outDir, ref, execDocs, stateDocs, cov); err != nil {
+	if err := writeCatalog(outDir, ref, execDocs, stateDocs, cov, Implemented{}); err != nil {
 		t.Fatalf("writeCatalog: %v", err)
 	}
 

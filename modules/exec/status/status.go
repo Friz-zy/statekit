@@ -98,7 +98,7 @@ func parseFloat(s string) float64 {
 
 // Register installs all status-module execution functions.
 func Register(reg *runtime.ExecRegistry) error {
-	fns := []runtime.ExecFunction{loadavgFunc{}, uptimeFunc{}, diskusageFunc{}, meminfoFunc{}}
+	fns := []runtime.ExecFunction{loadavgFunc{}, uptimeFunc{}, diskusageFunc{}, meminfoFunc{}, pidListFunc{}}
 	for _, fn := range fns {
 		if err := reg.Register(fn); err != nil {
 			return err

@@ -32,6 +32,7 @@ type fixture struct {
 	StderrContains []string       `yaml:"stderr-contains"`
 	JSON           map[string]any `yaml:"json"`
 	Tmpdir         bool           `yaml:"tmpdir"`
+	RequiresRoot   bool           `yaml:"requires-root"`
 }
 
 type result struct {
@@ -166,6 +167,10 @@ func runFixture(binPath, path string) result {
 	if f.ID == "" {
 		f.ID = filepath.Base(path)
 		return result{f.ID, false, "fixture has no id"}
+	}
+	if f.RequiresRoot && os.Geteuid() != 0 {
+		return result{id: f.ID, passed: true,
+			detail: "skipped: requires root"}
 	}
 
 	command := append([]string{}, f.Command...)

@@ -54,6 +54,7 @@ func buildBinary(t *testing.T) string {
 
 type fixture struct {
 	ID             string         `yaml:"id"`
+	RequiresRoot   bool           `yaml:"requires-root"`
 	Command        []string       `yaml:"command"`
 	Stdin          string         `yaml:"stdin"`
 	Exit           int            `yaml:"exit"`
@@ -105,6 +106,9 @@ func TestFixtures(t *testing.T) {
 			// tests/run-fixtures.sh inside systemd containers instead.
 			if suiteOf(path) == "service" {
 				t.Skip("tier 2: requires a systemd container (tests/run-fixtures.sh)")
+			}
+			if f.RequiresRoot && os.Geteuid() != 0 {
+				t.Skip("requires root; executed in privileged containers")
 			}
 			runFixture(t, bin, f)
 		})

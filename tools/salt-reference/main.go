@@ -45,7 +45,7 @@ func run(saltDir, outDir, lockPath, srcRoot string) error {
 		return err
 	}
 	cov := buildCoverage(ref, execDocs, stateDocs, impl)
-	if err := writeCatalog(outDir, ref, execDocs, stateDocs, cov); err != nil {
+	if err := writeCatalog(outDir, ref, execDocs, stateDocs, cov, impl); err != nil {
 		return err
 	}
 	if err := writeSaltLock(lockPath, ref); err != nil {
