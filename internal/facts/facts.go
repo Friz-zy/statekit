@@ -7,6 +7,12 @@
 // for process lifetime. Cheap facts are detected eagerly at Detect(); init
 // system, package manager, and security module status are resolved lazily
 // on first access.
+//
+// Detection is provider-split per GOOS (plans/porting.md enabler E4): linux
+// probes /etc/os-release and /proc, darwin shells out to sw_vers through the
+// central Runner, windows queries CIM via a PowerShell scriptlet, and the
+// BSDs use sysctl. External tool output is parsed by GOOS-neutral parsers in
+// providers.go so recorded fixtures verify every platform hermetically.
 package facts
 
 import (
@@ -14,11 +20,12 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/friz-zy/statekit/internal/process"
 )
 
 const (
@@ -28,16 +35,25 @@ const (
 	FamilyArch    = "arch"
 	FamilyAlpine  = "alpine"
 	FamilyGentoo  = "gentoo"
+	FamilyMacOS   = "macos"
+	FamilyWindows = "windows"
+	FamilyFreeBSD = "freebsd"
+	FamilyOpenBSD = "openbsd"
+	FamilyNetBSD  = "netbsd"
 	FamilyUnknown = ""
 )
 
-// OSFacts describes the operating system from /etc/os-release.
+// OSFacts describes the operating system identity. Build carries the
+// kernel/OS build number where the platform reports one (windows
+// BuildNumber, macOS BuildVersion); empty on linux, keeping existing
+// output byte-identical.
 type OSFacts struct {
 	ID       string `json:"id" yaml:"id"`
 	Name     string `json:"name" yaml:"name"`
 	Family   string `json:"family" yaml:"family"`
 	Version  string `json:"version" yaml:"version"`
 	Codename string `json:"codename,omitempty" yaml:"codename,omitempty"`
+	Build    string `json:"build,omitempty" yaml:"build,omitempty"`
 }
 
 // KernelFacts describes the running kernel.
@@ -85,6 +101,8 @@ type Facts struct {
 	cpu    CPUFacts
 	host   HostFacts
 
+	runner process.Runner
+
 	initOnce sync.Once
 	initSys  string
 
@@ -95,14 +113,16 @@ type Facts struct {
 	sec     SecurityFacts
 }
 
-// Detect performs eager detection of cheap facts. Init system, package
+// Detect performs eager detection of cheap facts. External platform tools
+// run through the central Runner (init.md section 37); init system, package
 // manager, and security status stay lazy until first queried.
-func Detect() *Facts {
+func Detect(runner process.Runner) *Facts {
 	return &Facts{
-		os:     detectOS("/etc/os-release"),
+		os:     detectOS(runner),
 		kernel: detectKernel(),
 		cpu:    CPUFacts{Arch: runtime.GOARCH, Count: runtime.NumCPU()},
 		host:   detectHost(),
+		runner: runner,
 	}
 }
 
@@ -202,59 +222,6 @@ func (f *Facts) MarshalJSON() ([]byte, error) { return json.Marshal(f.snapshot()
 // MarshalYAML resolves lazy facts and emits the full typed snapshot.
 func (f *Facts) MarshalYAML() (any, error) { return f.snapshot(), nil }
 
-func detectOS(path string) OSFacts {
-	release := parseOSRelease(path)
-	id := release["ID"]
-	name := release["NAME"]
-	version := release["VERSION_ID"]
-	codename := release["VERSION_CODENAME"]
-	if codename == "" {
-		codename = versionCodename(release["VERSION"])
-	}
-	return OSFacts{
-		ID:       id,
-		Name:     name,
-		Family:   OSFamily(id, release["ID_LIKE"]),
-		Version:  version,
-		Codename: codename,
-	}
-}
-
-// parseOSRelease parses an os-release style file into a key/value map,
-// stripping surrounding quotes from values.
-func parseOSRelease(path string) map[string]string {
-	out := map[string]string{}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return out
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		key, value, ok := strings.Cut(line, "=")
-		if !ok {
-			continue
-		}
-		value = strings.TrimSpace(value)
-		value = strings.Trim(value, `"'`)
-		out[strings.TrimSpace(key)] = value
-	}
-	return out
-}
-
-// versionCodename extracts a codename from a VERSION string like
-// "12 (bookworm)".
-func versionCodename(version string) string {
-	open := strings.IndexByte(version, '(')
-	close := strings.LastIndexByte(version, ')')
-	if open < 0 || close <= open+1 {
-		return ""
-	}
-	return version[open+1 : close]
-}
-
 var familyByID = map[string]string{
 	"debian": FamilyDebian, "ubuntu": FamilyDebian, "linuxmint": FamilyDebian,
 	"kali": FamilyDebian, "pop": FamilyDebian, "raspbian": FamilyDebian,
@@ -297,28 +264,18 @@ func detectHost() HostFacts {
 	return h
 }
 
-func detectInitSystem() string {
-	switch {
-	case fileExists("/run/systemd/system"):
-		return "systemd"
-	case fileExists("/run/openrc"), fileExists("/sbin/openrc"):
-		return "openrc"
-	}
-	if data, err := os.ReadFile("/proc/1/comm"); err == nil {
-		if comm := strings.TrimSpace(string(data)); comm != "" {
-			return filepath.Base(comm)
-		}
-	}
-	return ""
-}
-
 var managerCandidates = map[string][]string{
-	FamilyDebian: {"apt", "dpkg"},
-	FamilyRedHat: {"dnf", "yum"},
-	FamilySuse:   {"zypper"},
-	FamilyArch:   {"pacman"},
-	FamilyAlpine: {"apk"},
-	FamilyGentoo: {"emerge"},
+	FamilyDebian:  {"apt", "dpkg"},
+	FamilyRedHat:  {"dnf", "yum"},
+	FamilySuse:    {"zypper"},
+	FamilyArch:    {"pacman"},
+	FamilyAlpine:  {"apk"},
+	FamilyGentoo:  {"emerge"},
+	FamilyMacOS:   {"brew", "port"},
+	FamilyWindows: {"winget", "choco", "scoop"},
+	FamilyFreeBSD: {"pkg"},
+	FamilyOpenBSD: {"pkg_add"},
+	FamilyNetBSD:  {"pkgin"},
 }
 
 func detectPackageManager(family string) string {
@@ -332,20 +289,3 @@ func detectPackageManager(family string) string {
 
 // lookPath is split out for test injection.
 var lookPath = exec.LookPath
-
-func detectSecurity() SecurityFacts {
-	return SecurityFacts{
-		SELinux:  dirExists("/sys/fs/selinux"),
-		AppArmor: dirExists("/sys/module/apparmor") || dirExists("/sys/kernel/security/apparmor"),
-	}
-}
-
-func fileExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && !info.IsDir()
-}
-
-func dirExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
-}

@@ -64,12 +64,13 @@ import (
 var version = "dev"
 
 func buildRuntime() (*runtime.Runtime, error) {
+	runner := process.NewRunner()
 	rt := &runtime.Runtime{
 		Exec:      runtime.NewExecRegistry(),
 		States:    runtime.NewStateRegistry(),
-		Facts:     facts.Detect(),
+		Facts:     facts.Detect(runner),
 		Providers: runtime.NewProviderRegistry(),
-		Runner:    process.NewRunner(),
+		Runner:    runner,
 		FS:        runtime.NewOSFileSystem(),
 	}
 

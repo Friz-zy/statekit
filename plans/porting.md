@@ -189,9 +189,14 @@ Committed phases: E7 ledger v2, E1 runner OS profiles, E2 elevation,
 E3.1 cross-GOOS tree + CI matrix, E3.2 platform-scoped registration,
 E3.3 tags kmod/shadow/selinux, E3.4 tags sysctl/cron/environ,
 E3.5 tags status.loadavg/uptime linux-only,
-E3.6 tags status.meminfo/pid_list + mount family linux-only.
+E3.6 tags status.meminfo/pid_list + mount family linux-only,
+E4 Facts v2 (per-OS providers: darwin sw_vers, windows CIM via
+PowerShell scriptlet through the Runner shell model, BSD sysctl;
+GOOS-neutral parsers verified by golden fixtures under
+internal/facts/testdata). Enablers E1-E4 are complete: R6-R8 unblocked.
+Known gap parked for R8: statfs_unix.go (!windows tag) does not compile
+under GOOS=openbsd/netbsd (pre-existing, outside gated matrix).
 
-Next in order: E4 Facts v2 (win/mac/bsd providers); then rounds R1-R5
-(parallel), R6-R8 after enablers E1-E4, R9 after services tier (E5),
-R10 cloud, R11 netdev behind ADR gate. Master-minion families stay
-excluded.
+Next in order: rounds R1-R5 (parallel), R6-R8 (enablers done),
+R9 after services tier (E5), R10 cloud, R11 netdev behind ADR gate.
+Master-minion families stay excluded.

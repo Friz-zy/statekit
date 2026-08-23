@@ -78,7 +78,7 @@ func TestForTestingOverridesAndMarshal(t *testing.T) {
 }
 
 func TestDetectDoesNotPanic(t *testing.T) {
-	f := Detect()
+	f := Detect(nil)
 	snap := f.snapshot()
 	if f.PackageManager() != snap.Package.Manager {
 		t.Fatal("lazy package manager cache inconsistent")
