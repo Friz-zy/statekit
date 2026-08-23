@@ -96,7 +96,9 @@ func Register(reg *runtime.ExecRegistry) error {
 
 type meminfoArgs struct{}
 
-type meminfoFunc struct{}
+type meminfoFunc struct {
+	procOnly
+}
 
 func (meminfoFunc) Name() string { return "status.meminfo" }
 func (meminfoFunc) Args() any    { return meminfoArgs{} }

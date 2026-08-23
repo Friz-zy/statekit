@@ -21,7 +21,9 @@ type pidListArgs struct {
 	Name string `statekit:"required,name=name"`
 }
 
-type pidListFunc struct{}
+type pidListFunc struct {
+	procOnly
+}
 
 func (pidListFunc) Name() string { return "status.pid_list" }
 func (pidListFunc) Args() any    { return pidListArgs{} }

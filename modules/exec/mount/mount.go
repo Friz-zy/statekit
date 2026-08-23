@@ -18,6 +18,13 @@ const (
 	fstabPath  = "/etc/fstab"
 )
 
+// linuxOnly restricts every function of this module to linux: active
+// mounts come from /proc/mounts, persistence follows /etc/fstab, and
+// kernel mount/umount delegate to the Linux mount(8)/umount(8) tools.
+type linuxOnly struct{}
+
+func (linuxOnly) Platforms() []string { return []string{"linux"} }
+
 type activeEntry struct {
 	Dev     string   `json:"dev" yaml:"dev"`
 	Device  string   `json:"device" yaml:"device"`
@@ -28,7 +35,9 @@ type activeEntry struct {
 
 type activeArgs struct{}
 
-type activeFunc struct{}
+type activeFunc struct {
+	linuxOnly
+}
 
 func (activeFunc) Name() string { return "mount.active" }
 func (activeFunc) Args() any    { return activeArgs{} }
@@ -58,7 +67,9 @@ type isMountedArgs struct {
 	Path string `statekit:"required,name=path"`
 }
 
-type isMountedFunc struct{}
+type isMountedFunc struct {
+	linuxOnly
+}
 
 func (isMountedFunc) Name() string { return "mount.is_mounted" }
 func (isMountedFunc) Args() any    { return isMountedArgs{} }
@@ -89,7 +100,9 @@ type fstabEntry struct {
 
 type fstabArgs struct{}
 
-type fstabFunc struct{}
+type fstabFunc struct {
+	linuxOnly
+}
 
 func (fstabFunc) Name() string { return "mount.fstab" }
 func (fstabFunc) Args() any    { return fstabArgs{} }
@@ -147,7 +160,9 @@ type mountArgs struct {
 	Opts   string `statekit:"name=opts"`
 }
 
-type mountFunc struct{}
+type mountFunc struct {
+	linuxOnly
+}
 
 func (mountFunc) Name() string { return "mount.mount" }
 func (mountFunc) Args() any    { return mountArgs{} }
@@ -175,7 +190,9 @@ type umountArgs struct {
 	Name string `statekit:"required,name=name"`
 }
 
-type umountFunc struct{}
+type umountFunc struct {
+	linuxOnly
+}
 
 func (umountFunc) Name() string { return "mount.umount" }
 func (umountFunc) Args() any    { return umountArgs{} }
