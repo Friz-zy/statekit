@@ -74,16 +74,29 @@ func (r *ExecRegistry) Register(fn ExecFunction) error { return r.reg.Register(f
 // Get looks up an execution function by full name.
 func (r *ExecRegistry) Get(name string) (ExecFunction, bool) { return r.reg.Get(name) }
 
-// Names lists registered execution functions sorted lexicographically.
-func (r *ExecRegistry) Names() []string { return r.reg.Names() }
+// Names lists execution functions available on the current platform,
+// sorted lexicographically.
+func (r *ExecRegistry) Names() []string { return r.filterNames(r.reg.Names()) }
+
+func (r *ExecRegistry) filterNames(names []string) []string {
+	goos := CurrentGOOS()
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		if fn, ok := r.reg.Get(name); ok && SupportsPlatform(fn, goos) {
+			out = append(out, name)
+		}
+	}
+	return out
+}
 
 // Len returns the number of registered functions.
 func (r *ExecRegistry) Len() int { return r.reg.Len() }
 
-// Call invokes a registered execution function by name.
+// Call invokes a registered execution function by name. Functions declared
+// for other platforms surface as unsupported on this one.
 func (r *ExecRegistry) Call(ctx context.Context, rt *Runtime, name string, args any) (any, error) {
 	fn, ok := r.reg.Get(name)
-	if !ok {
+	if !ok || !SupportsPlatform(fn, CurrentGOOS()) {
 		return nil, &UnsupportedError{Kind: "function", Name: name}
 	}
 	return fn.Execute(ctx, rt, args)
@@ -109,10 +122,11 @@ func (r *StateRegistry) Names() []string { return r.reg.Names() }
 // Len returns the number of registered functions.
 func (r *StateRegistry) Len() int { return r.reg.Len() }
 
-// Apply invokes a registered state function by name.
+// Apply invokes a registered state function by name. Functions declared
+// for other platforms surface as unsupported on this one.
 func (r *StateRegistry) Apply(ctx context.Context, rt *Runtime, name string, args any) (result.StateResult, error) {
 	fn, ok := r.reg.Get(name)
-	if !ok {
+	if !ok || !SupportsPlatform(fn, CurrentGOOS()) {
 		return result.StateResult{}, &UnsupportedError{Kind: "state", Name: name}
 	}
 	return fn.Apply(ctx, rt, args), nil
