@@ -178,3 +178,55 @@ func TestMapFieldsHaveNoCLIFlag(t *testing.T) {
 		t.Fatal("map fields must not generate CLI flags")
 	}
 }
+
+type triStateArgs struct {
+	Name  string `statekit:"required"`
+	Force *bool  `statekit:"name=force"`
+}
+
+func TestPointerBoolTriState(t *testing.T) {
+	// Omitted everywhere: pointer stays nil so the function default wins.
+	args := &triStateArgs{Name: "x"}
+	if err := Decode(args, nil, nil); err != nil {
+		t.Fatalf("decode omitted: %v", err)
+	}
+	if args.Force != nil {
+		t.Fatalf("omitted force must stay nil, got %v", *args.Force)
+	}
+
+	// Structured input sets the pointer.
+	structured := map[string]any{"name": "x", "force": true}
+	args2 := &triStateArgs{}
+	if err := Decode(args2, structured, nil); err != nil {
+		t.Fatalf("decode structured: %v", err)
+	}
+	if args2.Force == nil || !*args2.Force {
+		t.Fatalf("structured force = %+v", args2.Force)
+	}
+
+	// Explicit CLI flag wins and can set false.
+	args3 := &triStateArgs{}
+	if err := Decode(args3, structured, map[string]string{"force": "false"}); err != nil {
+		t.Fatalf("decode flag: %v", err)
+	}
+	if args3.Force == nil || *args3.Force {
+		t.Fatalf("flag force = %+v", args3.Force)
+	}
+}
+
+func TestPointerBoolFlagForms(t *testing.T) {
+	fs, err := NewFlagSet("tristate", triStateArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fs.Lookup("force") == nil {
+		t.Fatal("*bool must generate a CLI flag")
+	}
+	normalized, err := NormalizeBoolArgs([]string{"--force", "true", "--name", "x"}, triStateArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalized[0] != "--force=true" {
+		t.Fatalf("spaced bool not normalized: %v", normalized)
+	}
+}

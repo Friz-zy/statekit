@@ -193,9 +193,13 @@ E3.6 tags status.meminfo/pid_list + mount family linux-only,
 E4 Facts v2 (per-OS providers: darwin sw_vers, windows CIM via
 PowerShell scriptlet through the Runner shell model, BSD sysctl;
 GOOS-neutral parsers verified by golden fixtures under
-internal/facts/testdata). Enablers E1-E4 are complete: R6-R8 unblocked.
-Known gap parked for R8: statfs_unix.go (!windows tag) does not compile
-under GOOS=openbsd/netbsd (pre-existing, outside gated matrix).
+internal/facts/testdata), R1.1 lvm family ported (15 exec functions +
+6 states mirroring linux_lvm.py/states/lvm.py contracts; tri-state
+*bool args added to the decoder for Salt default-true force flags;
+lvm moves implemented 34→35, planned 143→142). Enablers E1-E4 are
+complete: R6-R8 unblocked. Known gap parked for R8: statfs_unix.go
+(!windows tag) does not compile under GOOS=openbsd/netbsd
+(pre-existing, outside gated matrix).
 
 Next in order: rounds R1-R5 (parallel), R6-R8 (enablers done),
 R9 after services tier (E5), R10 cloud, R11 netdev behind ADR gate.

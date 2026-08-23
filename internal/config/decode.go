@@ -79,6 +79,13 @@ func checkSupportedKind(t reflect.Type) error {
 	switch t.Kind() {
 	case reflect.String, reflect.Bool, reflect.Int, reflect.Int64, reflect.Float64:
 		return nil
+	case reflect.Pointer:
+		// *bool carries tri-state options: nil keeps the Salt function
+		// default when the caller omits the flag entirely.
+		if t.Elem().Kind() == reflect.Bool {
+			return nil
+		}
+		return fmt.Errorf("unsupported pointer type *%s (only *bool)", t.Elem())
 	case reflect.Slice:
 		if t.Elem().Kind() == reflect.String {
 			return nil
@@ -137,7 +144,8 @@ func NewFlagSet(name string, argsTemplate any) (*flag.FlagSet, error) {
 			usage += " (required)"
 		}
 		fieldType := templateType.Field(s.index).Type
-		if fieldType.Kind() == reflect.Bool {
+		if fieldType.Kind() == reflect.Bool ||
+			(fieldType.Kind() == reflect.Pointer && fieldType.Elem().Kind() == reflect.Bool) {
 			fs.Bool(s.name, false, usage)
 			continue
 		}
@@ -166,7 +174,9 @@ func NormalizeBoolArgs(argv []string, argsTemplate any) ([]string, error) {
 	}
 	boolFlags := map[string]bool{}
 	for _, s := range specsForLenient(templateType) {
-		if templateType.Field(s.index).Type.Kind() == reflect.Bool {
+		ft := templateType.Field(s.index).Type
+		if ft.Kind() == reflect.Bool ||
+			(ft.Kind() == reflect.Pointer && ft.Elem().Kind() == reflect.Bool) {
 			boolFlags[s.name] = true
 		}
 	}
@@ -292,6 +302,14 @@ func assignError(name string, value, want any) error {
 }
 
 func assignFromFlag(field reflect.Value, name, raw string) error {
+	if field.Kind() == reflect.Pointer && field.Type().Elem().Kind() == reflect.Bool {
+		b, err := strconv.ParseBool(raw)
+		if err != nil {
+			return fmt.Errorf("argument %q: invalid boolean %q", name, raw)
+		}
+		field.Set(reflect.ValueOf(&b))
+		return nil
+	}
 	switch field.Kind() {
 	case reflect.String:
 		field.SetString(raw)
@@ -335,6 +353,16 @@ func splitList(raw string) []string {
 }
 
 func assignFromValue(field reflect.Value, name string, v any) error {
+	if field.Kind() == reflect.Pointer && field.Type().Elem().Kind() == reflect.Bool {
+		tmp := reflect.New(field.Type().Elem()).Elem()
+		if err := assignFromValue(tmp, name, v); err != nil {
+			return err
+		}
+		ptr := reflect.New(field.Type().Elem())
+		ptr.Elem().Set(tmp)
+		field.Set(ptr)
+		return nil
+	}
 	switch field.Kind() {
 	case reflect.String:
 		s, err := toStringScalar(v)

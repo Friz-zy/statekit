@@ -28,6 +28,7 @@ import (
 	execkmod "github.com/friz-zy/statekit/modules/exec/kmod"
 	execlocale "github.com/friz-zy/statekit/modules/exec/locale"
 	execlogrotate "github.com/friz-zy/statekit/modules/exec/logrotate"
+	execlvm "github.com/friz-zy/statekit/modules/exec/lvm"
 	execmount "github.com/friz-zy/statekit/modules/exec/mount"
 	execnpm "github.com/friz-zy/statekit/modules/exec/npm"
 	execpip "github.com/friz-zy/statekit/modules/exec/pip"
@@ -50,6 +51,7 @@ import (
 	stategroup "github.com/friz-zy/statekit/modules/state/group"
 	statehost "github.com/friz-zy/statekit/modules/state/host"
 	stateini "github.com/friz-zy/statekit/modules/state/ini"
+	statelvm "github.com/friz-zy/statekit/modules/state/lvm"
 	statepkg "github.com/friz-zy/statekit/modules/state/pkg"
 	stateselinux "github.com/friz-zy/statekit/modules/state/selinux"
 	stateservice "github.com/friz-zy/statekit/modules/state/service"
@@ -112,6 +114,7 @@ func buildRuntime() (*runtime.Runtime, error) {
 		execini.Register,
 		execrandom.Register,
 		execselinux.Register,
+		execlvm.Register,
 		execmount.Register,
 		execsysctl.Register,
 		executimezone.Register,
@@ -133,6 +136,7 @@ func buildRuntime() (*runtime.Runtime, error) {
 		statesysctl.Register,
 		statealiases.Register,
 		stateini.Register,
+		statelvm.Register,
 		stateselinux.Register,
 	} {
 		if err := registerState(rt.States); err != nil {
