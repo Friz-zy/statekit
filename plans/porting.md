@@ -202,10 +202,16 @@ quota (7 exec + quota.mode state, mirroring Salt's set_ zero-fallback
 quirk with a section-28 note), mdadm/raid (9, facts-driven config path,
 stop retcode quirk pinned by test); decoder gains *string tri-state;
 salt-reference generator honors __func_alias__ so counters match
-CLI-facing names (families implemented 35→40, planned 142→137).
-Enablers E1-E4 are complete: R6-R8 unblocked. Known gap parked for R8:
-statfs_unix.go (!windows tag) does not compile under GOOS=openbsd/
-netbsd (pre-existing, outside gated matrix).
+CLI-facing names (families implemented 35→40, planned 142→137),
+R1.3 xfs family ported (9 exec functions: xfs_info kv-parser ported
+against Salt's verbatim fixture, blkid export blocks, xfsdump scalar
+fields, indentation-walk inventory parser replacing Salt's eval,
+prune/estimate/mkfs/modify/defragment; families 40→41, planned
+137→136). Enablers E1-E4 are complete: R6-R8 unblocked. Known gap
+parked for R8: statfs_unix.go (!windows tag) does not compile under
+GOOS=openbsd/netbsd (pre-existing, outside gated matrix). Remaining
+in R1: bcache, parted_partition, blockdev extensions, pkg_resource
+helpers, loop state.
 
 Next in order: rounds R1-R5 (parallel), R6-R8 (enablers done),
 R9 after services tier (E5), R10 cloud, R11 netdev behind ADR gate.

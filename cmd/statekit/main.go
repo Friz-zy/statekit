@@ -49,6 +49,7 @@ import (
 	executimezone "github.com/friz-zy/statekit/modules/exec/timezone"
 	execuser "github.com/friz-zy/statekit/modules/exec/user"
 	execvirtualenv "github.com/friz-zy/statekit/modules/exec/virtualenv"
+	execxfs "github.com/friz-zy/statekit/modules/exec/xfs"
 	statealiases "github.com/friz-zy/statekit/modules/state/aliases"
 	statecmd "github.com/friz-zy/statekit/modules/state/cmd"
 	statecron "github.com/friz-zy/statekit/modules/state/cron"
@@ -127,6 +128,7 @@ func buildRuntime() (*runtime.Runtime, error) {
 		execmdadm.Register,
 		execmount.Register,
 		execquota.Register,
+		execxfs.Register,
 		execsysctl.Register,
 		executimezone.Register,
 	} {
