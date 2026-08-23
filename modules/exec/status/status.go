@@ -13,9 +13,16 @@ import (
 	"github.com/friz-zy/statekit/internal/runtime"
 )
 
+// procOnly marks functions reading /proc directly; they are linux contracts.
+type procOnly struct{}
+
+func (procOnly) Platforms() []string { return []string{"linux"} }
+
 type loadavgArgs struct{}
 
-type loadavgFunc struct{}
+type loadavgFunc struct {
+	procOnly
+}
 
 func (loadavgFunc) Name() string { return "status.loadavg" }
 func (loadavgFunc) Args() any    { return loadavgArgs{} }
@@ -37,7 +44,9 @@ func (loadavgFunc) Execute(_ context.Context, rt *runtime.Runtime, _ any) (any, 
 
 type uptimeArgs struct{}
 
-type uptimeFunc struct{}
+type uptimeFunc struct {
+	procOnly
+}
 
 func (uptimeFunc) Name() string { return "status.uptime" }
 func (uptimeFunc) Args() any    { return uptimeArgs{} }

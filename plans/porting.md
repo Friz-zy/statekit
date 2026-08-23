@@ -181,3 +181,16 @@ documented, core repo ships discovery/error contracts only.
 - [ ] Differential reports exist for every ported family with runtime parity
       potential.
 - [ ] Zero new Go module dependencies at completion (ADR-listed exceptions).
+
+
+## 6. Execution state (handoff ledger, updated per phase)
+
+Committed phases: E7 ledger v2, E1 runner OS profiles, E2 elevation,
+E3.1 cross-GOOS tree + CI matrix, E3.2 platform-scoped registration,
+E3.3 tags kmod/shadow/selinux, E3.4 tags sysctl/cron/environ,
+E3.5 tags status.loadavg/uptime linux-only.
+
+Next in order: E3.6 tag remaining /proc-bound functions as their rounds
+land; E4 Facts v2 (win/mac/bsd providers); then rounds R1-R5 (parallel),
+R6-R8 after enablers E1-E4, R9 after services tier (E5), R10 cloud,
+R11 netdev behind ADR gate. Master-minion families stay excluded.
