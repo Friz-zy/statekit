@@ -230,23 +230,49 @@ decoder gains []any structured list args with safe_load-style YAML-string
 coercion and pkg.list_pkgs gains versions_as_list; intentional
 divergence pinned by test: sort_pkglist/stringify reject non-list scalar
 values instead of Python's silent char-decomposition; families 42→43,
-planned 135→134). Enablers E1-E4 are complete: R6-R8 unblocked. Known gap
+planned 135→134), R1.6 storage-sysfs cluster ported in one phase as the
+ledger required: sysfs family (5 exec functions — attr/write/read/target/
+interfaces with realpath-per-component resolution so ".." hops resolve
+after symlinks, owner-bit r/w/rw interface classification, int-then-float
+value coercion, false-not-error failure contract, list-form read tree)
+plus the sysfs.present state (choice-list "[selected]" extraction,
+test-mode no-mutation, registry-driven read/write) and udev.env
+(minimal per the recorded decision: udevadm --export argv through the
+Runner, E-section parser with numeric coercion and single-element list
+collapse; info/name/path/links/exportdb stay unregistered until their
+round) plus bcache (11 exec functions under __func_alias__ names
+attach/config/super: uuid via /sys/fs/bcache discovery or cache-link
+resolution, attach/detach recursion over status with None-means-nothing
+results, start/stop flows, back_make/cache_make make-bcache argv incl.
+Salt's bucket-size quirk where the computed bucket is discarded, config_
+kwargs writes filtered of dunders, status/device sysfs-parse reshaping
+(stats re-keying, internals nesting, config writeback_* grouping),
+super_ bcache-super-show parsing with [value, comment] tuples; _wait
+sleeps through an injectable hook, tries=300 for detach/stop mirrored
+verbatim; bcache has no Salt unit tests so the suite pins the
+source-derived contract hermetically; documented divergence:
+status() synthesizes the cache-dev entry Salt would KeyError on).
+loop.until is RESOLVED: user accepted exclusion-by-ADR (code-eval
+contract, docs/adr/0001-loop-until-excluded.md); the loop family's
+remaining port surface is until_no_eval with builtin compare operators +
+data.subdict_match, planned behind the data/util layer — family terminal
+state will be partial. Also fixed: .gitignore's coverage.* rule was
+swallowing docs/catalog/coverage.yaml, so the generated coverage ledger
+was never committed; now tracked (families 43→46 implemented /
+134→131 planned; exec 221→238, state 31→32). Enablers E1-E4 are
+complete: R6-R8 unblocked. Known gap
 parked for R8: statfs_unix.go (!windows tag) does not compile under
-GOOS=openbsd/netbsd (pre-existing, outside gated matrix). Remaining
-in R1, in order:
-  1. sysfs + bcache in one phase — bcache is blocked on the sysfs
-     family: port sysfs.attr/interfaces/read (+ minimal udev.env via
-     udevadm --export parse) together with bcache; _wait needs an
-     injectable sleep hook. Head item for the next session.
-  2. loop state — OPEN DECISION for the user: loop.until eval()s
-     arbitrary Python conditions and is not honestly portable; proposal
-     is to mark until excluded-by-ADR (code-eval contract) and port
-     only until_no_eval restricted to builtin compare operators +
-     data.subdict_match once the data/util layer lands. Do not port
-     silently.
-  3. blockdev "extensions": no catalog entry exists for blockdev.*
+GOOS=openbsd/netbsd (pre-existing, outside gated matrix). loop.until is
+excluded per docs/adr/0001-loop-until-excluded.md; until_no_eval waits
+for the data/util layer. Remaining in R1, in order:
+  1. blockdev "extensions": no catalog entry exists for blockdev.*
      (info was a pre-catalog extension); nothing to port without a
-     differential catalog pass.
+     differential catalog pass. With that, R1's function scope is
+     exhausted — R1 closes after a differential-scope pass over its
+     families (R1 ports → R2 differential per section 3).
+  2. Next rounds: R2-R5 remain parallelizable; R6-R8 unblocked via E1-E4;
+     R9 awaits the services tier (E5); R10 cloud; R11 netdev behind the
+     ADR gate.
 
 Next in order: rounds R1-R5 (parallel), R6-R8 (enablers done),
 R9 after services tier (E5), R10 cloud, R11 netdev behind ADR gate.

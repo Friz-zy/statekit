@@ -12,6 +12,7 @@ import (
 	execaliases "github.com/friz-zy/statekit/modules/exec/aliases"
 	execarchive "github.com/friz-zy/statekit/modules/exec/archive"
 	execat "github.com/friz-zy/statekit/modules/exec/at"
+	execbcache "github.com/friz-zy/statekit/modules/exec/bcache"
 	execblockdev "github.com/friz-zy/statekit/modules/exec/blockdev"
 	execcmd "github.com/friz-zy/statekit/modules/exec/cmd"
 	execcron "github.com/friz-zy/statekit/modules/exec/cron"
@@ -47,8 +48,10 @@ import (
 	execshadow "github.com/friz-zy/statekit/modules/exec/shadow"
 	execstatus "github.com/friz-zy/statekit/modules/exec/status"
 	execsysctl "github.com/friz-zy/statekit/modules/exec/sysctl"
+	execsysfs "github.com/friz-zy/statekit/modules/exec/sysfs"
 	exectest "github.com/friz-zy/statekit/modules/exec/test"
 	executimezone "github.com/friz-zy/statekit/modules/exec/timezone"
+	execudev "github.com/friz-zy/statekit/modules/exec/udev"
 	execuser "github.com/friz-zy/statekit/modules/exec/user"
 	execvirtualenv "github.com/friz-zy/statekit/modules/exec/virtualenv"
 	execxfs "github.com/friz-zy/statekit/modules/exec/xfs"
@@ -65,6 +68,7 @@ import (
 	stateselinux "github.com/friz-zy/statekit/modules/state/selinux"
 	stateservice "github.com/friz-zy/statekit/modules/state/service"
 	statesysctl "github.com/friz-zy/statekit/modules/state/sysctl"
+	statesysfs "github.com/friz-zy/statekit/modules/state/sysfs"
 	statetest "github.com/friz-zy/statekit/modules/state/test"
 	stateuser "github.com/friz-zy/statekit/modules/state/user"
 	pkgprovider "github.com/friz-zy/statekit/providers/pkg"
@@ -107,6 +111,7 @@ func buildRuntime() (*runtime.Runtime, error) {
 		execservice.Register,
 		execarchive.Register,
 		execat.Register,
+		execbcache.Register,
 		execenviron.Register,
 		execkmod.Register,
 		execcron.Register,
@@ -134,6 +139,8 @@ func buildRuntime() (*runtime.Runtime, error) {
 		execquota.Register,
 		execxfs.Register,
 		execsysctl.Register,
+		execsysfs.Register,
+		execudev.Register,
 		executimezone.Register,
 	} {
 		if err := register(rt.Exec); err != nil {
@@ -152,6 +159,7 @@ func buildRuntime() (*runtime.Runtime, error) {
 		statecron.Register,
 		statehost.Register,
 		statesysctl.Register,
+		statesysfs.Register,
 		statealiases.Register,
 		stateini.Register,
 		statelvm.Register,

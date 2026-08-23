@@ -4,14 +4,15 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 43
+    implemented: 46
     partial: 0
     excluded: 69
-    planned: 134
+    planned: 131
 implemented_families:
     - aliases
     - archive
     - at
+    - bcache
     - blockdev
     - cmd
     - cron
@@ -46,9 +47,11 @@ implemented_families:
     - shadow
     - status
     - sysctl
+    - sysfs
     - system
     - test
     - timezone
+    - udev
     - user
     - virtualenv
     - xfs
@@ -139,7 +142,6 @@ planned:
     - 'auditpol (planned: needs a dedicated porting round)'
     - 'autoruns (planned: needs a dedicated porting round)'
     - 'baredoc (planned: needs a dedicated porting round)'
-    - 'bcache (planned: needs a dedicated porting round)'
     - 'beacon (planned: needs a dedicated porting round)'
     - 'bgp (planned: needs a dedicated porting round)'
     - 'bridge (planned: needs a dedicated porting round)'
@@ -237,14 +239,12 @@ planned:
     - 'stateconf (planned: needs a dedicated porting round)'
     - 'supervisord (planned: needs a dedicated porting round)'
     - 'sys (planned: needs a dedicated porting round)'
-    - 'sysfs (planned: needs a dedicated porting round)'
     - 'syslog_ng (planned: needs a dedicated porting round)'
     - 'task (planned: needs a dedicated porting round)'
     - 'temp (planned: needs a dedicated porting round)'
     - 'test_virtual (planned: needs a dedicated porting round)'
     - 'textfsm (planned: needs a dedicated porting round)'
     - 'tls (planned: needs a dedicated porting round)'
-    - 'udev (planned: needs a dedicated porting round)'
     - 'uptime (planned: needs a dedicated porting round)'
     - 'users (planned: needs a dedicated porting round)'
     - 'vagrant (planned: needs a dedicated porting round)'
