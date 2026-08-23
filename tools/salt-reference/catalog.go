@@ -267,21 +267,25 @@ func familyCoverage(docs []ModuleDoc, implemented []string) FamilyCoverage {
 	return fc
 }
 
-// Compatibility is the generated family-classification manifest.
+// Compatibility is the generated family-classification manifest (ledger v2).
+// Buckets: implemented, excluded (permanent ADR reason), planned (targeted by
+// a porting round). Partial appears once per-family subset annotations land.
 type Compatibility struct {
 	Reference           ReferenceInfo `yaml:"reference"`
 	Summary             CompatSummary `yaml:"summary"`
 	ImplementedFamilies []string      `yaml:"implemented_families"`
-	NotApplicable       []string      `yaml:"not_applicable"`
-	Deferred            []string      `yaml:"deferred"`
+	Excluded            []string      `yaml:"excluded"`
+	Planned             []string      `yaml:"planned"`
+	PartialFamilies     []string      `yaml:"partial,omitempty"`
 }
 
-// CompatSummary counts families per classification bucket.
+// CompatSummary counts families per ledger bucket.
 type CompatSummary struct {
 	FamiliesTotal int `yaml:"families_total"`
 	Implemented   int `yaml:"implemented"`
-	NotApplicable int `yaml:"not_applicable"`
-	Deferred      int `yaml:"deferred"`
+	Partial       int `yaml:"partial"`
+	Excluded      int `yaml:"excluded"`
+	Planned       int `yaml:"planned"`
 }
 
 // writeCatalog emits per-module YAML documents plus index and coverage.
@@ -322,14 +326,14 @@ func writeCatalog(outDir string, ref ReferenceInfo, execDocs, stateDocs []Module
 		Reference: ref,
 		Summary: CompatSummary{
 			FamiliesTotal: len(classification["implemented"]) +
-				len(classification["not_applicable"]) + len(classification["deferred"]),
-			Implemented:   len(classification["implemented"]),
-			NotApplicable: len(classification["not_applicable"]),
-			Deferred:      len(classification["deferred"]),
+				len(classification["excluded"]) + len(classification["planned"]),
+			Implemented: len(classification["implemented"]),
+			Excluded:    len(classification["excluded"]),
+			Planned:     len(classification["planned"]),
 		},
 		ImplementedFamilies: classification["implemented"],
-		NotApplicable:       classification["not_applicable"],
-		Deferred:            classification["deferred"],
+		Excluded:            classification["excluded"],
+		Planned:             classification["planned"],
 	}
 	if err := writeYAML(filepath.Join(outDir, "compatibility.yaml"), &compat); err != nil {
 		return err

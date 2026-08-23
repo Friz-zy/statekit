@@ -11,16 +11,17 @@ import (
 	"strings"
 )
 
-// Reason constants for non-implemented families.
+// Reason constants for non-implemented families. Master-minion families are
+// permanently excluded (ledger v2): StateKit is local-only by design.
 const (
-	reasonMasterMinion   = "master-minion architecture (StateKit is local-only by design)"
-	reasonPlatformWin    = "windows-only"
-	reasonPlatformMac    = "macos-only"
-	reasonPlatformUnix   = "non-linux unix platform"
-	reasonNetworkDevice  = "network-device stack"
-	reasonCloudAPI       = "cloud provider API"
-	reasonProtocolClient = "requires database/message-broker client protocol"
-	reasonDeferred       = "deferred: needs dedicated porting round"
+	reasonMasterMinion   = "excluded: master-minion architecture (StateKit is local-only by design)"
+	reasonPlatformWin    = "planned: windows-only (round R7)"
+	reasonPlatformMac    = "planned: macos-only (round R6)"
+	reasonPlatformUnix   = "planned: non-linux unix platform (round R8)"
+	reasonNetworkDevice  = "planned: network-device stack (round R11, ADR-gated plugin boundary)"
+	reasonCloudAPI       = "planned: cloud provider API (round R10)"
+	reasonProtocolClient = "planned: requires database/message-broker client protocol (round R9, services tier)"
+	reasonDeferred       = "planned: needs a dedicated porting round"
 )
 
 var notApplicablePrefixes = []struct {
@@ -141,9 +142,9 @@ func classifyFamilies(docs []ModuleDoc, implementedNames []string) map[string][]
 
 	seen := map[string]bool{}
 	buckets := map[string][]string{
-		"implemented":    {},
-		"not_applicable": {},
-		"deferred":       {},
+		"implemented": {},
+		"excluded":    {},
+		"planned":     {},
 	}
 	add := func(bucket, label string) {
 		if seen[label] {
@@ -182,13 +183,13 @@ func classifyFamilies(docs []ModuleDoc, implementedNames []string) map[string][]
 		classified := false
 		for _, rule := range notApplicablePrefixes {
 			if strings.HasPrefix(lower, rule.prefix) {
-				add("not_applicable", family+" ("+rule.reason+")")
+				add("excluded", family+" ("+rule.reason+")")
 				classified = true
 				break
 			}
 		}
 		if !classified {
-			add("deferred", family+" ("+reasonDeferred+")")
+			add("planned", family+" ("+reasonDeferred+")")
 		}
 	}
 

@@ -140,20 +140,11 @@ canonicalization beyond stdlib scope.
 Verify: contract tests against recorded-response fixtures; live smoke behind
 opt-in label only.
 
-### R11 — Master-minion compatibility shims (~45 funcs)
-`pillar.get` from a local static pillar file (`--pillar-file`), grains from
-Facts v2, `grains.item/ls`, read-only `mine`/`publish`/`event` returning an
-explicit unsupported-result (documented error contract), `salt_version`,
-`saltutil.*` local-only subset, `match` compound matcher against local facts.
-Everything else in the bucket gets **excluded** ADRs (key/minion/auth
-infrastructure contradicts the no-daemon product definition).
-Verify: unit tests over static fixtures; no network tier.
-
-### R12 — Network devices (plugin boundary) (~40 funcs)
+### R11 — Network devices (plugin boundary) (~40 funcs)
 `napalm_*`, `junos`, `nxos(_api)`, `arista_pyeapi`, netmiko-style drivers.
 Requires SSH/NETCONF clients — either pure-Go SSH (stdlib has none → would
 break dependency policy) or out-of-tree plugin consuming external CLIs.
-Decision gate: ADR before R12 starts; default outcome = plugin boundary
+Decision gate: ADR before R11 starts; default outcome = plugin boundary
 documented, core repo ships discovery/error contracts only.
 
 ## 3. Cross-cutting workstreams
@@ -170,7 +161,7 @@ documented, core repo ships discovery/error contracts only.
   R9+R10→75%, R12 done → 100% of catalog in terminal states.
 - **Estimation**: ~700 functions remain across rounds; sequencing DAG:
   E1–E4 → {R1,R2,R3,R4,R5} parallelizable → {R6,R7,R8} after enablers →
-  R9 after E5 → R10 anytime after R4 → R11 anytime → R12 last (ADR-gated).
+  R9 after E5 → R10 anytime after R4 → R11 last (ADR-gated).
 
 ## 4. Risks & mitigations
 

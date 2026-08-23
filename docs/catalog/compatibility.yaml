@@ -5,8 +5,9 @@ reference:
 summary:
     families_total: 246
     implemented: 34
-    not_applicable: 69
-    deferred: 143
+    partial: 0
+    excluded: 69
+    planned: 143
 implemented_families:
     - aliases
     - archive
@@ -42,217 +43,217 @@ implemented_families:
     - timezone
     - user
     - virtualenv
-not_applicable:
-    - beacons (master-minion architecture (StateKit is local-only by design))
-    - cassandra_cql (requires database/message-broker client protocol)
-    - cloud (cloud provider API)
-    - dig (requires database/message-broker client protocol)
-    - dnsutil (requires database/message-broker client protocol)
-    - etcd (requires database/message-broker client protocol)
-    - event (master-minion architecture (StateKit is local-only by design))
-    - grains (master-minion architecture (StateKit is local-only by design))
-    - highstate_doc (master-minion architecture (StateKit is local-only by design))
-    - junos (network-device stack)
-    - key (master-minion architecture (StateKit is local-only by design))
-    - keychain (master-minion architecture (StateKit is local-only by design))
-    - match (master-minion architecture (StateKit is local-only by design))
-    - mine (master-minion architecture (StateKit is local-only by design))
-    - minion (master-minion architecture (StateKit is local-only by design))
-    - mysql (requires database/message-broker client protocol)
-    - napalm (network-device stack)
-    - napalm_formula (network-device stack)
-    - napalm_yang (network-device stack)
-    - nxos (network-device stack)
-    - nxos_api (network-device stack)
-    - pillar (master-minion architecture (StateKit is local-only by design))
-    - postgres (requires database/message-broker client protocol)
-    - postgres_cluster (requires database/message-broker client protocol)
-    - postgres_database (requires database/message-broker client protocol)
-    - postgres_default_privileges (requires database/message-broker client protocol)
-    - postgres_extension (requires database/message-broker client protocol)
-    - postgres_group (requires database/message-broker client protocol)
-    - postgres_initdb (requires database/message-broker client protocol)
-    - postgres_language (requires database/message-broker client protocol)
-    - postgres_privileges (requires database/message-broker client protocol)
-    - postgres_schema (requires database/message-broker client protocol)
-    - postgres_tablespace (requires database/message-broker client protocol)
-    - postgres_user (requires database/message-broker client protocol)
-    - proxy (master-minion architecture (StateKit is local-only by design))
-    - publish (master-minion architecture (StateKit is local-only by design))
-    - rabbitmq (requires database/message-broker client protocol)
-    - rabbitmq_cluster (requires database/message-broker client protocol)
-    - rabbitmq_plugin (requires database/message-broker client protocol)
-    - rabbitmq_policy (requires database/message-broker client protocol)
-    - rabbitmq_upstream (requires database/message-broker client protocol)
-    - rabbitmq_user (requires database/message-broker client protocol)
-    - rabbitmq_vhost (requires database/message-broker client protocol)
-    - rest_sample_utils (master-minion architecture (StateKit is local-only by design))
-    - salt (master-minion architecture (StateKit is local-only by design))
-    - salt_proxy (master-minion architecture (StateKit is local-only by design))
-    - salt_version (master-minion architecture (StateKit is local-only by design))
-    - saltcheck (master-minion architecture (StateKit is local-only by design))
-    - saltcloud (master-minion architecture (StateKit is local-only by design))
-    - saltutil (master-minion architecture (StateKit is local-only by design))
-    - schedule (master-minion architecture (StateKit is local-only by design))
-    - sdb (master-minion architecture (StateKit is local-only by design))
-    - slsutil (master-minion architecture (StateKit is local-only by design))
-    - snmp (requires database/message-broker client protocol)
-    - sqlite3 (requires database/message-broker client protocol)
-    - vsphere (cloud provider API)
-    - win_dacl (windows-only)
-    - win_dns_client (windows-only)
-    - win_event (windows-only)
-    - win_firewall (windows-only)
-    - win_iis (windows-only)
-    - win_path (windows-only)
-    - win_pki (windows-only)
-    - win_servermanager (windows-only)
-    - win_smtp_server (windows-only)
-    - win_snmp (windows-only)
-    - win_wua (windows-only)
-    - zoneadm (non-linux unix platform)
-    - zonecfg (non-linux unix platform)
-deferred:
-    - 'acl (deferred: needs dedicated porting round)'
-    - 'alias (deferred: needs dedicated porting round)'
-    - 'alternatives (deferred: needs dedicated porting round)'
-    - 'ansible (deferred: needs dedicated porting round)'
-    - 'apache (deferred: needs dedicated porting round)'
-    - 'apache_conf (deferred: needs dedicated porting round)'
-    - 'apache_module (deferred: needs dedicated porting round)'
-    - 'apache_site (deferred: needs dedicated porting round)'
-    - 'apf (deferred: needs dedicated porting round)'
-    - 'appx (deferred: needs dedicated porting round)'
-    - 'artifactory (deferred: needs dedicated porting round)'
-    - 'assistive (deferred: needs dedicated porting round)'
-    - 'asymmetric (deferred: needs dedicated porting round)'
-    - 'auditpol (deferred: needs dedicated porting round)'
-    - 'autoruns (deferred: needs dedicated porting round)'
-    - 'baredoc (deferred: needs dedicated porting round)'
-    - 'bcache (deferred: needs dedicated porting round)'
-    - 'beacon (deferred: needs dedicated porting round)'
-    - 'bgp (deferred: needs dedicated porting round)'
-    - 'bridge (deferred: needs dedicated porting round)'
-    - 'celery (deferred: needs dedicated porting round)'
-    - 'certutil (deferred: needs dedicated porting round)'
-    - 'chef (deferred: needs dedicated porting round)'
-    - 'chocolatey (deferred: needs dedicated porting round)'
-    - 'chronos (deferred: needs dedicated porting round)'
-    - 'chroot (deferred: needs dedicated porting round)'
-    - 'config (deferred: needs dedicated porting round)'
-    - 'cp (deferred: needs dedicated porting round)'
-    - 'cryptdev (deferred: needs dedicated porting round)'
-    - 'data (deferred: needs dedicated porting round)'
-    - 'debconf (deferred: needs dedicated porting round)'
-    - 'defaults (deferred: needs dedicated porting round)'
-    - 'desktop (deferred: needs dedicated porting round)'
-    - 'devinfo (deferred: needs dedicated porting round)'
-    - 'devmap (deferred: needs dedicated porting round)'
-    - 'dism (deferred: needs dedicated porting round)'
-    - 'dsc (deferred: needs dedicated porting round)'
-    - 'dsc_resource (deferred: needs dedicated porting round)'
-    - 'ethtool (deferred: needs dedicated porting round)'
-    - 'extfs (deferred: needs dedicated porting round)'
-    - 'firewall (deferred: needs dedicated porting round)'
-    - 'firewalld (deferred: needs dedicated porting round)'
-    - 'fmadm (deferred: needs dedicated porting round)'
-    - 'gpg (deferred: needs dedicated porting round)'
-    - 'host (deferred: needs dedicated porting round)'
-    - 'idem (deferred: needs dedicated porting round)'
-    - 'incron (deferred: needs dedicated porting round)'
-    - 'iosconfig (deferred: needs dedicated porting round)'
-    - 'ip (deferred: needs dedicated porting round)'
-    - 'ipset (deferred: needs dedicated porting round)'
-    - 'iptables (deferred: needs dedicated porting round)'
-    - 'iwtools (deferred: needs dedicated porting round)'
-    - 'jinja (deferred: needs dedicated porting round)'
-    - 'kernelpkg (deferred: needs dedicated porting round)'
-    - 'lgpo (deferred: needs dedicated porting round)'
-    - 'lgpo_reg (deferred: needs dedicated porting round)'
-    - 'license (deferred: needs dedicated porting round)'
-    - 'linux_service (deferred: needs dedicated porting round)'
-    - 'locate (deferred: needs dedicated porting round)'
-    - 'log (deferred: needs dedicated porting round)'
-    - 'loop (deferred: needs dedicated porting round)'
-    - 'lvm (deferred: needs dedicated porting round)'
-    - 'macdefaults (deferred: needs dedicated porting round)'
-    - 'macpackage (deferred: needs dedicated porting round)'
-    - 'makeconf (deferred: needs dedicated porting round)'
-    - 'module (deferred: needs dedicated porting round)'
-    - 'nacl (deferred: needs dedicated porting round)'
-    - 'net (deferred: needs dedicated porting round)'
-    - 'netacl (deferred: needs dedicated porting round)'
-    - 'netaddress (deferred: needs dedicated porting round)'
-    - 'netconfig (deferred: needs dedicated porting round)'
-    - 'netntp (deferred: needs dedicated porting round)'
-    - 'netsnmp (deferred: needs dedicated porting round)'
-    - 'netusers (deferred: needs dedicated porting round)'
-    - 'network (deferred: needs dedicated porting round)'
-    - 'nfs3 (deferred: needs dedicated porting round)'
-    - 'nftables (deferred: needs dedicated porting round)'
-    - 'ntp (deferred: needs dedicated porting round)'
-    - 'oracle (deferred: needs dedicated porting round)'
-    - 'osquery (deferred: needs dedicated porting round)'
-    - 'out (deferred: needs dedicated porting round)'
-    - 'pam (deferred: needs dedicated porting round)'
-    - 'partition (deferred: needs dedicated porting round)'
-    - 'pkg_resource (deferred: needs dedicated porting round)'
-    - 'pkgbuild (deferred: needs dedicated porting round)'
-    - 'pkgrepo (deferred: needs dedicated porting round)'
-    - 'pkgutil (deferred: needs dedicated porting round)'
-    - 'power (deferred: needs dedicated porting round)'
-    - 'powercfg (deferred: needs dedicated porting round)'
-    - 'probes (deferred: needs dedicated porting round)'
-    - 'process (deferred: needs dedicated porting round)'
-    - 'ps (deferred: needs dedicated porting round)'
-    - 'psget (deferred: needs dedicated porting round)'
-    - 'puppet (deferred: needs dedicated porting round)'
-    - 'pyeapi (deferred: needs dedicated porting round)'
-    - 'pyenv (deferred: needs dedicated porting round)'
-    - 'python (deferred: needs dedicated porting round)'
-    - 'quota (deferred: needs dedicated porting round)'
-    - 'raid (deferred: needs dedicated porting round)'
-    - 'random (deferred: needs dedicated porting round)'
-    - 'rbac (deferred: needs dedicated porting round)'
-    - 'rdp (deferred: needs dedicated porting round)'
-    - 'reg (deferred: needs dedicated porting round)'
-    - 'restartcheck (deferred: needs dedicated porting round)'
-    - 'ret (deferred: needs dedicated porting round)'
-    - 'route (deferred: needs dedicated porting round)'
-    - 'scp (deferred: needs dedicated porting round)'
-    - 'scsi (deferred: needs dedicated porting round)'
-    - 'seed (deferred: needs dedicated porting round)'
-    - 'shortcut (deferred: needs dedicated porting round)'
-    - 'slack (deferred: needs dedicated porting round)'
-    - 'smbios (deferred: needs dedicated porting round)'
-    - 'snapper (deferred: needs dedicated porting round)'
-    - 'softwareupdate (deferred: needs dedicated porting round)'
-    - 'ssh (deferred: needs dedicated porting round)'
-    - 'ssh_auth (deferred: needs dedicated porting round)'
-    - 'ssh_known_hosts (deferred: needs dedicated porting round)'
-    - 'ssh_pki (deferred: needs dedicated porting round)'
-    - 'state (deferred: needs dedicated porting round)'
-    - 'stateconf (deferred: needs dedicated porting round)'
-    - 'supervisord (deferred: needs dedicated porting round)'
-    - 'sys (deferred: needs dedicated porting round)'
-    - 'sysfs (deferred: needs dedicated porting round)'
-    - 'syslog_ng (deferred: needs dedicated porting round)'
-    - 'task (deferred: needs dedicated porting round)'
-    - 'temp (deferred: needs dedicated porting round)'
-    - 'test_virtual (deferred: needs dedicated porting round)'
-    - 'textfsm (deferred: needs dedicated porting round)'
-    - 'tls (deferred: needs dedicated porting round)'
-    - 'udev (deferred: needs dedicated porting round)'
-    - 'uptime (deferred: needs dedicated porting round)'
-    - 'users (deferred: needs dedicated porting round)'
-    - 'vagrant (deferred: needs dedicated porting round)'
-    - 'webutil (deferred: needs dedicated porting round)'
-    - 'winrepo (deferred: needs dedicated porting round)'
-    - 'wua (deferred: needs dedicated porting round)'
-    - 'wusa (deferred: needs dedicated porting round)'
-    - 'x509 (deferred: needs dedicated porting round)'
-    - 'xattr (deferred: needs dedicated porting round)'
-    - 'xfs (deferred: needs dedicated porting round)'
-    - 'xml (deferred: needs dedicated porting round)'
-    - 'yaml (deferred: needs dedicated porting round)'
-    - 'zk_concurrency (deferred: needs dedicated porting round)'
+excluded:
+    - 'beacons (excluded: master-minion architecture (StateKit is local-only by design))'
+    - 'cassandra_cql (planned: requires database/message-broker client protocol (round R9, services tier))'
+    - 'cloud (planned: cloud provider API (round R10))'
+    - 'dig (planned: requires database/message-broker client protocol (round R9, services tier))'
+    - 'dnsutil (planned: requires database/message-broker client protocol (round R9, services tier))'
+    - 'etcd (planned: requires database/message-broker client protocol (round R9, services tier))'
+    - 'event (excluded: master-minion architecture (StateKit is local-only by design))'
+    - 'grains (excluded: master-minion architecture (StateKit is local-only by design))'
+    - 'highstate_doc (excluded: master-minion architecture (StateKit is local-only by design))'
+    - 'junos (planned: network-device stack (round R11, ADR-gated plugin boundary))'
+    - 'key (excluded: master-minion architecture (StateKit is local-only by design))'
+    - 'keychain (excluded: master-minion architecture (StateKit is local-only by design))'
+    - 'match (excluded: master-minion architecture (StateKit is local-only by design))'
+    - 'mine (excluded: master-minion architecture (StateKit is local-only by design))'
+    - 'minion (excluded: master-minion architecture (StateKit is local-only by design))'
+    - 'mysql (planned: requires database/message-broker client protocol (round R9, services tier))'
+    - 'napalm (planned: network-device stack (round R11, ADR-gated plugin boundary))'
+    - 'napalm_formula (planned: network-device stack (round R11, ADR-gated plugin boundary))'
+    - 'napalm_yang (planned: network-device stack (round R11, ADR-gated plugin boundary))'
+    - 'nxos (planned: network-device stack (round R11, ADR-gated plugin boundary))'
+    - 'nxos_api (planned: network-device stack (round R11, ADR-gated plugin boundary))'
+    - 'pillar (excluded: master-minion architecture (StateKit is local-only by design))'
+    - 'postgres (planned: requires database/message-broker client protocol (round R9, services tier))'
+    - 'postgres_cluster (planned: requires database/message-broker client protocol (round R9, services tier))'
+    - 'postgres_database (planned: requires database/message-broker client protocol (round R9, services tier))'
+    - 'postgres_default_privileges (planned: requires database/message-broker client protocol (round R9, services tier))'
+    - 'postgres_extension (planned: requires database/message-broker client protocol (round R9, services tier))'
+    - 'postgres_group (planned: requires database/message-broker client protocol (round R9, services tier))'
+    - 'postgres_initdb (planned: requires database/message-broker client protocol (round R9, services tier))'
+    - 'postgres_language (planned: requires database/message-broker client protocol (round R9, services tier))'
+    - 'postgres_privileges (planned: requires database/message-broker client protocol (round R9, services tier))'
+    - 'postgres_schema (planned: requires database/message-broker client protocol (round R9, services tier))'
+    - 'postgres_tablespace (planned: requires database/message-broker client protocol (round R9, services tier))'
+    - 'postgres_user (planned: requires database/message-broker client protocol (round R9, services tier))'
+    - 'proxy (excluded: master-minion architecture (StateKit is local-only by design))'
+    - 'publish (excluded: master-minion architecture (StateKit is local-only by design))'
+    - 'rabbitmq (planned: requires database/message-broker client protocol (round R9, services tier))'
+    - 'rabbitmq_cluster (planned: requires database/message-broker client protocol (round R9, services tier))'
+    - 'rabbitmq_plugin (planned: requires database/message-broker client protocol (round R9, services tier))'
+    - 'rabbitmq_policy (planned: requires database/message-broker client protocol (round R9, services tier))'
+    - 'rabbitmq_upstream (planned: requires database/message-broker client protocol (round R9, services tier))'
+    - 'rabbitmq_user (planned: requires database/message-broker client protocol (round R9, services tier))'
+    - 'rabbitmq_vhost (planned: requires database/message-broker client protocol (round R9, services tier))'
+    - 'rest_sample_utils (excluded: master-minion architecture (StateKit is local-only by design))'
+    - 'salt (excluded: master-minion architecture (StateKit is local-only by design))'
+    - 'salt_proxy (excluded: master-minion architecture (StateKit is local-only by design))'
+    - 'salt_version (excluded: master-minion architecture (StateKit is local-only by design))'
+    - 'saltcheck (excluded: master-minion architecture (StateKit is local-only by design))'
+    - 'saltcloud (excluded: master-minion architecture (StateKit is local-only by design))'
+    - 'saltutil (excluded: master-minion architecture (StateKit is local-only by design))'
+    - 'schedule (excluded: master-minion architecture (StateKit is local-only by design))'
+    - 'sdb (excluded: master-minion architecture (StateKit is local-only by design))'
+    - 'slsutil (excluded: master-minion architecture (StateKit is local-only by design))'
+    - 'snmp (planned: requires database/message-broker client protocol (round R9, services tier))'
+    - 'sqlite3 (planned: requires database/message-broker client protocol (round R9, services tier))'
+    - 'vsphere (planned: cloud provider API (round R10))'
+    - 'win_dacl (planned: windows-only (round R7))'
+    - 'win_dns_client (planned: windows-only (round R7))'
+    - 'win_event (planned: windows-only (round R7))'
+    - 'win_firewall (planned: windows-only (round R7))'
+    - 'win_iis (planned: windows-only (round R7))'
+    - 'win_path (planned: windows-only (round R7))'
+    - 'win_pki (planned: windows-only (round R7))'
+    - 'win_servermanager (planned: windows-only (round R7))'
+    - 'win_smtp_server (planned: windows-only (round R7))'
+    - 'win_snmp (planned: windows-only (round R7))'
+    - 'win_wua (planned: windows-only (round R7))'
+    - 'zoneadm (planned: non-linux unix platform (round R8))'
+    - 'zonecfg (planned: non-linux unix platform (round R8))'
+planned:
+    - 'acl (planned: needs a dedicated porting round)'
+    - 'alias (planned: needs a dedicated porting round)'
+    - 'alternatives (planned: needs a dedicated porting round)'
+    - 'ansible (planned: needs a dedicated porting round)'
+    - 'apache (planned: needs a dedicated porting round)'
+    - 'apache_conf (planned: needs a dedicated porting round)'
+    - 'apache_module (planned: needs a dedicated porting round)'
+    - 'apache_site (planned: needs a dedicated porting round)'
+    - 'apf (planned: needs a dedicated porting round)'
+    - 'appx (planned: needs a dedicated porting round)'
+    - 'artifactory (planned: needs a dedicated porting round)'
+    - 'assistive (planned: needs a dedicated porting round)'
+    - 'asymmetric (planned: needs a dedicated porting round)'
+    - 'auditpol (planned: needs a dedicated porting round)'
+    - 'autoruns (planned: needs a dedicated porting round)'
+    - 'baredoc (planned: needs a dedicated porting round)'
+    - 'bcache (planned: needs a dedicated porting round)'
+    - 'beacon (planned: needs a dedicated porting round)'
+    - 'bgp (planned: needs a dedicated porting round)'
+    - 'bridge (planned: needs a dedicated porting round)'
+    - 'celery (planned: needs a dedicated porting round)'
+    - 'certutil (planned: needs a dedicated porting round)'
+    - 'chef (planned: needs a dedicated porting round)'
+    - 'chocolatey (planned: needs a dedicated porting round)'
+    - 'chronos (planned: needs a dedicated porting round)'
+    - 'chroot (planned: needs a dedicated porting round)'
+    - 'config (planned: needs a dedicated porting round)'
+    - 'cp (planned: needs a dedicated porting round)'
+    - 'cryptdev (planned: needs a dedicated porting round)'
+    - 'data (planned: needs a dedicated porting round)'
+    - 'debconf (planned: needs a dedicated porting round)'
+    - 'defaults (planned: needs a dedicated porting round)'
+    - 'desktop (planned: needs a dedicated porting round)'
+    - 'devinfo (planned: needs a dedicated porting round)'
+    - 'devmap (planned: needs a dedicated porting round)'
+    - 'dism (planned: needs a dedicated porting round)'
+    - 'dsc (planned: needs a dedicated porting round)'
+    - 'dsc_resource (planned: needs a dedicated porting round)'
+    - 'ethtool (planned: needs a dedicated porting round)'
+    - 'extfs (planned: needs a dedicated porting round)'
+    - 'firewall (planned: needs a dedicated porting round)'
+    - 'firewalld (planned: needs a dedicated porting round)'
+    - 'fmadm (planned: needs a dedicated porting round)'
+    - 'gpg (planned: needs a dedicated porting round)'
+    - 'host (planned: needs a dedicated porting round)'
+    - 'idem (planned: needs a dedicated porting round)'
+    - 'incron (planned: needs a dedicated porting round)'
+    - 'iosconfig (planned: needs a dedicated porting round)'
+    - 'ip (planned: needs a dedicated porting round)'
+    - 'ipset (planned: needs a dedicated porting round)'
+    - 'iptables (planned: needs a dedicated porting round)'
+    - 'iwtools (planned: needs a dedicated porting round)'
+    - 'jinja (planned: needs a dedicated porting round)'
+    - 'kernelpkg (planned: needs a dedicated porting round)'
+    - 'lgpo (planned: needs a dedicated porting round)'
+    - 'lgpo_reg (planned: needs a dedicated porting round)'
+    - 'license (planned: needs a dedicated porting round)'
+    - 'linux_service (planned: needs a dedicated porting round)'
+    - 'locate (planned: needs a dedicated porting round)'
+    - 'log (planned: needs a dedicated porting round)'
+    - 'loop (planned: needs a dedicated porting round)'
+    - 'lvm (planned: needs a dedicated porting round)'
+    - 'macdefaults (planned: needs a dedicated porting round)'
+    - 'macpackage (planned: needs a dedicated porting round)'
+    - 'makeconf (planned: needs a dedicated porting round)'
+    - 'module (planned: needs a dedicated porting round)'
+    - 'nacl (planned: needs a dedicated porting round)'
+    - 'net (planned: needs a dedicated porting round)'
+    - 'netacl (planned: needs a dedicated porting round)'
+    - 'netaddress (planned: needs a dedicated porting round)'
+    - 'netconfig (planned: needs a dedicated porting round)'
+    - 'netntp (planned: needs a dedicated porting round)'
+    - 'netsnmp (planned: needs a dedicated porting round)'
+    - 'netusers (planned: needs a dedicated porting round)'
+    - 'network (planned: needs a dedicated porting round)'
+    - 'nfs3 (planned: needs a dedicated porting round)'
+    - 'nftables (planned: needs a dedicated porting round)'
+    - 'ntp (planned: needs a dedicated porting round)'
+    - 'oracle (planned: needs a dedicated porting round)'
+    - 'osquery (planned: needs a dedicated porting round)'
+    - 'out (planned: needs a dedicated porting round)'
+    - 'pam (planned: needs a dedicated porting round)'
+    - 'partition (planned: needs a dedicated porting round)'
+    - 'pkg_resource (planned: needs a dedicated porting round)'
+    - 'pkgbuild (planned: needs a dedicated porting round)'
+    - 'pkgrepo (planned: needs a dedicated porting round)'
+    - 'pkgutil (planned: needs a dedicated porting round)'
+    - 'power (planned: needs a dedicated porting round)'
+    - 'powercfg (planned: needs a dedicated porting round)'
+    - 'probes (planned: needs a dedicated porting round)'
+    - 'process (planned: needs a dedicated porting round)'
+    - 'ps (planned: needs a dedicated porting round)'
+    - 'psget (planned: needs a dedicated porting round)'
+    - 'puppet (planned: needs a dedicated porting round)'
+    - 'pyeapi (planned: needs a dedicated porting round)'
+    - 'pyenv (planned: needs a dedicated porting round)'
+    - 'python (planned: needs a dedicated porting round)'
+    - 'quota (planned: needs a dedicated porting round)'
+    - 'raid (planned: needs a dedicated porting round)'
+    - 'random (planned: needs a dedicated porting round)'
+    - 'rbac (planned: needs a dedicated porting round)'
+    - 'rdp (planned: needs a dedicated porting round)'
+    - 'reg (planned: needs a dedicated porting round)'
+    - 'restartcheck (planned: needs a dedicated porting round)'
+    - 'ret (planned: needs a dedicated porting round)'
+    - 'route (planned: needs a dedicated porting round)'
+    - 'scp (planned: needs a dedicated porting round)'
+    - 'scsi (planned: needs a dedicated porting round)'
+    - 'seed (planned: needs a dedicated porting round)'
+    - 'shortcut (planned: needs a dedicated porting round)'
+    - 'slack (planned: needs a dedicated porting round)'
+    - 'smbios (planned: needs a dedicated porting round)'
+    - 'snapper (planned: needs a dedicated porting round)'
+    - 'softwareupdate (planned: needs a dedicated porting round)'
+    - 'ssh (planned: needs a dedicated porting round)'
+    - 'ssh_auth (planned: needs a dedicated porting round)'
+    - 'ssh_known_hosts (planned: needs a dedicated porting round)'
+    - 'ssh_pki (planned: needs a dedicated porting round)'
+    - 'state (planned: needs a dedicated porting round)'
+    - 'stateconf (planned: needs a dedicated porting round)'
+    - 'supervisord (planned: needs a dedicated porting round)'
+    - 'sys (planned: needs a dedicated porting round)'
+    - 'sysfs (planned: needs a dedicated porting round)'
+    - 'syslog_ng (planned: needs a dedicated porting round)'
+    - 'task (planned: needs a dedicated porting round)'
+    - 'temp (planned: needs a dedicated porting round)'
+    - 'test_virtual (planned: needs a dedicated porting round)'
+    - 'textfsm (planned: needs a dedicated porting round)'
+    - 'tls (planned: needs a dedicated porting round)'
+    - 'udev (planned: needs a dedicated porting round)'
+    - 'uptime (planned: needs a dedicated porting round)'
+    - 'users (planned: needs a dedicated porting round)'
+    - 'vagrant (planned: needs a dedicated porting round)'
+    - 'webutil (planned: needs a dedicated porting round)'
+    - 'winrepo (planned: needs a dedicated porting round)'
+    - 'wua (planned: needs a dedicated porting round)'
+    - 'wusa (planned: needs a dedicated porting round)'
+    - 'x509 (planned: needs a dedicated porting round)'
+    - 'xattr (planned: needs a dedicated porting round)'
+    - 'xfs (planned: needs a dedicated porting round)'
+    - 'xml (planned: needs a dedicated porting round)'
+    - 'yaml (planned: needs a dedicated porting round)'
+    - 'zk_concurrency (planned: needs a dedicated porting round)'
