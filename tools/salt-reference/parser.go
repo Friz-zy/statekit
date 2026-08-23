@@ -45,10 +45,15 @@ type ModuleDoc struct {
 	Path            string   `yaml:"path"`
 	PlatformMarkers []string `yaml:"platform_markers,omitempty"`
 	Functions       []Entry  `yaml:"functions"`
+	// FuncAliases maps Salt source symbols to their CLI-facing names via
+	// __func_alias__; not serialized, used for implemented-name matching.
+	FuncAliases map[string]string `yaml:"-"`
 }
 
 var (
 	virtualNameRe = regexp.MustCompile(`(?m)^__virtualname__\s*=\s*["']([^"']+)["']`)
+	funcAliasRe   = regexp.MustCompile(`(?m)^__func_alias__\s*=\s*\{([^}]*)\}`)
+	aliasPairRe   = regexp.MustCompile(`["']([A-Za-z0-9_]+)["']\s*:\s*["']([A-Za-z0-9_]+)["']`)
 	defRe         = regexp.MustCompile(`^def\s+([A-Za-z_]\w*)\s*\((.*)$`)
 	execDepRe     = regexp.MustCompile(`__salt__\[\s*["']([A-Za-z0-9_.]+)["']\s*\]`)
 	utilDepRe     = regexp.MustCompile(`__utils__\[\s*["']([A-Za-z0-9_.]+)["']\s*\]`)
@@ -72,6 +77,12 @@ func parseModule(kind, relPath, stem, content string) ModuleDoc {
 	if m := virtualNameRe.FindStringSubmatch(stripped); m != nil {
 		doc.Module = m[1]
 		doc.Virtual = true
+	}
+	if m := funcAliasRe.FindStringSubmatch(stripped); m != nil {
+		doc.FuncAliases = map[string]string{}
+		for _, pair := range aliasPairRe.FindAllStringSubmatch(m[1], -1) {
+			doc.FuncAliases[pair[1]] = pair[2]
+		}
 	}
 	markers := map[string]bool{}
 	for _, m := range platformRe.FindAllStringSubmatch(stripped, -1) {

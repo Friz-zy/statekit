@@ -80,12 +80,12 @@ func checkSupportedKind(t reflect.Type) error {
 	case reflect.String, reflect.Bool, reflect.Int, reflect.Int64, reflect.Float64:
 		return nil
 	case reflect.Pointer:
-		// *bool carries tri-state options: nil keeps the Salt function
-		// default when the caller omits the flag entirely.
-		if t.Elem().Kind() == reflect.Bool {
+		// Pointer fields carry tri-state options: nil keeps the Salt
+		// function default when the caller omits the argument entirely.
+		if t.Elem().Kind() == reflect.Bool || t.Elem().Kind() == reflect.String {
 			return nil
 		}
-		return fmt.Errorf("unsupported pointer type *%s (only *bool)", t.Elem())
+		return fmt.Errorf("unsupported pointer type *%s (only *bool, *string)", t.Elem())
 	case reflect.Slice:
 		if t.Elem().Kind() == reflect.String {
 			return nil
@@ -302,12 +302,18 @@ func assignError(name string, value, want any) error {
 }
 
 func assignFromFlag(field reflect.Value, name, raw string) error {
-	if field.Kind() == reflect.Pointer && field.Type().Elem().Kind() == reflect.Bool {
+	if field.Kind() != reflect.Pointer {
+		// non-pointer path below
+	} else if field.Type().Elem().Kind() == reflect.Bool {
 		b, err := strconv.ParseBool(raw)
 		if err != nil {
 			return fmt.Errorf("argument %q: invalid boolean %q", name, raw)
 		}
 		field.Set(reflect.ValueOf(&b))
+		return nil
+	} else if field.Type().Elem().Kind() == reflect.String {
+		s := raw
+		field.Set(reflect.ValueOf(&s))
 		return nil
 	}
 	switch field.Kind() {
@@ -353,7 +359,8 @@ func splitList(raw string) []string {
 }
 
 func assignFromValue(field reflect.Value, name string, v any) error {
-	if field.Kind() == reflect.Pointer && field.Type().Elem().Kind() == reflect.Bool {
+	if field.Kind() == reflect.Pointer &&
+		(field.Type().Elem().Kind() == reflect.Bool || field.Type().Elem().Kind() == reflect.String) {
 		tmp := reflect.New(field.Type().Elem()).Elem()
 		if err := assignFromValue(tmp, name, v); err != nil {
 			return err

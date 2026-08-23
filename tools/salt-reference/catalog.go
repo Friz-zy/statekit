@@ -255,7 +255,13 @@ func familyCoverage(docs []ModuleDoc, implemented []string) FamilyCoverage {
 			if isRelevant(doc) {
 				fc.RelevantFunctions++
 			}
-			full := module + "." + fn.Function
+			// __func_alias__ renames (e.g. set_ -> set) define the
+			// CLI-facing name StateKit mirrors.
+			name := fn.Function
+			if public, ok := doc.FuncAliases[name]; ok {
+				name = public
+			}
+			full := module + "." + name
 			if set[full] && !matched[full] {
 				// Platform-split docs redefine the same virtual function;
 				// count each distinct Salt function once.

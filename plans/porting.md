@@ -195,11 +195,17 @@ PowerShell scriptlet through the Runner shell model, BSD sysctl;
 GOOS-neutral parsers verified by golden fixtures under
 internal/facts/testdata), R1.1 lvm family ported (15 exec functions +
 6 states mirroring linux_lvm.py/states/lvm.py contracts; tri-state
-*bool args added to the decoder for Salt default-true force flags;
-lvm moves implemented 34→35, planned 143→142). Enablers E1-E4 are
-complete: R6-R8 unblocked. Known gap parked for R8: statfs_unix.go
-(!windows tag) does not compile under GOOS=openbsd/netbsd
-(pre-existing, outside gated matrix).
+*bool args added to the decoder for Salt default-true force flags),
+R1.2 storage CLI batch ported: devmap (2), cryptdev (6, incl crypttab
+set/rm machinery), extfs (5, kwarg-flag maps + dumpe2fs parser),
+quota (7 exec + quota.mode state, mirroring Salt's set_ zero-fallback
+quirk with a section-28 note), mdadm/raid (9, facts-driven config path,
+stop retcode quirk pinned by test); decoder gains *string tri-state;
+salt-reference generator honors __func_alias__ so counters match
+CLI-facing names (families implemented 35→40, planned 142→137).
+Enablers E1-E4 are complete: R6-R8 unblocked. Known gap parked for R8:
+statfs_unix.go (!windows tag) does not compile under GOOS=openbsd/
+netbsd (pre-existing, outside gated matrix).
 
 Next in order: rounds R1-R5 (parallel), R6-R8 (enablers done),
 R9 after services tier (E5), R10 cloud, R11 netdev behind ADR gate.

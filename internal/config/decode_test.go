@@ -230,3 +230,31 @@ func TestPointerBoolFlagForms(t *testing.T) {
 		t.Fatalf("spaced bool not normalized: %v", normalized)
 	}
 }
+
+type triStringArgs struct {
+	Password *string `statekit:"name=password"`
+}
+
+func TestPointerStringTriState(t *testing.T) {
+	args := &triStringArgs{}
+	if err := Decode(args, nil, nil); err != nil {
+		t.Fatalf("decode omitted: %v", err)
+	}
+	if args.Password != nil {
+		t.Fatalf("omitted password must stay nil, got %q", *args.Password)
+	}
+	structured := map[string]any{"password": ""}
+	if err := Decode(args, structured, nil); err != nil {
+		t.Fatalf("decode structured: %v", err)
+	}
+	if args.Password == nil || *args.Password != "" {
+		t.Fatalf("explicit empty must be preserved, got %+v", args.Password)
+	}
+	flagged := &triStringArgs{}
+	if err := Decode(flagged, nil, map[string]string{"password": "secret"}); err != nil {
+		t.Fatalf("decode flag: %v", err)
+	}
+	if flagged.Password == nil || *flagged.Password != "secret" {
+		t.Fatalf("flag password = %+v", flagged.Password)
+	}
+}

@@ -15,8 +15,11 @@ import (
 	execblockdev "github.com/friz-zy/statekit/modules/exec/blockdev"
 	execcmd "github.com/friz-zy/statekit/modules/exec/cmd"
 	execcron "github.com/friz-zy/statekit/modules/exec/cron"
+	execcryptdev "github.com/friz-zy/statekit/modules/exec/cryptdev"
+	execdevmap "github.com/friz-zy/statekit/modules/exec/devmap"
 	execdisk "github.com/friz-zy/statekit/modules/exec/disk"
 	execenviron "github.com/friz-zy/statekit/modules/exec/environ"
+	execextfs "github.com/friz-zy/statekit/modules/exec/extfs"
 	execfile "github.com/friz-zy/statekit/modules/exec/file"
 	execgit "github.com/friz-zy/statekit/modules/exec/git"
 	execgroup "github.com/friz-zy/statekit/modules/exec/group"
@@ -29,10 +32,12 @@ import (
 	execlocale "github.com/friz-zy/statekit/modules/exec/locale"
 	execlogrotate "github.com/friz-zy/statekit/modules/exec/logrotate"
 	execlvm "github.com/friz-zy/statekit/modules/exec/lvm"
+	execmdadm "github.com/friz-zy/statekit/modules/exec/mdadm"
 	execmount "github.com/friz-zy/statekit/modules/exec/mount"
 	execnpm "github.com/friz-zy/statekit/modules/exec/npm"
 	execpip "github.com/friz-zy/statekit/modules/exec/pip"
 	execpkg "github.com/friz-zy/statekit/modules/exec/pkg"
+	execquota "github.com/friz-zy/statekit/modules/exec/quota"
 	execrandom "github.com/friz-zy/statekit/modules/exec/random"
 	execrsync "github.com/friz-zy/statekit/modules/exec/rsync"
 	execselinux "github.com/friz-zy/statekit/modules/exec/selinux"
@@ -53,6 +58,7 @@ import (
 	stateini "github.com/friz-zy/statekit/modules/state/ini"
 	statelvm "github.com/friz-zy/statekit/modules/state/lvm"
 	statepkg "github.com/friz-zy/statekit/modules/state/pkg"
+	statequota "github.com/friz-zy/statekit/modules/state/quota"
 	stateselinux "github.com/friz-zy/statekit/modules/state/selinux"
 	stateservice "github.com/friz-zy/statekit/modules/state/service"
 	statesysctl "github.com/friz-zy/statekit/modules/state/sysctl"
@@ -84,6 +90,9 @@ func buildRuntime() (*runtime.Runtime, error) {
 	}
 	for _, register := range []func(*runtime.ExecRegistry) error{
 		exectest.Register,
+		execcryptdev.Register,
+		execdevmap.Register,
+		execextfs.Register,
 		execcmd.Register,
 		execfile.Register,
 		execstatus.Register,
@@ -115,7 +124,9 @@ func buildRuntime() (*runtime.Runtime, error) {
 		execrandom.Register,
 		execselinux.Register,
 		execlvm.Register,
+		execmdadm.Register,
 		execmount.Register,
+		execquota.Register,
 		execsysctl.Register,
 		executimezone.Register,
 	} {
@@ -125,6 +136,7 @@ func buildRuntime() (*runtime.Runtime, error) {
 	}
 	for _, registerState := range []func(*runtime.StateRegistry) error{
 		statetest.Register,
+		statequota.Register,
 		statefile.Register,
 		statepkg.Register,
 		stateservice.Register,
