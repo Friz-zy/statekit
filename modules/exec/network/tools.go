@@ -807,3 +807,122 @@ func init() {
 		return nil
 	}
 }
+
+// --- address enumeration ------------------------------------------------------
+
+type IPAddrsArgs struct {
+	Interface       []string `statekit:"name=interface"`
+	IncludeLoopback bool     `statekit:"name=include_loopback"`
+	CIDR            *string  `statekit:"name=cidr"`
+	Type            *string  `statekit:"name=type"`
+}
+
+type ipAddrsFunc struct{ linuxLike }
+
+func (ipAddrsFunc) Name() string { return "network.ip_addrs" }
+func (ipAddrsFunc) Args() any    { return IPAddrsArgs{} }
+
+type ipAddrs6Func struct{ linuxLike }
+
+func (ipAddrs6Func) Name() string { return "network.ip_addrs6" }
+func (ipAddrs6Func) Args() any    { return IPAddrsArgs{} }
+
+// ipAddrsImpl ports _ip_addrs: unique sorted addresses of the given family
+// gathered from the interface data, loopback-filtered unless requested.
+// The module-level cidr/type refinements from network.ip_addrs apply after.
+func ipAddrsImpl(ctx context.Context, rt *runtime.Runtime, proto string, a *IPAddrsArgs) []any {
+	all := interfacesData(ctx, rt)
+	seen := map[string]bool{}
+	var out []any
+	for _, entryRaw := range all {
+		entry, ok := entryRaw.(map[string]any)
+		if !ok {
+			continue
+		}
+		addrs, _ := entry[proto].([]any)
+		for _, addrAny := range addrs {
+			addrMap, ok := addrAny.(map[string]any)
+			if !ok {
+				continue
+			}
+			address, _ := addrMap["address"].(string)
+			parsed, pok := parseAddr(address)
+			if !pok || !parsed.IsValid() {
+				continue
+			}
+			if parsed.IsLoopback() && !a.IncludeLoopback {
+				continue
+			}
+			key := parsed.String()
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+
+			if a.CIDR != nil && *a.CIDR != "" {
+				network, nok := parseNetwork(*a.CIDR)
+				if !nok || !networkContains(network, parsed) {
+					continue
+				}
+			}
+			if a.Type != nil {
+				privRaw, _ := isPrivateFunc{}.Execute(ctx, rt,
+					&IsPrivateArgs{IPAddr: key})
+				isPriv, _ := privRaw.(bool)
+				switch *a.Type {
+				case "public":
+					if isPriv {
+						continue
+					}
+				case "private":
+					if !isPriv {
+						continue
+					}
+				}
+			}
+			out = append(out, key)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].(string) < out[j].(string)
+	})
+	return out
+}
+
+func (ipAddrsFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a := args.(*IPAddrsArgs)
+	out := ipAddrsImpl(ctx, rt, "inet", a)
+	if out == nil {
+		out = []any{}
+	}
+	return out, nil
+}
+
+func (ipAddrs6Func) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a := args.(*IPAddrsArgs)
+	out := ipAddrsImpl(ctx, rt, "inet6", a)
+	if out == nil {
+		out = []any{}
+	}
+	return out, nil
+}
+
+func init() {
+	prev := extraRegister
+	extraRegister = func(reg *runtime.ExecRegistry) error {
+		if prev != nil {
+			if err := prev(reg); err != nil {
+				return err
+			}
+		}
+		for _, fn := range []runtime.ExecFunction{
+			ipAddrsFunc{},
+			ipAddrs6Func{},
+		} {
+			if err := reg.Register(fn); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}

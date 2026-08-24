@@ -428,3 +428,64 @@ func TestFqdns(t *testing.T) {
 		}
 	}
 }
+
+// Mirrors ip_addrs/ip_addrs6 filtering semantics over the fixture data.
+func TestIPAddrs(t *testing.T) {
+	rt, _ := newIfaceRT(t, nil)
+	af := ipAddrsFunc{}
+
+	gotRaw, err := af.Execute(context.Background(), rt, &IPAddrsArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []any{"172.17.0.4", "192.168.99.1"}
+	if !reflect.DeepEqual(gotRaw, want) {
+		t.Fatalf("ip_addrs = %#v, want %v", gotRaw, want)
+	}
+
+	loopbackOK := true
+	gotRaw, err = af.Execute(context.Background(), rt, &IPAddrsArgs{
+		IncludeLoopback: loopbackOK,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantLoop := []any{"127.0.0.1", "172.17.0.4", "192.168.99.1"}
+	if !reflect.DeepEqual(gotRaw, wantLoop) {
+		t.Fatalf("with loopback = %#v, want %v", gotRaw, wantLoop)
+	}
+
+	cidr := "192.168.99.0/24"
+	gotRaw, err = af.Execute(context.Background(), rt, &IPAddrsArgs{CIDR: &cidr})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(gotRaw, []any{"192.168.99.1"}) {
+		t.Fatalf("cidr filter = %#v", gotRaw)
+	}
+
+	privateType := "private"
+	gotRaw, err = af.Execute(context.Background(), rt, &IPAddrsArgs{Type: &privateType})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(gotRaw.([]any)) != 2 {
+		t.Fatalf("private filter = %#v", gotRaw)
+	}
+
+	publicType := "public"
+	gotRaw, err = af.Execute(context.Background(), rt, &IPAddrsArgs{Type: &publicType})
+	if err != nil || len(gotRaw.([]any)) != 0 {
+		t.Fatalf("public filter on private-only host = %#v, %v", gotRaw, err)
+	}
+
+	a6 := ipAddrs6Func{}
+	gotRaw, err = a6.Execute(context.Background(), rt, &IPAddrsArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantV6 := []any{"fd00::5"}
+	if !reflect.DeepEqual(gotRaw, wantV6) {
+		t.Fatalf("ip_addrs6 = %#v, want %v", gotRaw, wantV6)
+	}
+}

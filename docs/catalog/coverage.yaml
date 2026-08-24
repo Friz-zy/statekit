@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 377
+    implemented: 379
 state:
     salt_modules: 132
     salt_functions: 669
@@ -63,6 +63,8 @@ implemented:
         - network.get_fqdn
         - network.get_hostname
         - network.ifacestartswith
+        - network.ip_addrs6
+        - network.ip_addrs
         - network.ip_addrs6
         - network.ip_neighs
         - network.ip_neighs6

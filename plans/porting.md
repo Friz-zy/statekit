@@ -409,6 +409,17 @@ verbose dict shape, ifacestartswith with label preference, and fqdns as
 sorted reverse-resolved names (sequential; upstream parallelizes —
 documented divergence). The network family is now complete at 55/55
 catalog functions (exec 363→377).
+R2 CLOSED (differential scope pass executed): registration moved into
+internal/bootstrap so the CLI binary and the new tests/differential
+harness observe one identical execution surface; the pass reconciles
+the live registry against docs/catalog for every R2 family and emits a
+golden report at docs/differential/R2/report.yaml — R2 public surface
+119/119 registered (177 catalog entries incl. privates), zero pending.
+The twin-container scenario manifest (iptables/nftables restore-
+validation, ipset membership matrix, bridge lifecycle, ps vs procps,
+network math vs python-ipaddress) ships inside the report and waits on
+differential.yml runtime enablement; network family completed at 55/55
+catalog functions including ip_addrs/ip_addrs6 (exec 377→379).
 Enablers E1-E4 are complete: R6-R8 unblocked. Known gap
 parked for R8: statfs_unix.go (!windows tag) does not compile under
 GOOS=openbsd/netbsd (pre-existing, outside gated matrix). loop.until is
@@ -419,11 +430,12 @@ for the data/util layer. Remaining in R1, in order:
      differential catalog pass. With that, R1's function scope is
      exhausted — R1 closes after a differential-scope pass over its
      families (R1 ports → R2 differential per section 3).
-  2. Next rounds: the network family is complete (55/55 catalog
-     functions); R2 closes with a differential-scope pass over its
-     families; R3 pkg deep port; R4-R5 per plan; R6-R8 unblocked via
-     E1-E4; R9 awaits the services tier (E5); R10 cloud; R11 netdev
-     behind the ADR gate.
+  2. Round status: **R2 CLOSED** (ports + differential scope pass,
+     report at docs/differential/R2/report.yaml). Next: R3 pkg deep
+     port (head item); R4-R5 per plan; R6-R8 unblocked via E1-E4; R9
+     awaits the services tier (E5); R10 cloud; R11 netdev behind the
+     ADR gate. Twin-container differential runs activate with
+     differential.yml.
 
 Next in order: rounds R1-R5 (parallel), R6-R8 (enablers done),
 R9 after services tier (E5), R10 cloud, R11 netdev behind ADR gate.
