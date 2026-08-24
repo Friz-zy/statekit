@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 349
+    implemented: 363
 state:
     salt_modules: 132
     salt_functions: 669
@@ -57,6 +57,20 @@ implemented:
         - network.is_private
         - network.reverse_ip
         - network.wol
+        - network.active_tcp
+        - network.arp
+        - network.dig
+        - network.default_route
+        - network.get_route
+        - network.hw_addr
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.ping
+        - network.routes
+        - network.subnets
+        - network.subnets6
+        - network.traceroute
         - cmd.retcode
         - cmd.run
         - cmd.run_all

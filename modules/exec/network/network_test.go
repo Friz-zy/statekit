@@ -298,7 +298,7 @@ func TestRegisterNames(t *testing.T) {
 			t.Errorf("missing registration %s", want)
 		}
 	}
-	for _, pending := range []string{"network.ping", "network.netstat", "network.routes"} {
+	for _, pending := range []string{"network.netstat", "network.get_bufsize", "network.fqdns"} {
 		if names[pending] {
 			t.Errorf("%s lands in its own round", pending)
 		}

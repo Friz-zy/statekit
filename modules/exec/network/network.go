@@ -431,7 +431,7 @@ func macStrToBytes(macStr string) ([]byte, error) {
 // udpSendHook isolates the socket write for hermetic tests; the real
 // implementation broadcasts the magic packet over UDP.
 var udpSendHook = func(payload []byte, bcast string, destport int) error {
-	conn, err := net.Dial("udp", fmt.Sprintf("%s:%d", bcast, destport))
+	conn, err := net.Dial("udp", net.JoinHostPort(bcast, strconv.Itoa(destport)))
 	if err != nil {
 		return err
 	}
@@ -486,6 +486,11 @@ func (wolFunc) Execute(_ context.Context, _ *runtime.Runtime, args any) (any, er
 // Register installs the network-module execution functions shipped this
 // round; tool-backed functions join as their rounds land.
 func Register(reg *runtime.ExecRegistry) error {
+	if extraRegister != nil {
+		if err := extraRegister(reg); err != nil {
+			return err
+		}
+	}
 	for _, fn := range []runtime.ExecFunction{
 		wolFunc{},
 		inSubnetFunc{},
