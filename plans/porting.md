@@ -618,8 +618,26 @@ Mapped onto both pytests batteries (exec 405→418, states 37→40; python
 and pyenv families flip terminal, families 62→64 implemented / 113
 planned).
 
-Next in order: R3 continues (pkgbuild state built/repo, npm/pip/
-virtualenv long-tail check, R3 close differential pass), R4-R5 per
-plan, R6-R8 unblocked via E1-E4, R9 awaits the services tier (E5), R10
-cloud, R11 netdev behind the ADR gate. Master-minion families stay
-excluded.
+R3.9 landed the pkgbuild state module: built (the results-requirement
+gate, sorted missing-artifact verification against dest_dir, force/test
+comments, and the build→re-verify cycle with the exec-side change dict)
+and repo (test-mode refresh comment, retcode-driven result, refresh
+change key, and the stdout/stderr comment concatenation). Upstream
+ships integration-only tests, so hermetic tests pin the state flows
+end-to-end through a scripted fake toolchain. The upstream fallback
+indirection (rpmbuild.build/rpmbuild.make_repo names on non-RPM
+families) collapses into the family-dispatched pkgbuild.* surface
+(documented divergence); repo()'s invalid-env initialization quirk
+(result staying True with only a comment) is preserved verbatim
+(states 40→42; pkgbuild's owed state surface is now complete).
+
+Long-tail audit for R3 close: npm misses cache_path/cache_list/
+cache_clean; pip misses freeze/is_installed/list_all_versions/
+list_upgrades/normalize/upgrade/upgrade_available/version plus their
+private machinery — scheduled as dedicated phases before the R3 close
+differential pass.
+
+Next in order: R3 continues (npm cache trio + virtualenv_mod audit,
+pip deepening, R3 close differential pass), R4-R5 per plan, R6-R8
+unblocked via E1-E4, R9 awaits the services tier (E5), R10 cloud, R11
+netdev behind the ADR gate. Master-minion families stay excluded.

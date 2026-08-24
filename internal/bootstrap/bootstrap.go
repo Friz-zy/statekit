@@ -81,6 +81,7 @@ import (
 	stateini "github.com/friz-zy/statekit/modules/state/ini"
 	statelvm "github.com/friz-zy/statekit/modules/state/lvm"
 	statepkg "github.com/friz-zy/statekit/modules/state/pkg"
+	statepkgbuild "github.com/friz-zy/statekit/modules/state/pkgbuild"
 	statepkgrepo "github.com/friz-zy/statekit/modules/state/pkgrepo"
 	statepyenv "github.com/friz-zy/statekit/modules/state/pyenv"
 	statequota "github.com/friz-zy/statekit/modules/state/quota"
@@ -200,6 +201,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		statepkgrepo.Register,
 		statedebconf.Register,
 		statepyenv.Register,
+		statepkgbuild.Register,
 		statelvm.Register,
 		stateselinux.Register,
 	} {

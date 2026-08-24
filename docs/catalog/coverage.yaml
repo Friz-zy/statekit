@@ -11,7 +11,7 @@ state:
     salt_modules: 132
     salt_functions: 669
     relevant_functions: 197
-    implemented: 40
+    implemented: 42
 implemented:
     exec:
         - aliases.get_target
@@ -475,6 +475,8 @@ implemented:
         - pkg.installed
         - pkg.latest
         - pkg.removed
+        - pkgbuild.built
+        - pkgbuild.repo
         - pkgrepo.absent
         - pkgrepo.managed
         - pyenv.absent
