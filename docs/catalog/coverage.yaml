@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 283
+    implemented: 299
 state:
     salt_modules: 132
     salt_functions: 669
@@ -124,6 +124,22 @@ implemented:
         - ini.get_ini
         - ini.get_option
         - ini.remove_option
+        - iptables.append
+        - iptables.build_rule
+        - iptables.check
+        - iptables.check_chain
+        - iptables.delete
+        - iptables.delete_chain
+        - iptables.flush
+        - iptables.get_policy
+        - iptables.get_rules
+        - iptables.get_saved_policy
+        - iptables.get_saved_rules
+        - iptables.insert
+        - iptables.new_chain
+        - iptables.save
+        - iptables.set_policy
+        - iptables.version
         - iwtools.list_interfaces
         - iwtools.scan
         - iwtools.set_mode

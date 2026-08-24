@@ -30,6 +30,7 @@ import (
 	exechosts "github.com/friz-zy/statekit/modules/exec/hosts"
 	exechttp "github.com/friz-zy/statekit/modules/exec/http"
 	execini "github.com/friz-zy/statekit/modules/exec/ini"
+	execiptables "github.com/friz-zy/statekit/modules/exec/iptables"
 	execiwtools "github.com/friz-zy/statekit/modules/exec/iwtools"
 	execkeyboard "github.com/friz-zy/statekit/modules/exec/keyboard"
 	execkmod "github.com/friz-zy/statekit/modules/exec/kmod"
@@ -142,6 +143,7 @@ func buildRuntime() (*runtime.Runtime, error) {
 		execaliases.Register,
 		exechashutil.Register,
 		execini.Register,
+		execiptables.Register,
 		execrandom.Register,
 		execselinux.Register,
 		execlvm.Register,

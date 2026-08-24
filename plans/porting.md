@@ -300,7 +300,25 @@ the exact "binary was not found in $PATH" message, and status() mapping
 kernel state characters to psutil names. Upstream tests mock psutil
 internals on macOS, so the suite pins source-derived hermetic /proc
 fixtures instead (families 51→52 implemented / 125 planned; exec
-259→283). Enablers E1-E4 are complete: R6-R8 unblocked. Known gap
+259→283). R2.3 opened the firewall stack with iptables (16 exec
+functions): build_rule ports the full assembly order (if/of, proto/
+protocol with the policy-match exception, match lists with name_ for
+pknock/quota2/recent, negated multiport lists collapsing to one "!",
+comment quoting, the verbatim after-jump option table, generic leftover
+rendering) with upstream's error strings ("Error: protocol must be
+specified" and friends returned as results); check() probes --check
+support through the help text and falls back to the temporary-chain
+round-trip named by uuid.getnode's 0x-hex MAC; _parse_conf reimplements
+the shlex + swap/merge preprocessing plus a Go-side parse_known_args
+over the generated 381-option table (Go Split does not interleave
+capture groups, so pairing walks indices; unknown flags fall to extras);
+save() routes through config.option save_filters regexes and the
+file.write delegate. cmdmod gained cmd.run_stderr (additive, required by
+the family contract); os_family/os grains resolve behind injectable
+hooks defaulting to the unsupported-distro error path. Upstream's 17
+tests map onto StateKit fixtures covering every public function
+(families 52→53 implemented / 124 planned; exec 283→299).
+Enablers E1-E4 are complete: R6-R8 unblocked. Known gap
 parked for R8: statfs_unix.go (!windows tag) does not compile under
 GOOS=openbsd/netbsd (pre-existing, outside gated matrix). loop.until is
 excluded per docs/adr/0001-loop-until-excluded.md; until_no_eval waits
@@ -310,10 +328,10 @@ for the data/util layer. Remaining in R1, in order:
      differential catalog pass. With that, R1's function scope is
      exhausted — R1 closes after a differential-scope pass over its
      families (R1 ports → R2 differential per section 3).
-  2. Next rounds: R2 continues with the firewall/network stack
-     (iptables/nftables/ipset ~23 each, bridge 24, network 55); R3 pkg
-     deep port; R4-R5 per plan; R6-R8 unblocked via E1-E4; R9 awaits the
-     services tier (E5); R10 cloud; R11 netdev behind the ADR gate.
+  2. Next rounds: R2 continues with nftables/ipset (~23 each),
+     bridge 24, network 55; R3 pkg deep port; R4-R5 per plan; R6-R8
+     unblocked via E1-E4; R9 awaits the services tier (E5); R10 cloud;
+     R11 netdev behind the ADR gate.
 
 Next in order: rounds R1-R5 (parallel), R6-R8 (enablers done),
 R9 after services tier (E5), R10 cloud, R11 netdev behind ADR gate.

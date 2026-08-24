@@ -140,6 +140,29 @@ func (runStdoutFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any)
 	return string(res.Stdout), nil
 }
 
+// RunStdoutArgs is the exported handle cross-family callers use when
+// invoking cmd.run_stdout through the registry.
+type RunStdoutArgs = runStdoutArgs
+
+type RunStderrArgs RunArgs
+
+type runStderrFunc struct{}
+
+func (runStderrFunc) Name() string { return "cmd.run_stderr" }
+func (runStderrFunc) Args() any    { return RunStderrArgs{} }
+func (runStderrFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a := args.(*RunStderrArgs)
+	base := RunArgs(*a)
+	if err := validateRun(&base); err != nil {
+		return nil, err
+	}
+	res := rt.Runner.Run(ctx, base.command())
+	if res.Err != nil {
+		return nil, res.Err
+	}
+	return string(res.Stderr), nil
+}
+
 type retcodeArgs RunArgs
 
 type retcodeFunc struct{}
@@ -196,7 +219,8 @@ func whichBinary(name string) string {
 // Register installs all cmd-module execution functions.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
-		runFunc{}, runAllFunc{}, runStdoutFunc{}, retcodeFunc{}, whichFunc{},
+		runFunc{}, runAllFunc{}, runStdoutFunc{}, runStderrFunc{},
+		retcodeFunc{}, whichFunc{},
 	} {
 		if err := reg.Register(fn); err != nil {
 			return err
