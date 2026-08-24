@@ -280,8 +280,27 @@ Go Split does not interleave capture groups like Python re.split — the
 handle-record pairing walks FindAllStringSubmatchIndex. udev.info
 registered alongside env for devinfo's dependency; name/path/links/
 exportdb still pending their round (families 46→51 implemented /
-126→131→126 planned; exec 238→259). Enablers E1-E4 are complete:
-R6-R8 unblocked. Known gap
+126→131→126 planned; exec 238→259). R2.2 ported the ps family (24
+exec functions) off a local /proc reader replacing psutil — documented
+mechanism divergence with identical observable shapes: pids/stat/cmdline
+parsing tolerant of comm names containing spaces and parens, tick
+conversion at USER_HZ=100, top with two-sample CPU deltas and an
+injectable sleep, pgrep/pkill substring-or-regex matching over name or
+full cmdline with user filters and None-means-no-matches results,
+kill_pid/pkill signal delivery behind build-tagged syscall helpers
+(stdlib only), cpu_percent two-sample busy math incl. per-cpu lists,
+/proc/meminfo-backed virtual_memory/swap_memory/total_physical_memory
+with psutil percent rounding, /proc/net/dev and /proc/diskstats counter
+dicts with aggregate-vs-per-unit False misses, disk_partitions filtered
+by the /proc/filesystems nodev set unless all=True, disk_usage via
+stdlib statfs, boot_time with a strftime-subset converter raising the
+verbatim invalid-format error, get_users via little-endian utmp record
+parsing, lsof/netstat/ss/psaux shell wrappers with which-guards carrying
+the exact "binary was not found in $PATH" message, and status() mapping
+kernel state characters to psutil names. Upstream tests mock psutil
+internals on macOS, so the suite pins source-derived hermetic /proc
+fixtures instead (families 51→52 implemented / 125 planned; exec
+259→283). Enablers E1-E4 are complete: R6-R8 unblocked. Known gap
 parked for R8: statfs_unix.go (!windows tag) does not compile under
 GOOS=openbsd/netbsd (pre-existing, outside gated matrix). loop.until is
 excluded per docs/adr/0001-loop-until-excluded.md; until_no_eval waits
@@ -291,11 +310,10 @@ for the data/util layer. Remaining in R1, in order:
      differential catalog pass. With that, R1's function scope is
      exhausted — R1 closes after a differential-scope pass over its
      families (R1 ports → R2 differential per section 3).
-  2. Next rounds: R2 continues with the remaining network/hardware
-     families (ps 30, iptables/nftables/ipset ~23 each, bridge 24,
-     network 55); R3 pkg deep port; R4-R5 per plan; R6-R8 unblocked via
-     E1-E4; R9 awaits the services tier (E5); R10 cloud; R11 netdev
-     behind the ADR gate.
+  2. Next rounds: R2 continues with the firewall/network stack
+     (iptables/nftables/ipset ~23 each, bridge 24, network 55); R3 pkg
+     deep port; R4-R5 per plan; R6-R8 unblocked via E1-E4; R9 awaits the
+     services tier (E5); R10 cloud; R11 netdev behind the ADR gate.
 
 Next in order: rounds R1-R5 (parallel), R6-R8 (enablers done),
 R9 after services tier (E5), R10 cloud, R11 netdev behind ADR gate.

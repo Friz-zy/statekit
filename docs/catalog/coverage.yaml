@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 259
+    implemented: 283
 state:
     salt_modules: 132
     salt_functions: 669
@@ -209,6 +209,30 @@ implemented:
         - pkg_resource.version
         - pkg_resource.version_clean
         - pkg_resource.version_compare
+        - ps.boot_time
+        - ps.cpu_percent
+        - ps.cpu_times
+        - ps.disk_io_counters
+        - ps.disk_partition_usage
+        - ps.disk_partitions
+        - ps.disk_usage
+        - ps.get_pid_list
+        - ps.get_users
+        - ps.kill_pid
+        - ps.lsof
+        - ps.netstat
+        - ps.network_io_counters
+        - ps.num_cpus
+        - ps.pgrep
+        - ps.pkill
+        - ps.proc_info
+        - ps.psaux
+        - ps.ss
+        - ps.status
+        - ps.swap_memory
+        - ps.top
+        - ps.total_physical_memory
+        - ps.virtual_memory
         - quota.get_mode
         - quota.off
         - quota.on

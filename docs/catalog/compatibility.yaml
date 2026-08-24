@@ -4,10 +4,10 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 51
+    implemented: 52
     partial: 0
     excluded: 69
-    planned: 126
+    planned: 125
 implemented_families:
     - aliases
     - archive
@@ -42,6 +42,7 @@ implemented_families:
     - pip
     - pkg
     - pkg_resource
+    - ps
     - quota
     - raid
     - rsync
@@ -212,7 +213,6 @@ planned:
     - 'powercfg (planned: needs a dedicated porting round)'
     - 'probes (planned: needs a dedicated porting round)'
     - 'process (planned: needs a dedicated porting round)'
-    - 'ps (planned: needs a dedicated porting round)'
     - 'psget (planned: needs a dedicated porting round)'
     - 'puppet (planned: needs a dedicated porting round)'
     - 'pyeapi (planned: needs a dedicated porting round)'
