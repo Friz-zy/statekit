@@ -11,9 +11,15 @@
 //
 //   - Salt's virtual-module selection is mirrored: one set of pkg.* names
 //     dispatches on OS family — aptpkg on Debian-family hosts,
-//     yumpkg on RedHat-family hosts; the zypper surface lands with a later
-//     phase and reports unsupported until then. The key trio exists only
-//     in the apt provider module and reports unsupported elsewhere.
+//     yumpkg on RedHat-family hosts, zypperpkg on SUSE-family hosts. The
+//     key trio exists only in the apt provider module and reports
+//     unsupported elsewhere.
+//   - The _Zypper wrapper ports argv assembly (--non-interactive, --xmlout,
+//     --no-refresh unless refreshable, --root), exit-code classification
+//     (success 0/100-103, warnings 6/7/106/107), XML <message type="error">
+//     extraction, and the lock-7 retry loop with its five-second waits;
+//     systemd-run scoping is not reproduced and event.fire_master
+//     notifications are dropped (master-minion architecture, excluded).
 //   - The yum INI machinery ports configparser semantics verbatim:
 //     lowercased keys, first-occurring "=" / ":" delimiter, indented
 //     continuation lines joined with "\n", strict duplicate detection,
@@ -65,8 +71,7 @@ func (linuxOnly) Platforms() []string { return []string{"linux"} }
 
 // backendOf mirrors Salt's virtual-module selection: one pkg.* surface,
 // backed by aptpkg on Debian-family hosts, yumpkg on RedHat-family hosts,
-// and zypperpkg on SUSE-family hosts. The zypper branch lands with the
-// R3.3 phase and reports as unsupported until then.
+// and zypperpkg on SUSE-family hosts.
 func backendOf(rt *runtime.Runtime) (string, error) {
 	if rt.Facts == nil {
 		return "", fmt.Errorf("The pkg module could not be loaded: unsupported OS family")
@@ -104,11 +109,6 @@ func unsupportedOnBackend(fn, backend string) error {
 	return &runtime.UnsupportedError{Kind: "function", Name: fn + " (" + backend + ")"}
 }
 
-// zypperPending reports the R3.3 boundary for the SUSE backend.
-func zypperPending(fn string) (any, error) {
-	return nil, &runtime.UnsupportedError{Kind: "function", Name: fn + " (zypper)"}
-}
-
 type ListReposArgs struct {
 	Basedir      *string `statekit:"name=basedir"`
 	StrictConfig *bool   `statekit:"name=strict_config"`
@@ -139,7 +139,11 @@ func (listReposFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any)
 		}
 		return yumListRepos(rt, basedir, strict)
 	default:
-		return zypperPending("pkg.list_repos")
+		root := ""
+		if a.Root != nil {
+			root = *a.Root
+		}
+		return zypperListRepos(rt, root)
 	}
 }
 
@@ -167,7 +171,11 @@ func (getRepoFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (
 	case "yum":
 		return yumGetRepo(rt, a.Repo, basedirOrKwarg(a.Basedir, a.Kwargs), strictOrKwarg(a.StrictConfig, a.Kwargs))
 	default:
-		return zypperPending("pkg.get_repo")
+		root := ""
+		if a.Root != nil {
+			root = *a.Root
+		}
+		return zypperGetRepo(rt, a.Repo, root)
 	}
 }
 
@@ -215,7 +223,11 @@ func (delRepoFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (
 		}
 		return ret, nil
 	default:
-		return zypperPending("pkg.del_repo")
+		root := ""
+		if a.Root != nil {
+			root = *a.Root
+		}
+		return zypperDelRepo(ctx, rt, a.Repo, root)
 	}
 }
 
@@ -254,7 +266,11 @@ func (modRepoFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (
 		return yumModRepo(ctx, rt, a.Repo,
 			basedirOrKwarg(a.Basedir, a.Kwargs), strictOrKwarg(a.StrictConfig, a.Kwargs), a.Kwargs)
 	default:
-		return zypperPending("pkg.mod_repo")
+		root := ""
+		if a.Root != nil {
+			root = *a.Root
+		}
+		return zypperModRepo(ctx, rt, a.Repo, root, a.Kwargs)
 	}
 }
 

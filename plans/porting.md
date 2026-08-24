@@ -500,9 +500,28 @@ and .repo file scans iterate deterministically where os.listdir is
 arbitrary. Salt's test_yumpkg repo tests map onto hermetic fixtures;
 the CLI dispatch was smoke-checked against a live Fedora repos.d.
 
-Next in order: R3 continues (zypper repo surface via a minimal
-__zypper__ xml-call port, pkgrepo state module, pkgbuild, alternatives,
-debconfmod, python/pyenv, npm/pip/virtualenv long-tail check), R4-R5
-per plan, R6-R8 unblocked via E1-E4, R9 awaits the services tier (E5),
-R10 cloud, R11 netdev behind the ADR gate. Master-minion families stay
-excluded.
+R3.3 completed the zypper repository surface: a scoped port of the
+_Zypper wrapper (argv assembly with --non-interactive/--xmlout/
+--no-refresh-unless-refreshable/--root, the success 0/100-103 and
+warning 6/7/106/107 exit-code classification, XML
+<message type="error"> extraction over an encoding/xml DOM subset, and
+the lock-7 retry loop with five-second waits behind an injectable hook)
+plus list/get/del/mod_repo and refresh_db. The del_repo XML feedback
+contract keeps upstream's fall-through not-found raise when `rr`
+returns no progress/message nodes; mod_repo carries URL-parse
+six-tuple equality for the duplicate-alias probe, remove-and-readd on
+baseurl changes, the mr flag ordering (enabled/refresh/cache/gpgcheck/
+priority/humanname/name), and the no-op comment marker; refresh_db
+tolerates retcode 6 via success_retcodes and parses up-to-date/done
+lines. Documented divergences: systemd-run scoping is not reproduced,
+event.fire_master lock notifications are dropped (master-minion
+excluded) while the wait-and-retry behavior remains, and the rpm-lock
+fcntl probe is not reproduced (zypper-lock retries cover exit 7).
+Salt's test_zypperpkg refresh_db argv shapes and the zypp/*.cfg repo
+fixtures map onto hermetic fake-runner/MemoryFS tests.
+
+Next in order: R3 continues (pkgrepo state module, pkgbuild,
+alternatives, debconfmod, python/pyenv, npm/pip/virtualenv long-tail
+check), R4-R5 per plan, R6-R8 unblocked via E1-E4, R9 awaits the
+services tier (E5), R10 cloud, R11 netdev behind the ADR gate.
+Master-minion families stay excluded.

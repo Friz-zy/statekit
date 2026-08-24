@@ -419,6 +419,13 @@ func hasKwarg(kwargs map[string]any, key string) bool {
 	return ok
 }
 
+func kwargStringOK(kwargs map[string]any, key string) (string, bool) {
+	if v, ok := kwargs[key].(string); ok {
+		return v, true
+	}
+	return "", false
+}
+
 func kwargString(kwargs map[string]any, key string) string {
 	if v, ok := kwargs[key].(string); ok {
 		return v
