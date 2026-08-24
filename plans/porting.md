@@ -595,8 +595,31 @@ questions in sorted order where Python preserves request order
 (exec 400→405, states 35→37; debconf family flips terminal, families
 61→62 implemented / 115 planned).
 
-Next in order: R3 continues (python/pyenv, pkgbuild state built/repo,
-npm/pip/virtualenv long-tail check, R3 close differential pass), R4-R5
-per plan, R6-R8 unblocked via E1-E4, R9 awaits the services tier (E5),
-R10 cloud, R11 netdev behind the ADR gate. Master-minion families stay
+R3.8 landed the python and pyenv families. python.run/script execute
+snippets through a pinned interpreter: upstream targets sys.executable
+(the minion's bundled interpreter) while StateKit resolves python3 from
+PATH behind an injectable hook (documented divergence — no bundled
+runtime). run keeps the shlex arg handling, the "Must specify either
+'command' or 'args'" gate, rstrip, and the success_retcodes/stdout/
+stderr overrides; script keeps the cache-error result shape
+({pid:0, retcode:1, stdout:"", stderr:"", cache_error:true}), the
+extension-preserving temp script in cwd with post-run cleanup, and the
+salt:// scheme boundary via cp.cache_file UnsupportedError. pyenv ports
+the PYENV_ROOT-prefixed exec wrapper with its is_installed gate,
+config.option-driven root resolution (/usr/local/pyenv or ~user/.pyenv),
+install/update/uninstall_python lifecycle (BSD MAKE=gmake and
+pyenv.build_env env composition), versions/default/list/rehash, and the
+do/do_with_python shim execution — `cd X && git pull` compounds run as
+git -C equivalents and do()'s shell PATH expansion happens in-process
+(both documented). The state module mirrors installed/absent/
+install_pyenv including the pinned user-as-python quirk in install_pyenv;
+Salt's non-standard result "default" key maps into StateResult.Meta.Extra.
+Mapped onto both pytests batteries (exec 405→418, states 37→40; python
+and pyenv families flip terminal, families 62→64 implemented / 113
+planned).
+
+Next in order: R3 continues (pkgbuild state built/repo, npm/pip/
+virtualenv long-tail check, R3 close differential pass), R4-R5 per
+plan, R6-R8 unblocked via E1-E4, R9 awaits the services tier (E5), R10
+cloud, R11 netdev behind the ADR gate. Master-minion families stay
 excluded.

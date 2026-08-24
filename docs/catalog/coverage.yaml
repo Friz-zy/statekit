@@ -6,12 +6,12 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 405
+    implemented: 418
 state:
     salt_modules: 132
     salt_functions: 669
     relevant_functions: 197
-    implemented: 37
+    implemented: 40
 implemented:
     exec:
         - aliases.get_target
@@ -355,6 +355,19 @@ implemented:
         - ps.top
         - ps.total_physical_memory
         - ps.virtual_memory
+        - pyenv.default
+        - pyenv.do
+        - pyenv.do_with_python
+        - pyenv.install
+        - pyenv.install_python
+        - pyenv.is_installed
+        - pyenv.list
+        - pyenv.rehash
+        - pyenv.uninstall_python
+        - pyenv.update
+        - pyenv.versions
+        - python.run
+        - python.script
         - quota.get_mode
         - quota.off
         - quota.on
@@ -464,6 +477,9 @@ implemented:
         - pkg.removed
         - pkgrepo.absent
         - pkgrepo.managed
+        - pyenv.absent
+        - pyenv.install_pyenv
+        - pyenv.installed
         - quota.mode
         - selinux.mode
         - service.dead

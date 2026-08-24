@@ -4,10 +4,10 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 62
+    implemented: 64
     partial: 0
     excluded: 69
-    planned: 115
+    planned: 113
 implemented_families:
     - aliases
     - alternatives
@@ -53,6 +53,8 @@ implemented_families:
     - pkgbuild
     - pkgrepo
     - ps
+    - pyenv
+    - python
     - quota
     - raid
     - rsync
@@ -216,8 +218,6 @@ planned:
     - 'psget (planned: needs a dedicated porting round)'
     - 'puppet (planned: needs a dedicated porting round)'
     - 'pyeapi (planned: needs a dedicated porting round)'
-    - 'pyenv (planned: needs a dedicated porting round)'
-    - 'python (planned: needs a dedicated porting round)'
     - 'random (planned: needs a dedicated porting round)'
     - 'rbac (planned: needs a dedicated porting round)'
     - 'rdp (planned: needs a dedicated porting round)'

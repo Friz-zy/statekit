@@ -15,6 +15,10 @@ type ResultMeta struct {
 	Function   string `json:"function,omitempty" yaml:"function,omitempty"`
 	Provider   string `json:"provider,omitempty" yaml:"provider,omitempty"`
 	DurationMS int64  `json:"duration_ms,omitempty" yaml:"duration_ms,omitempty"`
+
+	// Extra carries non-standard top-level keys some Salt states return
+	// (e.g. pyenv's "default") without widening the core shape.
+	Extra map[string]any `json:"extra,omitempty" yaml:"extra,omitempty"`
 }
 
 // StateResult is the core Salt state return shape:

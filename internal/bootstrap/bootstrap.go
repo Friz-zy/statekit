@@ -52,6 +52,8 @@ import (
 	execpkgrepo "github.com/friz-zy/statekit/modules/exec/pkgrepo"
 	execpkgresource "github.com/friz-zy/statekit/modules/exec/pkgresource"
 	execps "github.com/friz-zy/statekit/modules/exec/ps"
+	execpyenv "github.com/friz-zy/statekit/modules/exec/pyenv"
+	execpython "github.com/friz-zy/statekit/modules/exec/python"
 	execquota "github.com/friz-zy/statekit/modules/exec/quota"
 	execrandom "github.com/friz-zy/statekit/modules/exec/random"
 	execrsync "github.com/friz-zy/statekit/modules/exec/rsync"
@@ -80,6 +82,7 @@ import (
 	statelvm "github.com/friz-zy/statekit/modules/state/lvm"
 	statepkg "github.com/friz-zy/statekit/modules/state/pkg"
 	statepkgrepo "github.com/friz-zy/statekit/modules/state/pkgrepo"
+	statepyenv "github.com/friz-zy/statekit/modules/state/pyenv"
 	statequota "github.com/friz-zy/statekit/modules/state/quota"
 	stateselinux "github.com/friz-zy/statekit/modules/state/selinux"
 	stateservice "github.com/friz-zy/statekit/modules/state/service"
@@ -127,6 +130,8 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execpkgbuild.Register,
 		execalt.Register,
 		execdebconf.Register,
+		execpython.Register,
+		execpyenv.Register,
 		execservice.Register,
 		execarchive.Register,
 		execat.Register,
@@ -194,6 +199,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		stateini.Register,
 		statepkgrepo.Register,
 		statedebconf.Register,
+		statepyenv.Register,
 		statelvm.Register,
 		stateselinux.Register,
 	} {
