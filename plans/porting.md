@@ -637,7 +637,15 @@ list_upgrades/normalize/upgrade/upgrade_available/version plus their
 private machinery — scheduled as dedicated phases before the R3 close
 differential pass.
 
-Next in order: R3 continues (npm cache trio + virtualenv_mod audit,
-pip deepening, R3 close differential pass), R4-R5 per plan, R6-R8
-unblocked via E1-E4, R9 awaits the services tier (E5), R10 cloud, R11
-netdev behind the ADR gate. Master-minion families stay excluded.
+R3.10 completed the npm family with the cache trio
+(cache_path/cache_list/cache_clean): upstream argv sequences including
+the npm@5 --force flag, the stderr-gated CommandExecutionError in
+cache_list, and the stdout-or-stderr fallback in cache_path. The
+SUDO_UID/SUDO_USER runas seeding degrades to explicit env vars under
+the single-user model (documented divergence). Exec 418→421; npm's
+public catalog surface is now fully covered.
+
+Next in order: R3 continues (virtualenv_mod audit and pip deepening,
+then the R3 close differential pass), R4-R5 per plan, R6-R8 unblocked
+via E1-E4, R9 awaits the services tier (E5), R10 cloud, R11 netdev
+behind the ADR gate. Master-minion families stay excluded.

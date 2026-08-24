@@ -56,3 +56,82 @@ func TestNpmListParses(t *testing.T) {
 		t.Fatalf("list = %v, %v", out, err)
 	}
 }
+
+// Cache-trio tests pinning argv and return shapes from npm.py.
+func TestCachePath(t *testing.T) {
+	rt, runner := newRT()
+	runner.script = []process.CommandResult{{Stdout: []byte("/home/user/.npm\n")}}
+	got, err := cachePathFunc{}.Execute(context.Background(), rt, &CachePathArgs{})
+	if err != nil || got != "/home/user/.npm" {
+		t.Fatalf("cache_path = %#v, %v", got, err)
+	}
+	if !equalSliceN(runner.calls[0], []string{"npm", "config", "get", "cache"}) {
+		t.Fatalf("argv = %#v", runner.calls[0])
+	}
+}
+
+func TestCacheList(t *testing.T) {
+	rt, runner := newRT()
+	runner.script = []process.CommandResult{{Stdout: []byte("empty")}}
+	got, _ := cacheListFunc{}.Execute(context.Background(), rt, &CacheListArgs{})
+	if got != "empty" {
+		t.Fatalf("cache_list = %#v", got)
+	}
+
+	runner.script = []process.CommandResult{{Stdout: []byte("~/.npm/lodash")}}
+	got, _ = cacheListFunc{}.Execute(context.Background(), rt,
+		&CacheListArgs{Path: strPtrNP("lodash")})
+	if got != "~/.npm/lodash" {
+		t.Fatalf("cache_list path = %#v", got)
+	}
+
+	runner.script = []process.CommandResult{{ExitCode: 1, Stderr: []byte("boom\n")}}
+	listFn := cacheListFunc{}
+	_, listErr := listFn.Execute(context.Background(), rt, &CacheListArgs{})
+	if listErr == nil || listErr.Error() != "boom" {
+		t.Fatalf("failure error = %v", listErr)
+	}
+}
+
+func TestCacheClean(t *testing.T) {
+	rt, runner := newRT()
+	got, err := cacheCleanFunc{}.Execute(context.Background(), rt,
+		&CacheCleanArgs{Force: true})
+	if err != nil || got != true {
+		t.Fatalf("cache_clean = %#v, %v", got, err)
+	}
+	want := []string{"npm", "cache", "clean", "--force"}
+	if len(runner.calls) != 1 || !equalSliceN(runner.calls[0], want) {
+		t.Fatalf("argv = %#v", runner.calls[0])
+	}
+
+	got, err = cacheCleanFunc{}.Execute(context.Background(), rt,
+		&CacheCleanArgs{Path: strPtrNP("lodash")})
+	if err != nil || got != true {
+		t.Fatalf("path clean = %#v, %v", got, err)
+	}
+	want = []string{"npm", "cache", "clean", "lodash"}
+	if !equalSliceN(runner.calls[len(runner.calls)-1], want) {
+		t.Fatalf("path clean argv = %#v", runner.calls[len(runner.calls)-1])
+	}
+
+	runner.script = []process.CommandResult{{ExitCode: 1}}
+	got, err = cacheCleanFunc{}.Execute(context.Background(), rt, &CacheCleanArgs{})
+	if err != nil || got != false {
+		t.Fatalf("failed clean = %#v, %v", got, err)
+	}
+}
+
+func equalSliceN(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func strPtrNP(s string) *string { return &s }
