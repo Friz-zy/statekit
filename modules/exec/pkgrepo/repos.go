@@ -1560,6 +1560,63 @@ func expandRepoDef(rt *runtime.Runtime, osName, osCodename string, kwargs map[st
 	}, nil
 }
 
+// ExpandRepoDef exposes _expand_repo_def to the pkgrepo state module,
+// mirroring Salt's from-import of the loader-hidden helper inside
+// states/pkgrepo.py.
+func ExpandRepoDef(rt *runtime.Runtime, osName, osCodename string, kwargs map[string]any) (map[string]any, error) {
+	return expandRepoDef(rt, osName, osCodename, kwargs)
+}
+
+// SplitRepoStr exposes _split_repo_str to the pkgrepo state module for the
+// absent-state architecture-match probe.
+func SplitRepoStr(repo string) (*repoEntry, error) { return splitRepoStr(repo) }
+
+// InvalidFlag and ArchitecturesView expose the parsed-definition fields the
+// state module compares.
+func (e *repoEntry) InvalidFlag() bool { return e.invalid }
+
+func (e *repoEntry) ArchitecturesView() []string { return e.architectures }
+
+// IsTrue exposes salt.utils.data.is_true semantics to consumers.
+func IsTrue(v any) bool { return isTrue(v) }
+
+// BackendOf exposes the OS-family backend selection to consumers.
+func BackendOf(rt *runtime.Runtime) (string, error) { return backendOfImpl(rt) }
+
+// WhichAptKey reports whether the apt-key binary resolves on PATH.
+func WhichAptKey() bool { return whichBin("apt-key") != "" }
+
+// ExportWhichBin returns the current whichBin hook (for test save/restore).
+func ExportWhichBin() func(string) string { return whichBin }
+
+// SetWhichBin overrides the binary-resolution hook (for tests).
+func SetWhichBin(fn func(string) string) { whichBin = fn }
+
+// CombineRpmComments exposes salt.utils.pkg.rpm.combine_comments.
+func CombineRpmComments(comments []string) string { return combineRpmComments(comments) }
+
+// CombineDebComments exposes salt.utils.pkg.deb.combine_comments.
+func CombineDebComments(comments any) string { return combineComments(comments) }
+
+// StripURI exposes salt.utils.pkg.deb.strip_uri.
+func StripURI(repo string) string { return stripURI(repo) }
+
+// backendOfImpl is the concrete backend selector behind BackendOf.
+func backendOfImpl(rt *runtime.Runtime) (string, error) {
+	if rt.Facts == nil {
+		return "", fmt.Errorf("The pkg module could not be loaded: unsupported OS family")
+	}
+	switch rt.Facts.OS().Family {
+	case "debian":
+		return "apt", nil
+	case "redhat":
+		return "yum", nil
+	case "suse":
+		return "zypper", nil
+	}
+	return "", fmt.Errorf("The pkg module could not be loaded: unsupported OS family")
+}
+
 func ubuntuLikeName(name string) bool {
 	switch strings.ToLower(name) {
 	case "ubuntu", "mint", "neon":

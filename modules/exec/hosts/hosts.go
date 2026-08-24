@@ -221,6 +221,94 @@ func (hasPairFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (an
 	return contains(parsed.byIP[a.IP], a.Alias), nil
 }
 
+type GetAliasArgs struct {
+	IP string `statekit:"required,name=ip"`
+}
+
+type getAliasFunc struct{}
+
+func (getAliasFunc) Name() string { return "hosts.get_alias" }
+func (getAliasFunc) Args() any    { return GetAliasArgs{} }
+func (getAliasFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a := args.(*GetAliasArgs)
+	data, err := rt.FS.ReadFile(hostsPath)
+	if err != nil {
+		return []string{}, nil
+	}
+	parsed := parseHosts(string(data))
+	aliases, ok := parsed.byIP[a.IP]
+	if !ok {
+		return []string{}, nil
+	}
+	return append([]string{}, aliases...), nil
+}
+
+type SetHostArgs struct {
+	IP      string `statekit:"required,name=ip"`
+	Aliases string `statekit:"name=alias"`
+	Comment string `statekit:"name=comment"`
+}
+
+type setHostFunc struct{}
+
+func (setHostFunc) Name() string { return "hosts.set_host" }
+func (setHostFunc) Args() any    { return SetHostArgs{} }
+
+// setHost mirrors hosts.set_host: the first line matching the IP is
+// replaced, later duplicates are blanked, and an alias-less call removes
+// every entry for the IP.
+func setHost(rt *runtime.Runtime, ip, aliases, comment string) bool {
+	if _, err := rt.FS.Stat(hostsPath); err != nil {
+		return false
+	}
+	lineToAdd := ip + "\t\t" + aliases
+	if comment != "" {
+		lineToAdd += "\t\t# " + comment
+	}
+	if strings.TrimSpace(aliases) == "" {
+		lineToAdd = ""
+	}
+	data, err := rt.FS.ReadFile(hostsPath)
+	if err != nil {
+		return false
+	}
+	lines := strings.Split(string(data), "\n")
+	overwritten := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		fields := strings.Fields(trimmed)
+		if len(fields) == 0 || fields[0] != ip {
+			continue
+		}
+		if !overwritten {
+			lines[i] = lineToAdd
+			overwritten = true
+		} else {
+			lines[i] = ""
+		}
+	}
+	if !overwritten {
+		// Ensure the previous line ends with a newline before appending.
+		if len(lines) > 0 && lines[len(lines)-1] != "" {
+			lines[len(lines)-1] += "\n"
+		}
+		lines = append(lines, lineToAdd)
+	}
+	mode := fileMode(rt, hostsPath)
+	if err := writeFile(rt, strings.Join(lines, "\n"), mode); err != nil {
+		return false
+	}
+	return true
+}
+
+func (setHostFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a := args.(*SetHostArgs)
+	return setHost(rt, a.IP, a.Aliases, a.Comment), nil
+}
+
 func fileMode(rt *runtime.Runtime, path string) fs.FileMode {
 	mode := fs.FileMode(0o644)
 	if info, err := rt.FS.Stat(path); err == nil {
@@ -238,7 +326,7 @@ func writeFile(rt *runtime.Runtime, content string, mode fs.FileMode) error {
 
 // Register installs all hosts-module execution functions.
 func Register(reg *runtime.ExecRegistry) error {
-	for _, fn := range []runtime.ExecFunction{listFunc{}, addFunc{}, rmFunc{}, getIPFunc{}, hasPairFunc{}} {
+	for _, fn := range []runtime.ExecFunction{listFunc{}, addFunc{}, rmFunc{}, getIPFunc{}, hasPairFunc{}, getAliasFunc{}, setHostFunc{}} {
 		if err := reg.Register(fn); err != nil {
 			return err
 		}

@@ -327,7 +327,11 @@ func writeCatalog(outDir string, ref ReferenceInfo, execDocs, stateDocs []Module
 	if err := writeYAML(filepath.Join(outDir, "index.yaml"), &index); err != nil {
 		return err
 	}
-	classification := classifyFamilies(append(append([]ModuleDoc{}, execDocs...), stateDocs...), impl.Exec)
+	// Family classification must see BOTH surfaces: state-led families
+	// (e.g. pkgrepo, whose exec functions live under the virtual pkg
+	// module) otherwise never flip terminal.
+	classification := classifyFamilies(append(append([]ModuleDoc{}, execDocs...), stateDocs...),
+		append(append([]string{}, impl.Exec...), impl.State...))
 	compat := Compatibility{
 		Reference: ref,
 		Summary: CompatSummary{

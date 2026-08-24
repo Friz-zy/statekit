@@ -6,12 +6,12 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 386
+    implemented: 388
 state:
     salt_modules: 132
     salt_functions: 669
     relevant_functions: 197
-    implemented: 32
+    implemented: 35
 implemented:
     exec:
         - aliases.get_target
@@ -126,10 +126,12 @@ implemented:
         - hashutil.hmac_compute
         - hashutil.hmac_signature
         - hosts.add_host
+        - hosts.get_alias
         - hosts.get_ip
         - hosts.has_pair
         - hosts.list_hosts
         - hosts.rm_host
+        - hosts.set_host
         - http.query
         - ini.get_ini
         - ini.get_option
@@ -428,6 +430,7 @@ implemented:
         - group.absent
         - group.present
         - host.absent
+        - host.only
         - host.present
         - ini.options_absent
         - ini.options_present
@@ -440,6 +443,8 @@ implemented:
         - pkg.installed
         - pkg.latest
         - pkg.removed
+        - pkgrepo.absent
+        - pkgrepo.managed
         - quota.mode
         - selinux.mode
         - service.dead

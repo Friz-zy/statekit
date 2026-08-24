@@ -24,6 +24,18 @@ var (
 	aptKeyringDir   = "/etc/apt/keyrings"
 )
 
+// SourcesPaths reports the current sources.list and sources.list.d paths
+// (for test save/restore).
+func SourcesPaths() ([2]string, [2]string) {
+	return [2]string{aptSourcesList}, [2]string{aptSourcesParts}
+}
+
+// SetSourcesPaths overrides both engine paths (for tests).
+func SetSourcesPaths(listPath, partsPath string) {
+	aptSourcesList = listPath
+	aptSourcesParts = partsPath
+}
+
 // stringToBool mirrors salt.utils.pkg.deb.string_to_bool.
 func stringToBool(s string) (bool, error) {
 	switch strings.ToLower(s) {

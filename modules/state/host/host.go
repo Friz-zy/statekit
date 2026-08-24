@@ -104,6 +104,75 @@ func (absentFunc) Apply(ctx context.Context, rt *runtime.Runtime, args any) resu
 	return result.New(a.Name, "", result.Bool(true), changes)
 }
 
+// onlyArgs mirrors states/host.py only(name, hostnames).
+type onlyArgs struct {
+	Name      string `statekit:"required"`
+	Hostnames any    `statekit:"name=hostnames"`
+	Test      bool   `statekit:"name=test"`
+}
+
+type onlyFunc struct{}
+
+func (onlyFunc) Name() string { return "host.only" }
+func (onlyFunc) Args() any    { return onlyArgs{} }
+
+// Apply ensures the IP maps to exactly the given hostnames in order,
+// replacing any other associations.
+func (onlyFunc) Apply(ctx context.Context, rt *runtime.Runtime, args any) result.StateResult {
+	a := args.(*onlyArgs)
+
+	var hostnames []string
+	switch v := a.Hostnames.(type) {
+	case nil:
+	case string:
+		hostnames = []string{v}
+	case []any:
+		for _, item := range v {
+			hostnames = append(hostnames, fmt.Sprintf("%v", item))
+		}
+	case []string:
+		hostnames = v
+	}
+
+	aliasRes, err := rt.Exec.Call(ctx, rt, "hosts.get_alias", &exechosts.GetAliasArgs{IP: a.Name})
+	if err != nil {
+		return result.Failure(a.Name, err.Error())
+	}
+	oldAliases, _ := aliasRes.([]string)
+	old := strings.Join(oldAliases, " ")
+	trimmed := make([]string, 0, len(hostnames))
+	for _, h := range hostnames {
+		trimmed = append(trimmed, strings.TrimSpace(h))
+	}
+	new := strings.Join(trimmed, " ")
+
+	if old == new {
+		return result.Success(a.Name,
+			fmt.Sprintf("IP address %s already set to %q", a.Name, new))
+	}
+
+	if a.Test {
+		return result.TestPending(a.Name,
+			fmt.Sprintf("Would change %s from %q to %q", a.Name, old, new),
+			map[string]any{})
+	}
+
+	ok, err := rt.Exec.Call(ctx, rt, "hosts.set_host", &exechosts.SetHostArgs{
+		IP: a.Name, Aliases: new,
+	})
+	if err != nil {
+		return result.Failure(a.Name, err.Error())
+	}
+	if succeeded, _ := ok.(bool); !succeeded {
+		return result.Failure(a.Name,
+			fmt.Sprintf("hosts.set_host failed to change %s from %q to %q", a.Name, old, new))
+	}
+	return result.New(a.Name,
+		fmt.Sprintf("successfully changed %s from %q to %q", a.Name, old, new),
+		result.Bool(true),
+		map[string]any{a.Name: map[string]any{"old": old, "new": new}})
+}
+
 func toStrings(v any) []string {
 	list, _ := v.([]string)
 	return list
@@ -111,7 +180,7 @@ func toStrings(v any) []string {
 
 // Register installs all host-module state functions.
 func Register(reg *runtime.StateRegistry) error {
-	for _, fn := range []runtime.StateFunction{presentFunc{}, absentFunc{}} {
+	for _, fn := range []runtime.StateFunction{presentFunc{}, absentFunc{}, onlyFunc{}} {
 		if err := reg.Register(fn); err != nil {
 			return err
 		}

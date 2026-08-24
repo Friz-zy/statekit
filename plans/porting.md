@@ -520,8 +520,28 @@ fcntl probe is not reproduced (zypper-lock retries cover exit 7).
 Salt's test_zypperpkg refresh_db argv shapes and the zypp/*.cfg repo
 fixtures map onto hermetic fake-runner/MemoryFS tests.
 
-Next in order: R3 continues (pkgrepo state module, pkgbuild,
-alternatives, debconfmod, python/pyenv, npm/pip/virtualenv long-tail
-check), R4-R5 per plan, R6-R8 unblocked via E1-E4, R9 awaits the
-services tier (E5), R10 cloud, R11 netdev behind the ADR gate.
-Master-minion families stay excluded.
+R3.4 landed the pkgrepo state module (managed/absent) and flipped the
+family terminal. managed ports the full flow — the key-argument
+conflict battery, enabled/disabled inversion per family, the
+already-configured comparison loop (comps/key_url set compares, the
+Debian line comparison with sorted tails and comment text, RedHat
+comment combining, boolean disambiguation for 1/0 vs True/False),
+clean_file staleness reconfiguration (#68208), the test-mode delta, and
+the mod_repo/post-get_repo change recording — delegating to the
+registered pkg.* functions; ExpandRepoDef/SplitRepoStr are exported
+from the exec package mirroring Salt's cross-module private imports.
+absent carries ppa/copr renaming, deb strip_uri, the architecture-
+mismatch invalidation, and optional key removal. The catalog
+classifier fix ships alongside: classifyFamilies previously received
+only exec-side shipped names, so state-led families could never reach
+terminal; with both surfaces counted, pkgrepo flipped implemented and
+the same gap surfaced a second latent family — host — whose state
+module predates the porting plan but lacked only() against its catalog.
+host.only plus the hosts.get_alias/set_host exec long tail were ported
+in this phase to complete it honestly (exec 386→388, states 32→35,
+families 57→59 implemented / 118 planned).
+
+Next in order: R3 continues (pkgbuild, alternatives, debconfmod,
+python/pyenv, npm/pip/virtualenv long-tail check), R4-R5 per plan,
+R6-R8 unblocked via E1-E4, R9 awaits the services tier (E5), R10 cloud,
+R11 netdev behind the ADR gate. Master-minion families stay excluded.

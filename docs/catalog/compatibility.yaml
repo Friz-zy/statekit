@@ -4,10 +4,10 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 57
+    implemented: 59
     partial: 0
     excluded: 69
-    planned: 120
+    planned: 118
 implemented_families:
     - aliases
     - archive
@@ -28,6 +28,7 @@ implemented_families:
     - git
     - group
     - hashutil
+    - host
     - hosts
     - http
     - ini
@@ -47,6 +48,7 @@ implemented_families:
     - pip
     - pkg
     - pkg_resource
+    - pkgrepo
     - ps
     - quota
     - raid
@@ -174,7 +176,6 @@ planned:
     - 'firewalld (planned: needs a dedicated porting round)'
     - 'fmadm (planned: needs a dedicated porting round)'
     - 'gpg (planned: needs a dedicated porting round)'
-    - 'host (planned: needs a dedicated porting round)'
     - 'idem (planned: needs a dedicated porting round)'
     - 'incron (planned: needs a dedicated porting round)'
     - 'iosconfig (planned: needs a dedicated porting round)'
@@ -207,7 +208,6 @@ planned:
     - 'out (planned: needs a dedicated porting round)'
     - 'pam (planned: needs a dedicated porting round)'
     - 'pkgbuild (planned: needs a dedicated porting round)'
-    - 'pkgrepo (planned: needs a dedicated porting round)'
     - 'pkgutil (planned: needs a dedicated porting round)'
     - 'power (planned: needs a dedicated porting round)'
     - 'powercfg (planned: needs a dedicated porting round)'
