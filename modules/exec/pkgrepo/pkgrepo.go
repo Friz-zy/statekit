@@ -9,10 +9,21 @@
 //
 // Contract notes (init.md section 28):
 //
-//   - aptpkg registers under Salt's virtual "pkg" module, so every function
-//     keeps its CLI-facing pkg.* name while living in this package; the
-//     coverage tooling attributes them to the pkg family like upstream's
-//     loader does.
+//   - Salt's virtual-module selection is mirrored: one set of pkg.* names
+//     dispatches on OS family — aptpkg on Debian-family hosts,
+//     yumpkg on RedHat-family hosts; the zypper surface lands with a later
+//     phase and reports unsupported until then. The key trio exists only
+//     in the apt provider module and reports unsupported elsewhere.
+//   - The yum INI machinery ports configparser semantics verbatim:
+//     lowercased keys, first-occurring "=" / ":" delimiter, indented
+//     continuation lines joined with "\n", strict duplicate detection,
+//     MissingSectionHeaderError degrading _parse_repo_file to ("", {}).
+//   - yumpkg.mod_repo writes every non-dunder kwarg into the stanza
+//     (basedir included — upstream never filters it) and keeps False and
+//     numeric zero through the blank-value deletion because Python
+//     evaluates False == 0; both quirks pinned by tests. Option apply
+//     order is sorted where upstream preserves request insertion order
+//     (Go map decoding loses it — documented divergence).
 //   - The Launchpad PPA fallback keeps upstream's argument-order quirk in
 //     del_repo (LP_PVT_SRC_FORMAT receives DIST before OWNER) verbatim;
 //     mod_repo/get_repo use the correct order.
@@ -40,28 +51,104 @@ package pkgrepo
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/friz-zy/statekit/internal/facts"
 	"github.com/friz-zy/statekit/internal/runtime"
 )
 
-// linuxOnly restricts this module to linux, mirroring aptpkg.__virtual__.
+// linuxOnly restricts this module to linux, mirroring the pkg providers'
+// __virtual__ guards.
 type linuxOnly struct{}
 
 func (linuxOnly) Platforms() []string { return []string{"linux"} }
 
-type ListReposArgs struct{}
+// backendOf mirrors Salt's virtual-module selection: one pkg.* surface,
+// backed by aptpkg on Debian-family hosts, yumpkg on RedHat-family hosts,
+// and zypperpkg on SUSE-family hosts. The zypper branch lands with the
+// R3.3 phase and reports as unsupported until then.
+func backendOf(rt *runtime.Runtime) (string, error) {
+	if rt.Facts == nil {
+		return "", fmt.Errorf("The pkg module could not be loaded: unsupported OS family")
+	}
+	switch rt.Facts.OS().Family {
+	case facts.FamilyDebian:
+		return "apt", nil
+	case facts.FamilyRedHat:
+		return "yum", nil
+	case facts.FamilySuse:
+		return "zypper", nil
+	}
+	return "", fmt.Errorf("The pkg module could not be loaded: unsupported OS family")
+}
+
+// kwargStrict extracts strict_config from kwargs (default true).
+func kwargStrict(kwargs map[string]any) bool {
+	if v, ok := kwargs["strict_config"]; ok {
+		return isTrue(v)
+	}
+	return true
+}
+
+// kwargBasedir pulls the basedir value in string-or-list form.
+func kwargBasedir(kwargs map[string]any) any {
+	if v, ok := kwargs["basedir"]; ok {
+		return v
+	}
+	return nil
+}
+
+// unsupportedOnBackend reports provider functions that exist only in one
+// Salt provider module (the key trio is aptpkg-only).
+func unsupportedOnBackend(fn, backend string) error {
+	return &runtime.UnsupportedError{Kind: "function", Name: fn + " (" + backend + ")"}
+}
+
+// zypperPending reports the R3.3 boundary for the SUSE backend.
+func zypperPending(fn string) (any, error) {
+	return nil, &runtime.UnsupportedError{Kind: "function", Name: fn + " (zypper)"}
+}
+
+type ListReposArgs struct {
+	Basedir      *string `statekit:"name=basedir"`
+	StrictConfig *bool   `statekit:"name=strict_config"`
+	Root         *string `statekit:"name=root"`
+}
 
 type listReposFunc struct{ linuxOnly }
 
 func (listReposFunc) Name() string { return "pkg.list_repos" }
 func (listReposFunc) Args() any    { return ListReposArgs{} }
 func (listReposFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	return listRepos(rt)
+	a := args.(*ListReposArgs)
+	backend, err := backendOf(rt)
+	if err != nil {
+		return nil, err
+	}
+	switch backend {
+	case "apt":
+		return listRepos(rt)
+	case "yum":
+		basedir := any(nil)
+		if a.Basedir != nil {
+			basedir = *a.Basedir
+		}
+		strict := true
+		if a.StrictConfig != nil {
+			strict = *a.StrictConfig
+		}
+		return yumListRepos(rt, basedir, strict)
+	default:
+		return zypperPending("pkg.list_repos")
+	}
 }
 
 type GetRepoArgs struct {
-	Repo   string         `statekit:"required"`
-	Kwargs map[string]any `statekit:"name=kwargs"`
+	Repo         string         `statekit:"required"`
+	Kwargs       map[string]any `statekit:"name=kwargs"`
+	Basedir      *string        `statekit:"name=basedir"`
+	StrictConfig *bool          `statekit:"name=strict_config"`
+	Root         *string        `statekit:"name=root"`
 }
 
 type getRepoFunc struct{ linuxOnly }
@@ -70,12 +157,41 @@ func (getRepoFunc) Name() string { return "pkg.get_repo" }
 func (getRepoFunc) Args() any    { return GetRepoArgs{} }
 func (getRepoFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
 	a := args.(*GetRepoArgs)
-	return getRepo(rt, a.Repo, a.Kwargs)
+	backend, err := backendOf(rt)
+	if err != nil {
+		return nil, err
+	}
+	switch backend {
+	case "apt":
+		return getRepo(rt, a.Repo, a.Kwargs)
+	case "yum":
+		return yumGetRepo(rt, a.Repo, basedirOrKwarg(a.Basedir, a.Kwargs), strictOrKwarg(a.StrictConfig, a.Kwargs))
+	default:
+		return zypperPending("pkg.get_repo")
+	}
+}
+
+// basedirOrKwarg prefers the named CLI field over the kwargs entry.
+func basedirOrKwarg(field *string, kwargs map[string]any) any {
+	if field != nil {
+		return *field
+	}
+	return kwargBasedir(kwargs)
+}
+
+func strictOrKwarg(field *bool, kwargs map[string]any) bool {
+	if field != nil {
+		return *field
+	}
+	return kwargStrict(kwargs)
 }
 
 type DelRepoArgs struct {
-	Repo   string         `statekit:"required"`
-	Kwargs map[string]any `statekit:"name=kwargs"`
+	Repo         string         `statekit:"required"`
+	Kwargs       map[string]any `statekit:"name=kwargs"`
+	Basedir      *string        `statekit:"name=basedir"`
+	StrictConfig *bool          `statekit:"name=strict_config"`
+	Root         *string        `statekit:"name=root"`
 }
 
 type delRepoFunc struct{ linuxOnly }
@@ -84,14 +200,33 @@ func (delRepoFunc) Name() string { return "pkg.del_repo" }
 func (delRepoFunc) Args() any    { return DelRepoArgs{} }
 func (delRepoFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
 	a := args.(*DelRepoArgs)
-	return delRepo(ctx, rt, a.Repo, a.Kwargs)
+	backend, err := backendOf(rt)
+	if err != nil {
+		return nil, err
+	}
+	switch backend {
+	case "apt":
+		return delRepo(ctx, rt, a.Repo, a.Kwargs)
+	case "yum":
+		ret, derr := yumDelRepo(ctx, rt, a.Repo,
+			basedirOrKwarg(a.Basedir, a.Kwargs), strictOrKwarg(a.StrictConfig, a.Kwargs))
+		if derr != nil {
+			return nil, derr
+		}
+		return ret, nil
+	default:
+		return zypperPending("pkg.del_repo")
+	}
 }
 
 type ModRepoArgs struct {
-	Repo    string         `statekit:"required"`
-	Saltenv *string        `statekit:"name=saltenv"`
-	Aptkey  *bool          `statekit:"name=aptkey"`
-	Kwargs  map[string]any `statekit:"name=kwargs"`
+	Repo         string         `statekit:"required"`
+	Kwargs       map[string]any `statekit:"name=kwargs"`
+	Saltenv      *string        `statekit:"name=saltenv"`
+	Aptkey       *bool          `statekit:"name=aptkey"`
+	Basedir      *string        `statekit:"name=basedir"`
+	StrictConfig *bool          `statekit:"name=strict_config"`
+	Root         *string        `statekit:"name=root"`
 }
 
 type modRepoFunc struct{ linuxOnly }
@@ -100,6 +235,10 @@ func (modRepoFunc) Name() string { return "pkg.mod_repo" }
 func (modRepoFunc) Args() any    { return ModRepoArgs{} }
 func (modRepoFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
 	a := args.(*ModRepoArgs)
+	backend, err := backendOf(rt)
+	if err != nil {
+		return nil, err
+	}
 	saltenv := "base"
 	if a.Saltenv != nil {
 		saltenv = *a.Saltenv
@@ -108,7 +247,15 @@ func (modRepoFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (
 	if a.Aptkey != nil {
 		aptkey = *a.Aptkey
 	}
-	return modRepo(ctx, rt, a.Repo, saltenv, aptkey, a.Kwargs)
+	switch backend {
+	case "apt":
+		return modRepo(ctx, rt, a.Repo, saltenv, aptkey, a.Kwargs)
+	case "yum":
+		return yumModRepo(ctx, rt, a.Repo,
+			basedirOrKwarg(a.Basedir, a.Kwargs), strictOrKwarg(a.StrictConfig, a.Kwargs), a.Kwargs)
+	default:
+		return zypperPending("pkg.mod_repo")
+	}
 }
 
 type GetRepoKeysArgs struct {
@@ -122,6 +269,13 @@ func (getRepoKeysFunc) Name() string { return "pkg.get_repo_keys" }
 func (getRepoKeysFunc) Args() any    { return GetRepoKeysArgs{} }
 func (getRepoKeysFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
 	a := args.(*GetRepoKeysArgs)
+	backend, err := backendOf(rt)
+	if err != nil {
+		return nil, err
+	}
+	if backend != "apt" {
+		return nil, unsupportedOnBackend("pkg.get_repo_keys", backend)
+	}
 	aptkey := true
 	if a.Aptkey != nil {
 		aptkey = *a.Aptkey
@@ -150,6 +304,13 @@ func (addRepoKeyFunc) Name() string { return "pkg.add_repo_key" }
 func (addRepoKeyFunc) Args() any    { return AddRepoKeyArgs{} }
 func (addRepoKeyFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
 	a := args.(*AddRepoKeyArgs)
+	backend, err := backendOf(rt)
+	if err != nil {
+		return nil, err
+	}
+	if backend != "apt" {
+		return nil, unsupportedOnBackend("pkg.add_repo_key", backend)
+	}
 	req := addRepoKeyRequest{aptkey: true, saltenv: "base"}
 	if a.Path != nil {
 		req.path = *a.Path
@@ -196,6 +357,13 @@ func (delRepoKeyFunc) Name() string { return "pkg.del_repo_key" }
 func (delRepoKeyFunc) Args() any    { return DelRepoKeyArgs{} }
 func (delRepoKeyFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
 	a := args.(*DelRepoKeyArgs)
+	backend, err := backendOf(rt)
+	if err != nil {
+		return nil, err
+	}
+	if backend != "apt" {
+		return nil, unsupportedOnBackend("pkg.del_repo_key", backend)
+	}
 	aptkey := true
 	if a.Aptkey != nil {
 		aptkey = *a.Aptkey

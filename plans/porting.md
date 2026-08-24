@@ -475,8 +475,34 @@ reconciled the stale implemented_families list that had drifted since
 R2.5 — network/nftables now recorded, summary consistent at 57
 implemented / 120 planned).
 
-Next in order: R3 continues (yum/zypper pkgrepo surfaces, pkgrepo
-state, pkgbuild, alternatives, debconfmod, python/pyenv, npm/pip/
-virtualenv long-tail check), R4-R5 per plan, R6-R8 unblocked via E1-E4,
-R9 awaits the services tier (E5), R10 cloud, R11 netdev behind the ADR
-gate. Master-minion families stay excluded.
+R3.2 completed the yum/dnf repository surface and unified the pkg.*
+registrations behind Salt's virtual-module selection: backendOf routes
+on OS family (Debian→apt engine, RedHat→yum engine; zypper stays
+unsupported until its phase, and the apt-only key trio reports
+unsupported on other families). The yum side ports configparser
+semantics into a local subset — lowercased keys, first-occurring "=" /
+":" delimiter, indented continuations joined with "\n", DEFAULT
+sections invisible to iteration, strict duplicate detection,
+MissingSectionHeaderError degrading _parse_repo_file to ("", {}) — plus
+yum.conf reposdir discovery over the /etc/yum/yum.conf, /etc/yum.conf,
+/etc/dnf/dnf.conf, /etc/tdnf/tdnf.conf lookup order with the verbatim
+no-config error list. list/get/del/mod_repo carry the upstream message
+shapes (including the copr alias expansion inside the not-found text),
+the single-file deletion path, comment-preserving multi-stanza rewrites
+with multiline value re-indentation, COPR name mapping
+(copr:owner/name → copr:copr.fedorainfracloud.org:owner:name), and the
+mod_repo kwargs machinery where every non-dunder kwarg lands in the
+stanza (basedir included — upstream never filters it) while blank-value
+deletion keeps False and numeric zero because Python evaluates
+False == 0. Documented divergences: option apply order is sorted where
+upstream preserves request insertion order (Go map decoding loses it),
+and .repo file scans iterate deterministically where os.listdir is
+arbitrary. Salt's test_yumpkg repo tests map onto hermetic fixtures;
+the CLI dispatch was smoke-checked against a live Fedora repos.d.
+
+Next in order: R3 continues (zypper repo surface via a minimal
+__zypper__ xml-call port, pkgrepo state module, pkgbuild, alternatives,
+debconfmod, python/pyenv, npm/pip/virtualenv long-tail check), R4-R5
+per plan, R6-R8 unblocked via E1-E4, R9 awaits the services tier (E5),
+R10 cloud, R11 netdev behind the ADR gate. Master-minion families stay
+excluded.
