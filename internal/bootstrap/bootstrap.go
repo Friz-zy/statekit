@@ -9,6 +9,7 @@ import (
 	"github.com/friz-zy/statekit/internal/runtime"
 
 	execaliases "github.com/friz-zy/statekit/modules/exec/aliases"
+	execalt "github.com/friz-zy/statekit/modules/exec/alternatives"
 	execarchive "github.com/friz-zy/statekit/modules/exec/archive"
 	execat "github.com/friz-zy/statekit/modules/exec/at"
 	execbcache "github.com/friz-zy/statekit/modules/exec/bcache"
@@ -122,6 +123,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execpkgresource.Register,
 		execpkgrepo.Register,
 		execpkgbuild.Register,
+		execalt.Register,
 		execservice.Register,
 		execarchive.Register,
 		execat.Register,

@@ -4,12 +4,13 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 60
+    implemented: 61
     partial: 0
     excluded: 69
-    planned: 117
+    planned: 116
 implemented_families:
     - aliases
+    - alternatives
     - archive
     - at
     - bcache
@@ -142,7 +143,6 @@ excluded:
 planned:
     - 'acl (planned: needs a dedicated porting round)'
     - 'alias (planned: needs a dedicated porting round)'
-    - 'alternatives (planned: needs a dedicated porting round)'
     - 'ansible (planned: needs a dedicated porting round)'
     - 'apache (planned: needs a dedicated porting round)'
     - 'apache_conf (planned: needs a dedicated porting round)'

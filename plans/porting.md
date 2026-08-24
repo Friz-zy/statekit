@@ -567,8 +567,19 @@ terminal under the classifier's prefix rule with the state module's
 built/repo still owed — flagged for the R3 close differential pass
 (exec 388→391, families 59→60 implemented / 117 planned).
 
-Next in order: R3 continues (pkgbuild state built/repo, alternatives,
-debconfmod, python/pyenv, npm/pip/virtualenv long-tail check, R3 close
+R3.6 landed the alternatives family (9 CLI-facing functions including
+the __func_alias__ set_→set registration): per-family command selection
+(alternatives on RedHat, update-alternatives elsewhere), the shared
+stderr-on-failure return shape for display/install/remove/auto/set, the
+three-way show_link strategy (direct metadata-file second-line read on
+RedHat/SUSE with family-specific directories, --query Link: parsing on
+Debian), and readlink-based show_current/check_installed. Mapped onto
+the full pytests battery including the Debian query fixture and both
+metadata-file variants (exec 391→400, families 60→61 implemented /
+116 planned).
+
+Next in order: R3 continues (debconfmod exec+state, python/pyenv,
+pkgbuild state built/repo, npm/pip/virtualenv long-tail check, R3 close
 differential pass), R4-R5 per plan, R6-R8 unblocked via E1-E4, R9
 awaits the services tier (E5), R10 cloud, R11 netdev behind the ADR
 gate. Master-minion families stay excluded.

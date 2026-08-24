@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 391
+    implemented: 400
 state:
     salt_modules: 132
     salt_functions: 669
@@ -19,6 +19,15 @@ implemented:
         - aliases.list_aliases
         - aliases.rm_alias
         - aliases.set_target
+        - alternatives.auto
+        - alternatives.check_exists
+        - alternatives.check_installed
+        - alternatives.display
+        - alternatives.install
+        - alternatives.remove
+        - alternatives.set
+        - alternatives.show_current
+        - alternatives.show_link
         - archive.gunzip
         - archive.gzip
         - archive.tar
