@@ -541,7 +541,34 @@ host.only plus the hosts.get_alias/set_host exec long tail were ported
 in this phase to complete it honestly (exec 386→388, states 32→35,
 families 57→59 implemented / 118 planned).
 
-Next in order: R3 continues (pkgbuild, alternatives, debconfmod,
-python/pyenv, npm/pip/virtualenv long-tail check), R4-R5 per plan,
-R6-R8 unblocked via E1-E4, R9 awaits the services tier (E5), R10 cloud,
-R11 netdev behind the ADR gate. Master-minion families stay excluded.
+R3.5 landed the pkgbuild exec surface behind backend dispatch:
+pkgbuild.make_src_pkg/build/make_repo route rpm (rpmbuild/mock/
+createrepo) on RedHat/SUSE families and deb (pbuilder/debuild/reprepro)
+on Debian hosts, mirroring both backends' __virtual__ guards. String
+commands run through a shlex-equivalent splitter matching Salt's
+python_shell=False handling, preserving the quoted --define pairs
+(rpm "_topdir"/"dist .el6"), the mock init/install/build cycle with
+--no-clean accumulation across SRPMs, the deb salt-tarball rename dance
+(- to _ plus "+ds", tar repack ending in `debuild -S -uc -us -sa`), the
+.dsc passthrough branch, pbuilder create/update/build sequencing, and
+reprepro includedsc/includedeb flows including the last-deb result
+retention quirk. Documented boundaries: cp.get_url accepts readable
+local absolute paths only (remote/salt schemes UnsupportedError),
+keyid signing is pillar-gated — StateKit reproduces upstream's
+format-string behavior where absent pillar names render as <gnupghome>/
+None and the gpg delegate absence maps onto the verbatim re-raised
+import error — and the salt.utils.vt interactive passphrase loops are
+unported (unreachable without pillar); runas stays single-user.
+Upstream ships integration-only tests for this family, so hermetic
+tests pin argv sequences, env-helper batteries (including the dead
+mandatory back-fill leaving codename empty when CODENAME is absent
+from a provided env), and error texts directly. Family flipped
+terminal under the classifier's prefix rule with the state module's
+built/repo still owed — flagged for the R3 close differential pass
+(exec 388→391, families 59→60 implemented / 117 planned).
+
+Next in order: R3 continues (pkgbuild state built/repo, alternatives,
+debconfmod, python/pyenv, npm/pip/virtualenv long-tail check, R3 close
+differential pass), R4-R5 per plan, R6-R8 unblocked via E1-E4, R9
+awaits the services tier (E5), R10 cloud, R11 netdev behind the ADR
+gate. Master-minion families stay excluded.

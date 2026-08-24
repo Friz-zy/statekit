@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 388
+    implemented: 391
 state:
     salt_modules: 132
     salt_functions: 669
@@ -314,6 +314,9 @@ implemented:
         - pkg_resource.version
         - pkg_resource.version_clean
         - pkg_resource.version_compare
+        - pkgbuild.build
+        - pkgbuild.make_repo
+        - pkgbuild.make_src_pkg
         - ps.boot_time
         - ps.cpu_percent
         - ps.cpu_times
