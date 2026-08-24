@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 379
+    implemented: 386
 state:
     salt_modules: 132
     salt_functions: 669
@@ -48,61 +48,24 @@ implemented:
         - bridge.list
         - bridge.show
         - bridge.stp
-        - network.calc_net
-        - network.convert_cidr
-        - network.in_subnet
-        - network.ip_in_subnet
-        - network.iphexval
-        - network.is_loopback
-        - network.is_private
-        - network.reverse_ip
-        - network.wol
-        - network.connect
-        - network.fqdns
-        - network.get_bufsize
-        - network.get_fqdn
-        - network.get_hostname
-        - network.ifacestartswith
-        - network.ip_addrs6
-        - network.ip_addrs
-        - network.ip_addrs6
-        - network.ip_neighs
-        - network.ip_neighs6
-        - network.ip_networks
-        - network.ip_networks6
-        - network.mod_bufsize
-        - network.netstat
-        - network.active_tcp
-        - network.arp
-        - network.dig
-        - network.default_route
-        - network.get_route
-        - network.hw_addr
-        - network.interface
-        - network.interface_ip
-        - network.interfaces
-        - network.ping
-        - network.routes
-        - network.subnets
-        - network.subnets6
-        - network.traceroute
         - cmd.retcode
         - cmd.run
         - cmd.run_all
+        - cmd.run_stderr
         - cmd.run_stdout
         - cmd.which
         - cron.add_job
         - cron.list_tab
         - cron.raw_tab
         - cron.rm_job
-        - devinfo.filter
-        - devinfo.hwinfo
         - cryptdev.active
         - cryptdev.close
         - cryptdev.crypttab
         - cryptdev.open
         - cryptdev.rm_crypttab
         - cryptdev.set_crypttab
+        - devinfo.filter
+        - devinfo.hwinfo
         - devmap.multipath_flush
         - devmap.multipath_list
         - disk.percent
@@ -171,6 +134,7 @@ implemented:
         - ini.get_ini
         - ini.get_option
         - ini.remove_option
+        - ini.set_option
         - ipset.add
         - ipset.check
         - ipset.check_set
@@ -198,31 +162,9 @@ implemented:
         - iptables.save
         - iptables.set_policy
         - iptables.version
-        - nftables.append
-        - nftables.build_rule
-        - nftables.check
-        - nftables.check_chain
-        - nftables.check_table
-        - nftables.delete
-        - nftables.delete_chain
-        - nftables.delete_table
-        - nftables.flush
-        - nftables.get_policy
-        - nftables.get_rule_handle
-        - nftables.get_rules
-        - nftables.get_rules_json
-        - nftables.get_saved_rules
-        - nftables.insert
-        - nftables.list_tables
-        - nftables.new_chain
-        - nftables.new_table
-        - nftables.save
-        - nftables.set_policy
-        - nftables.version
         - iwtools.list_interfaces
         - iwtools.scan
         - iwtools.set_mode
-        - ini.set_option
         - keyboard.get_layout
         - keyboard.set_layout
         - kmod.is_loaded
@@ -259,6 +201,65 @@ implemented:
         - mount.is_mounted
         - mount.mount
         - mount.umount
+        - network.active_tcp
+        - network.arp
+        - network.calc_net
+        - network.connect
+        - network.convert_cidr
+        - network.default_route
+        - network.dig
+        - network.fqdns
+        - network.get_bufsize
+        - network.get_fqdn
+        - network.get_hostname
+        - network.get_route
+        - network.hw_addr
+        - network.ifacestartswith
+        - network.in_subnet
+        - network.interface
+        - network.interface_ip
+        - network.interfaces
+        - network.ip_addrs
+        - network.ip_addrs6
+        - network.ip_in_subnet
+        - network.ip_neighs
+        - network.ip_neighs6
+        - network.ip_networks
+        - network.ip_networks6
+        - network.iphexval
+        - network.is_loopback
+        - network.is_private
+        - network.mod_bufsize
+        - network.mod_hostname
+        - network.netstat
+        - network.ping
+        - network.reverse_ip
+        - network.routes
+        - network.subnets
+        - network.subnets6
+        - network.traceroute
+        - network.wol
+        - nftables.append
+        - nftables.build_rule
+        - nftables.check
+        - nftables.check_chain
+        - nftables.check_table
+        - nftables.delete
+        - nftables.delete_chain
+        - nftables.delete_table
+        - nftables.flush
+        - nftables.get_policy
+        - nftables.get_rule_handle
+        - nftables.get_rules
+        - nftables.get_rules_json
+        - nftables.get_saved_rules
+        - nftables.insert
+        - nftables.list_tables
+        - nftables.new_chain
+        - nftables.new_table
+        - nftables.save
+        - nftables.set_policy
+        - nftables.version
         - npm.install
         - npm.list
         - npm.uninstall
@@ -287,9 +288,16 @@ implemented:
         - pip.install
         - pip.list
         - pip.uninstall
+        - pkg.add_repo_key
+        - pkg.del_repo
+        - pkg.del_repo_key
+        - pkg.get_repo
+        - pkg.get_repo_keys
         - pkg.install
         - pkg.latest_version
         - pkg.list_pkgs
+        - pkg.list_repos
+        - pkg.mod_repo
         - pkg.refresh_db
         - pkg.remove
         - pkg.version
@@ -385,11 +393,11 @@ implemented:
         - test.sleep
         - timezone.get_hwclock
         - timezone.get_offset
-        - udev.env
-        - udev.info
         - timezone.get_zone
         - timezone.set_hwclock
         - timezone.set_zone
+        - udev.env
+        - udev.info
         - user.add
         - user.chgid
         - user.chhome

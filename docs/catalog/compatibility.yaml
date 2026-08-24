@@ -13,12 +13,12 @@ implemented_families:
     - archive
     - at
     - bcache
-    - bridge
     - blockdev
+    - bridge
     - cmd
     - cron
-    - devinfo
     - cryptdev
+    - devinfo
     - devmap
     - disk
     - environ
@@ -40,6 +40,8 @@ implemented_families:
     - logrotate
     - lvm
     - mount
+    - network
+    - nftables
     - npm
     - partition
     - pip

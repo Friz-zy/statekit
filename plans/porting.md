@@ -437,6 +437,46 @@ for the data/util layer. Remaining in R1, in order:
      ADR gate. Twin-container differential runs activate with
      differential.yml.
 
-Next in order: rounds R1-R5 (parallel), R6-R8 (enablers done),
-R9 after services tier (E5), R10 cloud, R11 netdev behind ADR gate.
-Master-minion families stay excluded.
+R3.1 opened the package deepening round with the APT repository surface
+(the pkgrepo family, exec side): the Debian sources engine ported from
+salt/utils/pkg/deb.py — classic SourceEntry/SourcesList plus Deb822
+section stanzas, cdrom-line parsing, first-bracket-group option
+extraction, split_source_line's bracket-aware walk, repo_line rendering
+with trusted=no dropping and comment round-trip — and seven
+CLI-facing pkg.* functions registered from the new modules/exec/pkgrepo
+package: list_repos with deb822 per-uri/suite/type expansion, get_repo
+with ppa expansion and slash-insensitive matching, del_repo with
+suite/comps subtraction, the two cleanup-message shapes and the
+sources.list.d part-file removal, mod_repo with the full kwargs
+machinery (consolidate dedup onto sources.list deleting every
+processed part file, keyid/keyserver/key_url/key_text side doors,
+.sources creation behind the signedby/trusted gate when apt-key is
+absent, the _MODIFY_OK/_MODIFY_OK_LEGACY setattr allow-lists), plus
+get_repo_keys/add_repo_key/del_repo_key over gpg --with-colons parsing
+and the .asc armor-preservation rule from regression #68464. Upstream
+quirks pinned by tests: del_repo formats LP_PVT_SRC_FORMAT with swapped
+arguments (DIST before OWNER), _decrypt_key returns the .decrypted path
+even when dearmoring failed, get_repo_keys references an undefined
+local on apt-key failure (StateKit raises an explicit error instead),
+and the SyntaxError guard around _split_repo_str is dead code at the
+pinned revision because parse raises SaltInvocationError. Documented
+divergences: remote schemes surface UnsupportedError for cp.cache_file
+until the cp family lands while local absolute paths pass through,
+systemd-run scoping is not reproduced though the dpkg-lock retry
+backoff is, comps set-difference keeps first-seen order where Python's
+set iteration is unordered, truncated gpg colon-records degrade missing
+fields to None instead of crashing, and config.option degrades like
+minions lacking the module so proxy env injection for apt-key calls
+stays inert. Salt's test_aptpkg repo surface maps onto hermetic
+MemoryFS/fake-runner fixtures; expandRepoDef is ported internally for
+the pkgrepo state module (managed/absent), which lands as its own phase
+and flips the family terminal (exec 379→386; catalog regen also
+reconciled the stale implemented_families list that had drifted since
+R2.5 — network/nftables now recorded, summary consistent at 57
+implemented / 120 planned).
+
+Next in order: R3 continues (yum/zypper pkgrepo surfaces, pkgrepo
+state, pkgbuild, alternatives, debconfmod, python/pyenv, npm/pip/
+virtualenv long-tail check), R4-R5 per plan, R6-R8 unblocked via E1-E4,
+R9 awaits the services tier (E5), R10 cloud, R11 netdev behind the ADR
+gate. Master-minion families stay excluded.
