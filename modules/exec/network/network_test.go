@@ -298,9 +298,11 @@ func TestRegisterNames(t *testing.T) {
 			t.Errorf("missing registration %s", want)
 		}
 	}
-	for _, pending := range []string{"network.netstat", "network.get_bufsize", "network.fqdns"} {
-		if names[pending] {
-			t.Errorf("%s lands in its own round", pending)
+	// The remaining pending functions (ip_addrs trio, hostname-adjacent
+	// connect leftovers, ip_neighs aliases) are tracked in the handoff.
+	for _, registered := range []string{"network.netstat", "network.get_bufsize", "network.fqdns"} {
+		if !names[registered] {
+			t.Errorf("missing registration %s", registered)
 		}
 	}
 }

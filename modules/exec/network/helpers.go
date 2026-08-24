@@ -48,3 +48,28 @@ func toAnySlice(items []string) []any {
 	}
 	return out
 }
+
+// kernelHook mirrors __grains__["kernel"].
+var kernelHook = func(rt *runtime.Runtime) string {
+	switch goosName() {
+	case "linux":
+		return "Linux"
+	case "freebsd":
+		return "FreeBSD"
+	case "netbsd":
+		return "NetBSD"
+	case "openbsd":
+		return "OpenBSD"
+	default:
+		return ""
+	}
+}
+
+// osFamilyHook mirrors __grains__["os_family"]; empty by default until a
+// facts integration supplies it.
+var osFamilyHook = func(rt *runtime.Runtime) string { return "" }
+
+func pathExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}

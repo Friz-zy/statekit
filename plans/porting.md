@@ -382,6 +382,33 @@ the family: netstat/ss per-platform parsers, bufsize pair, hostname
 trio, connect, ip_networks(6), ifacestartswith, fqdns, ip_neighs(6)
 (families stay counted at 57 implemented; exec 349→363).
 planned; exec 340→349).
+R2.8 shipped the tool-backed Linux surface (14 more exec functions):
+interfaces/hw_addr/interface/interface_ip/subnets/subnets6 over a port
+of _interfaces_ip (group parsing of ip link+addr with prefixlen keys,
+secondary addresses, and per-interface merge so the link-pass hwaddr
+survives the addr pass), routes/default_route via the _ip_route_linux
+parser (netstat fallback deferred), get_route through the ip route get
+regex extraction, active_tcp off /proc/net/tcp(6) little-endian hex
+records with ESTABLISHED filtering, arp/ping/traceroute/dig wrappers
+with sanitize_host and which-guards. Remaining pending functions in
+the family: netstat/ss per-platform parsers, bufsize pair, hostname
+trio, connect, ip_networks(6), ifacestartswith, fqdns, ip_neighs(6)
+(families stay counted at 57 implemented; exec 349→363).
+R2.9 completed the network family (13 final exec functions): netstat
+with the Linux dispatch (netstat -tulpnea columns vs ss -tulpnea with
+users/uid/ino trailing-field extraction and ESTAB→ESTABLISHED rename),
+ip_neighs/ip_neighs6 over `ip neigh show` (mac-keyed like upstream's
+comps[4] mapping), get_hostname/get_fqdn behind injectable resolver
+hooks, mod_hostname for hostnamectl/hostname flows including /etc/hosts
+token rewrite and RedHat/Debian hostname-file persistence, connect with
+TCP dial plus UDP probe and verbatim comment dictionary,
+get_bufsize/mod_bufsize over literal /sbin/ethtool -g/-G with the
+max-suffix state machine and rx/tx/rx-mini/rx-jumbo kwargs, ip_networks/
+ip_networks6 with glob interface filtering, loopback exclusion and the
+verbose dict shape, ifacestartswith with label preference, and fqdns as
+sorted reverse-resolved names (sequential; upstream parallelizes —
+documented divergence). The network family is now complete at 55/55
+catalog functions (exec 363→377).
 Enablers E1-E4 are complete: R6-R8 unblocked. Known gap
 parked for R8: statfs_unix.go (!windows tag) does not compile under
 GOOS=openbsd/netbsd (pre-existing, outside gated matrix). loop.until is
@@ -392,12 +419,11 @@ for the data/util layer. Remaining in R1, in order:
      differential catalog pass. With that, R1's function scope is
      exhausted — R1 closes after a differential-scope pass over its
      families (R1 ports → R2 differential per section 3).
-  2. Next rounds: R2.9 finishes network's remaining pending functions
-     (netstat/ss parsers, bufsize, hostname trio, connect,
-     ip_networks(6), ifacestartswith, fqdns, ip_neighs), then R2 closes
-     with a differential-scope pass over its families; R3 pkg deep port;
-     R4-R5 per plan; R6-R8 unblocked via E1-E4; R9 awaits the services
-     tier (E5); R10 cloud; R11 netdev behind the ADR gate.
+  2. Next rounds: the network family is complete (55/55 catalog
+     functions); R2 closes with a differential-scope pass over its
+     families; R3 pkg deep port; R4-R5 per plan; R6-R8 unblocked via
+     E1-E4; R9 awaits the services tier (E5); R10 cloud; R11 netdev
+     behind the ADR gate.
 
 Next in order: rounds R1-R5 (parallel), R6-R8 (enablers done),
 R9 after services tier (E5), R10 cloud, R11 netdev behind ADR gate.
