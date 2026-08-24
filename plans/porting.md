@@ -356,6 +356,20 @@ argv (addem/deletem vs add/delete, stp on/off vs stp/-stp with the
 required iface). Upstream's 9 dispatch-mock tests map onto StateKit
 fixtures pinning both parser families and per-kernel argv (families
 55→56 implemented / 121 planned; exec 331→340).
+R2.7 opened the network family with its
+pure-compute surface (9 exec functions): subnet/CIDR math over netip
+(in_subnet scanning the host addresses behind an injectable hook,
+ip_in_subnet, calc_net with dotted/prefix netmasks rejecting
+non-contiguous masks, convert_cidr with v4 broadcast and v6 no-broadcast
+semantics), classification tables ported from CPython's ipaddress
+constants including CGNAT 100.64/10 and the full not-globally-reachable
+v4/v6 ranges, reverse_pointer for both families, uppercase hex octet
+encoding, and wol building the 102-byte magic packet behind an
+injectable UDP hook with mac_str_to_bytes separator handling. The
+tool-backed remainder of the family (ping/netstat/routes/interfaces/
+fqdns and the per-platform parsers) lands in R2.8. Upstream fixtures
+for these functions map one-to-one (families 56→57 implemented / 120
+planned; exec 340→349).
 Enablers E1-E4 are complete: R6-R8 unblocked. Known gap
 parked for R8: statfs_unix.go (!windows tag) does not compile under
 GOOS=openbsd/netbsd (pre-existing, outside gated matrix). loop.until is
@@ -366,10 +380,12 @@ for the data/util layer. Remaining in R1, in order:
      differential catalog pass. With that, R1's function scope is
      exhausted — R1 closes after a differential-scope pass over its
      families (R1 ports → R2 differential per section 3).
-  2. Next rounds: R2 closes with network 55 (the last big family) plus a
-     differential-scope pass over its families; R3 pkg deep port;
-     R4-R5 per plan; R6-R8 unblocked via E1-E4; R9 awaits the services
-     tier (E5); R10 cloud; R11 netdev behind the ADR gate.
+  2. Next rounds: R2.8 finishes network's tool-backed surface
+     (ping/netstat/routes/interfaces/fqdns and per-platform parsers),
+     then R2 closes with a differential-scope pass over its families;
+     R3 pkg deep port; R4-R5 per plan; R6-R8 unblocked via E1-E4; R9
+     awaits the services tier (E5); R10 cloud; R11 netdev behind the
+     ADR gate.
 
 Next in order: rounds R1-R5 (parallel), R6-R8 (enablers done),
 R9 after services tier (E5), R10 cloud, R11 netdev behind ADR gate.
