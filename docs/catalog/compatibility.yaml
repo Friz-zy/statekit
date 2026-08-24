@@ -4,10 +4,10 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 54
+    implemented: 55
     partial: 0
     excluded: 69
-    planned: 123
+    planned: 122
 implemented_families:
     - aliases
     - archive
@@ -200,7 +200,6 @@ planned:
     - 'netusers (planned: needs a dedicated porting round)'
     - 'network (planned: needs a dedicated porting round)'
     - 'nfs3 (planned: needs a dedicated porting round)'
-    - 'nftables (planned: needs a dedicated porting round)'
     - 'ntp (planned: needs a dedicated porting round)'
     - 'oracle (planned: needs a dedicated porting round)'
     - 'osquery (planned: needs a dedicated porting round)'

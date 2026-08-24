@@ -40,6 +40,7 @@ import (
 	execlvm "github.com/friz-zy/statekit/modules/exec/lvm"
 	execmdadm "github.com/friz-zy/statekit/modules/exec/mdadm"
 	execmount "github.com/friz-zy/statekit/modules/exec/mount"
+	execnftables "github.com/friz-zy/statekit/modules/exec/nftables"
 	execnpm "github.com/friz-zy/statekit/modules/exec/npm"
 	execpart "github.com/friz-zy/statekit/modules/exec/partition"
 	execpip "github.com/friz-zy/statekit/modules/exec/pip"
@@ -137,6 +138,7 @@ func buildRuntime() (*runtime.Runtime, error) {
 		execrsync.Register,
 		execscsi.Register,
 		execsmbios.Register,
+		execnftables.Register,
 		execnpm.Register,
 		execpip.Register,
 		execps.Register,

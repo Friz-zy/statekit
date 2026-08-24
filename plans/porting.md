@@ -331,7 +331,21 @@ parts keeping raw strings like the swallowed ValueError) and
 _compare_member_parts including its all-items AND behavior over range
 lists and the networks-never-contain rule. All 12 upstream tests map
 onto StateKit fixtures (families 53→54 implemented / 123 planned; exec
-299→310). Enablers E1-E4 are complete: R6-R8 unblocked. Known gap
+299→310). R2.5 ported nftables (21 exec functions): every result is the
+upstream dict shape {comment, rule?, result}; build_rule renders nft
+syntax (meta iifname/oifname, ct state braces, reverse-sorted port sets,
+after-jump ordering) with the empty-proto substring quirk preserved;
+check_table/check_chain/check return comment dicts and chain through a
+shared preflight; get_rule_handle extracts handles by regex over the
+--handle listing; list_tables/get_rules/get_rules_json parse real JSON
+envelopes; save() aggregates unique families into one file honoring
+file.directory_exists with a local-stat fallback (documented divergence);
+set_policy rebuilds base chains from live JSON info requiring type/hook/
+prio; get_policy keeps upstream's always-None double-index quirk past
+chain validation; new_chain emits upstream's literal backslash-brace
+tokens for typed base chains. Upstream's 25 tests map onto StateKit
+fixtures (families 54→55 implemented / 122 planned; exec 310→331).
+Enablers E1-E4 are complete: R6-R8 unblocked. Known gap
 parked for R8: statfs_unix.go (!windows tag) does not compile under
 GOOS=openbsd/netbsd (pre-existing, outside gated matrix). loop.until is
 excluded per docs/adr/0001-loop-until-excluded.md; until_no_eval waits
@@ -341,10 +355,9 @@ for the data/util layer. Remaining in R1, in order:
      differential catalog pass. With that, R1's function scope is
      exhausted — R1 closes after a differential-scope pass over its
      families (R1 ports → R2 differential per section 3).
-  2. Next rounds: R2 continues with nftables 23, bridge 24,
-     network 55; R3 pkg deep port; R4-R5 per plan; R6-R8 unblocked via
-     E1-E4; R9 awaits the services tier (E5); R10 cloud; R11 netdev
-     behind the ADR gate.
+  2. Next rounds: R2 continues with bridge 24 and network 55; R3 pkg
+     deep port; R4-R5 per plan; R6-R8 unblocked via E1-E4; R9 awaits the
+     services tier (E5); R10 cloud; R11 netdev behind the ADR gate.
 
 Next in order: rounds R1-R5 (parallel), R6-R8 (enablers done),
 R9 after services tier (E5), R10 cloud, R11 netdev behind ADR gate.

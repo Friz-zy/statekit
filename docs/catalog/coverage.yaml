@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 310
+    implemented: 331
 state:
     salt_modules: 132
     salt_functions: 669
@@ -151,6 +151,27 @@ implemented:
         - iptables.save
         - iptables.set_policy
         - iptables.version
+        - nftables.append
+        - nftables.build_rule
+        - nftables.check
+        - nftables.check_chain
+        - nftables.check_table
+        - nftables.delete
+        - nftables.delete_chain
+        - nftables.delete_table
+        - nftables.flush
+        - nftables.get_policy
+        - nftables.get_rule_handle
+        - nftables.get_rules
+        - nftables.get_rules_json
+        - nftables.get_saved_rules
+        - nftables.insert
+        - nftables.list_tables
+        - nftables.new_chain
+        - nftables.new_table
+        - nftables.save
+        - nftables.set_policy
+        - nftables.version
         - iwtools.list_interfaces
         - iwtools.scan
         - iwtools.set_mode
