@@ -18,6 +18,7 @@ import (
 	execcmd "github.com/friz-zy/statekit/modules/exec/cmd"
 	execcron "github.com/friz-zy/statekit/modules/exec/cron"
 	execcryptdev "github.com/friz-zy/statekit/modules/exec/cryptdev"
+	execdebconf "github.com/friz-zy/statekit/modules/exec/debconfmod"
 	execdevinfo "github.com/friz-zy/statekit/modules/exec/devinfo"
 	execdevmap "github.com/friz-zy/statekit/modules/exec/devmap"
 	execdisk "github.com/friz-zy/statekit/modules/exec/disk"
@@ -71,6 +72,7 @@ import (
 	statealiases "github.com/friz-zy/statekit/modules/state/aliases"
 	statecmd "github.com/friz-zy/statekit/modules/state/cmd"
 	statecron "github.com/friz-zy/statekit/modules/state/cron"
+	statedebconf "github.com/friz-zy/statekit/modules/state/debconfmod"
 	statefile "github.com/friz-zy/statekit/modules/state/file"
 	stategroup "github.com/friz-zy/statekit/modules/state/group"
 	statehost "github.com/friz-zy/statekit/modules/state/host"
@@ -124,6 +126,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execpkgrepo.Register,
 		execpkgbuild.Register,
 		execalt.Register,
+		execdebconf.Register,
 		execservice.Register,
 		execarchive.Register,
 		execat.Register,
@@ -190,6 +193,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		statealiases.Register,
 		stateini.Register,
 		statepkgrepo.Register,
+		statedebconf.Register,
 		statelvm.Register,
 		stateselinux.Register,
 	} {

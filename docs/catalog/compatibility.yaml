@@ -4,10 +4,10 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 61
+    implemented: 62
     partial: 0
     excluded: 69
-    planned: 116
+    planned: 115
 implemented_families:
     - aliases
     - alternatives
@@ -19,6 +19,7 @@ implemented_families:
     - cmd
     - cron
     - cryptdev
+    - debconf
     - devinfo
     - devmap
     - disk
@@ -167,7 +168,6 @@ planned:
     - 'config (planned: needs a dedicated porting round)'
     - 'cp (planned: needs a dedicated porting round)'
     - 'data (planned: needs a dedicated porting round)'
-    - 'debconf (planned: needs a dedicated porting round)'
     - 'defaults (planned: needs a dedicated porting round)'
     - 'desktop (planned: needs a dedicated porting round)'
     - 'dism (planned: needs a dedicated porting round)'

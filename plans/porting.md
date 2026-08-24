@@ -578,8 +578,25 @@ the full pytests battery including the Debian query fixture and both
 metadata-file variants (exec 391→400, families 60→61 implemented /
 116 planned).
 
-Next in order: R3 continues (debconfmod exec+state, python/pyenv,
-pkgbuild state built/repo, npm/pip/virtualenv long-tail check, R3 close
-differential pass), R4-R5 per plan, R6-R8 unblocked via E1-E4, R9
-awaits the services tier (E5), R10 cloud, R11 netdev behind the ADR
-gate. Master-minion families stay excluded.
+R3.7 landed the debconf family across both surfaces. The exec module
+(debconf.get_selections/show/set/set_template/set_file with the set_
+alias) ports the (?ms) record regex unpacking, the fetchempty grouping,
+and the temp-file set flow whose line format is pinned through runner
+capture; both __virtual__ guards (Debian family plus the
+debconf-utils presence probe) run per call with verbatim messages.
+set_template stays UnsupportedError pending templating scoping and
+set_file's salt:// scheme surfaces the cp.cache_file boundary like the
+pkg families. The state module ports set_file (context/defaults dict
+validation texts, test-mode comment, success/failure comments) and set
+(the unchanged-answers accumulation, lowercase boolean serialization
+before str(), password hiding, per-question failure marking), iterating
+questions in sorted order where Python preserves request order
+(documented divergence). Mapped onto both upstream pytest batteries
+(exec 400→405, states 35→37; debconf family flips terminal, families
+61→62 implemented / 115 planned).
+
+Next in order: R3 continues (python/pyenv, pkgbuild state built/repo,
+npm/pip/virtualenv long-tail check, R3 close differential pass), R4-R5
+per plan, R6-R8 unblocked via E1-E4, R9 awaits the services tier (E5),
+R10 cloud, R11 netdev behind the ADR gate. Master-minion families stay
+excluded.
