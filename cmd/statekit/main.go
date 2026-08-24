@@ -14,6 +14,7 @@ import (
 	execat "github.com/friz-zy/statekit/modules/exec/at"
 	execbcache "github.com/friz-zy/statekit/modules/exec/bcache"
 	execblockdev "github.com/friz-zy/statekit/modules/exec/blockdev"
+	execbridge "github.com/friz-zy/statekit/modules/exec/bridge"
 	execcmd "github.com/friz-zy/statekit/modules/exec/cmd"
 	execcron "github.com/friz-zy/statekit/modules/exec/cron"
 	execcryptdev "github.com/friz-zy/statekit/modules/exec/cryptdev"
@@ -124,6 +125,7 @@ func buildRuntime() (*runtime.Runtime, error) {
 		execenviron.Register,
 		execethtool.Register,
 		execkmod.Register,
+		execbridge.Register,
 		execcron.Register,
 		execdevinfo.Register,
 		execdisk.Register,

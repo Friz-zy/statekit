@@ -4,15 +4,16 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 55
+    implemented: 56
     partial: 0
     excluded: 69
-    planned: 122
+    planned: 121
 implemented_families:
     - aliases
     - archive
     - at
     - bcache
+    - bridge
     - blockdev
     - cmd
     - cron
@@ -152,7 +153,6 @@ planned:
     - 'baredoc (planned: needs a dedicated porting round)'
     - 'beacon (planned: needs a dedicated porting round)'
     - 'bgp (planned: needs a dedicated porting round)'
-    - 'bridge (planned: needs a dedicated porting round)'
     - 'celery (planned: needs a dedicated porting round)'
     - 'certutil (planned: needs a dedicated porting round)'
     - 'chef (planned: needs a dedicated porting round)'
