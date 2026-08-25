@@ -803,8 +803,27 @@ return empty maps like upstream's platform dispatch. master/
 ping_master/proxy_reconnect stay excluded (master-minion). Exec
 533→544.
 
-Next in order: R4 continues (restartcheck, remaining file tail incl.
-patch/sed/manage_file/check_* meta family), then the R4 close
-differential pass. R5 per plan after. R6-R8 via E1-E4, R9 awaits E5,
-R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued
-as its own round. Master-minion families stay excluded.
+R4.6 landed restartcheck plus the sed/patch file wrappers (4 functions).
+restartcheck ports the full pipeline: os_family dispatch (Debian/
+RedHat/NILRT with the verbatim unsupported-families dict), kernel
+version detection (dpkg --get-selections second-to-last entry rstripped
+of the install suffix, then apt-cache policy Installed extraction;
+rpm -q kernel for RedHat), running-service correlation via
+service.get_running/show delegates, the /proc/PID/maps deleted-file
+scanner with LIST_DIRS exclusions and (deleted)/(path inode=N) markers,
+package ownership via the pkg.owner delegate with process-name fallback
+and owners_cache, init.d/systemd classification through dpkg-query/
+repoquery including Type=oneshot filtering and service.available
+fallback, check_timeout guards, and both formatter shapes. The /proc
+scanner reads the real filesystem (deleted-library detection is a
+live-kernel view — documented). file.sed/sed_contains/patch port the
+binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
+-i{backup} argv, negate_match, contains' appended p-flag with g default;
+patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
+and -d/--strip=0 directory handling. Exec 544→548.
+
+Next in order: R4 continues (manage_file/check_managed/check_managed_
+changes/check_file_meta/check_perms — the managed-source meta family),
+then the R4 close differential pass. R5 per plan after. R6-R8 via E1-E4,
+R9 awaits E5, R10 cloud, R11 netdev behind ADR gate; pkg provider long
+tail queued as its own round. Master-minion families stay excluded.
