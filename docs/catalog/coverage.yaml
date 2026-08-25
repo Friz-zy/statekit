@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 533
+    implemented: 544
 state:
     salt_modules: 132
     salt_functions: 669
@@ -505,11 +505,23 @@ implemented:
         - shadow.info
         - smbios.get
         - smbios.records
+        - status.all_status
+        - status.cpuinfo
+        - status.cpustats
+        - status.custom
+        - status.diskstats
         - status.diskusage
         - status.loadavg
         - status.meminfo
+        - status.netdev
+        - status.netstats
+        - status.nproc
         - status.pid_list
+        - status.procs
+        - status.time_
         - status.uptime
+        - status.vmstats
+        - status.w
         - sysctl.assign
         - sysctl.default_config
         - sysctl.show

@@ -789,8 +789,22 @@ vocabulary — the datastore lives at .statekit/data (was .statekit/
 minion); upstream-architecture comments keep Salt terms where they
 describe the ported contract. Exec 517→533.
 
-Next in order: R4 continues (status long tail, restartcheck, remaining
-file tail incl. patch/sed/manage_file/check_* meta family), then the R4
-close differential pass. R5 per plan after. R6-R8 via E1-E4, R9 awaits
-E5, R10 cloud, R11 netdev behind ADR gate; pkg provider long tail
-queued as its own round. Master-minion families stay excluded.
+R4.5 landed the status long tail (12 functions via status.RegisterTail):
+cpuinfo/cpustats/diskstats/vmstats/netstats/netdev port the Linux
+/proc parsers verbatim (field-index mappings preserved, including the
+netdev rx-bytes splice at index 1 and the header/row pairing in
+/proc/net/netstat); nproc, procs (ps grain command through the Runner
+with USER/UID + PID + COMMAND/CMD header-index parsing), w (`w -fh`
+row records), time_ (strftime subset converted to Go layouts), the
+all_status composite degrading per-probe errors to empty maps, and
+custom projecting config.option("status.<fn>.custom") key lists out of
+probe results (empty without a config delegate). Non-Linux platforms
+return empty maps like upstream's platform dispatch. master/
+ping_master/proxy_reconnect stay excluded (master-minion). Exec
+533→544.
+
+Next in order: R4 continues (restartcheck, remaining file tail incl.
+patch/sed/manage_file/check_* meta family), then the R4 close
+differential pass. R5 per plan after. R6-R8 via E1-E4, R9 awaits E5,
+R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued
+as its own round. Master-minion families stay excluded.

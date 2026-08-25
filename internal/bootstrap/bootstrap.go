@@ -147,6 +147,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execout.Register,
 		execincron.Register,
 		execstatus.Register,
+		execstatus.RegisterTail,
 		execuser.Register,
 		execgroup.Register,
 		execshadow.Register,
