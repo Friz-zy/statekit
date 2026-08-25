@@ -724,9 +724,27 @@ The FileSystem abstraction gained Link and Glob (OS + memory backends;
 the memory hard link copies content — divergence documented). Exec
 434→456.
 
-Next in order: R4 continues (file hashes/sums/users/devices slice, cp
-local source, temp/xml/yaml/jinja-minimal/data/defaults, out/ret/
-incron/logrotate/restartcheck, status long tail), R5 per plan, R6-R8
-via E1-E4, R9 awaits E5, R10 cloud, R11 netdev behind ADR gate; the
-pkg provider long tail stays queued as its own round. Master-minion
-families stay excluded.
+R4.2 added the checksum/ownership/device slice (22 functions via
+RegisterSums and RegisterDevices). Checksums: get_sum (missing files
+return the literal "File not found" string — verbatim), get_hash with
+chunked reads, check_hash with the ":"/"=" separators, the
+length-to-type revmap and the verbatim supported-types enumeration
+error; extract_hash ports the line-scanning machinery with the
+source_hash_name > file_name > source priority, the partial first-hash
+fallback, and the lookaround-free hex-boundary emulation (RE2 has no
+lookbehind). Ownership: user_to_uid/uid_to_user/group_to_gid/gid_to_group
+over os/user with upstream fallback semantics (missing names yield ""),
+get_uid/get_user/get_gid/get_group degrading to -1/false like stats
+defaults. lstat returns the st_* attribute dict (empty on error);
+access implements f/r/w/x with the verbatim guards. Device nodes probe
+and create against the real OS filesystem (memory nodes cannot carry
+device metadata — documented): is_chrdev/is_blkdev/is_fifo/get_devmm
+plus mknod_chrdev/mknod_blkdev/mknod_fifo/mknod with EEXIST comment
+paths; mknod dev-number signatures split per GOOS behind thin adapters.
+Exec 456→478.
+
+Next in order: R4 continues (cp local source, temp/xml/yaml/jinja-
+minimal/data/defaults, out/ret/incron/logrotate/restartcheck, status
+long tail), R5 per plan, R6-R8 via E1-E4, R9 awaits E5, R10 cloud, R11
+netdev behind ADR gate; pkg provider long tail queued as its own round.
+Master-minion families stay excluded.

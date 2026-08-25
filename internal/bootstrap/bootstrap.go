@@ -123,6 +123,8 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execcmd.Register,
 		execfile.Register,
 		execfile.RegisterExt,
+		execfile.RegisterSums,
+		execfile.RegisterDevices,
 		execstatus.Register,
 		execuser.Register,
 		execgroup.Register,
