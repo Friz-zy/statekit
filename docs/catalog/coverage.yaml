@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 566
+    implemented: 572
 state:
     salt_modules: 132
     salt_functions: 669
@@ -527,6 +527,12 @@ implemented:
         - shadow.info
         - smbios.get
         - smbios.records
+        - ssh.check_known_host
+        - ssh.get_known_host_entries
+        - ssh.hash_known_hosts
+        - ssh.recv_known_host_entries
+        - ssh.rm_known_host
+        - ssh.set_known_host
         - status.all_status
         - status.cpuinfo
         - status.cpustats

@@ -70,6 +70,7 @@ import (
 	execservice "github.com/friz-zy/statekit/modules/exec/service"
 	execshadow "github.com/friz-zy/statekit/modules/exec/shadow"
 	execsmbios "github.com/friz-zy/statekit/modules/exec/smbios"
+	execssh "github.com/friz-zy/statekit/modules/exec/ssh"
 	execstatus "github.com/friz-zy/statekit/modules/exec/status"
 	execsysctl "github.com/friz-zy/statekit/modules/exec/sysctl"
 	execsysfs "github.com/friz-zy/statekit/modules/exec/sysfs"
@@ -140,6 +141,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execfile.RegisterPatch,
 		execfile.RegisterMeta,
 		execcp.Register,
+		execssh.Register,
 		exectemp.Register,
 		execxml.Register,
 		execyaml.Register,
