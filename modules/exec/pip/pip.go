@@ -917,9 +917,23 @@ func (uninstallFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any)
 	}, nil
 }
 
+type NormalizeArgs struct {
+	Name string `statekit:"required,name=name"`
+}
+
+type normalizeFunc struct{}
+
+func (normalizeFunc) Name() string { return "pip.normalize" }
+func (normalizeFunc) Args() any    { return NormalizeArgs{} }
+func (normalizeFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a := args.(*NormalizeArgs)
+	return normalize(a.Name), nil
+}
+
 // Register installs all pip-module execution functions.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
+		normalizeFunc{},
 		listFunc{},
 		installFunc{},
 		uninstallFunc{},

@@ -97,7 +97,10 @@ func shellSplit(cmd string) []string {
 	return args
 }
 
-type runResult map[string]any
+type RunResult map[string]any
+
+// runResult is the historical alias kept for internal call sites.
+type runResult = RunResult
 
 func toRunResult(_ *runtime.Runtime, res processResult) runResult {
 	exitCode := res.ExitCode
@@ -390,3 +393,10 @@ func scalarString(v any) string {
 	}
 	return fmt.Sprintf("%v", v)
 }
+
+// ExportInterpreter returns the current interpreter hook (for test
+// save/restore).
+func ExportInterpreter() func() string { return pythonExecutable }
+
+// SetInterpreter overrides the interpreter hook (for tests).
+func SetInterpreter(fn func() string) { pythonExecutable = fn }
