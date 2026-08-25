@@ -46,3 +46,6 @@ dist/
 .junit/
 __pycache__/
 *.pyc
+
+# Project-local scratch space (temp/data modules)
+.statekit/

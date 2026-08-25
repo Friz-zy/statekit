@@ -16,9 +16,12 @@ import (
 	execblockdev "github.com/friz-zy/statekit/modules/exec/blockdev"
 	execbridge "github.com/friz-zy/statekit/modules/exec/bridge"
 	execcmd "github.com/friz-zy/statekit/modules/exec/cmd"
+	execcp "github.com/friz-zy/statekit/modules/exec/cp"
 	execcron "github.com/friz-zy/statekit/modules/exec/cron"
 	execcryptdev "github.com/friz-zy/statekit/modules/exec/cryptdev"
+	execdata "github.com/friz-zy/statekit/modules/exec/datastore"
 	execdebconf "github.com/friz-zy/statekit/modules/exec/debconfmod"
+	execdefaults "github.com/friz-zy/statekit/modules/exec/defaults"
 	execdevinfo "github.com/friz-zy/statekit/modules/exec/devinfo"
 	execdevmap "github.com/friz-zy/statekit/modules/exec/devmap"
 	execdisk "github.com/friz-zy/statekit/modules/exec/disk"
@@ -35,6 +38,7 @@ import (
 	execipset "github.com/friz-zy/statekit/modules/exec/ipset"
 	execiptables "github.com/friz-zy/statekit/modules/exec/iptables"
 	execiwtools "github.com/friz-zy/statekit/modules/exec/iwtools"
+	execjinja "github.com/friz-zy/statekit/modules/exec/jinja"
 	execkeyboard "github.com/friz-zy/statekit/modules/exec/keyboard"
 	execkmod "github.com/friz-zy/statekit/modules/exec/kmod"
 	execlocale "github.com/friz-zy/statekit/modules/exec/locale"
@@ -65,12 +69,15 @@ import (
 	execstatus "github.com/friz-zy/statekit/modules/exec/status"
 	execsysctl "github.com/friz-zy/statekit/modules/exec/sysctl"
 	execsysfs "github.com/friz-zy/statekit/modules/exec/sysfs"
+	exectemp "github.com/friz-zy/statekit/modules/exec/temp"
 	exectest "github.com/friz-zy/statekit/modules/exec/test"
 	executimezone "github.com/friz-zy/statekit/modules/exec/timezone"
 	execudev "github.com/friz-zy/statekit/modules/exec/udev"
 	execuser "github.com/friz-zy/statekit/modules/exec/user"
 	execvirtualenv "github.com/friz-zy/statekit/modules/exec/virtualenv"
 	execxfs "github.com/friz-zy/statekit/modules/exec/xfs"
+	execxml "github.com/friz-zy/statekit/modules/exec/xml"
+	execyaml "github.com/friz-zy/statekit/modules/exec/yamlhelper"
 	statealiases "github.com/friz-zy/statekit/modules/state/aliases"
 	statecmd "github.com/friz-zy/statekit/modules/state/cmd"
 	statecron "github.com/friz-zy/statekit/modules/state/cron"
@@ -125,6 +132,13 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execfile.RegisterExt,
 		execfile.RegisterSums,
 		execfile.RegisterDevices,
+		execcp.Register,
+		exectemp.Register,
+		execxml.Register,
+		execyaml.Register,
+		execjinja.Register,
+		execdata.Register,
+		execdefaults.Register,
 		execstatus.Register,
 		execuser.Register,
 		execgroup.Register,

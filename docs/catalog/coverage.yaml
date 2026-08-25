@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 478
+    implemented: 517
 state:
     salt_modules: 132
     salt_functions: 669
@@ -63,6 +63,20 @@ implemented:
         - cmd.run_stderr
         - cmd.run_stdout
         - cmd.which
+        - cp.cache_file
+        - cp.cache_local_file
+        - cp.get_file
+        - cp.get_file_str
+        - cp.get_url
+        - cp.hash_file
+        - cp.is_cached
+        - cp.list_master
+        - cp.list_master_dirs
+        - cp.list_master_symlinks
+        - cp.list_states
+        - cp.push
+        - cp.push_dir
+        - cp.recv
         - cron.add_job
         - cron.list_tab
         - cron.raw_tab
@@ -73,11 +87,26 @@ implemented:
         - cryptdev.open
         - cryptdev.rm_crypttab
         - cryptdev.set_crypttab
+        - data.cas
+        - data.clear
+        - data.dump
+        - data.get
+        - data.has_key
+        - data.items
+        - data.keys
+        - data.load
+        - data.pop
+        - data.update
+        - data.values
         - debconf.get_selections
         - debconf.set
         - debconf.set_file
         - debconf.set_template
         - debconf.show
+        - defaults.deepcopy
+        - defaults.get
+        - defaults.merge
+        - defaults.update
         - devinfo.filter
         - devinfo.hwinfo
         - devmap.multipath_flush
@@ -225,6 +254,9 @@ implemented:
         - iwtools.list_interfaces
         - iwtools.scan
         - iwtools.set_mode
+        - jinja.import_json
+        - jinja.import_yaml
+        - jinja.load_map
         - keyboard.get_layout
         - keyboard.set_layout
         - kmod.is_loaded
@@ -476,6 +508,8 @@ implemented:
         - system.poweroff
         - system.reboot
         - system.shutdown
+        - temp.dir
+        - temp.file
         - test.echo
         - test.ping
         - test.sleep
@@ -509,6 +543,11 @@ implemented:
         - xfs.mkfs
         - xfs.modify
         - xfs.prune_dump
+        - xml.get_attribute
+        - xml.get_value
+        - xml.set_attribute
+        - xml.set_value
+        - yaml.lint
     state:
         - aliases.absent
         - aliases.present

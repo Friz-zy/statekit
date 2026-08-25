@@ -4,10 +4,10 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 64
+    implemented: 71
     partial: 0
     excluded: 69
-    planned: 113
+    planned: 106
 implemented_families:
     - aliases
     - alternatives
@@ -17,9 +17,12 @@ implemented_families:
     - blockdev
     - bridge
     - cmd
+    - cp
     - cron
     - cryptdev
+    - data
     - debconf
+    - defaults
     - devinfo
     - devmap
     - disk
@@ -37,6 +40,7 @@ implemented_families:
     - ipset
     - iptables
     - iwtools
+    - jinja
     - keyboard
     - kmod
     - locale
@@ -67,12 +71,15 @@ implemented_families:
     - sysctl
     - sysfs
     - system
+    - temp
     - test
     - timezone
     - udev
     - user
     - virtualenv
     - xfs
+    - xml
+    - yaml
 excluded:
     - 'beacons (excluded: master-minion architecture (StateKit is local-only by design))'
     - 'cassandra_cql (planned: requires database/message-broker client protocol (round R9, services tier))'
@@ -168,9 +175,6 @@ planned:
     - 'chronos (planned: needs a dedicated porting round)'
     - 'chroot (planned: needs a dedicated porting round)'
     - 'config (planned: needs a dedicated porting round)'
-    - 'cp (planned: needs a dedicated porting round)'
-    - 'data (planned: needs a dedicated porting round)'
-    - 'defaults (planned: needs a dedicated porting round)'
     - 'desktop (planned: needs a dedicated porting round)'
     - 'dism (planned: needs a dedicated porting round)'
     - 'dsc (planned: needs a dedicated porting round)'
@@ -183,7 +187,6 @@ planned:
     - 'incron (planned: needs a dedicated porting round)'
     - 'iosconfig (planned: needs a dedicated porting round)'
     - 'ip (planned: needs a dedicated porting round)'
-    - 'jinja (planned: needs a dedicated porting round)'
     - 'kernelpkg (planned: needs a dedicated porting round)'
     - 'lgpo (planned: needs a dedicated porting round)'
     - 'lgpo_reg (planned: needs a dedicated porting round)'
@@ -241,7 +244,6 @@ planned:
     - 'sys (planned: needs a dedicated porting round)'
     - 'syslog_ng (planned: needs a dedicated porting round)'
     - 'task (planned: needs a dedicated porting round)'
-    - 'temp (planned: needs a dedicated porting round)'
     - 'test_virtual (planned: needs a dedicated porting round)'
     - 'textfsm (planned: needs a dedicated porting round)'
     - 'tls (planned: needs a dedicated porting round)'
@@ -254,6 +256,4 @@ planned:
     - 'wusa (planned: needs a dedicated porting round)'
     - 'x509 (planned: needs a dedicated porting round)'
     - 'xattr (planned: needs a dedicated porting round)'
-    - 'xml (planned: needs a dedicated porting round)'
-    - 'yaml (planned: needs a dedicated porting round)'
     - 'zk_concurrency (planned: needs a dedicated porting round)'

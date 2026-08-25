@@ -5,12 +5,7 @@ package file
 
 import (
 	"context"
-	"crypto/md5"
-	"crypto/sha1"
-	"crypto/sha256"
-	"crypto/sha512"
 	"fmt"
-	"hash"
 	"io/fs"
 	"os/user"
 	"path/filepath"
@@ -19,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/friz-zy/statekit/internal/filesum"
 	"github.com/friz-zy/statekit/internal/runtime"
 )
 
@@ -40,23 +36,13 @@ func hashesRevmap() map[int]string {
 	return out
 }
 
-func newHash(form string) (hash.Hash, error) {
-	switch form {
-	case "md5":
-		return md5.New(), nil
-	case "sha1":
-		return sha1.New(), nil
-	case "sha224":
-		return sha256.New224(), nil
-	case "sha256":
-		return sha256.New(), nil
-	case "sha384":
-		return sha512.New384(), nil
-	case "sha512":
-		return sha512.New(), nil
-	}
-	return nil, fmt.Errorf("Invalid hash type: %s", form)
+type hashInterface = interface {
+	Write(p []byte) (int, error)
+	Sum(b []byte) []byte
+	Reset()
 }
+
+func newHash(form string) (hashInterface, error) { return filesum.New(form) }
 
 type getSumArgs struct {
 	Path string  `statekit:"required,name=path"`

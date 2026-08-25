@@ -743,8 +743,35 @@ plus mknod_chrdev/mknod_blkdev/mknod_fifo/mknod with EEXIST comment
 paths; mknod dev-number signatures split per GOOS behind thin adapters.
 Exec 456→478.
 
-Next in order: R4 continues (cp local source, temp/xml/yaml/jinja-
-minimal/data/defaults, out/ret/incron/logrotate/restartcheck, status
-long tail), R5 per plan, R6-R8 via E1-E4, R9 awaits E5, R10 cloud, R11
-netdev behind ADR gate; pkg provider long tail queued as its own round.
-Master-minion families stay excluded.
+R4.3 landed seven families (39 functions). cp covers the local-source
+subset (cache_file/cache_local_file/is_cached/get_file/get_url/
+get_file_str/hash_file): file:// and bare local paths copy through the
+FS with dest-directory handling and MkdirAll; salt:// stays permanently
+excluded, remote schemes surface UnsupportedError until a fetcher lands,
+and the master-fileserver surface (list_master*, list_states, push/
+push_dir/recv) reports the master-minion exclusion explicitly. temp.dir/
+file keep scratch space inside the project workspace (.statekit/tmp,
+lazy-created) instead of the OS temp directory. xml ports get/set_value
+and get/set_attribute over encoding/xml with an ElementTree-subset
+finder (bare tag, parent/child, .//descendant, [@attr='value']).
+yaml.lint validates structure over gopkg.in/yaml.v3 — upstream's
+yamllint style rules stay out of scope; salt:// sources hit the cp
+boundary. jinja lands as the minimal data-import surface allowed by the
+templating ADR: import_yaml/import_json/load_map parse data files
+directly; template logic surfaces honest errors. The data datastore
+persists JSON at .statekit/minion/datastore.json with cas/pop/get-list
+semantics (upstream serializes msgpack via salt.payload — wire format
+divergence documented); defaults ports deepcopy plus dictupdate merge/
+update recursion (overlap-triggered recursion, deduplicated list merge)
+while defaults.get reports the master boundary. Exec 478→517.
+
+Workspace hygiene: all new write paths stay inside the project tree
+(.statekit/, t.TempDir() in suites); system directories are read-only
+probe targets at most.
+
+Next in order: R4 continues (out/ret/incron/logrotate/restartcheck,
+status long tail, remaining file tail incl. patch/sed/manage_file
+family), then the R4 close differential pass. R5 per plan after. R6-R8
+via E1-E4, R9 awaits E5, R10 cloud, R11 netdev behind ADR gate; pkg
+provider long tail queued as its own round. Master-minion families stay
+excluded.
