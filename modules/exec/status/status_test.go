@@ -24,7 +24,7 @@ func testRT() *runtime.Runtime {
 }
 
 func TestLoadavg(t *testing.T) {
-	value, err := loadavgFunc{}.Execute(context.Background(), testRT(), &loadavgArgs{})
+	value, err := (loadavgFunc{}).Execute(context.Background(), testRT(), &loadavgArgs{})
 	if err != nil {
 		t.Fatalf("loadavg: %v", err)
 	}
@@ -35,7 +35,7 @@ func TestLoadavg(t *testing.T) {
 }
 
 func TestUptime(t *testing.T) {
-	value, err := uptimeFunc{}.Execute(context.Background(), testRT(), &uptimeArgs{})
+	value, err := (uptimeFunc{}).Execute(context.Background(), testRT(), &uptimeArgs{})
 	if err != nil {
 		t.Fatalf("uptime: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestUptime(t *testing.T) {
 }
 
 func TestDiskusageRealFS(t *testing.T) {
-	value, err := diskusageFunc{}.Execute(context.Background(), testRT(), &diskusageArgs{Path: "/tmp"})
+	value, err := (diskusageFunc{}).Execute(context.Background(), testRT(), &diskusageArgs{Path: "/tmp"})
 	if err != nil {
 		t.Fatalf("diskusage on real fs: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestDiskusageRealFS(t *testing.T) {
 }
 
 func TestMeminfo(t *testing.T) {
-	value, err := meminfoFunc{}.Execute(context.Background(), testRT(), &meminfoArgs{})
+	value, err := (meminfoFunc{}).Execute(context.Background(), testRT(), &meminfoArgs{})
 	if err != nil {
 		t.Fatalf("meminfo: %v", err)
 	}

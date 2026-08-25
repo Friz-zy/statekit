@@ -6,12 +6,12 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 434
+    implemented: 456
 state:
     salt_modules: 132
     salt_functions: 669
     relevant_functions: 197
-    implemented: 42
+    implemented: 44
 implemented:
     exec:
         - aliases.get_target
@@ -103,22 +103,44 @@ implemented:
         - extfs.mkfs
         - extfs.tune
         - file.append
+        - file.basename
+        - file.blockreplace
         - file.chgrp
         - file.chown
+        - file.comment
+        - file.comment_line
         - file.contains
         - file.contains_regex
         - file.copy
         - file.directory_exists
+        - file.dirname
         - file.file_exists
+        - file.is_hardlink
+        - file.is_link
+        - file.join
+        - file.link
+        - file.makedirs_
+        - file.makedirs_perms
         - file.mkdir
+        - file.normpath
+        - file.pardir
+        - file.path_exists_glob
+        - file.prepend
         - file.read
+        - file.readdir
         - file.readlink
         - file.remove
         - file.rename
         - file.replace
+        - file.rmdir
         - file.search
+        - file.seek_read
+        - file.seek_write
         - file.stats
+        - file.symlink
         - file.touch
+        - file.truncate
+        - file.uncomment
         - file.write
         - git.add
         - git.clone
@@ -311,6 +333,7 @@ implemented:
         - pip.list_all_versions
         - pip.list_freeze_parse
         - pip.list_upgrades
+        - pip.normalize
         - pip.uninstall
         - pip.upgrade
         - pip.upgrade_available
@@ -498,6 +521,8 @@ implemented:
         - pyenv.absent
         - pyenv.install_pyenv
         - pyenv.installed
+        - python.run
+        - python.script
         - quota.mode
         - selinux.mode
         - service.dead

@@ -22,7 +22,7 @@ func testRuntime() *runtime.Runtime {
 }
 
 func TestRunEchoes(t *testing.T) {
-	value, err := runFunc{}.Execute(context.Background(), testRuntime(), &RunArgs{Cmd: "printf hello"})
+	value, err := (runFunc{}).Execute(context.Background(), testRuntime(), &RunArgs{Cmd: "printf hello"})
 	if err != nil || value != "hello" {
 		t.Fatalf("cmd.run = %v, %v", value, err)
 	}
@@ -38,14 +38,14 @@ func TestRunRejectsEmptyAndRunas(t *testing.T) {
 }
 
 func TestRetcodeReturnsExitStatus(t *testing.T) {
-	value, err := retcodeFunc{}.Execute(context.Background(), testRuntime(), &retcodeArgs{Cmd: "sh -c 'exit 7'"})
+	value, err := (retcodeFunc{}).Execute(context.Background(), testRuntime(), &retcodeArgs{Cmd: "sh -c 'exit 7'"})
 	if err != nil || value.(int) != 7 {
 		t.Fatalf("cmd.retcode = %v, %v", value, err)
 	}
 }
 
 func TestRunAllShape(t *testing.T) {
-	ret, err := runAllFunc{}.Execute(context.Background(), testRuntime(), &RunAllArgs{Cmd: "echo data"})
+	ret, err := (runAllFunc{}).Execute(context.Background(), testRuntime(), &RunAllArgs{Cmd: "echo data"})
 	if err != nil {
 		t.Fatalf("run_all: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestRunAllShape(t *testing.T) {
 }
 
 func TestTimeoutPropagates(t *testing.T) {
-	_, err := runFunc{}.Execute(context.Background(), testRuntime(), &RunArgs{
+	_, err := (runFunc{}).Execute(context.Background(), testRuntime(), &RunArgs{
 		Cmd: "sleep 5", Timeout: 1,
 	})
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
@@ -69,11 +69,11 @@ func TestTimeoutPropagates(t *testing.T) {
 }
 
 func TestWhichFindsBinary(t *testing.T) {
-	value, err := whichFunc{}.Execute(context.Background(), testRuntime(), &whichArgs{Name: "sh"})
+	value, err := (whichFunc{}).Execute(context.Background(), testRuntime(), &whichArgs{Name: "sh"})
 	if err != nil || value == "" || strings.Contains(value.(string), "missing") {
 		t.Fatalf("cmd.which = %v, %v", value, err)
 	}
-	value, _ = whichFunc{}.Execute(context.Background(), testRuntime(), &whichArgs{Name: "definitely-not-here-xyz"})
+	value, _ = (whichFunc{}).Execute(context.Background(), testRuntime(), &whichArgs{Name: "definitely-not-here-xyz"})
 	if value != "" {
 		t.Fatalf("missing binary must return empty string, got %v", value)
 	}

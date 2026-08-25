@@ -77,7 +77,7 @@ func TestVersion(t *testing.T) {
 		"/usr/sbin/iptables --version": {Stdout: []byte("iptables v1.4.21")},
 	}}
 	rt := newRT(t, runner, "Debian")
-	gotRaw, err := versionFunc{}.Execute(context.Background(), rt, &FamilyArgs{})
+	gotRaw, err := (versionFunc{}).Execute(context.Background(), rt, &FamilyArgs{})
 	if err != nil || gotRaw != "v1.4.21" {
 		t.Fatalf("version = %#v, %v", gotRaw, err)
 	}
@@ -233,7 +233,7 @@ func TestGetSavedRulesParse(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gotRaw, err := getSavedRulesFunc{}.Execute(context.Background(), rt, &GetSavedRulesArgs{})
+	gotRaw, err := (getSavedRulesFunc{}).Execute(context.Background(), rt, &GetSavedRulesArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,12 +270,12 @@ func TestPolicies(t *testing.T) {
 
 	input := "INPUT"
 
-	gotRaw, err := getPolicyFunc{}.Execute(context.Background(), rt, &GetPolicyArgs{})
+	gotRaw, err := (getPolicyFunc{}).Execute(context.Background(), rt, &GetPolicyArgs{})
 	if err != nil || gotRaw != "Error: Chain needs to be specified" {
 		t.Fatalf("policy chain error = %#v, %v", gotRaw, err)
 	}
 
-	gotRaw, err = getPolicyFunc{}.Execute(context.Background(), rt,
+	gotRaw, err = (getPolicyFunc{}).Execute(context.Background(), rt,
 		&GetPolicyArgs{Chain: &input})
 	if err != nil || gotRaw != "ACCEPT" {
 		t.Fatalf("in-memory policy = %#v, %v", gotRaw, err)
@@ -288,14 +288,14 @@ func TestPolicies(t *testing.T) {
 	if err := rt.FS.WriteFile(confFile, []byte(confFixture), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gotRaw, err = getSavedPolicyFunc{}.Execute(context.Background(), rt,
+	gotRaw, err = (getSavedPolicyFunc{}).Execute(context.Background(), rt,
 		&GetSavedPolicyArgs{Chain: &input, ConfFile: &confFile})
 	if err != nil || gotRaw != "ACCEPT" {
 		t.Fatalf("saved policy = %#v, %v", gotRaw, err)
 	}
 
 	missing := "MISSING"
-	gotRaw, err = getSavedPolicyFunc{}.Execute(context.Background(), rt,
+	gotRaw, err = (getSavedPolicyFunc{}).Execute(context.Background(), rt,
 		&GetSavedPolicyArgs{Chain: &missing, ConfFile: &confFile})
 	if err != nil || gotRaw != nil {
 		t.Fatalf("missing policy = %#v, %v", gotRaw, err)

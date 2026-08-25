@@ -64,7 +64,7 @@ func parentOf(path string) string {
 func TestInstall(t *testing.T) {
 	runner := &fakeRunner{results: map[string]process.CommandResult{}}
 	rt := envRT(t, runner, nil)
-	got, err := installFunc{}.Execute(context.Background(), rt, &InstallArgs{})
+	got, err := (installFunc{}).Execute(context.Background(), rt, &InstallArgs{})
 	if err != nil || got != true {
 		t.Fatalf("install = %#v, %v", got, err)
 	}
@@ -78,7 +78,7 @@ func TestInstall(t *testing.T) {
 func TestUpdate(t *testing.T) {
 	runner := &fakeRunner{results: map[string]process.CommandResult{}}
 	rt := envRT(t, runner, nil)
-	got, err := updateFunc{}.Execute(context.Background(), rt, &UpdateArgs{})
+	got, err := (updateFunc{}).Execute(context.Background(), rt, &UpdateArgs{})
 	if err != nil || got != false {
 		t.Fatalf("update = %#v, %v", got, err)
 	}
@@ -91,13 +91,13 @@ func TestIsInstalled(t *testing.T) {
 	rt := envRT(t, &fakeRunner{results: map[string]process.CommandResult{}}, map[string]string{
 		"/usr/local/pyenv/bin/pyenv": "#!/bin/sh\n",
 	})
-	got, _ := isInstalledFunc{}.Execute(context.Background(), rt, &IsInstalledArgs{})
+	got, _ := (isInstalledFunc{}).Execute(context.Background(), rt, &IsInstalledArgs{})
 	if got != true {
 		t.Fatalf("is_installed = %#v", got)
 	}
 
 	rt = envRT(t, &fakeRunner{results: map[string]process.CommandResult{}}, nil)
-	got, _ = isInstalledFunc{}.Execute(context.Background(), rt, &IsInstalledArgs{})
+	got, _ = (isInstalledFunc{}).Execute(context.Background(), rt, &IsInstalledArgs{})
 	if got != false {
 		t.Fatalf("missing is_installed = %#v", got)
 	}
@@ -113,7 +113,7 @@ func TestInstallPython(t *testing.T) {
 
 	runner.results["env\x00PYENV_ROOT=/usr/local/pyenv\x00/usr/local/pyenv/bin/pyenv\x00install\x002.0.0-p0"] =
 		process.CommandResult{Stdout: []byte("salt"), Stderr: []byte("error")}
-	got, err := installPythonFunc{}.Execute(context.Background(), rt,
+	got, err := (installPythonFunc{}).Execute(context.Background(), rt,
 		&InstallPythonArgs{Python: "2.0.0-p0"})
 	if err != nil || got != "error" {
 		t.Fatalf("success install_python = %#v, %v", got, err)
@@ -121,7 +121,7 @@ func TestInstallPython(t *testing.T) {
 
 	runner.results["env\x00PYENV_ROOT=/usr/local/pyenv\x00/usr/local/pyenv/bin/pyenv\x00install\x002.0.0-p0"] =
 		process.CommandResult{ExitCode: 1, Stdout: []byte("salt"), Stderr: []byte("error")}
-	got, err = installPythonFunc{}.Execute(context.Background(), rt,
+	got, err = (installPythonFunc{}).Execute(context.Background(), rt,
 		&InstallPythonArgs{Python: "2.0.0-p0"})
 	if err != nil || got != false {
 		t.Fatalf("failed install_python = %#v, %v", got, err)
@@ -145,14 +145,14 @@ func TestVersions(t *testing.T) {
 	})
 	runner.results["env\x00PYENV_ROOT=/usr/local/pyenv\x00/usr/local/pyenv/bin/pyenv\x00versions\x00--bare"] =
 		process.CommandResult{ExitCode: 1}
-	got, _ := versionsFunc{}.Execute(context.Background(), rt, &VersionsArgs{})
+	got, _ := (versionsFunc{}).Execute(context.Background(), rt, &VersionsArgs{})
 	if list := got.([]string); len(list) != 0 {
 		t.Fatalf("versions = %#v", list)
 	}
 
 	runner.results["env\x00PYENV_ROOT=/usr/local/pyenv\x00/usr/local/pyenv/bin/pyenv\x00versions\x00--bare"] =
 		process.CommandResult{Stdout: []byte("3.11.4\n3.12.1\n")}
-	got, _ = versionsFunc{}.Execute(context.Background(), rt, &VersionsArgs{})
+	got, _ = (versionsFunc{}).Execute(context.Background(), rt, &VersionsArgs{})
 	list := got.([]string)
 	if !equalSlice(list, []string{"3.11.4", "3.12.1"}) {
 		t.Fatalf("versions = %#v", list)
@@ -167,12 +167,12 @@ func TestDefault(t *testing.T) {
 	})
 	runner.results["env\x00PYENV_ROOT=/usr/local/pyenv\x00/usr/local/pyenv/bin/pyenv\x00global"] =
 		process.CommandResult{ExitCode: 1}
-	got, _ := defaultFunc{}.Execute(context.Background(), rt, &DefaultArgs{})
+	got, _ := (defaultFunc{}).Execute(context.Background(), rt, &DefaultArgs{})
 	if got != "" {
 		t.Fatalf("default read = %#v", got)
 	}
 
-	got, _ = defaultFunc{}.Execute(context.Background(), rt,
+	got, _ = (defaultFunc{}).Execute(context.Background(), rt,
 		&DefaultArgs{Python: strPtr("2.0.0-p0")})
 	if got != true {
 		t.Fatalf("default set = %#v", got)
@@ -200,14 +200,14 @@ func TestList(t *testing.T) {
 	})
 	runner.results["env\x00PYENV_ROOT=/usr/local/pyenv\x00/usr/local/pyenv/bin/pyenv\x00install\x00--list"] =
 		process.CommandResult{ExitCode: 1}
-	got, _ := listFunc{}.Execute(context.Background(), rt, &ListArgs{})
+	got, _ := (listFunc{}).Execute(context.Background(), rt, &ListArgs{})
 	if list := got.([]string); len(list) != 0 {
 		t.Fatalf("list = %#v", list)
 	}
 
 	runner.results["env\x00PYENV_ROOT=/usr/local/pyenv\x00/usr/local/pyenv/bin/pyenv\x00install\x00--list"] =
 		process.CommandResult{Stdout: []byte("Available versions:\n  2.0.0-p0\n  3.11.4\n")}
-	got, _ = listFunc{}.Execute(context.Background(), rt, &ListArgs{})
+	got, _ = (listFunc{}).Execute(context.Background(), rt, &ListArgs{})
 	list := got.([]string)
 	if !equalSlice(list, []string{"2.0.0-p0", "3.11.4"}) {
 		t.Fatalf("list = %#v", list)
@@ -220,7 +220,7 @@ func TestRehash(t *testing.T) {
 	rt := envRT(t, runner, map[string]string{
 		"/usr/local/pyenv/bin/pyenv": "#!/bin/sh\n",
 	})
-	got, _ := rehashFunc{}.Execute(context.Background(), rt, &RehashArgs{})
+	got, _ := (rehashFunc{}).Execute(context.Background(), rt, &RehashArgs{})
 	if got != true {
 		t.Fatalf("rehash = %#v", got)
 	}
@@ -237,14 +237,14 @@ func TestDo(t *testing.T) {
 	runner.results["env\x00PATH=/usr/local/pyenv/shims:/usr/bin:/bin\x00gem\x00list\x00bundler"] =
 		process.CommandResult{ExitCode: 1, Stdout: []byte("salt"), Stderr: []byte("error")}
 	t.Setenv("PATH", "/usr/bin:/bin")
-	got, _ := doFunc{}.Execute(context.Background(), rt, &DoArgs{Cmdline: "gem list bundler"})
+	got, _ := (doFunc{}).Execute(context.Background(), rt, &DoArgs{Cmdline: "gem list bundler"})
 	if got != false {
 		t.Fatalf("failed do = %#v", got)
 	}
 
 	runner.results["env\x00PATH=/usr/local/pyenv/shims:/usr/bin:/bin\x00gem\x00list\x00bundler"] =
 		process.CommandResult{Stdout: []byte("salt"), Stderr: []byte("error")}
-	got, _ = doFunc{}.Execute(context.Background(), rt, &DoArgs{Cmdline: "gem list bundler"})
+	got, _ = (doFunc{}).Execute(context.Background(), rt, &DoArgs{Cmdline: "gem list bundler"})
 	if got != "salt" {
 		t.Fatalf("do = %#v", got)
 	}
@@ -259,7 +259,7 @@ func TestDoWithPython(t *testing.T) {
 	t.Setenv("PATH", "/usr/bin:/bin")
 	runner.results["env\x00PATH=/usr/local/pyenv/shims:/usr/bin:/bin\x00PYENV_VERSION=2.0.0-p0\x00gem\x00list\x00bundler"] =
 		process.CommandResult{ExitCode: 1, Stdout: []byte("salt"), Stderr: []byte("error")}
-	got, _ := doWithPythonFunc{}.Execute(context.Background(), rt,
+	got, _ := (doWithPythonFunc{}).Execute(context.Background(), rt,
 		&DoWithPythonArgs{Python: "2.0.0-p0", Cmdline: "gem list bundler"})
 	if got != false {
 		t.Fatalf("do_with_python = %#v", got)

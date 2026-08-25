@@ -121,7 +121,7 @@ func TestShowPause(t *testing.T) {
 	rt, _ := newRT(t, "/sbin/ethtool", map[string]process.CommandResult{
 		"/sbin/ethtool -a eth0": {Stdout: []byte(pauseRet)},
 	})
-	retRaw, err := showPauseFunc{}.Execute(context.Background(), rt, &DevnameArgs{Devname: "eth0"})
+	retRaw, err := (showPauseFunc{}).Execute(context.Background(), rt, &DevnameArgs{Devname: "eth0"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestShowFeatures(t *testing.T) {
 	rt, _ := newRT(t, "/sbin/ethtool", map[string]process.CommandResult{
 		"/sbin/ethtool -k eth0": {Stdout: []byte(features)},
 	})
-	retRaw, err := showFeaturesFunc{}.Execute(context.Background(), rt, &DevnameArgs{Devname: "eth0"})
+	retRaw, err := (showFeaturesFunc{}).Execute(context.Background(), rt, &DevnameArgs{Devname: "eth0"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +211,7 @@ func TestShowRingParsesBothSections(t *testing.T) {
 	rt, _ := newRT(t, "/sbin/ethtool", map[string]process.CommandResult{
 		"/sbin/ethtool -g eth0": {Stdout: []byte(ringOut)},
 	})
-	retRaw, err := showRingFunc{}.Execute(context.Background(), rt, &DevnameArgs{Devname: "eth0"})
+	retRaw, err := (showRingFunc{}).Execute(context.Background(), rt, &DevnameArgs{Devname: "eth0"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +233,7 @@ func TestSetRingChangesAndShows(t *testing.T) {
 		"/sbin/ethtool -g eth0":        {Stdout: []byte(ringOut)},
 		"/sbin/ethtool -G eth0 tx 512": {Stdout: []byte("")},
 	})
-	retRaw, err := setRingFunc{}.Execute(context.Background(), rt, &KwargsArgs{
+	retRaw, err := (setRingFunc{}).Execute(context.Background(), rt, &KwargsArgs{
 		Devname: "eth0",
 		Kwargs:  map[string]any{"tx": int64(512), "bogus": int64(1), "rx": int64(255)},
 	})
@@ -260,7 +260,7 @@ func TestShowDriver(t *testing.T) {
 	rt, _ := newRT(t, "/sbin/ethtool", map[string]process.CommandResult{
 		"/sbin/ethtool -i eth0": {Stdout: []byte(driverOut)},
 	})
-	retRaw, err := showDriverFunc{}.Execute(context.Background(), rt, &DevnameArgs{Devname: "eth0"})
+	retRaw, err := (showDriverFunc{}).Execute(context.Background(), rt, &DevnameArgs{Devname: "eth0"})
 	if err != nil {
 		t.Fatal(err)
 	}

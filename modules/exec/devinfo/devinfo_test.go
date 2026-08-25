@@ -269,7 +269,7 @@ func TestHwinfoGrainSections(t *testing.T) {
 	})
 
 	short := true
-	retRaw, err := hwinfoFunc{}.Execute(context.Background(), rt, &HwinfoArgs{
+	retRaw, err := (hwinfoFunc{}).Execute(context.Background(), rt, &HwinfoArgs{
 		Items: []string{"memory"}, Short: &short,
 	})
 	if err != nil {

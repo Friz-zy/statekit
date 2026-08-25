@@ -26,7 +26,7 @@ func TestActive(t *testing.T) {
 		Stdout: []byte("my-device       (253, 1)\n"),
 	}}
 	rt := &runtime.Runtime{Runner: runner, FS: runtime.NewMemoryFS()}
-	got, err := activeFunc{}.Execute(context.Background(), rt, &ActiveArgs{})
+	got, err := (activeFunc{}).Execute(context.Background(), rt, &ActiveArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestActive(t *testing.T) {
 
 	for _, out := range []string{"", "No devices found"} {
 		runner.result = process.CommandResult{Stdout: []byte(out)}
-		got2, err := activeFunc{}.Execute(context.Background(), rt, &ActiveArgs{})
+		got2, err := (activeFunc{}).Execute(context.Background(), rt, &ActiveArgs{})
 		if err != nil || len(got2.(map[string]any)) != 0 {
 			t.Fatalf("empty output = %v %v", got2, err)
 		}
@@ -65,7 +65,7 @@ func TestCrypttabListing(t *testing.T) {
 	rt := &runtime.Runtime{Runner: &fakeRunner{}, FS: runtime.NewMemoryFS()}
 	writeCrypttab(t, rt, crypttabFixture)
 
-	gotRaw, err := crypttabFunc{}.Execute(context.Background(), rt, &CrypttabArgs{})
+	gotRaw, err := (crypttabFunc{}).Execute(context.Background(), rt, &CrypttabArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestCrypttabListing(t *testing.T) {
 
 	// Duplicate names get an appended underscore.
 	writeCrypttab(t, rt, "x /dev/a none\nx /dev/b none\n")
-	got2, _ := crypttabFunc{}.Execute(context.Background(), rt, &CrypttabArgs{})
+	got2, _ := (crypttabFunc{}).Execute(context.Background(), rt, &CrypttabArgs{})
 	if _, ok := got2.(map[string]any)["x_"]; !ok {
 		t.Fatalf("dup rename missing: %v", got2)
 	}
@@ -96,13 +96,13 @@ func TestRmCrypttab(t *testing.T) {
 	rt := &runtime.Runtime{Runner: &fakeRunner{}, FS: runtime.NewMemoryFS()}
 	writeCrypttab(t, rt, crypttabFixture)
 
-	got, err := rmCrypttabFunc{}.Execute(context.Background(), rt,
+	got, err := (rmCrypttabFunc{}).Execute(context.Background(), rt,
 		&RmCrypttabArgs{Name: "missing"})
 	if err != nil || got != "absent" {
 		t.Fatalf("absent = %v %v", got, err)
 	}
 
-	got2, err := rmCrypttabFunc{}.Execute(context.Background(), rt,
+	got2, err := (rmCrypttabFunc{}).Execute(context.Background(), rt,
 		&RmCrypttabArgs{Name: "data"})
 	if err != nil || got2 != "change" {
 		t.Fatalf("change = %v %v", got2, err)
@@ -121,7 +121,7 @@ func TestSetCrypttabFlows(t *testing.T) {
 	writeCrypttab(t, rt, "# only a comment\n")
 
 	// new
-	got, err := setCrypttabFunc{}.Execute(context.Background(), rt,
+	got, err := (setCrypttabFunc{}).Execute(context.Background(), rt,
 		&SetCrypttabArgs{Name: "foo", Device: "/dev/sdz1"})
 	if err != nil || got != "new" {
 		t.Fatalf("new = %v %v", got, err)
@@ -132,14 +132,14 @@ func TestSetCrypttabFlows(t *testing.T) {
 	}
 
 	// present (identical re-run)
-	got2, err := setCrypttabFunc{}.Execute(context.Background(), rt,
+	got2, err := (setCrypttabFunc{}).Execute(context.Background(), rt,
 		&SetCrypttabArgs{Name: "foo", Device: "/dev/sdz1", Password: strPtr("none")})
 	if err != nil || got2 != "present" {
 		t.Fatalf("present = %v %v", got2, err)
 	}
 
 	// change
-	got3, err := setCrypttabFunc{}.Execute(context.Background(), rt,
+	got3, err := (setCrypttabFunc{}).Execute(context.Background(), rt,
 		&SetCrypttabArgs{Name: "foo", Device: "/dev/sdz2"})
 	if err != nil || got3 != "change" {
 		t.Fatalf("change = %v %v", got3, err)
@@ -151,7 +151,7 @@ func TestSetCrypttabFlows(t *testing.T) {
 
 	// test mode never writes
 	writeCrypttab(t, rt, "")
-	got4, err := setCrypttabFunc{}.Execute(context.Background(), rt,
+	got4, err := (setCrypttabFunc{}).Execute(context.Background(), rt,
 		&SetCrypttabArgs{Name: "bar", Device: "/dev/sdq1", Test: true})
 	if err != nil || got4 != "new" {
 		t.Fatalf("test new = %v %v", got4, err)
@@ -162,7 +162,7 @@ func TestSetCrypttabFlows(t *testing.T) {
 	}
 
 	// invalid match_on key errors like Salt
-	_, err = setCrypttabFunc{}.Execute(context.Background(), rt,
+	_, err = (setCrypttabFunc{}).Execute(context.Background(), rt,
 		&SetCrypttabArgs{Name: "x", Device: "y", MatchOn: []string{"bogus"}})
 	if err == nil || !strings.Contains(err.Error(), "Unrecognized keys in match_on") {
 		t.Fatalf("match_on error = %v", err)
@@ -170,7 +170,7 @@ func TestSetCrypttabFlows(t *testing.T) {
 
 	// missing config file errors
 	noCfg := &runtime.Runtime{Runner: &fakeRunner{}, FS: runtime.NewMemoryFS()}
-	_, err = setCrypttabFunc{}.Execute(context.Background(), noCfg,
+	_, err = (setCrypttabFunc{}).Execute(context.Background(), noCfg,
 		&SetCrypttabArgs{Name: "x", Device: "y"})
 	if err == nil || !strings.Contains(err.Error(), "Bad config file") {
 		t.Fatalf("bad config error = %v", err)
@@ -181,14 +181,14 @@ func TestOpenCloseContracts(t *testing.T) {
 	runner := &fakeRunner{}
 	rt := &runtime.Runtime{Runner: runner, FS: runtime.NewMemoryFS()}
 
-	_, err := openFunc{}.Execute(context.Background(), rt,
+	_, err := (openFunc{}).Execute(context.Background(), rt,
 		&OpenArgs{Name: "foo", Device: "/dev/sdz1", Keyfile: "none"})
 	if err == nil || !strings.Contains(err.Error(), "keyfile must not be none") {
 		t.Fatalf("open guard = %v", err)
 	}
 
 	runner.result = process.CommandResult{ExitCode: 0}
-	ok, err := openFunc{}.Execute(context.Background(), rt,
+	ok, err := (openFunc{}).Execute(context.Background(), rt,
 		&OpenArgs{Name: "foo", Device: "/dev/sdz1", Keyfile: "/keys/f"})
 	if err != nil || ok != true {
 		t.Fatalf("open = %v %v", ok, err)
@@ -199,7 +199,7 @@ func TestOpenCloseContracts(t *testing.T) {
 	}
 
 	runner.result = process.CommandResult{ExitCode: 4}
-	closed, err := closeFunc{}.Execute(context.Background(), rt, &CloseArgs{Name: "foo"})
+	closed, err := (closeFunc{}).Execute(context.Background(), rt, &CloseArgs{Name: "foo"})
 	if err != nil || closed != false {
 		t.Fatalf("close = %v %v", closed, err)
 	}

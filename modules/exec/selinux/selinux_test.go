@@ -55,7 +55,7 @@ func TestSetenforceArgvAndValidation(t *testing.T) {
 	if last != "setenforce 0" {
 		t.Fatalf("argv = %q", last)
 	}
-	setenforceFunc{}.Execute(context.Background(), rt, &SetenforceArgs{Mode: "1"})
+	(setenforceFunc{}).Execute(context.Background(), rt, &SetenforceArgs{Mode: "1"})
 	last = strings.Join(runner.calls[len(runner.calls)-1], " ")
 	if last != "setenforce 1" {
 		t.Fatalf("numeric argv = %q", last)

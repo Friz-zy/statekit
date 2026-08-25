@@ -48,7 +48,7 @@ func TestVersion(t *testing.T) {
 	rt, _ := newRT(t, "A", map[string]process.CommandResult{
 		"A --version": {Stdout: []byte("A\nB\nC")},
 	})
-	gotRaw, err := versionFunc{}.Execute(context.Background(), rt, &VersionArgs{})
+	gotRaw, err := (versionFunc{}).Execute(context.Background(), rt, &VersionArgs{})
 	if err != nil || gotRaw != "B" {
 		t.Fatalf("version = %#v, %v", gotRaw, err)
 	}
@@ -166,7 +166,7 @@ func TestListSets(t *testing.T) {
 	rt, _ := newRT(t, "A", map[string]process.CommandResult{
 		"A list -t": {Stdout: []byte("A:a")},
 	})
-	gotRaw, err := listSetsFunc{}.Execute(context.Background(), rt, &ListSetsArgs{})
+	gotRaw, err := (listSetsFunc{}).Execute(context.Background(), rt, &ListSetsArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}

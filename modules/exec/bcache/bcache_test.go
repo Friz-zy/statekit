@@ -175,7 +175,7 @@ func TestAttachAlreadyAttachedIsNone(t *testing.T) {
 	seedBackingDev(t, rt, true)
 
 	dev := "sdb"
-	got, err := attachFunc{}.Execute(context.Background(), rt, &attachArgs{Dev: &dev})
+	got, err := (attachFunc{}).Execute(context.Background(), rt, &attachArgs{Dev: &dev})
 	if err != nil || got != nil {
 		t.Fatalf("attach(already) = %#v, %v", got, err)
 	}
@@ -230,7 +230,7 @@ func TestDetachAllReturnsNoneWithoutBackingDevs(t *testing.T) {
 	rt, _ := newRT(t, nil)
 	seedCacheSet(t, rt)
 
-	got, err := detachFunc{}.Execute(context.Background(), rt, &detachArgs{})
+	got, err := (detachFunc{}).Execute(context.Background(), rt, &detachArgs{})
 	if err != nil || got != nil {
 		t.Fatalf("detach-all empty = %#v, %v", got, err)
 	}
@@ -243,7 +243,7 @@ func TestStartTriggersUdevadmAndWaits(t *testing.T) {
 	})
 	seedCacheSet(t, rt)
 
-	got, err := startFunc{}.Execute(context.Background(), rt, &startArgs{})
+	got, err := (startFunc{}).Execute(context.Background(), rt, &startArgs{})
 	if err != nil || got != true {
 		t.Fatalf("start = %#v, %v", got, err)
 	}
@@ -278,7 +278,7 @@ func TestConfigShowMergesSections(t *testing.T) {
 	writeSysfsFile(t, rt, "/sys/fs/bcache/"+cacheUUID+"/cache_mode", "[writeback] writethrough")
 	writeSysfsFile(t, rt, "/sys/fs/bcache/"+cacheUUID+"/writeback_percent", "15")
 
-	gotRaw, err := configFunc{}.Execute(context.Background(), rt, &configArgs{})
+	gotRaw, err := (configFunc{}).Execute(context.Background(), rt, &configArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,7 +306,7 @@ func TestConfigUpdateWritesAttrs(t *testing.T) {
 	writeSysfsFile(t, rt, "/sys/fs/bcache/"+cacheUUID+"/writeback_percent", "10")
 
 	kwargs := map[string]any{"writeback_percent": 15, "__hidden": "x"}
-	gotRaw, err := configFunc{}.Execute(context.Background(), rt, &configArgs{Kwargs: kwargs})
+	gotRaw, err := (configFunc{}).Execute(context.Background(), rt, &configArgs{Kwargs: kwargs})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +327,7 @@ func TestDeviceBackingStateList(t *testing.T) {
 	seedCacheSet(t, rt)
 	seedBackingDev(t, rt, true)
 
-	gotRaw, err := deviceFunc{}.Execute(context.Background(), rt, &deviceArgs{Dev: "sdb"})
+	gotRaw, err := (deviceFunc{}).Execute(context.Background(), rt, &deviceArgs{Dev: "sdb"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -357,7 +357,7 @@ func TestStatusNarrowsToCacheDevUnlessAlldevs(t *testing.T) {
 	seedBackingDev(t, rt, true)
 
 	// alldevs=false narrows to the active cache device entry.
-	narrowed, err := statusFunc{}.Execute(context.Background(), rt,
+	narrowed, err := (statusFunc{}).Execute(context.Background(), rt,
 		&statusArgs{})
 	if err != nil {
 		t.Fatal(err)
@@ -373,7 +373,7 @@ func TestStatusNarrowsToCacheDevUnlessAlldevs(t *testing.T) {
 		t.Fatalf("narrowed status = %#v", nmap)
 	}
 
-	all, err := statusFunc{}.Execute(context.Background(), rt, &statusArgs{AllDevs: true})
+	all, err := (statusFunc{}).Execute(context.Background(), rt, &statusArgs{AllDevs: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,7 +394,7 @@ func TestSuperParsesShowOutput(t *testing.T) {
 		},
 	})
 
-	gotRaw, err := superFunc{}.Execute(context.Background(), rt, &superArgs{Dev: "sdb"})
+	gotRaw, err := (superFunc{}).Execute(context.Background(), rt, &superArgs{Dev: "sdb"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -425,7 +425,7 @@ func TestBackMakeRefusesExistingWithoutForce(t *testing.T) {
 	seedCacheSet(t, rt)
 	seedBackingDev(t, rt, true)
 
-	got, err := backMakeFunc{}.Execute(context.Background(), rt, &backMakeArgs{Dev: "sdb"})
+	got, err := (backMakeFunc{}).Execute(context.Background(), rt, &backMakeArgs{Dev: "sdb"})
 	if err != nil || got != false {
 		t.Fatalf("back_make no-force = %#v, %v", got, err)
 	}
@@ -445,7 +445,7 @@ func TestBackMakeHappyPathArgv(t *testing.T) {
 
 	attach := true
 	force := true
-	got, err := backMakeFunc{}.Execute(context.Background(), rt, &backMakeArgs{
+	got, err := (backMakeFunc{}).Execute(context.Background(), rt, &backMakeArgs{
 		Dev: "sdk", Force: force, Attach: &attach,
 	})
 	if err != nil {

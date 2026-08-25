@@ -92,7 +92,7 @@ func TestDebMakeSrcPkgDSCPassthrough(t *testing.T) {
 		"/testbed/in/pkg.orig.tar.gz":    "orig",
 		"/testbed/in/pkg.debian.tar.xz":  "debian",
 	})
-	ret, err := makeSrcPkgFunc{}.Execute(context.Background(), rt, &MakeSrcPkgArgs{
+	ret, err := (makeSrcPkgFunc{}).Execute(context.Background(), rt, &MakeSrcPkgArgs{
 		DestDir: "/testbed/out",
 		Spec:    "/testbed/in/pkg.dsc",
 		Sources: []any{
@@ -121,7 +121,7 @@ func TestDebMakeSrcPkgTarballDance(t *testing.T) {
 		"/testbed/in/salt-3008.0.tar.gz": "sdist",
 	})
 
-	_, err := makeSrcPkgFunc{}.Execute(context.Background(), rt, &MakeSrcPkgArgs{
+	_, err := (makeSrcPkgFunc{}).Execute(context.Background(), rt, &MakeSrcPkgArgs{
 		DestDir: "/testbed/out",
 		Spec:    "/testbed/in/control.tar.xz",
 		Sources: []any{"/testbed/in/salt-3008.0.tar.gz"},
@@ -179,7 +179,7 @@ func TestDebBuildPbuilderCreateFailure(t *testing.T) {
 		"/testbed/home/root/.pbuilderrc": "",
 		"/testbed/in/pkg.dsc":            "dsc",
 	})
-	ret, err := buildFunc{}.Execute(context.Background(), rt, &BuildArgs{
+	ret, err := (buildFunc{}).Execute(context.Background(), rt, &BuildArgs{
 		Runas:   "root",
 		Tgt:     "deb-12-x86_64",
 		DestDir: "/testbed/out",
@@ -207,7 +207,7 @@ func TestDebMakeRepoUnsigned(t *testing.T) {
 	}}, map[string]string{
 		"/testbed/repo/hello.deb": "deb",
 	})
-	ret, err := makeRepoFunc{}.Execute(context.Background(), rt, &MakeRepoArgs{
+	ret, err := (makeRepoFunc{}).Execute(context.Background(), rt, &MakeRepoArgs{
 		RepoDir: "/testbed/repo",
 		Env:     env,
 	})
@@ -235,7 +235,7 @@ func TestDebMakeRepoKeyidWithoutPillar(t *testing.T) {
 	rt := pkgRT(t, "debian", &seqRunner{}, map[string]string{
 		"/testbed/repo/hello.deb": "deb",
 	})
-	_, err := makeRepoFunc{}.Execute(context.Background(), rt, &MakeRepoArgs{
+	_, err := (makeRepoFunc{}).Execute(context.Background(), rt, &MakeRepoArgs{
 		RepoDir: "/testbed/repo",
 		Keyid:   strPtrPkg("FBB75451"),
 		Env: map[string]any{

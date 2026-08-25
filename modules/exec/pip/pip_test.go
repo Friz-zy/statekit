@@ -148,7 +148,7 @@ func TestVersionParsesAndMemoizes(t *testing.T) {
 	}}
 	rt := pipRT(t, runner, nil)
 
-	got, err := versionFunc{}.Execute(context.Background(), rt, &VersionArgs{})
+	got, err := (versionFunc{}).Execute(context.Background(), rt, &VersionArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestVersionParsesAndMemoizes(t *testing.T) {
 func TestInstallNothingSpecified(t *testing.T) {
 	runner := &fakeRunner{results: map[string]process.CommandResult{}}
 	rt := pipRT(t, runner, map[string]string{})
-	ret, err := installFunc{}.Execute(context.Background(), rt, &InstallArgs{})
+	ret, err := (installFunc{}).Execute(context.Background(), rt, &InstallArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +194,7 @@ func TestInstallArgvAssembly(t *testing.T) {
 	}}
 	rt := pipRT(t, runner, map[string]string{})
 
-	ret, err := installFunc{}.Execute(context.Background(), rt, &InstallArgs{
+	ret, err := (installFunc{}).Execute(context.Background(), rt, &InstallArgs{
 		Pkgs:                "markdown,django",
 		Upgrade:             true,
 		NoDeps:              true,
@@ -236,7 +236,7 @@ func TestInstallValidations(t *testing.T) {
 	}
 
 	rt, _ := base()
-	_, err := installFunc{}.Execute(context.Background(), rt, &InstallArgs{
+	_, err := (installFunc{}).Execute(context.Background(), rt, &InstallArgs{
 		NoIndex: true, IndexURL: strPtr("https://pypi.example/simple"),
 	})
 	if err == nil || err.Error() !=
@@ -246,7 +246,7 @@ func TestInstallValidations(t *testing.T) {
 
 	rt, _ = base()
 	badURL := "notaurl"
-	_, err = installFunc{}.Execute(context.Background(), rt, &InstallArgs{
+	_, err = (installFunc{}).Execute(context.Background(), rt, &InstallArgs{
 		IndexURL: &badURL,
 	})
 	if err == nil || err.Error() != "'notaurl' is not a valid URL" {
@@ -255,7 +255,7 @@ func TestInstallValidations(t *testing.T) {
 
 	rt, _ = base()
 	badAction := "x"
-	_, err = installFunc{}.Execute(context.Background(), rt, &InstallArgs{
+	_, err = (installFunc{}).Execute(context.Background(), rt, &InstallArgs{
 		ExistsAction: &badAction, Pkgs: "pkg",
 	})
 	if err == nil || !strings.Contains(err.Error(),
@@ -265,7 +265,7 @@ func TestInstallValidations(t *testing.T) {
 
 	rt, _ = base()
 	floatTimeout := 1.5
-	_, err = installFunc{}.Execute(context.Background(), rt, &InstallArgs{
+	_, err = (installFunc{}).Execute(context.Background(), rt, &InstallArgs{
 		Timeout: floatTimeout, Pkgs: "pkg",
 	})
 	if err == nil || !strings.Contains(err.Error(),
@@ -274,7 +274,7 @@ func TestInstallValidations(t *testing.T) {
 	}
 
 	rt, _ = base()
-	_, err = installFunc{}.Execute(context.Background(), rt, &InstallArgs{
+	_, err = (installFunc{}).Execute(context.Background(), rt, &InstallArgs{
 		Editable: "git+https://github.com/x/y.git", Pkgs: "",
 	})
 	if err == nil || err.Error() != "You must specify an egg for this editable" {
@@ -282,7 +282,7 @@ func TestInstallValidations(t *testing.T) {
 	}
 
 	rt, _ = base()
-	_, err = installFunc{}.Execute(context.Background(), rt, &InstallArgs{
+	_, err = (installFunc{}).Execute(context.Background(), rt, &InstallArgs{
 		Requirements: "salt://reqs.txt",
 	})
 	var unsupported *runtime.UnsupportedError
@@ -315,7 +315,7 @@ func TestFreeze(t *testing.T) {
 	}}
 	rt := pipRT(t, runner, nil)
 
-	got, err := freezeFunc{}.Execute(context.Background(), rt, &FreezeArgs{})
+	got, err := (freezeFunc{}).Execute(context.Background(), rt, &FreezeArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -355,7 +355,7 @@ func TestListFreezeParse(t *testing.T) {
 	}}
 	rt := pipRT(t, runner, nil)
 
-	got, err := listFreezeParseFunc{}.Execute(context.Background(), rt,
+	got, err := (listFreezeParseFunc{}).Execute(context.Background(), rt,
 		&ListFreezeParseArgs{})
 	if err != nil {
 		t.Fatal(err)
@@ -384,7 +384,7 @@ func TestListJSONPathWithPrefix(t *testing.T) {
 	}}
 	rt := pipRT(t, runner, nil)
 
-	got, err := listFunc{}.Execute(context.Background(), rt,
+	got, err := (listFunc{}).Execute(context.Background(), rt,
 		&ListArgs{Prefix: strPtr("REQUEST")})
 	if err != nil {
 		t.Fatal(err)
@@ -408,7 +408,7 @@ func TestListUpgradesJSON(t *testing.T) {
 	}}
 	rt := pipRT(t, runner, nil)
 
-	got, err := listUpgradesFunc{}.Execute(context.Background(), rt, &ListUpgradesArgs{})
+	got, err := (listUpgradesFunc{}).Execute(context.Background(), rt, &ListUpgradesArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -417,7 +417,7 @@ func TestListUpgradesJSON(t *testing.T) {
 		t.Fatalf("upgrades = %#v", pkgs)
 	}
 
-	avail, err := upgradeAvailableFunc{}.Execute(context.Background(), rt,
+	avail, err := (upgradeAvailableFunc{}).Execute(context.Background(), rt,
 		&UpgradeAvailableArgs{Pkg: "requests"})
 	if err != nil || avail != true {
 		t.Fatalf("upgrade_available = %#v, %v", avail, err)
@@ -452,7 +452,7 @@ func TestUpgradeFlow(t *testing.T) {
 		}
 	}
 
-	ret, err := upgradeFunc{}.Execute(context.Background(), rt, &UpgradeArgs{})
+	ret, err := (upgradeFunc{}).Execute(context.Background(), rt, &UpgradeArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}

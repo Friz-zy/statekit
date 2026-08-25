@@ -51,7 +51,7 @@ func TestAtqParsesJobs(t *testing.T) {
 	runner.script = []process.CommandResult{
 		{Stdout: []byte("12\tSat Aug 22 20:00:00 2026 a vscode\n13\tSun Aug 23 09:00:00 2026 a root\n"), ExitCode: 0},
 	}
-	jobs, err := atqFunc{}.Execute(context.Background(), rt, &atqArgs{})
+	jobs, err := (atqFunc{}).Execute(context.Background(), rt, &atqArgs{})
 	if err != nil {
 		t.Fatalf("atq: %v", err)
 	}
@@ -64,12 +64,12 @@ func TestAtqParsesJobs(t *testing.T) {
 func TestAtrm(t *testing.T) {
 	rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), Runner: &scriptRunner{}, FS: runtime.NewMemoryFS()}
 	runner := rt.Runner.(*scriptRunner)
-	atrmFunc{}.Execute(context.Background(), rt, &atrmArgs{JobID: "12"})
+	(atrmFunc{}).Execute(context.Background(), rt, &atrmArgs{JobID: "12"})
 	if got := runner.calls[len(runner.calls)-1]; got.Name != "atrm" || got.Args[0] != "12" {
 		t.Fatalf("atrm argv wrong: %+v", got)
 	}
 	runner.script = []process.CommandResult{{ExitCode: 1}}
-	value, _ := atrmFunc{}.Execute(context.Background(), rt, &atrmArgs{JobID: "99"})
+	value, _ := (atrmFunc{}).Execute(context.Background(), rt, &atrmArgs{JobID: "99"})
 	if value != false {
 		t.Fatal("failed removal must report false")
 	}

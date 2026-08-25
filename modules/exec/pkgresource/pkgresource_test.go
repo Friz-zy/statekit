@@ -344,7 +344,7 @@ func TestVersionGlob(t *testing.T) {
 	}
 	rt := newRT(t, listFake)
 
-	gotRaw, err := versionFunc{}.Execute(context.Background(), rt, &VersionArgs{Names: []string{"python*"}})
+	gotRaw, err := (versionFunc{}).Execute(context.Background(), rt, &VersionArgs{Names: []string{"python*"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -364,7 +364,7 @@ func TestVersionWithoutListPkgs(t *testing.T) {
 	if err := Register(rt.Exec); err != nil {
 		t.Fatal(err)
 	}
-	_, err := versionFunc{}.Execute(context.Background(), rt, &VersionArgs{Names: []string{"A"}})
+	_, err := (versionFunc{}).Execute(context.Background(), rt, &VersionArgs{Names: []string{"A"}})
 	if err == nil || !strings.Contains(err.Error(), "unsupported function") {
 		t.Fatalf("missing list_pkgs error = %v", err)
 	}
@@ -544,7 +544,7 @@ func TestFormatPkgListNoAttr(t *testing.T) {
 // TestFormatPkgListNoAttrAsList pins the versions_as_list escape hatch.
 func TestFormatPkgListNoAttrAsList(t *testing.T) {
 	rt := newRT(t)
-	gotRaw, err := formatPkgListFunc{}.Execute(context.Background(), rt, &FormatPkgListArgs{
+	gotRaw, err := (formatPkgListFunc{}).Execute(context.Background(), rt, &FormatPkgListArgs{
 		Packages:       map[string]any{"glibc": formatPackages["glibc"]},
 		VersionsAsList: true,
 	})
@@ -576,7 +576,7 @@ func TestFormatPkgListWithAttr(t *testing.T) {
 	}
 	rt := newRT(t, parseArchFake)
 
-	gotRaw, err := formatPkgListFunc{}.Execute(context.Background(), rt, &FormatPkgListArgs{
+	gotRaw, err := (formatPkgListFunc{}).Execute(context.Background(), rt, &FormatPkgListArgs{
 		Packages: formatPackages,
 		Attr:     []string{"epoch", "release"},
 	})
@@ -617,7 +617,7 @@ func TestFormatPkgListWithAttr(t *testing.T) {
 // TestFormatPkgListAttrAll pins attr=all keeping the full attribute set.
 func TestFormatPkgListAttrAll(t *testing.T) {
 	rt := newRT(t)
-	gotRaw, err := formatPkgListFunc{}.Execute(context.Background(), rt, &FormatPkgListArgs{
+	gotRaw, err := (formatPkgListFunc{}).Execute(context.Background(), rt, &FormatPkgListArgs{
 		Packages: map[string]any{"glibc": []any{
 			map[string]any{"version": "2.12", "epoch": "", "release": "1", "arch": "x86_64",
 				"install_date": "2023-01-01", "install_date_time_t": 1672531200},
@@ -647,7 +647,7 @@ func TestFormatVersion(t *testing.T) {
 	}
 	rt := newRT(t)
 	for _, c := range cases {
-		got, err := formatVersionFunc{}.Execute(context.Background(), rt, &FormatVersionArgs{
+		got, err := (formatVersionFunc{}).Execute(context.Background(), rt, &FormatVersionArgs{
 			Epoch: c.epoch, Version: c.version, Release: c.release,
 		})
 		if err != nil || got != c.want {

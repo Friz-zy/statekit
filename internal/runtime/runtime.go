@@ -256,6 +256,8 @@ type FileSystem interface {
 	RemoveAll(path string) error
 	Rename(oldpath, newpath string) error
 	Symlink(oldname, newname string) error
+	Link(oldname, newname string) error
+	Glob(pattern string) ([]string, error)
 	Readlink(name string) (string, error)
 	ReadDir(name string) ([]fs.DirEntry, error)
 	Chmod(name string, mode fs.FileMode) error
@@ -301,6 +303,12 @@ func (OSFileSystem) Rename(oldpath, newpath string) error { return os.Rename(old
 
 // Symlink implements FileSystem.
 func (OSFileSystem) Symlink(oldname, newname string) error { return os.Symlink(oldname, newname) }
+
+// Link implements FileSystem (hard links).
+func (OSFileSystem) Link(oldname, newname string) error { return os.Link(oldname, newname) }
+
+// Glob implements FileSystem.
+func (OSFileSystem) Glob(pattern string) ([]string, error) { return filepath.Glob(pattern) }
 
 // Readlink implements FileSystem.
 func (OSFileSystem) Readlink(name string) (string, error) { return os.Readlink(name) }
@@ -653,6 +661,35 @@ func (m *MemoryFS) Symlink(oldname, newname string) error {
 }
 
 // Readlink implements FileSystem.
+// Link implements hard links for the memory filesystem by sharing content:
+// writes through either name diverge afterwards (documented limitation).
+func (m *MemoryFS) Link(oldname, newname string) error {
+	data, err := m.ReadFile(oldname)
+	if err != nil {
+		return err
+	}
+	info, serr := m.Stat(oldname)
+	if serr != nil {
+		return serr
+	}
+	return m.WriteFile(newname, data, info.Mode().Perm())
+}
+
+// Glob implements FileSystem over the in-memory tree.
+func (m *MemoryFS) Glob(pattern string) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []string
+	for path := range m.nodes {
+		ok, gerr := filepath.Match(filepath.Clean(pattern), path)
+		if gerr == nil && ok {
+			out = append(out, path)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
 func (m *MemoryFS) Readlink(name string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

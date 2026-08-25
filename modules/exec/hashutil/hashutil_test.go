@@ -36,7 +36,7 @@ func TestDigestKnownVectors(t *testing.T) {
 		}
 	}
 
-	value, _ := digestFunc{}.Execute(context.Background(), newRT(), &DigestArgs{Instr: ""})
+	value, _ := (digestFunc{}).Execute(context.Background(), newRT(), &DigestArgs{Instr: ""})
 	if value != "d41d8cd98f00b204e9800998ecf8427e" {
 		t.Fatalf("empty md5 vector mismatch: %v", value)
 	}
@@ -63,30 +63,30 @@ func TestDigestFile(t *testing.T) {
 }
 
 func TestBase64Roundtrip(t *testing.T) {
-	encoded, err := base64EncodeFunc{}.Execute(context.Background(), newRT(), &Base64EncodeArgs{Instr: "hello world"})
+	encoded, err := (base64EncodeFunc{}).Execute(context.Background(), newRT(), &Base64EncodeArgs{Instr: "hello world"})
 	if err != nil || encoded != "aGVsbG8gd29ybGQ=" {
 		t.Fatalf("encode = %v, %v", encoded, err)
 	}
-	decoded, err := base64DecodeFunc{}.Execute(context.Background(), newRT(), &Base64DecodeArgs{B64Instr: encoded.(string)})
+	decoded, err := (base64DecodeFunc{}).Execute(context.Background(), newRT(), &Base64DecodeArgs{B64Instr: encoded.(string)})
 	if err != nil || decoded != "hello world" {
 		t.Fatalf("decode = %v, %v", decoded, err)
 	}
 }
 
 func TestHmacComputeAndVerify(t *testing.T) {
-	signature, err := hmacComputeFunc{}.Execute(context.Background(), newRT(), &HmacComputeArgs{
+	signature, err := (hmacComputeFunc{}).Execute(context.Background(), newRT(), &HmacComputeArgs{
 		String: "payload", SharedSecret: "sekret",
 	})
 	if err != nil || signature == "" {
 		t.Fatalf("hmac_compute = %v, %v", signature, err)
 	}
-	ok, _ := hmacSignatureFunc{}.Execute(context.Background(), newRT(), &HmacVerifyArgs{
+	ok, _ := (hmacSignatureFunc{}).Execute(context.Background(), newRT(), &HmacVerifyArgs{
 		String: "payload", SharedSecret: "sekret", ChallengeHMAC: signature.(string),
 	})
 	if ok != true {
 		t.Fatal("valid signature must verify")
 	}
-	ok, _ = hmacSignatureFunc{}.Execute(context.Background(), newRT(), &HmacVerifyArgs{
+	ok, _ = (hmacSignatureFunc{}).Execute(context.Background(), newRT(), &HmacVerifyArgs{
 		String: "tampered", SharedSecret: "sekret", ChallengeHMAC: signature.(string),
 	})
 	if ok != false {
@@ -95,10 +95,10 @@ func TestHmacComputeAndVerify(t *testing.T) {
 }
 
 func TestGithubSignaturePrefixParsing(t *testing.T) {
-	signature, _ := hmacComputeFunc{}.Execute(context.Background(), newRT(), &HmacComputeArgs{
+	signature, _ := (hmacComputeFunc{}).Execute(context.Background(), newRT(), &HmacComputeArgs{
 		String: "body", SharedSecret: "webhook-secret", HmacType: "sha1",
 	})
-	ok, _ := githubSignatureFunc{}.Execute(context.Background(), newRT(), &GithubVerifyArgs{
+	ok, _ := (githubSignatureFunc{}).Execute(context.Background(), newRT(), &GithubVerifyArgs{
 		String: "body", SharedSecret: "webhook-secret",
 		ChallengeHMAC: "sha1=" + signature.(string),
 	})

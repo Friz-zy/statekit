@@ -64,7 +64,7 @@ func TestReport(t *testing.T) {
 		"repquota -vp -u /media/data": {Stdout: []byte(repquotaUserFixture)},
 		"repquota -vp -g /media/data": {Stdout: []byte(repquotaGroupFixture)},
 	})
-	gotRaw, err := reportFunc{}.Execute(context.Background(), rt, &ReportArgs{Mount: "/media/data"})
+	gotRaw, err := (reportFunc{}).Execute(context.Background(), rt, &ReportArgs{Mount: "/media/data"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestSetQuota(t *testing.T) {
 		"setquota":                    {},
 	})
 
-	got, err := setFunc{}.Execute(context.Background(), rt, &SetArgs{
+	got, err := (setFunc{}).Execute(context.Background(), rt, &SetArgs{
 		Device:         "/media/data",
 		User:           "larry",
 		BlockSoftLimit: "1048576",
@@ -124,7 +124,7 @@ func TestSetQuota(t *testing.T) {
 	}
 
 	// Both user and group is an error (Salt raises SaltInvocationError).
-	_, err = setFunc{}.Execute(context.Background(), rt, &SetArgs{
+	_, err = (setFunc{}).Execute(context.Background(), rt, &SetArgs{
 		Device: "/media/data", User: "a", Group: "b",
 	})
 	if err == nil || !strings.Contains(err.Error(), "not both") {
@@ -132,7 +132,7 @@ func TestSetQuota(t *testing.T) {
 	}
 
 	// Neither user nor group.
-	_, err = setFunc{}.Execute(context.Background(), rt, &SetArgs{Device: "/media/data"})
+	_, err = (setFunc{}).Execute(context.Background(), rt, &SetArgs{Device: "/media/data"})
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("neither error = %v", err)
 	}
@@ -154,7 +154,7 @@ func TestSetQuota(t *testing.T) {
 	rt2, _ := newRT(map[string]process.CommandResult{
 		"setquota": {ExitCode: 1, Stderr: []byte("nope\n")},
 	})
-	_, err = setFunc{}.Execute(context.Background(), rt2, &SetArgs{
+	_, err = (setFunc{}).Execute(context.Background(), rt2, &SetArgs{
 		Device: "/media/data", User: "u",
 	})
 	if err == nil || !strings.Contains(err.Error(), "Unable to set desired quota") ||
@@ -166,11 +166,11 @@ func TestSetQuota(t *testing.T) {
 func TestSimpleCommands(t *testing.T) {
 	rt, runner := newRT(map[string]process.CommandResult{})
 
-	got, err := onFunc{}.Execute(context.Background(), rt, &OnArgs{Device: "/dev/sda1"})
+	got, err := (onFunc{}).Execute(context.Background(), rt, &OnArgs{Device: "/dev/sda1"})
 	if err != nil || got != true {
 		t.Fatalf("on = %v %v", got, err)
 	}
-	got2, err := offFunc{}.Execute(context.Background(), rt, &OffArgs{Device: "/dev/sda1"})
+	got2, err := (offFunc{}).Execute(context.Background(), rt, &OffArgs{Device: "/dev/sda1"})
 	if err != nil || got2 != true {
 		t.Fatalf("off = %v %v", got2, err)
 	}
@@ -180,7 +180,7 @@ func TestSimpleCommands(t *testing.T) {
 	}
 
 	// warn runs quotawarn like Salt's code does.
-	warnFunc{}.Execute(context.Background(), rt, &WarnArgs{})
+	(warnFunc{}).Execute(context.Background(), rt, &WarnArgs{})
 	if !reflect.DeepEqual(runner.calls[len(runner.calls)-1], []string{"quotawarn"}) {
 		t.Fatalf("warn argv = %v", runner.calls)
 	}
@@ -189,7 +189,7 @@ func TestSimpleCommands(t *testing.T) {
 	rt3, _ := newRT(map[string]process.CommandResult{
 		"quotastats": {Stdout: []byte("Number of dquot lookups: 1234\njunkline\n")},
 	})
-	statsRaw, err := statsFunc{}.Execute(context.Background(), rt3, &StatsArgs{})
+	statsRaw, err := (statsFunc{}).Execute(context.Background(), rt3, &StatsArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +205,7 @@ func TestGetMode(t *testing.T) {
 			"group quota on /media/data (/dev/sda1) is on\n" +
 				"user quota on /media/data (/dev/sda1) is off\n")},
 	})
-	gotRaw, err := getModeFunc{}.Execute(context.Background(), rt, &GetModeArgs{Device: "/media/data"})
+	gotRaw, err := (getModeFunc{}).Execute(context.Background(), rt, &GetModeArgs{Device: "/media/data"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestGetMode(t *testing.T) {
 		"quotaon": {Stdout: []byte(
 			"quotaon: Cannot find mountpoint /media/data on this system right now\n")},
 	})
-	got2, err := getModeFunc{}.Execute(context.Background(), rt2, &GetModeArgs{Device: "/x"})
+	got2, err := (getModeFunc{}).Execute(context.Background(), rt2, &GetModeArgs{Device: "/x"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func TestGetMode(t *testing.T) {
 		"quotaon": {Stdout: []byte(
 			"quotaon: Mountpoint path /media/data (/dev/sda1) reported disabled now\n")},
 	})
-	got3, err := getModeFunc{}.Execute(context.Background(), rt3, &GetModeArgs{Device: "/d"})
+	got3, err := (getModeFunc{}).Execute(context.Background(), rt3, &GetModeArgs{Device: "/d"})
 	if err != nil {
 		t.Fatal(err)
 	}

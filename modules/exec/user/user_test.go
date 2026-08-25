@@ -50,7 +50,7 @@ func newRT() (*runtime.Runtime, *fakeRunner) {
 
 func TestUserInfo(t *testing.T) {
 	rt, _ := newRT()
-	value, err := infoFunc{}.Execute(context.Background(), rt, &InfoArgs{Name: "alice"})
+	value, err := (infoFunc{}).Execute(context.Background(), rt, &InfoArgs{Name: "alice"})
 	if err != nil {
 		t.Fatalf("user.info: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestUserInfo(t *testing.T) {
 
 func TestListUsers(t *testing.T) {
 	rt, _ := newRT()
-	value, _ := listUsersFunc{}.Execute(context.Background(), rt, &ListUsersArgs{})
+	value, _ := (listUsersFunc{}).Execute(context.Background(), rt, &ListUsersArgs{})
 	names := value.([]string)
 	if strings.Join(names, ",") != "root,alice" {
 		t.Fatalf("names = %v", names)
@@ -78,7 +78,7 @@ func TestListUsers(t *testing.T) {
 
 func TestAddArgvAssembly(t *testing.T) {
 	rt, runner := newRT()
-	addFunc{}.Execute(context.Background(), rt, &AddArgs{
+	(addFunc{}).Execute(context.Background(), rt, &AddArgs{
 		Name: "bob", UID: "1001", GID: "1001", Home: "/home/bob", Shell: "/bin/sh",
 	})
 	want := []string{"useradd", "-u", "1001", "-g", "1001", "-d", "/home/bob", "-s", "/bin/sh", "-M", "bob"}
@@ -93,11 +93,11 @@ func TestAddArgvAssembly(t *testing.T) {
 
 func TestDeleteAndChUID(t *testing.T) {
 	rt, runner := newRT()
-	deleteFunc{}.Execute(context.Background(), rt, &DeleteArgs{Name: "bob", Remove: true, Force: true})
+	(deleteFunc{}).Execute(context.Background(), rt, &DeleteArgs{Name: "bob", Remove: true, Force: true})
 	if got := strings.Join(runner.calls[len(runner.calls)-1], " "); got != "userdel -r -f bob" {
 		t.Fatalf("userdel argv = %q", got)
 	}
-	chUIDFunc{}.Execute(context.Background(), rt, &ChUIDArgs{Name: "alice", UID: "1010"})
+	(chUIDFunc{}).Execute(context.Background(), rt, &ChUIDArgs{Name: "alice", UID: "1010"})
 	last := runner.calls[len(runner.calls)-1]
 	if strings.Join(last, " ") != "usermod -u 1010 alice" {
 		t.Fatalf("chuid argv = %v", last)
@@ -106,7 +106,7 @@ func TestDeleteAndChUID(t *testing.T) {
 
 func TestChHomeMoves(t *testing.T) {
 	rt, runner := newRT()
-	chHomeFunc{}.Execute(context.Background(), rt, &ChHomeArgs{Name: "alice", Home: "/newhome", Move: true})
+	(chHomeFunc{}).Execute(context.Background(), rt, &ChHomeArgs{Name: "alice", Home: "/newhome", Move: true})
 	if got := strings.Join(runner.calls[len(runner.calls)-1], " "); got != "usermod -m -d /newhome alice" {
 		t.Fatalf("chhome argv = %q", got)
 	}

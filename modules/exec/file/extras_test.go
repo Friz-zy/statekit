@@ -22,7 +22,7 @@ func TestSearchAndContainsRegex(t *testing.T) {
 	if err != nil || value != true {
 		t.Fatalf("search = %v, %v", value, err)
 	}
-	value, _ = containsRegexFunc{}.Execute(context.Background(), rt, &containsRegexArgs{
+	value, _ = (containsRegexFunc{}).Execute(context.Background(), rt, &containsRegexArgs{
 		Path: "/logs/app.log", Regex: "FATAL",
 	})
 	if value != false {
@@ -58,7 +58,7 @@ func TestReplaceWithBackupAndCount(t *testing.T) {
 func TestReplaceNoMatchReportsFalse(t *testing.T) {
 	rt := newExtrasRT()
 	rt.FS.WriteFile("/f", []byte("static"), 0o644)
-	applied, _ := replaceFunc{}.Execute(context.Background(), rt, &replaceArgs{
+	applied, _ := (replaceFunc{}).Execute(context.Background(), rt, &replaceArgs{
 		Path: "/f", Pattern: "nomatch", Repl: "x",
 	})
 	if applied != false {

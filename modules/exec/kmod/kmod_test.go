@@ -45,11 +45,11 @@ func TestLsmodAndIsLoaded(t *testing.T) {
 	if strings.Join(modules.([]string), ",") != "ext4,bridge" {
 		t.Fatalf("modules = %v", modules)
 	}
-	value, _ := isLoadedFunc{}.Execute(context.Background(), rt, &isLoadedArgs{Mod: "bridge"})
+	value, _ := (isLoadedFunc{}).Execute(context.Background(), rt, &isLoadedArgs{Mod: "bridge"})
 	if value != true {
 		t.Fatal("bridge must be loaded")
 	}
-	value, _ = isLoadedFunc{}.Execute(context.Background(), rt, &isLoadedArgs{Mod: "nvidia"})
+	value, _ = (isLoadedFunc{}).Execute(context.Background(), rt, &isLoadedArgs{Mod: "nvidia"})
 	if value != false {
 		t.Fatal("nvidia must not be loaded")
 	}
@@ -57,11 +57,11 @@ func TestLsmodAndIsLoaded(t *testing.T) {
 
 func TestLoadRemoveArgv(t *testing.T) {
 	rt, runner := newRT()
-	loadFunc{}.Execute(context.Background(), rt, &loadArgs{Mod: "bridge"})
+	(loadFunc{}).Execute(context.Background(), rt, &loadArgs{Mod: "bridge"})
 	if got := strings.Join(runner.calls[len(runner.calls)-1], " "); got != "modprobe bridge" {
 		t.Fatalf("load argv = %q", got)
 	}
-	removeFunc{}.Execute(context.Background(), rt, &removeArgs{Mod: "bridge"})
+	(removeFunc{}).Execute(context.Background(), rt, &removeArgs{Mod: "bridge"})
 	if got := strings.Join(runner.calls[len(runner.calls)-1], " "); got != "modprobe -r bridge" {
 		t.Fatalf("remove argv = %q", got)
 	}

@@ -33,32 +33,32 @@ func newRT() (*runtime.Runtime, *fakeRunner) {
 func TestPowerCommandsArgv(t *testing.T) {
 	rt, runner := newRT()
 
-	haltFunc{}.Execute(context.Background(), rt, &haltArgs{})
+	(haltFunc{}).Execute(context.Background(), rt, &haltArgs{})
 	if got := strings.Join(runner.calls[len(runner.calls)-1], " "); got != "halt" {
 		t.Fatalf("halt argv = %q (Salt parity)", got)
 	}
 
-	poweroffFunc{}.Execute(context.Background(), rt, &poweroffArgs{})
+	(poweroffFunc{}).Execute(context.Background(), rt, &poweroffArgs{})
 	if got := strings.Join(runner.calls[len(runner.calls)-1], " "); got != "poweroff" {
 		t.Fatalf("poweroff argv = %q", got)
 	}
 
-	rebootFunc{}.Execute(context.Background(), rt, &rebootArgs{})
+	(rebootFunc{}).Execute(context.Background(), rt, &rebootArgs{})
 	if got := strings.Join(runner.calls[len(runner.calls)-1], " "); got != "shutdown -r now" {
 		t.Fatalf("reboot argv = %q", got)
 	}
 
-	rebootFunc{}.Execute(context.Background(), rt, &rebootArgs{AtTime: "5"})
+	(rebootFunc{}).Execute(context.Background(), rt, &rebootArgs{AtTime: "5"})
 	if got := strings.Join(runner.calls[len(runner.calls)-1], " "); got != "shutdown -r 5" {
 		t.Fatalf("delayed reboot argv = %q", got)
 	}
 
-	shutdownFunc{}.Execute(context.Background(), rt, &shutdownArgs{})
+	(shutdownFunc{}).Execute(context.Background(), rt, &shutdownArgs{})
 	if got := strings.Join(runner.calls[len(runner.calls)-1], " "); got != "shutdown -h now" {
 		t.Fatalf("shutdown argv = %q", got)
 	}
 
-	initFunc{}.Execute(context.Background(), rt, &initArgs{Runlevel: "3"})
+	(initFunc{}).Execute(context.Background(), rt, &initArgs{Runlevel: "3"})
 	if got := strings.Join(runner.calls[len(runner.calls)-1], " "); got != "init 3" {
 		t.Fatalf("init argv = %q", got)
 	}

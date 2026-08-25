@@ -451,7 +451,7 @@ func TestBackendDispatch(t *testing.T) {
 	rt := newRT(aptFacts, map[string]string{
 		"/testbed/sources.list": "deb http://deb.example/ stretch main\n",
 	})
-	got, err := listReposFunc{}.Execute(context.Background(), rt, &ListReposArgs{})
+	got, err := (listReposFunc{}).Execute(context.Background(), rt, &ListReposArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -463,7 +463,7 @@ func TestBackendDispatch(t *testing.T) {
 	rt = newRT(yumFacts, map[string]string{
 		"/testbed/repos/x.repo": "[xr]\nname=X\nbaseurl=http://rpm.example/\n",
 	})
-	got, err = listReposFunc{}.Execute(context.Background(), rt, &ListReposArgs{Basedir: strPtr("/testbed/repos")})
+	got, err = (listReposFunc{}).Execute(context.Background(), rt, &ListReposArgs{Basedir: strPtr("/testbed/repos")})
 	if err != nil {
 		t.Fatal(err)
 	}

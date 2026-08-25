@@ -50,7 +50,7 @@ func TestLs(t *testing.T) {
 		"stderr":  "",
 	})
 
-	gotRaw, err := lsFunc{}.Execute(context.Background(), rt, &LsArgs{})
+	gotRaw, err := (lsFunc{}).Execute(context.Background(), rt, &LsArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestLs(t *testing.T) {
 		"stdout":  "[0:0:0:0] disk HP LOGICAL VOLUME 6.68 /dev/sda [8:0]",
 		"stderr":  "",
 	})
-	gotRaw, err = lsFunc{}.Execute(context.Background(), rt2, &LsArgs{GetSize: boolPtr(false)})
+	gotRaw, err = (lsFunc{}).Execute(context.Background(), rt2, &LsArgs{GetSize: boolPtr(false)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestLsErrors(t *testing.T) {
 		"stdout":  "",
 		"stderr":  "An error occurred\nmore detail",
 	})
-	got, err := lsFunc{}.Execute(context.Background(), rt, &LsArgs{})
+	got, err := (lsFunc{}).Execute(context.Background(), rt, &LsArgs{})
 	if err != nil || got != "An error occurred" {
 		t.Fatalf("error passthrough = %#v, %v", got, err)
 	}
@@ -102,13 +102,13 @@ func TestLsErrors(t *testing.T) {
 		"stdout":  "",
 		"stderr":  "lsscsi: invalid option -- 's'\nUsage: lsscsi [options]",
 	})
-	got, err = lsFunc{}.Execute(context.Background(), rt2, &LsArgs{})
+	got, err = (lsFunc{}).Execute(context.Background(), rt2, &LsArgs{})
 	if err != nil || got != "lsscsi: invalid option -- 's' - try get_size=False" {
 		t.Fatalf("invalid-option hint = %#v, %v", got, err)
 	}
 
 	rt3 := newRT(t, "", nil)
-	got, err = lsFunc{}.Execute(context.Background(), rt3, &LsArgs{})
+	got, err = (lsFunc{}).Execute(context.Background(), rt3, &LsArgs{})
 	if err != nil || got != "scsi.ls not available - lsscsi command not found" {
 		t.Fatalf("missing binary = %#v, %v", got, err)
 	}
@@ -127,7 +127,7 @@ func TestRescanAll(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := rescanAllFunc{}.Execute(context.Background(), rt, &RescanAllArgs{Host: "0"})
+	got, err := (rescanAllFunc{}).Execute(context.Background(), rt, &RescanAllArgs{Host: "0"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestRescanAll(t *testing.T) {
 		t.Fatalf("rescan output = %#v", got)
 	}
 
-	got, err = rescanAllFunc{}.Execute(context.Background(), rt, &RescanAllArgs{Host: "9"})
+	got, err = (rescanAllFunc{}).Execute(context.Background(), rt, &RescanAllArgs{Host: "9"})
 	if err != nil || got != "Host 9 does not exist" {
 		t.Fatalf("missing host = %#v, %v", got, err)
 	}

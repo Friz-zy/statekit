@@ -69,7 +69,7 @@ func TestRunCommand(t *testing.T) {
 	runner := &fakeRunner{}
 	rt := pyRT(t, "/usr/bin/python3", runner, nil)
 
-	ret, err := runFunc{}.Execute(context.Background(), rt, &RunArgs{
+	ret, err := (runFunc{}).Execute(context.Background(), rt, &RunArgs{
 		Command: strPtr("print('hello world')"),
 	})
 	if err != nil {
@@ -88,7 +88,7 @@ func TestRunCommand(t *testing.T) {
 func TestRunArgsStringSplit(t *testing.T) {
 	runner := &fakeRunner{}
 	rt := pyRT(t, "/usr/bin/python3", runner, nil)
-	_, err := runFunc{}.Execute(context.Background(), rt, &RunArgs{
+	_, err := (runFunc{}).Execute(context.Background(), rt, &RunArgs{
 		Args: `-m json.tool "some file.json"`,
 	})
 	if err != nil {
@@ -102,7 +102,7 @@ func TestRunArgsStringSplit(t *testing.T) {
 
 func TestRunRequiresInput(t *testing.T) {
 	rt := pyRT(t, "/usr/bin/python3", &fakeRunner{}, nil)
-	_, err := runFunc{}.Execute(context.Background(), rt, &RunArgs{})
+	_, err := (runFunc{}).Execute(context.Background(), rt, &RunArgs{})
 	if err == nil || err.Error() != "Must specify either 'command' or 'args'" {
 		t.Fatalf("error = %v", err)
 	}
@@ -114,7 +114,7 @@ func TestRunRstripAndSuccessOverrides(t *testing.T) {
 	}}
 	rt := pyRT(t, "/usr/bin/python3", runner, nil)
 
-	ret, _ := runFunc{}.Execute(context.Background(), rt, &RunArgs{
+	ret, _ := (runFunc{}).Execute(context.Background(), rt, &RunArgs{
 		Command:         strPtr("x"),
 		Rstrip:          boolPtr(true),
 		SuccessRetcodes: []int{2},
@@ -141,7 +141,7 @@ func TestScriptLocalFlow(t *testing.T) {
 		return process.CommandResult{Stdout: []byte("script-out\n")}
 	}
 
-	ret, err := scriptFunc{}.Execute(context.Background(), rt, &ScriptArgs{
+	ret, err := (scriptFunc{}).Execute(context.Background(), rt, &ScriptArgs{
 		Source: "/testbed/scripts/runme.py",
 		Cwd:    strPtr("/testbed"),
 		Args:   `arg1 "arg 2"`,
@@ -172,7 +172,7 @@ func runnersArg0(argv []string) string { return argv[0] }
 
 func TestScriptCacheErrorShape(t *testing.T) {
 	rt := pyRT(t, "/usr/bin/python3", &fakeRunner{}, map[string]string{})
-	ret, err := scriptFunc{}.Execute(context.Background(), rt, &ScriptArgs{
+	ret, err := (scriptFunc{}).Execute(context.Background(), rt, &ScriptArgs{
 		Source: "/testbed/missing.py",
 	})
 	if err != nil {
@@ -186,7 +186,7 @@ func TestScriptCacheErrorShape(t *testing.T) {
 
 func TestScriptRemoteSchemeRejected(t *testing.T) {
 	rt := pyRT(t, "/usr/bin/python3", &fakeRunner{}, nil)
-	ret, err := scriptFunc{}.Execute(context.Background(), rt, &ScriptArgs{
+	ret, err := (scriptFunc{}).Execute(context.Background(), rt, &ScriptArgs{
 		Source: "salt://scripts/runme.py",
 	})
 	var unsupported *runtime.UnsupportedError

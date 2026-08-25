@@ -59,7 +59,7 @@ func TestNetstatLinuxParser(t *testing.T) {
 		"netstat -tulpnea": {Stdout: []byte(netstatOut)},
 	})
 
-	gotRaw, err := netstatFunc{}.Execute(context.Background(), rt, &NetstatArgs{})
+	gotRaw, err := (netstatFunc{}).Execute(context.Background(), rt, &NetstatArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ tcp   LISTEN 0      511         127.0.0.1:4505      0.0.0.0:*     users:(("pytho
 		return "/usr/sbin/" + ostool
 	}
 	t.Cleanup(func() { toolPath = savedTools2 })
-	gotRaw, err = netstatFunc{}.Execute(context.Background(), rt2, &NetstatArgs{})
+	gotRaw, err = (netstatFunc{}).Execute(context.Background(), rt2, &NetstatArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestIPNeighs(t *testing.T) {
 				"fe80::1 dev ens3 lladdr de:ad:be:ef:00:98 STALE\n")},
 	})
 
-	gotRaw, err := ipNeighsFunc{}.Execute(context.Background(), rt, &IPNeighsArgs{})
+	gotRaw, err := (ipNeighsFunc{}).Execute(context.Background(), rt, &IPNeighsArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestIPNeighs(t *testing.T) {
 		t.Fatalf("ip_neighs = %#v", gotRaw)
 	}
 
-	gotRaw, err = ipNeighs6Func{}.Execute(context.Background(), rt, &IPNeighs6Args{})
+	gotRaw, err = (ipNeighs6Func{}).Execute(context.Background(), rt, &IPNeighs6Args{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,12 +149,12 @@ func TestHostnameTrio(t *testing.T) {
 	fqdnHook = func(*runtime.Runtime) string { return "minion01.example.internal" }
 	t.Cleanup(func() { fqdnHook = savedFqdn })
 
-	gotRaw, err := getHostnameFunc{}.Execute(context.Background(), rt, &GetHostnameArgs{})
+	gotRaw, err := (getHostnameFunc{}).Execute(context.Background(), rt, &GetHostnameArgs{})
 	if err != nil || gotRaw != "minion01" {
 		t.Fatalf("get_hostname = %#v, %v", gotRaw, err)
 	}
 
-	gotRaw, err = getFqdnFunc{}.Execute(context.Background(), rt, &GetFqdnArgs{})
+	gotRaw, err = (getFqdnFunc{}).Execute(context.Background(), rt, &GetFqdnArgs{})
 	if err != nil || gotRaw != "minion01.example.internal" {
 		t.Fatalf("get_fqdn = %#v, %v", gotRaw, err)
 	}
@@ -413,7 +413,7 @@ func TestFqdns(t *testing.T) {
 	// /etc/hosts-free seam: fqdns uses net.LookupAddr, which we cannot
 	// stub directly; instead pin behavior against an unreachable network,
 	// expecting the empty sorted envelope.
-	gotRaw, err := fqdnsFunc{}.Execute(context.Background(), rt, &FqdnsArgs{})
+	gotRaw, err := (fqdnsFunc{}).Execute(context.Background(), rt, &FqdnsArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}

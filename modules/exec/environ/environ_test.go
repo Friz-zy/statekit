@@ -26,17 +26,17 @@ func newRT(initial string) *runtime.Runtime {
 func TestGetAndSetRoundtrip(t *testing.T) {
 	rt := newRT("# comment\nLANG=\"en_US.UTF-8\"\nEDITOR=vim\n")
 
-	value, _ := getFunc{}.Execute(context.Background(), rt, &getArgs{Name: "LANG"})
+	value, _ := (getFunc{}).Execute(context.Background(), rt, &getArgs{Name: "LANG"})
 	if value != "en_US.UTF-8" {
 		t.Fatalf("LANG = %v", value)
 	}
-	value, _ = getFunc{}.Execute(context.Background(), rt, &getArgs{Name: "MISSING"})
+	value, _ = (getFunc{}).Execute(context.Background(), rt, &getArgs{Name: "MISSING"})
 	if value != "" {
 		t.Fatalf("missing var = %v", value)
 	}
 
-	setFunc{}.Execute(context.Background(), rt, &setArgs{Name: "LANG", Value: "de_DE.UTF-8"})
-	setFunc{}.Execute(context.Background(), rt, &setArgs{Name: "NEW", Value: "yes"})
+	(setFunc{}).Execute(context.Background(), rt, &setArgs{Name: "LANG", Value: "de_DE.UTF-8"})
+	(setFunc{}).Execute(context.Background(), rt, &setArgs{Name: "NEW", Value: "yes"})
 
 	data, _ := rt.FS.ReadFile(etcEnvironment)
 	rendered := string(data)

@@ -57,7 +57,7 @@ func TestVersion(t *testing.T) {
 	rt, _ := newRT(t, "nft", map[string]process.CommandResult{
 		"nft --version": {Stdout: []byte("nf_tables 0.3-1")},
 	})
-	gotRaw, err := versionFunc{}.Execute(context.Background(), rt, &VersionArgs{})
+	gotRaw, err := (versionFunc{}).Execute(context.Background(), rt, &VersionArgs{})
 	if err != nil || gotRaw != "0.3-1" {
 		t.Fatalf("version = %#v, %v", gotRaw, err)
 	}
@@ -181,7 +181,7 @@ func TestGetSavedRules(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gotRaw, err := getSavedRulesFunc{}.Execute(context.Background(), rt, &GetSavedRulesArgs{})
+	gotRaw, err := (getSavedRulesFunc{}).Execute(context.Background(), rt, &GetSavedRulesArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func TestListTables(t *testing.T) {
 	rt, _ := newRT(t, "nft", map[string]process.CommandResult{
 		"nft --json --numeric --numeric --numeric list tables ip": {Stdout: []byte(tablesJSON)},
 	})
-	gotRaw, err := listTablesFunc{}.Execute(context.Background(), rt, &ListTablesArgs{})
+	gotRaw, err := (listTablesFunc{}).Execute(context.Background(), rt, &ListTablesArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestGetRulesJSON(t *testing.T) {
 	rt, _ := newRT(t, "nft", map[string]process.CommandResult{
 		"nft --numeric --numeric --numeric --json list ruleset ip": {Stdout: []byte(rulesJSON)},
 	})
-	gotRaw, err := getRulesJSONFunc{}.Execute(context.Background(), rt, &GetRulesJSONArgs{})
+	gotRaw, err := (getRulesJSONFunc{}).Execute(context.Background(), rt, &GetRulesJSONArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +235,7 @@ func TestGetRulesJSON(t *testing.T) {
 
 	// Empty tool output yields an empty list.
 	rt2, _ := newRT(t, "nft", nil)
-	gotRaw, err = getRulesJSONFunc{}.Execute(context.Background(), rt2, &GetRulesJSONArgs{})
+	gotRaw, err = (getRulesJSONFunc{}).Execute(context.Background(), rt2, &GetRulesJSONArgs{})
 	if err != nil || len(gotRaw.([]any)) != 0 {
 		t.Fatalf("empty output = %#v, %v", gotRaw, err)
 	}

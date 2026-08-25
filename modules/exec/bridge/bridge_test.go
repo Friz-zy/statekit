@@ -64,7 +64,7 @@ func TestLinuxBrShow(t *testing.T) {
 		"/usr/sbin/brctl show br0": {Stdout: []byte(strings.ReplaceAll(brctlShow, "br1\t\t8000.e4115bac8ddc\tno\t\teth1\n", ""))},
 	})
 
-	gotRaw, err := showFunc{}.Execute(context.Background(), rt, &ShowArgs{})
+	gotRaw, err := (showFunc{}).Execute(context.Background(), rt, &ShowArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestLinuxBrShow(t *testing.T) {
 
 	// A specific bridge returns only its entry.
 	brName := "br0"
-	singleRaw, err := showFunc{}.Execute(context.Background(), rt, &ShowArgs{Br: &brName})
+	singleRaw, err := (showFunc{}).Execute(context.Background(), rt, &ShowArgs{Br: &brName})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestLinuxBrShowMalformed(t *testing.T) {
 	rt, _ := newRT(t, "Linux", map[string]process.CommandResult{
 		"/usr/sbin/brctl show": {Stdout: []byte("orphan0\n")},
 	})
-	_, err := showFunc{}.Execute(context.Background(), rt, &ShowArgs{})
+	_, err := (showFunc{}).Execute(context.Background(), rt, &ShowArgs{})
 	if err == nil || !strings.Contains(err.Error(), "malformed brctl output") {
 		t.Fatalf("err = %v", err)
 	}
@@ -112,7 +112,7 @@ func TestList(t *testing.T) {
 	rtEmpty, _ := newRT(t, "Linux", map[string]process.CommandResult{
 		"/usr/sbin/brctl show": {},
 	})
-	gotRaw, err := listFunc{}.Execute(context.Background(), rtEmpty, &ListArgs{})
+	gotRaw, err := (listFunc{}).Execute(context.Background(), rtEmpty, &ListArgs{})
 	if err != nil || gotRaw != nil {
 		t.Fatalf("empty list = %#v, %v", gotRaw, err)
 	}
@@ -120,7 +120,7 @@ func TestList(t *testing.T) {
 	rt, _ := newRT(t, "Linux", map[string]process.CommandResult{
 		"/usr/sbin/brctl show": {Stdout: []byte(brctlShow)},
 	})
-	gotRaw, err = listFunc{}.Execute(context.Background(), rt, &ListArgs{})
+	gotRaw, err = (listFunc{}).Execute(context.Background(), rt, &ListArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,19 +207,19 @@ func TestMutatingCommandsLinux(t *testing.T) {
 	br0 := "br0"
 	eth0 := "eth0"
 
-	gotRaw, err := addFunc{}.Execute(context.Background(), rt, &AddArgs{Br: &br0})
+	gotRaw, err := (addFunc{}).Execute(context.Background(), rt, &AddArgs{Br: &br0})
 	if err != nil || gotRaw != "" {
 		t.Fatalf("add = %#v, %v", gotRaw, err)
 	}
-	_, err = deleteFunc{}.Execute(context.Background(), rt, &DeleteArgs{Br: &br0})
+	_, err = (deleteFunc{}).Execute(context.Background(), rt, &DeleteArgs{Br: &br0})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = addIfFunc{}.Execute(context.Background(), rt, &AddIfArgs{Br: &br0, Iface: &eth0})
+	_, err = (addIfFunc{}).Execute(context.Background(), rt, &AddIfArgs{Br: &br0, Iface: &eth0})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = delIfFunc{}.Execute(context.Background(), rt, &DelIfArgs{Br: &br0, Iface: &eth0})
+	_, err = (delIfFunc{}).Execute(context.Background(), rt, &DelIfArgs{Br: &br0, Iface: &eth0})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,7 +297,7 @@ func TestBSDDispatch(t *testing.T) {
 		"/sbin/ifconfig bridge1 destroy":    {},
 	})
 
-	showRaw, err := showFunc{}.Execute(context.Background(), rt, &ShowArgs{})
+	showRaw, err := (showFunc{}).Execute(context.Background(), rt, &ShowArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,17 +312,17 @@ func TestBSDDispatch(t *testing.T) {
 
 	addIf := "bridge1"
 	fxp0 := "fxp0"
-	_, err = addIfFunc{}.Execute(context.Background(), rt, &AddIfArgs{Br: &addIf, Iface: &fxp0})
+	_, err = (addIfFunc{}).Execute(context.Background(), rt, &AddIfArgs{Br: &addIf, Iface: &fxp0})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = stpFunc{}.Execute(context.Background(), rt, &StpArgs{
+	_, err = (stpFunc{}).Execute(context.Background(), rt, &StpArgs{
 		Br: &addIf, State: strPtr("enable"), Iface: &fxp0,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = deleteFunc{}.Execute(context.Background(), rt, &DeleteArgs{Br: &addIf})
+	_, err = (deleteFunc{}).Execute(context.Background(), rt, &DeleteArgs{Br: &addIf})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -349,7 +349,7 @@ func TestNetBSDShow(t *testing.T) {
 		"/sbin/brconfig -a": {Stdout: []byte(
 			"bridge0: flags=41<UP,RUNNING>\n\tInterfaces:\n\tfxp0 flags=3<LEARNING,DISCOVER>\n\tSTP: enabled\n")},
 	})
-	gotRaw, err := showFunc{}.Execute(context.Background(), rt, &ShowArgs{})
+	gotRaw, err := (showFunc{}).Execute(context.Background(), rt, &ShowArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}

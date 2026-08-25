@@ -52,7 +52,7 @@ func TestCurrentRevision(t *testing.T) {
 	rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), Runner: &scriptRunner{}, FS: runtime.NewMemoryFS()}
 	runner := rt.Runner.(*scriptRunner)
 	runner.script = []process.CommandResult{{Stdout: []byte("abc123\n"), ExitCode: 0}}
-	value, err := currentRevisionFunc{}.Execute(context.Background(), rt, &CurrentRevisionArgs{
+	value, err := (currentRevisionFunc{}).Execute(context.Background(), rt, &CurrentRevisionArgs{
 		Cwd: "/repo", Short: true,
 	})
 	if err != nil || value != "abc123" {
@@ -70,7 +70,7 @@ func TestCommitNothingToCommitIsFalse(t *testing.T) {
 	runner.script = []process.CommandResult{
 		{ExitCode: 1, Stderr: []byte("nothing to commit, working tree clean")},
 	}
-	result, err := commitFunc{}.Execute(context.Background(), rt, &CommitArgs{
+	result, err := (commitFunc{}).Execute(context.Background(), rt, &CommitArgs{
 		Cwd: "/repo", Message: "msg",
 	})
 	if err != nil || result != false {

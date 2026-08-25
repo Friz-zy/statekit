@@ -29,7 +29,7 @@ func TestGetZoneFromFile(t *testing.T) {
 	rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: runtime.NewMemoryFS(), Runner: process.NewRunner()}
 	rt.FS.MkdirAll("/etc", 0o755)
 	rt.FS.WriteFile("/etc/timezone", []byte("Europe/Berlin\n"), 0o644)
-	value, err := getZoneFunc{}.Execute(context.Background(), rt, &getZoneArgs{})
+	value, err := (getZoneFunc{}).Execute(context.Background(), rt, &getZoneArgs{})
 	if err != nil || value != "Europe/Berlin" {
 		t.Fatalf("zone = %v, %v", value, err)
 	}
@@ -40,7 +40,7 @@ func TestGetZoneFromLocaltimeSymlink(t *testing.T) {
 	rt.FS.MkdirAll("/etc", 0o755)
 	rt.FS.MkdirAll("/usr/share/zoneinfo", 0o755)
 	rt.FS.Symlink("/usr/share/zoneinfo/Asia/Tokyo", "/etc/localtime")
-	value, err := getZoneFunc{}.Execute(context.Background(), rt, &getZoneArgs{})
+	value, err := (getZoneFunc{}).Execute(context.Background(), rt, &getZoneArgs{})
 	if err != nil || value != "Asia/Tokyo" {
 		t.Fatalf("zone from symlink = %v, %v", value, err)
 	}
@@ -72,7 +72,7 @@ func TestHwclockViaTimedatectlAndAdjtime(t *testing.T) {
 	runner := &scriptRunner{}
 	rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: runtime.NewMemoryFS(), Runner: runner}
 	runner.script = []process.CommandResult{{Stdout: []byte("Clock=UTC\n"), ExitCode: 0}}
-	value, err := getHwclockFunc{}.Execute(context.Background(), rt, &getHwclockArgs{})
+	value, err := (getHwclockFunc{}).Execute(context.Background(), rt, &getHwclockArgs{})
 	if err != nil || value != "UTC" {
 		t.Fatalf("hwclock = %v, %v", value, err)
 	}
@@ -80,7 +80,7 @@ func TestHwclockViaTimedatectlAndAdjtime(t *testing.T) {
 	runner.script = nil
 	rt.FS.MkdirAll("/etc", 0o755)
 	rt.FS.WriteFile("/etc/adjtime", []byte("0.0\n0\nLOCAL\n"), 0o644)
-	value, err = getHwclockFunc{}.Execute(context.Background(), rt, &getHwclockArgs{})
+	value, err = (getHwclockFunc{}).Execute(context.Background(), rt, &getHwclockArgs{})
 	if err != nil || value != "LOCAL" {
 		t.Fatalf("adjtime hwclock = %v, %v", value, err)
 	}

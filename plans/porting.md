@@ -702,7 +702,31 @@ Round totals across scope files: 261 catalog functions, 172 public,
 90 registered, plus the pkgrepo state module and four new state
 families (pkgrepo/debconf/pyenv/pkgbuild + python states).
 
-Next in order: R4 (files/text/templates/misc Linux), R5 per plan, R6-R8
-unblocked via E1-E4, R9 awaits the services tier (E5), R10 cloud, R11
-netdev behind the ADR gate, and the pkg provider long tail as a
-dedicated round. Master-minion families stay excluded.
+R4.1 opened the files round with the first file.* long-tail slice (22
+functions registered via file.RegisterExt): path utilities
+(basename/dirname/normpath/pardir/join with absolute-component reset and
+path_exists_glob over the FS), text edits (prepend with the verbatim
+"Prepended N lines" reply, seek_read/seek_write with in-place overwrite
+semantics, truncate, and the comment/comment_line/uncomment trio whose
+Python $ anchoring before a trailing newline is reproduced by matching
+newline-stripped lines — including upstream's lstrip quirk where
+uncommenting "# pcspkr" leaves the leading space), blockreplace with
+the full marker machinery (auto linesep detection, append_newline None
+semantics, append/prepend/insert_before/insert_after not-found
+branches, dry_run, .bak backup, unified diff or boolean by show_changes,
+and the unterminated-block error), directory ops (makedirs_ walk-up
+messages, makedirs_perms, readdir with . / .. prefix, rmdir with
+recurse/verbose), and links (link/is_hardlink via st_nlink behind
+build-tagged syscall access, is_link, symlink with idempotent-target,
+force-replace, and the absolute-path guard).
+
+The FileSystem abstraction gained Link and Glob (OS + memory backends;
+the memory hard link copies content — divergence documented). Exec
+434→456.
+
+Next in order: R4 continues (file hashes/sums/users/devices slice, cp
+local source, temp/xml/yaml/jinja-minimal/data/defaults, out/ret/
+incron/logrotate/restartcheck, status long tail), R5 per plan, R6-R8
+via E1-E4, R9 awaits E5, R10 cloud, R11 netdev behind ADR gate; the
+pkg provider long tail stays queued as its own round. Master-minion
+families stay excluded.

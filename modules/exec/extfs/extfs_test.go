@@ -25,7 +25,7 @@ func TestMkfs(t *testing.T) {
 	runner := &fakeRunner{result: process.CommandResult{}}
 	rt := &runtime.Runtime{Runner: runner, FS: runtime.NewMemoryFS()}
 
-	got, err := mkfsFunc{}.Execute(context.Background(), rt,
+	got, err := (mkfsFunc{}).Execute(context.Background(), rt,
 		&MkfsArgs{Device: "/dev/sda1", FsType: "ext4"})
 	if err != nil {
 		t.Fatal(err)
@@ -38,7 +38,7 @@ func TestMkfs(t *testing.T) {
 		t.Fatalf("argv = %v", runner.calls[0])
 	}
 
-	full, err := mkfsFunc{}.Execute(context.Background(), rt,
+	full, err := (mkfsFunc{}).Execute(context.Background(), rt,
 		&MkfsArgs{Device: "/dev/sda1", FsType: "ext4", FullReturn: true})
 	if err != nil {
 		t.Fatal(err)
@@ -79,7 +79,7 @@ func TestTune(t *testing.T) {
 	}}
 	rt := &runtime.Runtime{Runner: runner, FS: runtime.NewMemoryFS()}
 
-	got, err := tuneFunc{}.Execute(context.Background(), rt, &TuneArgs{Device: "/dev/sda1"})
+	got, err := (tuneFunc{}).Execute(context.Background(), rt, &TuneArgs{Device: "/dev/sda1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestTune(t *testing.T) {
 		t.Fatalf("tune = %v", got)
 	}
 
-	full, err := tuneFunc{}.Execute(context.Background(), rt,
+	full, err := (tuneFunc{}).Execute(context.Background(), rt,
 		&TuneArgs{Device: "/dev/sda1", FullReturn: true})
 	if err != nil {
 		t.Fatal(err)
@@ -122,7 +122,7 @@ func TestDump(t *testing.T) {
 	runner := &fakeRunner{result: process.CommandResult{Stdout: []byte(dumpe2fsFixture)}}
 	rt := &runtime.Runtime{Runner: runner, FS: runtime.NewMemoryFS()}
 
-	gotRaw, err := dumpFunc{}.Execute(context.Background(), rt, &DumpArgs{Device: "/dev/sda1"})
+	gotRaw, err := (dumpFunc{}).Execute(context.Background(), rt, &DumpArgs{Device: "/dev/sda1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestDump(t *testing.T) {
 		t.Fatalf("dump argv = %v", runner.calls[0])
 	}
 
-	attrs, err := attributesFunc{}.Execute(context.Background(), rt,
+	attrs, err := (attributesFunc{}).Execute(context.Background(), rt,
 		&AttributesArgs{Device: "/dev/sda1"})
 	if err != nil {
 		t.Fatal(err)
@@ -172,7 +172,7 @@ func TestDump(t *testing.T) {
 		t.Fatalf("attributes view = %v", attrs)
 	}
 
-	blocks, err := blocksFunc{}.Execute(context.Background(), rt,
+	blocks, err := (blocksFunc{}).Execute(context.Background(), rt,
 		&BlocksArgs{Device: "/dev/sda1"})
 	if err != nil {
 		t.Fatal(err)

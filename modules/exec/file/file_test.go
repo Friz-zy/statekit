@@ -25,15 +25,15 @@ func TestExistsChecks(t *testing.T) {
 	rt.FS.MkdirAll("/etc", 0o755)
 	rt.FS.WriteFile("/etc/passwd", []byte("data"), 0o644)
 
-	value, err := fileExistsFunc{}.Execute(context.Background(), rt, &fileExistsArgs{Path: "/etc/passwd"})
+	value, err := (fileExistsFunc{}).Execute(context.Background(), rt, &fileExistsArgs{Path: "/etc/passwd"})
 	if err != nil || value != true {
 		t.Fatalf("file_exists = %v, %v", value, err)
 	}
-	value, _ = directoryExistsFunc{}.Execute(context.Background(), rt, &directoryExistsArgs{Path: "/etc"})
+	value, _ = (directoryExistsFunc{}).Execute(context.Background(), rt, &directoryExistsArgs{Path: "/etc"})
 	if value != true {
 		t.Fatalf("directory_exists = %v", value)
 	}
-	value, _ = fileExistsFunc{}.Execute(context.Background(), rt, &fileExistsArgs{Path: "/etc"})
+	value, _ = (fileExistsFunc{}).Execute(context.Background(), rt, &fileExistsArgs{Path: "/etc"})
 	if value != false {
 		t.Fatal("directories are not files")
 	}
@@ -50,14 +50,14 @@ func TestRemoveRemovesAndReportsMissing(t *testing.T) {
 	rt.FS.MkdirAll("/tmp/x/deep", 0o755)
 	rt.FS.WriteFile("/tmp/x/deep/f", []byte("d"), 0o644)
 
-	value, err := removeFunc{}.Execute(context.Background(), rt, &removeArgs{Path: "/tmp/x"})
+	value, err := (removeFunc{}).Execute(context.Background(), rt, &removeArgs{Path: "/tmp/x"})
 	if err != nil || value != true {
 		t.Fatalf("remove = %v, %v", value, err)
 	}
 	if _, statErr := rt.FS.Stat("/tmp/x"); statErr == nil {
 		t.Fatal("subtree must be gone")
 	}
-	value, _ = removeFunc{}.Execute(context.Background(), rt, &removeArgs{Path: "/tmp/missing"})
+	value, _ = (removeFunc{}).Execute(context.Background(), rt, &removeArgs{Path: "/tmp/missing"})
 	if value != false {
 		t.Fatalf("removing missing path must report false, got %v", value)
 	}
@@ -66,19 +66,19 @@ func TestRemoveRemovesAndReportsMissing(t *testing.T) {
 func TestWriteReadAppendContains(t *testing.T) {
 	rt := testRT()
 	rt.FS.MkdirAll("/srv", 0o755)
-	writeFunc{}.Execute(context.Background(), rt, &writeArgs{
+	(writeFunc{}).Execute(context.Background(), rt, &writeArgs{
 		Path: "/srv/conf.txt", Content: "alpha\n", Mode: "0644",
 	})
-	value, err := readFunc{}.Execute(context.Background(), rt, &readArgs{Path: "/srv/conf.txt"})
+	value, err := (readFunc{}).Execute(context.Background(), rt, &readArgs{Path: "/srv/conf.txt"})
 	if err != nil || value != "alpha\n" {
 		t.Fatalf("read = %v, %v", value, err)
 	}
-	appendFunc{}.Execute(context.Background(), rt, &appendArgs{Path: "/srv/conf.txt", Lines: []string{"beta"}})
-	value, _ = readFunc{}.Execute(context.Background(), rt, &readArgs{Path: "/srv/conf.txt"})
+	(appendFunc{}).Execute(context.Background(), rt, &appendArgs{Path: "/srv/conf.txt", Lines: []string{"beta"}})
+	value, _ = (readFunc{}).Execute(context.Background(), rt, &readArgs{Path: "/srv/conf.txt"})
 	if value != "alpha\nbeta\n" {
 		t.Fatalf("append result = %q", value)
 	}
-	value, _ = containsFunc{}.Execute(context.Background(), rt, &containsArgs{Path: "/srv/conf.txt", Text: "beta"})
+	value, _ = (containsFunc{}).Execute(context.Background(), rt, &containsArgs{Path: "/srv/conf.txt", Text: "beta"})
 	if value != true {
 		t.Fatal("contains must find beta")
 	}
@@ -91,7 +91,7 @@ func TestWriteReadAppendContains(t *testing.T) {
 func TestMkdirIdempotent(t *testing.T) {
 	rt := testRT()
 	for range [2]int{} {
-		value, err := mkdirFunc{}.Execute(context.Background(), rt, &mkdirArgs{DirPath: "/a/b/c", Mode: "0755"})
+		value, err := (mkdirFunc{}).Execute(context.Background(), rt, &mkdirArgs{DirPath: "/a/b/c", Mode: "0755"})
 		if err != nil || value != true {
 			t.Fatalf("mkdir = %v, %v", value, err)
 		}
@@ -118,7 +118,7 @@ func TestCopyRecursive(t *testing.T) {
 	rt.FS.WriteFile("/src/a", []byte("A"), 0o600)
 	rt.FS.WriteFile("/src/sub/b", []byte("B"), 0o640)
 
-	value, err := copyFunc{}.Execute(context.Background(), rt, &copyArgs{Src: "/src", Dst: "/dst", Recurse: true})
+	value, err := (copyFunc{}).Execute(context.Background(), rt, &copyArgs{Src: "/src", Dst: "/dst", Recurse: true})
 	if err != nil || value != true {
 		t.Fatalf("copy = %v, %v", value, err)
 	}
@@ -136,7 +136,7 @@ func TestCopyRecursive(t *testing.T) {
 func TestStatsShape(t *testing.T) {
 	rt := testRT()
 	rt.FS.WriteFile("/f", []byte("12345"), 0o640)
-	ret, err := statsFunc{}.Execute(context.Background(), rt, &statsArgs{Path: "/f"})
+	ret, err := (statsFunc{}).Execute(context.Background(), rt, &statsArgs{Path: "/f"})
 	if err != nil {
 		t.Fatalf("stats: %v", err)
 	}
@@ -153,11 +153,11 @@ func TestReadlinkCanonicalize(t *testing.T) {
 	rt.FS.Symlink("/real/data", "/link1")
 	rt.FS.Symlink("/link1", "/link2")
 
-	value, err := readlinkFunc{}.Execute(context.Background(), rt, &readlinkArgs{Path: "/link2"})
+	value, err := (readlinkFunc{}).Execute(context.Background(), rt, &readlinkArgs{Path: "/link2"})
 	if err != nil || value != "/link1" {
 		t.Fatalf("readlink = %v, %v", value, err)
 	}
-	value, _ = readlinkFunc{}.Execute(context.Background(), rt, &readlinkArgs{Path: "/link2", Canonicalize: true})
+	value, _ = (readlinkFunc{}).Execute(context.Background(), rt, &readlinkArgs{Path: "/link2", Canonicalize: true})
 	if value != "/real/data" {
 		t.Fatalf("canonicalized readlink = %v", value)
 	}
@@ -166,7 +166,7 @@ func TestReadlinkCanonicalize(t *testing.T) {
 func TestRename(t *testing.T) {
 	rt := testRT()
 	rt.FS.WriteFile("/old", []byte("x"), 0o644)
-	value, err := renameFunc{}.Execute(context.Background(), rt, &renameArgs{Src: "/old", Dst: "/new"})
+	value, err := (renameFunc{}).Execute(context.Background(), rt, &renameArgs{Src: "/old", Dst: "/new"})
 	if err != nil || value != true {
 		t.Fatalf("rename = %v, %v", value, err)
 	}

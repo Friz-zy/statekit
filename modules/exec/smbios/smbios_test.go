@@ -76,7 +76,7 @@ func TestRecords(t *testing.T) {
 		"/usr/sbin/dmidecode": {Stdout: []byte(dmiDump)},
 	})
 
-	gotRaw, err := recordsFunc{}.Execute(context.Background(), rt, &RecordsArgs{})
+	gotRaw, err := (recordsFunc{}).Execute(context.Background(), rt, &RecordsArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestRecordsTypeFieldsAndUnclean(t *testing.T) {
 
 	recType := "4"
 	fields := []string{"family"}
-	gotRaw, err := recordsFunc{}.Execute(context.Background(), rt, &RecordsArgs{
+	gotRaw, err := (recordsFunc{}).Execute(context.Background(), rt, &RecordsArgs{
 		RecType: &recType, Fields: fields,
 	})
 	if err != nil {
@@ -162,7 +162,7 @@ func TestRecordsTypeFieldsAndUnclean(t *testing.T) {
 	}
 
 	cleanFalse := false
-	gotRaw, err = recordsFunc{}.Execute(context.Background(), rt, &RecordsArgs{Clean: &cleanFalse})
+	gotRaw, err = (recordsFunc{}).Execute(context.Background(), rt, &RecordsArgs{Clean: &cleanFalse})
 	if err != nil {
 		t.Fatal(err)
 	}

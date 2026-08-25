@@ -24,7 +24,7 @@ func TestHashDeterministic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash: %v", err)
 	}
-	second, _ := hashFunc{}.Execute(context.Background(), newRT(), &HashArgs{Value: "salt", Algorithm: "sha256"})
+	second, _ := (hashFunc{}).Execute(context.Background(), newRT(), &HashArgs{Value: "salt", Algorithm: "sha256"})
 	if first != second || len(first.(string)) != 64 {
 		t.Fatalf("sha256 hash wrong: %v", first)
 	}

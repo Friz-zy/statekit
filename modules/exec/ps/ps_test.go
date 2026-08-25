@@ -150,7 +150,7 @@ func (f *fakeRunner) Run(_ context.Context, cmd process.Command) process.Command
 
 func TestGetPidList(t *testing.T) {
 	rt, _ := newRT(t, nil)
-	gotRaw, err := getPIDListFunc{}.Execute(context.Background(), rt, &getPidsArgs{})
+	gotRaw, err := (getPIDListFunc{}).Execute(context.Background(), rt, &getPidsArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +322,7 @@ func TestPgrepPkill(t *testing.T) {
 func TestCpuPercentAndTimes(t *testing.T) {
 	rt, ticks := newRT(t, nil)
 
-	gotRaw, err := cpuPercentFunc{}.Execute(context.Background(), rt, &CpuPercentArgs{Interval: floatPtr(0)})
+	gotRaw, err := (cpuPercentFunc{}).Execute(context.Background(), rt, &CpuPercentArgs{Interval: floatPtr(0)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +333,7 @@ func TestCpuPercentAndTimes(t *testing.T) {
 		t.Fatalf("interval sampling must tick once, got %d", *ticks)
 	}
 
-	gotRaw, err = cpuPercentFunc{}.Execute(context.Background(), rt, &CpuPercentArgs{
+	gotRaw, err = (cpuPercentFunc{}).Execute(context.Background(), rt, &CpuPercentArgs{
 		Interval: floatPtr(0), PerCpu: true,
 	})
 	if err != nil {
@@ -371,7 +371,7 @@ func TestCpuPercentAndTimes(t *testing.T) {
 func TestMemory(t *testing.T) {
 	rt, _ := newRT(t, nil)
 
-	vmRaw, err := virtualMemoryFunc{}.Execute(context.Background(), rt, struct{}{})
+	vmRaw, err := (virtualMemoryFunc{}).Execute(context.Background(), rt, struct{}{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -390,7 +390,7 @@ func TestMemory(t *testing.T) {
 		t.Fatalf("percent = %#v", vm["percent"])
 	}
 
-	swRaw, err := swapMemoryFunc{}.Execute(context.Background(), rt, struct{}{})
+	swRaw, err := (swapMemoryFunc{}).Execute(context.Background(), rt, struct{}{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -404,7 +404,7 @@ func TestMemory(t *testing.T) {
 		t.Fatalf("swap io = %#v", sw)
 	}
 
-	tpmRaw, err := totalPhysicalMemoryFunc{}.Execute(context.Background(), rt, &TotalPhysicalMemoryArgs{})
+	tpmRaw, err := (totalPhysicalMemoryFunc{}).Execute(context.Background(), rt, &TotalPhysicalMemoryArgs{})
 	if err != nil || tpmRaw != int64(4000000*kb) {
 		t.Fatalf("total_physical_memory = %#v, %v", tpmRaw, err)
 	}
@@ -413,7 +413,7 @@ func TestMemory(t *testing.T) {
 func TestNumCpusAndBootTime(t *testing.T) {
 	rt, _ := newRT(t, nil)
 
-	gotRaw, err := numCpusFunc{}.Execute(context.Background(), rt, &NumCpusArgs{})
+	gotRaw, err := (numCpusFunc{}).Execute(context.Background(), rt, &NumCpusArgs{})
 	if err != nil || gotRaw != int64(2) {
 		t.Fatalf("num_cpus = %#v, %v", gotRaw, err)
 	}
@@ -490,7 +490,7 @@ func TestNetworkAndDiskIOCounters(t *testing.T) {
 
 func TestGetUsers(t *testing.T) {
 	rt, _ := newRT(t, nil)
-	gotRaw, err := getUsersFunc{}.Execute(context.Background(), rt, &GetUsersArgs{})
+	gotRaw, err := (getUsersFunc{}).Execute(context.Background(), rt, &GetUsersArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -545,7 +545,7 @@ func TestDiskPartitionsAndUsage(t *testing.T) {
 	}
 
 	// Composed function merges usage into each partition entry.
-	dpuRaw, err := diskPartitionUsageFunc{}.Execute(context.Background(), rt,
+	dpuRaw, err := (diskPartitionUsageFunc{}).Execute(context.Background(), rt,
 		&DiskPartitionsArgs{All: true})
 	if err != nil {
 		t.Fatal(err)

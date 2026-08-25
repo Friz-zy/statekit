@@ -149,7 +149,7 @@ func TestRPMMakeSrcPkg(t *testing.T) {
 		"/testbed/in/hello-1.0.tar.gz": "tarball bytes",
 	})
 
-	ret, err := makeSrcPkgFunc{}.Execute(context.Background(), rt, &MakeSrcPkgArgs{
+	ret, err := (makeSrcPkgFunc{}).Execute(context.Background(), rt, &MakeSrcPkgArgs{
 		DestDir: "/testbed/out/SRPMS",
 		Spec:    "/testbed/in/hello.spec",
 		Sources: []any{"/testbed/in/hello-1.0.tar.gz"},
@@ -190,7 +190,7 @@ func TestRPMMakeSrcPkgFailure(t *testing.T) {
 	rt := pkgRT(t, "redhat", runner, map[string]string{
 		"/testbed/in/hello.spec": "Name: hello\n",
 	})
-	_, err := makeSrcPkgFunc{}.Execute(context.Background(), rt, &MakeSrcPkgArgs{
+	_, err := (makeSrcPkgFunc{}).Execute(context.Background(), rt, &MakeSrcPkgArgs{
 		DestDir: "/testbed/out",
 		Spec:    "/testbed/in/hello.spec",
 		Sources: []any{},
@@ -209,7 +209,7 @@ func TestRPMMakeSrcPkgRemoteSchemeRejected(t *testing.T) {
 	rt := pkgRT(t, "redhat", &seqRunner{}, map[string]string{
 		"/testbed/in/hello.spec": "Name: hello\n",
 	})
-	_, err := makeSrcPkgFunc{}.Execute(context.Background(), rt, &MakeSrcPkgArgs{
+	_, err := (makeSrcPkgFunc{}).Execute(context.Background(), rt, &MakeSrcPkgArgs{
 		DestDir: "/testbed/out",
 		Spec:    "https://example.com/hello.spec",
 	})
@@ -267,7 +267,7 @@ func TestRPMBuildOrchestration(t *testing.T) {
 		"/testbed/dep/dep.rpm":         "dep",
 	})
 
-	retAny, err := buildFunc{}.Execute(context.Background(), rt, &BuildArgs{
+	retAny, err := (buildFunc{}).Execute(context.Background(), rt, &BuildArgs{
 		Runas:   "root",
 		Tgt:     "epel-8-x86_64",
 		DestDir: "/testbed/out",
@@ -328,7 +328,7 @@ func TestRPMMakeRepoUnsigned(t *testing.T) {
 	rt := pkgRT(t, "redhat", runner, map[string]string{
 		"/testbed/repo/hello.rpm": "rpm",
 	})
-	ret, err := makeRepoFunc{}.Execute(context.Background(), rt, &MakeRepoArgs{
+	ret, err := (makeRepoFunc{}).Execute(context.Background(), rt, &MakeRepoArgs{
 		RepoDir: "/testbed/repo",
 	})
 	if err != nil {
@@ -356,7 +356,7 @@ func TestRPMMakeRepoKeyidWithoutPillar(t *testing.T) {
 	rt := pkgRT(t, "redhat", &seqRunner{}, map[string]string{
 		"/testbed/repo/hello.rpm": "rpm",
 	})
-	_, err := makeRepoFunc{}.Execute(context.Background(), rt, &MakeRepoArgs{
+	_, err := (makeRepoFunc{}).Execute(context.Background(), rt, &MakeRepoArgs{
 		RepoDir: "/testbed/repo",
 		Keyid:   strPtrPkg("FBB75451"),
 	})

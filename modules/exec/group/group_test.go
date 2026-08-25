@@ -41,7 +41,7 @@ func newRT() (*runtime.Runtime, *fakeRunner) {
 
 func TestGroupInfo(t *testing.T) {
 	rt, _ := newRT()
-	value, err := infoFunc{}.Execute(context.Background(), rt, &InfoArgs{Name: "devs"})
+	value, err := (infoFunc{}).Execute(context.Background(), rt, &InfoArgs{Name: "devs"})
 	if err != nil {
 		t.Fatalf("group.info: %v", err)
 	}
@@ -57,15 +57,15 @@ func TestGroupInfo(t *testing.T) {
 
 func TestAddAndDelete(t *testing.T) {
 	rt, runner := newRT()
-	addFunc{}.Execute(context.Background(), rt, &AddArgs{Name: "ops", GID: "3000"})
+	(addFunc{}).Execute(context.Background(), rt, &AddArgs{Name: "ops", GID: "3000"})
 	if got := strings.Join(runner.calls[0], " "); got != "groupadd -g 3000 ops" {
 		t.Fatalf("groupadd argv = %q", got)
 	}
-	deleteFunc{}.Execute(context.Background(), rt, &DeleteArgs{Name: "ops"})
+	(deleteFunc{}).Execute(context.Background(), rt, &DeleteArgs{Name: "ops"})
 	if got := strings.Join(runner.calls[1], " "); got != "groupdel ops" {
 		t.Fatalf("groupdel argv = %q", got)
 	}
-	chGIDFunc{}.Execute(context.Background(), rt, &ChGIDArgs{Name: "ops", GID: "3100"})
+	(chGIDFunc{}).Execute(context.Background(), rt, &ChGIDArgs{Name: "ops", GID: "3100"})
 	if got := strings.Join(runner.calls[2], " "); got != "groupmod -g 3100 ops" {
 		t.Fatalf("groupmod argv = %q", got)
 	}

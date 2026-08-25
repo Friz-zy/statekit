@@ -90,7 +90,7 @@ func sortedKeys(m map[string]any) []string {
 
 func TestInterfaces(t *testing.T) {
 	rt, _ := newIfaceRT(t, nil)
-	gotRaw, err := interfacesFunc{}.Execute(context.Background(), rt, &InterfacesArgs{})
+	gotRaw, err := (interfacesFunc{}).Execute(context.Background(), rt, &InterfacesArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestIfaceAccessors(t *testing.T) {
 
 	hf := hwAddrFunc{}
 	gotRaw, err := hf.Execute(context.Background(), rt, &HwAddrArgs{Iface: "ens3"})
-	dbg, _ := interfacesFunc{}.Execute(context.Background(), rt, &InterfacesArgs{})
+	dbg, _ := (interfacesFunc{}).Execute(context.Background(), rt, &InterfacesArgs{})
 	t.Logf("DBG ifaces=%#v", dbg)
 	if err != nil || gotRaw != "de:ad:be:ef:00:01" {
 		t.Fatalf("hw_addr = %#v, %v", gotRaw, err)
@@ -287,7 +287,7 @@ func TestActiveTCP(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gotRaw, err := activeTCPFunc{}.Execute(context.Background(), rt, &ActiveTCPArgs{})
+	gotRaw, err := (activeTCPFunc{}).Execute(context.Background(), rt, &ActiveTCPArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -356,7 +356,7 @@ func TestArp(t *testing.T) {
 		"arp -an": {Stdout: []byte(
 			"? (172.17.0.1) at de:ad:be:ef:00:99 [ether] on ens3\n? (10.0.0.1) at <incomplete> on eth0\n")},
 	})
-	gotRaw, err := arpFunc{}.Execute(context.Background(), rt, &ArpArgs{})
+	gotRaw, err := (arpFunc{}).Execute(context.Background(), rt, &ArpArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}

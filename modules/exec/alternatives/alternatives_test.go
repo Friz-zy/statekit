@@ -69,13 +69,13 @@ func TestDisplay(t *testing.T) {
 		"update-alternatives\x00--display\x00better-world": {Stdout: []byte("undoubtedly-salt")},
 	}}
 	rt := altRT(t, "redhat", runner, nil)
-	got, _ := displayFunc{}.Execute(context.Background(), rt, &DisplayArgs{Name: "better-world"})
+	got, _ := (displayFunc{}).Execute(context.Background(), rt, &DisplayArgs{Name: "better-world"})
 	if got != "salt" || len(runner.calls) != 1 || runner.calls[0][0] != "alternatives" {
 		t.Fatalf("redhat display = %#v calls=%#v", got, runner.calls)
 	}
 
 	rt = altRT(t, "suse", runner, nil)
-	got, _ = displayFunc{}.Execute(context.Background(), rt, &DisplayArgs{Name: "better-world"})
+	got, _ = (displayFunc{}).Execute(context.Background(), rt, &DisplayArgs{Name: "better-world"})
 	if got != "undoubtedly-salt" || runner.calls[len(runner.calls)-1][0] != "update-alternatives" {
 		t.Fatalf("suse display = %#v", got)
 	}
@@ -83,7 +83,7 @@ func TestDisplay(t *testing.T) {
 	runner.results["alternatives\x00--display\x00better-world"] =
 		process.CommandResult{ExitCode: 1, Stdout: []byte("salt-out"), Stderr: []byte("salt-err")}
 	rt = altRT(t, "redhat", runner, nil)
-	got, _ = displayFunc{}.Execute(context.Background(), rt, &DisplayArgs{Name: "better-world"})
+	got, _ = (displayFunc{}).Execute(context.Background(), rt, &DisplayArgs{Name: "better-world"})
 	if got != "salt-err" {
 		t.Fatalf("failure display = %#v; want stderr", got)
 	}
@@ -98,12 +98,12 @@ func TestShowCurrent(t *testing.T) {
 	if err := rt.FS.Symlink("/etc/alternatives/salt", "/testbed/etc/alternatives/better-world"); err != nil {
 		t.Fatal(err)
 	}
-	got, _ := showCurrentFunc{}.Execute(context.Background(), rt, &ShowCurrentArgs{Name: "better-world"})
+	got, _ := (showCurrentFunc{}).Execute(context.Background(), rt, &ShowCurrentArgs{Name: "better-world"})
 	if got != "/etc/alternatives/salt" {
 		t.Fatalf("show_current = %#v", got)
 	}
 
-	got, _ = showCurrentFunc{}.Execute(context.Background(), rt, &ShowCurrentArgs{Name: "hell"})
+	got, _ = (showCurrentFunc{}).Execute(context.Background(), rt, &ShowCurrentArgs{Name: "hell"})
 	if got != false {
 		t.Fatalf("missing link = %#v; want false", got)
 	}
@@ -118,13 +118,13 @@ func TestCheckInstalled(t *testing.T) {
 	if err := rt.FS.Symlink("/etc/alternatives/salt", "/testbed/etc/alternatives/better-world"); err != nil {
 		t.Fatal(err)
 	}
-	got, _ := checkInstalledFunc{}.Execute(context.Background(), rt, &CheckInstalledArgs{
+	got, _ := (checkInstalledFunc{}).Execute(context.Background(), rt, &CheckInstalledArgs{
 		Name: "better-world", Path: "/etc/alternatives/salt",
 	})
 	if got != true {
 		t.Fatalf("check_installed = %#v", got)
 	}
-	got, _ = checkInstalledFunc{}.Execute(context.Background(), rt, &CheckInstalledArgs{
+	got, _ = (checkInstalledFunc{}).Execute(context.Background(), rt, &CheckInstalledArgs{
 		Name: "help", Path: "/etc/alternatives/salt",
 	})
 	if got != false {
@@ -142,7 +142,7 @@ func TestInstall(t *testing.T) {
 
 	rt := altRT(t, "redhat", runner, nil)
 	runner.results[key("alternatives")] = process.CommandResult{Stdout: []byte("salt")}
-	got, _ := installFunc{}.Execute(context.Background(), rt, &InstallArgs{
+	got, _ := (installFunc{}).Execute(context.Background(), rt, &InstallArgs{
 		Name: "better-world", Link: "/usr/bin/better-world", Path: "/usr/bin/salt", Priority: 100,
 	})
 	if got != "salt" {
@@ -151,7 +151,7 @@ func TestInstall(t *testing.T) {
 
 	rt = altRT(t, "debian", runner, nil)
 	runner.results[key("update-alternatives")] = process.CommandResult{Stdout: []byte("salt")}
-	got, _ = installFunc{}.Execute(context.Background(), rt, &InstallArgs{
+	got, _ = (installFunc{}).Execute(context.Background(), rt, &InstallArgs{
 		Name: "better-world", Link: "/usr/bin/better-world", Path: "/usr/bin/salt", Priority: 100,
 	})
 	if got != "salt" {
@@ -161,7 +161,7 @@ func TestInstall(t *testing.T) {
 	runner.results[key("alternatives")] = process.CommandResult{ExitCode: 1,
 		Stdout: []byte("salt-out"), Stderr: []byte("salt-err")}
 	rt = altRT(t, "redhat", runner, nil)
-	got, _ = installFunc{}.Execute(context.Background(), rt, &InstallArgs{
+	got, _ = (installFunc{}).Execute(context.Background(), rt, &InstallArgs{
 		Name: "better-world", Link: "/usr/bin/better-world", Path: "/usr/bin/salt", Priority: 100,
 	})
 	if got != "salt-err" {
@@ -178,7 +178,7 @@ func TestRemove(t *testing.T) {
 
 	rt := altRT(t, "redhat", runner, nil)
 	runner.results[removeKey("alternatives")] = process.CommandResult{Stdout: []byte("salt")}
-	got, _ := removeFunc{}.Execute(context.Background(), rt, &RemoveArgs{
+	got, _ := (removeFunc{}).Execute(context.Background(), rt, &RemoveArgs{
 		Name: "better-world", Path: "/usr/bin/better-world",
 	})
 	if got != "salt" {
@@ -187,7 +187,7 @@ func TestRemove(t *testing.T) {
 
 	rt = altRT(t, "debian", runner, nil)
 	runner.results[removeKey("update-alternatives")] = process.CommandResult{Stdout: []byte("salt")}
-	got, _ = removeFunc{}.Execute(context.Background(), rt, &RemoveArgs{
+	got, _ = (removeFunc{}).Execute(context.Background(), rt, &RemoveArgs{
 		Name: "better-world", Path: "/usr/bin/better-world",
 	})
 	if got != "salt" {
@@ -197,7 +197,7 @@ func TestRemove(t *testing.T) {
 	runner.results[removeKey("alternatives")] = process.CommandResult{ExitCode: 1,
 		Stdout: []byte("salt-out"), Stderr: []byte("salt-err")}
 	rt = altRT(t, "redhat", runner, nil)
-	got, _ = removeFunc{}.Execute(context.Background(), rt, &RemoveArgs{
+	got, _ = (removeFunc{}).Execute(context.Background(), rt, &RemoveArgs{
 		Name: "better-world", Path: "/usr/bin/better-world",
 	})
 	if got != "salt-err" {
@@ -222,7 +222,7 @@ Priority: 40
 		"update-alternatives\x00--query\x00editor": {Stdout: []byte(queryOut)},
 	}}
 	rt := altRT(t, "debian", runner, nil)
-	got, _ := showLinkFunc{}.Execute(context.Background(), rt, &ShowLinkArgs{Name: "editor"})
+	got, _ := (showLinkFunc{}).Execute(context.Background(), rt, &ShowLinkArgs{Name: "editor"})
 	if got != "/usr/bin/editor" {
 		t.Fatalf("debian show_link = %#v", got)
 	}
@@ -238,7 +238,7 @@ func TestShowLinkRedHat(t *testing.T) {
 	rt := altRT(t, "redhat", runner, map[string]string{
 		"/testbed/var/lib/alternatives/ld": ldData,
 	})
-	got, _ := showLinkFunc{}.Execute(context.Background(), rt, &ShowLinkArgs{Name: "ld"})
+	got, _ := (showLinkFunc{}).Execute(context.Background(), rt, &ShowLinkArgs{Name: "ld"})
 	if got != "/usr/bin/ld" {
 		t.Fatalf("redhat show_link = %#v", got)
 	}
@@ -253,7 +253,7 @@ func TestShowLinkSuse(t *testing.T) {
 	rt := altRT(t, "suse", &fakeRunner{}, map[string]string{
 		"/testbed/var/lib/rpm/alternatives/ld": ldData,
 	})
-	got, _ := showLinkFunc{}.Execute(context.Background(), rt, &ShowLinkArgs{Name: "ld"})
+	got, _ := (showLinkFunc{}).Execute(context.Background(), rt, &ShowLinkArgs{Name: "ld"})
 	if got != "/usr/bin/ld" {
 		t.Fatalf("suse show_link = %#v", got)
 	}

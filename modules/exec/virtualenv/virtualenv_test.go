@@ -83,7 +83,7 @@ func TestCreateVenvBranch(t *testing.T) {
 	runner := &fakeRunner{results: map[string]process.CommandResult{}}
 	rt := envRT(t, runner, nil)
 
-	ret, err := createFunc{}.Execute(context.Background(), rt, &CreateArgs{
+	ret, err := (createFunc{}).Execute(context.Background(), rt, &CreateArgs{
 		Path: "/venvs/app",
 	})
 	if err != nil {
@@ -99,7 +99,7 @@ func TestCreateVenvBranch(t *testing.T) {
 	}
 
 	upgradeTrue, symlinksTrue := true, true
-	_, err = createFunc{}.Execute(context.Background(), rt, &CreateArgs{
+	_, err = (createFunc{}).Execute(context.Background(), rt, &CreateArgs{
 		Path: "/venvs/full", VenvBin: strPtr("venv"),
 		Upgrade:            &upgradeTrue,
 		Symlinks:           &symlinksTrue,
@@ -123,7 +123,7 @@ func TestCreateVenvOnlyGuards(t *testing.T) {
 	rt := envRT(t, &fakeRunner{results: map[string]process.CommandResult{}}, nil)
 
 	python := "python3.12"
-	_, err := createFunc{}.Execute(context.Background(), rt, &CreateArgs{
+	_, err := (createFunc{}).Execute(context.Background(), rt, &CreateArgs{
 		Path: "/venvs/x", VenvBin: strPtr("venv"), Python: &python,
 	})
 	if err == nil || !strings.Contains(err.Error(), "not supported by 'venv'") ||
@@ -132,7 +132,7 @@ func TestCreateVenvOnlyGuards(t *testing.T) {
 	}
 
 	extra := "/opt/pyvenvs"
-	_, err = createFunc{}.Execute(context.Background(), rt, &CreateArgs{
+	_, err = (createFunc{}).Execute(context.Background(), rt, &CreateArgs{
 		Path: "/venvs/x", VenvBin: strPtr("venv"), ExtraSearchDir: &extra,
 	})
 	if err == nil || !strings.Contains(err.Error(), "`extra_search_dir`") {
@@ -140,7 +140,7 @@ func TestCreateVenvOnlyGuards(t *testing.T) {
 	}
 
 	noDownload := true
-	_, err = createFunc{}.Execute(context.Background(), rt, &CreateArgs{
+	_, err = (createFunc{}).Execute(context.Background(), rt, &CreateArgs{
 		Path: "/venvs/x", VenvBin: strPtr("venv"), NeverDownload: &noDownload,
 	})
 	if err == nil || !strings.Contains(err.Error(), "`never_download`") {
@@ -148,7 +148,7 @@ func TestCreateVenvOnlyGuards(t *testing.T) {
 	}
 
 	prompt := "env"
-	_, err = createFunc{}.Execute(context.Background(), rt, &CreateArgs{
+	_, err = (createFunc{}).Execute(context.Background(), rt, &CreateArgs{
 		Path: "/venvs/x", VenvBin: strPtr("venv"), Prompt: &prompt,
 	})
 	if err == nil || !strings.Contains(err.Error(), "`prompt`") {
@@ -165,7 +165,7 @@ func TestCreateVirtualenvTool(t *testing.T) {
 	runner.results[verKey] = process.CommandResult{Stdout: []byte("20.23.0\n")}
 
 	upgrade := true
-	_, err := createFunc{}.Execute(context.Background(), rt, &CreateArgs{
+	_, err := (createFunc{}).Execute(context.Background(), rt, &CreateArgs{
 		Path: "/venvs/x", VenvBin: strPtr("virtualenv"), Upgrade: &upgrade,
 	})
 	if err == nil || !strings.Contains(err.Error(),
@@ -173,7 +173,7 @@ func TestCreateVirtualenvTool(t *testing.T) {
 		t.Fatalf("upgrade guard = %v", err)
 	}
 	symlinks := true
-	_, err = createFunc{}.Execute(context.Background(), rt, &CreateArgs{
+	_, err = (createFunc{}).Execute(context.Background(), rt, &CreateArgs{
 		Path: "/venvs/x", VenvBin: strPtr("virtualenv"), Symlinks: &symlinks,
 	})
 	if err == nil || !strings.Contains(err.Error(), "`symlinks`") {
@@ -184,7 +184,7 @@ func TestCreateVirtualenvTool(t *testing.T) {
 	// quoting inside a single argv token.
 	prompt := "my env"
 	noDownload := false
-	_, err = createFunc{}.Execute(context.Background(), rt, &CreateArgs{
+	_, err = (createFunc{}).Execute(context.Background(), rt, &CreateArgs{
 		Path:          "/venvs/x",
 		VenvBin:       strPtr("virtualenv"),
 		Prompt:        &prompt,
@@ -213,7 +213,7 @@ func TestCreateVirtualenvTool(t *testing.T) {
 
 	// --python resolution guard.
 	missingPython := "/nonexistent/python"
-	_, err = createFunc{}.Execute(context.Background(), rt, &CreateArgs{
+	_, err = (createFunc{}).Execute(context.Background(), rt, &CreateArgs{
 		Path: "/venvs/x", VenvBin: strPtr("virtualenv"), Python: &missingPython,
 	})
 	if err == nil || err.Error() != "Cannot find requested python (/nonexistent/python)." {
@@ -223,7 +223,7 @@ func TestCreateVirtualenvTool(t *testing.T) {
 	// Failure return keeps the full result dict instead of an error.
 	failKey := strings.Join([]string{"virtualenv", "/venvs/fail"}, "\x00")
 	runner.results[failKey] = process.CommandResult{ExitCode: 2, Stderr: []byte("cannot create")}
-	ret, cerr := createFunc{}.Execute(context.Background(), rt, &CreateArgs{
+	ret, cerr := (createFunc{}).Execute(context.Background(), rt, &CreateArgs{
 		Path: "/venvs/fail", VenvBin: strPtr("virtualenv"),
 	})
 	if cerr != nil {
@@ -246,7 +246,7 @@ func TestVirtualenvVerParsing(t *testing.T) {
 	runner.results[verKey] = process.CommandResult{
 		Stdout: []byte("20.23.0 (from pip)\n"),
 	}
-	got, err := virtualenvVerFunc{}.Execute(context.Background(), rt,
+	got, err := (virtualenvVerFunc{}).Execute(context.Background(), rt,
 		&VirtualenvVerArgs{VenvBin: "/usr/bin/virtualenv"})
 	if err != nil {
 		t.Fatal(err)
@@ -258,7 +258,7 @@ func TestVirtualenvVerParsing(t *testing.T) {
 
 	// rc suffix stripping.
 	runner.results[verKey] = process.CommandResult{Stdout: []byte("1.9rc1\n")}
-	got, _ = virtualenvVerFunc{}.Execute(context.Background(), rt,
+	got, _ = (virtualenvVerFunc{}).Execute(context.Background(), rt,
 		&VirtualenvVerArgs{VenvBin: "/usr/bin/virtualenv"})
 	list = got.([]int)
 	if len(list) != 2 || list[0] != 1 || list[1] != 9 {
@@ -267,7 +267,7 @@ func TestVirtualenvVerParsing(t *testing.T) {
 
 	// Empty output raises the verbatim error with rendered cmd and dict.
 	runner.results[verKey] = process.CommandResult{}
-	_, err = virtualenvVerFunc{}.Execute(context.Background(), rt,
+	_, err = (virtualenvVerFunc{}).Execute(context.Background(), rt,
 		&VirtualenvVerArgs{VenvBin: "/usr/bin/virtualenv"})
 	if err == nil || !strings.HasPrefix(err.Error(),
 		"Unable to get the virtualenv version output using '['/usr/bin/virtualenv', '--version']'. Returned data: ") {
@@ -293,7 +293,7 @@ func TestGetSitePackagesAndVerify(t *testing.T) {
 		`import sysconfig; print(sysconfig.get_path("purelib"))`}, "\x00")
 	runner.results[sitePkgKey] = process.CommandResult{Stdout: []byte("/venvs/app/lib/python3.12/site-packages\n")}
 
-	got, err := getSitePackagesFunc{}.Execute(context.Background(), rt,
+	got, err := (getSitePackagesFunc{}).Execute(context.Background(), rt,
 		&GetSitePackagesArgs{Venv: "/venvs/app"})
 	if err != nil {
 		t.Fatal(err)
@@ -303,7 +303,7 @@ func TestGetSitePackagesAndVerify(t *testing.T) {
 	}
 
 	// Non-venv path raises the verbatim verification error.
-	_, err = getSitePackagesFunc{}.Execute(context.Background(), rt,
+	_, err = (getSitePackagesFunc{}).Execute(context.Background(), rt,
 		&GetSitePackagesArgs{Venv: "/not/a/venv"})
 	if err == nil || err.Error() !=
 		"Path '/not/a/venv' does not appear to be a virtualenv: '/not/a/venv/bin/python' not found." {
@@ -313,7 +313,7 @@ func TestGetSitePackagesAndVerify(t *testing.T) {
 	// Failing exec surfaces stdout+stderr combined.
 	runner.results[sitePkgKey] = process.CommandResult{ExitCode: 1,
 		Stdout: []byte("out-line"), Stderr: []byte("err-line")}
-	_, err = getSitePackagesFunc{}.Execute(context.Background(), rt,
+	_, err = (getSitePackagesFunc{}).Execute(context.Background(), rt,
 		&GetSitePackagesArgs{Venv: "/venvs/app"})
 	if err == nil || err.Error() != "out-line\nerr-line" {
 		t.Fatalf("exec failure = %v", err)
@@ -344,7 +344,7 @@ func TestCreatePipBootstrapBoundary(t *testing.T) {
 	runner.results["virtualenv\x00--version"] =
 		process.CommandResult{Stdout: []byte("20.23.0\n")}
 
-	_, err := createFunc{}.Execute(context.Background(), rt, &CreateArgs{
+	_, err := (createFunc{}).Execute(context.Background(), rt, &CreateArgs{
 		Path: "/venvs/x", VenvBin: strPtr("virtualenv"), Pip: true,
 	})
 	var unsupported *runtime.UnsupportedError

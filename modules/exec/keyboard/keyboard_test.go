@@ -38,7 +38,7 @@ const kbdFixture = "# config\nXKBLAYOUT=us\nXKBOPTIONS=ctrl:nocaps\n"
 
 func TestGetLayout(t *testing.T) {
 	rt, _ := newRT(kbdFixture)
-	value, err := getLayoutFunc{}.Execute(context.Background(), rt, &GetLayoutArgs{})
+	value, err := (getLayoutFunc{}).Execute(context.Background(), rt, &GetLayoutArgs{})
 	if err != nil || value != "us" {
 		t.Fatalf("layout = %v, %v", value, err)
 	}
@@ -46,7 +46,7 @@ func TestGetLayout(t *testing.T) {
 
 func TestSetLayoutUpdatesFileAndKeepsOptions(t *testing.T) {
 	rt, runner := newRT(kbdFixture)
-	setLayoutFunc{}.Execute(context.Background(), rt, &SetLayoutArgs{Layout: "de"})
+	(setLayoutFunc{}).Execute(context.Background(), rt, &SetLayoutArgs{Layout: "de"})
 	data, _ := rt.FS.ReadFile(keyboardConfig)
 	rendered := string(data)
 	if !strings.Contains(rendered, `XKBLAYOUT="de"`) || !strings.Contains(rendered, "XKBOPTIONS=ctrl:nocaps") {
@@ -60,7 +60,7 @@ func TestSetLayoutUpdatesFileAndKeepsOptions(t *testing.T) {
 
 func TestSetLayoutIdempotent(t *testing.T) {
 	rt, _ := newRT(kbdFixture)
-	message, _ := setLayoutFunc{}.Execute(context.Background(), rt, &SetLayoutArgs{Layout: "us"})
+	message, _ := (setLayoutFunc{}).Execute(context.Background(), rt, &SetLayoutArgs{Layout: "us"})
 	if !strings.Contains(message.(string), "already set") {
 		t.Fatalf("idempotent message = %v", message)
 	}

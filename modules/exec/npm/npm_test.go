@@ -34,7 +34,7 @@ func newRT() (*runtime.Runtime, *fakeRunner) {
 
 func TestNpmInstallLocal(t *testing.T) {
 	rt, runner := newRT()
-	installFunc{}.Execute(context.Background(), rt, &InstallArgs{
+	(installFunc{}).Execute(context.Background(), rt, &InstallArgs{
 		Pkg: "left-pad@1.0.0", Cwd: "/app",
 	})
 	got := strings.Join(runner.calls[len(runner.calls)-1], " ")
@@ -51,7 +51,7 @@ func TestNpmListParses(t *testing.T) {
 	runner.script = []process.CommandResult{
 		{Stdout: []byte(`{"dependencies":{"lodash":{"version":"4.17.21"}}}`), ExitCode: 0},
 	}
-	out, err := listFunc{}.Execute(context.Background(), rt, &ListArgs{})
+	out, err := (listFunc{}).Execute(context.Background(), rt, &ListArgs{})
 	if err != nil || !strings.Contains(out.(string), "lodash") {
 		t.Fatalf("list = %v, %v", out, err)
 	}
@@ -61,7 +61,7 @@ func TestNpmListParses(t *testing.T) {
 func TestCachePath(t *testing.T) {
 	rt, runner := newRT()
 	runner.script = []process.CommandResult{{Stdout: []byte("/home/user/.npm\n")}}
-	got, err := cachePathFunc{}.Execute(context.Background(), rt, &CachePathArgs{})
+	got, err := (cachePathFunc{}).Execute(context.Background(), rt, &CachePathArgs{})
 	if err != nil || got != "/home/user/.npm" {
 		t.Fatalf("cache_path = %#v, %v", got, err)
 	}
@@ -73,13 +73,13 @@ func TestCachePath(t *testing.T) {
 func TestCacheList(t *testing.T) {
 	rt, runner := newRT()
 	runner.script = []process.CommandResult{{Stdout: []byte("empty")}}
-	got, _ := cacheListFunc{}.Execute(context.Background(), rt, &CacheListArgs{})
+	got, _ := (cacheListFunc{}).Execute(context.Background(), rt, &CacheListArgs{})
 	if got != "empty" {
 		t.Fatalf("cache_list = %#v", got)
 	}
 
 	runner.script = []process.CommandResult{{Stdout: []byte("~/.npm/lodash")}}
-	got, _ = cacheListFunc{}.Execute(context.Background(), rt,
+	got, _ = (cacheListFunc{}).Execute(context.Background(), rt,
 		&CacheListArgs{Path: strPtrNP("lodash")})
 	if got != "~/.npm/lodash" {
 		t.Fatalf("cache_list path = %#v", got)
@@ -95,7 +95,7 @@ func TestCacheList(t *testing.T) {
 
 func TestCacheClean(t *testing.T) {
 	rt, runner := newRT()
-	got, err := cacheCleanFunc{}.Execute(context.Background(), rt,
+	got, err := (cacheCleanFunc{}).Execute(context.Background(), rt,
 		&CacheCleanArgs{Force: true})
 	if err != nil || got != true {
 		t.Fatalf("cache_clean = %#v, %v", got, err)
@@ -105,7 +105,7 @@ func TestCacheClean(t *testing.T) {
 		t.Fatalf("argv = %#v", runner.calls[0])
 	}
 
-	got, err = cacheCleanFunc{}.Execute(context.Background(), rt,
+	got, err = (cacheCleanFunc{}).Execute(context.Background(), rt,
 		&CacheCleanArgs{Path: strPtrNP("lodash")})
 	if err != nil || got != true {
 		t.Fatalf("path clean = %#v, %v", got, err)
@@ -116,7 +116,7 @@ func TestCacheClean(t *testing.T) {
 	}
 
 	runner.script = []process.CommandResult{{ExitCode: 1}}
-	got, err = cacheCleanFunc{}.Execute(context.Background(), rt, &CacheCleanArgs{})
+	got, err = (cacheCleanFunc{}).Execute(context.Background(), rt, &CacheCleanArgs{})
 	if err != nil || got != false {
 		t.Fatalf("failed clean = %#v, %v", got, err)
 	}

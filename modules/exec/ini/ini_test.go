@@ -35,13 +35,13 @@ func newRT(initial string) *runtime.Runtime {
 
 func TestGetOption(t *testing.T) {
 	rt := newRT(iniFixture)
-	value, err := getOptionFunc{}.Execute(context.Background(), rt, &GetOptionArgs{
+	value, err := (getOptionFunc{}).Execute(context.Background(), rt, &GetOptionArgs{
 		FileName: "/etc/app/conf.ini", Section: "main", Option: "host",
 	})
 	if err != nil || value != "old.example.org" {
 		t.Fatalf("get_option = %v, %v", value, err)
 	}
-	value, _ = getOptionFunc{}.Execute(context.Background(), rt, &GetOptionArgs{
+	value, _ = (getOptionFunc{}).Execute(context.Background(), rt, &GetOptionArgs{
 		FileName: "/etc/app/conf.ini", Section: "missing", Option: "host",
 	})
 	if value != "" {
@@ -51,7 +51,7 @@ func TestGetOption(t *testing.T) {
 
 func TestSetOptionChangesAndIdempotence(t *testing.T) {
 	rt := newRT(iniFixture)
-	changes, err := setOptionFunc{}.Execute(context.Background(), rt, &SetOptionArgs{
+	changes, err := (setOptionFunc{}).Execute(context.Background(), rt, &SetOptionArgs{
 		FileName: "/etc/app/conf.ini",
 		Sections: map[string]any{"main": map[string]any{"host": "new.example.org", "timeout": 30}},
 	})
@@ -71,7 +71,7 @@ func TestSetOptionChangesAndIdempotence(t *testing.T) {
 		}
 	}
 
-	repeat, _ := setOptionFunc{}.Execute(context.Background(), rt, &SetOptionArgs{
+	repeat, _ := (setOptionFunc{}).Execute(context.Background(), rt, &SetOptionArgs{
 		FileName: "/etc/app/conf.ini",
 		Sections: map[string]any{"main": map[string]any{"host": "new.example.org", "timeout": 30}},
 	})
@@ -82,7 +82,7 @@ func TestSetOptionChangesAndIdempotence(t *testing.T) {
 
 func TestRemoveOptionPreservesOthers(t *testing.T) {
 	rt := newRT(iniFixture)
-	removed, err := removeOptionFunc{}.Execute(context.Background(), rt, &RemoveOptionArgs{
+	removed, err := (removeOptionFunc{}).Execute(context.Background(), rt, &RemoveOptionArgs{
 		FileName: "/etc/app/conf.ini", Section: "main", Options: []string{"port"},
 	})
 	if err != nil || removed.(map[string]any)["port"] != "5432" {
@@ -96,7 +96,7 @@ func TestRemoveOptionPreservesOthers(t *testing.T) {
 }
 
 func TestGetIniWholeTree(t *testing.T) {
-	value, err := getIniFunc{}.Execute(context.Background(), newRT(iniFixture), &GetIniArgs{
+	value, err := (getIniFunc{}).Execute(context.Background(), newRT(iniFixture), &GetIniArgs{
 		FileName: "/etc/app/conf.ini",
 	})
 	if err != nil {

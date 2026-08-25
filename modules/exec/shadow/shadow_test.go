@@ -18,7 +18,7 @@ func TestShadowInfo(t *testing.T) {
 	rt.FS.MkdirAll("/etc", 0o755)
 	rt.FS.WriteFile("/etc/shadow", []byte("alice:$6$h$xyz:20000:5:60:7:14:21000:\n"), 0o600)
 
-	value, err := infoFunc{}.Execute(context.Background(), rt, &infoArgs{Name: "alice"})
+	value, err := (infoFunc{}).Execute(context.Background(), rt, &infoArgs{Name: "alice"})
 	if err != nil {
 		t.Fatalf("shadow.info: %v", err)
 	}

@@ -46,7 +46,7 @@ func TestList(t *testing.T) {
 			"ARRAY /dev/md/1 metadata=1.2 UUID=51f245bc:a1402c8a name=tst:1\n" +
 				"junkline\n")},
 	})
-	got, err := listFunc{}.Execute(context.Background(), rt, &ListArgs{})
+	got, err := (listFunc{}).Execute(context.Background(), rt, &ListArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestDetail(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gotRaw, err := detailFunc{}.Execute(context.Background(), rt, &DetailArgs{Device: "/dev/md0"})
+	gotRaw, err := (detailFunc{}).Execute(context.Background(), rt, &DetailArgs{Device: "/dev/md0"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,14 +115,14 @@ func TestDetail(t *testing.T) {
 
 	// Missing device mirrors Salt's CommandExecutionError text.
 	rt2, _ := newRT(map[string]process.CommandResult{})
-	_, err = detailFunc{}.Execute(context.Background(), rt2, &DetailArgs{Device: "/dev/mdX"})
+	_, err = (detailFunc{}).Execute(context.Background(), rt2, &DetailArgs{Device: "/dev/mdX"})
 	if err == nil || err.Error() != "Device /dev/mdX doesn't exist!" {
 		t.Fatalf("missing device err = %v", err)
 	}
 
 	// Empty device falls back to Salt's /dev/md0 default.
 	rt3, _ := newRT(map[string]process.CommandResult{"mdadm": {}})
-	_, err = detailFunc{}.Execute(context.Background(), rt3, &DetailArgs{})
+	_, err = (detailFunc{}).Execute(context.Background(), rt3, &DetailArgs{})
 	if err == nil || !strings.Contains(err.Error(), "Device /dev/md0 doesn't exist!") {
 		t.Fatalf("default device err = %v", err)
 	}
@@ -132,7 +132,7 @@ func TestDetail(t *testing.T) {
 // test-mode string contract.
 func TestCreate(t *testing.T) {
 	rt, runner := newRT(map[string]process.CommandResult{})
-	got, err := createFunc{}.Execute(context.Background(), rt, &CreateArgs{
+	got, err := (createFunc{}).Execute(context.Background(), rt, &CreateArgs{
 		Name:     "/dev/md0",
 		Level:    "5",
 		Devices:  []string{"/dev/sdb1", "/dev/sdc1", "/dev/sdd1"},
@@ -157,7 +157,7 @@ func TestCreate(t *testing.T) {
 	rt2, runner2 := newRT(map[string]process.CommandResult{
 		"mdadm": {Stdout: []byte("salt\n")},
 	})
-	got2, err := createFunc{}.Execute(context.Background(), rt2, &CreateArgs{
+	got2, err := (createFunc{}).Execute(context.Background(), rt2, &CreateArgs{
 		Name:    "/dev/md0",
 		Level:   "5",
 		Devices: []string{"/dev/sdb1", "/dev/sdc1", "/dev/sdd1"},
@@ -177,7 +177,7 @@ func TestCreate(t *testing.T) {
 
 	// spare-devices reduces the device count.
 	rt3, runner3 := newRT(map[string]process.CommandResult{"mdadm": {}})
-	createFunc{}.Execute(context.Background(), rt3, &CreateArgs{
+	(createFunc{}).Execute(context.Background(), rt3, &CreateArgs{
 		Name: "/dev/md1", Level: "1",
 		Devices: []string{"/dev/x", "/dev/y"},
 		Option:  map[string]string{"spare-devices": "1"},
@@ -201,7 +201,7 @@ func TestExamine(t *testing.T) {
 		"mdadm -Y -E /dev/md0": {Stdout: []byte(
 			"ARRAY /dev/md/pool metadata=1.2 UUID=567da122 name=positron:pool\n")},
 	})
-	got, err := examineFunc{}.Execute(context.Background(), rt,
+	got, err := (examineFunc{}).Execute(context.Background(), rt,
 		&ExamineArgs{Device: "/dev/md0"})
 	if err != nil {
 		t.Fatal(err)
@@ -226,7 +226,7 @@ func TestDestroy(t *testing.T) {
 	}
 	rt.FS.WriteFile("/dev/md0", nil, 0o600)
 
-	ok, err := destroyFunc{}.Execute(context.Background(), rt, &DestroyArgs{Device: "/dev/md0"})
+	ok, err := (destroyFunc{}).Execute(context.Background(), rt, &DestroyArgs{Device: "/dev/md0"})
 	if err != nil || ok != true {
 		t.Fatalf("destroy = %v %v", ok, err)
 	}
@@ -254,7 +254,7 @@ func TestDestroy(t *testing.T) {
 	if err := rt2.FS.MkdirAll("/dev", 0o755); err != nil {
 		t.Fatal(err)
 	}
-	ok2, err := destroyFunc{}.Execute(context.Background(), rt2, &DestroyArgs{Device: "/dev/md0"})
+	ok2, err := (destroyFunc{}).Execute(context.Background(), rt2, &DestroyArgs{Device: "/dev/md0"})
 	if err != nil || ok2 != false {
 		t.Fatalf("destroy fail path = %v %v", ok2, err)
 	}
@@ -265,14 +265,14 @@ func TestStopQuirk(t *testing.T) {
 	failing, _ := newRT(map[string]process.CommandResult{
 		"mdadm --stop --scan": {ExitCode: 1},
 	})
-	got, err := stopFunc{}.Execute(context.Background(), failing, &StopArgs{})
+	got, err := (stopFunc{}).Execute(context.Background(), failing, &StopArgs{})
 	if err != nil || got != true {
 		t.Fatalf("non-zero rc must yield true: %v %v", got, err)
 	}
 	succeeding, _ := newRT(map[string]process.CommandResult{
 		"mdadm --stop --scan": {ExitCode: 0},
 	})
-	got2, err := stopFunc{}.Execute(context.Background(), succeeding, &StopArgs{})
+	got2, err := (stopFunc{}).Execute(context.Background(), succeeding, &StopArgs{})
 	if err != nil || got2 != false {
 		t.Fatalf("zero rc must yield false: %v %v", got2, err)
 	}
@@ -283,14 +283,14 @@ func TestAddAssembleSaveConfig(t *testing.T) {
 	rt, _ := newRT(map[string]process.CommandResult{
 		"mdadm --manage /dev/md0 --add /dev/sdc1": {ExitCode: 0},
 	})
-	got, err := addFunc{}.Execute(context.Background(), rt,
+	got, err := (addFunc{}).Execute(context.Background(), rt,
 		&AddArgs{Name: "/dev/md0", Device: "/dev/sdc1"})
 	if err != nil || got != true {
 		t.Fatalf("add = %v %v", got, err)
 	}
 
 	rt2, runner2 := newRT(map[string]process.CommandResult{"mdadm": {Stdout: []byte("assembled\n")}})
-	got2, err := assembleFunc{}.Execute(context.Background(), rt2, &AssembleArgs{
+	got2, err := (assembleFunc{}).Execute(context.Background(), rt2, &AssembleArgs{
 		Name: "/dev/md0", Devices: []string{"/dev/sdb1", "/dev/sdc1"},
 	})
 	if err != nil || got2 != "assembled" {
@@ -303,7 +303,7 @@ func TestAddAssembleSaveConfig(t *testing.T) {
 
 	// test_mode returns the argv slice itself.
 	rt3, _ := newRT(nil)
-	got3, err := assembleFunc{}.Execute(context.Background(), rt3, &AssembleArgs{
+	got3, err := (assembleFunc{}).Execute(context.Background(), rt3, &AssembleArgs{
 		Name: "/dev/md9", Devices: []string{"/dev/z"}, TestMode: true,
 	})
 	if err != nil {
@@ -323,7 +323,7 @@ func TestAddAssembleSaveConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	rt4.FS.WriteFile("/etc/mdadm/mdadm.conf", []byte(""), 0o644)
-	got4, err := saveConfigFunc{}.Execute(context.Background(), rt4, &SaveConfigArgs{})
+	got4, err := (saveConfigFunc{}).Execute(context.Background(), rt4, &SaveConfigArgs{})
 	if err != nil || got4 != "initramfs updated" {
 		t.Fatalf("save_config = %v %v", got4, err)
 	}

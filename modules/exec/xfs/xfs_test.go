@@ -111,7 +111,7 @@ func TestDevicesMergesMounts(t *testing.T) {
 	rt.FS.WriteFile("/proc/mounts", []byte(
 		"/dev/sda1 /srv xfs rw,relatime 0 0\n"), 0o600)
 
-	gotRaw, err := devicesFunc{}.Execute(context.Background(), rt, &DevicesArgs{})
+	gotRaw, err := (devicesFunc{}).Execute(context.Background(), rt, &DevicesArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestDumpContract(t *testing.T) {
 	lookPath = func(name string) (string, error) { return "/usr/sbin/xfsdump", nil }
 	defer func() { lookPath = savedLook }()
 
-	gotRaw, err := dumpFunc{}.Execute(context.Background(), rt, &DumpArgs{
+	gotRaw, err := (dumpFunc{}).Execute(context.Background(), rt, &DumpArgs{
 		Device: "/dev/sda1", Destination: "/backup/file", Level: "2", Label: "weekly",
 	})
 	if err != nil {
@@ -160,7 +160,7 @@ func TestDumpContract(t *testing.T) {
 	savedLook2 := lookPath
 	lookPath = func(name string) (string, error) { return "", context.Canceled }
 	defer func() { lookPath = savedLook2 }()
-	_, err = dumpFunc{}.Execute(context.Background(), noTool, &DumpArgs{
+	_, err = (dumpFunc{}).Execute(context.Background(), noTool, &DumpArgs{
 		Device: "/dev/sda1", Destination: "/backup/x"})
 	if err == nil || !strings.Contains(err.Error(), "has to be installed or missing") {
 		t.Fatalf("utility guard = %v", err)
@@ -180,7 +180,7 @@ session 0: b74a3586-e52e-4a4a-8775-c3334fa8ea2c
 	rt, _ := newRT(map[string]process.CommandResult{
 		"xfsrestore -I": {Stdout: []byte(inventoryOut)},
 	})
-	gotRaw, err := inventoryFunc{}.Execute(context.Background(), rt, &InventoryArgs{})
+	gotRaw, err := (inventoryFunc{}).Execute(context.Background(), rt, &InventoryArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ session 0: b74a3586-e52e-4a4a-8775-c3334fa8ea2c
 	rt2, _ := newRT(map[string]process.CommandResult{
 		"xfsrestore -I": {Stdout: []byte("xfsrestore: Restore Status: INCOMPLETE\n")},
 	})
-	got2, err := inventoryFunc{}.Execute(context.Background(), rt2, &InventoryArgs{})
+	got2, err := (inventoryFunc{}).Execute(context.Background(), rt2, &InventoryArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +226,7 @@ other output
 			Stdout: []byte(pruneOut),
 		},
 	})
-	got3, err := pruneDumpFunc{}.Execute(context.Background(), rt3,
+	got3, err := (pruneDumpFunc{}).Execute(context.Background(), rt3,
 		&PruneDumpArgs{SessionID: "b74a3586-e52e-4a4a-8775-c3334fa8ea2c"})
 	if err != nil {
 		t.Fatal(err)
@@ -239,7 +239,7 @@ other output
 	rt4, _ := newRT(map[string]process.CommandResult{
 		"xfsinvutil -s missing-id -F": {Stdout: []byte("----------\nnothing\n")},
 	})
-	_, err = pruneDumpFunc{}.Execute(context.Background(), rt4, &PruneDumpArgs{SessionID: "missing-id"})
+	_, err = (pruneDumpFunc{}).Execute(context.Background(), rt4, &PruneDumpArgs{SessionID: "missing-id"})
 	if err == nil || !strings.Contains(err.Error(), `Session UUID "missing-id" was not found.`) {
 		t.Fatalf("prune miss = %v", err)
 	}
@@ -255,7 +255,7 @@ func TestEstimateMkfsModifyDefragment(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	estimateOut, err := estimateFunc{}.Execute(context.Background(), rt, &EstimateArgs{Path: "/srv"})
+	estimateOut, err := (estimateFunc{}).Execute(context.Background(), rt, &EstimateArgs{Path: "/srv"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +265,7 @@ func TestEstimateMkfsModifyDefragment(t *testing.T) {
 	}
 
 	missing, _ := newRT(nil)
-	_, err = estimateFunc{}.Execute(context.Background(), missing, &EstimateArgs{Path: "/nope"})
+	_, err = (estimateFunc{}).Execute(context.Background(), missing, &EstimateArgs{Path: "/nope"})
 	if err == nil || !strings.Contains(err.Error(), `Path "/nope" was not found.`) {
 		t.Fatalf("estimate path guard = %v", err)
 	}
@@ -279,7 +279,7 @@ realtime =none extsz=4096 blocks=0 rtextents=0
 			Stdout: []byte(mkfsOut),
 		},
 	})
-	gotMk, err := mkfsFunc{}.Execute(context.Background(), mk, &MkfsArgs{
+	gotMk, err := (mkfsFunc{}).Execute(context.Background(), mk, &MkfsArgs{
 		Device: "/dev/sda1", Label: "backup", Ssize: "size=4096",
 		Dso: "su=32k,sw=6", Lso: "logdev=/dev/sda2,size=10000b",
 	})
@@ -297,7 +297,7 @@ realtime =none extsz=4096 blocks=0 rtextents=0
 	}
 
 	// Invalid option string errors like Salt.
-	_, err = mkfsFunc{}.Execute(context.Background(), mk, &MkfsArgs{
+	_, err = (mkfsFunc{}).Execute(context.Background(), mk, &MkfsArgs{
 		Device: "/dev/sda1", Bso: "invalid",
 	})
 	if err == nil || !strings.Contains(err.Error(), `Wrong parameters "invalid" for option "-b"`) {
@@ -309,7 +309,7 @@ realtime =none extsz=4096 blocks=0 rtextents=0
 		"blkid -o export /dev/sda1":                         {Stdout: []byte("DEVNAME=/dev/sda1\nTYPE=xfs\n")},
 	})
 	truth, falsity := true, false
-	gotMod, err := modifyFunc{}.Execute(context.Background(), mod, &ModifyArgs{
+	gotMod, err := (modifyFunc{}).Execute(context.Background(), mod, &ModifyArgs{
 		Device: "/dev/sda1", Label: "My backup", LazyCounting: &falsity, UUID: &truth,
 	})
 	if err != nil {
@@ -324,7 +324,7 @@ realtime =none extsz=4096 blocks=0 rtextents=0
 	}
 
 	// Nothing to modify errors.
-	_, err = modifyFunc{}.Execute(context.Background(), mod, &ModifyArgs{Device: "/dev/sda1"})
+	_, err = (modifyFunc{}).Execute(context.Background(), mod, &ModifyArgs{Device: "/dev/sda1"})
 	if err == nil || !strings.Contains(err.Error(), "Nothing specified for modification") {
 		t.Fatalf("modify noop error = %v", err)
 	}
@@ -335,7 +335,7 @@ realtime =none extsz=4096 blocks=0 rtextents=0
 	defr.FS.MkdirAll("/proc", 0o755)
 	defr.FS.WriteFile("/proc/mounts", []byte(
 		"/dev/sda1 /srv xfs rw 0 0\n"), 0o600)
-	gotDefr, err := defragmentFunc{}.Execute(context.Background(), defr, &DefragmentArgs{Device: "/dev/sda1"})
+	gotDefr, err := (defragmentFunc{}).Execute(context.Background(), defr, &DefragmentArgs{Device: "/dev/sda1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -348,11 +348,11 @@ realtime =none extsz=4096 blocks=0 rtextents=0
 	}
 
 	// Root and unmounted guards.
-	_, err = defragmentFunc{}.Execute(context.Background(), defr, &DefragmentArgs{Device: "/"})
+	_, err = (defragmentFunc{}).Execute(context.Background(), defr, &DefragmentArgs{Device: "/"})
 	if err == nil || err.Error() != "Root is not a device." {
 		t.Fatalf("root guard = %v", err)
 	}
-	_, err = defragmentFunc{}.Execute(context.Background(), defr, &DefragmentArgs{Device: "/dev/sdb"})
+	_, err = (defragmentFunc{}).Execute(context.Background(), defr, &DefragmentArgs{Device: "/dev/sdb"})
 	if err == nil || !strings.Contains(err.Error(), `Device "/dev/sdb" is not mounted`) {
 		t.Fatalf("mount guard = %v", err)
 	}

@@ -24,7 +24,7 @@ func TestTarCreateExtractRoundtrip(t *testing.T) {
 	rt.FS.WriteFile("/work/src/a.txt", []byte("alpha"), 0o644)
 	rt.FS.WriteFile("/work/src/sub/b.txt", []byte("beta"), 0o600)
 
-	value, err := tarFunc{}.Execute(context.Background(), rt, &tarArgs{
+	value, err := (tarFunc{}).Execute(context.Background(), rt, &tarArgs{
 		Tarfile: "/work/out.tar", Sources: []string{"src"}, Cwd: "/work",
 	})
 	if err != nil {
@@ -39,7 +39,7 @@ func TestTarCreateExtractRoundtrip(t *testing.T) {
 	tarData, _ := rt.FS.ReadFile("/work/out.tar")
 	rt2.FS.MkdirAll("/work", 0o755)
 	rt2.FS.WriteFile("/work/out.tar", tarData, 0o644)
-	extracted, err := tarFunc{}.Execute(context.Background(), rt2, &tarArgs{
+	extracted, err := (tarFunc{}).Execute(context.Background(), rt2, &tarArgs{
 		Options: "x", Tarfile: "/work/out.tar", Dest: "/restore", Cwd: "/work",
 	})
 	if err != nil {
@@ -62,10 +62,10 @@ func TestTarListAndGzip(t *testing.T) {
 	rt := testRT()
 	rt.FS.MkdirAll("/work", 0o755)
 	rt.FS.WriteFile("/work/f", []byte("data"), 0o644)
-	tarFunc{}.Execute(context.Background(), rt, &tarArgs{
+	(tarFunc{}).Execute(context.Background(), rt, &tarArgs{
 		Tarfile: "/work/t.tar.gz", Sources: []string{"f"}, Cwd: "/work", Options: "czf",
 	})
-	listing, err := tarFunc{}.Execute(context.Background(), rt, &tarArgs{
+	listing, err := (tarFunc{}).Execute(context.Background(), rt, &tarArgs{
 		Options: "t", Tarfile: "/work/t.tar.gz", Cwd: "/work",
 	})
 	if err != nil {
@@ -87,7 +87,7 @@ func TestGzipGunzip(t *testing.T) {
 	if _, err := rt.FS.Stat("/d/file.gz"); err != nil {
 		t.Fatal(".gz file missing")
 	}
-	value, err := gunzipFunc{}.Execute(context.Background(), rt, &gunzipArgs{Gzipfile: "/d/file.gz"})
+	value, err := (gunzipFunc{}).Execute(context.Background(), rt, &gunzipArgs{Gzipfile: "/d/file.gz"})
 	if err != nil {
 		t.Fatalf("gunzip: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestZipUnzip(t *testing.T) {
 	zipData, _ := rt.FS.ReadFile("/z/a.zip")
 	rt2.FS.MkdirAll("/z", 0o755)
 	rt2.FS.WriteFile("/z/a.zip", zipData, 0o644)
-	value, err := unzipFunc{}.Execute(context.Background(), rt2, &unzipArgs{ZipFile: "/z/a.zip", Dest: "/out"})
+	value, err := (unzipFunc{}).Execute(context.Background(), rt2, &unzipArgs{ZipFile: "/z/a.zip", Dest: "/out"})
 	if err != nil {
 		t.Fatalf("unzip: %v", err)
 	}

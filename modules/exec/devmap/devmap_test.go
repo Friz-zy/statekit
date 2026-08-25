@@ -23,7 +23,7 @@ func (f *fakeRunner) Run(_ context.Context, cmd process.Command) process.Command
 func TestMultipathList(t *testing.T) {
 	runner := &fakeRunner{result: process.CommandResult{Stdout: []byte("A\n")}}
 	rt := &runtime.Runtime{Runner: runner, FS: runtime.NewMemoryFS()}
-	got, err := multipathListFunc{}.Execute(context.Background(), rt, &MultipathListArgs{})
+	got, err := (multipathListFunc{}).Execute(context.Background(), rt, &MultipathListArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func TestMultipathList(t *testing.T) {
 // TestMultipathFlush mirrors Salt's test_multipath_flush.
 func TestMultipathFlush(t *testing.T) {
 	rt := &runtime.Runtime{Runner: &fakeRunner{}, FS: runtime.NewMemoryFS()}
-	_, err := multipathFlushFunc{}.Execute(context.Background(), rt,
+	_, err := (multipathFlushFunc{}).Execute(context.Background(), rt,
 		&MultipathFlushArgs{Device: "device"})
 	if err == nil || err.Error() != "device does not exist" {
 		t.Fatalf("missing device err = %v", err)
@@ -52,7 +52,7 @@ func TestMultipathFlush(t *testing.T) {
 	}
 	runner := &fakeRunner{result: process.CommandResult{Stdout: []byte("A\n")}}
 	rt.Runner = runner
-	got, err := multipathFlushFunc{}.Execute(context.Background(), rt,
+	got, err := (multipathFlushFunc{}).Execute(context.Background(), rt,
 		&MultipathFlushArgs{Device: "/dev/mpath1"})
 	if err != nil {
 		t.Fatal(err)

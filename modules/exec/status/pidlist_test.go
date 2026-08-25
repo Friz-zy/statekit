@@ -18,7 +18,7 @@ func TestPidListFindsSelfProcessName(t *testing.T) {
 		FS:     runtime.NewMemoryFS(),
 	}
 	self := os.Getpid()
-	value, err := pidListFunc{}.Execute(context.Background(), rt, &pidListArgs{Name: "go"})
+	value, err := (pidListFunc{}).Execute(context.Background(), rt, &pidListArgs{Name: "go"})
 	if err != nil {
 		// comm of the test binary may differ; fall back to asserting no error
 		// path and non-crashing behavior only.

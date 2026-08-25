@@ -33,7 +33,7 @@ func (fakeRunner) Run(_ context.Context, cmd process.Command) process.CommandRes
 
 func TestBlockdevInfo(t *testing.T) {
 	rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), Runner: fakeRunner{}, FS: runtime.NewMemoryFS()}
-	value, err := infoFunc{}.Execute(context.Background(), rt, &InfoArgs{Device: "/dev/sda"})
+	value, err := (infoFunc{}).Execute(context.Background(), rt, &InfoArgs{Device: "/dev/sda"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -109,7 +109,7 @@ func TestGetSelections(t *testing.T) {
 	}}
 	rt := debRT(t, runner, nil)
 
-	sel, err := getSelectionsFunc{}.Execute(context.Background(), rt, &GetSelectionsArgs{})
+	sel, err := (getSelectionsFunc{}).Execute(context.Background(), rt, &GetSelectionsArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestGetSelections(t *testing.T) {
 	}
 
 	// fetchempty=False drops empty-valued rows.
-	sel, err = getSelectionsFunc{}.Execute(context.Background(), rt,
+	sel, err = (getSelectionsFunc{}).Execute(context.Background(), rt,
 		&GetSelectionsArgs{FetchEmpty: boolPtr(false)})
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +136,7 @@ func TestShow(t *testing.T) {
 	}}
 	rt := debRT(t, runner, nil)
 
-	got, err := showFunc{}.Execute(context.Background(), rt, &ShowArgs{Name: "nullmailer"})
+	got, err := (showFunc{}).Execute(context.Background(), rt, &ShowArgs{Name: "nullmailer"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestShow(t *testing.T) {
 		t.Fatalf("show = %#v", got)
 	}
 
-	got, err = showFunc{}.Execute(context.Background(), rt, &ShowArgs{Name: "ghost"})
+	got, err = (showFunc{}).Execute(context.Background(), rt, &ShowArgs{Name: "ghost"})
 	if err != nil || got != nil {
 		t.Fatalf("unknown show = %#v, %v; want nil", got, err)
 	}
@@ -157,7 +157,7 @@ func TestSet(t *testing.T) {
 	runner := &fakeRunner{onRunRecord: func(argv []string) { captured = append(captured, strings.Join(argv, " ")) }}
 	rt := debRT(t, runner, nil)
 
-	got, err := setFunc{}.Execute(context.Background(), rt, &SetArgs{
+	got, err := (setFunc{}).Execute(context.Background(), rt, &SetArgs{
 		Package: "package", Question: "question", Type: "type", Value: "value",
 	})
 	if err != nil || got != true {
@@ -175,7 +175,7 @@ func TestSet(t *testing.T) {
 // Mirrors test_set_template: templating stays unsupported.
 func TestSetTemplateUnsupported(t *testing.T) {
 	rt := debRT(t, &fakeRunner{}, nil)
-	_, err := setTemplateFunc{}.Execute(context.Background(), rt, &SetTemplateArgs{
+	_, err := (setTemplateFunc{}).Execute(context.Background(), rt, &SetTemplateArgs{
 		Path: "/testbed/in/selections", Template: "jinja",
 	})
 	var unsupported *runtime.UnsupportedError
@@ -204,7 +204,7 @@ func TestSetFile(t *testing.T) {
 	rt := debRT(t, runner, map[string]string{
 		"/testbed/in/pkg.selections": "pkg\tquestion\tstring\tvalue",
 	})
-	got, err := setFileFunc{}.Execute(context.Background(), rt, &SetFileArgs{
+	got, err := (setFileFunc{}).Execute(context.Background(), rt, &SetFileArgs{
 		Path: "/testbed/in/pkg.selections",
 	})
 	if err != nil || got != true {
@@ -216,7 +216,7 @@ func TestSetFile(t *testing.T) {
 	}
 
 	// Remote scheme surfaces UnsupportedError.
-	got, err = setFileFunc{}.Execute(context.Background(), rt, &SetFileArgs{
+	got, err = (setFileFunc{}).Execute(context.Background(), rt, &SetFileArgs{
 		Path: "salt://pkg.selections",
 	})
 	if got != false || err == nil {
@@ -230,7 +230,7 @@ func TestBackendGate(t *testing.T) {
 	rt.Facts = facts.ForTesting(facts.Overrides{OS: &facts.OSFacts{
 		ID: "fedora", Family: facts.FamilyRedHat,
 	}})
-	_, err := getSelectionsFunc{}.Execute(context.Background(), rt, &GetSelectionsArgs{})
+	_, err := (getSelectionsFunc{}).Execute(context.Background(), rt, &GetSelectionsArgs{})
 	if err == nil || err.Error() != "The debconfmod module could not be loaded: unsupported OS family" {
 		t.Fatalf("family gate error = %v", err)
 	}
@@ -239,7 +239,7 @@ func TestBackendGate(t *testing.T) {
 	saved := whichBin
 	whichBin = func(string) string { return "" }
 	defer func() { whichBin = saved }()
-	_, err = getSelectionsFunc{}.Execute(context.Background(), rt, &GetSelectionsArgs{})
+	_, err = (getSelectionsFunc{}).Execute(context.Background(), rt, &GetSelectionsArgs{})
 	if err == nil || !strings.Contains(err.Error(), "debconf-utils is not installed.") {
 		t.Fatalf("toolchain gate error = %v", err)
 	}

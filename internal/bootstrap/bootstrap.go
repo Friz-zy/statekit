@@ -122,6 +122,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execextfs.Register,
 		execcmd.Register,
 		execfile.Register,
+		execfile.RegisterExt,
 		execstatus.Register,
 		execuser.Register,
 		execgroup.Register,

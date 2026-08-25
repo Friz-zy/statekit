@@ -45,7 +45,7 @@ func newRT() (*runtime.Runtime, *scriptRunner) {
 
 func TestActive(t *testing.T) {
 	rt, _ := newRT()
-	value, err := activeFunc{}.Execute(context.Background(), rt, &activeArgs{})
+	value, err := (activeFunc{}).Execute(context.Background(), rt, &activeArgs{})
 	if err != nil {
 		t.Fatalf("active: %v", err)
 	}
@@ -61,11 +61,11 @@ func TestActive(t *testing.T) {
 
 func TestIsMounted(t *testing.T) {
 	rt, _ := newRT()
-	value, _ := isMountedFunc{}.Execute(context.Background(), rt, &isMountedArgs{Path: "/proc"})
+	value, _ := (isMountedFunc{}).Execute(context.Background(), rt, &isMountedArgs{Path: "/proc"})
 	if value != true {
 		t.Fatal("/proc must be mounted")
 	}
-	value, _ = isMountedFunc{}.Execute(context.Background(), rt, &isMountedArgs{Path: "/nope"})
+	value, _ = (isMountedFunc{}).Execute(context.Background(), rt, &isMountedArgs{Path: "/nope"})
 	if value != false {
 		t.Fatal("unmounted path must report false")
 	}
@@ -73,7 +73,7 @@ func TestIsMounted(t *testing.T) {
 
 func TestFstabParsing(t *testing.T) {
 	rt, _ := newRT()
-	value, err := fstabFunc{}.Execute(context.Background(), rt, &fstabArgs{})
+	value, err := (fstabFunc{}).Execute(context.Background(), rt, &fstabArgs{})
 	if err != nil {
 		t.Fatalf("fstab: %v", err)
 	}
@@ -93,14 +93,14 @@ func TestFstabParsing(t *testing.T) {
 
 func TestMountUmountArgv(t *testing.T) {
 	rt, runner := newRT()
-	mountFunc{}.Execute(context.Background(), rt, &mountArgs{
+	(mountFunc{}).Execute(context.Background(), rt, &mountArgs{
 		Name: "/mnt/x", Device: "/dev/sdb1", FsType: "ext4", Opts: "rw,noatime",
 	})
 	got := strings.Join(runner.calls[len(runner.calls)-1], " ")
 	if got != "mount -t ext4 -o rw,noatime /dev/sdb1 /mnt/x" {
 		t.Fatalf("mount argv = %q", got)
 	}
-	umountFunc{}.Execute(context.Background(), rt, &umountArgs{Name: "/mnt/x"})
+	(umountFunc{}).Execute(context.Background(), rt, &umountArgs{Name: "/mnt/x"})
 	got = strings.Join(runner.calls[len(runner.calls)-1], " ")
 	if got != "umount /mnt/x" {
 		t.Fatalf("umount argv = %q", got)

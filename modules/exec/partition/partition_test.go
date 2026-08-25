@@ -69,7 +69,7 @@ func TestList(t *testing.T) {
 	})
 	withBlockDevice(t, rt)
 
-	gotRaw, err := listFunc{}.Execute(context.Background(), rt, &ListArgs{Device: "/dev/sda"})
+	gotRaw, err := (listFunc{}).Execute(context.Background(), rt, &ListArgs{Device: "/dev/sda"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestList(t *testing.T) {
 		t.Fatalf("unit argv = %v", runner2.calls)
 	}
 
-	_, err = listFunc{}.Execute(context.Background(), rt2, &ListArgs{Device: "/dev/sda", Unit: "parsec"})
+	_, err = (listFunc{}).Execute(context.Background(), rt2, &ListArgs{Device: "/dev/sda", Unit: "parsec"})
 	if err == nil || err.Error() != "Invalid unit passed to partition.part_list" {
 		t.Fatalf("unit error = %v", err)
 	}
@@ -124,7 +124,7 @@ func TestList(t *testing.T) {
 		"parted -m -s /dev/sda print": {Stdout: []byte("garbage:line\n")},
 	})
 	withBlockDeviceFS(rt3)
-	_, err = listFunc{}.Execute(context.Background(), rt3, &ListArgs{Device: "/dev/sda"})
+	_, err = (listFunc{}).Execute(context.Background(), rt3, &ListArgs{Device: "/dev/sda"})
 	if err == nil || !strings.Contains(err.Error(), "Problem encountered while parsing output") {
 		t.Fatalf("parse error = %v", err)
 	}
@@ -201,12 +201,12 @@ func TestArgvContracts(t *testing.T) {
 	})
 	withBlockDevice(t, rt)
 
-	probeFunc{}.Execute(context.Background(), rt, &ProbeArgs{Devices: []string{"/dev/sda"}})
+	(probeFunc{}).Execute(context.Background(), rt, &ProbeArgs{Devices: []string{"/dev/sda"}})
 	if !reflect.DeepEqual(runner.calls[0], []string{"partprobe", "--", "/dev/sda"}) {
 		t.Fatalf("probe argv = %v", runner.calls)
 	}
 
-	typesRaw, err := systemTypesFunc{}.Execute(context.Background(), rt, &SystemTypesArgs{})
+	typesRaw, err := (systemTypesFunc{}).Execute(context.Background(), rt, &SystemTypesArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +215,7 @@ func TestArgvContracts(t *testing.T) {
 		t.Fatalf("system_types = %v", types)
 	}
 
-	setIDFunc{}.Execute(context.Background(), rt, &SetIDArgs{
+	(setIDFunc{}).Execute(context.Background(), rt, &SetIDArgs{
 		Device: "/dev/sda", Minor: "1", SystemID: "83"})
 	last := runner.calls[len(runner.calls)-1]
 	if !reflect.DeepEqual(last, []string{"sfdisk", "--change-id", "/dev/sda", "1", "83"}) {
@@ -223,14 +223,14 @@ func TestArgvContracts(t *testing.T) {
 	}
 
 	// Unknown system id errors.
-	_, err = setIDFunc{}.Execute(context.Background(), rt, &SetIDArgs{
+	_, err = (setIDFunc{}).Execute(context.Background(), rt, &SetIDArgs{
 		Device: "/dev/sda", Minor: "1", SystemID: "ff"})
 	if err == nil || !strings.Contains(err.Error(), "Invalid system_id") {
 		t.Fatalf("set_id system error = %v", err)
 	}
 
 	// linux-swap maps to mkswap.
-	mkfsFunc{}.Execute(context.Background(), rt, &MkfsArgs{Device: "/dev/sda", FsType: "linux-swap"})
+	(mkfsFunc{}).Execute(context.Background(), rt, &MkfsArgs{Device: "/dev/sda", FsType: "linux-swap"})
 	found := false
 	for _, call := range runner.calls {
 		if reflect.DeepEqual(call, []string{"mkswap", "/dev/sda"}) {
@@ -241,7 +241,7 @@ func TestArgvContracts(t *testing.T) {
 		t.Fatalf("mkswap argv missing: %v", runner.calls)
 	}
 
-	nameFunc{}.Execute(context.Background(), rt, &NameArgs{
+	(nameFunc{}).Execute(context.Background(), rt, &NameArgs{
 		Device: "/dev/sda", Partition: "1", Name: "My Documents"})
 	found = false
 	for _, call := range runner.calls {
@@ -254,7 +254,7 @@ func TestArgvContracts(t *testing.T) {
 		t.Fatalf("name argv missing: %v", runner.calls)
 	}
 
-	devs, err := getBlockDeviceFunc{}.Execute(context.Background(), rt, &GetBlockDeviceArgs{})
+	devs, err := (getBlockDeviceFunc{}).Execute(context.Background(), rt, &GetBlockDeviceArgs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,11 +267,11 @@ func TestExistsAndBoundaryUnits(t *testing.T) {
 	rt, _ := newRT(nil)
 	withBlockDevice(t, rt)
 
-	got, err := existsFunc{}.Execute(context.Background(), rt, &ExistsArgs{Device: "/dev/sda"})
+	got, err := (existsFunc{}).Execute(context.Background(), rt, &ExistsArgs{Device: "/dev/sda"})
 	if err != nil || got != true {
 		t.Fatalf("exists = %v %v", got, err)
 	}
-	got2, _ := existsFunc{}.Execute(context.Background(), rt, &ExistsArgs{Device: "/dev/none"})
+	got2, _ := (existsFunc{}).Execute(context.Background(), rt, &ExistsArgs{Device: "/dev/none"})
 	if got2 != false {
 		t.Fatalf("exists missing = %v", got2)
 	}

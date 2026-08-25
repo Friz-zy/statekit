@@ -52,7 +52,7 @@ func TestEnvNameQuery(t *testing.T) {
 		"udevadm info --export --query=all --name=/dev/vcsa7": {Stdout: []byte(stdout)},
 	})
 
-	gotRaw, err := envFunc{}.Execute(context.Background(), rt, &EnvArgs{Dev: "/dev/vcsa7"})
+	gotRaw, err := (envFunc{}).Execute(context.Background(), rt, &EnvArgs{Dev: "/dev/vcsa7"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestEnvRetcodeFailure(t *testing.T) {
 	rt, _ := newRT(map[string]process.CommandResult{
 		"udevadm info --export --query=all --name=/dev/gone": {ExitCode: 1, Stderr: []byte("Unknown device")},
 	})
-	_, err := envFunc{}.Execute(context.Background(), rt, &EnvArgs{Dev: "/dev/gone"})
+	_, err := (envFunc{}).Execute(context.Background(), rt, &EnvArgs{Dev: "/dev/gone"})
 	if err == nil || !strings.Contains(err.Error(), "Unknown device") {
 		t.Fatalf("err = %v", err)
 	}

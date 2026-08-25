@@ -29,7 +29,7 @@ func newRT(initial string) *runtime.Runtime {
 }
 
 func TestParseAndList(t *testing.T) {
-	value, err := listFunc{}.Execute(context.Background(), newRT(aliasesFixture), &ListAliasesArgs{})
+	value, err := (listFunc{}).Execute(context.Background(), newRT(aliasesFixture), &ListAliasesArgs{})
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestParseAndList(t *testing.T) {
 }
 
 func TestGetTargetMissingIsEmpty(t *testing.T) {
-	value, _ := getTargetFunc{}.Execute(context.Background(), newRT(""), &GetTargetArgs{Alias: "nope"})
+	value, _ := (getTargetFunc{}).Execute(context.Background(), newRT(""), &GetTargetArgs{Alias: "nope"})
 	if value != "" {
 		t.Fatalf("missing target = %v", value)
 	}
@@ -48,11 +48,11 @@ func TestGetTargetMissingIsEmpty(t *testing.T) {
 
 func TestHasTarget(t *testing.T) {
 	rt := newRT(aliasesFixture)
-	value, _ := hasTargetFunc{}.Execute(context.Background(), rt, &HasTargetArgs{Alias: "support", Target: "alice"})
+	value, _ := (hasTargetFunc{}).Execute(context.Background(), rt, &HasTargetArgs{Alias: "support", Target: "alice"})
 	if value != true {
 		t.Fatal("alice must be a support target")
 	}
-	value, _ = hasTargetFunc{}.Execute(context.Background(), rt, &HasTargetArgs{Alias: "support", Target: "carol"})
+	value, _ = (hasTargetFunc{}).Execute(context.Background(), rt, &HasTargetArgs{Alias: "support", Target: "carol"})
 	if value != false {
 		t.Fatal("carol must not be listed")
 	}
@@ -61,7 +61,7 @@ func TestHasTarget(t *testing.T) {
 func TestSetTargetAppendAndIdempotent(t *testing.T) {
 	rt := newRT(aliasesFixture)
 
-	changed, err := setTargetFunc{}.Execute(context.Background(), rt, &SetTargetArgs{Alias: "support", Target: "carol"})
+	changed, err := (setTargetFunc{}).Execute(context.Background(), rt, &SetTargetArgs{Alias: "support", Target: "carol"})
 	if err != nil || changed != true {
 		t.Fatalf("set = %v, %v", changed, err)
 	}
@@ -74,12 +74,12 @@ func TestSetTargetAppendAndIdempotent(t *testing.T) {
 		t.Fatalf("target not appended:\n%s", rendered)
 	}
 
-	changed, _ = setTargetFunc{}.Execute(context.Background(), rt, &SetTargetArgs{Alias: "support", Target: "carol"})
+	changed, _ = (setTargetFunc{}).Execute(context.Background(), rt, &SetTargetArgs{Alias: "support", Target: "carol"})
 	if changed != false {
 		t.Fatalf("duplicate set must report false, got %v", changed)
 	}
 
-	changed, _ = setTargetFunc{}.Execute(context.Background(), rt, &SetTargetArgs{Alias: "abuse", Target: "root"})
+	changed, _ = (setTargetFunc{}).Execute(context.Background(), rt, &SetTargetArgs{Alias: "abuse", Target: "root"})
 	if changed != true {
 		t.Fatal("new alias creation failed")
 	}
@@ -91,7 +91,7 @@ func TestSetTargetAppendAndIdempotent(t *testing.T) {
 
 func TestRmAlias(t *testing.T) {
 	rt := newRT(aliasesFixture)
-	removed, _ := rmAliasFunc{}.Execute(context.Background(), rt, &RmAliasArgs{Alias: "postmaster"})
+	removed, _ := (rmAliasFunc{}).Execute(context.Background(), rt, &RmAliasArgs{Alias: "postmaster"})
 	if removed != true {
 		t.Fatal("rm must report removal")
 	}
@@ -99,7 +99,7 @@ func TestRmAlias(t *testing.T) {
 	if strings.Contains(string(data), "postmaster") {
 		t.Fatalf("alias still present:\n%s", data)
 	}
-	removed, _ = rmAliasFunc{}.Execute(context.Background(), rt, &RmAliasArgs{Alias: "postmaster"})
+	removed, _ = (rmAliasFunc{}).Execute(context.Background(), rt, &RmAliasArgs{Alias: "postmaster"})
 	if removed != false {
 		t.Fatal("second rm must report false")
 	}
