@@ -645,7 +645,24 @@ SUDO_UID/SUDO_USER runas seeding degrades to explicit env vars under
 the single-user model (documented divergence). Exec 418→421; npm's
 public catalog surface is now fully covered.
 
-Next in order: R3 continues (virtualenv_mod audit and pip deepening,
-then the R3 close differential pass), R4-R5 per plan, R6-R8 unblocked
-via E1-E4, R9 awaits the services tier (E5), R10 cloud, R11 netdev
-behind the ADR gate. Master-minion families stay excluded.
+R3.11 replaced the reduced pre-plan virtualenv.create with the full
+contract and completed the family: create ports both toolchain branches
+(venv via the interpreter hook, virtualenv with the version-window
+flag logic for distribute/never_download/--download), all six venv-only
+and virtualenv-only option guards with verbatim texts, the quoted
+--prompt token, and the run_all-dict failure return (no error on nonzero
+retcode). The pip/setuptools bootstrap scripts hit the cp.cache_file
+boundary — https URLs surface UnsupportedError, so create(pip=True)
+only completes where pip already exists (documented boundary).
+virtualenv_ver parses the version-looking tokens, strips rc/+ds suffixes,
+and renders the verbatim failure text including Python-style argv/dict
+reprs. get_site_packages/get_distribution_path/get_resource_path/
+get_resource_content embed the upstream Python source strings verbatim
+(pkg_resources vs importlib.metadata split included) behind the
+safe_py_code guard and the bin/python verification error. Exec 421→426;
+virtualenv's public catalog surface is fully covered.
+
+Next in order: R3 continues (pip deepening, then the R3 close
+differential pass), R4-R5 per plan, R6-R8 unblocked via E1-E4, R9
+awaits the services tier (E5), R10 cloud, R11 netdev behind the ADR
+gate. Master-minion families stay excluded.
