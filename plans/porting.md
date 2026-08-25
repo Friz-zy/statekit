@@ -662,7 +662,31 @@ get_resource_content embed the upstream Python source strings verbatim
 safe_py_code guard and the bin/python verification error. Exec 421→426;
 virtualenv's public catalog surface is fully covered.
 
-Next in order: R3 continues (pip deepening, then the R3 close
-differential pass), R4-R5 per plan, R6-R8 unblocked via E1-E4, R9
-awaits the services tier (E5), R10 cloud, R11 netdev behind the ADR
-gate. Master-minion families stay excluded.
+R3.12 completed the pip family, replacing the reduced pre-plan surface
+with the full contract across eleven CLI-facing functions. install
+ports the complete kwargs machinery: version-gated legacy flags
+(use_wheel/no_use_wheel/no_binary), the log file validation chain,
+proxy composition with the global-config fallback, the timeout
+float/int validation text, index/mirror validation with the pip>=7
+mirrors rejection, exists_action s/i/w/b validation, VENV_PIP_TARGET
+inheritance, the semicolon-to-comma pkgs quirk, the editable #egg
+guard, extra_args dict/positional handling, VIRTUAL_ENV injection for
+directory bin_env values, and the pip 10+ short-circuit returning
+{"retcode": 0, "stdout": "No packages to install."} after exactly one
+version probe. uninstall carries the requirements-dedup quirk; freeze
+pins the --all floor and the #68214 --disable-pip-version-check
+placements; list_/list_freeze_parse cover the JSON and freeze-parse
+paths including -e/#egg and === records; list_upgrades keeps all three
+output-format branches; upgrade() diffs the before/after lists
+symmetrically. Binary resolution mirrors the ranked venv search
+(python < python3 < pythonX.Y) with upstream's os.access semantics —
+nonexistent paths yield the Access-denied message. Divergences
+documented in-package: no bundled salt-pip branch (PATH interpreter
+hook), no user-scoped requirements tempdir copying (single-user model),
+salt:// requirements surfacing cp.cache_file UnsupportedError.
+Exec 426→434.
+
+Next in order: R3 close differential pass (registry vs catalog
+reconciliation across all R3 families), then R4-R5 per plan, R6-R8
+unblocked via E1-E4, R9 awaits the services tier (E5), R10 cloud, R11
+netdev behind the ADR gate. Master-minion families stay excluded.
