@@ -23,7 +23,7 @@ func TestR43FamiliesRegistered(t *testing.T) {
 		t.Fatal(err)
 	}
 	expected := map[string]int{
-		"cp":       14,
+		"cp":       15, // R4.7 adds cp.stat_file for the file keep_mode flow
 		"temp":     2,
 		"xml":      4,
 		"jinja":    3,

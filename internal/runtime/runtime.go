@@ -262,6 +262,7 @@ type FileSystem interface {
 	ReadDir(name string) ([]fs.DirEntry, error)
 	Chmod(name string, mode fs.FileMode) error
 	Chown(name string, uid, gid int) error
+	Lchown(name string, uid, gid int) error
 }
 
 // OSFileSystem is the production FileSystem backed by the os package.
@@ -321,6 +322,10 @@ func (OSFileSystem) Chmod(name string, mode fs.FileMode) error { return os.Chmod
 
 // Chown implements FileSystem.
 func (OSFileSystem) Chown(name string, uid, gid int) error { return os.Chown(name, uid, gid) }
+
+// Lchown implements FileSystem without following the final symlink
+// (salt.modules.file.lchown relies on it for symlink ownership).
+func (OSFileSystem) Lchown(name string, uid, gid int) error { return os.Lchown(name, uid, gid) }
 
 type memNode struct {
 	dir     bool
@@ -750,6 +755,19 @@ func (m *MemoryFS) Chown(name string, uid, gid int) error {
 	node, err := m.getResolved("chown", name)
 	if err != nil {
 		return err
+	}
+	node.uid, node.gid = uid, gid
+	return nil
+}
+
+// Lchown implements FileSystem without following the final symlink; the
+// memory tree records ownership on the link node itself.
+func (m *MemoryFS) Lchown(name string, uid, gid int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	node, ok := m.nodes[m.norm(name)]
+	if !ok {
+		return pathError("lchown", name, fs.ErrNotExist)
 	}
 	node.uid, node.gid = uid, gid
 	return nil

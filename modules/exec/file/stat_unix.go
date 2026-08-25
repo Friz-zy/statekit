@@ -27,3 +27,10 @@ func nlinkOf(info fs.FileInfo) uint64 {
 	}
 	return 1
 }
+
+func inodeOf(info fs.FileInfo) int64 {
+	if st, ok := info.Sys().(*syscall.Stat_t); ok {
+		return int64(st.Ino)
+	}
+	return 0
+}

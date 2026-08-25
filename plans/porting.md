@@ -822,8 +822,50 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R4 continues (manage_file/check_managed/check_managed_
-changes/check_file_meta/check_perms — the managed-source meta family),
-then the R4 close differential pass. R5 per plan after. R6-R8 via E1-E4,
-R9 awaits E5, R10 cloud, R11 netdev behind ADR gate; pkg provider long
-tail queued as its own round. Master-minion families stay excluded.
+Next in order: the R4 close differential pass over its families (R4.1–
+R4.7), then remaining R4 file long-tail slices (find/grep/line/move/psed,
+backup listing) per plan. R5 per plan after. R6-R8 via E1-E4, R9 awaits
+E5, R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued
+as its own round. Master-minion families stay excluded.
+
+R4.7 landed the managed-source meta family behind file.manage_file (15
+registered exec functions): check_file_meta ports the full probe — newfile
+detection, hsum-vs-lstats sum comparison with the sfn cache fallback,
+contents-diff via tempfiles, obfuscate_templates through config.option,
+user/group/mode/attrs comparisons, and the 3007 ignore_ordering/whitespace/
+comment_characters tuple returns; check_managed_changes adds the keep_mode
+cp.stat_file override and the lowercase-hsum normalization; check_managed
+returns upstream's tri-state (True / None+change list / False+comment) with
+the tempdir permission pop and deterministic key ordering (divergence:
+upstream keeps insertion order); manage_file reproduces both branches —
+existing-target replace with web-checksum verification (verbatim mismatch
+texts incl. the source_hash_name hint), _binary_replace diffing, backup=
+minion timestamped copies under cachedir/file_backup with owner/mode
+preservation (salt.utils.files.copyfile/backup_minion port), symlink
+replacement without follow_symlinks, umask-derived new-file modes — and the
+new-file arm incl. parent-directory errors carrying accumulated changes
+(upstream's _error contract), makedirs dir-mode derivation OR-ing execute
+bits per nonzero digit, and the documented quirk that exec-level test mode
+still writes new-file contents (states gate earlier). check_perms ports the
+luser/lgroup/lmode recording, chown/lchown selection by follow_symlinks
+with suid/sgid mode restoration, post-verification failure texts, attrs
+add/remove via lsattr/chattr/tune2fs version probing through the central
+Runner, and the Linux selinux-context battery over stat -c %C/chcon plus
+fcontext persist delegates; its ValueError path is pinned as a fixed Salt
+crash (init.md section 28). get_diff ships a faithful difflib port
+(SequenceMatcher with autojunk, grouped opcodes, unified_diff headers even
+when show_filenames=False) mapped onto the exact upstream test vectors incl.
+Cyrillic lines and the binary-replace strings, plus get_conditional_diff.
+source_list degrades master lists to empty (master-minion excluded) while
+keeping local-path and dict-form matching with the verbatim none-found
+error; get_managed keeps the Local-file-source/salt-not-found/template-
+unsupported comment shapes (template registry stays empty per the minimal-
+jinja ADR) and surfaces signature params as gpg.verify UnsupportedError
+until R5. get_source_sum completes the hash-expression/hash-file machinery
+with all four verbatim error texts. FileSystem gains Lchown (OS + memory);
+RuntimeFS untouched otherwise; cp.stat_file added for keep_mode. Upstream
+pytests map onto hermetic MemoryFS/OS-tempdir fixtures with a scripted
+fake Runner; difflib outputs are byte-exact against CPython vectors. File
+family remains partial — find/grep/line/diskusage/statvfs/open_files/move/
+psed and the backup-listing quartet stay pending for later R4 slices (exec
+548→564).

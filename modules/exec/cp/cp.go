@@ -29,7 +29,7 @@ func stripFileScheme(path string) string {
 	return strings.TrimPrefix(path, "file://")
 }
 
-type cacheFileArgs struct {
+type CacheFileArgs struct {
 	Path    string  `statekit:"required,name=path"`
 	Saltenv *string `statekit:"name=saltenv"`
 }
@@ -40,9 +40,9 @@ type CacheFileFunc struct{}
 // paths return unchanged (no remote cache exists — documented divergence);
 // salt:// stays permanently excluded.
 func (CacheFileFunc) Name() string { return "cp.cache_file" }
-func (CacheFileFunc) Args() any    { return cacheFileArgs{} }
+func (CacheFileFunc) Args() any    { return CacheFileArgs{} }
 func (CacheFileFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*cacheFileArgs)
+	a := args.(*CacheFileArgs)
 	if isSaltURL(a.Path) {
 		return false, &runtime.UnsupportedError{Kind: "function", Name: "cp.cache_file"}
 	}
@@ -71,7 +71,7 @@ func (CacheLocalFileFunc) Execute(_ context.Context, rt *runtime.Runtime, args a
 	return a.Path, nil
 }
 
-type isCachedArgs struct {
+type IsCachedArgs struct {
 	Path    string  `statekit:"required,name=path"`
 	Saltenv *string `statekit:"name=saltenv"`
 }
@@ -81,9 +81,9 @@ type IsCachedFunc struct{}
 // IsCached mirrors is_cached: local paths are always cached; a salt:// URL
 // yields "" upstream when the file cannot be fetched.
 func (IsCachedFunc) Name() string { return "cp.is_cached" }
-func (IsCachedFunc) Args() any    { return isCachedArgs{} }
+func (IsCachedFunc) Args() any    { return IsCachedArgs{} }
 func (IsCachedFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*isCachedArgs)
+	a := args.(*IsCachedArgs)
 	if isSaltURL(a.Path) {
 		return "", nil
 	}
@@ -204,6 +204,40 @@ func (GetFileStrFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any
 	return res, nil
 }
 
+type StatFileArgs struct {
+	Path    string  `statekit:"required,name=path"`
+	Saltenv *string `statekit:"name=saltenv"`
+	Octal   *bool   `statekit:"name=octal"`
+}
+
+type StatFileFunc struct{}
+
+// StatFile mirrors cp.stat_file for local sources: an absolute (or file://)
+// path returns its mode as a zero-padded octal string by default, or the
+// integer permission bits with octal=False. salt:// requires the excluded
+// master fileserver and surfaces UnsupportedError like list_master.
+func (StatFileFunc) Name() string { return "cp.stat_file" }
+func (StatFileFunc) Args() any    { return StatFileArgs{} }
+func (StatFileFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a := args.(*StatFileArgs)
+	if isSaltURL(a.Path) {
+		return nil, masterUnsupported("cp.stat_file")
+	}
+	path := filepath.Clean(strings.TrimPrefix(a.Path, "file://"))
+	info, err := rt.FS.Stat(path)
+	if err != nil {
+		return nil, nil
+	}
+	octal := true
+	if a.Octal != nil {
+		octal = *a.Octal
+	}
+	if octal {
+		return fmt.Sprintf("%04o", info.Mode().Perm()), nil
+	}
+	return int(info.Mode().Perm()), nil
+}
+
 type HashFileArgs struct {
 	Path    string  `statekit:"required,name=path"`
 	Form    *string `statekit:"name=form"`
@@ -312,6 +346,7 @@ func Register(reg *runtime.ExecRegistry) error {
 		GetURLFunc{},
 		GetFileStrFunc{},
 		HashFileFunc{},
+		StatFileFunc{},
 		ListMasterFunc{},
 		ListMasterDirsFunc{},
 		ListMasterSymlinksFunc{},

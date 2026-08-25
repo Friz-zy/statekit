@@ -138,6 +138,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execfile.RegisterSums,
 		execfile.RegisterDevices,
 		execfile.RegisterPatch,
+		execfile.RegisterMeta,
 		execcp.Register,
 		exectemp.Register,
 		execxml.Register,

@@ -49,3 +49,6 @@ __pycache__/
 
 # Project-local scratch space (temp/data modules)
 .statekit/
+
+# Go toolchain scratch (noexec /tmp workaround)
+.gotmp/

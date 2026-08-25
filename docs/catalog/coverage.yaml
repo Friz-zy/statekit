@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 548
+    implemented: 564
 state:
     salt_modules: 132
     salt_functions: 669
@@ -77,6 +77,7 @@ implemented:
         - cp.push
         - cp.push_dir
         - cp.recv
+        - cp.stat_file
         - cron.add_job
         - cron.list_tab
         - cron.raw_tab
@@ -135,7 +136,12 @@ implemented:
         - file.append
         - file.basename
         - file.blockreplace
+        - file.chattr
+        - file.check_file_meta
         - file.check_hash
+        - file.check_managed
+        - file.check_managed_changes
+        - file.check_perms
         - file.chgrp
         - file.chown
         - file.comment
@@ -148,9 +154,13 @@ implemented:
         - file.extract_hash
         - file.file_exists
         - file.get_devmm
+        - file.get_diff
         - file.get_gid
         - file.get_group
         - file.get_hash
+        - file.get_managed
+        - file.get_selinux_context
+        - file.get_source_sum
         - file.get_sum
         - file.get_uid
         - file.get_user
@@ -162,10 +172,13 @@ implemented:
         - file.is_hardlink
         - file.is_link
         - file.join
+        - file.lchown
         - file.link
+        - file.lsattr
         - file.lstat
         - file.makedirs_
         - file.makedirs_perms
+        - file.manage_file
         - file.mkdir
         - file.mknod
         - file.mknod_blkdev
@@ -182,12 +195,15 @@ implemented:
         - file.remove
         - file.rename
         - file.replace
+        - file.restorecon
         - file.rmdir
         - file.search
         - file.sed
         - file.sed_contains
         - file.seek_read
         - file.seek_write
+        - file.set_selinux_context
+        - file.source_list
         - file.stats
         - file.symlink
         - file.touch
