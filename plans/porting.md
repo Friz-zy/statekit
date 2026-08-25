@@ -769,9 +769,28 @@ Workspace hygiene: all new write paths stay inside the project tree
 (.statekit/, t.TempDir() in suites); system directories are read-only
 probe targets at most.
 
-Next in order: R4 continues (out/ret/incron/logrotate/restartcheck,
-status long tail, remaining file tail incl. patch/sed/manage_file
-family), then the R4 close differential pass. R5 per plan after. R6-R8
-via E1-E4, R9 awaits E5, R10 cloud, R11 netdev behind ADR gate; pkg
-provider long tail queued as its own round. Master-minion families stay
-excluded.
+R4.4 landed four families (17 exec functions + the logrotate state).
+ret reports its returner-dispatch exclusion per function (the returner
+loader is part of the master-minion job architecture). out renders
+through json/yaml via internal/output plus a minimal nested renderer;
+unknown outputters surface UnsupportedError; string_format strips ANSI
+(no-op for these renderers) and html_format wraps escaped text in a
+pre block. incron ports list_tab/raw_incron/raw_system_incron/set_job/
+rm_job/write_incron_file(+verbose) with the mask-type validation table,
+present/new/updated/removed/absent replies, direct system-tab writes
+(/etc/incron.d/salt, dir lazy-created) and `incrontab <file>` dispatch
+through the Runner for user tabs. logrotate ports the conf parser
+(single/multi modes, include recursion with provenance tracking,
+script-directive opaque bodies, int coercion), show_conf/get/set_ with
+dict guards and prepend-if-not-found line replacement, plus the
+logrotate.set_ state (idempotence comment, test mode, old/new changes).
+Terminology hygiene: StateKit's own paths and tokens avoid SaltStack
+vocabulary — the datastore lives at .statekit/data (was .statekit/
+minion); upstream-architecture comments keep Salt terms where they
+describe the ported contract. Exec 517→533.
+
+Next in order: R4 continues (status long tail, restartcheck, remaining
+file tail incl. patch/sed/manage_file/check_* meta family), then the R4
+close differential pass. R5 per plan after. R6-R8 via E1-E4, R9 awaits
+E5, R10 cloud, R11 netdev behind ADR gate; pkg provider long tail
+queued as its own round. Master-minion families stay excluded.

@@ -34,6 +34,7 @@ import (
 	exechashutil "github.com/friz-zy/statekit/modules/exec/hashutil"
 	exechosts "github.com/friz-zy/statekit/modules/exec/hosts"
 	exechttp "github.com/friz-zy/statekit/modules/exec/http"
+	execincron "github.com/friz-zy/statekit/modules/exec/incron"
 	execini "github.com/friz-zy/statekit/modules/exec/ini"
 	execipset "github.com/friz-zy/statekit/modules/exec/ipset"
 	execiptables "github.com/friz-zy/statekit/modules/exec/iptables"
@@ -49,6 +50,7 @@ import (
 	execnetwork "github.com/friz-zy/statekit/modules/exec/network"
 	execnftables "github.com/friz-zy/statekit/modules/exec/nftables"
 	execnpm "github.com/friz-zy/statekit/modules/exec/npm"
+	execout "github.com/friz-zy/statekit/modules/exec/out"
 	execpart "github.com/friz-zy/statekit/modules/exec/partition"
 	execpip "github.com/friz-zy/statekit/modules/exec/pip"
 	execpkg "github.com/friz-zy/statekit/modules/exec/pkg"
@@ -60,6 +62,7 @@ import (
 	execpython "github.com/friz-zy/statekit/modules/exec/python"
 	execquota "github.com/friz-zy/statekit/modules/exec/quota"
 	execrandom "github.com/friz-zy/statekit/modules/exec/random"
+	execret "github.com/friz-zy/statekit/modules/exec/ret"
 	execrsync "github.com/friz-zy/statekit/modules/exec/rsync"
 	execscsi "github.com/friz-zy/statekit/modules/exec/scsi"
 	execselinux "github.com/friz-zy/statekit/modules/exec/selinux"
@@ -86,6 +89,7 @@ import (
 	stategroup "github.com/friz-zy/statekit/modules/state/group"
 	statehost "github.com/friz-zy/statekit/modules/state/host"
 	stateini "github.com/friz-zy/statekit/modules/state/ini"
+	statelogrotate "github.com/friz-zy/statekit/modules/state/logrotate"
 	statelvm "github.com/friz-zy/statekit/modules/state/lvm"
 	statepkg "github.com/friz-zy/statekit/modules/state/pkg"
 	statepkgbuild "github.com/friz-zy/statekit/modules/state/pkgbuild"
@@ -139,6 +143,9 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execjinja.Register,
 		execdata.Register,
 		execdefaults.Register,
+		execret.Register,
+		execout.Register,
+		execincron.Register,
 		execstatus.Register,
 		execuser.Register,
 		execgroup.Register,
@@ -217,6 +224,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		statealiases.Register,
 		stateini.Register,
 		statepkgrepo.Register,
+		statelogrotate.Register,
 		statedebconf.Register,
 		statepyenv.Register,
 		statepython.Register,

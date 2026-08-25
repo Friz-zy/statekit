@@ -1,6 +1,6 @@
-// Package data implements Salt's minion datastore over a JSON file at an
-// injectable cache directory, mirroring saltstack/salt/modules/data.py @
-// pinned revision.
+// Package data implements the StateKit persistent datastore over a JSON
+// file at an injectable cache directory, mirroring saltstack/salt/modules/
+// data.py @ pinned revision (upstream calls it the minion datastore).
 //
 // Contract notes (init.md section 28): upstream serializes through
 // salt.payload (msgpack); StateKit persists JSON — same structure,
@@ -18,9 +18,9 @@ import (
 
 // dataDir is injectable so suites run hermetically. Upstream reads
 // __opts__["cachedir"] (default /var/cache/salt/minion); StateKit keeps
-// all writes inside the project workspace by default (.statekit/minion)
+// all writes inside the project workspace by default (.statekit/data)
 // and never touches system cache directories.
-var dataDir = filepath.Join(".statekit", "minion")
+var dataDir = filepath.Join(".statekit", "data")
 
 func datastorePath() string { return dataDir + "/datastore.json" }
 

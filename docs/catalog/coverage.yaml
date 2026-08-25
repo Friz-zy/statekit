@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 517
+    implemented: 533
 state:
     salt_modules: 132
     salt_functions: 669
@@ -220,6 +220,13 @@ implemented:
         - hosts.rm_host
         - hosts.set_host
         - http.query
+        - incron.list_tab
+        - incron.raw_incron
+        - incron.raw_system_incron
+        - incron.rm_job
+        - incron.set_job
+        - incron.write_incron_file
+        - incron.write_incron_file_verbose
         - ini.get_ini
         - ini.get_option
         - ini.remove_option
@@ -267,8 +274,9 @@ implemented:
         - locale.get_locale
         - locale.list_avail
         - locale.set_locale
-        - logrotate.rotate
-        - logrotate.show_config
+        - logrotate.get
+        - logrotate.set_
+        - logrotate.show_conf
         - lvm.fullversion
         - lvm.lvcreate
         - lvm.lvdisplay
@@ -358,6 +366,9 @@ implemented:
         - npm.install
         - npm.list
         - npm.uninstall
+        - out.html_format
+        - out.out_format
+        - out.string_format
         - partition.align_check
         - partition.check
         - partition.cp
@@ -472,6 +483,10 @@ implemented:
         - raid.list
         - raid.save_config
         - raid.stop
+        - ret.get_fun
+        - ret.get_jid
+        - ret.get_jids
+        - ret.get_minions
         - rsync.sync
         - scsi.ls
         - scsi.rescan_all
@@ -566,6 +581,7 @@ implemented:
         - host.present
         - ini.options_absent
         - ini.options_present
+        - logrotate.set_
         - lvm.lv_absent
         - lvm.lv_present
         - lvm.pv_absent

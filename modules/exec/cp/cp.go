@@ -37,7 +37,7 @@ type cacheFileArgs struct {
 type CacheFileFunc struct{}
 
 // CacheFile mirrors cache_file for local sources: readable local absolute
-// paths return unchanged (no minion cache exists — documented divergence);
+// paths return unchanged (no remote cache exists — documented divergence);
 // salt:// stays permanently excluded.
 func (CacheFileFunc) Name() string { return "cp.cache_file" }
 func (CacheFileFunc) Args() any    { return cacheFileArgs{} }
@@ -59,7 +59,7 @@ type cacheLocalFileArgs struct {
 
 type CacheLocalFileFunc struct{}
 
-// CacheLocalFile mirrors cache_local_file: StateKit has no minion cache,
+// CacheLocalFile mirrors cache_local_file: StateKit has no fileserver cache,
 // so the readable local path returns as-is (documented divergence).
 func (CacheLocalFileFunc) Name() string { return "cp.cache_local_file" }
 func (CacheLocalFileFunc) Args() any    { return cacheLocalFileArgs{} }

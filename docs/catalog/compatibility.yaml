@@ -4,10 +4,10 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 71
+    implemented: 74
     partial: 0
     excluded: 69
-    planned: 106
+    planned: 103
 implemented_families:
     - aliases
     - alternatives
@@ -36,6 +36,7 @@ implemented_families:
     - host
     - hosts
     - http
+    - incron
     - ini
     - ipset
     - iptables
@@ -50,6 +51,7 @@ implemented_families:
     - network
     - nftables
     - npm
+    - out
     - partition
     - pip
     - pkg
@@ -61,6 +63,7 @@ implemented_families:
     - python
     - quota
     - raid
+    - ret
     - rsync
     - scsi
     - selinux
@@ -184,7 +187,6 @@ planned:
     - 'fmadm (planned: needs a dedicated porting round)'
     - 'gpg (planned: needs a dedicated porting round)'
     - 'idem (planned: needs a dedicated porting round)'
-    - 'incron (planned: needs a dedicated porting round)'
     - 'iosconfig (planned: needs a dedicated porting round)'
     - 'ip (planned: needs a dedicated porting round)'
     - 'kernelpkg (planned: needs a dedicated porting round)'
@@ -211,7 +213,6 @@ planned:
     - 'ntp (planned: needs a dedicated porting round)'
     - 'oracle (planned: needs a dedicated porting round)'
     - 'osquery (planned: needs a dedicated porting round)'
-    - 'out (planned: needs a dedicated porting round)'
     - 'pam (planned: needs a dedicated porting round)'
     - 'pkgutil (planned: needs a dedicated porting round)'
     - 'power (planned: needs a dedicated porting round)'
@@ -226,7 +227,6 @@ planned:
     - 'rdp (planned: needs a dedicated porting round)'
     - 'reg (planned: needs a dedicated porting round)'
     - 'restartcheck (planned: needs a dedicated porting round)'
-    - 'ret (planned: needs a dedicated porting round)'
     - 'route (planned: needs a dedicated porting round)'
     - 'scp (planned: needs a dedicated porting round)'
     - 'seed (planned: needs a dedicated porting round)'
