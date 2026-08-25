@@ -3277,10 +3277,69 @@ func RegisterMeta(reg *runtime.ExecRegistry) error {
 		getSelinuxContextFunc{},
 		setSelinuxContextFunc{},
 		restoreconFunc{},
+		getModeFunc{},
+		setModeFunc{},
 	} {
 		if err := reg.Register(fn); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// file.get_mode / file.set_mode
+
+type getModeArgs struct {
+	Path           string `statekit:"required,name=path"`
+	FollowSymlinks *bool  `statekit:"name=follow_symlinks"`
+}
+
+type getModeFunc struct{}
+
+func (getModeFunc) Name() string { return "file.get_mode" }
+func (getModeFunc) Args() any    { return getModeArgs{} }
+func (getModeFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (res any, err error) {
+	defer recoverMeta(&res, &err)
+	a := args.(*getModeArgs)
+	follow := a.FollowSymlinks == nil || *a.FollowSymlinks
+	st, serr := statsImpl(rt, expandUser(a.Path), nil, follow)
+	if serr != nil {
+		panicCmdExec(serr.Error())
+	}
+	if m, ok := st["mode"].(string); ok {
+		return m, nil
+	}
+	return "", nil
+}
+
+type setModeArgs struct {
+	Path string `statekit:"required,name=path"`
+	Mode any    `statekit:"name=mode"`
+}
+
+type setModeFunc struct{}
+
+func (setModeFunc) Name() string { return "file.set_mode" }
+func (setModeFunc) Args() any    { return setModeArgs{} }
+func (setModeFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (res any, err error) {
+	defer recoverMeta(&res, &err)
+	a := args.(*setModeArgs)
+	path := expandUser(a.Path)
+	mode := strings.TrimLeft(fmt.Sprintf("%v", a.Mode), "0Oo")
+	if mode == "" {
+		mode = "0"
+	}
+	if _, serr := rt.FS.Stat(path); serr != nil {
+		panicCmdExec(fmt.Sprintf("%s: File not found", path))
+	}
+	if cerr := chmodMode(rt, path, mode); cerr != nil {
+		return "Invalid Mode " + mode, nil
+	}
+	st, serr := statsImpl(rt, path, nil, true)
+	if serr != nil {
+		panicCmdExec(serr.Error())
+	}
+	m, _ := st["mode"].(string)
+	return m, nil
 }

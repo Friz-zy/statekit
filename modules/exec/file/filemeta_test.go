@@ -960,3 +960,44 @@ func TestCpStatFileOctal(t *testing.T) {
 		t.Fatalf("salt:// boundary = %v", err)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// get_mode / set_mode
+
+func TestGetModeSetMode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "script.sh")
+	writeOSFile(t, path, "#!/bin/sh\n")
+	os.Chmod(path, 0o750)
+
+	rt, _ := osMetaRT(t, dir)
+	res := mustCall(t, rt, "file.get_mode", &getModeArgs{Path: path})
+	if res != "0750" {
+		t.Fatalf("get_mode = %#v", res)
+	}
+
+	// set_mode strips leading zeros and returns the resulting mode string.
+	res = mustCall(t, rt, "file.set_mode", &setModeArgs{Path: path, Mode: "0640"})
+	if res != "0640" {
+		t.Fatalf("set_mode reply = %#v", res)
+	}
+	info, _ := os.Stat(path)
+	if info.Mode().Perm() != 0o640 {
+		t.Fatalf("mode not applied: %v", info.Mode().Perm())
+	}
+
+	// Invalid mode yields the verbatim error string without raising.
+	res, err := setModeFunc{}.Execute(context.Background(), rt, &setModeArgs{
+		Path: path, Mode: "0999",
+	})
+	if err != nil || res != "Invalid Mode 999" {
+		t.Fatalf("invalid mode = %#v, %v", res, err)
+	}
+
+	_, err = setModeFunc{}.Execute(context.Background(), rt, &setModeArgs{
+		Path: filepath.Join(dir, "absent"), Mode: "0600",
+	})
+	if err == nil || !strings.HasSuffix(err.Error(), ": File not found") {
+		t.Fatalf("missing file error = %v", err)
+	}
+}
