@@ -822,13 +822,38 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R5.7 — the gpg key-management tail (create/delete/list/
-search/trust/import/export/receive/read/get_key over _create_gnupghome/
-_create_gpg), then tls (29, openssl orchestration), then ssh_pki and the
-x509 boundary classification. R6-R8 via E1-E4, R9 awaits E5, R10 cloud,
-R11 netdev behind ADR gate; pkg provider long tail queued as its own
-round; remaining R4 file long-tail slices tracked in the R4 report's
-pending lists. Master-minion families stay excluded.
+Next in order: R5.8 — tls (29 functions, pure openssl orchestration
+through the Runner), then ssh_pki and the x509 boundary classification;
+after that the R5 close differential pass. R6-R8 via E1-E4, R9 awaits E5,
+R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
+its own round; remaining R4 file long-tail slices tracked in the R4
+report's pending lists. Master-minion families stay excluded.
+
+R5.7 completed the gpg module with its key-management tail (12 registered
+exec functions), all through the gpg CLI with --with-colons streams:
+list_keys/list_secret_keys filter pub/sec records by mode and render the
+python-gnupg key shape (keyid/fingerprint/uids, %Y-%m-%d created/expires
+with the expired boolean, keyLength, letter-trust translations);
+get_key/get_secret_key keep the short-id slice quirk (long[8:]); read_key
+maps to gpg --show-keys with path/text exclusivity guards; search_keys
+and receive_keys talk to keys.openpgp.org by default with IMPORT_OK code
+messages (added/already-exists/updated-new-signatures/updated-new-subkeys)
+and IMPORT_PROBLEM fallbacks; import_key carries both invocation errors,
+the fingerprints list plus Successfully-imported/already-exist/unable
+message mapping and the 3008 select filter via a temp.file throwaway
+keyring roundtrip; export_key reproduces bare/output/comment shapes with
+loopback passphrases for secret material; create_key generates the batch
+parameter file (Key-Type/Length, names, subkey halves, Expire-Date,
+%no-protection or Passphrase) and reads KEY_CREATED for the fingerprint;
+delete_key keeps the argument guards, secret-first ordering with
+"Secret key exists..." refusal and the deleted/failed message pairs;
+trust_key validates exactly-one-of and the six trust levels, then drives
+--import-ownertrust through a stdin-substitute file parsing the from/to
+digits into "Changing ownership trust"/"Setting ownership trust" replies.
+A prefix-handling bug class was caught by tests across all status parsers:
+field indices must be taken after stripping "[GNUPG:] ". The gpg family is
+now fully registered modulo upstream's own library dependencies (exec
+606→618).
 
 R5.6 ported the gpg cryptographic core (4 registered exec functions)
 driving the real gpg binary through the central Runner with --status-fd 2
