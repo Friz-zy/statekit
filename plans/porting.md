@@ -822,14 +822,37 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R5.2 — the ssh auth-keys surface (auth_keys/check_key/
-check_key_file/set_auth_key[_from_file]/rm_auth_key[_from_file]/user_keys/
-host_keys/key_is_encrypted with _validate_keys/_fingerprint machinery),
-then the rest of R5 per plan (ssh_pki, x509, tls, asymmetric, webutil, gpg,
-nacl, pam, semanage, linux_acl). R6-R8 via E1-E4, R9 awaits E5, R10 cloud,
-R11 netdev behind ADR gate; pkg provider long tail queued as its own
-round; remaining R4 file long-tail slices tracked in the R4 report's
-pending lists. Master-minion families stay excluded.
+Next in order: R5.3 — the remaining R5 security families per plan
+(ssh_pki, x509, tls, asymmetric, webutil, gpg, nacl, pam, semanage,
+linux_acl). R6-R8 via E1-E4, R9 awaits E5, R10 cloud, R11 netdev behind
+ADR gate; pkg provider long tail queued as its own round; remaining R4
+file long-tail slices tracked in the R4 report's pending lists.
+Master-minion families stay excluded.
+
+R5.2 completed the ssh module's authorized-keys surface (10 registered
+exec functions): _validate_keys ports the options/enc/key/comment line
+grammar over an RE2 translation of upstream's patterns; auth_keys keeps
+the single-user old shape and silently skips unresolvable users;
+check_key runs the refine_enc normalization (rsa/dss/ecdsa/ed25519 plus
+the cert-v01 and sk- allowlist) against the formatted-line comparison;
+set_auth_key carries the full guard chain — multiword "invalid", unknown
+user "fail", base64-validity "Invalid public key", homedir-must-exist
+"fail" — then dir creation 0700/new-file 0600 with root-only chown and
+best-effort restorecon through the Runner; _replace_auth_key rewrites
+matching key lines preserving comments; rm_auth_key reproduces the
+documented quirk that unparseable non-key lines are dropped during the
+rewrite ("Key removed"/"Key not present"/"Key not removed" verdicts);
+*_from_file variants layer cp.cache_file resolution and the fail >
+replace > new > no-change aggregation order; check_key_file maps keys to
+add/update/exists; host_keys scans ssh_host_*_key files with private/
+certs filters and the FORMAT 1.1 binary guard; user_keys walks the
+id_{rsa,dsa,ecdsa,ed25519} defaults under ~/.ssh with tri-state
+pubfile/prvfile overrides and empty-user pruning; key_is_encrypted pins
+the Proc-Type ENCRYPTED probe with the not-a-private-key error. A
+Python-vs-RE2 anchoring divergence was caught by tests and fixed: lines
+are matched stripped because RE2 `$` does not tolerate a trailing newline
+like Python's. The ssh family is now fully registered modulo its
+excluded/pending tails (exec 572→582).
 
 R5.1 opened the security round with the ssh known-hosts surface (6
 registered exec functions): get_known_host_entries runs ssh-keygen -F

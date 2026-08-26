@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 572
+    implemented: 582
 state:
     salt_modules: 132
     salt_functions: 669
@@ -527,12 +527,22 @@ implemented:
         - shadow.info
         - smbios.get
         - smbios.records
+        - ssh.auth_keys
+        - ssh.check_key
+        - ssh.check_key_file
         - ssh.check_known_host
         - ssh.get_known_host_entries
         - ssh.hash_known_hosts
+        - ssh.host_keys
+        - ssh.key_is_encrypted
         - ssh.recv_known_host_entries
+        - ssh.rm_auth_key
+        - ssh.rm_auth_key_from_file
         - ssh.rm_known_host
+        - ssh.set_auth_key
+        - ssh.set_auth_key_from_file
         - ssh.set_known_host
+        - ssh.user_keys
         - status.all_status
         - status.cpuinfo
         - status.cpustats

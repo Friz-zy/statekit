@@ -142,6 +142,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execfile.RegisterMeta,
 		execcp.Register,
 		execssh.Register,
+		execssh.RegisterAuth,
 		exectemp.Register,
 		execxml.Register,
 		execyaml.Register,

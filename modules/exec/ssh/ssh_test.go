@@ -57,8 +57,10 @@ func newMemFS() runtime.FileSystem { return runtime.NewMemoryFS() }
 func sshRT(t *testing.T, fsys runtime.FileSystem) (*runtime.Runtime, *sshRunner) {
 	t.Helper()
 	reg := runtime.NewExecRegistry()
-	if err := Register(reg); err != nil {
-		t.Fatal(err)
+	for _, register := range []func(*runtime.ExecRegistry) error{Register, RegisterAuth} {
+		if err := register(reg); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := reg.Register(userStub{}); err != nil {
 		t.Fatal(err)
