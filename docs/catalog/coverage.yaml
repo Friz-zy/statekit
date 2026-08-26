@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 582
+    implemented: 591
 state:
     salt_modules: 132
     salt_functions: 669
@@ -14,6 +14,11 @@ state:
     implemented: 44
 implemented:
     exec:
+        - acl.delfacl
+        - acl.getfacl
+        - acl.modfacl
+        - acl.version
+        - acl.wipefacls
         - aliases.get_target
         - aliases.has_target
         - aliases.list_aliases
@@ -390,6 +395,7 @@ implemented:
         - out.html_format
         - out.out_format
         - out.string_format
+        - pam.read_file
         - partition.align_check
         - partition.check
         - partition.cp
@@ -599,6 +605,9 @@ implemented:
         - virtualenv.get_resource_path
         - virtualenv.get_site_packages
         - virtualenv.virtualenv_ver
+        - webutil.useradd
+        - webutil.userdel
+        - webutil.verify
         - xfs.defragment
         - xfs.devices
         - xfs.dump

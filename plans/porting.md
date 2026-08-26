@@ -822,12 +822,31 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R5.3 — the remaining R5 security families per plan
-(ssh_pki, x509, tls, asymmetric, webutil, gpg, nacl, pam, semanage,
-linux_acl). R6-R8 via E1-E4, R9 awaits E5, R10 cloud, R11 netdev behind
-ADR gate; pkg provider long tail queued as its own round; remaining R4
-file long-tail slices tracked in the R4 report's pending lists.
-Master-minion families stay excluded.
+Next in order: R5.4 — the crypto-heavy security families per plan
+(ssh_pki, x509, tls, asymmetric, nacl, gpg), then pam-adjacent semanage
+and linux_acl tails. R6-R8 via E1-E4, R9 awaits E5, R10 cloud, R11
+netdev behind ADR gate; pkg provider long tail queued as its own round;
+remaining R4 file long-tail slices tracked in the R4 report's pending
+lists. Master-minion families stay excluded.
+
+R5.3 shipped the small CLI/FS batch of the security round (9 registered
+exec functions across three new packages): the acl package registers
+under Salt's virtual name with version/getfacl/wipefacls/modfacl/delfacl —
+getfacl ports the comment-header grammar (# file:/owner:/group:/flags:)
+into upstream's nested entry shape including suid/sgid/sticky flag
+decoding and default: rule separation, _parse_acl derives octal from
+rwx strings with owner/group fallbacks, mod/del/wipe build setfacl argv
+with -R-before--m ordering, d:g prefix normalization and the verbatim
+no-files guard; missing binaries surface the __virtual__ message. The
+pam package reads /etc/pam.d-style files through the FS abstraction,
+porting the bracketed control-flag continuation ("[success=1
+default=ignore]") into interface/control_flag/module/arguments rules
+with the literal False missing-file reply. The webutil package wraps
+htpasswd useradd/userdel/verify through the central Runner: create-flag
+appending for absent files, run_all dict vs stdout-lines shapes, the
+retcode==0 verify contract and the verbatim which-guard message.
+Upstream has no unit tests for these three surfaces; hermetic fake-Runner
+fixtures pin every flow (exec 582→591).
 
 R5.2 completed the ssh module's authorized-keys surface (10 registered
 exec functions): _validate_keys ports the options/enc/key/comment line

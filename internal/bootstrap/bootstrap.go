@@ -8,6 +8,7 @@ import (
 	"github.com/friz-zy/statekit/internal/process"
 	"github.com/friz-zy/statekit/internal/runtime"
 
+	execacl "github.com/friz-zy/statekit/modules/exec/acl"
 	execaliases "github.com/friz-zy/statekit/modules/exec/aliases"
 	execalt "github.com/friz-zy/statekit/modules/exec/alternatives"
 	execarchive "github.com/friz-zy/statekit/modules/exec/archive"
@@ -51,6 +52,7 @@ import (
 	execnftables "github.com/friz-zy/statekit/modules/exec/nftables"
 	execnpm "github.com/friz-zy/statekit/modules/exec/npm"
 	execout "github.com/friz-zy/statekit/modules/exec/out"
+	execpam "github.com/friz-zy/statekit/modules/exec/pam"
 	execpart "github.com/friz-zy/statekit/modules/exec/partition"
 	execpip "github.com/friz-zy/statekit/modules/exec/pip"
 	execpkg "github.com/friz-zy/statekit/modules/exec/pkg"
@@ -80,6 +82,7 @@ import (
 	execudev "github.com/friz-zy/statekit/modules/exec/udev"
 	execuser "github.com/friz-zy/statekit/modules/exec/user"
 	execvirtualenv "github.com/friz-zy/statekit/modules/exec/virtualenv"
+	execwebutil "github.com/friz-zy/statekit/modules/exec/webutil"
 	execxfs "github.com/friz-zy/statekit/modules/exec/xfs"
 	execxml "github.com/friz-zy/statekit/modules/exec/xml"
 	execyaml "github.com/friz-zy/statekit/modules/exec/yamlhelper"
@@ -142,6 +145,9 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execfile.RegisterMeta,
 		execcp.Register,
 		execssh.Register,
+		execacl.Register,
+		execpam.Register,
+		execwebutil.Register,
 		execssh.RegisterAuth,
 		exectemp.Register,
 		execxml.Register,
