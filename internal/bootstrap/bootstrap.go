@@ -49,6 +49,7 @@ import (
 	execlvm "github.com/friz-zy/statekit/modules/exec/lvm"
 	execmdadm "github.com/friz-zy/statekit/modules/exec/mdadm"
 	execmount "github.com/friz-zy/statekit/modules/exec/mount"
+	execnacl "github.com/friz-zy/statekit/modules/exec/nacl"
 	execnetwork "github.com/friz-zy/statekit/modules/exec/network"
 	execnftables "github.com/friz-zy/statekit/modules/exec/nftables"
 	execnpm "github.com/friz-zy/statekit/modules/exec/npm"
@@ -148,6 +149,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execssh.Register,
 		execacl.Register,
 		execasym.Register,
+		execnacl.Register,
 		execpam.Register,
 		execwebutil.Register,
 		execssh.RegisterAuth,

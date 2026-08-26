@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 593
+    implemented: 602
 state:
     salt_modules: 132
     salt_functions: 669
@@ -329,6 +329,15 @@ implemented:
         - mount.is_mounted
         - mount.mount
         - mount.umount
+        - nacl.dec
+        - nacl.dec_file
+        - nacl.enc
+        - nacl.enc_file
+        - nacl.keygen
+        - nacl.sealedbox_decrypt
+        - nacl.sealedbox_encrypt
+        - nacl.secretbox_decrypt
+        - nacl.secretbox_encrypt
         - network.active_tcp
         - network.arp
         - network.calc_net

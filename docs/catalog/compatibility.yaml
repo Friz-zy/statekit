@@ -4,10 +4,10 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 80
+    implemented: 81
     partial: 0
     excluded: 69
-    planned: 97
+    planned: 96
 implemented_families:
     - acl
     - aliases
@@ -50,6 +50,7 @@ implemented_families:
     - logrotate
     - lvm
     - mount
+    - nacl
     - network
     - nftables
     - npm
@@ -205,7 +206,6 @@ planned:
     - 'macpackage (planned: needs a dedicated porting round)'
     - 'makeconf (planned: needs a dedicated porting round)'
     - 'module (planned: needs a dedicated porting round)'
-    - 'nacl (planned: needs a dedicated porting round)'
     - 'net (planned: needs a dedicated porting round)'
     - 'netacl (planned: needs a dedicated porting round)'
     - 'netaddress (planned: needs a dedicated porting round)'

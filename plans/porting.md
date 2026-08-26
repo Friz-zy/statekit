@@ -822,14 +822,36 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R5.5 — gpg and tls (Runner-driven CLI families), then
-ssh_pki (mixed CLI/library) and the x509 boundary classification;
-nacl requires golang.org/x/crypto for the box/sealedbox primitives —
-blocked on the new-dependency ADR per the standing constraint. R6-R8 via
-E1-E4, R9 awaits E5, R10 cloud, R11 netdev behind ADR gate; pkg provider
-long tail queued as its own round; remaining R4 file long-tail slices
-tracked in the R4 report's pending lists. Master-minion families stay
-excluded.
+Next in order: R5.6 — gpg and tls (Runner-driven CLI families), then
+ssh_pki (mixed CLI/library) and the x509 boundary classification.
+R6-R8 via E1-E4, R9 awaits E5, R10 cloud, R11 netdev behind ADR gate;
+pkg provider long tail queued as its own round; remaining R4 file
+long-tail slices tracked in the R4 report's pending lists. Master-minion
+families stay excluded.
+
+R5.5 unblocked nacl via ADR 0002 (owner-approved use of the standard Go
+crypto extension library) and ported the family on golang.org/x/crypto
+v0.55.0 (9 registered exec functions): keygen reproduces the branch
+matrix verbatim — keypair dict when file-less, "saved sk_file:"/"saved
+pk_file:"/the double-space pair message, both-exist and pk-without-sk
+errors — deriving public keys through X25519(sk, basepoint); sealedbox_
+encrypt/decrypt ride box.SealAnonymous/OpenAnonymous for crypto_box_seal
+wire compatibility; secretbox_encrypt/decrypt reproduce libnacl's layout
+(24-byte nonce prepended to crypto_secretbox_easy output, injectable
+nonce source for hermetic wire assertions); enc/dec route by box_type
+(default sealedbox) over the config.get("nacl.config") merge with a
+workspace-local pki_dir fallback; enc_file/dec_file resolve inputs via
+cp.get_file_str first with local-FS fallback and keep the out-exists
+guard; dec returns None for None input; FIPS-mode refusal ports the
+__virtual__ gate. Key material length checks reject short keys where
+PyNaCl would raise. go.mod expands for the first time since R1: x/crypto
+plus indirect x/sys v0.47.0; the audit procedure re-ran per ADR 0002 —
+version-pinned OSV shows only GO-2026-5932 against the unmaintained
+x/crypto/openpgp subpackage, proven absent from the build graph via
+go list -deps/go mod why; go mod verify clean; live PyNaCl interop was
+intentionally not executed (no packages installed into the environment
+without approval) — wire compatibility rests on the shared primitives
+and is structurally pinned by tests. Exec 593→602.
 
 R5.4 ported the asymmetric family onto the Go standard library (2
 registered exec functions, zero new dependencies): asymmetric.sign loads
