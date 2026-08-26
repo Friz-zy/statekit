@@ -4,15 +4,16 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 79
+    implemented: 80
     partial: 0
     excluded: 69
-    planned: 98
+    planned: 97
 implemented_families:
     - acl
     - aliases
     - alternatives
     - archive
+    - asymmetric
     - at
     - bcache
     - blockdev
@@ -169,7 +170,6 @@ planned:
     - 'appx (planned: needs a dedicated porting round)'
     - 'artifactory (planned: needs a dedicated porting round)'
     - 'assistive (planned: needs a dedicated porting round)'
-    - 'asymmetric (planned: needs a dedicated porting round)'
     - 'auditpol (planned: needs a dedicated porting round)'
     - 'autoruns (planned: needs a dedicated porting round)'
     - 'baredoc (planned: needs a dedicated porting round)'

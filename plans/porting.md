@@ -822,12 +822,32 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R5.4 — the crypto-heavy security families per plan
-(ssh_pki, x509, tls, asymmetric, nacl, gpg), then pam-adjacent semanage
-and linux_acl tails. R6-R8 via E1-E4, R9 awaits E5, R10 cloud, R11
-netdev behind ADR gate; pkg provider long tail queued as its own round;
-remaining R4 file long-tail slices tracked in the R4 report's pending
-lists. Master-minion families stay excluded.
+Next in order: R5.5 — gpg and tls (Runner-driven CLI families), then
+ssh_pki (mixed CLI/library) and the x509 boundary classification;
+nacl requires golang.org/x/crypto for the box/sealedbox primitives —
+blocked on the new-dependency ADR per the standing constraint. R6-R8 via
+E1-E4, R9 awaits E5, R10 cloud, R11 netdev behind ADR gate; pkg provider
+long tail queued as its own round; remaining R4 file long-tail slices
+tracked in the R4 report's pending lists. Master-minion families stay
+excluded.
+
+R5.4 ported the asymmetric family onto the Go standard library (2
+registered exec functions, zero new dependencies): asymmetric.sign loads
+PKCS#8/PKCS#1/SEC1 private keys (legacy DEK-Info encryption honored with
+a passphrase; OpenSSH containers and Ed448 surface explicit unsupported-
+algorithm errors) and signs text or file inputs — RSA PKCS#1 v1.5 and
+ECDSA ASN.1 consume the single file digest (prehashed), Ed25519 signs raw
+bytes; output is base64 by default with raw=true defaulting to bool(path)
+and the "Signature written to '...'" path reply. asymmetric.verify keeps
+the gpg.verify-compatible {"res","message"} contract: mutual-exclusion and
+missing-parameter invocation errors verbatim, signature references via
+inline base64/local paths/file:// plus cp.cache_file for remote schemes,
+plain pubkey+signature degrading into signed_by_all=[pubkey] exactly like
+upstream, signed_by_any short-circuit with its none-matched message,
+signed_by_all consuming one signature per key, and cached file digests so
+multi-key checks hash the input once. Tests generate RSA-2048/P-256/
+Ed25519 keys at runtime with stdlib crypto and pin roundtrips, tamper
+rejection, multi-check matrices and every guard text (exec 591→593).
 
 R5.3 shipped the small CLI/FS batch of the security round (9 registered
 exec functions across three new packages): the acl package registers

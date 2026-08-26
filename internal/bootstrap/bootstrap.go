@@ -12,6 +12,7 @@ import (
 	execaliases "github.com/friz-zy/statekit/modules/exec/aliases"
 	execalt "github.com/friz-zy/statekit/modules/exec/alternatives"
 	execarchive "github.com/friz-zy/statekit/modules/exec/archive"
+	execasym "github.com/friz-zy/statekit/modules/exec/asymmetric"
 	execat "github.com/friz-zy/statekit/modules/exec/at"
 	execbcache "github.com/friz-zy/statekit/modules/exec/bcache"
 	execblockdev "github.com/friz-zy/statekit/modules/exec/blockdev"
@@ -146,6 +147,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execcp.Register,
 		execssh.Register,
 		execacl.Register,
+		execasym.Register,
 		execpam.Register,
 		execwebutil.Register,
 		execssh.RegisterAuth,
