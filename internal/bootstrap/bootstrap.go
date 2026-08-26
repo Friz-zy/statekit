@@ -32,6 +32,7 @@ import (
 	execextfs "github.com/friz-zy/statekit/modules/exec/extfs"
 	execfile "github.com/friz-zy/statekit/modules/exec/file"
 	execgit "github.com/friz-zy/statekit/modules/exec/git"
+	execgpg "github.com/friz-zy/statekit/modules/exec/gpg"
 	execgroup "github.com/friz-zy/statekit/modules/exec/group"
 	exechashutil "github.com/friz-zy/statekit/modules/exec/hashutil"
 	exechosts "github.com/friz-zy/statekit/modules/exec/hosts"
@@ -150,6 +151,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execacl.Register,
 		execasym.Register,
 		execnacl.Register,
+		execgpg.Register,
 		execpam.Register,
 		execwebutil.Register,
 		execssh.RegisterAuth,

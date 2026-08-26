@@ -822,12 +822,33 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R5.6 — gpg and tls (Runner-driven CLI families), then
-ssh_pki (mixed CLI/library) and the x509 boundary classification.
-R6-R8 via E1-E4, R9 awaits E5, R10 cloud, R11 netdev behind ADR gate;
-pkg provider long tail queued as its own round; remaining R4 file
-long-tail slices tracked in the R4 report's pending lists. Master-minion
-families stay excluded.
+Next in order: R5.7 — the gpg key-management tail (create/delete/list/
+search/trust/import/export/receive/read/get_key over _create_gnupghome/
+_create_gpg), then tls (29, openssl orchestration), then ssh_pki and the
+x509 boundary classification. R6-R8 via E1-E4, R9 awaits E5, R10 cloud,
+R11 netdev behind ADR gate; pkg provider long tail queued as its own
+round; remaining R4 file long-tail slices tracked in the R4 report's
+pending lists. Master-minion families stay excluded.
+
+R5.6 ported the gpg cryptographic core (4 registered exec functions)
+driving the real gpg binary through the central Runner with --status-fd 2
+instead of python-gnupg: encrypt/decrypt keep upstream's {"res","comment"}
+dicts (bare mode returns raw strings; output targets flip the comment to
+"Encrypted/Decrypted data has been written to ..."), sign returns the
+armored block with --local-user keyid support and loopback passphrases;
+verify parses GOODSIG/EXPKEYSIG/VALIDSIG/TRUST_*/ERRSIG status lines into
+the sig_info shape and implements both return contracts — the single-key
+trust dict ("The signature is verified." with username/key_id/trust_level
+mapped through the gnupg>=0.5.1 table) and the 3007 multi-key matrix
+(signed_by_any short-circuit message, signed_by_all per-key failure text,
+"All required keys have provided a signature") plus the trustmodel
+validation list. Homedir machinery ports _get_user_info (config-user
+fallback), _get_user_gnupghome ("salt" user -> config_dir/gpgkeys,
+GNUPGHOME via environ.get, ~/.gnupg fallback) and the 0700 creation
+recovery of _create_gpg; ownership fix-ups degrade to root-only chown
+under the StateKit single-user model. Passphrases resolve from
+config.get("gpg_passphrase") with the verbatim pillar error. Key
+management remains pending for R5.7 (exec 602→606).
 
 R5.5 unblocked nacl via ADR 0002 (owner-approved use of the standard Go
 crypto extension library) and ported the family on golang.org/x/crypto
