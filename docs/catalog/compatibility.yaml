@@ -4,10 +4,10 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 89
+    implemented: 91
     partial: 0
-    excluded: 69
-    planned: 88
+    excluded: 68
+    planned: 87
 implemented_families:
     - acl
     - aliases
@@ -47,6 +47,7 @@ implemented_families:
     - iwtools
     - jinja
     - keyboard
+    - keychain
     - kmod
     - locale
     - logrotate
@@ -95,6 +96,7 @@ implemented_families:
     - user
     - virtualenv
     - webutil
+    - xattr
     - xfs
     - xml
     - yaml
@@ -110,7 +112,6 @@ excluded:
     - 'highstate_doc (excluded: master-minion architecture (StateKit is local-only by design))'
     - 'junos (planned: network-device stack (round R11, ADR-gated plugin boundary))'
     - 'key (excluded: master-minion architecture (StateKit is local-only by design))'
-    - 'keychain (excluded: master-minion architecture (StateKit is local-only by design))'
     - 'match (excluded: master-minion architecture (StateKit is local-only by design))'
     - 'mine (excluded: master-minion architecture (StateKit is local-only by design))'
     - 'minion (excluded: master-minion architecture (StateKit is local-only by design))'
@@ -255,5 +256,4 @@ planned:
     - 'wua (planned: needs a dedicated porting round)'
     - 'wusa (planned: needs a dedicated porting round)'
     - 'x509 (planned: needs a dedicated porting round)'
-    - 'xattr (planned: needs a dedicated porting round)'
     - 'zk_concurrency (planned: needs a dedicated porting round)'

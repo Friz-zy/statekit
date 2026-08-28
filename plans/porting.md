@@ -822,7 +822,8 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R6.6 — macOS extended-attribute wrapper (`mac_xattr`). R7/R8
+Next in order: R6.8 — macOS power and assistive wrappers (`mac_power`,
+`mac_assistive`). R7/R8
 remain behind the same enablers; R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
@@ -989,6 +990,34 @@ macOS output generations, filters, scheduling, catalog lookup and guards;
 moves desktop and softwareupdate to implemented and exec coverage is
 687→707. No host packages were installed; rootless dind still cannot start
 child containers because runc hits `/proc` mount EPERM.
+
+R6.6 ported the five public `mac_xattr` functions (`list`, `read`, `write`,
+`delete`, `clear`) behind a Darwin-only registration, with the upstream
+`list_` alias exposed as `xattr.list`. Native xattr list/read/write/delete/
+clear calls use shell-free argv through the central Runner; list composes
+per-attribute reads, `-x` stays an explicit flag, write verifies the
+post-write value, and error text maps missing files/attributes to Salt's
+`File not found`/`Attribute not found`/`Unknown Error` contracts. Invalid
+UTF-8 output is replaced like the Python decode path. Fake-runner tests cover
+stateful lifecycle, hex flags, errors and platform declarations; coverage is
+exec 707→712 and xattr moves to implemented. No host packages were installed;
+rootless dind still fails before process start on `/proc` mount EPERM.
+
+R6.7 ported the eight public `mac_keychain` functions behind a Darwin-only
+registration: certificate install/uninstall, certificate listing, PKCS#12
+friendly-name/hash extraction, default-keychain get/set, and keychain unlock.
+`security` and the OpenSSL/grep inspection pipelines run through the central
+Runner; password-bearing commands carry Runner redaction entries, improving
+on Salt's plaintext-job warning without changing returned values. Default
+keychain/user switching is an explicit boundary because the current Runner
+has no target-user field; no silent privilege escalation is attempted. Tests
+cover argv/shell command shapes, redaction, list/friendly/hash parsing,
+unlock/default operations and the boundary. The classifier's former broad
+`HasPrefix("key")` rule was corrected to an exact master-minion `key` rule so
+local `keychain` is not falsely excluded; the regression is covered by the
+catalog tool tests. Keychain moves to implemented and exec coverage is
+712→720. No host packages were installed; rootless dind still fails before
+process start on `/proc` mount EPERM.
 
 R6.4 ported the Homebrew/Ports package-provider surface behind Darwin-only
 `pkg.*` registration and fact-driven dispatch: the existing `pkg.Register`

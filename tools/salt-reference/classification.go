@@ -104,7 +104,6 @@ var notApplicablePrefixes = []struct {
 	{"publish", reasonMasterMinion},
 	{"event", reasonMasterMinion},
 	{"minion", reasonMasterMinion},
-	{"key", reasonMasterMinion},
 	{"beacons", reasonMasterMinion},
 	{"schedule", reasonMasterMinion},
 	{"proxy", reasonMasterMinion},
@@ -116,6 +115,13 @@ var notApplicablePrefixes = []struct {
 	{"match", reasonMasterMinion},
 	{"grains", reasonMasterMinion},
 	{"sdb", reasonMasterMinion},
+}
+
+// notApplicableExact contains master-minion names that must not be treated
+// as prefixes. In particular, `keychain` is a local macOS API family, while
+// Salt's `key` family is the master-minion key-management surface.
+var notApplicableExact = map[string]string{
+	"key": reasonMasterMinion,
 }
 
 // classifyFamilies buckets every catalog doc into implemented /
@@ -180,6 +186,10 @@ func classifyFamilies(docs []ModuleDoc, implementedNames []string) map[string][]
 			continue
 		}
 		lower := strings.ToLower(family)
+		if reason, ok := notApplicableExact[lower]; ok {
+			add("excluded", family+" ("+reason+")")
+			continue
+		}
 		classified := false
 		for _, rule := range notApplicablePrefixes {
 			if strings.HasPrefix(lower, rule.prefix) {

@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 707
+    implemented: 720
 state:
     salt_modules: 132
     salt_functions: 669
@@ -319,6 +319,14 @@ implemented:
         - jinja.load_map
         - keyboard.get_layout
         - keyboard.set_layout
+        - keychain.get_default_keychain
+        - keychain.get_friendly_name
+        - keychain.get_hash
+        - keychain.install
+        - keychain.list_certs
+        - keychain.set_default_keychain
+        - keychain.uninstall
+        - keychain.unlock_keychain
         - kmod.is_loaded
         - kmod.load
         - kmod.lsmod
@@ -728,6 +736,11 @@ implemented:
         - webutil.useradd
         - webutil.userdel
         - webutil.verify
+        - xattr.clear
+        - xattr.delete
+        - xattr.list
+        - xattr.read
+        - xattr.write
         - xfs.defragment
         - xfs.devices
         - xfs.dump

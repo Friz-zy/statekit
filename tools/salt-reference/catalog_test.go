@@ -107,6 +107,19 @@ func TestRelevanceAndAliases(t *testing.T) {
 	}
 }
 
+func TestExactMasterMinionKeyRuleDoesNotCatchKeychain(t *testing.T) {
+	buckets := classifyFamilies([]ModuleDoc{
+		{Module: "key", SourceModule: "key"},
+		{Module: "keychain", SourceModule: "mac_keychain"},
+	}, nil)
+	if len(buckets["excluded"]) != 1 || buckets["excluded"][0] != "key (excluded: master-minion architecture (StateKit is local-only by design))" {
+		t.Fatalf("key classification = %v", buckets["excluded"])
+	}
+	if len(buckets["planned"]) != 1 || buckets["planned"][0] != "keychain (planned: needs a dedicated porting round)" {
+		t.Fatalf("keychain classification = %v", buckets["planned"])
+	}
+}
+
 func TestDetectImplemented(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "modules", "exec")

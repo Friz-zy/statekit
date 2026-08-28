@@ -45,6 +45,7 @@ import (
 	execiwtools "github.com/friz-zy/statekit/modules/exec/iwtools"
 	execjinja "github.com/friz-zy/statekit/modules/exec/jinja"
 	execkeyboard "github.com/friz-zy/statekit/modules/exec/keyboard"
+	execkeychain "github.com/friz-zy/statekit/modules/exec/keychain"
 	execkmod "github.com/friz-zy/statekit/modules/exec/kmod"
 	execlocale "github.com/friz-zy/statekit/modules/exec/locale"
 	execlogrotate "github.com/friz-zy/statekit/modules/exec/logrotate"
@@ -93,6 +94,7 @@ import (
 	execuser "github.com/friz-zy/statekit/modules/exec/user"
 	execvirtualenv "github.com/friz-zy/statekit/modules/exec/virtualenv"
 	execwebutil "github.com/friz-zy/statekit/modules/exec/webutil"
+	execxattr "github.com/friz-zy/statekit/modules/exec/xattr"
 	execxfs "github.com/friz-zy/statekit/modules/exec/xfs"
 	execxml "github.com/friz-zy/statekit/modules/exec/xml"
 	execyaml "github.com/friz-zy/statekit/modules/exec/yamlhelper"
@@ -184,6 +186,8 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execpkgutil.Register,
 		execsoftwareupdate.Register,
 		execdesktop.Register,
+		execxattr.Register,
+		execkeychain.Register,
 		execshadow.Register,
 		execpkg.Register,
 		execpkgresource.Register,
