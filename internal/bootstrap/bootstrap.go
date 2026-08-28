@@ -76,6 +76,7 @@ import (
 	execshadow "github.com/friz-zy/statekit/modules/exec/shadow"
 	execsmbios "github.com/friz-zy/statekit/modules/exec/smbios"
 	execssh "github.com/friz-zy/statekit/modules/exec/ssh"
+	execsshpki "github.com/friz-zy/statekit/modules/exec/ssh_pki"
 	execstatus "github.com/friz-zy/statekit/modules/exec/status"
 	execsysctl "github.com/friz-zy/statekit/modules/exec/sysctl"
 	execsysfs "github.com/friz-zy/statekit/modules/exec/sysfs"
@@ -150,6 +151,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execcp.Register,
 		execssh.Register,
 		execacl.Register,
+		execsshpki.Register,
 		execasym.Register,
 		execnacl.Register,
 		execgpg.Register,

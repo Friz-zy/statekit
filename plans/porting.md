@@ -822,9 +822,9 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R5.9 — ssh_pki (19 functions, mixed FS/CLI surface), the
-x509 boundary classification (40 functions, cryptography-dependent like
-tls), then the R5 close differential pass. R6-R8 via E1-E4, R9 awaits E5,
+Next in order: R5.10 — the x509 boundary classification (40 functions,
+cryptography-dependent like tls), then the R5 close differential pass.
+R6-R8 via E1-E4, R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
 report's pending lists. Master-minion families stay excluded. Docker
@@ -884,6 +884,38 @@ scalars. Two parser-bug classes were caught by tests: PEM must be
 decoded before the DER probes, and composite literals in if-init
 positions (fixed by caExistsImpl/maybeFixImpl extraction). Exec
 618→636.
+
+R5.9 ported the local ssh_pki surface (11 cataloged execution functions,
+plus the upstream create_certificate_ssh alias) onto golang.org/x/crypto/ssh
+(already approved by ADR 0002): create_certificate builds and signs
+OpenSSH v01 user/host certificates with private/public-key input forms,
+serial-number parsing, TTL/not_before/not_after handling, principals,
+critical-options/extensions, raw/string/path output and copypath; the
+certificate wire bytes are verified against x/crypto's own bytes-for-signing
+layout and authorized-key parser. create_private_key covers RSA/EC/
+Ed25519 generation, OpenSSH PEM encoding (encrypted and unencrypted),
+0600/0644 path writes, public-key sidecar and overwrite guard; the
+pubkey_suffix empty string is the local equivalent of upstream's false
+skip switch. encode_private_key round-trips encrypted keys and preserves
+the upstream missing/wrong/passphrase error messages. expires,
+get_private_key_size, get_public_key, verify_private_key and
+verify_signature port the introspection/cryptographic checks; read_certificate
+returns cert_type/principals/key-id/type/size, colon-hex serial, UTC dates,
+key lines, critical options/extensions and SHA-256 plus non-FIPS MD5
+fingerprints. get_signing_policy and sign_remote_certificate reproduce
+the local pillar-over-config lookup and policy merge: forced/default/
+allowed option and extension maps, principal intersection/defaults,
+TTL/max-TTL clamping and policy precedence; policy-only responses strip
+private key material and expose signing_public_key. `ca_server`,
+_query_remote, compound matching and __pub_id are explicit boundaries:
+peer publish is master-minion architecture and unavailable in StateKit's
+local-only runtime; matcher policies return the upstream
+"minion sending this request could not be identified" response. The Go
+SSH library supplies bcrypt-backed encrypted-key parsing/encoding, so no
+environment package installation or new dependency was needed. Tests
+cover RSA/EC/Ed25519 and certificate round-trips, signature tampering,
+policy precedence, encrypted-key failures, path modes, expiry and all
+remote boundary/error shapes. Exec 636→647.
 
 R5.7 completed the gpg module with its key-management tail (12 registered
 exec functions), all through the gpg CLI with --with-colons streams:

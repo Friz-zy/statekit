@@ -4,10 +4,10 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 83
+    implemented: 84
     partial: 0
     excluded: 69
-    planned: 94
+    planned: 93
 implemented_families:
     - acl
     - aliases
@@ -77,6 +77,7 @@ implemented_families:
     - shadow
     - smbios
     - ssh
+    - ssh_pki
     - status
     - sysctl
     - sysfs
@@ -239,7 +240,6 @@ planned:
     - 'softwareupdate (planned: needs a dedicated porting round)'
     - 'ssh_auth (planned: needs a dedicated porting round)'
     - 'ssh_known_hosts (planned: needs a dedicated porting round)'
-    - 'ssh_pki (planned: needs a dedicated porting round)'
     - 'state (planned: needs a dedicated porting round)'
     - 'stateconf (planned: needs a dedicated porting round)'
     - 'supervisord (planned: needs a dedicated porting round)'
