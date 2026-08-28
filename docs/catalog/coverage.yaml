@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 752
+    implemented: 762
 state:
     salt_modules: 132
     salt_functions: 669
@@ -607,6 +607,16 @@ implemented:
         - raid.list
         - raid.save_config
         - raid.stop
+        - reg.broadcast_change
+        - reg.delete_key_recursive
+        - reg.delete_value
+        - reg.import_file
+        - reg.key_exists
+        - reg.list_keys
+        - reg.list_values
+        - reg.read_value
+        - reg.set_value
+        - reg.value_exists
         - restartcheck.restartcheck
         - ret.get_fun
         - ret.get_jid

@@ -74,6 +74,7 @@ import (
 	execpython "github.com/friz-zy/statekit/modules/exec/python"
 	execquota "github.com/friz-zy/statekit/modules/exec/quota"
 	execrandom "github.com/friz-zy/statekit/modules/exec/random"
+	execreg "github.com/friz-zy/statekit/modules/exec/reg"
 	execrestartcheck "github.com/friz-zy/statekit/modules/exec/restartcheck"
 	execret "github.com/friz-zy/statekit/modules/exec/ret"
 	execrsync "github.com/friz-zy/statekit/modules/exec/rsync"
@@ -192,6 +193,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execxattr.Register,
 		execkeychain.Register,
 		execpower.Register,
+		execreg.Register,
 		execshadow.Register,
 		execpkg.Register,
 		execpkgresource.Register,

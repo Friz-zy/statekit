@@ -4,10 +4,10 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 93
+    implemented: 94
     partial: 0
     excluded: 68
-    planned: 85
+    planned: 84
 implemented_families:
     - acl
     - aliases
@@ -75,6 +75,7 @@ implemented_families:
     - python
     - quota
     - raid
+    - reg
     - restartcheck
     - ret
     - rsync
@@ -232,7 +233,6 @@ planned:
     - 'random (planned: needs a dedicated porting round)'
     - 'rbac (planned: needs a dedicated porting round)'
     - 'rdp (planned: needs a dedicated porting round)'
-    - 'reg (planned: needs a dedicated porting round)'
     - 'route (planned: needs a dedicated porting round)'
     - 'scp (planned: needs a dedicated porting round)'
     - 'seed (planned: needs a dedicated porting round)'

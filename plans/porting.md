@@ -822,7 +822,8 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R7.1 — Windows core objects (reg → user/group/service/pkg/file).
+Next in order: R7.2 — Windows user/group objects
+(`win_useradd`, `win_groupadd`).
 R8 remains behind E3/E4/E6; R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
@@ -860,6 +861,23 @@ cross-build-only because the available rootless dind sandbox cannot start a
 child container and no macOS runner is attached. R6's Linux gates, catalog
 regeneration, Darwin cross-build matrix and fake-runner contract tests are
 green; R7 is now the next executable track.
+
+R7.1 ported the ten public `reg` functions behind a Windows-only build-tag
+surface and bootstrap registration: key/value existence and enumeration,
+read/set/delete, recursive key deletion, environment broadcast and `.reg`
+file import. The Go implementation uses native `reg.exe`/`rundll32` argv
+through the central Runner, parses `REG_SZ`/`REG_EXPAND_SZ`/`REG_DWORD`/
+`REG_QWORD`/`REG_BINARY`/`REG_MULTI_SZ` output into the Salt result shapes,
+preserves default-value handling, 32/64-bit view switches, hive validation,
+delete safety checks and `Cannot find` comments, and accepts structured
+union-valued registry data through the decoder's `any` support. Volatile
+key creation and remote `cp.cache_file` URL resolution remain explicit
+boundaries because `reg.exe` cannot express the Win32 API option and the
+local-only runtime has no remote fileserver delegate. Windows-only parser
+tests and `GOOS=windows GOARCH=amd64 go test -c` pass; the full repository
+also cross-builds for Windows, while no Windows runtime is attached and no
+host package was installed. Catalog coverage is exec 752→762 and `reg`
+moves to implemented.
 
 R5.8 ported the tls family (18 registered exec functions) onto the Go
 standard library after the contract read showed pyOpenSSL is a libssl
