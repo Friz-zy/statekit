@@ -822,8 +822,8 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R6.3 — mac package/brew wrappers (mac_brew_pkg,
-mac_portspkg, mac_pkgutil, macpackage). R7/R8
+Next in order: R6.4 — Homebrew/Ports package provider long tail
+(`mac_brew_pkg`, `mac_portspkg`). R7/R8
 remain behind the same enablers; R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
@@ -956,6 +956,23 @@ remain green and `GOOS=darwin GOARCH=amd64 go test -c` builds both packages.
 The catalog scanner now deduplicates platform-overlapping virtual names
 (`user.*`/`group.*`) so coverage lists remain auditable; exec coverage is
 651→664. R6 remains open and no host packages were installed; the configured
+rootless dind sandbox still fails before process start on `/proc` mount EPERM.
+
+R6.3 ported the eight public `mac_pkgutil`/`macpackage` functions behind
+Darwin-only registrations: pkgutil list/is_installed/install/forget and
+macpackage installer/app/mount/unmount/package-list/package-ID helpers.
+Native `pkgutil`, `installer`, `hdiutil`, `rsync`, `xar`, `find` and
+PlistBuddy invocations are routed through the central Runner, using argv
+without a shell unless the upstream contract explicitly requires wildcard or
+pipeline shell behavior; installer results preserve retcode/stdout/stderr
+maps, mount returns the output/mountpoint pair, package identifiers support
+archive and directory fallbacks, and filesystem cleanup uses Runtime.FS.
+The `list_` Salt alias registers as `pkgutil.list`; all functions declare
+Darwin platform scope. Linux fake-runner tests cover command shapes,
+scheme/file guards, wildcard handling, package-ID fallback and cleanup;
+Darwin cross-builds pass. Catalog coverage is exec 664→676 and the
+`pkgutil`/`macpackage` families move to implemented; Homebrew/Ports remain
+the next R6.4 slice. No host packages were installed; the configured
 rootless dind sandbox still fails before process start on `/proc` mount EPERM.
 
 R5.9 ported the local ssh_pki surface (11 cataloged execution functions,

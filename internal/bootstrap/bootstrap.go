@@ -49,6 +49,7 @@ import (
 	execlogrotate "github.com/friz-zy/statekit/modules/exec/logrotate"
 	execlvm "github.com/friz-zy/statekit/modules/exec/lvm"
 	execmacdefaults "github.com/friz-zy/statekit/modules/exec/macdefaults"
+	execmacpackage "github.com/friz-zy/statekit/modules/exec/macpackage"
 	execmdadm "github.com/friz-zy/statekit/modules/exec/mdadm"
 	execmount "github.com/friz-zy/statekit/modules/exec/mount"
 	execnacl "github.com/friz-zy/statekit/modules/exec/nacl"
@@ -63,6 +64,7 @@ import (
 	execpkgbuild "github.com/friz-zy/statekit/modules/exec/pkgbuild"
 	execpkgrepo "github.com/friz-zy/statekit/modules/exec/pkgrepo"
 	execpkgresource "github.com/friz-zy/statekit/modules/exec/pkgresource"
+	execpkgutil "github.com/friz-zy/statekit/modules/exec/pkgutil"
 	execps "github.com/friz-zy/statekit/modules/exec/ps"
 	execpyenv "github.com/friz-zy/statekit/modules/exec/pyenv"
 	execpython "github.com/friz-zy/statekit/modules/exec/python"
@@ -176,6 +178,8 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execuser.Register,
 		execgroup.Register,
 		execmacdefaults.Register,
+		execmacpackage.Register,
+		execpkgutil.Register,
 		execshadow.Register,
 		execpkg.Register,
 		execpkgresource.Register,

@@ -4,10 +4,10 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 85
+    implemented: 87
     partial: 0
     excluded: 69
-    planned: 92
+    planned: 90
 implemented_families:
     - acl
     - aliases
@@ -51,6 +51,7 @@ implemented_families:
     - logrotate
     - lvm
     - macdefaults
+    - macpackage
     - mount
     - nacl
     - network
@@ -64,6 +65,7 @@ implemented_families:
     - pkg_resource
     - pkgbuild
     - pkgrepo
+    - pkgutil
     - ps
     - pyenv
     - python
@@ -205,7 +207,6 @@ planned:
     - 'locate (planned: needs a dedicated porting round)'
     - 'log (planned: needs a dedicated porting round)'
     - 'loop (planned: needs a dedicated porting round)'
-    - 'macpackage (planned: needs a dedicated porting round)'
     - 'makeconf (planned: needs a dedicated porting round)'
     - 'module (planned: needs a dedicated porting round)'
     - 'net (planned: needs a dedicated porting round)'
@@ -219,7 +220,6 @@ planned:
     - 'ntp (planned: needs a dedicated porting round)'
     - 'oracle (planned: needs a dedicated porting round)'
     - 'osquery (planned: needs a dedicated porting round)'
-    - 'pkgutil (planned: needs a dedicated porting round)'
     - 'power (planned: needs a dedicated porting round)'
     - 'powercfg (planned: needs a dedicated porting round)'
     - 'probes (planned: needs a dedicated porting round)'

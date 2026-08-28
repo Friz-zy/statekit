@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 664
+    implemented: 676
 state:
     salt_modules: 132
     salt_functions: 669
@@ -344,6 +344,14 @@ implemented:
         - macdefaults.delete
         - macdefaults.read
         - macdefaults.write
+        - macpackage.get_mpkg_ids
+        - macpackage.get_pkg_id
+        - macpackage.install
+        - macpackage.install_app
+        - macpackage.installed_pkgs
+        - macpackage.mount
+        - macpackage.uninstall_app
+        - macpackage.unmount
         - mod_random.get_str
         - mod_random.hash
         - mod_random.rand_int
@@ -492,6 +500,10 @@ implemented:
         - pkgbuild.build
         - pkgbuild.make_repo
         - pkgbuild.make_src_pkg
+        - pkgutil.forget
+        - pkgutil.install
+        - pkgutil.is_installed
+        - pkgutil.list
         - ps.boot_time
         - ps.cpu_percent
         - ps.cpu_times
