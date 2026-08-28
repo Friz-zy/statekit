@@ -822,8 +822,8 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R6.9 — Darwin launchctl service variant. R7/R8
-remain behind the same enablers; R9 awaits E5,
+Next in order: R7.1 — Windows core objects (reg → user/group/service/pkg/file).
+R8 remains behind E3/E4/E6; R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
 report's pending lists. Master-minion families stay excluded. Docker
@@ -831,6 +831,35 @@ sandbox flagged: the daemon's runc cannot spawn containers in this
 environment (proc-mount EPERM inside rootless dind); gates ran on the
 host toolchain — live openssl interop for tls stayed skipped like the
 R5.5 PyNaCl check.
+
+R6.9 ported the Darwin `mac_service` launchd variant (16 public catalog
+functions) under the existing `service.*` virtual family. Darwin registration
+selects plist discovery over `/Library` and `/System/Library` LaunchAgents/
+LaunchDaemons (plus user agents), parses Label/KeepAlive/ProgramArguments
+with the standard XML decoder, resolves Salt aliases and basename/full-path
+service names, computes system/gui domain targets, and preserves the
+launchctl list/enable/disable/bootstrap/bootout/status/print-disabled result
+and error shapes. The generic service provider now includes launchd with
+kickstart/kill/print/enable/disable operations and Facts selects it from the
+Darwin init-system detector; Linux systemd/openrc behavior remains unchanged.
+`runas` is an explicit boundary because Runtime has no target-user field.
+Darwin fixture tests cover plist discovery, service aliases, lifecycle,
+KeepAlive/PID status, disabled parsing, missing services and command errors;
+the full repository and `GOOS=darwin GOARCH=amd64 go build ./...` pass.
+Catalog coverage is exec 743→752 (the seven names overlap the generic
+service surface), with no host package install and no live macOS runtime in
+the current environment.
+
+R6 CLOSED after `docs/differential/R6/report.yaml`, generated and guarded by
+`tests/differential/r6_test.go`. The platform-aware report reconciles all 14
+R6 source catalogs (mac_user, mac_group, Homebrew/Ports, pkgutil, macpackage,
+launchd service, macdefaults, keychain, softwareupdate, desktop, assistive,
+xattr and power): 174 catalog functions, 139 public functions and 139
+ported public functions, with Darwin runtime validation explicitly marked
+cross-build-only because the available rootless dind sandbox cannot start a
+child container and no macOS runner is attached. R6's Linux gates, catalog
+regeneration, Darwin cross-build matrix and fake-runner contract tests are
+green; R7 is now the next executable track.
 
 R5.8 ported the tls family (18 registered exec functions) onto the Go
 standard library after the contract read showed pyOpenSSL is a libssl

@@ -53,6 +53,34 @@ func TestSelectByInitSystem(t *testing.T) {
 	if _, err := Select(rt.Facts); err == nil {
 		t.Fatal("unsupported init must fail")
 	}
+	rt, _ = newRT("launchd")
+	if name, err := Select(rt.Facts); err != nil || name != "launchd" {
+		t.Fatalf("launchd select = %q, %v", name, err)
+	}
+}
+
+func TestLaunchdProviderCommands(t *testing.T) {
+	rt, runner := newRT("launchd")
+	provider, err := Resolve(rt)
+	if err != nil {
+		t.Fatalf("resolve launchd: %v", err)
+	}
+	if err := provider.Start(context.Background(), rt, "com.example.demo"); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(runner.calls[len(runner.calls)-1], " "); got != "launchctl kickstart system/com.example.demo" {
+		t.Fatalf("start = %q", got)
+	}
+	runner.script = []process.CommandResult{{ExitCode: 3}}
+	running, err := provider.Status(context.Background(), rt, "com.example.demo")
+	if err != nil || running {
+		t.Fatalf("inactive launchd status = %v %v", running, err)
+	}
+	runner.script = []process.CommandResult{{Stdout: []byte("disabled services = {\n\t\"com.example.demo\" => true\n}")}}
+	enabled, err := provider.Enabled(context.Background(), rt, "com.example.demo")
+	if err != nil || enabled {
+		t.Fatalf("disabled launchd enabled() = %v %v", enabled, err)
+	}
 }
 
 func TestSystemdUnitSuffix(t *testing.T) {

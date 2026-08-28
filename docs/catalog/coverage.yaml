@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 743
+    implemented: 752
 state:
     salt_modules: 132
     salt_functions: 669
@@ -619,11 +619,20 @@ implemented:
         - selinux.getenforce
         - selinux.selinux_fs_path
         - selinux.setenforce
+        - service.available
         - service.disable
+        - service.disabled
         - service.enable
         - service.enabled
+        - service.get_all
+        - service.get_enabled
+        - service.launchctl
+        - service.list
+        - service.loaded
+        - service.missing
         - service.reload
         - service.restart
+        - service.show
         - service.start
         - service.status
         - service.stop
