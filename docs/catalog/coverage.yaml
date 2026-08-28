@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 618
+    implemented: 636
 state:
     salt_modules: 132
     salt_functions: 669
@@ -616,6 +616,24 @@ implemented:
         - timezone.get_zone
         - timezone.set_hwclock
         - timezone.set_zone
+        - tls.ca_exists
+        - tls.cert_base_path
+        - tls.cert_info
+        - tls.create_ca
+        - tls.create_ca_signed_cert
+        - tls.create_csr
+        - tls.create_empty_crl
+        - tls.create_pkcs12
+        - tls.create_self_signed_cert
+        - tls.get_ca
+        - tls.get_ca_signed_cert
+        - tls.get_ca_signed_key
+        - tls.get_expiration_date
+        - tls.get_extensions
+        - tls.maybe_fix_ssl_version
+        - tls.revoke_cert
+        - tls.set_ca_path
+        - tls.validate
         - udev.env
         - udev.info
         - user.add

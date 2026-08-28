@@ -4,10 +4,10 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 82
+    implemented: 83
     partial: 0
     excluded: 69
-    planned: 95
+    planned: 94
 implemented_families:
     - acl
     - aliases
@@ -84,6 +84,7 @@ implemented_families:
     - temp
     - test
     - timezone
+    - tls
     - udev
     - user
     - virtualenv
@@ -247,7 +248,6 @@ planned:
     - 'task (planned: needs a dedicated porting round)'
     - 'test_virtual (planned: needs a dedicated porting round)'
     - 'textfsm (planned: needs a dedicated porting round)'
-    - 'tls (planned: needs a dedicated porting round)'
     - 'uptime (planned: needs a dedicated porting round)'
     - 'users (planned: needs a dedicated porting round)'
     - 'vagrant (planned: needs a dedicated porting round)'

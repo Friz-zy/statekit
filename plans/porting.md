@@ -822,12 +822,68 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R5.8 — tls (29 functions, pure openssl orchestration
-through the Runner), then ssh_pki and the x509 boundary classification;
-after that the R5 close differential pass. R6-R8 via E1-E4, R9 awaits E5,
+Next in order: R5.9 — ssh_pki (19 functions, mixed FS/CLI surface), the
+x509 boundary classification (40 functions, cryptography-dependent like
+tls), then the R5 close differential pass. R6-R8 via E1-E4, R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
-report's pending lists. Master-minion families stay excluded.
+report's pending lists. Master-minion families stay excluded. Docker
+sandbox flagged: the daemon's runc cannot spawn containers in this
+environment (proc-mount EPERM inside rootless dind); gates ran on the
+host toolchain — live openssl interop for tls stayed skipped like the
+R5.5 PyNaCl check.
+
+R5.8 ported the tls family (18 registered exec functions) onto the Go
+standard library after the contract read showed pyOpenSSL is a libssl
+BINDING, not a CLI wrapper — the substrate mapping is library-to-library
+(crypto/x509, encoding/asn1), like R5.4/R5.5, not openssl orchestration.
+create_ca generates the RSA key (reuse + `.unloadable.<ts>` rename of
+unloadable material), serials ride the `_new_serial` hexlify(microtime +
+"_" + urandom) algorithm appended decimal to `<cachedir>/<ca>.serial`
+(cachedir via config.option, workspace-local default), certs carry
+basicConstraints/pathlen:0 + keyCertSign,cRLSign (critical) plus SKI and
+keyid-AKI, key 0600 / cert 0644, index.txt rows keep the exact
+"V\t<YYMMDDHHMMSSZ>\t\t<HEX>\tunknown\t/<subject>\n" tab layout with the
+subject in upstream wire order (Go typed-field order matches
+pyOpenSSL's set order; emailAddress rides ExtraNames). create_csr
+reproduces get_extensions' merge (defaults + pillar.get override,
+KeyError for unknown profiles), non-critical basicConstraints/keyUsage/
+extendedKeyUsage plus text-form subjectAltName parsing (DNS/IP/email/
+URI — GeneralNames DER hand-built; double-separator csr_path lives in
+paths while messages use single-separator join like upstream
+os.path.join). create_ca_signed_cert copies CSR extensions verbatim and
+keeps the type_ext-without-cert_type empty-dict guard and the
+'There is no CSR that matches the CN "<cert_filename>"' quirk (upstream
+replies with cert_filename, not csr_filename). maybe_fix_ssl_version
+needed a raw-ASN.1 TBS probe: Go rejects version fields >2 on parse, so
+the illegal old-salt literal 3 is detected via tbsPeek (SPKI as one
+wrapped field, matching crypto/x509's own parser layout) and subject/
+validity extract from the raw DER. cert_info pins the upstream fixture's
+OpenSSL goldens (fingerprint colon-hex, "sha256WithRSAEncryption", epoch
+dates, huge serial) and renders the family's own extension profile back
+into OpenSSL text (keyUsage bit names, EKU long names, SAN with "IP
+Address:" forms, SKI/AKI colon-hex). CRL flows (create_empty_crl,
+revoke_cert, validate) use x509.CreateRevocationList (CRLNumber=1
+documented: Go requires it, cryptography omits it), rebuild from
+index.txt R rows with the 159-bit serial truncation on both builders and
+validate's lookup key, and revoke_cert reproduces the V→R file.replace
+inline (regex-escape replace, backup=False) with Python line iteration
+keeping "\n" inside the substring match. validate ports the
+X509StoreContext checks reachable in single-CA hierarchies with OpenSSL
+reason strings (expired/not-yet-valid/issuer-mismatch/signature) and
+error_cert as PEM text instead of an object handle. Documented
+boundaries: create_pkcs12 surfaces an explicit unsupported-serialization
+error because golang.org/x/crypto v0.55.0 ships pkcs12 decode only (the
+encoder subpackage is unreleased — hand-rolling a PKCS#12 envelope
+without interop verification was rejected); CA certs carry keyid-only
+AKI (Go's flat field), leafs gain a Go-added AKI upstream omitted; the
+None-base quirk stays (unconfigured base path renders literal
+"None/..."); onlyif/unless run through the central Runner's shell like
+cmd.retcode; serials >int64 render as exact JSON numbers but quoted YAML
+scalars. Two parser-bug classes were caught by tests: PEM must be
+decoded before the DER probes, and composite literals in if-init
+positions (fixed by caExistsImpl/maybeFixImpl extraction). Exec
+618→636.
 
 R5.7 completed the gpg module with its key-management tail (12 registered
 exec functions), all through the gpg CLI with --with-colons streams:

@@ -82,6 +82,7 @@ import (
 	exectemp "github.com/friz-zy/statekit/modules/exec/temp"
 	exectest "github.com/friz-zy/statekit/modules/exec/test"
 	executimezone "github.com/friz-zy/statekit/modules/exec/timezone"
+	exectls "github.com/friz-zy/statekit/modules/exec/tls"
 	execudev "github.com/friz-zy/statekit/modules/exec/udev"
 	execuser "github.com/friz-zy/statekit/modules/exec/user"
 	execvirtualenv "github.com/friz-zy/statekit/modules/exec/virtualenv"
@@ -167,6 +168,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execrestartcheck.Register,
 		execstatus.Register,
 		execstatus.RegisterTail,
+		exectls.Register,
 		execuser.Register,
 		execgroup.Register,
 		execshadow.Register,
