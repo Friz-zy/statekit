@@ -822,9 +822,8 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R5.10 — the x509 boundary classification (40 functions,
-cryptography-dependent like tls), then the R5 close differential pass.
-R6-R8 via E1-E4, R9 awaits E5,
+Next in order: R6 — macOS track via E1-E4. R7/R8 remain behind the same
+enablers; R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
 report's pending lists. Master-minion families stay excluded. Docker
@@ -884,6 +883,40 @@ scalars. Two parser-bug classes were caught by tests: PEM must be
 decoded before the DER probes, and composite literals in if-init
 positions (fixed by caExistsImpl/maybeFixImpl extraction). Exec
 618→636.
+
+R5.10 classified the two source implementations hidden behind the public
+`x509` family label (ADR 0003). The legacy `salt/modules/x509.py` surface
+(40 catalog functions) is an explicit terminal exclusion: it is deprecated
+since Salt 3006, announced for removal in 3009, and its contract is bound to
+M2Crypto's ctypes ABI plus an openssl CLI parser workaround. The modern
+`salt/modules/x509_v2.py` replacement (37 catalog functions, default in Salt
+3008) remains planned rather than excluded: local key/PEM/certificate/CSR/CRL
+operations are viable on the existing Go crypto substrate, while PKCS#12
+(cryptography 36/37 compatibility variants), PKCS#7 (cryptography 37), broad
+OpenSSL extension syntax, policy merging and peer signing need a dedicated
+round and explicit interop gates. x509 and x509_v2 both serialize as
+`module: x509` in the current catalog, so `docs/catalog/compatibility.yaml`
+intentionally keeps the collapsed family in `planned` instead of falsely
+marking the modern replacement excluded. No dependency or environment
+package change was made; x/crypto v0.55.0 has no PKCS#12 encoder or PKCS#7
+serializer, and the docker sandbox remains unavailable because rootless dind
+cannot mount `/proc` for child containers. The legacy exclusion and modern
+upgrade path are recorded in `docs/adr/0003-x509-boundary.md`.
+
+R5 CLOSED after the differential-scope pass in
+`docs/differential/R5/report.yaml`, generated and guarded by
+`tests/differential/r5_test.go`. The report reconciles 12 security/crypto/auth
+source families (including separate legacy x509 and x509_v2 catalog views),
+232 catalog functions, 149 public functions and 85 registered public
+functions, and pins the future twin-runtime scenarios for each family. The
+pass caught one bootstrap omission left by R5.7: `gpg.RegisterKeyMgmt` was
+present in the package and coverage scanner but absent from BuildRuntime; the
+registration was added and the report regenerated, bringing the gpg public
+surface to 16/16. R5's package/repository gates are green (gofmt, go vet,
+full `go test ./...`, catalog regeneration); containerized differential and
+live external-crypto checks remain pending because the configured rootless
+dind daemon cannot start child containers (runc proc-mount EPERM), while no
+host packages were installed.
 
 R5.9 ported the local ssh_pki surface (11 cataloged execution functions,
 plus the upstream create_certificate_ssh alias) onto golang.org/x/crypto/ssh

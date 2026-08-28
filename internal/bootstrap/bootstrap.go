@@ -155,6 +155,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execasym.Register,
 		execnacl.Register,
 		execgpg.Register,
+		execgpg.RegisterKeyMgmt,
 		execpam.Register,
 		execwebutil.Register,
 		execssh.RegisterAuth,
