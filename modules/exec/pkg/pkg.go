@@ -162,6 +162,9 @@ func (latestVersionFunc) Execute(ctx context.Context, rt *runtime.Runtime, args 
 
 // Register installs all pkg-module execution functions.
 func Register(reg *runtime.ExecRegistry) error {
+	if runtime.CurrentGOOS() == "darwin" {
+		return registerMac(reg)
+	}
 	for _, fn := range []runtime.ExecFunction{
 		refreshDBFunc{}, versionFunc{}, listFunc{}, installFunc{}, removeFunc{}, latestVersionFunc{},
 	} {

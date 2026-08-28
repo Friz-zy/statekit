@@ -137,6 +137,26 @@ var apkSpec = spec{
 	listInstalled: []string{"apk", "info", "-v"},
 }
 
+var brewSpec = spec{
+	manager:       "brew",
+	binary:        "brew",
+	refresh:       []string{"brew", "update"},
+	install:       []string{"brew", "install", "{name}"},
+	remove:        []string{"brew", "uninstall", "{name}"},
+	versionQuery:  []string{"brew", "list", "--versions"},
+	listInstalled: []string{"brew", "list", "--versions"},
+}
+
+var portSpec = spec{
+	manager:       "port",
+	binary:        "port",
+	refresh:       []string{"port", "selfupdate"},
+	install:       []string{"port", "install", "{name}"},
+	remove:        []string{"port", "uninstall", "{name}"},
+	versionQuery:  []string{"port", "installed"},
+	listInstalled: []string{"port", "installed"},
+}
+
 // commandProvider executes a spec against the central Runner.
 type commandProvider struct {
 	spec spec
@@ -171,6 +191,8 @@ func versionSuffix(manager, version string) string {
 		return ""
 	case "apk":
 		return "=" + version
+	case "brew", "port":
+		return "@" + version
 	default:
 		return "=" + version
 	}
@@ -182,6 +204,30 @@ func (p *commandProvider) Remove(ctx context.Context, rt *runtime.Runtime, name 
 
 func (p *commandProvider) Version(ctx context.Context, rt *runtime.Runtime, name string) (string, error) {
 	switch p.spec.manager {
+	case "brew":
+		out, err := run(ctx, rt, append(p.spec.versionQuery, name))
+		if err != nil {
+			return "", nil
+		}
+		for _, line := range nonEmptyLines(out) {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 && fields[0] == name {
+				return strings.Join(fields[1:], ", "), nil
+			}
+		}
+		return "", nil
+	case "port":
+		out, err := run(ctx, rt, append(p.spec.versionQuery, name))
+		if err != nil {
+			return "", nil
+		}
+		for _, line := range nonEmptyLines(out) {
+			fields := strings.Fields(line)
+			if len(fields) >= 3 && fields[0] == name && fields[2] == "(active)" {
+				return strings.TrimPrefix(fields[1], "@"), nil
+			}
+		}
+		return "", nil
 	case "apt":
 		out, err := run(ctx, rt, append(p.spec.versionQuery, name))
 		if err != nil {
@@ -256,6 +302,20 @@ func (p *commandProvider) List(ctx context.Context, rt *runtime.Runtime) (map[st
 	}
 	packages := map[string]string{}
 	for _, line := range nonEmptyLines(out) {
+		if p.spec.manager == "brew" {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				packages[fields[0]] = strings.Join(fields[1:], ", ")
+			}
+			continue
+		}
+		if p.spec.manager == "port" {
+			fields := strings.Fields(line)
+			if len(fields) >= 3 && fields[2] == "(active)" {
+				packages[fields[0]] = strings.TrimPrefix(fields[1], "@")
+			}
+			continue
+		}
 		name, version, ok := strings.Cut(line, " ")
 		if !ok {
 			continue
@@ -279,7 +339,7 @@ func nonEmptyLines(s string) []string {
 
 // specsByPreference orders providers for deterministic selection when facts
 // leave ambiguity.
-var specsByPreference = []spec{aptSpec, dnfSpec, yumSpec, zypperSpec, pacmanSpec, apkSpec}
+var specsByPreference = []spec{aptSpec, dnfSpec, yumSpec, zypperSpec, pacmanSpec, apkSpec, brewSpec, portSpec}
 
 // Register installs every manager provider plus the fact-driven selector.
 func Register(registry *runtime.ProviderRegistry) error {
@@ -311,6 +371,10 @@ func Select(f *facts.Facts) (string, error) {
 		return "pacman", nil
 	case manager == "apk":
 		return "apk", nil
+	case manager == "brew":
+		return "brew", nil
+	case manager == "port":
+		return "port", nil
 	default:
 		return "", fmt.Errorf("unsupported package manager %q", manager)
 	}

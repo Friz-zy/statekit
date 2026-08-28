@@ -46,7 +46,7 @@ func newRT(manager string) (*runtime.Runtime, *scriptRunner) {
 func TestSelectByPackageManager(t *testing.T) {
 	for manager, want := range map[string]string{
 		"apt": "apt", "dnf": "dnf", "yum": "yum", "zypper": "zypper",
-		"pacman": "pacman", "apk": "apk",
+		"pacman": "pacman", "apk": "apk", "brew": "brew", "port": "port",
 	} {
 		rt, _ := newRT(manager)
 		name, err := Select(rt.Facts)
@@ -57,6 +57,43 @@ func TestSelectByPackageManager(t *testing.T) {
 	rt, _ := newRT("")
 	if _, err := Select(rt.Facts); err == nil {
 		t.Fatal("missing package manager must fail")
+	}
+}
+
+func TestDarwinProviderParsing(t *testing.T) {
+	rt, runner := newRT("brew")
+	provider, err := Resolve(rt)
+	if err != nil || provider.Name() != "brew" {
+		t.Fatalf("brew resolve = %v %v", provider, err)
+	}
+	runner.script = []process.CommandResult{{
+		Stdout: []byte("curl 8.14.1\nvim 9.0\n"), ExitCode: 0,
+	}}
+	listed, err := provider.List(context.Background(), rt)
+	if err != nil || listed["curl"] != "8.14.1" || listed["vim"] != "9.0" {
+		t.Fatalf("brew list = %v %v", listed, err)
+	}
+	runner.script = []process.CommandResult{{Stdout: []byte("curl 8.14.1\n"), ExitCode: 0}}
+	version, err := provider.Version(context.Background(), rt, "curl")
+	if err != nil || version != "8.14.1" {
+		t.Fatalf("brew version = %q %v", version, err)
+	}
+	if err := provider.Install(context.Background(), rt, "curl", "8.14.1"); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(runner.calls[len(runner.calls)-1], " "); got != "brew install curl@8.14.1" {
+		t.Fatalf("brew install = %q", got)
+	}
+
+	rt, runner = newRT("port")
+	provider, err = Resolve(rt)
+	if err != nil || provider.Name() != "port" {
+		t.Fatalf("port resolve = %v %v", provider, err)
+	}
+	runner.script = []process.CommandResult{{Stdout: []byte("curl @8.14.1_0 (active)\n"), ExitCode: 0}}
+	listed, err = provider.List(context.Background(), rt)
+	if err != nil || listed["curl"] != "8.14.1_0" {
+		t.Fatalf("port list = %v %v", listed, err)
 	}
 }
 

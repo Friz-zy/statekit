@@ -822,8 +822,8 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R6.4 — Homebrew/Ports package provider long tail
-(`mac_brew_pkg`, `mac_portspkg`). R7/R8
+Next in order: R6.5 — macOS desktop/softwareupdate wrappers
+(`mac_desktop`, `mac_softwareupdate`). R7/R8
 remain behind the same enablers; R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
@@ -974,6 +974,26 @@ Darwin cross-builds pass. Catalog coverage is exec 664→676 and the
 `pkgutil`/`macpackage` families move to implemented; Homebrew/Ports remain
 the next R6.4 slice. No host packages were installed; the configured
 rootless dind sandbox still fails before process start on `/proc` mount EPERM.
+
+R6.4 ported the Homebrew/Ports package-provider surface behind Darwin-only
+`pkg.*` registration and fact-driven dispatch: the existing `pkg.Register`
+selects the mac implementation on Darwin while Linux keeps its provider
+functions, and `providers/pkg` now resolves `brew` and `port` managers from
+Facts. The common lifecycle covers homebrew_prefix, list_pkgs, version,
+latest_version, remove, refresh_db, install, list_upgrades,
+upgrade_available and upgrade for both managers; Homebrew's additional
+info_installed, hold/unhold (pin/unpin aliases), and list_trusted/trust/
+untrust/is_trusted surfaces include JSON v2/v1 parsing, cask/formula aliases,
+tap handling, pinned state result maps, and trust-type validation. Ports
+parsing keeps active-only `port installed` rows, `@version` normalization,
+selfupdate and outdated/upgrade command shapes. Version pins use the native
+`@` form for both managers. Runner calls remain argv-based and no package
+was installed in the host environment; Darwin cross-build fixtures cover
+brew/port selection and JSON/list parsing, while Linux provider tests cover
+the new selectors. Catalog coverage is exec 664→687; `pkg` was already an
+implemented virtual family, so compatibility classification remains stable.
+R6 remains open and the rootless dind sandbox still fails before process
+start on `/proc` mount EPERM.
 
 R5.9 ported the local ssh_pki surface (11 cataloged execution functions,
 plus the upstream create_certificate_ssh alias) onto golang.org/x/crypto/ssh
