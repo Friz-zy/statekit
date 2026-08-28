@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 687
+    implemented: 707
 state:
     salt_modules: 132
     salt_functions: 669
@@ -115,6 +115,11 @@ implemented:
         - defaults.get
         - defaults.merge
         - defaults.update
+        - desktop.get_output_volume
+        - desktop.lock
+        - desktop.say
+        - desktop.screensaver
+        - desktop.set_output_volume
         - devinfo.filter
         - devinfo.hwinfo
         - devmap.multipath_flush
@@ -594,6 +599,21 @@ implemented:
         - shadow.info
         - smbios.get
         - smbios.records
+        - softwareupdate.download
+        - softwareupdate.download_all
+        - softwareupdate.get_catalog
+        - softwareupdate.ignore
+        - softwareupdate.list_available
+        - softwareupdate.list_downloads
+        - softwareupdate.list_ignored
+        - softwareupdate.reset_catalog
+        - softwareupdate.reset_ignored
+        - softwareupdate.schedule_enable
+        - softwareupdate.schedule_enabled
+        - softwareupdate.set_catalog
+        - softwareupdate.update
+        - softwareupdate.update_all
+        - softwareupdate.update_available
         - ssh.auth_keys
         - ssh.check_key
         - ssh.check_key_file

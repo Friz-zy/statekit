@@ -822,8 +822,7 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R6.5 — macOS desktop/softwareupdate wrappers
-(`mac_desktop`, `mac_softwareupdate`). R7/R8
+Next in order: R6.6 — macOS extended-attribute wrapper (`mac_xattr`). R7/R8
 remain behind the same enablers; R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
@@ -974,6 +973,22 @@ Darwin cross-builds pass. Catalog coverage is exec 664→676 and the
 `pkgutil`/`macpackage` families move to implemented; Homebrew/Ports remain
 the next R6.4 slice. No host packages were installed; the configured
 rootless dind sandbox still fails before process start on `/proc` mount EPERM.
+
+R6.5 ported the five public `mac_desktop` and fifteen public
+`mac_softwareupdate` functions behind Darwin-only registrations. Desktop
+volume/screen/session/say operations use shell-free `osascript`, `open`,
+CGSession and `say` argv with Salt's combined stderr/stdout command-error
+text. Software Update supports modern (Label/Title/Version/Action) and
+legacy parenthesized output parsers, recommended/restart/shut-down filters,
+ignore/reset, schedule status and enable/disable (including the documented
+empty-enable readback), update/download single and all flows, downloaded
+`.dist` discovery through Runtime.FS, and catalog get/set/reset. Native
+commands remain behind the central Runner; fake-runner fixtures cover both
+macOS output generations, filters, scheduling, catalog lookup and guards;
+`GOOS=darwin GOARCH=amd64 go build ./...` passes. Catalog classification
+moves desktop and softwareupdate to implemented and exec coverage is
+687→707. No host packages were installed; rootless dind still cannot start
+child containers because runc hits `/proc` mount EPERM.
 
 R6.4 ported the Homebrew/Ports package-provider surface behind Darwin-only
 `pkg.*` registration and fact-driven dispatch: the existing `pkg.Register`

@@ -4,10 +4,10 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 87
+    implemented: 89
     partial: 0
     excluded: 69
-    planned: 90
+    planned: 88
 implemented_families:
     - acl
     - aliases
@@ -25,6 +25,7 @@ implemented_families:
     - data
     - debconf
     - defaults
+    - desktop
     - devinfo
     - devmap
     - disk
@@ -79,6 +80,7 @@ implemented_families:
     - service
     - shadow
     - smbios
+    - softwareupdate
     - ssh
     - ssh_pki
     - status
@@ -189,7 +191,6 @@ planned:
     - 'chronos (planned: needs a dedicated porting round)'
     - 'chroot (planned: needs a dedicated porting round)'
     - 'config (planned: needs a dedicated porting round)'
-    - 'desktop (planned: needs a dedicated porting round)'
     - 'dism (planned: needs a dedicated porting round)'
     - 'dsc (planned: needs a dedicated porting round)'
     - 'dsc_resource (planned: needs a dedicated porting round)'
@@ -237,7 +238,6 @@ planned:
     - 'shortcut (planned: needs a dedicated porting round)'
     - 'slack (planned: needs a dedicated porting round)'
     - 'snapper (planned: needs a dedicated porting round)'
-    - 'softwareupdate (planned: needs a dedicated porting round)'
     - 'ssh_auth (planned: needs a dedicated porting round)'
     - 'ssh_known_hosts (planned: needs a dedicated porting round)'
     - 'state (planned: needs a dedicated porting round)'

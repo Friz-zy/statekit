@@ -24,6 +24,7 @@ import (
 	execdata "github.com/friz-zy/statekit/modules/exec/datastore"
 	execdebconf "github.com/friz-zy/statekit/modules/exec/debconfmod"
 	execdefaults "github.com/friz-zy/statekit/modules/exec/defaults"
+	execdesktop "github.com/friz-zy/statekit/modules/exec/desktop"
 	execdevinfo "github.com/friz-zy/statekit/modules/exec/devinfo"
 	execdevmap "github.com/friz-zy/statekit/modules/exec/devmap"
 	execdisk "github.com/friz-zy/statekit/modules/exec/disk"
@@ -78,6 +79,7 @@ import (
 	execservice "github.com/friz-zy/statekit/modules/exec/service"
 	execshadow "github.com/friz-zy/statekit/modules/exec/shadow"
 	execsmbios "github.com/friz-zy/statekit/modules/exec/smbios"
+	execsoftwareupdate "github.com/friz-zy/statekit/modules/exec/softwareupdate"
 	execssh "github.com/friz-zy/statekit/modules/exec/ssh"
 	execsshpki "github.com/friz-zy/statekit/modules/exec/ssh_pki"
 	execstatus "github.com/friz-zy/statekit/modules/exec/status"
@@ -180,6 +182,8 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execmacdefaults.Register,
 		execmacpackage.Register,
 		execpkgutil.Register,
+		execsoftwareupdate.Register,
+		execdesktop.Register,
 		execshadow.Register,
 		execpkg.Register,
 		execpkgresource.Register,
