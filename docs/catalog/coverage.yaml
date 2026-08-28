@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 651
+    implemented: 664
 state:
     salt_modules: 132
     salt_functions: 669
@@ -245,10 +245,14 @@ implemented:
         - gpg.trust_key
         - gpg.verify
         - group.add
+        - group.adduser
         - group.chgid
         - group.delete
+        - group.deluser
+        - group.getent
         - group.info
         - group.list_groups
+        - group.members
         - hashutil.base64_decodestring
         - hashutil.base64_encodestring
         - hashutil.digest
@@ -653,13 +657,22 @@ implemented:
         - udev.env
         - udev.info
         - user.add
+        - user.chfullname
         - user.chgid
+        - user.chgroups
         - user.chhome
         - user.chshell
         - user.chuid
         - user.delete
+        - user.disable_auto_login
+        - user.enable_auto_login
+        - user.get_auto_login
+        - user.getent
         - user.info
+        - user.list_groups
         - user.list_users
+        - user.primary_group
+        - user.rename
         - virtualenv.create
         - virtualenv.get_distribution_path
         - virtualenv.get_resource_content

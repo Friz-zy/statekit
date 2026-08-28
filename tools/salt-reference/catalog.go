@@ -206,6 +206,7 @@ func detectImplemented(srcRoot string) (Implemented, error) {
 		filepath.Join("modules", "state"): &out.State,
 	}
 	for rel, sink := range kinds {
+		seen := map[string]bool{}
 		root := filepath.Join(srcRoot, rel)
 		err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
@@ -219,6 +220,10 @@ func detectImplemented(srcRoot string) (Implemented, error) {
 				return err
 			}
 			for _, name := range scanImplementedNames(string(data)) {
+				if seen[name] {
+					continue
+				}
+				seen[name] = true
 				*sink = append(*sink, name)
 			}
 			return nil

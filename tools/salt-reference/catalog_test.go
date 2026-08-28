@@ -141,6 +141,33 @@ func TestBogus(t *testing.T) {}
 	}
 }
 
+func TestDetectImplementedDeduplicatesPlatformProviders(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "modules", "exec")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	src := `package test
+
+type first struct{}
+func (first) Name() string { return "user.info" }
+type second struct{}
+func (second) Name() string { return "user.info" }
+`
+	for _, name := range []string{"one.go", "two.go"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	impl, err := detectImplemented(root)
+	if err != nil {
+		t.Fatalf("detect: %v", err)
+	}
+	if len(impl.Exec) != 1 || impl.Exec[0] != "user.info" {
+		t.Fatalf("deduplicated implemented exec = %v", impl.Exec)
+	}
+}
+
 func TestWriteCatalogAndCoverage(t *testing.T) {
 	root := writeMiniSaltTree(t)
 	outDir := filepath.Join(t.TempDir(), "catalog")

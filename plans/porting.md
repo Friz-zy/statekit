@@ -822,7 +822,8 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R6.2 — mac_user/mac_group (dscl account surface). R7/R8
+Next in order: R6.3 — mac package/brew wrappers (mac_brew_pkg,
+mac_portspkg, mac_pkgutil, macpackage). R7/R8
 remain behind the same enablers; R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
@@ -936,6 +937,26 @@ cross-builds the package successfully. Catalog coverage is exec 647→651
 and macdefaults moves to implemented; the R6 track remains open. The
 container sandbox still cannot spawn child containers due rootless-dind
 proc-mount EPERM, so no host package was installed.
+
+R6.2 ported the Darwin `mac_user` and `mac_group` virtual-provider surfaces
+without changing Linux behavior: `user.Register`/`group.Register` now select
+the dscl/dscacheutil implementations on GOOS=darwin and retain the existing
+passwd/group implementations elsewhere. The user surface covers add,
+delete, getent, info, list_users/list_groups/primary_group, UID/GID/shell/
+home/full-name/group changes, rename and auto-login enable/disable; the
+group surface covers add/delete, adduser/deluser, members, info/getent and
+chgid. Commands use shell-free argv for dscl/dscacheutil/id and preserve
+Salt's shell command shapes for membership/defaults/rm operations; modern
+Darwin uses `localhost` + `/Local/Default`, while facts-aware legacy 10.7
+uses `.` without the node prefix. Runtime filesystem writes preserve the
+explicit home/kcpassword modes; target-user privilege switching remains an
+E2 boundary rather than a silent downgrade. Darwin-only fixture tests cover
+record parsing, dscl paths, validation and kcpassword; Linux package tests
+remain green and `GOOS=darwin GOARCH=amd64 go test -c` builds both packages.
+The catalog scanner now deduplicates platform-overlapping virtual names
+(`user.*`/`group.*`) so coverage lists remain auditable; exec coverage is
+651→664. R6 remains open and no host packages were installed; the configured
+rootless dind sandbox still fails before process start on `/proc` mount EPERM.
 
 R5.9 ported the local ssh_pki surface (11 cataloged execution functions,
 plus the upstream create_certificate_ssh alias) onto golang.org/x/crypto/ssh
