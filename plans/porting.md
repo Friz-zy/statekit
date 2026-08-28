@@ -822,8 +822,7 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R6.8 — macOS power and assistive wrappers (`mac_power`,
-`mac_assistive`). R7/R8
+Next in order: R6.9 — Darwin launchctl service variant. R7/R8
 remain behind the same enablers; R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
@@ -1018,6 +1017,25 @@ local `keychain` is not falsely excluded; the regression is covered by the
 catalog tool tests. Keychain moves to implemented and exec coverage is
 712→720. No host packages were installed; rootless dind still fails before
 process start on `/proc` mount EPERM.
+
+R6.8 ported the eighteen public `mac_power` functions and five public
+`mac_assistive` functions behind Darwin-only registrations. `power` mirrors
+Salt's `systemsetup` sleep/volume-independent settings, colon-output parser,
+minute validation (1–180 or Never/Off), enabled normalization, five-attempt
+confirmation polling and exact invalid-value messages; all get/set sleep,
+wake, restart and power-button operations use the central Runner. `assistive`
+uses the native sqlite3 Runner rather than adding a Go SQLite driver: it
+hashes the TCC access schema, handles Mojave/Catalina allowed, Big Sur auth,
+and Sonoma branches, issues parameter-escaped installed/enabled queries and
+schema-specific insert/update/delete statements, and retries readonly
+database writes with the upstream tries/wait semantics. Error wrappers keep
+the app-id-specific Salt messages; the `enable_` alias is exposed as
+`assistive.enable`. Stateful fake-sqlite/power tests cover all schema columns,
+retry, lifecycle, parser, validation and platform declarations; full Linux
+gates and `GOOS=darwin GOARCH=amd64 go build ./...` pass. Catalog coverage is
+exec 720→743 and assistive/power move to implemented. TCC/systemsetup access
+was not run on a host, and no packages were installed; rootless dind still
+cannot start child containers because runc hits `/proc` mount EPERM.
 
 R6.4 ported the Homebrew/Ports package-provider surface behind Darwin-only
 `pkg.*` registration and fact-driven dispatch: the existing `pkg.Register`

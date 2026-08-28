@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 720
+    implemented: 743
 state:
     salt_modules: 132
     salt_functions: 669
@@ -38,6 +38,11 @@ implemented:
         - archive.tar
         - archive.unzip
         - archive.zip_
+        - assistive.enable
+        - assistive.enabled
+        - assistive.install
+        - assistive.installed
+        - assistive.remove
         - asymmetric.sign
         - asymmetric.verify
         - at.at
@@ -531,6 +536,24 @@ implemented:
         - pkgutil.install
         - pkgutil.is_installed
         - pkgutil.list
+        - power.get_computer_sleep
+        - power.get_display_sleep
+        - power.get_harddisk_sleep
+        - power.get_restart_freeze
+        - power.get_restart_power_failure
+        - power.get_sleep
+        - power.get_sleep_on_power_button
+        - power.get_wake_on_modem
+        - power.get_wake_on_network
+        - power.set_computer_sleep
+        - power.set_display_sleep
+        - power.set_harddisk_sleep
+        - power.set_restart_freeze
+        - power.set_restart_power_failure
+        - power.set_sleep
+        - power.set_sleep_on_power_button
+        - power.set_wake_on_modem
+        - power.set_wake_on_network
         - ps.boot_time
         - ps.cpu_percent
         - ps.cpu_times

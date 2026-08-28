@@ -12,6 +12,7 @@ import (
 	execaliases "github.com/friz-zy/statekit/modules/exec/aliases"
 	execalt "github.com/friz-zy/statekit/modules/exec/alternatives"
 	execarchive "github.com/friz-zy/statekit/modules/exec/archive"
+	execassistive "github.com/friz-zy/statekit/modules/exec/assistive"
 	execasym "github.com/friz-zy/statekit/modules/exec/asymmetric"
 	execat "github.com/friz-zy/statekit/modules/exec/at"
 	execbcache "github.com/friz-zy/statekit/modules/exec/bcache"
@@ -67,6 +68,7 @@ import (
 	execpkgrepo "github.com/friz-zy/statekit/modules/exec/pkgrepo"
 	execpkgresource "github.com/friz-zy/statekit/modules/exec/pkgresource"
 	execpkgutil "github.com/friz-zy/statekit/modules/exec/pkgutil"
+	execpower "github.com/friz-zy/statekit/modules/exec/power"
 	execps "github.com/friz-zy/statekit/modules/exec/ps"
 	execpyenv "github.com/friz-zy/statekit/modules/exec/pyenv"
 	execpython "github.com/friz-zy/statekit/modules/exec/python"
@@ -186,8 +188,10 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execpkgutil.Register,
 		execsoftwareupdate.Register,
 		execdesktop.Register,
+		execassistive.Register,
 		execxattr.Register,
 		execkeychain.Register,
+		execpower.Register,
 		execshadow.Register,
 		execpkg.Register,
 		execpkgresource.Register,
