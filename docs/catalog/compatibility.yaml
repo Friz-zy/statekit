@@ -4,10 +4,10 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 84
+    implemented: 85
     partial: 0
     excluded: 69
-    planned: 93
+    planned: 92
 implemented_families:
     - acl
     - aliases
@@ -50,6 +50,7 @@ implemented_families:
     - locale
     - logrotate
     - lvm
+    - macdefaults
     - mount
     - nacl
     - network
@@ -204,7 +205,6 @@ planned:
     - 'locate (planned: needs a dedicated porting round)'
     - 'log (planned: needs a dedicated porting round)'
     - 'loop (planned: needs a dedicated porting round)'
-    - 'macdefaults (planned: needs a dedicated porting round)'
     - 'macpackage (planned: needs a dedicated porting round)'
     - 'makeconf (planned: needs a dedicated porting round)'
     - 'module (planned: needs a dedicated porting round)'

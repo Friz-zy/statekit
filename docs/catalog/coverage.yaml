@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 647
+    implemented: 651
 state:
     salt_modules: 132
     salt_functions: 669
@@ -336,6 +336,10 @@ implemented:
         - lvm.vgdisplay
         - lvm.vgextend
         - lvm.vgremove
+        - macdefaults.cast_value_to_vtype
+        - macdefaults.delete
+        - macdefaults.read
+        - macdefaults.write
         - mod_random.get_str
         - mod_random.hash
         - mod_random.rand_int

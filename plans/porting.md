@@ -822,8 +822,8 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R6 — macOS track via E1-E4. R7/R8 remain behind the same
-enablers; R9 awaits E5,
+Next in order: R6.2 — mac_user/mac_group (dscl account surface). R7/R8
+remain behind the same enablers; R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
 report's pending lists. Master-minion families stay excluded. Docker
@@ -917,6 +917,25 @@ full `go test ./...`, catalog regeneration); containerized differential and
 live external-crypto checks remain pending because the configured rootless
 dind daemon cannot start child containers (runc proc-mount EPERM), while no
 host packages were installed.
+
+R6.1 ported the four public `macdefaults` functions (`write`, `read`,
+`delete`, `cast_value_to_vtype`) behind Darwin-only platform declarations.
+The defaults export/import flow uses the central Runner's explicit shell
+model; an encoding/xml plist reader/writer preserves strings, bools,
+integers, reals, dates, data, dictionaries and arrays, including nested
+dictionary and array-index traversal, dictionary merge/array append, and
+recursive list deletion. Type casting mirrors Salt's bool/string/int/float/
+date/data/dict/array validation and exact error wording; XML output is
+deterministically key-sorted for fixture stability. The decoder gained the
+smallest needed `any` union-field support (scalar CLI flags plus structured
+plist values), with its own regression test. `user`/runas remains an
+explicit boundary because Runtime's elevation model has no target-user
+field; binary plist export is rejected rather than silently misparsed.
+Linux tests use a fake Runner and XML fixtures; `GOOS=darwin go test -c`
+cross-builds the package successfully. Catalog coverage is exec 647→651
+and macdefaults moves to implemented; the R6 track remains open. The
+container sandbox still cannot spawn child containers due rootless-dind
+proc-mount EPERM, so no host package was installed.
 
 R5.9 ported the local ssh_pki surface (11 cataloged execution functions,
 plus the upstream create_certificate_ssh alias) onto golang.org/x/crypto/ssh

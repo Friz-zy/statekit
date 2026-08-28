@@ -81,6 +81,15 @@ func checkSupportedKind(t reflect.Type) error {
 	switch t.Kind() {
 	case reflect.String, reflect.Bool, reflect.Int, reflect.Int64, reflect.Float64:
 		return nil
+	case reflect.Interface:
+		if t.NumMethod() == 0 {
+			// Salt has a small number of genuinely union-valued arguments
+			// (for example macdefaults.write's plist value). Keep this
+			// explicit: only interface{} is accepted, not arbitrary
+			// interfaces with hidden behavior.
+			return nil
+		}
+		return fmt.Errorf("unsupported interface type %s (only any)", t)
 	case reflect.Pointer:
 		// Pointer fields carry tri-state options: nil keeps the Salt
 		// function default when the caller omits the argument entirely.
@@ -158,6 +167,12 @@ func NewFlagSet(name string, argsTemplate any) (*flag.FlagSet, error) {
 		}
 		if fieldType.Kind() == reflect.Map {
 			// Maps are supplied exclusively through structured input.
+			continue
+		}
+		if fieldType.Kind() == reflect.Interface {
+			// Union-valued arguments accept a scalar flag and retain
+			// richer values through structured input.
+			fs.String(s.name, "", usage)
 			continue
 		}
 		if fieldType.Kind() == reflect.Slice && fieldType.Elem().Kind() == reflect.Interface {
@@ -328,6 +343,8 @@ func assignFromFlag(field reflect.Value, name, raw string) error {
 		return nil
 	}
 	switch field.Kind() {
+	case reflect.Interface:
+		field.Set(reflect.ValueOf(raw))
 	case reflect.String:
 		field.SetString(raw)
 	case reflect.Bool:
@@ -385,6 +402,17 @@ func assignFromValue(field reflect.Value, name string, v any) error {
 		return nil
 	}
 	switch field.Kind() {
+	case reflect.Interface:
+		if v == nil {
+			field.Set(reflect.Zero(field.Type()))
+			return nil
+		}
+		value := reflect.ValueOf(v)
+		if value.Type().AssignableTo(field.Type()) || field.Type().NumMethod() == 0 {
+			field.Set(value)
+			return nil
+		}
+		return assignError(name, v, field.Interface())
 	case reflect.String:
 		s, err := toStringScalar(v)
 		if err != nil {

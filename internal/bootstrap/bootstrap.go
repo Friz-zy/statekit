@@ -48,6 +48,7 @@ import (
 	execlocale "github.com/friz-zy/statekit/modules/exec/locale"
 	execlogrotate "github.com/friz-zy/statekit/modules/exec/logrotate"
 	execlvm "github.com/friz-zy/statekit/modules/exec/lvm"
+	execmacdefaults "github.com/friz-zy/statekit/modules/exec/macdefaults"
 	execmdadm "github.com/friz-zy/statekit/modules/exec/mdadm"
 	execmount "github.com/friz-zy/statekit/modules/exec/mount"
 	execnacl "github.com/friz-zy/statekit/modules/exec/nacl"
@@ -174,6 +175,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		exectls.Register,
 		execuser.Register,
 		execgroup.Register,
+		execmacdefaults.Register,
 		execshadow.Register,
 		execpkg.Register,
 		execpkgresource.Register,

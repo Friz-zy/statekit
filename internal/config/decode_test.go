@@ -142,6 +142,35 @@ type mapArgs struct {
 	Payload map[string]any    `statekit:"name=payload"`
 }
 
+type unionArgs struct {
+	Name  string `statekit:"required"`
+	Value any    `statekit:"required,name=value"`
+}
+
+func TestAnyFieldSupportsScalarFlagsAndStructuredValues(t *testing.T) {
+	args := &unionArgs{}
+	if err := Decode(args, map[string]any{
+		"name": "plist", "value": map[string]any{"enabled": true},
+	}, nil); err != nil {
+		t.Fatalf("structured any decode: %v", err)
+	}
+	value, ok := args.Value.(map[string]any)
+	if !ok || value["enabled"] != true {
+		t.Fatalf("structured any value = %#v", args.Value)
+	}
+	args = &unionArgs{}
+	if err := Decode(args, nil, map[string]string{"name": "plist", "value": "true"}); err != nil {
+		t.Fatalf("flag any decode: %v", err)
+	}
+	if args.Value != "true" {
+		t.Fatalf("flag any value = %#v", args.Value)
+	}
+	fs, err := NewFlagSet("union", unionArgs{})
+	if err != nil || fs.Lookup("value") == nil {
+		t.Fatalf("any flag = %v", err)
+	}
+}
+
 func TestMapFieldsFromStructuredInput(t *testing.T) {
 	args := &mapArgs{}
 	structured := map[string]any{
