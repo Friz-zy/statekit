@@ -181,6 +181,13 @@ func (second) Name() string { return "user.info" }
 	}
 }
 
+func TestScanImplementedPreservesMixedCaseNames(t *testing.T) {
+	got := scanImplementedNames(`func (alias) Name() string { return "user.getUserSid" }`)
+	if len(got) != 1 || got[0] != "user.getUserSid" {
+		t.Fatalf("mixed-case implementation name = %v", got)
+	}
+}
+
 func TestWriteCatalogAndCoverage(t *testing.T) {
 	root := writeMiniSaltTree(t)
 	outDir := filepath.Join(t.TempDir(), "catalog")

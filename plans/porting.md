@@ -822,8 +822,7 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R7.2 — Windows user/group objects
-(`win_useradd`, `win_groupadd`).
+Next in order: R7.3 — Windows service object (`win_service`).
 R8 remains behind E3/E4/E6; R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
@@ -878,6 +877,25 @@ tests and `GOOS=windows GOARCH=amd64 go test -c` pass; the full repository
 also cross-builds for Windows, while no Windows runtime is attached and no
 host package was installed. Catalog coverage is exec 752→762 and `reg`
 moves to implemented.
+
+R7.2 ported the Windows `win_useradd` and `win_groupadd` virtual providers
+under the existing `user.*`/`group.*` names. Build-time routing selects the
+Windows implementation while preserving the Linux and Darwin provider
+branches; encoded UTF-16LE/base64 PowerShell scripts reach the central Runner
+without shell interpolation of account names/passwords. User operations
+cover add/update/delete, SID aliases, password/group membership, home/profile/
+full-name changes, info/getent/list/rename/current; group operations cover
+add/delete/info/getent/adduser/deluser/members/list_groups. JSON projections
+keep Salt's info/getent field shapes and local account/group semantics,
+including password/disabled/locked/expiration fields where LocalAccounts
+exposes them. Missing accounts map through exit-code 3, sensitive mutation
+commands carry redaction values, and the Windows-only fixture tests validate
+the encoded command payload, SID/current formatting, JSON fields and not-found
+mapping. `GOOS=windows GOARCH=amd64 go build ./...` and user/group test
+cross-builds pass; the catalog scanner now accepts mixed-case aliases (so
+`user.getUserSid` is measurable); no Windows runtime or host package
+installation is available. Catalog coverage is exec 762→770; the virtual
+user/group families were already classified implemented.
 
 R5.8 ported the tls family (18 registered exec functions) onto the Go
 standard library after the contract read showed pyOpenSSL is a libssl

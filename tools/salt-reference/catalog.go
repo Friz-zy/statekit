@@ -94,10 +94,10 @@ var nameMethodRe = regexp.MustCompile(`^func\s+\([^)]*\)\s+Name\(\)\s+string\s*\
 
 // nameOneLineRe matches a one-line Name() method returning a literal.
 var nameOneLineRe = regexp.MustCompile(
-	`^func\s+\([^)]*\)\s+Name\(\)\s+string\s*\{\s*return\s+"([a-z0-9_]+\.[a-z0-9_]+)"`)
+	`^func\s+\([^)]*\)\s+Name\(\)\s+string\s*\{\s*return\s+"([A-Za-z0-9_]+\.[A-Za-z0-9_]+)"`)
 
 // returnNameRe matches a bare literal return inside Name().
-var returnNameRe = regexp.MustCompile(`^\s*return\s+"([a-z0-9_]+\.[a-z0-9_]+)"\s*$`)
+var returnNameRe = regexp.MustCompile(`^\s*return\s+"([A-Za-z0-9_]+\.[A-Za-z0-9_]+)"\s*$`)
 
 // scanSaltTree walks salt/modules and salt/states producing ModuleDocs.
 func scanSaltTree(saltDir string) ([]ModuleDoc, []ModuleDoc, error) {
