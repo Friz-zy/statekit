@@ -100,6 +100,7 @@ import (
 	execwebutil "github.com/friz-zy/statekit/modules/exec/webutil"
 	execwindacl "github.com/friz-zy/statekit/modules/exec/win_dacl"
 	execwindns "github.com/friz-zy/statekit/modules/exec/win_dns_client"
+	execwinevent "github.com/friz-zy/statekit/modules/exec/win_event"
 	execwinpki "github.com/friz-zy/statekit/modules/exec/win_pki"
 	execxattr "github.com/friz-zy/statekit/modules/exec/xattr"
 	execxfs "github.com/friz-zy/statekit/modules/exec/xfs"
@@ -202,6 +203,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execwindns.Register,
 		execwindacl.Register,
 		execwinpki.Register,
+		execwinevent.Register,
 		execshadow.Register,
 		execpkg.Register,
 		execpkgresource.Register,

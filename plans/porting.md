@@ -822,7 +822,7 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R7.10 — Windows event log surface (`win_event`).
+Next in order: R7.11 — Windows path helper surface (`win_path`).
 R8 remains behind E3/E4/E6; R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
@@ -998,6 +998,18 @@ mutation argv and registry rejection; `GOOS=windows GOARCH=amd64 go build
 ./...` plus the DACL test cross-build pass, with Linux full gates green. No
 Windows runtime or host package installation is available. Catalog coverage
 is exec 821→828 and `win_dacl` moves to implemented.
+
+R7.10 ported the seven public `win_event` functions behind a Windows-only
+registration. Get/query uses encoded PowerShell `Get-WinEvent` projections
+with XPath, newest/oldest, record limits and raw XML modes; get_filtered
+reuses the event projection for all/any matching, get_log_names/count use
+wevtutil/PowerShell, clear uses wevtutil backup support, and add validates
+string/numeric event types while forwarding messages/raw data to
+Write-EventLog. Windows-only fixtures cover query/filter/raw output, log
+enumeration/clear and event validation; Linux full gates and
+`GOOS=windows GOARCH=amd64 go build ./...` plus event test cross-build pass.
+No Windows runtime or host package installation is available. Catalog
+coverage is exec 828→835 and `win_event` moves to implemented.
 
 R5.8 ported the tls family (18 registered exec functions) onto the Go
 standard library after the contract read showed pyOpenSSL is a libssl
