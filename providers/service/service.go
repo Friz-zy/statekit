@@ -173,6 +173,43 @@ func (launchdProvider) Disable(ctx context.Context, rt *runtime.Runtime, name st
 	return runOK(ctx, rt, []string{"launchctl", "disable", "system/" + name})
 }
 
+// scmProvider drives the Windows Service Control Manager through sc.exe.
+type scmProvider struct{}
+
+func (scmProvider) Name() string { return "scm" }
+func (scmProvider) Start(ctx context.Context, rt *runtime.Runtime, name string) error {
+	return runOK(ctx, rt, []string{"sc.exe", "start", name})
+}
+func (scmProvider) Stop(ctx context.Context, rt *runtime.Runtime, name string) error {
+	return runOK(ctx, rt, []string{"sc.exe", "stop", name})
+}
+func (scmProvider) Restart(ctx context.Context, rt *runtime.Runtime, name string) error {
+	if err := runOK(ctx, rt, []string{"sc.exe", "stop", name}); err != nil {
+		return err
+	}
+	return runOK(ctx, rt, []string{"sc.exe", "start", name})
+}
+func (scmProvider) Status(ctx context.Context, rt *runtime.Runtime, name string) (bool, error) {
+	res := rt.Runner.Run(ctx, runtime.Command("sc.exe", "query", name))
+	if res.Err != nil {
+		return false, res.Err
+	}
+	return res.ExitCode == 0 && strings.Contains(strings.ToUpper(string(res.Stdout)), "RUNNING"), nil
+}
+func (scmProvider) Enabled(ctx context.Context, rt *runtime.Runtime, name string) (bool, error) {
+	res := rt.Runner.Run(ctx, runtime.Command("sc.exe", "qc", name))
+	if res.Err != nil {
+		return false, res.Err
+	}
+	return res.ExitCode == 0 && strings.Contains(strings.ToUpper(string(res.Stdout)), "AUTO_START"), nil
+}
+func (scmProvider) Enable(ctx context.Context, rt *runtime.Runtime, name string) error {
+	return runOK(ctx, rt, []string{"sc.exe", "config", name, "start=", "auto"})
+}
+func (scmProvider) Disable(ctx context.Context, rt *runtime.Runtime, name string) error {
+	return runOK(ctx, rt, []string{"sc.exe", "config", name, "start=", "disabled"})
+}
+
 // unit appends .service for bare names, mirroring Salt's _systemctl_cmd.
 func unit(name string) string {
 	switch {
@@ -192,6 +229,8 @@ func Select(f *facts.Facts) (string, error) {
 		return "openrc", nil
 	case "launchd":
 		return "launchd", nil
+	case "scm":
+		return "scm", nil
 	default:
 		return "", fmt.Errorf("unsupported init system %q; only systemd and openrc are supported", f.InitSystem())
 	}
@@ -199,7 +238,7 @@ func Select(f *facts.Facts) (string, error) {
 
 // Register installs every service provider plus the fact-driven selector.
 func Register(registry *runtime.ProviderRegistry) error {
-	for _, p := range []Provider{systemctlProvider{}, openrcProvider{}, launchdProvider{}} {
+	for _, p := range []Provider{systemctlProvider{}, openrcProvider{}, launchdProvider{}, scmProvider{}} {
 		if err := registry.Register("service", p.Name(), p); err != nil {
 			return err
 		}

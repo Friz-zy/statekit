@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 770
+    implemented: 779
 state:
     salt_modules: 132
     salt_functions: 669
@@ -630,16 +630,25 @@ implemented:
         - selinux.selinux_fs_path
         - selinux.setenforce
         - service.available
+        - service.create
+        - service.create_win_salt_restart_task
+        - service.delete
         - service.disable
         - service.disabled
         - service.enable
         - service.enabled
+        - service.execute_salt_restart_task
         - service.get_all
+        - service.get_disabled
         - service.get_enabled
+        - service.get_service_name
+        - service.getsid
+        - service.info
         - service.launchctl
         - service.list
         - service.loaded
         - service.missing
+        - service.modify
         - service.reload
         - service.restart
         - service.show

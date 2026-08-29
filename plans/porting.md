@@ -822,7 +822,7 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R7.3 — Windows service object (`win_service`).
+Next in order: R7.4 — Windows package object (`win_pkg`).
 R8 remains behind E3/E4/E6; R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
@@ -896,6 +896,23 @@ cross-builds pass; the catalog scanner now accepts mixed-case aliases (so
 `user.getUserSid` is measurable); no Windows runtime or host package
 installation is available. Catalog coverage is exec 762→770; the virtual
 user/group families were already classified implemented.
+
+R7.3 ported the 21 public `win_service` functions behind Windows-only
+registration and the existing `service.*` virtual family. The implementation
+uses `sc.exe` query/queryex/qc/config/start/stop/create/delete and
+`schtasks.exe` for the Salt restart task, parses service names/display names,
+status/start types/dependencies/accounts, preserves glob status and Not Found
+behavior, start/stop wait-hint polling, disable-to-manual startup, modify/
+create validation, enabled/disabled lists, delete idempotence and the
+salt-minion restart-task special case. `providers/service` now includes an
+`scm` provider selected by the Windows init detector; Linux systemd/openrc
+and Darwin launchd remain unchanged. Windows-only fixtures cover SC output
+parsing, command quoting, glob status and display-name mapping;
+`GOOS=windows GOARCH=amd64 go build ./...` plus service test cross-builds
+pass. Localized `sc.exe` output and target-user/runas behavior remain explicit
+Windows runtime ceilings; no Windows runtime or host package installation is
+available. Catalog coverage is exec 770→779; the service family was already
+classified implemented.
 
 R5.8 ported the tls family (18 registered exec functions) onto the Go
 standard library after the contract read showed pyOpenSSL is a libssl

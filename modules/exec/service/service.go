@@ -163,6 +163,9 @@ func Register(reg *runtime.ExecRegistry) error {
 	if runtime.CurrentGOOS() == "darwin" {
 		return registerMac(reg)
 	}
+	if runtime.CurrentGOOS() == "windows" {
+		return registerWindows(reg)
+	}
 	for _, fn := range []runtime.ExecFunction{
 		startFunc{}, stopFunc{}, restartFunc{}, statusFunc{}, reloadFunc{},
 		enableFunc{}, disableFunc{}, enabledFunc{},
