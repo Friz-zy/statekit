@@ -822,8 +822,8 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R4.8 — remaining Linux file long-tail functions from the R4
-differential report; R8 remains behind E3/E4/E6.
+Next in order: E3/E4/E6 preflight for R8; R4's Jinja template boundary
+(`file.apply_template_on_contents`) remains explicit.
 R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
@@ -1115,6 +1115,19 @@ test-binary builds are green. R7 compatibility now includes the firewall
 state family; current catalog totals are exec 908 implemented and state 47
 implemented. No host packages were installed; Docker child runtime remains
 blocked by rootless-dind/runc `/proc` mount EPERM.
+
+R4.8 ported the remaining local Linux file long-tail functions that were
+safe without new protocol/dependency surfaces: find (name/iname/regex/type/
+size/grep/depth/delete criteria), grep argv/result projection, contains_glob,
+line edits, pure-Python psed edits/backups, statvfs, open_files via /proc,
+move with filesystem-copy fallback, diskusage, and Salt minion backup
+list/restore/delete. Runtime.FS and central Runner remain in the path; backup
+timestamps use the existing file_backup convention. The Jinja-dependent
+`apply_template_on_contents` function is intentionally not registered and
+remains pending under the minimal-Jinja ceiling. Linux tests cover all local
+flows plus missing/template branches; Linux full gates and Darwin/Windows
+cross-builds pass. R4 differential report now has file 95/96 public and only
+that template function pending; catalog coverage is exec 908→921.
 
 R5.8 ported the tls family (18 registered exec functions) onto the Go
 standard library after the contract read showed pyOpenSSL is a libssl

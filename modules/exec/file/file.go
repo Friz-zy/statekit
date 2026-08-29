@@ -497,5 +497,5 @@ func Register(reg *runtime.ExecRegistry) error {
 			return err
 		}
 	}
-	return nil
+	return registerLongtail(reg)
 }

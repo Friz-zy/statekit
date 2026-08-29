@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 908
+    implemented: 921
 state:
     salt_modules: 132
     salt_functions: 669
@@ -165,12 +165,16 @@ implemented:
         - file.comment
         - file.comment_line
         - file.contains
+        - file.contains_glob
         - file.contains_regex
         - file.copy
+        - file.delete_backup
         - file.directory_exists
         - file.dirname
+        - file.diskusage
         - file.extract_hash
         - file.file_exists
+        - file.find
         - file.get_attributes
         - file.get_devmm
         - file.get_diff
@@ -187,6 +191,7 @@ implemented:
         - file.get_uid
         - file.get_user
         - file.gid_to_group
+        - file.grep
         - file.group_to_gid
         - file.is_blkdev
         - file.is_chrdev
@@ -195,7 +200,10 @@ implemented:
         - file.is_link
         - file.join
         - file.lchown
+        - file.line
         - file.link
+        - file.list_backups
+        - file.list_backups_dir
         - file.lsattr
         - file.lstat
         - file.makedirs_
@@ -206,17 +214,21 @@ implemented:
         - file.mknod_blkdev
         - file.mknod_chrdev
         - file.mknod_fifo
+        - file.move
         - file.normpath
+        - file.open_files
         - file.pardir
         - file.patch
         - file.path_exists_glob
         - file.prepend
+        - file.psed
         - file.read
         - file.readdir
         - file.readlink
         - file.remove
         - file.rename
         - file.replace
+        - file.restore_backup
         - file.restorecon
         - file.rmdir
         - file.search
@@ -230,6 +242,7 @@ implemented:
         - file.set_selinux_context
         - file.source_list
         - file.stats
+        - file.statvfs
         - file.symlink
         - file.touch
         - file.truncate
