@@ -52,3 +52,5 @@ __pycache__/
 
 # Go toolchain scratch (noexec /tmp workaround)
 .gotmp/
+
+.kilo
