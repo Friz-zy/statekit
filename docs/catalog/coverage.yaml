@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 890
+    implemented: 898
 state:
     salt_modules: 132
     salt_functions: 669
@@ -906,6 +906,14 @@ implemented:
         - win_smtp_server.set_log_format
         - win_smtp_server.set_relay_ip_list
         - win_smtp_server.set_server_setting
+        - win_snmp.get_agent_service_types
+        - win_snmp.get_agent_settings
+        - win_snmp.get_auth_traps_enabled
+        - win_snmp.get_community_names
+        - win_snmp.get_permission_types
+        - win_snmp.set_agent_settings
+        - win_snmp.set_auth_traps_enabled
+        - win_snmp.set_community_names
         - xattr.clear
         - xattr.delete
         - xattr.list

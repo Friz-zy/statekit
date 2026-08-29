@@ -822,7 +822,7 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R7.15 — Windows SNMP surface (`win_snmp`).
+Next in order: R7.16 — Windows Update surface (`win_wua`).
 R8 remains behind E3/E4/E6; R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
@@ -1066,6 +1066,20 @@ handling; `GOOS=windows GOARCH=amd64 go build ./...` plus SMTP test
 cross-build pass, with Linux full gates green. No Windows runtime or host
 package installation is available. Catalog coverage is exec 880→890 and
 `win_smtp_server` moves to implemented.
+
+R7.15 ported the eight public `win_snmp` functions behind a Windows-only
+registration. Static service/permission type maps, RFC1156Agent contact/
+location/sysServices bitmask settings, authentication-trap state and
+ValidCommunities/GPO precedence use encoded PowerShell registry cmdlets;
+community permission names map to the source numeric values and GPO-managed
+communities are read-only with an explicit error on mutation. Duplicate
+service inputs are normalized, invalid service/permission values fail before
+mutation, and SNMP protocol/network behavior is intentionally outside this
+configuration surface. Windows-only fixtures cover bitmask/order helpers,
+agent settings, auth state and platform declarations; `GOOS=windows
+GOARCH=amd64 go build ./...` plus SNMP test cross-build pass, with Linux full
+gates green. No Windows runtime or host package installation is available.
+Catalog coverage is exec 890→898 and `win_snmp` moves to implemented.
 
 R5.8 ported the tls family (18 registered exec functions) onto the Go
 standard library after the contract read showed pyOpenSSL is a libssl

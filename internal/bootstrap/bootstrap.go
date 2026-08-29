@@ -106,6 +106,7 @@ import (
 	execwinpki "github.com/friz-zy/statekit/modules/exec/win_pki"
 	execwinservermanager "github.com/friz-zy/statekit/modules/exec/win_servermanager"
 	execwinsmtp "github.com/friz-zy/statekit/modules/exec/win_smtp_server"
+	execwinsnmp "github.com/friz-zy/statekit/modules/exec/win_snmp"
 	execxattr "github.com/friz-zy/statekit/modules/exec/xattr"
 	execxfs "github.com/friz-zy/statekit/modules/exec/xfs"
 	execxml "github.com/friz-zy/statekit/modules/exec/xml"
@@ -212,6 +213,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execwinpath.Register,
 		execwinservermanager.Register,
 		execwinsmtp.Register,
+		execwinsnmp.Register,
 		execshadow.Register,
 		execpkg.Register,
 		execpkgresource.Register,
