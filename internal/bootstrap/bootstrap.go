@@ -35,6 +35,7 @@ import (
 	execfile "github.com/friz-zy/statekit/modules/exec/file"
 	execfirewall "github.com/friz-zy/statekit/modules/exec/firewall"
 	execgit "github.com/friz-zy/statekit/modules/exec/git"
+	execgotemplate "github.com/friz-zy/statekit/modules/exec/gotemplate"
 	execgpg "github.com/friz-zy/statekit/modules/exec/gpg"
 	execgroup "github.com/friz-zy/statekit/modules/exec/group"
 	exechashutil "github.com/friz-zy/statekit/modules/exec/hashutil"
@@ -185,6 +186,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execxml.Register,
 		execyaml.Register,
 		execjinja.Register,
+		execgotemplate.Register,
 		execdata.Register,
 		execdefaults.Register,
 		execret.Register,

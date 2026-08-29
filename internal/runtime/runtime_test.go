@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/friz-zy/statekit/internal/facts"
@@ -13,6 +16,46 @@ import (
 
 type fakeExec struct {
 	name string
+}
+
+func TestReadFileBoundedValidationAndOSLimits(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file")
+	if err := os.WriteFile(file, []byte("1234"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fsys := NewOSFileSystem()
+	data, err := ReadFileBounded(fsys, file, 4)
+	if err != nil || string(data) != "1234" {
+		t.Fatalf("exact read = %q, %v", data, err)
+	}
+	if _, err := ReadFileBounded(fsys, file, 3); !errors.Is(err, ErrReadLimit) {
+		t.Fatalf("over-limit error = %v", err)
+	}
+	if _, err := ReadFileBounded(fsys, dir, 4); !errors.Is(err, syscall.EISDIR) {
+		t.Fatalf("directory error = %v", err)
+	}
+	for _, limit := range []int64{-1, MaxBoundedReadLimit + 1, int64(^uint64(0) >> 1)} {
+		if _, err := ReadFileBounded(fsys, file, limit); !errors.Is(err, ErrInvalidReadLimit) {
+			t.Fatalf("invalid limit %d: %v", limit, err)
+		}
+	}
+}
+
+func TestReadFileBoundedRejectsUnsupportedFSAndMemoryLimits(t *testing.T) {
+	if _, err := ReadFileBounded(struct{ FileSystem }{}, "x", 1); err == nil || !strings.Contains(err.Error(), "does not support bounded reads") {
+		t.Fatalf("unsupported filesystem error = %v", err)
+	}
+	m := NewMemoryFS()
+	if err := m.WriteFile("/bounded", []byte("123"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.ReadFileBounded("/bounded", 2); !errors.Is(err, ErrReadLimit) {
+		t.Fatalf("memory over-limit error = %v", err)
+	}
+	if _, err := m.ReadFileBounded("/bounded", -1); !errors.Is(err, ErrInvalidReadLimit) {
+		t.Fatalf("memory invalid-limit error = %v", err)
+	}
 }
 
 func (f fakeExec) Name() string { return f.name }

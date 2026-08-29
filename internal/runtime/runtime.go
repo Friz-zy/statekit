@@ -7,7 +7,9 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -265,6 +267,46 @@ type FileSystem interface {
 	Lchown(name string, uid, gid int) error
 }
 
+// ErrReadLimit reports that a bounded filesystem read found more than the
+// requested number of bytes. It is separate from ReadFile, whose unbounded
+// compatibility semantics are retained.
+var ErrReadLimit = errors.New("runtime: file exceeds read limit")
+
+// ErrInvalidReadLimit reports a negative or unreasonably large bounded-read
+// limit. Rejecting it before arithmetic keeps the sentinel allocation finite.
+var ErrInvalidReadLimit = errors.New("runtime: invalid bounded read limit")
+
+// MaxBoundedReadLimit is the largest finite limit accepted by ReadFileBounded.
+const MaxBoundedReadLimit int64 = 64 << 20
+
+// BoundedFileSystem is the optional bounded-read capability used by consumers
+// that must not allocate an untrusted file in full.
+type BoundedFileSystem interface {
+	ReadFileBounded(name string, limit int64) ([]byte, error)
+}
+
+// ReadFileBounded reads at most limit bytes plus one sentinel byte. Negative
+// and values above MaxBoundedReadLimit return ErrInvalidReadLimit. Filesystems
+// used by bounded consumers must expose BoundedFileSystem; silently falling
+// back to ReadFile would defeat the allocation bound.
+func ReadFileBounded(fsys FileSystem, name string, limit int64) ([]byte, error) {
+	if err := validateBoundedReadLimit(limit); err != nil {
+		return nil, err
+	}
+	bounded, ok := fsys.(BoundedFileSystem)
+	if !ok {
+		return nil, errors.New("runtime: filesystem does not support bounded reads")
+	}
+	return bounded.ReadFileBounded(name, limit)
+}
+
+func validateBoundedReadLimit(limit int64) error {
+	if limit < 0 || limit > MaxBoundedReadLimit {
+		return ErrInvalidReadLimit
+	}
+	return nil
+}
+
 // OSFileSystem is the production FileSystem backed by the os package.
 type OSFileSystem struct{}
 
@@ -279,6 +321,35 @@ func (OSFileSystem) Lstat(name string) (fs.FileInfo, error) { return os.Lstat(na
 
 // ReadFile implements FileSystem.
 func (OSFileSystem) ReadFile(name string) ([]byte, error) { return os.ReadFile(name) }
+
+func (OSFileSystem) ReadFileBounded(name string, limit int64) ([]byte, error) {
+	if err := validateBoundedReadLimit(limit); err != nil {
+		return nil, err
+	}
+	f, err := os.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if info.IsDir() {
+		return nil, syscall.EISDIR
+	}
+	// Validation above makes this addition safe. Reading into one exact-sized
+	// buffer keeps allocation at limit+1 bytes, including the sentinel.
+	data := make([]byte, int(limit)+1)
+	n, err := io.ReadFull(f, data)
+	if n == len(data) {
+		return nil, ErrReadLimit
+	}
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return nil, err
+	}
+	return data[:n], nil
+}
 
 // WriteFile implements FileSystem.
 func (OSFileSystem) WriteFile(name string, data []byte, perm fs.FileMode) error {
@@ -463,6 +534,29 @@ func (m *MemoryFS) ReadFile(name string) ([]byte, error) {
 	}
 	if node.dir {
 		return nil, pathError("read", name, syscall.EISDIR)
+	}
+	out := make([]byte, len(node.data))
+	copy(out, node.data)
+	return out, nil
+}
+
+// ReadFileBounded implements BoundedFileSystem without an intermediate full
+// copy, while keeping the tree locked against concurrent writes.
+func (m *MemoryFS) ReadFileBounded(name string, limit int64) ([]byte, error) {
+	if err := validateBoundedReadLimit(limit); err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	node, err := m.getResolved("open", name)
+	if err != nil {
+		return nil, err
+	}
+	if node.dir {
+		return nil, pathError("read", name, syscall.EISDIR)
+	}
+	if int64(len(node.data)) > limit {
+		return nil, ErrReadLimit
 	}
 	out := make([]byte, len(node.data))
 	copy(out, node.data)
