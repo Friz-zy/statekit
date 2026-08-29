@@ -24,7 +24,12 @@ type FamilyCoverage struct {
 	SaltModules       int `yaml:"salt_modules"`
 	SaltFunctions     int `yaml:"salt_functions"`
 	RelevantFunctions int `yaml:"relevant_functions"`
-	Implemented       int `yaml:"implemented"`
+	// SourceInventoryCount labels the raw Go Name() inventory; it is not a
+	// catalog coverage count.
+	SourceInventoryCount int `yaml:"source_inventory_count"`
+	// CatalogIntersectionCount labels the implemented catalog intersection.
+	CatalogIntersectionCount int `yaml:"catalog_intersection_count"`
+	Implemented              int `yaml:"implemented"`
 }
 
 // Implemented lists StateKit functions detected in Go sources.
@@ -242,6 +247,10 @@ func buildCoverage(ref ReferenceInfo, execDocs, stateDocs []ModuleDoc, impl Impl
 	cov := Coverage{Reference: ref, Implemented: impl}
 	cov.Execution = familyCoverage(execDocs, impl.Exec)
 	cov.State = familyCoverage(stateDocs, impl.State)
+	cov.Execution.SourceInventoryCount = len(impl.Exec)
+	cov.Execution.CatalogIntersectionCount = cov.Execution.Implemented
+	cov.State.SourceInventoryCount = len(impl.State)
+	cov.State.CatalogIntersectionCount = cov.State.Implemented
 	return cov
 }
 

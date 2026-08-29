@@ -6,11 +6,15 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 921
+    source_inventory_count: 947
+    catalog_intersection_count: 922
+    implemented: 922
 state:
     salt_modules: 132
     salt_functions: 669
     relevant_functions: 197
+    source_inventory_count: 50
+    catalog_intersection_count: 47
     implemented: 47
 implemented:
     exec:
@@ -151,6 +155,7 @@ implemented:
         - extfs.tune
         - file.access
         - file.append
+        - file.apply_template_on_contents
         - file.basename
         - file.blockreplace
         - file.chattr
@@ -273,6 +278,10 @@ implemented:
         - git.fetch
         - git.init
         - git.pull
+        - gotemplate.import_json
+        - gotemplate.import_yaml
+        - gotemplate.load_map
+        - gotemplate.render
         - gpg.create_key
         - gpg.decrypt
         - gpg.delete_key

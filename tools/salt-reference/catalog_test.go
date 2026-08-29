@@ -228,6 +228,36 @@ func TestWriteCatalogAndCoverage(t *testing.T) {
 	}
 }
 
+func TestBuildCoverageLabelsInventoryAndIntersection(t *testing.T) {
+	ref := ReferenceInfo{Repository: "salt", Commit: "abc123"}
+	docs := []ModuleDoc{{
+		Module:       "pkg",
+		SourceModule: "pkg",
+		Functions:    []Entry{{Function: "install"}},
+	}}
+	stateDocs := []ModuleDoc{{
+		Module:       "pkg",
+		SourceModule: "pkg",
+		Kind:         "state",
+		Functions:    []Entry{{Function: "installed"}},
+	}}
+	impl := Implemented{
+		Exec:  []string{"pkg.install", "pkg.remove"},
+		State: []string{"pkg.installed", "pkg.uninstalled"},
+	}
+
+	cov := buildCoverage(ref, docs, stateDocs, impl)
+	if cov.Execution.SourceInventoryCount != 2 || cov.Execution.CatalogIntersectionCount != 1 {
+		t.Fatalf("execution labels = %+v, want inventory 2/intersection 1", cov.Execution)
+	}
+	if cov.State.SourceInventoryCount != 2 || cov.State.CatalogIntersectionCount != 1 {
+		t.Fatalf("state labels = %+v, want inventory 2/intersection 1", cov.State)
+	}
+	if cov.Execution.SourceInventoryCount == cov.Execution.CatalogIntersectionCount {
+		t.Fatal("execution labels must distinguish inventory from catalog intersection")
+	}
+}
+
 func TestWriteSaltLock(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "references", "salt.lock")
 	err := writeSaltLock(path, ReferenceInfo{

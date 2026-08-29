@@ -74,9 +74,18 @@ throwaway packages per provider.
 ### R4 — Files, text, templates, misc Linux (~80 funcs)
 `file.*` long tail (patch, blockreplace, makedirs_perms, copy options),
 `cp` (local source), `incron`, logrotate extras, `temp`, `xml` (encoding/xml),
-`yaml` (existing dep), `jinja` — **minimal** variable/substitution engine only
-(full Jinja excluded by ADR), `data`, `defaults`, `out`, `ret`, `restartcheck`,
-status long tail.
+`yaml` (existing dep), and `jinja`: Salt-compatible
+`jinja.import_yaml`, `jinja.import_json`, and `jinja.load_map` use a bounded
+system/venv Python CLI bridge with Jinja2. StateKit also provides the opt-in,
+non-Salt `gotemplate.render`, `gotemplate.import_yaml`,
+`gotemplate.import_json`, and `gotemplate.load_map` functions on stdlib
+`text/template`. `file.apply_template_on_contents` is registered, but supports
+only `template=gotemplate`; `template=jinja` and other engines return the Salt
+unsupported map. Full Salt renderer semantics, Salt custom import tags,
+loader/pillar/grains, `file.get_managed` templated-source handling, and state
+file templating remain deferred/excluded; this is an explicit compatibility
+ceiling, not a claim of full Jinja parity. Also includes `data`, `defaults`,
+`out`, `ret`, `restartcheck`, and the status long tail.
 Verify: hermetic unit + fixture suites.
 
 ### R5 — Security, crypto, auth on Linux (~85 funcs)
@@ -171,7 +180,7 @@ documented, core repo ships discovery/error contracts only.
 | Flaky service-tier tests | compose healthchecks + retry-once annotation policy (testing.md §Cost controls) |
 | Salt drift | catalog re-index job fails golden check on submodule bump |
 | Protocol client creep into Go deps | ADR gate; wrapper-first default |
-| Scope explosion in jinja/templating | minimal engine ADR; full Jinja excluded |
+| Scope explosion in jinja/templating | bounded Python Jinja2 bridge and opt-in Go templates; full Salt renderer semantics remain deferred/excluded |
 
 ## 5. Acceptance
 
@@ -823,8 +832,10 @@ patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
 Next in order: E6 is blocked before R8; provide a QEMU/VM runner and populated
-`tests/images/vm/` fixtures. R4's Jinja template boundary
-(`file.apply_template_on_contents`) remains explicit.
+`tests/images/vm/` fixtures. R4's renderer boundary remains explicit: Jinja2
+uses the bounded Python CLI bridge; gotemplate is opt-in native
+`text/template`; file templating and full Salt renderer semantics remain
+deferred as described above.
 R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
@@ -1123,12 +1134,34 @@ size/grep/depth/delete criteria), grep argv/result projection, contains_glob,
 line edits, pure-Python psed edits/backups, statvfs, open_files via /proc,
 move with filesystem-copy fallback, diskusage, and Salt minion backup
 list/restore/delete. Runtime.FS and central Runner remain in the path; backup
-timestamps use the existing file_backup convention. The Jinja-dependent
-`apply_template_on_contents` function is intentionally not registered and
-remains pending under the minimal-Jinja ceiling. Linux tests cover all local
-flows plus missing/template branches; Linux full gates and Darwin/Windows
-cross-builds pass. R4 differential report now has file 95/96 public and only
-that template function pending; catalog coverage is exec 908→921.
+timestamps use the existing file_backup convention. Its pre-renderer boundary
+for `apply_template_on_contents` was later completed by R4.9c as a
+gotemplate-only integration; Jinja and other engines remain explicitly
+unsupported/deferred. Linux tests cover all local flows plus missing/template
+branches; Linux full gates and Darwin/Windows cross-builds pass. At the R4.8
+cut, the differential scope was file 95/96 public, with only
+`apply_template_on_contents` pending; aggregate coverage was 169/184
+registered_public and catalog coverage was exec 908→921. R4.9c subsequently
+completed the renderer boundary described above.
+
+R4.9a (`2170132`) added bounded process/filesystem limits, the opt-in
+gotemplate renderer/functions, bootstrap wiring, and tests; the senior gate
+passed. R4.9b (`4ba20df`) added the bounded Python Jinja2 CLI bridge plus
+candidate/fallback/error/sandbox tests and an optional real-environment test;
+the senior gate passed. R4.9c (`2c62e60`) integrated
+`file.apply_template_on_contents` for `template=gotemplate` only, added
+isolation tests, and updated the R4 report: file 96/96 public registered;
+aggregate registered_public 170/184; the senior gate
+passed. R4.9d is this documentation/catalog phase; its gate passed and it is
+recorded by this documentation commit.
+
+R4.9 code-phase quality gates passed for `gofmt -l .`, `go vet ./...`,
+`go test ./...`, `go test -race ./...`, `GOOS=darwin GOARCH=amd64 go build ./...`,
+`GOOS=windows GOARCH=amd64 go build ./...`, and
+`GOOS=freebsd GOARCH=amd64 go build ./...`; targeted renderer/file tests and
+catalog regeneration with `go run ./tools/salt-reference -salt saltstack -out
+docs/catalog -lock references/salt.lock -src .` also passed. Native R6/R7 and
+VM-required limitations are unrelated to these R4.9 code phases.
 
 E3/E4/E6 preflight completed after R4.8. E3's required cross-GOOS matrix is
 green for Linux, Darwin, Windows and FreeBSD (`GOOS=freebsd GOARCH=amd64 go
@@ -1554,10 +1587,11 @@ and the stateless replacement of __context__ caching. Upstream has no unit
 tests for this surface; contracts pin source behavior directly. The ssh
 family stays partial pending the auth-keys half (exec 566→572).
 
-R4 CLOSED. The differential scope pass (docs/differential/R4/report.yaml,
+**Historical R4 CLOSED snapshot (pre-R4.7/R4.8; retained for provenance).** The
+differential scope pass (docs/differential/R4/report.yaml,
 generated by tests/differential TestR4DifferentialReport with the
 stale-report CI gate) reconciles the registry against the catalog for the
-fourteen scope files: file 82/96 public registered (14 pending recorded:
+fourteen scope files: file 82/96 public registered, with 14 pending items:
 find/grep/line/move/psed, backup-listing quartet, diskusage/statvfs/
 open_files, contains_glob, apply_template_on_contents), cp 15/24 (the
 master-fileserver and chunked-transfer surface stays excluded/pending by
@@ -1567,7 +1601,8 @@ the master-minion trio stay pending), temp 2/2, xml 4/4, yaml 1/1,
 jinja 3/3. get_mode/set_mode were ported alongside to close their meta-
 family gap (mode strings via stats(), set_mode's lstrip("0Oo") parsing,
 "Invalid Mode" reply, ": File not found" error). Round totals across
-scope files: 233 catalog functions, 184 public, 156 registered; the twin-
+scope files: 233 catalog functions, 184 public, 156 registered_public (156/184
+aggregate); the twin-
 container scenario manifest ships inside the report. Exec 564→566.
 
 R4.7 landed the managed-source meta family behind file.manage_file (15
@@ -1601,9 +1636,11 @@ Cyrillic lines and the binary-replace strings, plus get_conditional_diff.
 source_list degrades master lists to empty (master-minion excluded) while
 keeping local-path and dict-form matching with the verbatim none-found
 error; get_managed keeps the Local-file-source/salt-not-found/template-
-unsupported comment shapes (template registry stays empty per the minimal-
-jinja ADR) and surfaces signature params as gpg.verify UnsupportedError
-until R5. get_source_sum completes the hash-expression/hash-file machinery
+unsupported comment shapes; templated-source handling remains deferred, while
+the separate gotemplate-only file.apply_template_on_contents path and bounded
+Jinja2 bridge are documented in R4.9. It surfaces signature params as
+gpg.verify UnsupportedError until R5. get_source_sum completes the
+hash-expression/hash-file machinery
 with all four verbatim error texts. FileSystem gains Lchown (OS + memory);
 RuntimeFS untouched otherwise; cp.stat_file added for keep_mode. Upstream
 pytests map onto hermetic MemoryFS/OS-tempdir fixtures with a scripted
@@ -1615,9 +1652,30 @@ psed and the backup-listing quartet stay pending for later R4 slices (exec
 ## 7. Porting Debt Register (audit snapshot)
 
 - **Snapshot:** 2026-08-29; pinned input HEAD `c3e7b8f` (before this documentation edit); pinned Salt `8b63e700637e40d76f80a00d95c60471797c73b9` (`references/salt.lock`).
-- **Canonical identity/counts:** loader-visible identity is `kind + canonical module.function`; canonical public catalog totals are **2574** exec and **436** state after deduplication. Raw Go `Name()` inventories are **942** exec and **50** state and are not coverage totals.
+- **Canonical identity/counts:** loader-visible identity is `kind + canonical module.function`; canonical public catalog totals are **2574** exec and **436** state after deduplication. Generated coverage records raw Go `Name()` inventories as **947** exec and **50** state, alongside catalog intersections of **922** exec and **47** state; these are distinct metrics and neither claims full Jinja parity. The four new raw exec names from the gotemplate additions are `gotemplate.render`, `gotemplate.import_yaml`, `gotemplate.import_json`, and `gotemplate.load_map`; a fifth new raw exec name is `file.apply_template_on_contents`.
 - **Executor policy:** actionable implementation and tooling rows are assigned to `software-engineer-senior` (senior software engineer, Go porting/tooling); regression/contract rows to `qa-engineer-senior` (senior QA engineer, Go); documentation rows to `technical-writer-lead` (lead technical writer); excluded classifications to `solution-architect-lead` (lead solution architect). Review requires a senior maintainer plus platform owner for R6-R8.
 - **Canonical enumeration algorithm (normative for this snapshot):** (1) parse every concrete catalog and pinned Salt source path named by the function rows below, excluding only source function names beginning `_`; resolve each source file's `__virtualname__` and `__func_alias__`; apply the StateKit family aliases exactly as `tools/salt-reference/catalog.go#familyAliases`; deduplicate by `kind + canonical loader-visible module.function` while preserving every concrete catalog/source/test provenance item in semicolon-separated cells. (2) Compare canonical names with actual non-test Go `Name()` literals and `internal/bootstrap/bootstrap.go#BuildRuntime`; record wrong aliases as `noncanonical-registered`, Go-but-unwired names as `registered-missing`, and R6/R7 registered names without a native runner as `registered-but-runtime-unproven`; all other absent public functions are `actionable`. (3) Emit every architecture-only function as `excluded` with its exact local-only ADR reason; emit each non-CLI lifecycle hook once as `deferred` pending a lifecycle-engine ADR and explicit round assignment. (4) Treat the concrete differential report paths named by test rows only as scope evidence; R6/R7 remain cross-build-only until their native tests pass, and retain every mapped Salt source/test path.
+
+#### 7.0 Current-status overrides (after the pre-R4.9 snapshot)
+
+The PTD tables below are retained as an immutable audit snapshot. These
+overrides are the current status and do not delete or rewrite any original
+rows or counts.
+
+| PTD ID / names | Current status | Evidence and explicit boundary |
+|---|---|---|
+| `PTD-EXEC-0270 file.apply_template_on_contents` | completed by `2c62e60` | Registered and integrated for `template=gotemplate` only; `template=jinja`, other engines, and `file.get_managed` templated-source handling remain deferred. |
+| `PTD-TEST-0305` | completed by `2c62e60` isolation/integration tests | The acceptance surface is gotemplate-only registration, rendering, unsupported-engine mapping, and isolation; no full Salt renderer parity is claimed. |
+| `jinja.import_yaml`, `jinja.import_json`, `jinja.load_map` | implemented and verified by `4ba20df` | Bounded system/venv Python CLI bridge with Jinja2; candidate/fallback/error/sandbox coverage, with optional real-environment coverage. |
+| `gotemplate.render`, `gotemplate.import_yaml`, `gotemplate.import_json`, `gotemplate.load_map` | StateKit-native additions, evidence `2170132` | Opt-in stdlib `text/template` surface; these are not Salt parity claims. |
+| `PTD-PROBLEM-0011` | resolved in R4.9d by `software-engineer-middle`; senior gate passed | Generated `execution.source_inventory_count=947` vs `catalog_intersection_count=922`, and `state.source_inventory_count=50` vs `catalog_intersection_count=47`; focused generator test asserts the distinction. Historical audit row remains immutable. |
+
+| Current execution ledger | Commit | Senior gate |
+|---|---|---|
+| R4.9a bounded runner/FS limits and gotemplate | `2170132` | passed |
+| R4.9b bounded Python Jinja2 bridge | `4ba20df` | passed |
+| R4.9c gotemplate-only file integration | `2c62e60` | passed |
+| R4.9d documentation and catalog regeneration | ready for/recorded in this documentation commit | passed |
 
 ### 7.1 Problems to fix
 
