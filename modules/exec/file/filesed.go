@@ -261,6 +261,9 @@ func shellSplitFile(cmd string) []string {
 
 // RegisterPatch installs the R4.6 sed/patch functions alongside the base.
 func RegisterPatch(reg *runtime.ExecRegistry) error {
+	if runtime.CurrentGOOS() == "windows" {
+		return nil
+	}
 	for _, fn := range []runtime.ExecFunction{
 		sedFunc{},
 		sedContainsFunc{},

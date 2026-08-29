@@ -598,6 +598,9 @@ func (accessFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any
 
 // RegisterSums installs the R4.2 long-tail functions alongside the base set.
 func RegisterSums(reg *runtime.ExecRegistry) error {
+	if runtime.CurrentGOOS() == "windows" {
+		return nil
+	}
 	for _, fn := range []runtime.ExecFunction{
 		getSumFunc{},
 		getHashFunc{},

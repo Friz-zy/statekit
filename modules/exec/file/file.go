@@ -484,6 +484,9 @@ func errorsIsNotExist(err error) bool { return errors.Is(err, fs.ErrNotExist) }
 
 // Register installs all file-module execution functions.
 func Register(reg *runtime.ExecRegistry) error {
+	if runtime.CurrentGOOS() == "windows" {
+		return registerWindowsFile(reg)
+	}
 	for _, fn := range []runtime.ExecFunction{
 		fileExistsFunc{}, directoryExistsFunc{}, removeFunc{}, renameFunc{}, copyFunc{},
 		readFunc{}, writeFunc{}, containsFunc{}, appendFunc{}, mkdirFunc{},

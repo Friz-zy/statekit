@@ -171,6 +171,9 @@ func (mknodFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (an
 
 // RegisterDevices installs the R4.2 device functions.
 func RegisterDevices(reg *runtime.ExecRegistry) error {
+	if runtime.CurrentGOOS() == "windows" {
+		return nil
+	}
 	for _, fn := range []runtime.ExecFunction{
 		isChrdevFunc{},
 		isBlkdevFunc{},

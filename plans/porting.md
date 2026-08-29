@@ -822,7 +822,7 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R7.5 — Windows file object (`win_file`).
+Next in order: R7.6 — Windows firewall policy stack (`win_firewall`).
 R8 remains behind E3/E4/E6; R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
@@ -931,6 +931,21 @@ errors; `GOOS=windows GOARCH=amd64 go build ./...` plus pkg test cross-builds
 pass, with Linux provider tests covering winget selection/version flags. No
 Windows runtime or host package installation is available. Catalog coverage
 is exec 779→787.
+
+R7.5 ported the 30 public `win_file` functions behind Windows-only file
+registration while preserving selected cross-platform file helpers. The
+Windows provider covers SID/name and owner/group projections, Windows mode
+no-op compatibility, stats and hashing, PowerShell file version/details,
+`attrib.exe` flags, ownership changes, remove/link/directory operations and
+`icacls` grant/deny/inheritance/reset permission flows. Registration routing
+prevents POSIX meta/device/extension surfaces from colliding with win_file
+names on Windows; non-Windows behavior remains unchanged. `vdata`/ACL maps
+use the decoder's union-valued fields, and symlink/remove path checks keep
+the Windows error contracts. Windows-only fixtures cover attributes, ACL
+permission mapping, modes, links and removal; `GOOS=windows GOARCH=amd64
+go build ./...` plus file test cross-build passes, while Linux full gates
+remain green. Catalog coverage is exec 787→795; no Windows runtime or host
+package installation is available.
 
 R5.8 ported the tls family (18 registered exec functions) onto the Go
 standard library after the contract read showed pyOpenSSL is a libssl

@@ -941,6 +941,9 @@ func (symlinkFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (an
 
 // RegisterExt installs the R4.1 long-tail functions alongside the base set.
 func RegisterExt(reg *runtime.ExecRegistry) error {
+	if runtime.CurrentGOOS() == "windows" {
+		return nil
+	}
 	for _, fn := range []runtime.ExecFunction{
 		basenameFunc{},
 		dirnameFunc{},

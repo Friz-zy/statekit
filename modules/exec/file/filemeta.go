@@ -3261,6 +3261,9 @@ func backupModeOf(rt *runtime.Runtime, backup string) string {
 
 // RegisterMeta installs the R4.7 managed-source meta family.
 func RegisterMeta(reg *runtime.ExecRegistry) error {
+	if runtime.CurrentGOOS() == "windows" {
+		return nil
+	}
 	for _, fn := range []runtime.ExecFunction{
 		sourceListFunc{},
 		getManagedFunc{},

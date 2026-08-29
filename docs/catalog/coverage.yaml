@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 787
+    implemented: 795
 state:
     salt_modules: 132
     salt_functions: 669
@@ -161,6 +161,7 @@ implemented:
         - file.check_perms
         - file.chgrp
         - file.chown
+        - file.chpgrp
         - file.comment
         - file.comment_line
         - file.contains
@@ -170,6 +171,7 @@ implemented:
         - file.dirname
         - file.extract_hash
         - file.file_exists
+        - file.get_attributes
         - file.get_devmm
         - file.get_diff
         - file.get_gid
@@ -177,6 +179,8 @@ implemented:
         - file.get_hash
         - file.get_managed
         - file.get_mode
+        - file.get_pgid
+        - file.get_pgroup
         - file.get_selinux_context
         - file.get_source_sum
         - file.get_sum
@@ -220,7 +224,9 @@ implemented:
         - file.sed_contains
         - file.seek_read
         - file.seek_write
+        - file.set_attributes
         - file.set_mode
+        - file.set_perms
         - file.set_selinux_context
         - file.source_list
         - file.stats
@@ -230,6 +236,8 @@ implemented:
         - file.uid_to_user
         - file.uncomment
         - file.user_to_uid
+        - file.version
+        - file.version_details
         - file.write
         - git.add
         - git.clone
