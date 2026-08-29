@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 835
+    implemented: 840
 state:
     salt_modules: 132
     salt_functions: 669
@@ -844,6 +844,11 @@ implemented:
         - win_event.get_filtered
         - win_event.get_log_names
         - win_event.query
+        - win_path.add
+        - win_path.exists
+        - win_path.get_path
+        - win_path.rehash
+        - win_path.remove
         - win_pki.export_cert
         - win_pki.get_cert_file
         - win_pki.get_certs

@@ -822,7 +822,7 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R7.11 — Windows path helper surface (`win_path`).
+Next in order: R7.12 — Windows IIS surface (`win_iis`).
 R8 remains behind E3/E4/E6; R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
@@ -1010,6 +1010,20 @@ enumeration/clear and event validation; Linux full gates and
 `GOOS=windows GOARCH=amd64 go build ./...` plus event test cross-build pass.
 No Windows runtime or host package installation is available. Catalog
 coverage is exec 828→835 and `win_event` moves to implemented.
+
+R7.11 ported the five public `win_path` functions behind a Windows-only
+registration. SYSTEM PATH is read/written as
+`HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment`
+`REG_EXPAND_SZ` through `reg.exe`, local process PATH is updated separately,
+and `rundll32` broadcasts Environment changes when rehash is enabled. Path
+normalization, case-insensitive/trailing-separator matching, duplicate
+idempotence, append/end/index/negative-index ordering, removal and the
+empty/`.` guard mirror the source; registry and local slice updates return
+new slice headers explicitly. Windows-only fixtures cover registry parsing,
+ordering, mutation, normalization and rehash switches; `GOOS=windows
+GOARCH=amd64 go build ./...` plus path test cross-build pass, with Linux full
+gates green. No Windows runtime or host package installation is available.
+Catalog coverage is exec 835→840 and `win_path` moves to implemented.
 
 R5.8 ported the tls family (18 registered exec functions) onto the Go
 standard library after the contract read showed pyOpenSSL is a libssl
