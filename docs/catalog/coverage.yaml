@@ -11,7 +11,7 @@ state:
     salt_modules: 132
     salt_functions: 669
     relevant_functions: 197
-    implemented: 44
+    implemented: 47
 implemented:
     exec:
         - acl.delfacl
@@ -991,3 +991,6 @@ implemented:
         - test.nop
         - user.absent
         - user.present
+        - win_firewall.add_rule
+        - win_firewall.disabled
+        - win_firewall.enabled

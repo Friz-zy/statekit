@@ -134,6 +134,7 @@ import (
 	statesysfs "github.com/friz-zy/statekit/modules/state/sysfs"
 	statetest "github.com/friz-zy/statekit/modules/state/test"
 	stateuser "github.com/friz-zy/statekit/modules/state/user"
+	statewinfirewall "github.com/friz-zy/statekit/modules/state/win_firewall"
 	pkgprovider "github.com/friz-zy/statekit/providers/pkg"
 	serviceprovider "github.com/friz-zy/statekit/providers/service"
 )
@@ -298,6 +299,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		statepkgbuild.Register,
 		statelvm.Register,
 		stateselinux.Register,
+		statewinfirewall.Register,
 	} {
 		if err := registerState(rt.States); err != nil {
 			return nil, err

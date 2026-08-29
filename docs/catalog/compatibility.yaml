@@ -4,9 +4,9 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 105
+    implemented: 106
     partial: 0
-    excluded: 58
+    excluded: 57
     planned: 83
 implemented_families:
     - acl
@@ -103,6 +103,7 @@ implemented_families:
     - win_dacl
     - win_dns_client
     - win_event
+    - win_firewall
     - win_iis
     - win_path
     - win_pki
@@ -170,7 +171,6 @@ excluded:
     - 'snmp (planned: requires database/message-broker client protocol (round R9, services tier))'
     - 'sqlite3 (planned: requires database/message-broker client protocol (round R9, services tier))'
     - 'vsphere (planned: cloud provider API (round R10))'
-    - 'win_firewall (planned: windows-only (round R7))'
     - 'zoneadm (planned: non-linux unix platform (round R8))'
     - 'zonecfg (planned: non-linux unix platform (round R8))'
 planned:

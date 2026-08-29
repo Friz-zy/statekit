@@ -822,8 +822,9 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R7.17 — Windows firewall state wrapper (`win_firewall`).
-R8 remains behind E3/E4/E6; R9 awaits E5,
+Next in order: R4.8 — remaining Linux file long-tail functions from the R4
+differential report; R8 remains behind E3/E4/E6.
+R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
 report's pending lists. Master-minion families stay excluded. Docker
@@ -932,7 +933,7 @@ pass, with Linux provider tests covering winget selection/version flags. No
 Windows runtime or host package installation is available. Catalog coverage
 is exec 779→787.
 
-R7.5 ported the 30 public `win_file` functions behind Windows-only file
+R7.5 ported the 29 public `win_file` functions behind Windows-only file
 registration while preserving selected cross-platform file helpers. The
 Windows provider covers SID/name and owner/group projections, Windows mode
 no-op compatibility, stats and hashing, PowerShell file version/details,
@@ -1094,6 +1095,26 @@ plus WUA test cross-build pass, with Linux full gates green. Windows Update
 COM/network behavior requires a Windows runtime; no host package installation
 is available. Catalog coverage is exec 898→908 and `win_wua` moves to
 implemented.
+
+R7.17 ported the three public `win_firewall` state functions (`disabled`,
+`enabled`, `add_rule`) with Salt-compatible test-mode tri-state results,
+idempotence, profile mapping, rule-exists checks and changes/comment shapes.
+The state layer calls the execution registry through exported typed firewall
+argument aliases, so Windows providers are platform-selected while fake
+execution dependencies remain hermetically testable. Linux-runnable state
+fixtures cover pending/applied/idempotent/invalid paths; Windows execution
+and state cross-builds, Linux full gates and catalog regeneration pass.
+
+R7 CLOSED after `docs/differential/R7/report.yaml`, generated and guarded by
+`tests/differential/r7_test.go`. The platform-aware report reconciles 17
+Windows execution source catalogs plus the firewall state catalog: 270 catalog
+functions, 219 public functions and 219 ported public functions. It records
+Windows runtime validation as cross-build-only because no Windows runner is
+attached; `GOOS=windows GOARCH=amd64 go build ./...` and targeted Windows
+test-binary builds are green. R7 compatibility now includes the firewall
+state family; current catalog totals are exec 908 implemented and state 47
+implemented. No host packages were installed; Docker child runtime remains
+blocked by rootless-dind/runc `/proc` mount EPERM.
 
 R5.8 ported the tls family (18 registered exec functions) onto the Go
 standard library after the contract read showed pyOpenSSL is a libssl

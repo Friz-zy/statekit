@@ -116,7 +116,7 @@ func parseProfileOutput(output string) map[string]bool {
 // ---------------------------------------------------------------------------
 // profile/rule functions
 
-type getConfigArgs struct{}
+type getConfigArgs = ConfigArgs
 type getConfigFunc struct{}
 
 func (getConfigFunc) Name() string        { return "firewall.get_config" }
@@ -134,9 +134,7 @@ func (getConfigFunc) Execute(ctx context.Context, rt *runtime.Runtime, _ any) (r
 	return parseProfileOutput(string(result.Stdout)), nil
 }
 
-type profileArgs struct {
-	Profile string `statekit:"name=profile"`
-}
+type profileArgs = ProfileArgs
 type disableFunc struct{}
 type enableFunc struct{}
 
@@ -197,14 +195,7 @@ func (getRuleFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (
 	return map[string]string{a.Name: string(result.Stdout)}, nil
 }
 
-type addRuleArgs struct {
-	Name      string  `statekit:"required"`
-	LocalPort string  `statekit:"required,name=localport"`
-	Protocol  *string `statekit:"name=protocol"`
-	Action    *string `statekit:"name=action"`
-	Dir       *string `statekit:"name=dir"`
-	RemoteIP  *string `statekit:"name=remoteip"`
-}
+type addRuleArgs = AddRuleArgs
 type addRuleFunc struct{}
 
 func (addRuleFunc) Name() string        { return "firewall.add_rule" }
@@ -287,9 +278,7 @@ func (deleteRuleFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any
 	return true, nil
 }
 
-type ruleExistsArgs struct {
-	Name string `statekit:"required"`
-}
+type ruleExistsArgs = RuleExistsArgs
 type ruleExistsFunc struct{}
 
 func (ruleExistsFunc) Name() string        { return "firewall.rule_exists" }
@@ -679,6 +668,35 @@ func recoverFirewall(res *any, errPtr *error) {
 		}
 		panic(value)
 	}
+}
+
+// GetConfig is the typed bridge used by the win_firewall state wrapper.
+func GetConfig(ctx context.Context, rt *runtime.Runtime) (map[string]bool, error) {
+	value, err := (getConfigFunc{}).Execute(ctx, rt, getConfigArgs{})
+	if err != nil {
+		return nil, err
+	}
+	return value.(map[string]bool), nil
+}
+
+func Disable(ctx context.Context, rt *runtime.Runtime, profile string) (any, error) {
+	return (disableFunc{}).Execute(ctx, rt, &profileArgs{Profile: profile})
+}
+
+func Enable(ctx context.Context, rt *runtime.Runtime, profile string) (any, error) {
+	return (enableFunc{}).Execute(ctx, rt, &profileArgs{Profile: profile})
+}
+
+func RuleExists(ctx context.Context, rt *runtime.Runtime, name string) (bool, error) {
+	value, err := (ruleExistsFunc{}).Execute(ctx, rt, &ruleExistsArgs{Name: name})
+	if err != nil {
+		return false, err
+	}
+	return value.(bool), nil
+}
+
+func AddRule(ctx context.Context, rt *runtime.Runtime, name, localPort, protocol, action, direction, remoteIP string) (any, error) {
+	return (addRuleFunc{}).Execute(ctx, rt, &addRuleArgs{Name: name, LocalPort: localPort, Protocol: &protocol, Action: &action, Dir: &direction, RemoteIP: &remoteIP})
 }
 
 // Register installs Windows firewall functions.
