@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 779
+    implemented: 787
 state:
     salt_modules: 132
     salt_functions: 669
@@ -493,9 +493,13 @@ implemented:
         - pip.version
         - pkg.add_repo_key
         - pkg.available_version
+        - pkg.compare_versions
         - pkg.del_repo
         - pkg.del_repo_key
+        - pkg.genrepo
+        - pkg.get_package_info
         - pkg.get_repo
+        - pkg.get_repo_data
         - pkg.get_repo_keys
         - pkg.hold
         - pkg.homebrew_prefix
@@ -503,12 +507,16 @@ implemented:
         - pkg.install
         - pkg.is_trusted
         - pkg.latest_version
+        - pkg.list_available
         - pkg.list_pkgs
+        - pkg.list_repo_pkgs
         - pkg.list_repos
         - pkg.list_trusted
         - pkg.list_upgrades
         - pkg.mod_repo
+        - pkg.normalize_name
         - pkg.pin
+        - pkg.purge
         - pkg.refresh_db
         - pkg.remove
         - pkg.trust

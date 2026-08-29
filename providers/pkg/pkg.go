@@ -157,6 +157,36 @@ var portSpec = spec{
 	listInstalled: []string{"port", "installed"},
 }
 
+var wingetSpec = spec{
+	manager:       "winget",
+	binary:        "winget",
+	refresh:       []string{"winget", "source", "update"},
+	install:       []string{"winget", "install", "--id", "{name}", "--silent", "--accept-package-agreements", "--accept-source-agreements"},
+	remove:        []string{"winget", "uninstall", "--id", "{name}", "--silent", "--accept-source-agreements"},
+	versionQuery:  []string{"winget", "show", "--id"},
+	listInstalled: []string{"winget", "list"},
+}
+
+var chocoSpec = spec{
+	manager:       "choco",
+	binary:        "choco",
+	refresh:       []string{"choco", "outdated", "--limit-output"},
+	install:       []string{"choco", "install", "{name}", "-y"},
+	remove:        []string{"choco", "uninstall", "{name}", "-y"},
+	versionQuery:  []string{"choco", "info"},
+	listInstalled: []string{"choco", "list", "--local-only", "--limit-output"},
+}
+
+var scoopSpec = spec{
+	manager:       "scoop",
+	binary:        "scoop",
+	refresh:       []string{"scoop", "update"},
+	install:       []string{"scoop", "install", "{name}"},
+	remove:        []string{"scoop", "uninstall", "{name}"},
+	versionQuery:  []string{"scoop", "info"},
+	listInstalled: []string{"scoop", "list"},
+}
+
 // commandProvider executes a spec against the central Runner.
 type commandProvider struct {
 	spec spec
@@ -169,6 +199,11 @@ func (p *commandProvider) Refresh(ctx context.Context, rt *runtime.Runtime) erro
 }
 
 func (p *commandProvider) Install(ctx context.Context, rt *runtime.Runtime, name, version string) error {
+	if version != "" && version != "latest" && (p.spec.manager == "winget" || p.spec.manager == "choco") {
+		args := expand(p.spec.install, "name", name)
+		args = append(args, "--version", version)
+		return runOK(ctx, rt, args)
+	}
 	target := name
 	if version != "" && version != "latest" {
 		target = name + versionSuffix(p.spec.manager, version)
@@ -191,7 +226,7 @@ func versionSuffix(manager, version string) string {
 		return ""
 	case "apk":
 		return "=" + version
-	case "brew", "port":
+	case "brew", "port", "scoop":
 		return "@" + version
 	default:
 		return "=" + version
@@ -339,7 +374,7 @@ func nonEmptyLines(s string) []string {
 
 // specsByPreference orders providers for deterministic selection when facts
 // leave ambiguity.
-var specsByPreference = []spec{aptSpec, dnfSpec, yumSpec, zypperSpec, pacmanSpec, apkSpec, brewSpec, portSpec}
+var specsByPreference = []spec{aptSpec, dnfSpec, yumSpec, zypperSpec, pacmanSpec, apkSpec, brewSpec, portSpec, wingetSpec, chocoSpec, scoopSpec}
 
 // Register installs every manager provider plus the fact-driven selector.
 func Register(registry *runtime.ProviderRegistry) error {
@@ -375,6 +410,12 @@ func Select(f *facts.Facts) (string, error) {
 		return "brew", nil
 	case manager == "port":
 		return "port", nil
+	case manager == "winget":
+		return "winget", nil
+	case manager == "choco":
+		return "choco", nil
+	case manager == "scoop":
+		return "scoop", nil
 	default:
 		return "", fmt.Errorf("unsupported package manager %q", manager)
 	}

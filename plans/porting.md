@@ -822,7 +822,7 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R7.4 — Windows package object (`win_pkg`).
+Next in order: R7.5 — Windows file object (`win_file`).
 R8 remains behind E3/E4/E6; R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
@@ -913,6 +913,24 @@ pass. Localized `sc.exe` output and target-user/runas behavior remain explicit
 Windows runtime ceilings; no Windows runtime or host package installation is
 available. Catalog coverage is exec 770→779; the service family was already
 classified implemented.
+
+R7.4 ported the 20 public `win_pkg` functions behind the Windows `pkg.*`
+virtual provider. Build-time routing selects the Windows implementation;
+installed package projections use encoded PowerShell/Get-Package JSON and
+local lifecycle/version flows dispatch to winget, Chocolatey or Scoop from
+Facts. latest_version/upgrade_available/list_upgrades parse manager output,
+install/remove/purge preserve compare-dict change maps, normalize_name is a
+no-op as upstream specifies, compare_versions supports latest/Not Found and
+all Salt operators, and win_pkg.upgrade keeps Salt's documented Windows
+no-op empty dict. winrepo refresh/list/genrepo/get_repo_data/get_package_info/
+list_available remain explicit boundaries because their contracts require
+master `cp.cache_*`, SLS metadata and peer state; package-manager version
+pinning is separately supported by the provider specs. Windows-only fixtures
+cover Get-Package normalization, target maps, version comparison and boundary
+errors; `GOOS=windows GOARCH=amd64 go build ./...` plus pkg test cross-builds
+pass, with Linux provider tests covering winget selection/version flags. No
+Windows runtime or host package installation is available. Catalog coverage
+is exec 779→787.
 
 R5.8 ported the tls family (18 registered exec functions) onto the Go
 standard library after the contract read showed pyOpenSSL is a libssl

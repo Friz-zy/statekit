@@ -97,6 +97,20 @@ func TestDarwinProviderParsing(t *testing.T) {
 	}
 }
 
+func TestWindowsProviderVersionPin(t *testing.T) {
+	rt, runner := newRT("winget")
+	provider, err := Resolve(rt)
+	if err != nil || provider.Name() != "winget" {
+		t.Fatalf("winget resolve = %v %v", provider, err)
+	}
+	if err := provider.Install(context.Background(), rt, "Git.Git", "2.45.0"); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(runner.calls[len(runner.calls)-1], " "); got != "winget install --id Git.Git --silent --accept-package-agreements --accept-source-agreements --version 2.45.0" {
+		t.Fatalf("winget install = %q", got)
+	}
+}
+
 func TestAptVersionQuery(t *testing.T) {
 	rt, runner := newRT("apt")
 	provider, err := Resolve(rt)
