@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 814
+    implemented: 821
 state:
     salt_modules: 132
     salt_functions: 669
@@ -830,6 +830,13 @@ implemented:
         - win_dns_client.get_dns_config
         - win_dns_client.get_dns_servers
         - win_dns_client.rm_dns
+        - win_pki.export_cert
+        - win_pki.get_cert_file
+        - win_pki.get_certs
+        - win_pki.get_stores
+        - win_pki.import_cert
+        - win_pki.remove_cert
+        - win_pki.test_cert
         - xattr.clear
         - xattr.delete
         - xattr.list

@@ -4,9 +4,9 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 96
+    implemented: 97
     partial: 0
-    excluded: 67
+    excluded: 66
     planned: 83
 implemented_families:
     - acl
@@ -101,6 +101,7 @@ implemented_families:
     - virtualenv
     - webutil
     - win_dns_client
+    - win_pki
     - xattr
     - xfs
     - xml
@@ -166,7 +167,6 @@ excluded:
     - 'win_firewall (planned: windows-only (round R7))'
     - 'win_iis (planned: windows-only (round R7))'
     - 'win_path (planned: windows-only (round R7))'
-    - 'win_pki (planned: windows-only (round R7))'
     - 'win_servermanager (planned: windows-only (round R7))'
     - 'win_smtp_server (planned: windows-only (round R7))'
     - 'win_snmp (planned: windows-only (round R7))'
