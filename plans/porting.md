@@ -822,7 +822,7 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R7.12 — Windows IIS surface (`win_iis`).
+Next in order: R7.13 — Windows Server Manager surface (`win_servermanager`).
 R8 remains behind E3/E4/E6; R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
@@ -1024,6 +1024,22 @@ ordering, mutation, normalization and rehash switches; `GOOS=windows
 GOARCH=amd64 go build ./...` plus path test cross-build pass, with Linux full
 gates green. No Windows runtime or host package installation is available.
 Catalog coverage is exec 835→840 and `win_path` moves to implemented.
+
+R7.12 ported the 36 public `win_iis` functions behind a Windows-only
+registration. The operational site/binding/certificate-binding, app-pool,
+application, virtual-directory, config-backup and worker-process surfaces use
+encoded WebAdministration PowerShell with structured JSON projections and
+safe literals; site/app-pool lifecycle, binding defaults/protocol validation,
+certificate attachment and idempotent site creation follow the source
+contracts. The six caller-specific container/webapp/webconfiguration setting
+functions are registered as explicit filter-schema boundaries rather than
+guessing arbitrary IIS collection paths; they remain the upgrade point for a
+dedicated WebAdministration schema mapping. Windows-only fixtures cover site
+and binding projections, idempotence, protocol validation, literal escaping
+and boundary errors; `GOOS=windows GOARCH=amd64 go build ./...` plus IIS test
+cross-build pass, with Linux full gates green. No IIS/Windows runtime or host
+package installation is available. Catalog coverage is exec 840→876 and
+`win_iis` moves to implemented with the settings ceiling documented above.
 
 R5.8 ported the tls family (18 registered exec functions) onto the Go
 standard library after the contract read showed pyOpenSSL is a libssl
