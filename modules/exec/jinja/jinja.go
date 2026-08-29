@@ -1,18 +1,28 @@
 // Package jinja implements the minimal jinja helper surface allowed by the
-// templating ADR: data-file imports only. Variable/substitution rendering
-// is scoped separately; full Jinja stays excluded.
+// templating ADR: data-file imports only. The bridge supports only bounded
+// literals, variables, conditionals, assignments, and load_map's tojson;
+// this is not full Salt/Jinja parity and deliberately has no loader parity.
 //
 // Reference: saltstack/salt/modules/jinja.py @ pinned revision.
 package jinja
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"strings"
+	"io/fs"
 
+	"github.com/friz-zy/statekit/internal/renderer/gotemplate"
+	jinjarenderer "github.com/friz-zy/statekit/internal/renderer/jinja"
 	"github.com/friz-zy/statekit/internal/runtime"
-	"gopkg.in/yaml.v3"
+)
+
+// ErrJinjaUnavailable is returned when no candidate Python has Jinja2.
+var ErrJinjaUnavailable = jinjarenderer.ErrJinjaUnavailable
+
+var (
+	ErrRead            = errors.New("jinja: unable to read source")
+	ErrInvalidRendered = errors.New("jinja: invalid rendered document")
 )
 
 type importYAMLArgs struct {
@@ -21,20 +31,31 @@ type importYAMLArgs struct {
 
 type importYAMLFunc struct{}
 
-// ImportYAML loads YAML data from the given path. Upstream wraps the file
-// in a jinja import template; the minimal engine reads and parses directly
-// (documented divergence).
+// ImportYAML renders the source through the bounded Python Jinja bridge, then
+// decodes the rendered YAML in Go. Salt-specific loaders and globals are not
+// implemented by this phase.
 func (importYAMLFunc) Name() string { return "jinja.import_yaml" }
 func (importYAMLFunc) Args() any    { return importYAMLArgs{} }
-func (importYAMLFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, error) {
+func (importYAMLFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
 	a := args.(*importYAMLArgs)
-	data, err := rt.FS.ReadFile(a.Path)
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	data, err := readSource(rt, a.Path)
 	if err != nil {
-		return false, nil
+		if errors.Is(err, fs.ErrNotExist) {
+			return false, nil
+		}
+		return false, stableReadError(err)
+	}
+	rendered, err := jinjarenderer.Render(ctx, rt.Runner, jinjarenderer.Request{Operation: "render", Source: string(data)})
+	if err != nil {
+		return false, err
 	}
 	var doc any
-	if yerr := yaml.Unmarshal(data, &doc); yerr != nil {
-		return false, fmt.Errorf("Unable to import yaml from %s: %v", a.Path, yerr)
+	var yerr error
+	if doc, yerr = gotemplate.DecodeYAML(ctx, rendered); yerr != nil {
+		return false, stableDecodeError(yerr)
 	}
 	return doc, nil
 }
@@ -47,15 +68,26 @@ type importJSONFunc struct{}
 
 func (importJSONFunc) Name() string { return "jinja.import_json" }
 func (importJSONFunc) Args() any    { return importJSONArgs{} }
-func (importJSONFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, error) {
+func (importJSONFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
 	a := args.(*importJSONArgs)
-	data, err := rt.FS.ReadFile(a.Path)
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	data, err := readSource(rt, a.Path)
 	if err != nil {
-		return false, nil
+		if errors.Is(err, fs.ErrNotExist) {
+			return false, nil
+		}
+		return false, stableReadError(err)
+	}
+	rendered, err := jinjarenderer.Render(ctx, rt.Runner, jinjarenderer.Request{Operation: "render", Source: string(data)})
+	if err != nil {
+		return false, err
 	}
 	var doc any
-	if jerr := json.Unmarshal(data, &doc); jerr != nil {
-		return false, fmt.Errorf("Unable to import json from %s: %v", a.Path, jerr)
+	var jerr error
+	if doc, jerr = gotemplate.DecodeJSON(ctx, rendered); jerr != nil {
+		return false, stableDecodeError(jerr)
 	}
 	return doc, nil
 }
@@ -67,27 +99,48 @@ type loadMapArgs struct {
 
 type loadMapFunc struct{}
 
-// LoadMap loads the map at path. Upstream renders an import template; the
-// minimal engine parses the file as YAML (the dominant map.jinja shape —
-// templates with logic surface parse errors honestly).
+// LoadMap renders a map template and returns only the requested identifier.
 func (loadMapFunc) Name() string { return "jinja.load_map" }
 func (loadMapFunc) Args() any    { return loadMapArgs{} }
-func (loadMapFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, error) {
+func (loadMapFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
 	a := args.(*loadMapArgs)
-	data, err := rt.FS.ReadFile(a.Path)
-	if err != nil {
-		return false, nil
+	if err := ctx.Err(); err != nil {
+		return false, err
 	}
-	content := strings.TrimSpace(string(data))
-	if strings.Contains(content, "{%") || strings.Contains(content, "{{") {
-		return false, fmt.Errorf(
-			"template logic in %s exceeds the minimal jinja subset", a.Path)
+	data, err := readSource(rt, a.Path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return false, nil
+		}
+		return false, stableReadError(err)
+	}
+	rendered, err := jinjarenderer.Render(ctx, rt.Runner, jinjarenderer.Request{Operation: "load_map", Source: string(data), Value: a.Value})
+	if err != nil {
+		return false, err
 	}
 	var doc any
-	if yerr := yaml.Unmarshal([]byte(content), &doc); yerr != nil {
-		return false, fmt.Errorf("Unable to load map from %s: %v", a.Path, yerr)
+	var jerr error
+	if doc, jerr = gotemplate.DecodeJSON(ctx, rendered); jerr != nil {
+		return false, stableDecodeError(jerr)
 	}
 	return doc, nil
+}
+
+func readSource(rt *runtime.Runtime, path string) ([]byte, error) {
+	return runtime.ReadFileBounded(rt.FS, path, jinjarenderer.MaxBytes)
+}
+
+func stableReadError(err error) error {
+	if errors.Is(err, runtime.ErrReadLimit) {
+		return fmt.Errorf("%w: %w", ErrRead, runtime.ErrReadLimit)
+	}
+	return ErrRead
+}
+
+func stableDecodeError(err error) error {
+	// Preserve only bounded, path-free categories for callers that need to
+	// distinguish resource failures; decoder text itself is not public.
+	return fmt.Errorf("%w: %w", ErrInvalidRendered, err)
 }
 
 // Register installs all jinja-module execution functions.
