@@ -98,6 +98,7 @@ import (
 	execuser "github.com/friz-zy/statekit/modules/exec/user"
 	execvirtualenv "github.com/friz-zy/statekit/modules/exec/virtualenv"
 	execwebutil "github.com/friz-zy/statekit/modules/exec/webutil"
+	execwindacl "github.com/friz-zy/statekit/modules/exec/win_dacl"
 	execwindns "github.com/friz-zy/statekit/modules/exec/win_dns_client"
 	execwinpki "github.com/friz-zy/statekit/modules/exec/win_pki"
 	execxattr "github.com/friz-zy/statekit/modules/exec/xattr"
@@ -199,6 +200,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execreg.Register,
 		execfirewall.Register,
 		execwindns.Register,
+		execwindacl.Register,
 		execwinpki.Register,
 		execshadow.Register,
 		execpkg.Register,

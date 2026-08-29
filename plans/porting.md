@@ -822,7 +822,7 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R7.9 — Windows DACL utility surface (`win_dacl`).
+Next in order: R7.10 — Windows event log surface (`win_event`).
 R8 remains behind E3/E4/E6; R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
@@ -984,6 +984,20 @@ cover UTF-16LE/base64 PowerShell encoding, stores, format/path guards and
 platform declarations; `GOOS=windows GOARCH=amd64 go build ./...` and the
 PKI test cross-build pass, with Linux full gates green. Catalog coverage is
 exec 814→821 and `win_pki` moves to implemented.
+
+R7.9 ported the seven public `win_dacl` functions behind a Windows-only
+registration. File/directory ACL reads, ACE add/remove/check, inheritance
+enable/disable/check and principal/permission matching use `icacls` through
+the central Runner, preserving the source result/changes/comment maps,
+allow/deny permission text, inheritance markers and typed removal switches.
+Registry, service and printer descriptors remain explicit boundaries because
+icacls cannot address those Win32 security object types; the existing
+`file.set_perms` path remains the dedicated file ACL surface. Windows-only
+fixtures cover ACL filtering, exact/non-exact ACE checks, inheritance,
+mutation argv and registry rejection; `GOOS=windows GOARCH=amd64 go build
+./...` plus the DACL test cross-build pass, with Linux full gates green. No
+Windows runtime or host package installation is available. Catalog coverage
+is exec 821→828 and `win_dacl` moves to implemented.
 
 R5.8 ported the tls family (18 registered exec functions) onto the Go
 standard library after the contract read showed pyOpenSSL is a libssl
