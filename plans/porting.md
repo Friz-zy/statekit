@@ -822,7 +822,7 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R7.16 — Windows Update surface (`win_wua`).
+Next in order: R7.17 — Windows firewall state wrapper (`win_firewall`).
 R8 remains behind E3/E4/E6; R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
@@ -1080,6 +1080,20 @@ agent settings, auth state and platform declarations; `GOOS=windows
 GOARCH=amd64 go build ./...` plus SNMP test cross-build pass, with Linux full
 gates green. No Windows runtime or host package installation is available.
 Catalog coverage is exec 890→898 and `win_snmp` moves to implemented.
+
+R7.16 ported the ten public `win_wua` functions behind a Windows-only
+registration using encoded PowerShell Windows Update Agent COM calls. Update
+search/detail/list/available projections include GUID/KB/title/category/
+severity/download/install/reboot fields; XPath/online/newest-oldest/summary
+filters, multi-name download/install/uninstall actions, installed KB lists,
+AutoUpdate settings validation/projection and reboot-required registry state
+are preserved. Requested host reboots are not implicitly issued. Windows-only
+fixtures cover update maps/filter/summary, multi-name action scripts, settings
+validation and reboot decoding; `GOOS=windows GOARCH=amd64 go build ./...`
+plus WUA test cross-build pass, with Linux full gates green. Windows Update
+COM/network behavior requires a Windows runtime; no host package installation
+is available. Catalog coverage is exec 898→908 and `win_wua` moves to
+implemented.
 
 R5.8 ported the tls family (18 registered exec functions) onto the Go
 standard library after the contract read showed pyOpenSSL is a libssl

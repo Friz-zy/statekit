@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 898
+    implemented: 908
 state:
     salt_modules: 132
     salt_functions: 669
@@ -914,6 +914,16 @@ implemented:
         - win_snmp.set_agent_settings
         - win_snmp.set_auth_traps_enabled
         - win_snmp.set_community_names
+        - win_wua.available
+        - win_wua.download
+        - win_wua.get
+        - win_wua.get_needs_reboot
+        - win_wua.get_wu_settings
+        - win_wua.install
+        - win_wua.installed
+        - win_wua.list
+        - win_wua.set_wu_settings
+        - win_wua.uninstall
         - xattr.clear
         - xattr.delete
         - xattr.list
