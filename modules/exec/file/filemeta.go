@@ -3265,6 +3265,7 @@ func RegisterMeta(reg *runtime.ExecRegistry) error {
 		return nil
 	}
 	for _, fn := range []runtime.ExecFunction{
+		applyTemplateOnContentsFunc{},
 		sourceListFunc{},
 		getManagedFunc{},
 		getSourceSumFunc{},

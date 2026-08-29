@@ -37,9 +37,7 @@ families:
         catalog_functions: 115
         public_functions: 96
         private_functions: 19
-        registered_public: 95
-        pending_public:
-            - file.apply_template_on_contents
+        registered_public: 96
         differential_scenarios:
             - file.managed-contents-perms-idempotence
             - file.blockreplace-sed-patch-text-edits
@@ -125,4 +123,4 @@ families:
 totals:
     catalog_functions: 233
     public_functions: 184
-    registered_public: 169
+    registered_public: 170
