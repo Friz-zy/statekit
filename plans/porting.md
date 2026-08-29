@@ -822,7 +822,7 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R7.13 — Windows Server Manager surface (`win_servermanager`).
+Next in order: R7.14 — Windows SMTP server surface (`win_smtp_server`).
 R8 remains behind E3/E4/E6; R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
@@ -1040,6 +1040,18 @@ and boundary errors; `GOOS=windows GOARCH=amd64 go build ./...` plus IIS test
 cross-build pass, with Linux full gates green. No IIS/Windows runtime or host
 package installation is available. Catalog coverage is exec 840→876 and
 `win_iis` moves to implemented with the settings ceiling documented above.
+
+R7.13 ported the four public `win_servermanager` functions behind a
+Windows-only registration. ServerManager PowerShell lists available and
+installed features, and install/remove preserve feature lists, recurse/source,
+remove-payload, FeatureResult fields, already-installed/not-installed
+messages and restart-needed reporting. Requested reboots are deliberately not
+executed by the local runner; `Restarted` remains false as an explicit safety
+boundary. Windows-only fixtures cover feature-name/result normalization and
+the no-reboot behavior; `GOOS=windows GOARCH=amd64 go build ./...` plus the
+ServerManager test cross-build pass, with Linux full gates green. No Windows
+ServerManager runtime or host package installation is available. Catalog
+coverage is exec 876→880 and `win_servermanager` moves to implemented.
 
 R5.8 ported the tls family (18 registered exec functions) onto the Go
 standard library after the contract read showed pyOpenSSL is a libssl

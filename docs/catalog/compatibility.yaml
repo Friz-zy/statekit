@@ -4,9 +4,9 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 101
+    implemented: 102
     partial: 0
-    excluded: 62
+    excluded: 61
     planned: 83
 implemented_families:
     - acl
@@ -106,6 +106,7 @@ implemented_families:
     - win_iis
     - win_path
     - win_pki
+    - win_servermanager
     - xattr
     - xfs
     - xml
@@ -167,7 +168,6 @@ excluded:
     - 'sqlite3 (planned: requires database/message-broker client protocol (round R9, services tier))'
     - 'vsphere (planned: cloud provider API (round R10))'
     - 'win_firewall (planned: windows-only (round R7))'
-    - 'win_servermanager (planned: windows-only (round R7))'
     - 'win_smtp_server (planned: windows-only (round R7))'
     - 'win_snmp (planned: windows-only (round R7))'
     - 'win_wua (planned: windows-only (round R7))'

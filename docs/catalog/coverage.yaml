@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 876
+    implemented: 880
 state:
     salt_modules: 132
     salt_functions: 669
@@ -892,6 +892,10 @@ implemented:
         - win_pki.import_cert
         - win_pki.remove_cert
         - win_pki.test_cert
+        - win_servermanager.install
+        - win_servermanager.list_available
+        - win_servermanager.list_installed
+        - win_servermanager.remove
         - xattr.clear
         - xattr.delete
         - xattr.list
