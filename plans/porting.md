@@ -822,7 +822,7 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R7.14 — Windows SMTP server surface (`win_smtp_server`).
+Next in order: R7.15 — Windows SNMP surface (`win_snmp`).
 R8 remains behind E3/E4/E6; R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
@@ -1052,6 +1052,20 @@ the no-reboot behavior; `GOOS=windows GOARCH=amd64 go build ./...` plus the
 ServerManager test cross-build pass, with Linux full gates green. No Windows
 ServerManager runtime or host package installation is available. Catalog
 coverage is exec 876→880 and `win_servermanager` moves to implemented.
+
+R7.14 ported the ten public `win_smtp_server` functions behind a Windows-only
+registration. Legacy IIS SMTP WMI settings, virtual-server enumeration,
+server property get/set, log-format ID/name conversion, connection IPGrant
+maps and relay octet/IP conversion use encoded PowerShell CIM calls against
+`root/MicrosoftIISv2`. Empty/default server behavior, dict-to-braced setting
+normalization, unordered connection addresses, ordered relay addresses and
+empty/None relay semantics are preserved; the optional WMI namespace remains
+an explicit Windows runtime dependency rather than a new Go library. Windows
+fixtures cover settings/value/list conversions, defaults and invalid format
+handling; `GOOS=windows GOARCH=amd64 go build ./...` plus SMTP test
+cross-build pass, with Linux full gates green. No Windows runtime or host
+package installation is available. Catalog coverage is exec 880→890 and
+`win_smtp_server` moves to implemented.
 
 R5.8 ported the tls family (18 registered exec functions) onto the Go
 standard library after the contract read showed pyOpenSSL is a libssl
