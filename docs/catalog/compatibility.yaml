@@ -4,10 +4,10 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 94
+    implemented: 95
     partial: 0
     excluded: 68
-    planned: 84
+    planned: 83
 implemented_families:
     - acl
     - aliases
@@ -34,6 +34,7 @@ implemented_families:
     - ethtool
     - extfs
     - file
+    - firewall
     - git
     - gpg
     - group
@@ -197,7 +198,6 @@ planned:
     - 'dism (planned: needs a dedicated porting round)'
     - 'dsc (planned: needs a dedicated porting round)'
     - 'dsc_resource (planned: needs a dedicated porting round)'
-    - 'firewall (planned: needs a dedicated porting round)'
     - 'firewalld (planned: needs a dedicated porting round)'
     - 'fmadm (planned: needs a dedicated porting round)'
     - 'idem (planned: needs a dedicated porting round)'

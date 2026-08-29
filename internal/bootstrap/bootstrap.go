@@ -33,6 +33,7 @@ import (
 	execethtool "github.com/friz-zy/statekit/modules/exec/ethtool"
 	execextfs "github.com/friz-zy/statekit/modules/exec/extfs"
 	execfile "github.com/friz-zy/statekit/modules/exec/file"
+	execfirewall "github.com/friz-zy/statekit/modules/exec/firewall"
 	execgit "github.com/friz-zy/statekit/modules/exec/git"
 	execgpg "github.com/friz-zy/statekit/modules/exec/gpg"
 	execgroup "github.com/friz-zy/statekit/modules/exec/group"
@@ -194,6 +195,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execkeychain.Register,
 		execpower.Register,
 		execreg.Register,
+		execfirewall.Register,
 		execshadow.Register,
 		execpkg.Register,
 		execpkgresource.Register,

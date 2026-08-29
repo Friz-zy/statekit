@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 795
+    implemented: 809
 state:
     salt_modules: 132
     salt_functions: 669
@@ -239,6 +239,20 @@ implemented:
         - file.version
         - file.version_details
         - file.write
+        - firewall.add_rule
+        - firewall.delete_rule
+        - firewall.disable
+        - firewall.enable
+        - firewall.get_all_profiles
+        - firewall.get_all_settings
+        - firewall.get_config
+        - firewall.get_rule
+        - firewall.get_settings
+        - firewall.rule_exists
+        - firewall.set_firewall_settings
+        - firewall.set_logging_settings
+        - firewall.set_settings
+        - firewall.set_state
         - git.add
         - git.clone
         - git.commit

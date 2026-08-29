@@ -822,7 +822,7 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R7.6 — Windows firewall policy stack (`win_firewall`).
+Next in order: R7.7 — Windows DNS client wrapper (`win_dns_client`).
 R8 remains behind E3/E4/E6; R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
@@ -946,6 +946,18 @@ permission mapping, modes, links and removal; `GOOS=windows GOARCH=amd64
 go build ./...` plus file test cross-build passes, while Linux full gates
 remain green. Catalog coverage is exec 787→795; no Windows runtime or host
 package installation is available.
+
+R7.6 ported the 14 public `win_firewall` functions behind a Windows-only
+`firewall.*` registration. Profile state/enable/disable and rule add/get/
+delete/existence use `netsh advfirewall`; profile/settings/group-policy
+properties use encoded PowerShell NetSecurity JSON and setter scripts,
+preserving Salt's profile/store/section validation, inbound/outbound/logging
+maps and NotConfigured errors. Windows-only fixtures cover profile/rule
+command arguments and settings transforms; the Windows target builds the
+complete repository and firewall test binary, while Linux full gates remain
+green. Localized netsh output and live firewall mutation remain runtime-only
+concerns; no Windows runtime or host package installation is available.
+Catalog coverage is exec 795→809 and firewall moves to implemented.
 
 R5.8 ported the tls family (18 registered exec functions) onto the Go
 standard library after the contract read showed pyOpenSSL is a libssl
