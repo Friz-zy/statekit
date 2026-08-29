@@ -6,7 +6,7 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    implemented: 809
+    implemented: 814
 state:
     salt_modules: 132
     salt_functions: 669
@@ -825,6 +825,11 @@ implemented:
         - webutil.useradd
         - webutil.userdel
         - webutil.verify
+        - win_dns_client.add_dns
+        - win_dns_client.dns_dhcp
+        - win_dns_client.get_dns_config
+        - win_dns_client.get_dns_servers
+        - win_dns_client.rm_dns
         - xattr.clear
         - xattr.delete
         - xattr.list

@@ -822,7 +822,7 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: R7.7 — Windows DNS client wrapper (`win_dns_client`).
+Next in order: R7.8 — Windows PKI wrapper (`win_pki`).
 R8 remains behind E3/E4/E6; R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
 its own round; remaining R4 file long-tail slices tracked in the R4
@@ -958,6 +958,18 @@ complete repository and firewall test binary, while Linux full gates remain
 green. Localized netsh output and live firewall mutation remain runtime-only
 concerns; no Windows runtime or host package installation is available.
 Catalog coverage is exec 795→809 and firewall moves to implemented.
+
+R7.7 ported the five public `win_dns_client` functions behind a Windows-only
+registration. DNS server inspection and DHCP configuration use encoded
+PowerShell/NetTCPIP JSON and `netsh interface ip` mutation commands; interface
+backslashes are normalized exactly like the source, server ordering/idempotent
+index handling is preserved, duplicate servers are removed before re-add,
+and absent-interface/config results retain the source False/None distinction.
+Windows-only fixtures cover JSON server projection, interface normalization,
+idempotent add, delete/DHCP argv and config values; `GOOS=windows
+GOARCH=amd64 go build ./...` plus DNS test cross-builds pass, with Linux full
+gates green. No Windows runtime or host package installation is available.
+Catalog coverage is exec 809→814 and `win_dns_client` moves to implemented.
 
 R5.8 ported the tls family (18 registered exec functions) onto the Go
 standard library after the contract read showed pyOpenSSL is a libssl
