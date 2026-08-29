@@ -822,7 +822,8 @@ binary-wrapper contracts: _sed_esc quoting rules, shlex-split options,
 patch's which-guard, --forward/--reject-file=- defaults, BSD -C dry-run,
 and -d/--strip=0 directory handling. Exec 544→548.
 
-Next in order: E3/E4/E6 preflight for R8; R4's Jinja template boundary
+Next in order: E6 is blocked before R8; provide a QEMU/VM runner and populated
+`tests/images/vm/` fixtures. R4's Jinja template boundary
 (`file.apply_template_on_contents`) remains explicit.
 R9 awaits E5,
 R10 cloud, R11 netdev behind ADR gate; pkg provider long tail queued as
@@ -1128,6 +1129,17 @@ remains pending under the minimal-Jinja ceiling. Linux tests cover all local
 flows plus missing/template branches; Linux full gates and Darwin/Windows
 cross-builds pass. R4 differential report now has file 95/96 public and only
 that template function pending; catalog coverage is exec 908→921.
+
+E3/E4/E6 preflight completed after R4.8. E3's required cross-GOOS matrix is
+green for Linux, Darwin, Windows and FreeBSD (`GOOS=freebsd GOARCH=amd64 go
+build ./...`); the optional OpenBSD/Solaris builds still expose pre-existing
+statfs/mknod/facts-provider tag gaps and are not promoted. E4's facts/runtime/
+config tests pass, with the per-OS Windows PowerShell/CIM and Darwin providers
+already exercised by their cross-build gates. E6 cannot advance: neither
+`qemu-system-x86_64` nor `packer` is installed, `tests/images/vm/` has no VM
+fixtures, and the available Docker daemon cannot start child containers due
+rootless-dind runc `/proc` mount EPERM. R8 is therefore blocked at its
+mandatory QEMU gate; no VM-required platform work is started on assumptions.
 
 R5.8 ported the tls family (18 registered exec functions) onto the Go
 standard library after the contract read showed pyOpenSSL is a libssl
