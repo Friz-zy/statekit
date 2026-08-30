@@ -85,7 +85,7 @@ families:
         catalog_functions: 55
         public_functions: 39
         private_functions: 16
-        registered_public: 10
+        registered_public: 12
         pending_public:
             - pkg.clean_metadata
             - pkg.diff
@@ -105,9 +105,7 @@ families:
             - pkg.list_repo_pkgs
             - pkg.list_upgrades
             - pkg.modified
-            - pkg.normalize_name
             - pkg.owner
-            - pkg.parse_arch
             - pkg.purge
             - pkg.services_need_restart
             - pkg.unhold
@@ -163,4 +161,4 @@ families:
 totals:
     catalog_functions: 261
     public_functions: 172
-    registered_public: 111
+    registered_public: 113

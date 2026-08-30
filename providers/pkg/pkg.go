@@ -36,6 +36,12 @@ type AptProvider interface {
 	Apt(ctx context.Context, rt *runtime.Runtime, function string, args any) (any, error)
 }
 
+// YumProvider exposes only the explicitly implemented RPM virtual capability.
+type YumProvider interface {
+	Provider
+	Yum(ctx context.Context, rt *runtime.Runtime, function string, args any) (any, error)
+}
+
 // spec drives one manager implementation with argv templates; {name} and
 // {version} placeholders expand to the requested values.
 type spec struct {

@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/friz-zy/statekit/internal/facts"
 	"github.com/friz-zy/statekit/internal/runtime"
 	pkgprovider "github.com/friz-zy/statekit/providers/pkg"
 )
@@ -88,27 +89,61 @@ type aptLongtailFunc struct {
 	prototype any
 }
 
-func (f aptLongtailFunc) Name() string                   { return "pkg." + f.name }
-func (f aptLongtailFunc) Args() any                      { return f.prototype }
-func (f aptLongtailFunc) ProviderCapabilities() []string { return []string{"aptpkg"} }
+func (f aptLongtailFunc) Name() string { return "pkg." + f.name }
+func (f aptLongtailFunc) Args() any    { return f.prototype }
+func (f aptLongtailFunc) ProviderCapabilities() []string {
+	// These public names are shared by aptpkg and yumpkg; execution dispatch
+	// remains provider-specific below. Unique APT functions stay APT-only.
+	for _, name := range []string{"normalize_name", "parse_arch"} {
+		if f.name == name {
+			return []string{"aptpkg", "yumpkg"}
+		}
+	}
+	return []string{"aptpkg"}
+}
 func (f aptLongtailFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
 	p, err := pkgprovider.Resolve(rt)
 	if err != nil {
 		return nil, err
 	}
+	if yp, ok := p.(pkgprovider.YumProvider); ok && p.Name() != "apt" && rt.Facts.OS().Family == facts.FamilyRedHat && (f.name == "normalize_name" || f.name == "parse_arch") {
+		argMap, err := mapArgs(f.Name(), args, f.prototype)
+		if err != nil {
+			return nil, err
+		}
+		return yp.Yum(ctx, rt, f.name, argMap)
+	}
 	ap, ok := p.(pkgprovider.AptProvider)
 	if !ok {
 		return nil, pkgprovider.ErrUnsupportedAPT
 	}
+	argMap, err := mapArgs(f.Name(), args, f.prototype)
+	if err != nil {
+		return nil, err
+	}
+	return ap.Apt(ctx, rt, f.name, argMap)
+}
+
+func mapArgs(name string, args any, prototype any) (map[string]any, error) {
 	v := reflect.ValueOf(args)
-	if v.Kind() == reflect.Ptr {
-		if v.IsNil() {
-			return nil, fmt.Errorf("%s: nil arguments", f.Name())
+	if !v.IsValid() {
+		return nil, fmt.Errorf("%s: malformed arguments", name)
+	}
+	expected := reflect.TypeOf(prototype)
+	if expected != nil && expected.Kind() == reflect.Pointer {
+		expected = expected.Elem()
+	}
+	if expected == nil || expected.Kind() != reflect.Struct {
+		return nil, fmt.Errorf("%s: malformed arguments", name)
+	}
+	if v.Kind() == reflect.Pointer {
+		if v.IsNil() || v.Type().Elem() != expected {
+			return nil, fmt.Errorf("%s: malformed arguments", name)
 		}
 		v = v.Elem()
 	}
-	if v.Kind() != reflect.Struct {
-		return nil, fmt.Errorf("%s: malformed arguments", f.Name())
+	if v.Kind() != reflect.Struct || v.Type() != expected {
+		return nil, fmt.Errorf("%s: malformed arguments", name)
 	}
 	m := map[string]any{}
 	t := v.Type()
@@ -121,16 +156,16 @@ func (f aptLongtailFunc) Execute(ctx context.Context, rt *runtime.Runtime, args 
 		if key == "" || key == "required" {
 			key = strings.ToLower(t.Field(i).Name)
 		}
-		field := v.Field(i)
+		f := v.Field(i)
 		// Do not manufacture optional nil values at the provider boundary.
 		// In particular, a nil compatibility/source slice must not become an
 		// explicitly supplied argument with different Salt semantics.
-		if (field.Kind() == reflect.Pointer || field.Kind() == reflect.Slice || field.Kind() == reflect.Map || field.Kind() == reflect.Interface) && field.IsNil() {
+		if (f.Kind() == reflect.Pointer || f.Kind() == reflect.Slice || f.Kind() == reflect.Map || f.Kind() == reflect.Interface) && f.IsNil() {
 			continue
 		}
-		m[key] = field.Interface()
+		m[key] = f.Interface()
 	}
-	return ap.Apt(ctx, rt, f.name, m)
+	return m, nil
 }
 
 func longtailFunctions() []runtime.ExecFunction {
