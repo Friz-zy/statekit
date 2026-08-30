@@ -2,6 +2,7 @@ package pkg
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 
@@ -15,6 +16,306 @@ type yumNoCallRunner struct{ calls int }
 func (r *yumNoCallRunner) Run(context.Context, process.Command) process.CommandResult {
 	r.calls++
 	return process.CommandResult{}
+}
+
+type yumRecordingRunner struct {
+	commands []process.Command
+	results  []process.CommandResult
+}
+
+func (r *yumRecordingRunner) Run(_ context.Context, command process.Command) process.CommandResult {
+	r.commands = append(r.commands, command)
+	if len(r.results) == 0 {
+		return process.CommandResult{ExitCode: 0}
+	}
+	result := r.results[0]
+	r.results = r.results[1:]
+	return result
+}
+
+type yumContextRecordingRunner struct {
+	commands []process.Command
+	results  []process.CommandResult
+}
+
+func (r *yumContextRecordingRunner) Run(ctx context.Context, command process.Command) process.CommandResult {
+	r.commands = append(r.commands, command)
+	if err := ctx.Err(); err != nil {
+		return process.CommandResult{Err: err}
+	}
+	if len(r.results) == 0 {
+		return process.CommandResult{ExitCode: 0}
+	}
+	result := r.results[0]
+	r.results = r.results[1:]
+	return result
+}
+
+func TestYumInfoInstalledQueryTagsFailureDoesNotQueryRPM(t *testing.T) {
+	provider := &commandProvider{spec: yumSpec}
+	sentinel := errors.New("querytags failed")
+	for _, tc := range []struct {
+		name   string
+		ctx    context.Context
+		result process.CommandResult
+		want   error
+	}{
+		{name: "runner error", ctx: context.Background(), result: process.CommandResult{Err: sentinel}, want: sentinel},
+		{name: "nonzero", ctx: context.Background(), result: process.CommandResult{ExitCode: 7, Stderr: []byte("bad tags")}, want: errors.New("rpm exited with code 7: bad tags")},
+		{name: "canceled", ctx: func() context.Context { ctx, cancel := context.WithCancel(context.Background()); cancel(); return ctx }(), result: process.CommandResult{}, want: context.Canceled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &yumContextRecordingRunner{results: []process.CommandResult{tc.result}}
+			rt := &runtime.Runtime{Runner: r, Facts: facts.ForTesting(facts.Overrides{OS: &facts.OSFacts{Family: facts.FamilyRedHat}})}
+			got, err := provider.Yum(tc.ctx, rt, "info_installed", map[string]any{"names": []string{"foo"}})
+			if tc.name == "nonzero" {
+				if err == nil || err.Error() != tc.want.Error() || got != nil {
+					t.Fatalf("got=%#v err=%v want=%v", got, err, tc.want)
+				}
+			} else if err != tc.want || got != nil {
+				t.Fatalf("got=%#v err=%v want=%v", got, err, tc.want)
+			}
+			if len(r.commands) != 1 || !reflect.DeepEqual(r.commands[0].Args, []string{"--querytags"}) {
+				t.Fatalf("commands=%#v", r.commands)
+			}
+		})
+	}
+}
+
+func TestYumInfoInstalledMainQueryFailureDoesNotCreateMetadata(t *testing.T) {
+	provider := &commandProvider{spec: yumSpec}
+	for _, tc := range []struct {
+		name string
+		want error
+	}{
+		{name: "runner error", want: errors.New("rpm info failed")},
+		{name: "canceled", want: context.Canceled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &yumRecordingRunner{results: []process.CommandResult{
+				{ExitCode: 0, Stdout: []byte("LONGSIZE\n")},
+				{Err: tc.want},
+			}}
+			rt := &runtime.Runtime{Runner: r, Facts: facts.ForTesting(facts.Overrides{OS: &facts.OSFacts{Family: facts.FamilyRedHat}})}
+			got, err := provider.Yum(context.Background(), rt, "info_installed", map[string]any{"names": []string{"foo"}})
+			if err != tc.want || got != nil {
+				t.Fatalf("got=%#v err=%v want=%v", got, err, tc.want)
+			}
+			if len(r.commands) != 2 {
+				t.Fatalf("commands=%#v", r.commands)
+			}
+		})
+	}
+}
+
+func TestYumInfoInstalledSelectsSizeQueryTagAndPreservesCommandModel(t *testing.T) {
+	provider := &commandProvider{spec: yumSpec}
+	for _, tc := range []struct {
+		name, tags, sizeTag, size string
+	}{
+		{name: "long size", tags: "LONGSIZE\n", sizeTag: "%{LONGSIZE}", size: "123456789"},
+		{name: "legacy size", tags: "SIZE\n", sizeTag: "%{SIZE}", size: "42"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &yumRecordingRunner{results: []process.CommandResult{
+				{ExitCode: 0, Stdout: []byte(tc.tags)},
+				{ExitCode: 0, Stdout: []byte("size: " + tc.size + "\nname: foo\nversion: 1\nedition: 1-0\n-----\n")},
+			}}
+			rt := &runtime.Runtime{Runner: r, Facts: facts.ForTesting(facts.Overrides{OS: &facts.OSFacts{Family: facts.FamilyRedHat}})}
+			got, err := provider.Yum(context.Background(), rt, "info_installed", map[string]any{"names": []string{"foo"}, "attr": "size,name,version"})
+			want := map[string]any{"foo": map[string]any{"size": tc.size, "name": "foo", "version": "1"}}
+			if err != nil || !reflect.DeepEqual(got, want) {
+				t.Fatalf("got=%#v err=%v want=%#v", got, err, want)
+			}
+			format := "size: " + tc.sizeTag + "\\nname: %{NAME}\\nversion: %{VERSION}\\nedition: %|EPOCH?{%{EPOCH}:}|%{VERSION}-%{RELEASE}\\n-----\\n"
+			if !reflect.DeepEqual(r.commands[0], process.Command{Name: "rpm", Args: []string{"--querytags"}}) {
+				t.Fatalf("querytags command=%#v", r.commands[0])
+			}
+			wantMain := process.Command{Name: "rpm", Args: []string{"-q", "foo", "--queryformat", format}, Env: []string{"TZ=UTC"}}
+			if !reflect.DeepEqual(r.commands[1], wantMain) {
+				t.Fatalf("main command=%#v want=%#v", r.commands[1], wantMain)
+			}
+		})
+	}
+}
+
+func TestYumLongtailRootAndInfoQuery(t *testing.T) {
+	r := &yumRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("/a\n/a\n")},
+		{ExitCode: 0, Stdout: []byte("foo 1\n")},
+		{ExitCode: 0, Stdout: []byte("/usr/bin/foo\n")},
+		{ExitCode: 0, Stdout: []byte("foo\n")},
+		{ExitCode: 0, Stdout: []byte("LONGSIZE\n")},
+		{ExitCode: 0, Stdout: []byte("name: foo\nversion: 1\nrelease: 2\nedition: 1-2\nrelocations: (not relocatable)\nsignature: sig\ndescription:\ntext\n-----\n")},
+	}}
+	rt := &runtime.Runtime{Runner: r, Facts: facts.ForTesting(facts.Overrides{OS: &facts.OSFacts{Family: facts.FamilyRedHat}})}
+	p := &commandProvider{spec: yumSpec}
+	root := "/image"
+	if _, err := p.Yum(context.Background(), rt, "file_list", map[string]any{"packages": []string{"foo"}, "root": &root}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Yum(context.Background(), rt, "file_dict", map[string]any{"packages": []string{"foo"}, "root": &root}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Yum(context.Background(), rt, "owner", map[string]any{"paths": []string{"/usr/bin/foo"}, "root": &root}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Yum(context.Background(), rt, "info_installed", map[string]any{"names": []string{"foo"}, "root": &root, "attr": "relocations,signature,description"}); err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{
+		{"rpm", "--root", "/image", "-ql", "foo"},
+		{"rpm", "--root", "/image", "-q", "--queryformat", "%{NAME} %{VERSION}\\n", "foo"},
+		{"rpm", "-ql", "foo"}, // pinned rpm_lowpkg.py omits root in per-package call
+		{"rpm", "--root", "/image", "-qf", "--queryformat", "%{name}", "/usr/bin/foo"},
+		{"rpm", "--querytags"},
+		{"rpm", "--root", "/image", "-q", "foo", "--queryformat", "relocations: %|PREFIXES?{[%{PREFIXES} ]}:{(not relocatable)}|\\n" +
+			"signature: %|DSAHEADER?{%{DSAHEADER:pgpsig}}:{%|RSAHEADER?{%{RSAHEADER:pgpsig}}:{%|SIGGPG?{%{SIGGPG:pgpsig}}:{%|SIGPGP?{%{SIGPGP:pgpsig}}:{(none)}|}|}|}|\\n" +
+			"name: %{NAME}\\n" + "edition: %|EPOCH?{%{EPOCH}:}|%{VERSION}-%{RELEASE}\\n" + "description:\\n%{DESCRIPTION}\\n-----\\n"},
+	}
+	for i, command := range r.commands {
+		if i == 5 {
+			if !reflect.DeepEqual(command.Args, want[i][1:]) || command.Env == nil || !reflect.DeepEqual(command.Env, []string{"TZ=UTC"}) {
+				t.Fatalf("info argv/env=%#v/%#v want=%#v/TZ", command.Args, command.Env, want[i][1:])
+			}
+			continue
+		}
+		got := append([]string{command.Name}, command.Args...)
+		if !reflect.DeepEqual(got, want[i]) {
+			t.Fatalf("command %d=%#v want=%#v", i, got, want[i])
+		}
+	}
+}
+
+func TestYumLongtailReturnsProviderValues(t *testing.T) {
+	newRuntime := func(results ...process.CommandResult) (*runtime.Runtime, *yumRecordingRunner) {
+		r := &yumRecordingRunner{results: results}
+		return &runtime.Runtime{Runner: r, Facts: facts.ForTesting(facts.Overrides{OS: &facts.OSFacts{Family: facts.FamilyRedHat}})}, r
+	}
+	p := &commandProvider{spec: yumSpec}
+
+	rt, _ := newRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("/usr/bin/a\n/usr/bin/a\n")})
+	got, err := p.Yum(context.Background(), rt, "file_list", map[string]any{"packages": []string{"a"}})
+	if err != nil || !reflect.DeepEqual(got, map[string]any{"errors": []string{}, "files": []string{"/usr/bin/a", "/usr/bin/a"}}) {
+		t.Fatalf("file_list got=%#v err=%v", got, err)
+	}
+
+	rt, _ = newRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte("a 1\nb 2\na 3\nb is not installed\n")},
+		process.CommandResult{ExitCode: 0, Stdout: []byte("/a\n")},
+		process.CommandResult{ExitCode: 0, Stdout: []byte("/b\n")},
+	)
+	got, err = p.Yum(context.Background(), rt, "file_dict", map[string]any{"packages": []string{"a", "b"}})
+	want := map[string]any{"errors": []string{"b is not installed"}, "packages": map[string]any{"a": []string{"/a"}, "b": []string{"/b"}}}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("file_dict got=%#v err=%v want=%#v", got, err, want)
+	}
+
+	rt, _ = newRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("a\n")})
+	got, err = p.Yum(context.Background(), rt, "owner", map[string]any{"paths": []string{"/a"}})
+	if err != nil || got != "a\n" {
+		t.Fatalf("owner got=%#v err=%v", got, err)
+	}
+
+	metadata := "name: foo\nversion: 1\nrelease: 0\nsource_rpm: (none)\nbuild_date: 100\nbuild_date_time_t: 100\ninstall_date: (not installed)\ninstall_date_time_t: (not installed)\nedition: 1-0\n-----\n" +
+		"name: foo\nversion: 2\nrelease: 0\nsource_rpm: (not installed)\nedition: 2-0\n-----\n" +
+		"name: gpg-pubkey\nversion: 1\nedition: 1-0\n-----\n"
+	rt, _ = newRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte("LONGSIZE\n")},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(metadata)},
+	)
+	got, err = p.Yum(context.Background(), rt, "info_installed", map[string]any{"names": []string{"foo"}})
+	want = map[string]any{"foo": map[string]any{
+		"name": "foo", "version": "2", "release": "0", "source": "(not installed)", "edition": "2-0", "description": "",
+	}}
+	// Latest mode follows yumpkg's wrapper and drops edition, while retaining
+	// lowpkg's name and source translation; date values are checked separately
+	// in all_versions mode below.
+	delete(want["foo"].(map[string]any), "edition")
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("info_installed latest got=%#v err=%v want=%#v", got, err, want)
+	}
+
+	all := true
+	rt, _ = newRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte("SIZE\n")},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(metadata)},
+	)
+	got, err = p.Yum(context.Background(), rt, "info_installed", map[string]any{"names": []string{"foo"}, "all_versions": all, "attr": "name,source_rpm,build_date,build_date_time_t"})
+	want = map[string]any{"foo": []any{
+		map[string]any{"name": "foo", "source": "(not installed)", "edition": "2-0"},
+		map[string]any{"name": "foo", "source": "(none)", "build_date": "1970-01-01T00:01:40Z", "build_date_time_t": int64(100), "edition": "1-0"},
+	}}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("info_installed all got=%#v err=%v want=%#v", got, err, want)
+	}
+}
+
+// These cases pin the value shapes at the yumpkg/rpm_lowpkg boundary.  The
+// source references are salt/modules/yumpkg.py and salt/modules/rpm_lowpkg.py
+// at revision 8b63e700637e40d76f80a00d95c60471797c73b9; only the fake Runner is
+// used here.
+func TestYumSharedFunctionsReturnAllSourceShapes(t *testing.T) {
+	provider := &commandProvider{spec: yumSpec}
+	newRuntime := func(results ...process.CommandResult) (*runtime.Runtime, *yumRecordingRunner) {
+		r := &yumRecordingRunner{results: results}
+		return &runtime.Runtime{Runner: r, Facts: facts.ForTesting(facts.Overrides{OS: &facts.OSFacts{Family: facts.FamilyRedHat}})}, r
+	}
+
+	rt, r := newRuntime(process.CommandResult{ExitCode: 0})
+	got, err := provider.Yum(context.Background(), rt, "file_list", map[string]any{"packages": []string{}})
+	if err != nil || !reflect.DeepEqual(got, map[string]any{"errors": []string{}, "files": []string{}}) || len(r.commands) != 1 {
+		t.Fatalf("empty file_list got=%#v err=%v calls=%d", got, err, len(r.commands))
+	}
+
+	rt, r = newRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("x 1\nx 2\n")})
+	got, err = provider.Yum(context.Background(), rt, "file_dict", map[string]any{"packages": []string{"x"}})
+	if err != nil || !reflect.DeepEqual(got, map[string]any{"errors": []string{}, "packages": map[string]any{"x": []string{}}}) || len(r.commands) != 2 {
+		t.Fatalf("file_dict empty grouped value got=%#v err=%v calls=%d", got, err, len(r.commands))
+	}
+
+	metadata := "name: foo\nversion: 3\nrelease: 1\nsource_rpm: src-3.rpm\nrelocations: /opt\nsignature: sig\ninstall_date: 100\ninstall_date_time_t: 100\nedition: 3-1\ndescription:\nhello\n-----\n"
+	rt, r = newRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("LONGSIZE\n")}, process.CommandResult{ExitCode: 0, Stdout: []byte(metadata)})
+	got, err = provider.Yum(context.Background(), rt, "info_installed", map[string]any{"names": []string{"foo"}, "attr": "name,source_rpm,relocations,signature,install_date,install_date_time_t,description"})
+	wantInfo := map[string]any{"foo": map[string]any{"name": "foo", "source": "src-3.rpm", "relocations": "/opt", "signature": "sig", "install_date": "1970-01-01T00:01:40Z", "install_date_time_t": int64(100), "description": "hello"}}
+	if err != nil || !reflect.DeepEqual(got, wantInfo) || len(r.commands) != 2 {
+		t.Fatalf("info attrs got=%#v err=%v calls=%d", got, err, len(r.commands))
+	}
+
+	for _, tc := range []struct {
+		name      string
+		args      map[string]any
+		results   []process.CommandResult
+		want      any
+		wantCalls int
+	}{
+		{"owner zero", map[string]any{"paths": []string{}}, nil, "", 0},
+		{"owner one", map[string]any{"paths": []string{"/a"}}, []process.CommandResult{{Stdout: []byte("pkg\n")}}, "pkg\n", 1},
+		{"owner many", map[string]any{"paths": []string{"/a", "/b"}}, []process.CommandResult{{Stdout: []byte("a")}, {Stdout: []byte("b")}}, map[string]any{"/a": "a", "/b": "b"}, 2},
+		{"owner unowned", map[string]any{"paths": []string{"/a"}}, []process.CommandResult{{ExitCode: 1, Stdout: []byte("file is not owned")}}, "", 1},
+		{"owner error", map[string]any{"paths": []string{"/a"}}, []process.CommandResult{{Err: context.Canceled}}, nil, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, r := newRuntime(tc.results...)
+			got, err := provider.Yum(context.Background(), rt, "owner", tc.args)
+			if tc.name == "owner error" {
+				if !errors.Is(err, context.Canceled) || got != nil {
+					t.Fatalf("got=%#v err=%v", got, err)
+				}
+			} else if err != nil || !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got=%#v err=%v want=%#v", got, err, tc.want)
+			}
+			if len(r.commands) != tc.wantCalls {
+				t.Fatalf("calls=%d want=%d", len(r.commands), tc.wantCalls)
+			}
+		})
+	}
+
+	root := "/image"
+	rt, r = newRuntime(process.CommandResult{Stdout: []byte("pkg")})
+	if _, err := provider.Yum(context.Background(), rt, "owner", map[string]any{"paths": []string{"/a"}, "root": &root}); err != nil || !reflect.DeepEqual(r.commands[0].Args, []string{"--root", "/image", "-qf", "--queryformat", "%{name}", "/a"}) {
+		t.Fatalf("root owner command=%#v err=%v", r.commands, err)
+	}
 }
 
 func TestYumNormalizeNameSourceVectors(t *testing.T) {
@@ -236,5 +537,33 @@ func TestYumVersionCmpRejectsTypesWithoutRunner(t *testing.T) {
 	}
 	if r.calls != 0 {
 		t.Fatalf("runner calls=%d", r.calls)
+	}
+}
+
+func TestSourceSplitLinesMatchesPythonBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		name, input string
+		want        []string
+	}{
+		{"lf", "a\nb", []string{"a", "b"}},
+		{"cr", "a\rb", []string{"a", "b"}},
+		{"crlf", "a\r\nb", []string{"a", "b"}},
+		{"vertical tab", "a\vb", []string{"a", "b"}},
+		{"form feed", "a\fb", []string{"a", "b"}},
+		{"file separator", "a\x1cb", []string{"a", "b"}},
+		{"group separator", "a\x1db", []string{"a", "b"}},
+		{"record separator", "a\x1eb", []string{"a", "b"}},
+		{"nel", "a\u0085b", []string{"a", "b"}},
+		{"line separator", "a\u2028b", []string{"a", "b"}},
+		{"paragraph separator", "a\u2029b", []string{"a", "b"}},
+		{"consecutive empty lines", "a\n\nb", []string{"a", "", "b"}},
+		{"trailing boundary", "a\n", []string{"a"}},
+		{"no boundary", "ab", []string{"ab"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sourceSplitLines(tc.input); !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("sourceSplitLines(%q)=%#v want %#v", tc.input, got, tc.want)
+			}
+		})
 	}
 }

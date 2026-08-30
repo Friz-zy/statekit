@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/friz-zy/statekit/internal/facts"
 	"github.com/friz-zy/statekit/internal/runtime"
 	pkgprovider "github.com/friz-zy/statekit/providers/pkg"
 )
@@ -32,6 +31,9 @@ type PurgeArgs struct {
 }
 type FilePackagesArgs struct {
 	Packages []string `statekit:"name=packages"`
+}
+type OwnerArgs struct {
+	Paths []string `statekit:"name=paths"`
 }
 type SelectionsArgs struct {
 	Pattern *string `statekit:"name=pattern"`
@@ -90,8 +92,28 @@ type aptLongtailFunc struct {
 	prototype any
 }
 
-func (f aptLongtailFunc) Name() string { return "pkg." + f.name }
-func (f aptLongtailFunc) Args() any    { return f.prototype }
+func (f aptLongtailFunc) Name() string         { return "pkg." + f.name }
+func (f aptLongtailFunc) Args() any            { return f.prototype }
+func (f aptLongtailFunc) ProviderKind() string { return "pkg" }
+func (f aptLongtailFunc) ArgsForProvider(providerName string) (any, error) {
+	switch providerName {
+	case "apt":
+		return f.prototype, nil
+	case "yum", "dnf":
+		if p, ok := YumPrototype(f.name); ok {
+			return p, nil
+		}
+		for _, shared := range []string{"normalize_name", "parse_arch", "version_cmp"} {
+			if f.name == shared {
+				return f.prototype, nil
+			}
+		}
+	}
+	return nil, &runtime.UnsupportedError{Kind: "provider", Name: providerName}
+}
+func (f aptLongtailFunc) ProviderArgsStrict() bool {
+	return f.name == "file_list" || f.name == "file_dict" || f.name == "info_installed" || f.name == "owner"
+}
 func (f aptLongtailFunc) ProviderCapabilities() []string {
 	// These public names are shared by aptpkg and yumpkg; execution dispatch
 	// remains provider-specific below. Unique APT functions stay APT-only.
@@ -103,6 +125,11 @@ func (f aptLongtailFunc) ProviderCapabilities() []string {
 	if f.name == "version_cmp" {
 		return []string{"aptpkg", "yumpkg"}
 	}
+	for _, name := range []string{"file_list", "file_dict", "info_installed", "owner"} {
+		if f.name == name {
+			return []string{"aptpkg", "yumpkg"}
+		}
+	}
 	return []string{"aptpkg"}
 }
 func (f aptLongtailFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
@@ -110,8 +137,13 @@ func (f aptLongtailFunc) Execute(ctx context.Context, rt *runtime.Runtime, args 
 	if err != nil {
 		return nil, err
 	}
-	if yp, ok := p.(pkgprovider.YumProvider); ok && p.Name() != "apt" && rt.Facts.OS().Family == facts.FamilyRedHat && (f.name == "normalize_name" || f.name == "parse_arch" || f.name == "version_cmp") {
-		argMap, err := mapArgs(f.Name(), args, f.prototype)
+	providerName := p.Name()
+	prototype, err := f.ArgsForProvider(providerName)
+	if err != nil {
+		return nil, err
+	}
+	if yp, ok := p.(pkgprovider.YumProvider); ok && (providerName == "yum" || providerName == "dnf") {
+		argMap, err := mapArgs(f.Name(), args, prototype)
 		if err != nil {
 			return nil, err
 		}
@@ -121,7 +153,7 @@ func (f aptLongtailFunc) Execute(ctx context.Context, rt *runtime.Runtime, args 
 	if !ok {
 		return nil, pkgprovider.ErrUnsupportedAPT
 	}
-	argMap, err := mapArgs(f.Name(), args, f.prototype)
+	argMap, err := mapArgs(f.Name(), args, prototype)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +206,6 @@ func mapArgs(name string, args any, prototype any) (map[string]any, error) {
 
 func longtailFunctions() []runtime.ExecFunction {
 	return []runtime.ExecFunction{
-		aptLongtailFunc{"autoremove", AutoremoveArgs{}}, aptLongtailFunc{"file_dict", FilePackagesArgs{}}, aptLongtailFunc{"file_list", FilePackagesArgs{}}, aptLongtailFunc{"get_selections", SelectionsArgs{}}, aptLongtailFunc{"hold", PackagesArgs{}}, aptLongtailFunc{"info_installed", InfoArgs{}}, aptLongtailFunc{"list_downloaded", DownloadedArgs{}}, aptLongtailFunc{"list_repo_pkgs", FilePackagesArgs{}}, aptLongtailFunc{"list_upgrades", ListUpgradesArgs{}}, aptLongtailFunc{"normalize_name", NormalizeNameArgs{}}, aptLongtailFunc{"owner", struct {
-			Paths []string `statekit:"name=paths"`
-		}{}}, aptLongtailFunc{"parse_arch", ParseArchArgs{}}, aptLongtailFunc{"purge", PurgeArgs{}}, aptLongtailFunc{"services_need_restart", struct{}{}}, aptLongtailFunc{"set_selections", SetSelectionsArgs{}}, aptLongtailFunc{"show", ShowArgs{}}, aptLongtailFunc{"unhold", PackagesArgs{}}, aptLongtailFunc{"upgrade", UpgradeArgs{}}, aptLongtailFunc{"upgrade_available", NormalizeNameArgs{}}, aptLongtailFunc{"version_cmp", VersionCmpArgs{}}, aptLongtailFunc{"which", PathArgs{}}}
+		aptLongtailFunc{"autoremove", AutoremoveArgs{}}, aptLongtailFunc{"file_dict", FilePackagesArgs{}}, aptLongtailFunc{"file_list", FilePackagesArgs{}}, aptLongtailFunc{"get_selections", SelectionsArgs{}}, aptLongtailFunc{"hold", PackagesArgs{}}, aptLongtailFunc{"info_installed", InfoArgs{}}, aptLongtailFunc{"list_downloaded", DownloadedArgs{}}, aptLongtailFunc{"list_repo_pkgs", FilePackagesArgs{}}, aptLongtailFunc{"list_upgrades", ListUpgradesArgs{}}, aptLongtailFunc{"normalize_name", NormalizeNameArgs{}}, aptLongtailFunc{"owner", OwnerArgs{}}, aptLongtailFunc{"parse_arch", ParseArchArgs{}}, aptLongtailFunc{"purge", PurgeArgs{}}, aptLongtailFunc{"services_need_restart", struct{}{}}, aptLongtailFunc{"set_selections", SetSelectionsArgs{}}, aptLongtailFunc{"show", ShowArgs{}}, aptLongtailFunc{"unhold", PackagesArgs{}}, aptLongtailFunc{"upgrade", UpgradeArgs{}}, aptLongtailFunc{"upgrade_available", NormalizeNameArgs{}}, aptLongtailFunc{"version_cmp", VersionCmpArgs{}}, aptLongtailFunc{"which", PathArgs{}},
+	}
 }

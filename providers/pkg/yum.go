@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sort"
+	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -324,7 +327,7 @@ func rpmAlnum(r rune) bool {
 }
 func rpmSpecial(r rune) bool { return r == '~' || r == '^' }
 
-func (p *commandProvider) Yum(_ context.Context, rt *runtime.Runtime, function string, args any) (any, error) {
+func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function string, args any) (any, error) {
 	if p.spec.manager != "yum" && p.spec.manager != "dnf" {
 		return nil, ErrUnsupportedYUM
 	}
@@ -332,7 +335,137 @@ func (p *commandProvider) Yum(_ context.Context, rt *runtime.Runtime, function s
 	if !ok {
 		return nil, fmt.Errorf("YUM function %q: malformed arguments", function)
 	}
+	if err := validateYUMArgs(function, a); err != nil {
+		return nil, err
+	}
 	switch function {
+	case "file_list":
+		packages, root, err := yumFilesArgs(a)
+		if err != nil {
+			return nil, err
+		}
+		cmd := []string{"rpm"}
+		if root != "" {
+			cmd = append(cmd, "--root", root)
+		}
+		if len(packages) == 0 {
+			cmd = append(cmd, "-qla")
+		} else {
+			cmd = append(cmd, "-ql")
+			cmd = append(cmd, packages...)
+		}
+		res := rt.Runner.Run(ctx, runtime.Command(cmd...))
+		if res.Err != nil {
+			return nil, res.Err
+		}
+		if res.ExitCode != 0 {
+			return nil, fmt.Errorf("rpm exited with code %d: %s", res.ExitCode, res.Stderr)
+		}
+		// Salt's cmd.run(...).splitlines() preserves source order, duplicates,
+		// and whitespace; do not normalize the rpm stream here.
+		files := sourceSplitLines(string(res.Stdout))
+		return map[string]any{"errors": []string{}, "files": files}, nil
+	case "file_dict":
+		packages, root, err := yumFilesArgs(a)
+		if err != nil {
+			return nil, err
+		}
+		cmd := []string{"rpm"}
+		if root != "" {
+			cmd = append(cmd, "--root", root)
+		}
+		if len(packages) == 0 {
+			cmd = append(cmd, "-qa")
+		} else {
+			cmd = append(cmd, "-q")
+		}
+		cmd = append(cmd, "--queryformat", "%{NAME} %{VERSION}\\n")
+		// rpm_lowpkg.file_dict places package operands after --queryformat;
+		// preserve that exact argv ordering (including its per-package -ql
+		// invocation quirk below).
+		if len(packages) > 0 {
+			cmd = append(cmd, packages...)
+		}
+		res := rt.Runner.Run(ctx, runtime.Command(cmd...))
+		if res.Err != nil {
+			return nil, res.Err
+		}
+		if res.ExitCode != 0 {
+			return nil, fmt.Errorf("rpm exited with code %d: %s", res.ExitCode, res.Stderr)
+		}
+		errorsOut := []string{}
+		versions := map[string]struct{ version string }{}
+		order := []string{}
+		for _, line := range sourceSplitLines(string(res.Stdout)) {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			if strings.Contains(line, "is not installed") {
+				errorsOut = append(errorsOut, line)
+				continue
+			}
+			f := strings.Fields(line)
+			if len(f) < 2 {
+				return nil, fmt.Errorf("rpm: malformed package output")
+			}
+			if _, exists := versions[f[0]]; !exists {
+				order = append(order, f[0])
+			}
+			versions[f[0]] = struct{ version string }{version: f[1]}
+		}
+		ret := map[string]any{}
+		for _, pkg := range order {
+			q := []string{"rpm"}
+			// Pinned salt rpm_lowpkg.py constructs a rooted `cmd` but invokes
+			// cmd.run(["rpm", "-ql", pkg]); preserve that source quirk exactly.
+			q = append(q, "-ql", pkg)
+			r := rt.Runner.Run(ctx, runtime.Command(q...))
+			if r.Err != nil {
+				return nil, r.Err
+			}
+			if r.ExitCode != 0 {
+				return nil, fmt.Errorf("rpm exited with code %d: %s", r.ExitCode, r.Stderr)
+			}
+			ret[pkg] = sourceSplitLines(string(r.Stdout))
+		}
+		return map[string]any{"errors": errorsOut, "packages": ret}, nil
+	case "owner":
+		paths, root, err := yumOwnerArgs(a)
+		if err != nil {
+			return nil, err
+		}
+		if len(paths) == 0 {
+			return "", nil
+		}
+		ret := map[string]any{}
+		for _, file := range paths {
+			if strings.IndexByte(file, 0) >= 0 {
+				return nil, errors.New("argument path contains NUL")
+			}
+			cmd := []string{"rpm"}
+			if root != "" {
+				cmd = append(cmd, "--root", root)
+			}
+			cmd = append(cmd, "-qf", "--queryformat", "%{name}", file)
+			r := rt.Runner.Run(ctx, runtime.Command(cmd...))
+			if r.Err != nil {
+				return nil, r.Err
+			}
+			// cmd.run_stdout returns stdout independently of retcode. Salt then
+			// translates the rpm "not owned" diagnostic to an empty value.
+			if strings.Contains(strings.ToLower(string(r.Stdout)), "not owned") || r.ExitCode != 0 {
+				ret[file] = ""
+			} else {
+				ret[file] = string(r.Stdout)
+			}
+		}
+		if len(paths) == 1 {
+			return ret[paths[0]], nil
+		}
+		return ret, nil
+	case "info_installed":
+		return yumInfoInstalled(ctx, rt, a)
 	case "normalize_name":
 		name, ok := a["name"].(string)
 		if !ok {
@@ -368,4 +501,417 @@ func (p *commandProvider) Yum(_ context.Context, rt *runtime.Runtime, function s
 	default:
 		return nil, fmt.Errorf("unknown YUM function %q", function)
 	}
+}
+
+func validateYUMArgs(function string, a map[string]any) error {
+	allowed := map[string]bool{}
+	switch function {
+	case "file_list", "file_dict":
+		allowed = map[string]bool{"packages": true, "root": true}
+	case "owner":
+		allowed = map[string]bool{"paths": true, "root": true}
+	case "info_installed":
+		allowed = map[string]bool{"names": true, "all_versions": true, "root": true, "attr": true}
+	case "normalize_name", "parse_arch":
+		allowed = map[string]bool{"name": true}
+	case "version_cmp":
+		allowed = map[string]bool{"pkg1": true, "pkg2": true, "ignore_epoch": true}
+	default:
+		return nil
+	}
+	for key := range a {
+		if !allowed[key] {
+			return fmt.Errorf("YUM function %q: unsupported argument %q", function, key)
+		}
+	}
+	for _, key := range []string{"packages", "paths", "names"} {
+		if v, present := a[key]; present && v != nil {
+			if _, ok := v.([]string); !ok {
+				return fmt.Errorf("argument %q must be a string list", key)
+			}
+		}
+	}
+	for _, key := range []string{"root", "attr", "pkg1", "pkg2", "name"} {
+		if v, present := a[key]; present && v != nil {
+			switch v.(type) {
+			case string, *string:
+			default:
+				return fmt.Errorf("argument %q must be a string", key)
+			}
+		}
+	}
+	for _, key := range []string{"all_versions", "ignore_epoch"} {
+		if v, present := a[key]; present && v != nil {
+			switch v.(type) {
+			case bool, *bool:
+			default:
+				return fmt.Errorf("argument %q must be a boolean", key)
+			}
+		}
+	}
+	return nil
+}
+
+func yumFilesArgs(a map[string]any) ([]string, string, error) {
+	p, ok := a["packages"]
+	if !ok {
+		p = []string{}
+	}
+	packages, ok := p.([]string)
+	if !ok {
+		return nil, "", errors.New("argument \"packages\" must be a string list")
+	}
+	root, err := yumRoot(a)
+	return packages, root, err
+}
+func yumOwnerArgs(a map[string]any) ([]string, string, error) {
+	p, ok := a["paths"]
+	if !ok {
+		p = []string{}
+	}
+	paths, ok := p.([]string)
+	if !ok {
+		return nil, "", errors.New("argument \"paths\" must be a string list")
+	}
+	root, err := yumRoot(a)
+	return paths, root, err
+}
+func yumRoot(a map[string]any) (string, error) {
+	v, ok := a["root"]
+	if !ok {
+		return "", nil
+	}
+	s, ok := v.(*string)
+	if ok {
+		if s == nil {
+			return "", nil
+		}
+		return *s, nil
+	}
+	if s, ok := v.(string); ok {
+		return s, nil
+	}
+	return "", errors.New("argument \"root\" must be a string")
+}
+
+func yumStringArg(a map[string]any, key string) (string, bool) {
+	v, ok := a[key]
+	if !ok || v == nil {
+		return "", false
+	}
+	if s, ok := v.(string); ok {
+		return s, true
+	}
+	if s, ok := v.(*string); ok && s != nil {
+		return *s, true
+	}
+	return "", false
+}
+
+// sourceSplitLines implements Python str.splitlines(). In addition to the
+// ASCII line endings, Python recognizes VT, FF, the C0 record separators, NEL,
+// and the Unicode line and paragraph separators. A CRLF is one boundary.
+func sourceSplitLines(s string) []string {
+	if s == "" {
+		return []string{}
+	}
+	runes := []rune(s)
+	lines := make([]string, 0)
+	start := 0
+	for i := 0; i < len(runes); i++ {
+		if !sourceLineBoundary(runes[i]) {
+			continue
+		}
+		lines = append(lines, string(runes[start:i]))
+		if runes[i] == '\r' && i+1 < len(runes) && runes[i+1] == '\n' {
+			i++
+		}
+		start = i + 1
+	}
+	if start < len(runes) {
+		lines = append(lines, string(runes[start:]))
+	}
+	return lines
+}
+
+func sourceLineBoundary(r rune) bool {
+	switch r {
+	case '\n', '\r', '\v', '\f', '\x1c', '\x1d', '\x1e', '\x85', '\u2028', '\u2029':
+		return true
+	default:
+		return false
+	}
+}
+
+var yumInfoAttributes = []struct {
+	name, format string
+}{
+	{"name", "name: %{NAME}\\n"},
+	{"relocations", "relocations: %|PREFIXES?{[%{PREFIXES} ]}:{(not relocatable)}|\\n"},
+	{"version", "version: %{VERSION}\\n"},
+	{"vendor", "vendor: %{VENDOR}\\n"},
+	{"release", "release: %{RELEASE}\\n"},
+	{"epoch", "%|EPOCH?{epoch: %{EPOCH}\\n}|"},
+	{"build_date_time_t", "build_date_time_t: %{BUILDTIME}\\n"},
+	{"build_date", "build_date: %{BUILDTIME}\\n"},
+	{"install_date_time_t", "install_date_time_t: %|INSTALLTIME?{%{INSTALLTIME}}:{(not installed)}|\\n"},
+	{"install_date", "install_date: %|INSTALLTIME?{%{INSTALLTIME}}:{(not installed)}|\\n"},
+	{"build_host", "build_host: %{BUILDHOST}\\n"},
+	{"group", "group: %{GROUP}\\n"},
+	{"source_rpm", "source_rpm: %{SOURCERPM}\\n"},
+	{"size", "size: %{SIZE}\\n"},
+	{"arch", "arch: %{ARCH}\\n"},
+	{"license", "%|LICENSE?{license: %{LICENSE}\\n}|"},
+	{"signature", "signature: %|DSAHEADER?{%{DSAHEADER:pgpsig}}:{%|RSAHEADER?{%{RSAHEADER:pgpsig}}:{%|SIGGPG?{%{SIGGPG:pgpsig}}:{%|SIGPGP?{%{SIGPGP:pgpsig}}:{(none)}|}|}|}|\\n"},
+	{"packager", "%|PACKAGER?{packager: %{PACKAGER}\\n}|"},
+	{"url", "%|URL?{url: %{URL}\\n}|"},
+	{"summary", "summary: %{SUMMARY}\\n"},
+	{"description", "description:\\n%{DESCRIPTION}\\n"},
+	{"edition", "edition: %|EPOCH?{%{EPOCH}:}|%{VERSION}-%{RELEASE}\\n"},
+}
+
+func yumInfoQueryFormat(a map[string]any, sizeTag string) (string, error) {
+	var attr []string
+	if s, ok := yumStringArg(a, "attr"); ok && s != "" {
+		attr = strings.Split(s, ",")
+	}
+	valid := make(map[string]string, len(yumInfoAttributes))
+	for _, item := range yumInfoAttributes {
+		valid[item.name] = strings.Replace(item.format, "%{SIZE}", sizeTag, 1)
+	}
+	var query []string
+	if len(attr) > 0 {
+		for _, name := range attr {
+			if format, ok := valid[name]; ok && name != "description" {
+				query = append(query, format)
+			}
+		}
+		if len(query) == 0 {
+			return "", errors.New("No valid attributes found.")
+		}
+		if !containsString(attr, "name") {
+			attr = append(attr, "name")
+			query = append(query, valid["name"])
+		}
+		if !containsString(attr, "edition") {
+			attr = append(attr, "edition")
+			query = append(query, valid["edition"])
+		}
+		if containsString(attr, "description") {
+			query = append(query, valid["description"])
+		}
+	} else {
+		for _, item := range yumInfoAttributes {
+			if item.name != "description" {
+				query = append(query, valid[item.name])
+			}
+		}
+		query = append(query, valid["description"])
+	}
+	return strings.Join(query, "") + "-----\\n", nil
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func yumInfoInstalled(ctx context.Context, rt *runtime.Runtime, a map[string]any) (any, error) {
+	names := []string{}
+	if v, ok := a["names"]; ok {
+		var good bool
+		names, good = v.([]string)
+		if !good {
+			return nil, errors.New("argument \"names\" must be a string list")
+		}
+	}
+	all := false
+	if v, ok := a["all_versions"]; ok {
+		switch x := v.(type) {
+		case *bool:
+			if x != nil {
+				all = *x
+			}
+		case bool:
+			all = x
+		default:
+			return nil, errors.New("argument \"all_versions\" must be a boolean")
+		}
+	}
+	root, err := yumRoot(a)
+	if err != nil {
+		return nil, err
+	}
+	if attr, ok := yumStringArg(a, "attr"); ok && strings.TrimSpace(attr) != "" {
+		valid := map[string]bool{"name": true, "relocations": true, "version": true, "vendor": true, "release": true, "build_date": true, "build_date_time_t": true, "install_date": true, "install_date_time_t": true, "build_host": true, "group": true, "source_rpm": true, "arch": true, "epoch": true, "size": true, "license": true, "signature": true, "packager": true, "url": true, "summary": true, "description": true, "edition": true}
+		found := false
+		for _, item := range strings.Split(attr, ",") {
+			if valid[strings.TrimSpace(item)] {
+				found = true
+			}
+		}
+		if !found {
+			return nil, errors.New("No valid attributes found.")
+		}
+	}
+	// rpm_lowpkg probes querytags first so SIZE remains compatible with older
+	// rpm versions. yumpkg passes root/all_versions/attr through to lowpkg.
+	tags := rt.Runner.Run(ctx, runtime.Command("rpm", "--querytags"))
+	if tags.Err != nil {
+		return nil, tags.Err
+	}
+	if tags.ExitCode != 0 {
+		return nil, fmt.Errorf("rpm exited with code %d: %s", tags.ExitCode, tags.Stderr)
+	}
+	sizeTag := "%{SIZE}"
+	if strings.Contains(string(tags.Stdout), "LONGSIZE") {
+		sizeTag = "%{LONGSIZE}"
+	}
+	cmd := []string{"rpm"}
+	if root != "" {
+		cmd = append(cmd, "--root", root)
+	}
+	if len(names) == 0 {
+		cmd = append(cmd, "-qa")
+	} else {
+		cmd = append(cmd, "-q")
+		cmd = append(cmd, names...)
+	}
+	format, err := yumInfoQueryFormat(a, sizeTag)
+	if err != nil {
+		return nil, err
+	}
+	cmd = append(cmd, "--queryformat", format)
+	// lowpkg.info invokes cmd.run_all with env={"TZ": "UTC"} and
+	// clean_env=True. Command.Env is the runtime's equivalent boundary.
+	queryCmd := runtime.Command(cmd...)
+	queryCmd.Env = []string{"TZ=UTC"}
+	r := rt.Runner.Run(ctx, queryCmd)
+	if r.Err != nil {
+		return nil, r.Err
+	}
+	// lowpkg.info uses ignore_retcode=True: usable stdout is parsed even when
+	// rpm reports missing packages. Runner errors (including cancellation) are
+	// still surfaced above rather than converted into fake success.
+	ret := map[string]any{}
+	type packageRecord struct {
+		name    string
+		fields  map[string]any
+		edition string
+	}
+	var records []packageRecord
+	for _, record := range strings.Split(string(r.Stdout), "-----") {
+		record = strings.TrimSpace(record)
+		if record == "" {
+			continue
+		}
+		fields := map[string]any{}
+		var name string
+		description := []string{}
+		inDesc := false
+		for _, line := range strings.Split(record, "\n") {
+			if inDesc {
+				description = append(description, line)
+				continue
+			}
+			if line == "description:" {
+				inDesc = true
+				continue
+			}
+			k, v, ok := strings.Cut(line, ":")
+			if !ok {
+				continue
+			}
+			k, v = strings.TrimSpace(k), strings.TrimSpace(v)
+			if k == "name" {
+				name = v
+				continue
+			}
+			// yumpkg translates this lowpkg field to source without
+			// normalizing sentinel values such as (none) or (not installed).
+			// Empty values are omitted by the lowpkg truthy-field parser.
+			if k == "source_rpm" {
+				if v != "" {
+					fields["source"] = v
+				}
+				continue
+			}
+			if v == "" {
+				continue
+			}
+			switch k {
+			case "build_date", "install_date":
+				if seconds, e := strconv.ParseInt(v, 10, 64); e == nil {
+					fields[k] = time.Unix(seconds, 0).UTC().Format("2006-01-02T15:04:05Z")
+				}
+			case "build_date_time_t", "install_date_time_t":
+				if seconds, e := strconv.ParseInt(v, 10, 64); e == nil {
+					fields[k] = seconds
+				}
+			default:
+				fields[k] = v
+			}
+		}
+		if name == "" || strings.HasPrefix(name, "gpg-pubkey") {
+			continue
+		}
+		// lowpkg.info adds the package name to every metadata object.
+		fields["name"] = name
+		if attrRequested(a, "description") {
+			fields["description"] = strings.Join(description, "\n")
+		}
+		edition, _ := fields["edition"].(string)
+		records = append(records, packageRecord{name: name, fields: fields, edition: edition})
+	}
+	// lowpkg.info sorts by edition descending and yumpkg.info_installed keeps
+	// that order, selecting the first record unless all_versions is requested.
+	sort.SliceStable(records, func(i, j int) bool {
+		return yumVersionCmp(records[i].edition, records[j].edition, false) > 0
+	})
+	for _, item := range records {
+		fields := item.fields
+		if attr, ok := yumStringArg(a, "attr"); ok && strings.TrimSpace(attr) != "" {
+			wanted := map[string]bool{"name": true, "edition": true}
+			for _, key := range strings.Split(attr, ",") {
+				key = strings.TrimSpace(key)
+				if key == "source_rpm" {
+					key = "source"
+				}
+				wanted[key] = true
+			}
+			for key := range fields {
+				if !wanted[key] {
+					delete(fields, key)
+				}
+			}
+		}
+		if all {
+			if prior, exists := ret[item.name].([]any); exists {
+				ret[item.name] = append(prior, fields)
+			} else {
+				ret[item.name] = []any{fields}
+			}
+		} else if _, exists := ret[item.name]; !exists {
+			delete(fields, "edition")
+			ret[item.name] = fields
+		}
+	}
+	return ret, nil
+}
+
+func attrRequested(a map[string]any, name string) bool {
+	attr, ok := yumStringArg(a, "attr")
+	if !ok || strings.TrimSpace(attr) == "" {
+		return !ok || strings.TrimSpace(attr) == ""
+	}
+	for _, item := range strings.Split(attr, ",") {
+		if strings.TrimSpace(item) == name {
+			return true
+		}
+	}
+	return false
 }

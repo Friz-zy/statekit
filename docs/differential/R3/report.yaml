@@ -85,19 +85,16 @@ families:
         catalog_functions: 55
         public_functions: 39
         private_functions: 16
-        registered_public: 13
+        registered_public: 17
         pending_public:
             - pkg.clean_metadata
             - pkg.diff
             - pkg.download
-            - pkg.file_dict
-            - pkg.file_list
             - pkg.group_diff
             - pkg.group_info
             - pkg.group_install
             - pkg.group_list
             - pkg.hold
-            - pkg.info_installed
             - pkg.list_downloaded
             - pkg.list_holds
             - pkg.list_installed_patches
@@ -105,7 +102,6 @@ families:
             - pkg.list_repo_pkgs
             - pkg.list_upgrades
             - pkg.modified
-            - pkg.owner
             - pkg.purge
             - pkg.services_need_restart
             - pkg.unhold
@@ -160,4 +156,4 @@ families:
 totals:
     catalog_functions: 261
     public_functions: 172
-    registered_public: 114
+    registered_public: 118

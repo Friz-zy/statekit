@@ -353,11 +353,11 @@ func (a *App) cmdFunction(kind string, argv []string) int {
 
 func resolveTemplate(kind string, rt *runtime.Runtime, fullName string) (any, int) {
 	if kind == "exec" {
-		fn, ok := rt.Exec.Get(fullName)
-		if !ok {
-			return nil, failf(ExitUnsupported, "unsupported function %q", fullName)
+		template, err := rt.Exec.ResolveArgs(rt, fullName)
+		if err != nil {
+			return nil, execFailure(err)
 		}
-		return fn.Args(), ExitOK
+		return template, ExitOK
 	}
 	fn, ok := rt.States.Get(fullName)
 	if !ok {
@@ -453,6 +453,7 @@ func decodeArgs(kind, fullName string, template any, argv []string, base config.
 		}
 	}
 
+	argv = canonicalizeFlagSpelling(argv, names)
 	normalized, err := config.NormalizeBoolArgs(argv, template)
 	if err != nil {
 		return nil, "", "", failf(ExitInvalidInput, "%v", err)
@@ -515,6 +516,30 @@ func decodeArgs(kind, fullName string, template any, argv []string, base config.
 		return nil, "", "", failf(ExitInvalidInput, "%v", err)
 	}
 	return argsPtr, explicit, funKey, ExitOK
+}
+
+// canonicalizeFlagSpelling accepts the conventional hyphenated CLI spelling
+// while retaining underscore names in structured contracts and Go fields.
+func canonicalizeFlagSpelling(argv, names []string) []string {
+	known := make(map[string]string, len(names))
+	for _, name := range names {
+		known[strings.ReplaceAll(name, "_", "-")] = name
+	}
+	out := append([]string(nil), argv...)
+	for i, token := range out {
+		if !strings.HasPrefix(token, "--") {
+			continue
+		}
+		body := strings.TrimPrefix(token, "--")
+		value := ""
+		if cut := strings.IndexByte(body, '='); cut >= 0 {
+			value, body = body[cut:], body[:cut]
+		}
+		if name, ok := known[body]; ok {
+			out[i] = "--" + name + value
+		}
+	}
+	return out
 }
 
 // mergeChannels layers function-level channel values over namespace-level

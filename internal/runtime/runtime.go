@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,6 +38,18 @@ type ExecFunction interface {
 	// Execute receives a pointer to a decoded copy of the argument struct.
 	Execute(ctx context.Context, rt *Runtime, args any) (any, error)
 }
+
+// ProviderAwareArgs supplies the argument prototype for the provider selected
+// by the current runtime. Args remains the backward-compatible default used by
+// callers that do not have a runtime available.
+type ProviderAwareArgs interface {
+	ProviderKind() string
+	ArgsForProvider(providerName string) (any, error)
+}
+
+// ProviderArgsStrict marks functions whose selected provider prototype is an
+// execution contract, rather than merely metadata for dispatch.
+type ProviderArgsStrict interface{ ProviderArgsStrict() bool }
 
 // ProviderCapability optionally limits a virtual execution function to the
 // provider families whose implementation is actually backed by this function.
@@ -82,6 +95,34 @@ func (r *ExecRegistry) Register(fn ExecFunction) error { return r.reg.Register(f
 // Get looks up an execution function by full name.
 func (r *ExecRegistry) Get(name string) (ExecFunction, bool) { return r.reg.Get(name) }
 
+// ResolveArgs returns the argument prototype appropriate for the selected
+// provider without executing the provider or touching runtime side effects.
+func (r *ExecRegistry) ResolveArgs(rt *Runtime, name string) (any, error) {
+	fn, ok := r.reg.Get(name)
+	if !ok || !SupportsPlatform(fn, CurrentGOOS()) {
+		return nil, &UnsupportedError{Kind: "function", Name: name}
+	}
+	aware, ok := fn.(ProviderAwareArgs)
+	if !ok {
+		return fn.Args(), nil
+	}
+	if rt == nil || rt.Providers == nil || rt.Facts == nil {
+		return nil, &UnsupportedError{Kind: "provider", Name: aware.ProviderKind()}
+	}
+	_, providerName, err := rt.Providers.Resolve(rt.Facts, aware.ProviderKind())
+	if err != nil {
+		return nil, &UnsupportedError{Kind: "provider", Name: aware.ProviderKind()}
+	}
+	prototype, err := aware.ArgsForProvider(providerName)
+	if err != nil {
+		return nil, &UnsupportedError{Kind: "provider", Name: providerName}
+	}
+	if prototype == nil || reflect.TypeOf(prototype).Kind() != reflect.Struct {
+		return nil, &UnsupportedError{Kind: "provider", Name: providerName}
+	}
+	return prototype, nil
+}
+
 // Names lists execution functions available on the current platform,
 // sorted lexicographically.
 func (r *ExecRegistry) Names() []string { return r.filterNames(r.reg.Names()) }
@@ -120,6 +161,20 @@ func (r *ExecRegistry) Call(ctx context.Context, rt *Runtime, name string, args 
 	fn, ok := r.reg.Get(name)
 	if !ok || !SupportsPlatform(fn, CurrentGOOS()) {
 		return nil, &UnsupportedError{Kind: "function", Name: name}
+	}
+	// Provider-aware functions have provider-specific argument contracts. Check
+	// the selected prototype at the registry boundary so a wrong provider
+	// pointer cannot reach Execute (and therefore cannot reach a Runner).
+	strict, isStrict := fn.(ProviderArgsStrict)
+	if isStrict && strict.ProviderArgsStrict() {
+		prototype, err := r.ResolveArgs(rt, name)
+		if err != nil {
+			return nil, err
+		}
+		want := reflect.PointerTo(reflect.TypeOf(prototype))
+		if args == nil || reflect.TypeOf(args) != want {
+			return nil, fmt.Errorf("%s: expected arguments of type %s, got %T", name, want, args)
+		}
 	}
 	return fn.Execute(ctx, rt, args)
 }

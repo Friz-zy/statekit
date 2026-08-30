@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/friz-zy/statekit/internal/facts"
+	"github.com/friz-zy/statekit/internal/process"
 	"github.com/friz-zy/statekit/internal/result"
 )
 
@@ -19,6 +20,177 @@ type fakeExec struct {
 }
 
 type capableFakeExec struct{}
+
+type providerAwareFakeExec struct{}
+
+type matrixProviderAwareExec struct {
+	prototype any
+	err       error
+	executed  *int
+}
+
+type resolveNoCallRunner struct{ calls int }
+
+func (r *resolveNoCallRunner) Run(context.Context, process.Command) process.CommandResult {
+	r.calls++
+	return process.CommandResult{}
+}
+
+func (f matrixProviderAwareExec) Name() string         { return "pkg.matrix" }
+func (f matrixProviderAwareExec) Args() any            { return struct{}{} }
+func (f matrixProviderAwareExec) ProviderKind() string { return "pkg" }
+func (f matrixProviderAwareExec) ArgsForProvider(provider string) (any, error) {
+	if provider == "zypper" {
+		return nil, &UnsupportedError{Kind: "provider", Name: provider}
+	}
+	return f.prototype, f.err
+}
+func (f matrixProviderAwareExec) Execute(context.Context, *Runtime, any) (any, error) {
+	if f.executed != nil {
+		*f.executed++
+	}
+	return nil, nil
+}
+
+func (providerAwareFakeExec) Name() string         { return "pkg.provider_aware" }
+func (providerAwareFakeExec) Args() any            { return struct{ Legacy string }{} }
+func (providerAwareFakeExec) ProviderKind() string { return "pkg" }
+func (providerAwareFakeExec) ArgsForProvider(name string) (any, error) {
+	if name == "yum" {
+		return struct{ YumOnly string }{}, nil
+	}
+	return nil, &UnsupportedError{Kind: "provider", Name: name}
+}
+func (providerAwareFakeExec) Execute(context.Context, *Runtime, any) (any, error) { return nil, nil }
+
+func TestExecRegistryResolveArgsProviderAware(t *testing.T) {
+	reg := NewExecRegistry()
+	if err := reg.Register(providerAwareFakeExec{}); err != nil {
+		t.Fatal(err)
+	}
+	providers := NewProviderRegistry()
+	if err := providers.Register("pkg", "yum", struct{}{}); err != nil {
+		t.Fatal(err)
+	}
+	providers.SetSelector("pkg", func(*facts.Facts) (string, error) { return "yum", nil })
+	rt := &Runtime{Facts: facts.ForTesting(facts.Overrides{}), Providers: providers}
+	got, err := reg.ResolveArgs(rt, "pkg.provider_aware")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got.(struct{ YumOnly string }); !ok {
+		t.Fatalf("prototype=%T", got)
+	}
+}
+
+func TestExecRegistryResolveArgsProviderFailuresHaveNoSideEffects(t *testing.T) {
+	type setup func() *Runtime
+	selectorError := errors.New("selector failed")
+	cases := []struct {
+		name  string
+		setup setup
+		want  string
+	}{
+		{"nil runtime", func() *Runtime { return nil }, `unsupported provider "pkg"`},
+		{"nil providers", func() *Runtime { return &Runtime{Facts: facts.ForTesting(facts.Overrides{})} }, `unsupported provider "pkg"`},
+		{"nil facts", func() *Runtime { return &Runtime{Providers: NewProviderRegistry()} }, `unsupported provider "pkg"`},
+		{"selector missing", func() *Runtime {
+			p := NewProviderRegistry()
+			_ = p.Register("pkg", "apt", struct{}{})
+			_ = p.Register("pkg", "yum", struct{}{})
+			return &Runtime{Facts: facts.ForTesting(facts.Overrides{}), Providers: p}
+		}, `unsupported provider "pkg"`},
+		{"selector error", func() *Runtime {
+			p := NewProviderRegistry()
+			_ = p.Register("pkg", "apt", struct{}{})
+			p.SetSelector("pkg", func(*facts.Facts) (string, error) { return "", selectorError })
+			return &Runtime{Facts: facts.ForTesting(facts.Overrides{}), Providers: p}
+		}, `unsupported provider "pkg"`},
+		{"unknown provider", func() *Runtime {
+			p := NewProviderRegistry()
+			p.SetSelector("pkg", func(*facts.Facts) (string, error) { return "missing", nil })
+			_ = p.Register("pkg", "apt", struct{}{})
+			return &Runtime{Facts: facts.ForTesting(facts.Overrides{}), Providers: p}
+		}, `unsupported provider "pkg"`},
+		{"inapplicable zypper provider", func() *Runtime {
+			p := NewProviderRegistry()
+			_ = p.Register("pkg", "zypper", struct{}{})
+			p.SetSelector("pkg", func(*facts.Facts) (string, error) { return "zypper", nil })
+			return &Runtime{Facts: facts.ForTesting(facts.Overrides{}), Providers: p}
+		}, `unsupported provider "zypper"`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			reg := NewExecRegistry()
+			if err := reg.Register(matrixProviderAwareExec{prototype: struct{ Valid string }{}, executed: &calls}); err != nil {
+				t.Fatal(err)
+			}
+			rt := tc.setup()
+			runner := &resolveNoCallRunner{}
+			var fsBefore int
+			if rt != nil {
+				rt.Runner = runner
+				memory := NewMemoryFS()
+				rt.FS = memory
+				fsBefore = len(memory.nodes)
+			}
+			got, err := reg.ResolveArgs(rt, "pkg.matrix")
+			if got != nil || err == nil || err.Error() != tc.want {
+				t.Fatalf("prototype=%#v err=%v want=%q", got, err, tc.want)
+			}
+			if calls != 0 {
+				t.Fatalf("execute calls=%d", calls)
+			}
+			if runner.calls != 0 {
+				t.Fatalf("runner calls=%d", runner.calls)
+			}
+			if rt != nil {
+				if memory, ok := rt.FS.(*MemoryFS); ok && len(memory.nodes) != fsBefore {
+					t.Fatalf("filesystem changed: before=%d after=%d", fsBefore, len(memory.nodes))
+				}
+			}
+		})
+	}
+
+	for _, tc := range []struct {
+		name      string
+		prototype any
+		err       error
+	}{
+		{"unsupported prototype", "not a struct", nil},
+		{"malformed provider-aware function", nil, errors.New("bad prototype")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			reg := NewExecRegistry()
+			if err := reg.Register(matrixProviderAwareExec{prototype: tc.prototype, err: tc.err, executed: &calls}); err != nil {
+				t.Fatal(err)
+			}
+			p := NewProviderRegistry()
+			_ = p.Register("pkg", "yum", struct{}{})
+			p.SetSelector("pkg", func(*facts.Facts) (string, error) { return "yum", nil })
+			runner := &resolveNoCallRunner{}
+			memory := NewMemoryFS()
+			rt := &Runtime{Facts: facts.ForTesting(facts.Overrides{}), Providers: p, Runner: runner, FS: memory}
+			fsBefore := len(memory.nodes)
+			got, err := reg.ResolveArgs(rt, "pkg.matrix")
+			if got != nil || err == nil {
+				t.Fatalf("prototype=%#v err=%v", got, err)
+			}
+			var unsupported *UnsupportedError
+			if !errors.As(err, &unsupported) || unsupported.Name != "yum" {
+				t.Fatalf("error=%v", err)
+			}
+			if calls != 0 {
+				t.Fatalf("execute calls=%d", calls)
+			}
+			if runner.calls != 0 || len(memory.nodes) != fsBefore {
+				t.Fatalf("side effects: runner=%d fs=%d/%d", runner.calls, len(memory.nodes), fsBefore)
+			}
+		})
+	}
+}
 
 func (capableFakeExec) Name() string                                        { return "pkg.apt_only" }
 func (capableFakeExec) Args() any                                           { return struct{}{} }

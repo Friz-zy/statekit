@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -10,9 +11,11 @@ import (
 	"github.com/friz-zy/statekit/internal/facts"
 	"github.com/friz-zy/statekit/internal/process"
 	"github.com/friz-zy/statekit/internal/runtime"
+	pkgs "github.com/friz-zy/statekit/modules/exec/pkg"
 	exectest "github.com/friz-zy/statekit/modules/exec/test"
 	statefile "github.com/friz-zy/statekit/modules/state/file"
 	statetest "github.com/friz-zy/statekit/modules/state/test"
+	pkgprovider "github.com/friz-zy/statekit/providers/pkg"
 )
 
 func capture(t *testing.T, fn func()) (string, string) {
@@ -36,6 +39,103 @@ func capture(t *testing.T, fn func()) (string, string) {
 	outData, _ := io.ReadAll(outR)
 	errData, _ := io.ReadAll(errR)
 	return string(outData), string(errData)
+}
+
+type cliRecordingRunner struct {
+	calls   []process.Command
+	results []process.CommandResult
+}
+
+func (r *cliRecordingRunner) Run(_ context.Context, command process.Command) process.CommandResult {
+	r.calls = append(r.calls, command)
+	if len(r.results) == 0 {
+		return process.CommandResult{ExitCode: 0}
+	}
+	result := r.results[0]
+	r.results = r.results[1:]
+	return result
+}
+
+func providerCLIApp(t *testing.T, manager string, runner *cliRecordingRunner) *App {
+	t.Helper()
+	build := func() (*runtime.Runtime, error) {
+		rt := &runtime.Runtime{
+			Exec: runtime.NewExecRegistry(), Providers: runtime.NewProviderRegistry(), Runner: runner,
+			Facts: facts.ForTesting(facts.Overrides{Package: manager, OS: &facts.OSFacts{Family: facts.FamilyRedHat}, CPU: &facts.CPUFacts{Arch: "x86_64"}}),
+			FS:    runtime.NewMemoryFS(),
+		}
+		if err := pkgs.Register(rt.Exec); err != nil {
+			return nil, err
+		}
+		if err := pkgprovider.Register(rt.Providers); err != nil {
+			return nil, err
+		}
+		return rt, nil
+	}
+	return NewApp("test-version", build)
+}
+
+func TestProviderAwareCLIValidation(t *testing.T) {
+	for _, manager := range []string{"yum", "dnf"} {
+		runner := &cliRecordingRunner{results: []process.CommandResult{
+			{ExitCode: 0, Stdout: []byte("LONGSIZE\n")},
+			{ExitCode: 0, Stdout: []byte("name: foo\nversion: 1\nrelease: 1\nedition: 1-1\n-----\n")},
+		}}
+		code, _, errS := captureCode(t, providerCLIApp(t, manager, runner), "exec", "pkg.info_installed", "--all-versions", "--root", "/image", "--attr", "version")
+		if code != ExitOK || errS != "" || len(runner.calls) != 2 {
+			t.Fatalf("%s valid fields: code=%d err=%q calls=%d", manager, code, errS, len(runner.calls))
+		}
+		if runner.calls[1].Args[0] != "--root" || runner.calls[1].Args[1] != "/image" {
+			t.Fatalf("%s root not decoded: %#v", manager, runner.calls[1])
+		}
+
+		runner = &cliRecordingRunner{}
+		code, _, _ = captureCode(t, providerCLIApp(t, manager, runner), "exec", "pkg.info_installed", "--failhard")
+		if code != ExitInvalidInput || len(runner.calls) != 0 {
+			t.Fatalf("%s accepted apt-only flag: code=%d calls=%d", manager, code, len(runner.calls))
+		}
+	}
+	for _, manager := range []string{"apt"} {
+		runner := &cliRecordingRunner{results: []process.CommandResult{{ExitCode: 0}}}
+		code, _, _ := captureCode(t, providerCLIApp(t, manager, runner), "exec", "pkg.info_installed", "--failhard")
+		if code == ExitInvalidInput || len(runner.calls) == 0 {
+			t.Fatalf("apt failhard validation: code=%d calls=%d", code, len(runner.calls))
+		}
+		runner = &cliRecordingRunner{}
+		code, _, _ = captureCode(t, providerCLIApp(t, manager, runner), "exec", "pkg.info_installed", "--all-versions")
+		if code != ExitInvalidInput || len(runner.calls) != 0 {
+			t.Fatalf("apt accepted yum-only flag: code=%d calls=%d", code, len(runner.calls))
+		}
+	}
+	for _, tc := range []struct {
+		manager string
+		command string
+		valid   bool
+	}{
+		{"yum", "pkg.file_list", true}, {"dnf", "pkg.owner", true},
+		{"apt", "pkg.file_list", false}, {"apt", "pkg.owner", false},
+	} {
+		runner := &cliRecordingRunner{results: []process.CommandResult{{ExitCode: 0, Stdout: []byte("/x\n")}}}
+		flag := "--packages"
+		if tc.command == "pkg.owner" {
+			flag = "--paths"
+		}
+		code, _, _ := captureCode(t, providerCLIApp(t, tc.manager, runner), "exec", tc.command, "--root", "/image", flag, "/x")
+		if tc.valid {
+			if code == ExitInvalidInput || len(runner.calls) == 0 {
+				t.Fatalf("%s %s root rejected: code=%d calls=%d", tc.manager, tc.command, code, len(runner.calls))
+			}
+		} else if code != ExitInvalidInput || len(runner.calls) != 0 {
+			t.Fatalf("%s %s accepted root: code=%d calls=%d", tc.manager, tc.command, code, len(runner.calls))
+		}
+	}
+}
+
+func captureCode(t *testing.T, app *App, argv ...string) (int, string, string) {
+	t.Helper()
+	var code int
+	out, errS := capture(t, func() { code = app.Run(argv) })
+	return code, out, errS
 }
 
 func testRuntime() (*runtime.Runtime, error) {
