@@ -18,6 +18,27 @@ type fakeExec struct {
 	name string
 }
 
+type capableFakeExec struct{}
+
+func (capableFakeExec) Name() string                                        { return "pkg.apt_only" }
+func (capableFakeExec) Args() any                                           { return struct{}{} }
+func (capableFakeExec) Execute(context.Context, *Runtime, any) (any, error) { return nil, nil }
+func (capableFakeExec) ProviderCapabilities() []string                      { return []string{"aptpkg"} }
+
+func TestExecRegistryProviderCapabilities(t *testing.T) {
+	reg := NewExecRegistry()
+	if err := reg.Register(capableFakeExec{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := reg.ProviderCapabilities("pkg.apt_only"); len(got) != 1 || got[0] != "aptpkg" {
+		t.Fatalf("capabilities = %#v", got)
+	}
+	got := reg.ProviderCapabilities("missing")
+	if got != nil {
+		t.Fatalf("missing capabilities = %#v", got)
+	}
+}
+
 func TestReadFileBoundedValidationAndOSLimits(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "file")
@@ -42,6 +63,30 @@ func TestReadFileBoundedValidationAndOSLimits(t *testing.T) {
 	}
 }
 
+func TestCommandWithInputBounded(t *testing.T) {
+	argv := []string{"dpkg", "--set-selections"}
+	for _, tc := range []struct {
+		name, input string
+		wantErr     bool
+	}{
+		{"under", "abc", false},
+		{"exact", strings.Repeat("x", MaxCommandInputBytes), false},
+		{"over", strings.Repeat("x", MaxCommandInputBytes+1), true},
+		{"negative is not an input", "", false},
+	} {
+		cmd, err := CommandWithInputBounded(argv, tc.input)
+		if (err != nil) != tc.wantErr {
+			t.Fatalf("%s: err=%v", tc.name, err)
+		}
+		if err == nil && string(cmd.Stdin) != tc.input {
+			t.Fatalf("%s: stdin changed", tc.name)
+		}
+	}
+	if _, err := CommandWithInputBounded(nil, strings.Repeat("x", MaxCommandInputBytes+1)); !errors.Is(err, ErrCommandInputLimit) {
+		t.Fatalf("invalid command input: %v", err)
+	}
+}
+
 func TestReadFileBoundedRejectsUnsupportedFSAndMemoryLimits(t *testing.T) {
 	if _, err := ReadFileBounded(struct{ FileSystem }{}, "x", 1); err == nil || !strings.Contains(err.Error(), "does not support bounded reads") {
 		t.Fatalf("unsupported filesystem error = %v", err)
@@ -55,6 +100,54 @@ func TestReadFileBoundedRejectsUnsupportedFSAndMemoryLimits(t *testing.T) {
 	}
 	if _, err := m.ReadFileBounded("/bounded", -1); !errors.Is(err, ErrInvalidReadLimit) {
 		t.Fatalf("memory invalid-limit error = %v", err)
+	}
+}
+
+func TestMemoryFSBoundedWalkRejectsUnsafeParentsAndFinalNodes(t *testing.T) {
+	m := NewMemoryFS()
+	if err := m.MkdirAll("/safe/nested", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.WriteFile("/safe/nested/value", []byte("safe"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.MkdirAll("/outside", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.WriteFile("/outside/value", []byte("outside"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, name := range []string{"/safe/nested/value", "safe/nested/value"} {
+		data, err := m.ReadFileBounded(name, 16)
+		if err != nil || string(data) != "safe" {
+			t.Fatalf("bounded %q = %q, %v", name, data, err)
+		}
+	}
+
+	if err := m.Symlink("/outside", "/safe/link"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.ReadFileBounded("/safe/link/value", 16); err != ErrNonRegularFile {
+		t.Fatalf("parent symlink error = %v, want %v", err, ErrNonRegularFile)
+	}
+
+	// Install a raw non-directory node to ensure bounded traversal does not
+	// resolve or otherwise bypass an unsafe parent representation.
+	m.nodes["/safe/not-a-directory"] = &memNode{mode: fs.ModeNamedPipe}
+	if _, err := m.ReadFileBounded("/safe/not-a-directory/value", 16); err != ErrNonRegularFile {
+		t.Fatalf("non-directory parent error = %v, want %v", err, ErrNonRegularFile)
+	}
+
+	if err := m.Symlink("/outside/value", "/safe/final-link"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.ReadFileBounded("/safe/final-link", 16); err != ErrNonRegularFile {
+		t.Fatalf("final symlink error = %v, want %v", err, ErrNonRegularFile)
+	}
+	m.nodes["/safe/device"] = &memNode{mode: fs.ModeDevice}
+	if _, err := m.ReadFileBounded("/safe/device", 16); err != ErrNonRegularFile {
+		t.Fatalf("final non-regular error = %v, want %v", err, ErrNonRegularFile)
 	}
 }
 

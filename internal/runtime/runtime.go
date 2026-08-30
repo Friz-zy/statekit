@@ -9,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -37,6 +36,13 @@ type ExecFunction interface {
 	Args() any
 	// Execute receives a pointer to a decoded copy of the argument struct.
 	Execute(ctx context.Context, rt *Runtime, args any) (any, error)
+}
+
+// ProviderCapability optionally limits a virtual execution function to the
+// provider families whose implementation is actually backed by this function.
+// Functions without this metadata retain the historical shared-module meaning.
+type ProviderCapability interface {
+	ProviderCapabilities() []string
 }
 
 // StateFunction is a registered state function, the equivalent of a function
@@ -79,6 +85,20 @@ func (r *ExecRegistry) Get(name string) (ExecFunction, bool) { return r.reg.Get(
 // Names lists execution functions available on the current platform,
 // sorted lexicographically.
 func (r *ExecRegistry) Names() []string { return r.filterNames(r.reg.Names()) }
+
+// ProviderCapabilities reports provider-family metadata for a registered
+// function. A nil result means the function is shared by all families.
+func (r *ExecRegistry) ProviderCapabilities(name string) []string {
+	fn, ok := r.reg.Get(name)
+	if !ok {
+		return nil
+	}
+	capable, ok := fn.(ProviderCapability)
+	if !ok {
+		return nil
+	}
+	return append([]string(nil), capable.ProviderCapabilities()...)
+}
 
 func (r *ExecRegistry) filterNames(names []string) []string {
 	goos := CurrentGOOS()
@@ -232,6 +252,27 @@ func Command(argv ...string) process.Command {
 	return process.Command{Name: argv[0], Args: append([]string{}, argv[1:]...)}
 }
 
+// CommandWithInput builds a shell-free argv command with explicit stdin. It
+// retains compatibility for callers that already provide their own bound.
+func CommandWithInput(argv []string, input string) process.Command {
+	c := Command(argv...)
+	c.Stdin = []byte(input)
+	return c
+}
+
+var ErrCommandInputLimit = errors.New("runtime: command input exceeds limit")
+
+// MaxCommandInputBytes is the finite input ceiling for untrusted command data.
+const MaxCommandInputBytes = 1 << 20
+
+// CommandWithInputBounded rejects oversized stdin before a Runner can start.
+func CommandWithInputBounded(argv []string, input string) (process.Command, error) {
+	if len(input) > MaxCommandInputBytes {
+		return process.Command{}, ErrCommandInputLimit
+	}
+	return CommandWithInput(argv, input), nil
+}
+
 // Runtime is the explicit dependency object handed to every function,
 // replacing Salt's dynamic dunder dictionaries.
 type Runtime struct {
@@ -271,6 +312,15 @@ type FileSystem interface {
 // requested number of bytes. It is separate from ReadFile, whose unbounded
 // compatibility semantics are retained.
 var ErrReadLimit = errors.New("runtime: file exceeds read limit")
+
+// ErrNonRegularFile identifies bounded-read candidates that are not ordinary
+// files. It prevents consumers from accidentally reading devices, FIFOs, or
+// other special files.
+var ErrNonRegularFile = errors.New("runtime: bounded read requires regular file")
+
+// ErrUnsafePathRead reports that the current platform cannot provide the
+// descriptor/no-follow guarantees required for bounded path reads.
+var ErrUnsafePathRead = errors.New("runtime: bounded path read unsupported")
 
 // ErrInvalidReadLimit reports a negative or unreasonably large bounded-read
 // limit. Rejecting it before arithmetic keeps the sentinel allocation finite.
@@ -323,32 +373,7 @@ func (OSFileSystem) Lstat(name string) (fs.FileInfo, error) { return os.Lstat(na
 func (OSFileSystem) ReadFile(name string) ([]byte, error) { return os.ReadFile(name) }
 
 func (OSFileSystem) ReadFileBounded(name string, limit int64) ([]byte, error) {
-	if err := validateBoundedReadLimit(limit); err != nil {
-		return nil, err
-	}
-	f, err := os.Open(name)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-	if info.IsDir() {
-		return nil, syscall.EISDIR
-	}
-	// Validation above makes this addition safe. Reading into one exact-sized
-	// buffer keeps allocation at limit+1 bytes, including the sentinel.
-	data := make([]byte, int(limit)+1)
-	n, err := io.ReadFull(f, data)
-	if n == len(data) {
-		return nil, ErrReadLimit
-	}
-	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
-		return nil, err
-	}
-	return data[:n], nil
+	return readFileBoundedOS(name, limit)
 }
 
 // WriteFile implements FileSystem.
@@ -402,6 +427,7 @@ type memNode struct {
 	dir     bool
 	mode    fs.FileMode
 	modTime time.Time
+	ctime   time.Time
 	data    []byte
 	link    string // non-empty marks a symlink whose value is link
 	uid     int
@@ -433,7 +459,13 @@ func (i memInfo) Mode() fs.FileMode {
 }
 func (i memInfo) ModTime() time.Time { return i.node.modTime }
 func (i memInfo) IsDir() bool        { return i.node.dir }
-func (i memInfo) Sys() any           { return nil }
+
+type memTimespec struct{ Sec, Nsec int64 }
+type memStat struct{ Ctim memTimespec }
+
+func (i memInfo) Sys() any {
+	return memStat{Ctim: memTimespec{Sec: i.node.ctime.Unix(), Nsec: int64(i.node.ctime.Nanosecond())}}
+}
 
 type memDirEntry struct {
 	info fs.FileInfo
@@ -457,8 +489,8 @@ type MemoryFS struct {
 func NewMemoryFS() *MemoryFS {
 	fs := &MemoryFS{nodes: make(map[string]*memNode)}
 	now := time.Unix(0, 0).UTC()
-	fs.nodes["/"] = &memNode{dir: true, mode: 0o755, modTime: now}
-	fs.nodes["/tmp"] = &memNode{dir: true, mode: 0o1777, modTime: now}
+	fs.nodes["/"] = &memNode{dir: true, mode: 0o755, modTime: now, ctime: now}
+	fs.nodes["/tmp"] = &memNode{dir: true, mode: 0o1777, modTime: now, ctime: now}
 	return fs
 }
 
@@ -548,19 +580,43 @@ func (m *MemoryFS) ReadFileBounded(name string, limit int64) ([]byte, error) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	node, err := m.getResolved("open", name)
-	if err != nil {
-		return nil, err
+	p := m.norm(name)
+	parts := strings.Split(strings.Trim(p, "/"), "/")
+	if p == "/" {
+		parts = nil
 	}
-	if node.dir {
-		return nil, pathError("read", name, syscall.EISDIR)
+	current := "/"
+	for index, part := range parts {
+		current = path.Join(current, part)
+		node, ok := m.nodes[current]
+		if !ok {
+			return nil, pathError("open", name, fs.ErrNotExist)
+		}
+		if index < len(parts)-1 {
+			// Do not resolve raw nodes while walking. A symlink or non-directory
+			// parent must never be able to redirect the bounded read.
+			if node.link != "" || !node.dir || node.mode.Type() != 0 {
+				return nil, ErrNonRegularFile
+			}
+			continue
+		}
+		if node.link != "" || node.mode.Type() != 0 {
+			return nil, ErrNonRegularFile
+		}
+		if node.dir {
+			return nil, pathError("read", name, syscall.EISDIR)
+		}
+		if int64(len(node.data)) > limit {
+			return nil, ErrReadLimit
+		}
+		out := make([]byte, len(node.data))
+		copy(out, node.data)
+		return out, nil
 	}
-	if int64(len(node.data)) > limit {
-		return nil, ErrReadLimit
+	if _, ok := m.nodes["/"]; !ok {
+		return nil, pathError("open", name, fs.ErrNotExist)
 	}
-	out := make([]byte, len(node.data))
-	copy(out, node.data)
-	return out, nil
+	return nil, pathError("read", name, syscall.EISDIR)
 }
 
 // WriteFile implements FileSystem, requiring the parent directory to exist.
@@ -582,7 +638,8 @@ func (m *MemoryFS) WriteFile(name string, data []byte, perm fs.FileMode) error {
 	}
 	dataCopy := make([]byte, len(data))
 	copy(dataCopy, data)
-	m.nodes[p] = &memNode{mode: perm.Perm(), data: dataCopy, modTime: m.now()}
+	now := m.now()
+	m.nodes[p] = &memNode{mode: perm.Perm(), data: dataCopy, modTime: now, ctime: now}
 	return nil
 }
 
