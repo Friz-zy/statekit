@@ -28,6 +28,13 @@ type YumCleanMetadataArgs struct {
 	CheckUpdate     *bool   `statekit:"name=check_update"`
 }
 
+// YumListHoldsArgs mirrors yumpkg.list_holds. Pointers preserve whether the
+// caller supplied an optional value; the provider applies Salt's defaults.
+type YumListHoldsArgs struct {
+	Pattern *string `statekit:"name=pattern"`
+	Full    *bool   `statekit:"name=full"`
+}
+
 // YumPrototype returns the exact provider-specific argument shape for a
 // shared longtail function. Registration and dispatch remain canonical in
 // apt_longtail.go.
@@ -41,6 +48,8 @@ func YumPrototype(name string) (any, bool) {
 		return YumOwnerArgs{}, true
 	case "clean_metadata":
 		return YumCleanMetadataArgs{}, true
+	case "list_holds":
+		return YumListHoldsArgs{}, true
 	default:
 		return nil, false
 	}

@@ -3,6 +3,7 @@ package pkg
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -10,6 +11,195 @@ import (
 	"github.com/friz-zy/statekit/internal/process"
 	"github.com/friz-zy/statekit/internal/runtime"
 )
+
+func TestYumListHoldsPinnedParsing(t *testing.T) {
+	for _, tc := range []struct {
+		manager string
+		output  string
+		full    bool
+		pattern string
+		want    []string
+	}{
+		{"yum", "Loaded\n0:vim-enhanced-7.4.629-5.el6.x86_64.*\n0:vim-enhanced-7.4.629-5.el6.x86_64.*\n", true, "", []string{"0:vim-enhanced-7.4.629-5.el6.x86_64.*", "0:vim-enhanced-7.4.629-5.el6.x86_64.*"}},
+		{"yum", "0:vim-enhanced-7.4.629-5.el6.x86_64.*\n", false, "", []string{"vim-enhanced"}},
+		{"dnf", "vim-enhanced-2:7.4.827-1.fc22.x86_64.*\nother-1:2-3.x86_64.*\n", true, "vim", []string{"vim-enhanced-2:7.4.827-1.fc22.x86_64.*"}},
+		{"dnf", "vim-enhanced-2:7.4.827-1.fc22.x86_64.*\n", false, "vim", []string{"vim-enhanced"}},
+	} {
+		t.Run(tc.manager+fmt.Sprint(tc.full)+tc.pattern, func(t *testing.T) {
+			plugin := "yum-plugin-versionlock"
+			if tc.manager == "dnf" {
+				plugin = "python2-dnf-plugin-versionlock"
+			}
+			r := &listHoldsRunner{results: []process.CommandResult{{Stdout: []byte(plugin + " 1\n")}, {Stdout: []byte(tc.output)}}}
+			a := map[string]any{"full": tc.full}
+			if tc.pattern != "" {
+				a["pattern"] = tc.pattern
+			}
+			got, err := (&commandProvider{spec: rpmSpec(tc.manager)}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "list_holds", a)
+			if err != nil || !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got=%#v err=%v want=%#v", got, err, tc.want)
+			}
+			if len(r.commands) != 2 || r.commands[1].Shell || !reflect.DeepEqual(append([]string{r.commands[1].Name}, r.commands[1].Args...), []string{tc.manager, "versionlock", "list"}) {
+				t.Fatalf("command=%#v", r.commands)
+			}
+		})
+	}
+}
+
+func TestYumListHoldsDefaultsValidationAndDNF5FailClosed(t *testing.T) {
+	r := &listHoldsRunner{results: []process.CommandResult{{Stdout: []byte("yum-plugin-versionlock 1\n")}, {Stdout: []byte("0:vim-enhanced-7.4-1.x86_64.*\n")}}}
+	p := &commandProvider{spec: rpmSpec("yum")}
+	got, err := p.Yum(context.Background(), &runtime.Runtime{Runner: r}, "list_holds", map[string]any{})
+	if err != nil || !reflect.DeepEqual(got, []string{"0:vim-enhanced-7.4-1.x86_64.*"}) {
+		t.Fatalf("defaults got=%#v err=%v", got, err)
+	}
+	for _, bad := range []map[string]any{{"full": "yes"}, {"pattern": 1}, {"pattern": "["}} {
+		before := len(r.commands)
+		if _, err := p.Yum(context.Background(), &runtime.Runtime{Runner: r}, "list_holds", bad); err == nil || len(r.commands) != before {
+			t.Fatalf("bad=%#v err=%v calls=%d", bad, err, len(r.commands))
+		}
+	}
+	r.commands = nil
+	if _, err := (&commandProvider{spec: rpmSpec("dnf5")}).Yum(context.Background(), &runtime.Runtime{FS: runtime.NewMemoryFS()}, "list_holds", map[string]any{}); !errors.As(err, new(*runtime.UnsupportedError)) || len(r.commands) != 0 {
+		t.Fatalf("dnf5 err=%v", err)
+	}
+}
+
+func TestYumListHoldsChecksVersionlockPluginBeforeListing(t *testing.T) {
+	for _, tc := range []struct {
+		name, manager, osID, version, plugin string
+	}{
+		{"yum", "yum", "", "", "yum-plugin-versionlock"},
+		{"fedora-old", "dnf", "fedora", "25", "python3-dnf-plugins-extras-versionlock"},
+		{"fedora-new", "dnf", "fedora", "40", "python3-dnf-plugin-versionlock"},
+		{"rhel-old", "dnf", "rhel", "7.9", "python2-dnf-plugin-versionlock"},
+		{"rhel-new", "dnf", "rhel", "9.4", "python3-dnf-plugin-versionlock"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &listHoldsRunner{results: []process.CommandResult{
+				{Stdout: []byte(tc.plugin + " 1\n")},
+				{Stdout: []byte("held-1-1.x86_64.*\n")},
+			}}
+			rt := &runtime.Runtime{Runner: r, Facts: facts.ForTesting(facts.Overrides{OS: &facts.OSFacts{ID: tc.osID, Family: facts.FamilyRedHat, Version: tc.version}})}
+			if _, err := (&commandProvider{spec: rpmSpec(tc.manager)}).Yum(context.Background(), rt, "list_holds", map[string]any{}); err != nil {
+				t.Fatal(err)
+			}
+			if len(r.commands) != 2 || r.commands[0].Name != "rpm" || r.commands[1].Name != tc.manager {
+				t.Fatalf("command order=%#v", r.commands)
+			}
+			if got := append([]string{r.commands[0].Name}, r.commands[0].Args...); !reflect.DeepEqual(got, []string{"rpm", "-qa", "--qf", "%{NAME} %{VERSION}\n"}) {
+				t.Fatalf("plugin query=%v", got)
+			}
+		})
+	}
+
+	r := &listHoldsRunner{results: []process.CommandResult{{Stdout: []byte("other 1\n")}}}
+	_, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "list_holds", map[string]any{})
+	if err == nil || err.Error() != "Cannot proceed, yum-plugin-versionlock is not installed." || len(r.commands) != 1 {
+		t.Fatalf("absent plugin err=%v commands=%#v", err, r.commands)
+	}
+}
+
+func TestYumListHoldsRetcodesAndMalformedLinesFollowSource(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		listResult process.CommandResult
+		full       bool
+		want       []string
+		wantErr    error
+	}{
+		{name: "zero full", listResult: process.CommandResult{Stdout: []byte("Loaded\n0:vim-enhanced-7.4-1.x86_64.*\nmalformed\n")}, full: true, want: []string{"0:vim-enhanced-7.4-1.x86_64.*"}},
+		{name: "zero full false", listResult: process.CommandResult{Stdout: []byte("0:vim-enhanced-7.4-1.x86_64.*\n")}, want: []string{"vim-enhanced"}},
+		{name: "nonzero still returns command stdout", listResult: process.CommandResult{ExitCode: 17, Stderr: []byte("versionlock unavailable"), Stdout: []byte("0:vim-enhanced-7.4-1.x86_64.*\n")}, want: []string{"vim-enhanced"}},
+		{name: "empty", listResult: process.CommandResult{ExitCode: 0}, want: []string{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &listHoldsRunner{results: []process.CommandResult{
+				{ExitCode: 0, Stdout: []byte("yum-plugin-versionlock 1\n")},
+				tc.listResult,
+			}}
+			a := map[string]any{"full": tc.full}
+			got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "list_holds", a)
+			if !reflect.DeepEqual(got, tc.want) || !errors.Is(err, tc.wantErr) {
+				t.Fatalf("got=%#v err=%v want=%#v/%v", got, err, tc.want, tc.wantErr)
+			}
+			if len(r.commands) != 2 || r.commands[0].Name != "rpm" || r.commands[1].Name != "yum" ||
+				!reflect.DeepEqual(r.commands[1].Args, []string{"versionlock", "list"}) || r.commands[1].Shell ||
+				r.commands[1].MaxStdoutBytes != yumHoldOutputLimit || r.commands[1].MaxStderrBytes != yumHoldOutputLimit {
+				t.Fatalf("commands=%#v", r.commands)
+			}
+		})
+	}
+}
+
+func TestYumListHoldsStopsAfterPluginOrListRunnerFailure(t *testing.T) {
+	sentinel := errors.New("runner failure")
+	cases := []struct {
+		name    string
+		results []process.CommandResult
+		wantErr error
+		calls   int
+		cancel  bool
+	}{
+		{name: "plugin runner error", results: []process.CommandResult{{Err: sentinel}}, wantErr: sentinel, calls: 1},
+		{name: "plugin cancellation", results: []process.CommandResult{{}}, wantErr: context.Canceled, calls: 1, cancel: true},
+		{name: "list runner error", results: []process.CommandResult{{Stdout: []byte("yum-plugin-versionlock 1\n")}, {Err: sentinel}}, wantErr: sentinel, calls: 2},
+		{name: "list cancellation", results: []process.CommandResult{{Stdout: []byte("yum-plugin-versionlock 1\n")}, {}}, wantErr: context.Canceled, calls: 2, cancel: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			r := &listHoldsRunner{results: tc.results}
+			if tc.cancel {
+				r.cancel = cancel
+				if tc.calls == 1 {
+					cancel()
+				}
+			}
+			got, err := (&commandProvider{spec: yumSpec}).Yum(ctx, &runtime.Runtime{Runner: r}, "list_holds", map[string]any{})
+			if got != nil || !errors.Is(err, tc.wantErr) || len(r.commands) != tc.calls {
+				t.Fatalf("got=%#v err=%v calls=%d want err=%v calls=%d", got, err, len(r.commands), tc.wantErr, tc.calls)
+			}
+			if len(r.commands) > 0 && r.commands[0].Name != "rpm" {
+				t.Fatalf("command order=%#v", r.commands)
+			}
+			if len(r.commands) == 2 && r.commands[1].Name != "yum" {
+				t.Fatalf("command order=%#v", r.commands)
+			}
+		})
+	}
+}
+
+func TestYumListHoldsRejectsTDNFBeforeRunner(t *testing.T) {
+	r := &yumNoCallRunner{}
+	_, err := (&commandProvider{spec: rpmSpec("tdnf")}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "list_holds", map[string]any{})
+	if err == nil || err.Error() != "Cannot proceed, no versionlock for tdnf" || r.calls != 0 {
+		t.Fatalf("tdnf err=%v calls=%d", err, r.calls)
+	}
+}
+
+type listHoldsRunner struct {
+	results  []process.CommandResult
+	commands []process.Command
+	cancel   context.CancelFunc
+}
+
+func (r *listHoldsRunner) Run(ctx context.Context, c process.Command) process.CommandResult {
+	r.commands = append(r.commands, c)
+	if err := ctx.Err(); err != nil {
+		return process.CommandResult{Err: err}
+	}
+	if r.cancel != nil && len(r.commands) == 1 {
+		r.cancel()
+	}
+	if len(r.results) == 0 {
+		return process.CommandResult{}
+	}
+	result := r.results[0]
+	r.results = r.results[1:]
+	return result
+}
 
 type yumNoCallRunner struct{ calls int }
 

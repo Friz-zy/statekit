@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -328,7 +329,13 @@ func rpmAlnum(r rune) bool {
 func rpmSpecial(r rune) bool { return r == '~' || r == '^' }
 
 func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function string, args any) (any, error) {
-	if p.spec.manager != "yum" && p.spec.manager != "dnf" {
+	// tdnf is intentionally not a supported provider, but list_holds must
+	// fail like Salt before attempting any command rather than falling through
+	// to a manager-specific implementation.
+	if p.spec.manager == "tdnf" && function == "list_holds" {
+		return nil, errors.New("Cannot proceed, no versionlock for tdnf")
+	}
+	if p.spec.manager != "yum" && p.spec.manager != "dnf" && p.spec.manager != "dnf5" {
 		return nil, ErrUnsupportedYUM
 	}
 	a, ok := args.(map[string]any)
@@ -339,6 +346,8 @@ func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function
 		return nil, err
 	}
 	switch function {
+	case "list_holds":
+		return yumListHolds(ctx, rt, p.spec.manager, a)
 	case "clean_metadata":
 		return yumCleanMetadata(ctx, rt, p.spec.manager, a)
 	case "file_list":
@@ -520,6 +529,8 @@ func validateYUMArgs(function string, a map[string]any) error {
 		allowed = map[string]bool{"pkg1": true, "pkg2": true, "ignore_epoch": true}
 	case "clean_metadata":
 		allowed = map[string]bool{"repo": true, "fromrepo": true, "enablerepo": true, "disablerepo": true, "branch": true, "disableexcludes": true, "setopt": true, "check_update": true}
+	case "list_holds":
+		allowed = map[string]bool{"pattern": true, "full": true}
 	default:
 		return nil
 	}
@@ -553,6 +564,20 @@ func validateYUMArgs(function string, a map[string]any) error {
 			}
 		}
 	}
+	if v, present := a["full"]; present && v != nil {
+		switch v.(type) {
+		case bool, *bool:
+		default:
+			return errors.New(`argument "full" must be a boolean`)
+		}
+	}
+	if v, present := a["pattern"]; present && v != nil {
+		switch v.(type) {
+		case string, *string:
+		default:
+			return errors.New(`argument "pattern" must be a string`)
+		}
+	}
 	for _, key := range []string{"repo", "fromrepo", "branch", "disableexcludes"} {
 		if v, present := a[key]; present && v != nil {
 			if _, ok := yumStringArg(a, key); !ok {
@@ -575,6 +600,121 @@ func validateYUMArgs(function string, a map[string]any) error {
 		}
 	}
 	return nil
+}
+
+const yumHoldOutputLimit = 1 << 20
+const yumHoldPattern = `[\w+]+(?:[.-][^-]+)*`
+
+func yumListHolds(ctx context.Context, rt *runtime.Runtime, manager string, a map[string]any) (any, error) {
+	if manager == "dnf5" {
+		// The standard library has no TOML parser and adding a permissive parser
+		// here would make malformed lock data unsafe to interpret. Fail closed
+		// before consulting FS; a typed TOML dependency can enable this later.
+		return nil, &runtime.UnsupportedError{Kind: "function", Name: "pkg.list_holds.dnf5"}
+	}
+	plugin, err := yumVersionlockPlugin(rt, manager)
+	if err != nil {
+		return nil, err
+	}
+	pattern := yumHoldPattern
+	if value, ok := yumStringArg(a, "pattern"); ok {
+		pattern = value
+	}
+	full := true
+	if value, ok := a["full"]; ok && value != nil {
+		switch v := value.(type) {
+		case bool:
+			full = v
+		case *bool:
+			if v != nil {
+				full = *v
+			}
+		}
+	}
+	if _, err := regexp.Compile(pattern); err != nil {
+		return nil, fmt.Errorf("argument \"pattern\": invalid regular expression: %w", err)
+	}
+	lockPattern := pattern + `-\S+`
+	if manager == "yum" {
+		if full {
+			lockPattern = `\d+:` + lockPattern
+		} else {
+			lockPattern = `\d+:(` + lockPattern + `)`
+		}
+	} else if !full {
+		lockPattern = `(` + lockPattern + `)`
+	}
+	if full {
+		lockPattern = `(` + lockPattern + `)`
+	}
+	re, err := regexp.Compile(lockPattern)
+	if err != nil {
+		return nil, fmt.Errorf("argument \"pattern\": invalid regular expression: %w", err)
+	}
+	if rt == nil || rt.Runner == nil {
+		return nil, errors.New("YUM list_holds requires a runner")
+	}
+	installed, err := (&commandProvider{spec: rpmSpec(manager)}).List(ctx, rt)
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := installed[plugin]; !ok {
+		return nil, fmt.Errorf("Cannot proceed, %s is not installed.", plugin)
+	}
+	cmd := runtime.Command(manager, "versionlock", "list")
+	cmd.MaxStdoutBytes, cmd.MaxStderrBytes = yumHoldOutputLimit, yumHoldOutputLimit
+	res := rt.Runner.Run(ctx, cmd)
+	if res.Err != nil {
+		return nil, res.Err
+	}
+	ret := []string{}
+	for _, line := range sourceSplitLines(string(res.Stdout)) {
+		match := re.FindStringSubmatch(line)
+		if len(match) == 0 {
+			continue
+		}
+		value := match[1]
+		if !full {
+			value = strings.TrimSuffix(value, "."+value[strings.LastIndexByte(value, '.')+1:])
+			if i := strings.LastIndexByte(value, '-'); i >= 0 {
+				value = value[:i]
+			}
+			if i := strings.LastIndexByte(value, '-'); i >= 0 {
+				value = value[:i]
+			}
+		}
+		ret = append(ret, value)
+	}
+	return ret, nil
+}
+
+// yumVersionlockPlugin mirrors yumpkg._versionlock_pkg using typed facts.
+// Unknown or malformed versions use the legacy RedHat branch, matching the
+// source's pre-Python-3 package choice where no major fact is available.
+func yumVersionlockPlugin(rt *runtime.Runtime, manager string) (string, error) {
+	if manager == "yum" {
+		return "yum-plugin-versionlock", nil
+	}
+	if manager != "dnf" {
+		return "", &runtime.UnsupportedError{Kind: "function", Name: "pkg.list_holds." + manager}
+	}
+	if rt != nil && rt.Facts != nil {
+		os := rt.Facts.OS()
+		major := os.Version
+		if i := strings.IndexByte(major, '.'); i >= 0 {
+			major = major[:i]
+		}
+		if strings.EqualFold(os.ID, "fedora") {
+			if n, err := strconv.Atoi(major); err == nil && n >= 26 {
+				return "python3-dnf-plugin-versionlock", nil
+			}
+			return "python3-dnf-plugins-extras-versionlock", nil
+		}
+		if n, err := strconv.Atoi(major); err == nil && n >= 8 {
+			return "python3-dnf-plugin-versionlock", nil
+		}
+	}
+	return "python2-dnf-plugin-versionlock", nil
 }
 
 const yumMetadataOutputLimit = 1 << 20

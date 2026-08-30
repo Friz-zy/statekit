@@ -329,6 +329,58 @@ func TestCleanMetadataRegistryRejectsNULBeforeRunner(t *testing.T) {
 	}
 }
 
+func TestListHoldsProviderAwareRegistry(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	if got := reg.ProviderCapabilities("pkg.list_holds"); !reflect.DeepEqual(got, []string{"yumpkg"}) {
+		t.Fatalf("capabilities=%v", got)
+	}
+	for _, manager := range []string{"yum", "dnf"} {
+		plugin := "yum-plugin-versionlock"
+		if manager == "dnf" {
+			plugin = "python2-dnf-plugin-versionlock"
+		}
+		runner := &yumExecRecordingRunner{results: []process.CommandResult{{Stdout: []byte(plugin + " 1\n")}, {Stdout: []byte("\n")}}}
+		providers := runtime.NewProviderRegistry()
+		if err := pkgprovider.Register(providers); err != nil {
+			t.Fatal(err)
+		}
+		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: manager}), Providers: providers, Runner: runner}
+		prototype, err := reg.ResolveArgs(rt, "pkg.list_holds")
+		if err != nil || reflect.TypeOf(prototype) != reflect.TypeOf(YumListHoldsArgs{}) {
+			t.Fatalf("%s prototype=%T err=%v", manager, prototype, err)
+		}
+		if names, err := config.ArgumentNames(prototype); err != nil || !reflect.DeepEqual(names, []string{"full", "pattern"}) {
+			t.Fatalf("%s names=%v err=%v", manager, names, err)
+		}
+		full := false
+		pattern := "foo"
+		got, err := reg.Call(context.Background(), rt, "pkg.list_holds", &YumListHoldsArgs{Pattern: &pattern, Full: &full})
+		if err != nil || !reflect.DeepEqual(got, []string{}) || len(runner.commands) != 2 {
+			t.Fatalf("%s call got=%#v err=%v commands=%d", manager, got, err, len(runner.commands))
+		}
+		if got := commandArgv(runner.commands); !reflect.DeepEqual(got, [][]string{{"rpm", "-qa", "--qf", "%{NAME} %{VERSION}\n"}, {manager, "versionlock", "list"}}) {
+			t.Fatalf("%s argv=%#v", manager, got)
+		}
+	}
+	for _, manager := range []string{"apt", "zypper"} {
+		providers := runtime.NewProviderRegistry()
+		if err := pkgprovider.Register(providers); err != nil {
+			t.Fatal(err)
+		}
+		runner := &yumExecRecordingRunner{}
+		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: manager}), Providers: providers, Runner: runner}
+		if _, err := reg.ResolveArgs(rt, "pkg.list_holds"); err == nil {
+			t.Fatalf("%s unexpectedly resolved list_holds", manager)
+		}
+		if _, err := reg.Call(context.Background(), rt, "pkg.list_holds", &YumListHoldsArgs{}); err == nil || len(runner.commands) != 0 {
+			t.Fatalf("%s call err=%v commands=%d", manager, err, len(runner.commands))
+		}
+	}
+}
+
 type yumExecRecordingRunner struct {
 	commands []process.Command
 	results  []process.CommandResult
