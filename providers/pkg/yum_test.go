@@ -85,3 +85,156 @@ func TestYumRejectsMalformedInputWithoutRunner(t *testing.T) {
 		t.Fatalf("runner calls=%d", r.calls)
 	}
 }
+
+func TestYumVersionCmpSourceVectors(t *testing.T) {
+	// Vectors follow salt/utils/pkg/rpm.py:168-351
+	// (_rpmvercmp, evr_compare, and version_to_evr).
+	tests := []struct {
+		name, left, right string
+		ignore            bool
+		want              int
+	}{
+		{"equal", "1.2-3", "1.2-3", false, 0},
+		{"epoch", "1:1.0-1", "0:9.9-9", false, 1},
+		{"signed epoch", "-1:1.0", "0:1.0", false, -1},
+		{"ignore epoch", "1:1.0-1", "0:1.0-1", true, 0},
+		{"version", "1.10", "1.9", false, 1},
+		{"release", "1.0-2", "1.0-1", false, 1},
+		{"leading zeros", "1.01", "1.1", false, 0},
+		{"numeric alpha", "1.0", "1.a", false, 1},
+		{"punctuation", "1.0.1", "1_0_1", false, 0},
+		{"tilde", "1.0~rc1", "1.0", false, -1},
+		{"caret", "1.0", "1.0^git1", false, -1},
+		{"missing release lower", "1.0", "1.0-99", false, -1},
+		{"missing release upper", "1.0-99", "1.0", false, 1},
+		{"missing release equal", "1.0", "1.0-", false, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			value, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{}, "version_cmp", map[string]any{
+				"pkg1": tt.left, "pkg2": tt.right, "ignore_epoch": tt.ignore,
+			})
+			if err != nil || value != tt.want {
+				t.Fatalf("got=%#v err=%v want=%d", value, err, tt.want)
+			}
+		})
+	}
+}
+
+func TestYumVersionToEVRSourceEpochVectors(t *testing.T) {
+	// Python int(epoch) vectors from salt/utils/pkg/rpm.py:168-351.
+	for _, tt := range []struct {
+		name, input, want string
+	}{
+		{"arabic-indic", "١٢:1.0", "12"},
+		{"devanagari", "१२:1.0", "12"},
+		{"signed whitespace", "  +१२  :1.0", "12"},
+		{"negative", "-१२:1.0", "-12"},
+		{"negative zero canonical", "-٠:1.0", "0"},
+		{"huge", "999999999999999999999999999999999999999999999999999999:1.0", "999999999999999999999999999999999999999999999999999999"},
+		{"roman rejected fallback", "Ⅻ:1.0", "0"},
+		{"fraction rejected fallback", "½:1.0", "0"},
+		{"superscript rejected fallback", "²:1.0", "0"},
+		{"invalid rejected fallback", "12x:1.0", "0"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			epoch, _, _ := yumVersionToEVR(tt.input)
+			if epoch != tt.want {
+				t.Fatalf("yumVersionToEVR(%q) epoch=%q want=%q", tt.input, epoch, tt.want)
+			}
+		})
+	}
+}
+
+func TestYumVersionCmpAcceptsSourceValuesWithoutRunner(t *testing.T) {
+	r := &yumNoCallRunner{}
+	rt := &runtime.Runtime{Runner: r}
+	for _, tt := range []struct {
+		left, right string
+		want        int
+	}{
+		{"", "1.0", -1}, {"1.0", "", 1}, {"wat:1.0", "1.0", 0},
+		{"1:", "1.0", 1}, {"-1", "1.0", -1}, {"1.0-", "1.0", 0},
+		{"1.0 bad", "1.0", 1}, {"1:2:1.0", "1.0", 1},
+	} {
+		got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), rt, "version_cmp", map[string]any{
+			"pkg1": tt.left, "pkg2": tt.right,
+		})
+		if err != nil || got != tt.want {
+			t.Errorf("%q/%q got=%#v err=%v want=%d", tt.left, tt.right, got, err, tt.want)
+		}
+	}
+	if r.calls != 0 {
+		t.Fatalf("runner calls=%d", r.calls)
+	}
+}
+
+func TestYumVersionCmpUnicodeSourceVectors(t *testing.T) {
+	for _, tt := range []struct {
+		left, right string
+		want        int
+	}{
+		{"1.0α", "1.0β", -1},
+		{"1.0α", "1.0a", 1},
+		{"1.٠", "1.2", 1},
+		{"1.①", "1.1", 1},
+		{"1.፩", "1.1", 1},
+		{"1.⑴", "1.1", 1},
+		{"1.²", "1.1", 1},
+		{"1.½", "1.1", -1},
+		{"1.Ⅻ", "1.1", -1},
+		{"1.①", "1.②", -1},
+		{"1.①①", "1.①", 1},
+		{"1.１２", "1.２", 1},
+		{"1.0~α", "1.0", -1},
+		{"1.0^α", "1.0", 1},
+		{"1.0+α", "1.0_β", -1},
+		{"1+0", "1_0", 0},
+		{"1/0", "1.0", 0},
+	} {
+		got := yumVersionCmp(tt.left, tt.right, false)
+		if got != tt.want {
+			t.Errorf("%q/%q got=%v want=%d", tt.left, tt.right, got, tt.want)
+		}
+	}
+}
+
+func TestPythonDigitPredicateSourceVectors(t *testing.T) {
+	// These assertions mirror Python str.isdigit() on the pinned Unicode
+	// version: Other_Digit values are true, while other numeric categories are
+	// deliberately false.
+	for _, tt := range []struct {
+		name string
+		r    rune
+		want bool
+	}{
+		{"ascii digit", '7', true},
+		{"circled digit", '①', true},
+		{"ethiopic digit", '፩', true},
+		{"parenthesized digit", '⑴', true},
+		{"superscript digit", '²', true},
+		{"fraction", '½', false},
+		{"roman numeral", 'Ⅻ', false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := pythonDigit(tt.r); got != tt.want {
+				t.Fatalf("pythonDigit(%U)=%v want=%v", tt.r, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestYumVersionCmpRejectsTypesWithoutRunner(t *testing.T) {
+	r := &yumNoCallRunner{}
+	rt := &runtime.Runtime{Runner: r}
+	for _, args := range []map[string]any{
+		{"pkg1": 1, "pkg2": "1"}, {"pkg1": "1", "pkg2": nil}, {"pkg1": "1", "pkg2": "1", "ignore_epoch": "no"},
+	} {
+		if got, err := (&commandProvider{spec: dnfSpec}).Yum(context.Background(), rt, "version_cmp", args); got != nil || err == nil {
+			t.Errorf("args=%#v got=%#v err=%v", args, got, err)
+		}
+	}
+	if r.calls != 0 {
+		t.Fatalf("runner calls=%d", r.calls)
+	}
+}

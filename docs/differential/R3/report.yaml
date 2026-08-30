@@ -85,7 +85,7 @@ families:
         catalog_functions: 55
         public_functions: 39
         private_functions: 16
-        registered_public: 12
+        registered_public: 13
         pending_public:
             - pkg.clean_metadata
             - pkg.diff
@@ -113,7 +113,6 @@ families:
             - pkg.upgrade
             - pkg.upgrade_available
             - pkg.verify
-            - pkg.version_cmp
         differential_scenarios:
             - pkgrepo.yum-repo-file-lifecycle
             - pkgrepo.yum-copr-mapping
@@ -161,4 +160,4 @@ families:
 totals:
     catalog_functions: 261
     public_functions: 172
-    registered_public: 113
+    registered_public: 114

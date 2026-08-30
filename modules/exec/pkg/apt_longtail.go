@@ -77,6 +77,7 @@ type VersionCmpArgs struct {
 	Pkg2        string `statekit:"required"`
 	IgnoreEpoch *bool  `statekit:"name=ignore_epoch"`
 }
+
 type PathArgs struct {
 	Path string `statekit:"required"`
 }
@@ -99,6 +100,9 @@ func (f aptLongtailFunc) ProviderCapabilities() []string {
 			return []string{"aptpkg", "yumpkg"}
 		}
 	}
+	if f.name == "version_cmp" {
+		return []string{"aptpkg", "yumpkg"}
+	}
 	return []string{"aptpkg"}
 }
 func (f aptLongtailFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
@@ -106,7 +110,7 @@ func (f aptLongtailFunc) Execute(ctx context.Context, rt *runtime.Runtime, args 
 	if err != nil {
 		return nil, err
 	}
-	if yp, ok := p.(pkgprovider.YumProvider); ok && p.Name() != "apt" && rt.Facts.OS().Family == facts.FamilyRedHat && (f.name == "normalize_name" || f.name == "parse_arch") {
+	if yp, ok := p.(pkgprovider.YumProvider); ok && p.Name() != "apt" && rt.Facts.OS().Family == facts.FamilyRedHat && (f.name == "normalize_name" || f.name == "parse_arch" || f.name == "version_cmp") {
 		argMap, err := mapArgs(f.Name(), args, f.prototype)
 		if err != nil {
 			return nil, err

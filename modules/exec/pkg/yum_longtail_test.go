@@ -37,6 +37,7 @@ func TestYumLongtailRegistryAndPureCalls(t *testing.T) {
 		}{
 			{"pkg.normalize_name", &NormalizeNameArgs{Name: "zsh.x86_64"}, "zsh"},
 			{"pkg.parse_arch", &ParseArchArgs{Name: "zsh.x86_64"}, map[string]any{"name": "zsh", "arch": "x86_64"}},
+			{"pkg.version_cmp", &VersionCmpArgs{Pkg1: "1.0~rc1", Pkg2: "1.0"}, -1},
 		} {
 			fn, ok := reg.Get(tt.name)
 			if !ok {
@@ -51,6 +52,27 @@ func TestYumLongtailRegistryAndPureCalls(t *testing.T) {
 			got, err := reg.Call(context.Background(), rt, tt.name, tt.args)
 			if err != nil || !reflect.DeepEqual(got, tt.want) {
 				t.Fatalf("%s got=%#v err=%v", tt.name, got, err)
+			}
+		}
+		for _, args := range []any{nil, &NormalizeNameArgs{}, map[string]any{"pkg1": "1", "pkg2": 2}} {
+			if _, err := reg.Call(context.Background(), rt, "pkg.version_cmp", args); err == nil {
+				t.Errorf("version_cmp accepted malformed args %#v", args)
+			}
+		}
+		for _, tt := range []struct {
+			left, right string
+			ignore      *bool
+			want        any
+		}{
+			{"", "1.0", nil, -1},
+			{"wat:1.0", "1.0", nil, 0},
+			{"1.0", "1.0", nil, 0},
+			{"1.1", "1.0", nil, 1},
+			{"0:1.0", "1:1.0", func() *bool { v := true; return &v }(), 0},
+		} {
+			got, err := reg.Call(context.Background(), rt, "pkg.version_cmp", &VersionCmpArgs{Pkg1: tt.left, Pkg2: tt.right, IgnoreEpoch: tt.ignore})
+			if err != nil || !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("version_cmp %q/%q got=%#v err=%v want=%#v", tt.left, tt.right, got, err, tt.want)
 			}
 		}
 		for _, tt := range []struct {
