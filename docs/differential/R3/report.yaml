@@ -13,29 +13,7 @@ families:
         catalog_functions: 49
         public_functions: 34
         private_functions: 15
-        registered_public: 13
-        pending_public:
-            - pkg.autoremove
-            - pkg.file_dict
-            - pkg.file_list
-            - pkg.get_selections
-            - pkg.hold
-            - pkg.info_installed
-            - pkg.list_downloaded
-            - pkg.list_repo_pkgs
-            - pkg.list_upgrades
-            - pkg.normalize_name
-            - pkg.owner
-            - pkg.parse_arch
-            - pkg.purge
-            - pkg.services_need_restart
-            - pkg.set_selections
-            - pkg.show
-            - pkg.unhold
-            - pkg.upgrade
-            - pkg.upgrade_available
-            - pkg.version_cmp
-            - pkg.which
+        registered_public: 34
         differential_scenarios:
             - pkgrepo.apt-deb822-create-modify-delete
             - pkgrepo.apt-key-lifecycle
@@ -185,4 +163,4 @@ families:
 totals:
     catalog_functions: 261
     public_functions: 172
-    registered_public: 90
+    registered_public: 111

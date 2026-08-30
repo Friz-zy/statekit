@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/friz-zy/statekit/internal/bootstrap"
+	"github.com/friz-zy/statekit/internal/runtime"
 
 	"gopkg.in/yaml.v3"
 )
@@ -107,10 +108,9 @@ func TestR3DifferentialReport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	registered := registeredNames(rt)
-
 	report := roundReport{Round: "R3", Families: map[string]familyReport{}}
 	for _, family := range r3Families {
+		registered := registeredNamesForFamily(rt, family)
 		catalogNames := loadCatalogFunctionNames(t, family)
 		module := family
 		if override, ok := moduleNameByCatalogFile[family]; ok {
@@ -165,4 +165,24 @@ func TestR3DifferentialReport(t *testing.T) {
 		return
 	}
 	t.Fatalf("differential report stale; run UPDATE_DIFFERENTIAL=1 go test ./tests/differential\n--- want ---\n%s", want)
+}
+
+func registeredNamesForFamily(rt *runtime.Runtime, family string) map[string]bool {
+	out := map[string]bool{}
+	for _, name := range rt.Exec.Names() {
+		caps := rt.Exec.ProviderCapabilities(name)
+		if len(caps) == 0 || containsString(caps, family) {
+			out[name] = true
+		}
+	}
+	return out
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

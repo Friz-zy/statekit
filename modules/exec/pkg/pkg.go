@@ -175,5 +175,10 @@ func Register(reg *runtime.ExecRegistry) error {
 			return err
 		}
 	}
+	for _, fn := range longtailFunctions() {
+		if err := reg.Register(fn); err != nil {
+			return err
+		}
+	}
 	return nil
 }

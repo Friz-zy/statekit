@@ -28,6 +28,14 @@ type Provider interface {
 	List(ctx context.Context, rt *runtime.Runtime) (map[string]string, error)
 }
 
+// AptProvider is an optional capability.  It deliberately is not part of
+// Provider: RPM and other providers must not gain an accidental APT command
+// path when the virtual pkg module is extended.
+type AptProvider interface {
+	Provider
+	Apt(ctx context.Context, rt *runtime.Runtime, function string, args any) (any, error)
+}
+
 // spec drives one manager implementation with argv templates; {name} and
 // {version} placeholders expand to the requested values.
 type spec struct {
