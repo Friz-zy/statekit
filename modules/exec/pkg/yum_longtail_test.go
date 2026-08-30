@@ -257,6 +257,78 @@ func TestLongtailResolveArgsProviderMatrix(t *testing.T) {
 	}
 }
 
+func TestCleanMetadataProviderAwareRegistry(t *testing.T) {
+	for _, manager := range []string{"yum", "dnf"} {
+		reg := runtime.NewExecRegistry()
+		if err := Register(reg); err != nil {
+			t.Fatal(err)
+		}
+		providers := runtime.NewProviderRegistry()
+		if err := pkgprovider.Register(providers); err != nil {
+			t.Fatal(err)
+		}
+		runner := &yumExecRecordingRunner{results: []process.CommandResult{{ExitCode: 0}, {ExitCode: 100}}}
+		rt := &runtime.Runtime{
+			Facts:     facts.ForTesting(facts.Overrides{Package: manager, OS: &facts.OSFacts{Family: facts.FamilyRedHat}}),
+			Providers: providers, Runner: runner,
+		}
+		prototype, err := reg.ResolveArgs(rt, "pkg.clean_metadata")
+		if err != nil || reflect.TypeOf(prototype) != reflect.TypeOf(YumCleanMetadataArgs{}) {
+			t.Fatalf("%s prototype=%T err=%v", manager, prototype, err)
+		}
+		if got, err := config.ArgumentNames(prototype); err != nil || !reflect.DeepEqual(got, []string{"branch", "check_update", "disableexcludes", "disablerepo", "enablerepo", "fromrepo", "repo", "setopt"}) {
+			t.Fatalf("%s args=%v err=%v", manager, got, err)
+		}
+		if got := reg.ProviderCapabilities("pkg.clean_metadata"); !reflect.DeepEqual(got, []string{"yumpkg"}) {
+			t.Fatalf("%s capabilities=%v", manager, got)
+		}
+		fromrepo := "base"
+		got, err := reg.Call(context.Background(), rt, "pkg.clean_metadata", &YumCleanMetadataArgs{Fromrepo: &fromrepo, Enablerepo: []string{"ignored"}})
+		if err != nil || got != true {
+			t.Fatalf("%s got=%#v err=%v", manager, got, err)
+		}
+		want := [][]string{{manager, "--quiet", "--assumeyes", "clean", "expire-cache", "--disablerepo=*", "--enablerepo=base"}, {manager, "--quiet", "--assumeyes", "check-update", "--disablerepo=*", "--enablerepo=base"}}
+		if got := commandArgv(runner.commands); !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s argv=%v want=%v", manager, got, want)
+		}
+	}
+
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	providers := runtime.NewProviderRegistry()
+	if err := pkgprovider.Register(providers); err != nil {
+		t.Fatal(err)
+	}
+	runner := &yumExecRecordingRunner{}
+	rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: "apt"}), Providers: providers, Runner: runner}
+	if _, err := reg.ResolveArgs(rt, "pkg.clean_metadata"); err == nil || len(runner.commands) != 0 {
+		t.Fatalf("apt resolve err=%v calls=%d", err, len(runner.commands))
+	}
+}
+
+func TestCleanMetadataRegistryRejectsNULBeforeRunner(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	providers := runtime.NewProviderRegistry()
+	if err := pkgprovider.Register(providers); err != nil {
+		t.Fatal(err)
+	}
+	runner := &yumExecNoCallRunner{}
+	rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: "yum", OS: &facts.OSFacts{Family: facts.FamilyRedHat}}), Providers: providers, Runner: runner}
+	for _, args := range []any{
+		&YumCleanMetadataArgs{Enablerepo: "bad\x00repo"},
+		&YumCleanMetadataArgs{Setopt: []any{"ok=1", "bad\nvalue"}},
+	} {
+		if _, err := reg.Call(context.Background(), rt, "pkg.clean_metadata", args); err == nil || runner.calls != 0 {
+			t.Fatalf("args=%#v err=%v calls=%d", args, err, runner.calls)
+		}
+	}
+}
+
 type yumExecRecordingRunner struct {
 	commands []process.Command
 	results  []process.CommandResult

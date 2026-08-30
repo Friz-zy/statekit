@@ -339,6 +339,8 @@ func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function
 		return nil, err
 	}
 	switch function {
+	case "clean_metadata":
+		return yumCleanMetadata(ctx, rt, p.spec.manager, a)
 	case "file_list":
 		packages, root, err := yumFilesArgs(a)
 		if err != nil {
@@ -516,6 +518,8 @@ func validateYUMArgs(function string, a map[string]any) error {
 		allowed = map[string]bool{"name": true}
 	case "version_cmp":
 		allowed = map[string]bool{"pkg1": true, "pkg2": true, "ignore_epoch": true}
+	case "clean_metadata":
+		allowed = map[string]bool{"repo": true, "fromrepo": true, "enablerepo": true, "disablerepo": true, "branch": true, "disableexcludes": true, "setopt": true, "check_update": true}
 	default:
 		return nil
 	}
@@ -549,7 +553,217 @@ func validateYUMArgs(function string, a map[string]any) error {
 			}
 		}
 	}
+	for _, key := range []string{"repo", "fromrepo", "branch", "disableexcludes"} {
+		if v, present := a[key]; present && v != nil {
+			if _, ok := yumStringArg(a, key); !ok {
+				return fmt.Errorf("argument %q must be a string", key)
+			}
+		}
+	}
+	for _, key := range []string{"enablerepo", "disablerepo", "setopt"} {
+		if v, present := a[key]; present && v != nil {
+			if _, err := yumStringListArg(a, key); err != nil {
+				return err
+			}
+		}
+	}
+	if v, present := a["check_update"]; present && v != nil {
+		switch v.(type) {
+		case bool, *bool:
+		default:
+			return errors.New(`argument "check_update" must be a boolean`)
+		}
+	}
 	return nil
+}
+
+const yumMetadataOutputLimit = 1 << 20
+
+func yumMetadataOptions(a map[string]any) ([]string, error) {
+	for _, key := range []string{"repo", "fromrepo", "disableexcludes", "branch"} {
+		if value, present := a[key]; present && value != nil {
+			v, ok := yumStringArg(a, key)
+			if !ok {
+				return nil, fmt.Errorf("argument %q must be a string", key)
+			}
+			if v == "" {
+				return nil, fmt.Errorf("argument %q: value must be non-empty", key)
+			}
+			if err := validateYUMOption(v); err != nil {
+				return nil, fmt.Errorf("argument %q: %w", key, err)
+			}
+		}
+	}
+	fromrepo, _ := yumStringArg(a, "fromrepo")
+	if fromrepo == "" {
+		fromrepo, _ = yumStringArg(a, "repo")
+	}
+	options := []string{}
+	if fromrepo != "" {
+		options = append(options, "--disablerepo=*", "--enablerepo="+fromrepo)
+	} else {
+		for _, key := range []string{"disablerepo", "enablerepo"} {
+			values, err := yumStringListArg(a, key)
+			if err != nil {
+				return nil, err
+			}
+			for _, value := range values {
+				if err := validateYUMOption(value); err != nil {
+					return nil, fmt.Errorf("argument %q: %w", key, err)
+				}
+				options = append(options, "--"+key+"="+value)
+			}
+		}
+	}
+	for _, key := range []string{"disableexcludes", "branch"} {
+		if value, ok := yumStringArg(a, key); ok && value != "" {
+			if err := validateYUMOption(value); err != nil {
+				return nil, fmt.Errorf("argument %q: %w", key, err)
+			}
+			options = append(options, "--"+key+"="+value)
+		}
+	}
+	setopts, err := yumStringListArg(a, "setopt")
+	if err != nil {
+		return nil, err
+	}
+	for _, value := range setopts {
+		if err := validateYUMOption(value); err != nil {
+			return nil, fmt.Errorf("argument %q: %w", "setopt", err)
+		}
+		options = append(options, "--setopt="+value)
+	}
+	return options, nil
+}
+
+func yumStringListArg(a map[string]any, key string) ([]string, error) {
+	v, ok := a[key]
+	if !ok || v == nil {
+		return nil, nil
+	}
+	var values []string
+	switch value := v.(type) {
+	case string:
+		if key == "setopt" {
+			values = strings.Split(value, ",")
+		} else {
+			values = []string{value}
+		}
+	case []string:
+		values = append([]string(nil), value...)
+	case []any:
+		values = make([]string, len(value))
+		for i, item := range value {
+			s, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("argument %q must be a string or string list", key)
+			}
+			values[i] = s
+		}
+	default:
+		return nil, fmt.Errorf("argument %q must be a string or string list", key)
+	}
+	for i := range values {
+		values[i] = strings.TrimSpace(values[i])
+		if err := validateYUMOption(values[i]); err != nil {
+			return nil, fmt.Errorf("argument %q: %w", key, err)
+		}
+	}
+	return values, nil
+}
+
+func validateYUMOption(value string) error {
+	if value == "" {
+		return errors.New("value must be non-empty")
+	}
+	if strings.IndexByte(value, 0) >= 0 {
+		return errors.New("value must contain no NUL")
+	}
+	for _, r := range value {
+		if unicode.IsControl(r) {
+			return errors.New("value must contain no control characters")
+		}
+	}
+	return nil
+}
+
+func yumCleanMetadata(ctx context.Context, rt *runtime.Runtime, manager string, a map[string]any) (any, error) {
+	options, err := yumMetadataOptions(a)
+	if err != nil {
+		return nil, err
+	}
+	checkUpdate, err := yumBoolArg(a, "check_update", true)
+	if err != nil {
+		return nil, err
+	}
+	if rt == nil || rt.Runner == nil {
+		return nil, errors.New("YUM clean_metadata requires a runner")
+	}
+	clean := append([]string{manager, "--quiet", "--assumeyes", "clean", "expire-cache"}, options...)
+	cleanCommand := runtime.Command(clean...)
+	cleanCommand.MaxStdoutBytes = yumMetadataOutputLimit
+	cleanCommand.MaxStderrBytes = yumMetadataOutputLimit
+	result := rt.Runner.Run(ctx, cleanCommand)
+	if result.Err != nil {
+		return nil, result.Err
+	}
+	if !checkUpdate {
+		return true, nil
+	}
+	update := append([]string{manager, "--quiet", "--assumeyes", "check-update"}, options...)
+	if yumRHEL7(rt) {
+		update = append([]string{manager, "--quiet", "--assumeyes", "check-update", "--setopt=autocheck_running_kernel=false"}, options...)
+	}
+	updateCommand := runtime.Command(update...)
+	updateCommand.MaxStdoutBytes = yumMetadataOutputLimit
+	updateCommand.MaxStderrBytes = yumMetadataOutputLimit
+	result = rt.Runner.Run(ctx, updateCommand)
+	if result.Err != nil {
+		return nil, result.Err
+	}
+	switch result.ExitCode {
+	case 100:
+		return true, nil
+	case 0:
+		return nil, nil
+	default:
+		return false, nil
+	}
+}
+
+// yumRHEL7 uses the existing typed OS facts. An absent or unparsable version
+// deliberately defaults to false rather than assuming every RedHat host is 7.
+func yumRHEL7(rt *runtime.Runtime) bool {
+	if rt == nil || rt.Facts == nil {
+		return false
+	}
+	os := rt.Facts.OS()
+	if os.Family != "redhat" {
+		return false
+	}
+	major := os.Version
+	if i := strings.IndexByte(major, '.'); i >= 0 {
+		major = major[:i]
+	}
+	return major == "7"
+}
+
+func yumBoolArg(a map[string]any, key string, fallback bool) (bool, error) {
+	v, ok := a[key]
+	if !ok || v == nil {
+		return fallback, nil
+	}
+	switch value := v.(type) {
+	case bool:
+		return value, nil
+	case *bool:
+		if value == nil {
+			return fallback, nil
+		}
+		return *value, nil
+	default:
+		return false, fmt.Errorf("argument %q must be a boolean", key)
+	}
 }
 
 func yumFilesArgs(a map[string]any) ([]string, string, error) {

@@ -98,6 +98,9 @@ func (f aptLongtailFunc) ProviderKind() string { return "pkg" }
 func (f aptLongtailFunc) ArgsForProvider(providerName string) (any, error) {
 	switch providerName {
 	case "apt":
+		if f.name == "clean_metadata" {
+			return nil, &runtime.UnsupportedError{Kind: "provider", Name: providerName}
+		}
 		return f.prototype, nil
 	case "yum", "dnf":
 		if p, ok := YumPrototype(f.name); ok {
@@ -112,9 +115,12 @@ func (f aptLongtailFunc) ArgsForProvider(providerName string) (any, error) {
 	return nil, &runtime.UnsupportedError{Kind: "provider", Name: providerName}
 }
 func (f aptLongtailFunc) ProviderArgsStrict() bool {
-	return f.name == "file_list" || f.name == "file_dict" || f.name == "info_installed" || f.name == "owner"
+	return f.name == "file_list" || f.name == "file_dict" || f.name == "info_installed" || f.name == "owner" || f.name == "clean_metadata"
 }
 func (f aptLongtailFunc) ProviderCapabilities() []string {
+	if f.name == "clean_metadata" {
+		return []string{"yumpkg"}
+	}
 	// These public names are shared by aptpkg and yumpkg; execution dispatch
 	// remains provider-specific below. Unique APT functions stay APT-only.
 	for _, name := range []string{"normalize_name", "parse_arch"} {
@@ -206,6 +212,6 @@ func mapArgs(name string, args any, prototype any) (map[string]any, error) {
 
 func longtailFunctions() []runtime.ExecFunction {
 	return []runtime.ExecFunction{
-		aptLongtailFunc{"autoremove", AutoremoveArgs{}}, aptLongtailFunc{"file_dict", FilePackagesArgs{}}, aptLongtailFunc{"file_list", FilePackagesArgs{}}, aptLongtailFunc{"get_selections", SelectionsArgs{}}, aptLongtailFunc{"hold", PackagesArgs{}}, aptLongtailFunc{"info_installed", InfoArgs{}}, aptLongtailFunc{"list_downloaded", DownloadedArgs{}}, aptLongtailFunc{"list_repo_pkgs", FilePackagesArgs{}}, aptLongtailFunc{"list_upgrades", ListUpgradesArgs{}}, aptLongtailFunc{"normalize_name", NormalizeNameArgs{}}, aptLongtailFunc{"owner", OwnerArgs{}}, aptLongtailFunc{"parse_arch", ParseArchArgs{}}, aptLongtailFunc{"purge", PurgeArgs{}}, aptLongtailFunc{"services_need_restart", struct{}{}}, aptLongtailFunc{"set_selections", SetSelectionsArgs{}}, aptLongtailFunc{"show", ShowArgs{}}, aptLongtailFunc{"unhold", PackagesArgs{}}, aptLongtailFunc{"upgrade", UpgradeArgs{}}, aptLongtailFunc{"upgrade_available", NormalizeNameArgs{}}, aptLongtailFunc{"version_cmp", VersionCmpArgs{}}, aptLongtailFunc{"which", PathArgs{}},
+		aptLongtailFunc{"autoremove", AutoremoveArgs{}}, aptLongtailFunc{"clean_metadata", YumCleanMetadataArgs{}}, aptLongtailFunc{"file_dict", FilePackagesArgs{}}, aptLongtailFunc{"file_list", FilePackagesArgs{}}, aptLongtailFunc{"get_selections", SelectionsArgs{}}, aptLongtailFunc{"hold", PackagesArgs{}}, aptLongtailFunc{"info_installed", InfoArgs{}}, aptLongtailFunc{"list_downloaded", DownloadedArgs{}}, aptLongtailFunc{"list_repo_pkgs", FilePackagesArgs{}}, aptLongtailFunc{"list_upgrades", ListUpgradesArgs{}}, aptLongtailFunc{"normalize_name", NormalizeNameArgs{}}, aptLongtailFunc{"owner", OwnerArgs{}}, aptLongtailFunc{"parse_arch", ParseArchArgs{}}, aptLongtailFunc{"purge", PurgeArgs{}}, aptLongtailFunc{"services_need_restart", struct{}{}}, aptLongtailFunc{"set_selections", SetSelectionsArgs{}}, aptLongtailFunc{"show", ShowArgs{}}, aptLongtailFunc{"unhold", PackagesArgs{}}, aptLongtailFunc{"upgrade", UpgradeArgs{}}, aptLongtailFunc{"upgrade_available", NormalizeNameArgs{}}, aptLongtailFunc{"version_cmp", VersionCmpArgs{}}, aptLongtailFunc{"which", PathArgs{}},
 	}
 }

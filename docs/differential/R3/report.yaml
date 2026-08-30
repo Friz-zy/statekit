@@ -85,9 +85,8 @@ families:
         catalog_functions: 55
         public_functions: 39
         private_functions: 16
-        registered_public: 17
+        registered_public: 18
         pending_public:
-            - pkg.clean_metadata
             - pkg.diff
             - pkg.download
             - pkg.group_diff
@@ -156,4 +155,4 @@ families:
 totals:
     catalog_functions: 261
     public_functions: 172
-    registered_public: 118
+    registered_public: 119

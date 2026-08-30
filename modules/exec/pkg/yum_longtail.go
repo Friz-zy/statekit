@@ -17,6 +17,17 @@ type YumOwnerArgs struct {
 	Root  *string  `statekit:"name=root"`
 }
 
+type YumCleanMetadataArgs struct {
+	Repo            *string `statekit:"name=repo"`
+	Fromrepo        *string `statekit:"name=fromrepo"`
+	Enablerepo      any     `statekit:"name=enablerepo"`
+	Disablerepo     any     `statekit:"name=disablerepo"`
+	Branch          *string `statekit:"name=branch"`
+	Disableexcludes *string `statekit:"name=disableexcludes"`
+	Setopt          any     `statekit:"name=setopt"`
+	CheckUpdate     *bool   `statekit:"name=check_update"`
+}
+
 // YumPrototype returns the exact provider-specific argument shape for a
 // shared longtail function. Registration and dispatch remain canonical in
 // apt_longtail.go.
@@ -28,6 +39,8 @@ func YumPrototype(name string) (any, bool) {
 		return YumInfoInstalledArgs{}, true
 	case "owner":
 		return YumOwnerArgs{}, true
+	case "clean_metadata":
+		return YumCleanMetadataArgs{}, true
 	default:
 		return nil, false
 	}

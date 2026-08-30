@@ -187,6 +187,147 @@ func TestYumLongtailRootAndInfoQuery(t *testing.T) {
 	}
 }
 
+func TestYumCleanMetadataMirrorsRefreshDB(t *testing.T) {
+	trueValue := true
+	args := map[string]any{
+		"repo": "legacy", "fromrepo": "preferred",
+		"disablerepo": []string{"one", "two"}, "enablerepo": []string{"three"},
+		"disableexcludes": "main", "branch": "stable",
+		"setopt": []string{"a=1", "b=2"}, "check_update": &trueValue,
+	}
+	r := &yumRecordingRunner{results: []process.CommandResult{{ExitCode: 7}, {ExitCode: 100}}}
+	rt := &runtime.Runtime{Runner: r}
+	got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), rt, "clean_metadata", args)
+	if err != nil || got != true {
+		t.Fatalf("got=%#v err=%v", got, err)
+	}
+	want := [][]string{
+		{"yum", "--quiet", "--assumeyes", "clean", "expire-cache", "--disablerepo=*", "--enablerepo=preferred", "--disableexcludes=main", "--branch=stable", "--setopt=a=1", "--setopt=b=2"},
+		{"yum", "--quiet", "--assumeyes", "check-update", "--disablerepo=*", "--enablerepo=preferred", "--disableexcludes=main", "--branch=stable", "--setopt=a=1", "--setopt=b=2"},
+	}
+	if len(r.commands) != len(want) {
+		t.Fatalf("commands=%#v", r.commands)
+	}
+	for i, command := range r.commands {
+		if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want[i]) {
+			t.Fatalf("command %d=%v want %v", i, got, want[i])
+		}
+		if command.Shell || command.MaxStdoutBytes != yumMetadataOutputLimit || command.MaxStderrBytes != yumMetadataOutputLimit {
+			t.Fatalf("command %d unsafe execution settings: %#v", i, command)
+		}
+	}
+}
+
+func TestYumCleanMetadataRetcodesAndValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		code int
+		want any
+	}{
+		{"no updates", 0, nil}, {"updates", 100, true}, {"error", 1, false}, {"other", 42, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &yumRecordingRunner{results: []process.CommandResult{{ExitCode: 0}, {ExitCode: tc.code}}}
+			got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "clean_metadata", map[string]any{})
+			if err != nil || !reflect.DeepEqual(got, tc.want) || len(r.commands) != 2 {
+				t.Fatalf("got=%#v err=%v calls=%d", got, err, len(r.commands))
+			}
+		})
+	}
+	for _, args := range []map[string]any{
+		{"unknown": true}, {"check_update": "yes"}, {"repo": 1}, {"enablerepo": []any{1}},
+	} {
+		r := &yumNoCallRunner{}
+		_, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "clean_metadata", args)
+		if err == nil || r.calls != 0 {
+			t.Fatalf("args=%#v err=%v calls=%d", args, err, r.calls)
+		}
+	}
+}
+
+func TestYumCleanMetadataStopsOnRunnerErrorOrCancellation(t *testing.T) {
+	sentinel := errors.New("runner failure")
+	for _, result := range []process.CommandResult{{Err: sentinel}, {Err: context.Canceled}} {
+		r := &yumRecordingRunner{results: []process.CommandResult{result}}
+		got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "clean_metadata", map[string]any{})
+		if !errors.Is(err, result.Err) || got != nil || len(r.commands) != 1 {
+			t.Fatalf("got=%#v err=%v commands=%d", got, err, len(r.commands))
+		}
+	}
+	falseValue := false
+	r := &yumRecordingRunner{}
+	got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "clean_metadata", map[string]any{"check_update": &falseValue})
+	if err != nil || got != true || len(r.commands) != 1 {
+		t.Fatalf("check_update=false got=%#v err=%v commands=%d", got, err, len(r.commands))
+	}
+}
+
+func TestYumCleanMetadataOptionShapesAndRHEL7(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args map[string]any
+		want []string
+	}{
+		{"scalar", map[string]any{"disablerepo": "base", "enablerepo": "extras", "setopt": "a=1,b=2", "check_update": false}, []string{"--disablerepo=base", "--enablerepo=extras", "--setopt=a=1", "--setopt=b=2"}},
+		{"list", map[string]any{"disablerepo": []string{"a", "b"}, "enablerepo": []any{"c"}, "setopt": []string{"x=1", "y=2"}, "check_update": false}, []string{"--disablerepo=a", "--disablerepo=b", "--enablerepo=c", "--setopt=x=1", "--setopt=y=2"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &yumRecordingRunner{}
+			_, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "clean_metadata", tc.args)
+			if err != nil || len(r.commands) != 1 || !reflect.DeepEqual(r.commands[0].Args[4:], tc.want) {
+				t.Fatalf("err=%v argv=%v want=%v", err, r.commands, tc.want)
+			}
+		})
+	}
+	for _, version := range []string{"7.9", "8.0", ""} {
+		r := &yumRecordingRunner{results: []process.CommandResult{{ExitCode: 0}, {ExitCode: 100}}}
+		rt := &runtime.Runtime{Runner: r, Facts: facts.ForTesting(facts.Overrides{OS: &facts.OSFacts{Family: facts.FamilyRedHat, Version: version}})}
+		if _, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), rt, "clean_metadata", map[string]any{}); err != nil {
+			t.Fatal(err)
+		}
+		got := append([]string{r.commands[1].Name}, r.commands[1].Args...)
+		has := containsString(got, "--setopt=autocheck_running_kernel=false")
+		if has != (version == "7.9") {
+			t.Fatalf("version=%q argv=%v", version, got)
+		}
+		if has && got[4] != "--setopt=autocheck_running_kernel=false" {
+			t.Fatalf("flag position=%v", got)
+		}
+	}
+}
+
+func TestYumCleanMetadataRejectsInvalidEffectiveOptionsWithoutRunner(t *testing.T) {
+	for _, args := range []map[string]any{
+		{"repo": "bad\x00repo"}, {"fromrepo": "bad\nrepo"}, {"enablerepo": ""},
+		{"disablerepo": []any{"ok", 1}}, {"setopt": "ok=1,,bad=2"},
+	} {
+		r := &yumNoCallRunner{}
+		_, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "clean_metadata", args)
+		if err == nil || r.calls != 0 {
+			t.Fatalf("args=%#v err=%v calls=%d", args, err, r.calls)
+		}
+	}
+}
+
+func TestYumCleanMetadataRHEL7ManagerArgv(t *testing.T) {
+	for _, tc := range []struct {
+		manager string
+		spec    spec
+	}{
+		{"yum", yumSpec}, {"dnf", dnfSpec},
+	} {
+		r := &yumRecordingRunner{results: []process.CommandResult{{ExitCode: 0}, {ExitCode: 100}}}
+		rt := &runtime.Runtime{Runner: r, Facts: facts.ForTesting(facts.Overrides{OS: &facts.OSFacts{Family: facts.FamilyRedHat, Version: "7.9"}})}
+		if _, err := (&commandProvider{spec: tc.spec}).Yum(context.Background(), rt, "clean_metadata", map[string]any{"setopt": "z=1"}); err != nil {
+			t.Fatal(err)
+		}
+		want := []string{tc.manager, "--quiet", "--assumeyes", "check-update", "--setopt=autocheck_running_kernel=false", "--setopt=z=1"}
+		if got := append([]string{r.commands[1].Name}, r.commands[1].Args...); !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s argv=%v want=%v", tc.manager, got, want)
+		}
+	}
+}
+
 func TestYumLongtailReturnsProviderValues(t *testing.T) {
 	newRuntime := func(results ...process.CommandResult) (*runtime.Runtime, *yumRecordingRunner) {
 		r := &yumRecordingRunner{results: results}
