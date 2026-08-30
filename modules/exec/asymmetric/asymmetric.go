@@ -16,17 +16,24 @@
 package asymmetric
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
+	_ "crypto/sha1"
 	"crypto/sha256"
+	_ "crypto/sha3"
+	_ "crypto/sha512"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"fmt"
+	"io/fs"
+	"net/url"
 	"strings"
 
 	"github.com/friz-zy/statekit/internal/runtime"
@@ -49,6 +56,55 @@ type invocationErr struct{ msg string }
 
 func (e *invocationErr) Error() string { return e.msg }
 
+var (
+	keyReadError         = errors.New("Could not read key")
+	privateKeyParseError = errors.New("Could not parse private key")
+	publicKeyParseError  = errors.New("Could not parse public key")
+	dataReadError        = errors.New("Could not read data")
+)
+
+// maxDataBytes is the finite ceiling for filename inputs. The bounded runtime
+// reader validates the limit before allocation and reads only regular files.
+const maxDataBytes int64 = runtime.MaxBoundedReadLimit
+
+// classifiedASYMError deliberately exposes only stable text while retaining
+// safe, non-sensitive sentinel classification for callers.
+type classifiedASYMError struct {
+	msg   string
+	cause error
+}
+
+func (e *classifiedASYMError) Error() string { return e.msg }
+func (e *classifiedASYMError) Unwrap() error { return e.cause }
+
+func stableASYMError(msg string, err error) error {
+	if err == nil {
+		return errors.New(msg)
+	}
+	if errors.Is(err, runtime.ErrReadLimit) ||
+		errors.Is(err, runtime.ErrInvalidReadLimit) ||
+		errors.Is(err, runtime.ErrNonRegularFile) ||
+		errors.Is(err, runtime.ErrUnsafePathRead) ||
+		errors.Is(err, fs.ErrNotExist) ||
+		errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) {
+		return &classifiedASYMError{msg: msg, cause: err}
+	}
+	var unsupportedErr *runtime.UnsupportedError
+	if errors.As(err, &unsupportedErr) {
+		// Only the fixed delegate name is safe to expose; a delegate must not
+		// be able to turn an untrusted URI into public error text.
+		return &runtime.UnsupportedError{Kind: "function", Name: "cp.cache_file"}
+	}
+	return errors.New(msg)
+}
+
+type unsupportedDigestError struct{ name string }
+
+func (e *unsupportedDigestError) Error() string {
+	return fmt.Sprintf("Unsupported digest algorithm '%s'", e.name)
+}
+
 func unsupported(name string) error {
 	return &runtime.UnsupportedError{Kind: "algorithm", Name: name}
 }
@@ -58,6 +114,21 @@ func strDerefA(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// fileURLPath keeps the URL parser's escaped path spelling. In particular,
+// %2f must remain part of one filename component rather than becoming a path
+// separator. RawPath is populated by net/url when the input used an escaped
+// spelling; Path is retained for ordinary unescaped paths. The host is
+// intentionally ignored to match Salt's parsed.path handling.
+func fileURLPath(parsed *url.URL) string {
+	if parsed.RawPath != "" {
+		return parsed.EscapedPath()
+	}
+	if parsed.Path != "" {
+		return parsed.Path
+	}
+	return parsed.Opaque
 }
 
 // ---------------------------------------------------------------------------
@@ -75,13 +146,13 @@ func loadPrivateKey(rt *runtime.Runtime, ref, passphrase *string) (*privateKey, 
 	}
 	block, _ := pem.Decode(data)
 	if block == nil {
-		return nil, fmt.Errorf("Could not decode private key PEM")
+		return nil, privateKeyParseError
 	}
 	switch block.Type {
 	case "PRIVATE KEY":
 		key, derr := x509.ParsePKCS8PrivateKey(block.Bytes)
 		if derr != nil {
-			return nil, fmt.Errorf("Could not parse private key: %s", derr.Error())
+			return nil, privateKeyParseError
 		}
 		return wrapPrivate(key)
 	case "RSA PRIVATE KEY":
@@ -95,7 +166,7 @@ func loadPrivateKey(rt *runtime.Runtime, ref, passphrase *string) (*privateKey, 
 		}
 		key, perr := x509.ParsePKCS1PrivateKey(raw)
 		if perr != nil {
-			return nil, fmt.Errorf("Could not parse private key: %s", perr.Error())
+			return nil, privateKeyParseError
 		}
 		return wrapPrivate(key)
 	case "EC PRIVATE KEY":
@@ -109,13 +180,13 @@ func loadPrivateKey(rt *runtime.Runtime, ref, passphrase *string) (*privateKey, 
 		}
 		key, perr := x509.ParseECPrivateKey(raw)
 		if perr != nil {
-			return nil, fmt.Errorf("Could not parse private key: %s", perr.Error())
+			return nil, privateKeyParseError
 		}
 		return wrapPrivate(key)
 	case "OPENSSH PRIVATE KEY":
 		return nil, unsupported("OpenSSH private key container")
 	default:
-		return nil, fmt.Errorf("Unknown private key PEM type '%s'", block.Type)
+		return nil, privateKeyParseError
 	}
 }
 
@@ -126,11 +197,11 @@ func isEncryptedPEM(block *pem.Block) bool {
 
 func decryptPEM(block *pem.Block, passphrase *string) ([]byte, error) {
 	if passphrase == nil || *passphrase == "" {
-		return nil, fmt.Errorf("Private key is encrypted, but no passphrase provided")
+		return nil, errors.New("Private key passphrase required")
 	}
 	clear, derr := x509.DecryptPEMBlock(block, []byte(*passphrase))
 	if derr != nil {
-		return nil, fmt.Errorf("Could not decrypt private key: %s", derr.Error())
+		return nil, errors.New("Could not decrypt private key")
 	}
 	return clear, nil
 }
@@ -156,11 +227,19 @@ func loadPublicKey(rt *runtime.Runtime, ref *string) (any, error) {
 	if block, _ := pem.Decode(data); block != nil {
 		switch block.Type {
 		case "PUBLIC KEY":
-			return x509.ParsePKIXPublicKey(block.Bytes)
+			key, err := x509.ParsePKIXPublicKey(block.Bytes)
+			if err != nil {
+				return nil, publicKeyParseError
+			}
+			return key, nil
 		case "RSA PUBLIC KEY":
-			return x509.ParsePKCS1PublicKey(block.Bytes)
+			key, err := x509.ParsePKCS1PublicKey(block.Bytes)
+			if err != nil {
+				return nil, publicKeyParseError
+			}
+			return key, nil
 		default:
-			return nil, fmt.Errorf("Unknown public key PEM type '%s'", block.Type)
+			return nil, publicKeyParseError
 		}
 	}
 	der, berr := base64.StdEncoding.DecodeString(strings.Join(strings.Fields(string(data)), ""))
@@ -169,24 +248,63 @@ func loadPublicKey(rt *runtime.Runtime, ref *string) (any, error) {
 			return key, nil
 		}
 	}
-	return nil, fmt.Errorf("Could not parse public key")
+	return nil, publicKeyParseError
 }
 
 // resolveRef reads a key reference: inline PEM material or a filesystem
-// path (file:// included). Remote schemes are out of scope for keys.
+// path. URL parsing intentionally follows Salt's _fetch: file URLs use their
+// parsed path (the host is ignored), while every other scheme delegates the
+// original URI. All filesystem reads are bounded and descriptor-safe.
 func resolveRef(rt *runtime.Runtime, ref *string) ([]byte, error) {
 	if ref == nil || *ref == "" {
 		return nil, &invocationErr{msg: "Missing key reference"}
 	}
 	val := *ref
-	if !strings.HasPrefix(val, "/") && !strings.HasPrefix(val, "file://") &&
-		!strings.Contains(val, "-----BEGIN") {
+	parsed, parseErr := url.Parse(val)
+	if parseErr != nil {
+		// Salt treats malformed URL input as an inline key candidate.
 		return []byte(val), nil
 	}
-	path := strings.TrimPrefix(val, "file://")
-	data, rerr := rt.FS.ReadFile(path)
-	if rerr != nil {
-		return nil, fmt.Errorf("Could not read key from '%s'", val)
+	if parsed.Scheme != "" && parsed.Scheme != "file" {
+		res, derr := callDelegateASYM(rt, "cp.cache_file", map[string]any{"path": val})
+		if derr != nil {
+			return nil, stableASYMError("Could not read key", derr)
+		}
+		cached, ok := res.(string)
+		if !ok || cached == "" {
+			return nil, keyReadError
+		}
+		return readASYMFile(rt, cached, keyReadError)
+	}
+
+	path := val
+	if parsed.Scheme == "file" {
+		path = fileURLPath(parsed)
+	}
+	if parsed.Scheme == "" {
+		// Existing bare paths have precedence over inline material, as in
+		// x509.load_file_or_bytes. A missing non-absolute value remains inline.
+		info, statErr := rt.FS.Stat(path)
+		if statErr != nil {
+			if strings.HasPrefix(path, "/") {
+				return nil, stableASYMError(keyReadError.Error(), statErr)
+			}
+			return []byte(val), nil
+		}
+		if info == nil || !info.Mode().IsRegular() {
+			return nil, keyReadError
+		}
+	}
+	return readASYMFile(rt, path, keyReadError)
+}
+
+// maxPrivateKeyBytes bounds key references before PEM/X.509 parsing.
+const maxPrivateKeyBytes int64 = 16 << 20
+
+func readASYMFile(rt *runtime.Runtime, name string, failure error) ([]byte, error) {
+	data, err := runtime.ReadFileBounded(rt.FS, name, maxPrivateKeyBytes)
+	if err != nil {
+		return nil, stableASYMError(failure.Error(), err)
 	}
 	return data, nil
 }
@@ -195,17 +313,37 @@ func resolveRef(rt *runtime.Runtime, ref *string) ([]byte, error) {
 // primitives
 
 func digestHash(name string) (crypto.Hash, error) {
+	var h crypto.Hash
 	switch strings.ToLower(name) {
+	case "sha1":
+		h = crypto.SHA1
 	case "sha224":
-		return crypto.SHA224, nil
+		h = crypto.SHA224
 	case "", defaultDigest:
-		return crypto.SHA256, nil
+		h = crypto.SHA256
 	case "sha384":
-		return crypto.SHA384, nil
+		h = crypto.SHA384
 	case "sha512":
-		return crypto.SHA512, nil
+		h = crypto.SHA512
+	case "sha3_224":
+		h = crypto.SHA3_224
+	case "sha3_256":
+		h = crypto.SHA3_256
+	case "sha3_384":
+		h = crypto.SHA3_384
+	case "sha3_512":
+		h = crypto.SHA3_512
+	case "sha512_224":
+		h = crypto.SHA512_224
+	case "sha512_256":
+		h = crypto.SHA512_256
+	default:
+		return 0, &unsupportedDigestError{name: name}
 	}
-	return 0, fmt.Errorf("Unsupported digest algorithm '%s'", name)
+	if !h.Available() {
+		return 0, &unsupportedDigestError{name: name}
+	}
+	return h, nil
 }
 
 func sumOf(data []byte, h crypto.Hash) []byte {
@@ -227,7 +365,12 @@ func signPrimitive(key *privateKey, data []byte, digest string, prehashed bool) 
 		if !prehashed {
 			payload = sumOf(data, h)
 		}
-		return rsa.SignPKCS1v15(rand.Reader, rsaKey, h, payload)
+		return rsa.SignPSS(rand.Reader, rsaKey, h, payload, &rsa.PSSOptions{
+			Hash: h,
+			// Go's Auto means the largest permitted salt while signing,
+			// matching cryptography's PSS.MAX_LENGTH in Salt.
+			SaltLength: rsa.PSSSaltLengthAuto,
+		})
 	case "EC":
 		ecKey := key.key.(*ecdsa.PrivateKey)
 		payload := data
@@ -246,33 +389,37 @@ func signPrimitive(key *privateKey, data []byte, digest string, prehashed bool) 
 	return nil, unsupported(key.alg)
 }
 
-func verifyPrimitive(pub any, signature, data []byte, digest string, prehashed bool) bool {
+func verifyPrimitive(pub any, signature, data []byte, digest string, prehashed bool) (bool, error) {
 	digest = orDefault(digest)
 	switch key := pub.(type) {
 	case *rsa.PublicKey:
 		h, herr := digestHash(digest)
 		if herr != nil {
-			return false
+			return false, herr
 		}
 		payload := data
 		if !prehashed {
 			payload = sumOf(data, h)
 		}
-		return rsa.VerifyPKCS1v15(key, h, payload, signature) == nil
+		err := rsa.VerifyPSS(key, h, payload, signature, &rsa.PSSOptions{
+			Hash:       h,
+			SaltLength: rsa.PSSSaltLengthAuto,
+		})
+		return err == nil, nil
 	case *ecdsa.PublicKey:
 		payload := data
 		if !prehashed {
 			h, herr := digestHash(digest)
 			if herr != nil {
-				return false
+				return false, herr
 			}
 			payload = sumOf(data, h)
 		}
-		return ecdsa.VerifyASN1(key, payload, signature)
+		return ecdsa.VerifyASN1(key, payload, signature), nil
 	case ed25519.PublicKey:
-		return ed25519.Verify(key, data, signature)
+		return ed25519.Verify(key, data, signature), nil
 	default:
-		return false
+		return false, nil
 	}
 }
 
@@ -297,56 +444,135 @@ type sigFetch struct {
 	source string
 }
 
+const maxSignatureBytes int64 = 1 << 20
+const maxSignatureTextBytes int = int(maxSignatureBytes*4/3 + 4)
+
+const (
+	signatureLoadError  = "Failed loading signature as file and/or base64 string"
+	signatureFetchError = "Failed fetching signature"
+)
+
+func decodeSignatureText(data []byte) ([]byte, bool) {
+	// Salt's try_base64 removes LF bytes only, then requires the decoded data
+	// to re-encode byte-for-byte. Strict decoding additionally rejects altered
+	// pad bits; other whitespace remains invalid instead of being trimmed.
+	if len(data) > maxSignatureTextBytes {
+		return nil, false
+	}
+	normalized := bytes.ReplaceAll(data, []byte{'\n'}, nil)
+	if bytes.Contains(normalized, []byte{'\r'}) {
+		return nil, false
+	}
+	raw, err := base64.StdEncoding.Strict().DecodeString(string(normalized))
+	if err == nil && len(raw) <= int(maxSignatureBytes) &&
+		bytes.Equal([]byte(base64.StdEncoding.EncodeToString(raw)), normalized) {
+		return raw, true
+	}
+	return nil, false
+}
+
+func readSignatureFile(rt *runtime.Runtime, candidate string) ([]byte, error) {
+	data, err := runtime.ReadFileBounded(rt.FS, candidate, maxSignatureBytes)
+	if err != nil {
+		return nil, stableASYMError(signatureFetchError, err)
+	}
+	if raw, ok := decodeSignatureText(data); ok {
+		return raw, nil
+	}
+	return data, nil
+}
+
 // fetchSig ports _fetch for signatures: bare base64 strings pass through,
 // local paths/file:// are read from the FS, remote schemes go through the
 // cp.cache_file delegate.
 func fetchSig(rt *runtime.Runtime, ref any) (*sigFetch, error) {
 	var text string
-	var isPathLike bool
+	var rawRef []byte
+	var isBytes bool
 	switch t := ref.(type) {
 	case string:
 		text = t
+	case []byte:
+		rawRef = append([]byte(nil), t...)
+		isBytes = true
 	default:
 		text = fmt.Sprintf("%v", t)
 	}
-	scheme := ""
-	path := text
-	if idx := strings.Index(text, "://"); idx > 0 {
-		scheme = text[:idx]
-		path = text[idx+3:]
-		isPathLike = true
-	} else if strings.HasPrefix(text, "/") {
-		isPathLike = true
-	}
-	if !isPathLike {
-		if raw, derr := base64.StdEncoding.DecodeString(text); derr == nil {
+	if isBytes {
+		if raw, ok := decodeSignatureText(rawRef); ok {
 			return &sigFetch{raw: raw, source: "inline"}, nil
 		}
-		return nil, fmt.Errorf("Failed loading signature as file and/or base64 string")
+		if len(rawRef) != 0 && len(rawRef) <= int(maxSignatureBytes) {
+			return &sigFetch{raw: rawRef, source: "inline"}, nil
+		}
+		return nil, fmt.Errorf("%s", signatureLoadError)
 	}
+
+	parsed, parseErr := url.Parse(text)
+	scheme := ""
+	path := text
+	if parseErr == nil {
+		scheme = parsed.Scheme
+		if scheme == "file" {
+			path = fileURLPath(parsed)
+		}
+	}
+
+	// A local path wins only when it is an existing regular file. In
+	// particular, a leading '/' is not sufficient to classify a value as a
+	// path: '/' is a valid base64 alphabet character and may begin a signature.
+	explicitFile := scheme == "file"
+	if scheme == "" || explicitFile {
+		info, statErr := rt.FS.Stat(path)
+		if statErr == nil {
+			if info == nil || !info.Mode().IsRegular() {
+				return nil, fmt.Errorf("%s", signatureFetchError)
+			}
+			raw, rerr := readSignatureFile(rt, path)
+			if rerr != nil {
+				return nil, rerr
+			}
+			return &sigFetch{raw: raw, source: path}, nil
+		}
+		if explicitFile {
+			return nil, errors.New(signatureFetchError)
+		}
+	}
+
 	candidate := path
 	if scheme != "" && scheme != "file" {
 		res, err := callDelegateASYM(rt, "cp.cache_file",
 			map[string]any{"path": text})
-		if err != nil || res == nil || res.(string) == "" {
-			return nil, fmt.Errorf("Failed fetching '%s'", text)
+		cached, ok := res.(string)
+		if err != nil || !ok || cached == "" {
+			if err != nil {
+				return nil, stableASYMError(signatureFetchError, err)
+			}
+			return nil, errors.New(signatureFetchError)
 		}
-		candidate = res.(string)
-	}
-	data, rerr := rt.FS.ReadFile(candidate)
-	if rerr != nil {
-		return nil, fmt.Errorf("Failed fetching '%s'", text)
-	}
-	// File content may be raw bytes or a base64 encoding of them.
-	if raw, derr := base64.StdEncoding.DecodeString(strings.TrimSpace(string(data))); derr == nil {
+		candidate = cached
+		if info, statErr := rt.FS.Stat(candidate); statErr != nil || info == nil || !info.Mode().IsRegular() {
+			if statErr != nil {
+				return nil, stableASYMError(signatureFetchError, statErr)
+			}
+			return nil, errors.New(signatureFetchError)
+		}
+		raw, rerr := readSignatureFile(rt, candidate)
+		if rerr != nil {
+			return nil, rerr
+		}
 		return &sigFetch{raw: raw, source: candidate}, nil
 	}
-	return &sigFetch{raw: data, source: candidate}, nil
+
+	if raw, ok := decodeSignatureText([]byte(text)); ok {
+		return &sigFetch{raw: raw, source: "inline"}, nil
+	}
+	return nil, fmt.Errorf("%s", signatureLoadError)
 }
 
 func callDelegateASYM(rt *runtime.Runtime, name string, args any) (any, error) {
 	if _, ok := rt.Exec.Get(name); !ok {
-		return nil, fmt.Errorf("%s is not available", name)
+		return nil, &runtime.UnsupportedError{Kind: "function", Name: name}
 	}
 	return rt.Exec.Call(context.Background(), rt, name, args)
 }
@@ -378,9 +604,9 @@ func (signFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (res a
 	case a.Text != nil && *a.Text != "":
 		data = []byte(*a.Text)
 	case a.Filename != nil && *a.Filename != "":
-		fdata, rerr := rt.FS.ReadFile(*a.Filename)
+		fdata, rerr := runtime.ReadFileBounded(rt.FS, *a.Filename, maxDataBytes)
 		if rerr != nil {
-			return nil, fmt.Errorf("Could not read '%s'", *a.Filename)
+			return nil, stableASYMError(dataReadError.Error(), rerr)
 		}
 		data = fdata
 		isFile = true
@@ -428,7 +654,7 @@ func (signFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (res a
 			payload = string(sig)
 		}
 		if werr := rt.FS.WriteFile(writeTo, []byte(payload), 0o600); werr != nil {
-			return nil, fmt.Errorf("Could not write signature to '%s'", writeTo)
+			return nil, errors.New("Could not write signature")
 		}
 		return fmt.Sprintf("Signature written to '%s'", writeTo), nil
 	}
@@ -478,6 +704,11 @@ func (verifyFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (res
 	case !multiCheck && !pubkeySet:
 		panic(&invocationErr{msg: "Missing pubkey(s) to check against"})
 	case !multiCheck && pubkeySet:
+		switch a.Signature.(type) {
+		case string, []byte:
+		default:
+			panic(&invocationErr{msg: "`signature` must be a string or bytes when verifying a single signing `pubkey`"})
+		}
 		signedByAll = []string{*a.Pubkey}
 	}
 
@@ -487,9 +718,9 @@ func (verifyFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (res
 	case a.Text != nil && *a.Text != "":
 		data = []byte(*a.Text)
 	case a.Filename != nil && *a.Filename != "":
-		fdata, rerr := rt.FS.ReadFile(*a.Filename)
+		fdata, rerr := runtime.ReadFileBounded(rt.FS, *a.Filename, maxDataBytes)
 		if rerr != nil {
-			panic(fmt.Errorf("Path '%s' does not exist", *a.Filename))
+			panic(stableASYMError(dataReadError.Error(), rerr))
 		}
 		data = fdata
 		isFile = true
@@ -498,9 +729,14 @@ func (verifyFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (res
 	}
 
 	var sigRefs []any
-	if list, ok := a.Signature.([]any); ok {
+	switch list := a.Signature.(type) {
+	case []any:
 		sigRefs = list
-	} else {
+	case []string:
+		for _, ref := range list {
+			sigRefs = append(sigRefs, ref)
+		}
+	default:
 		sigRefs = []any{a.Signature}
 	}
 	var sigs []*sigFetch
@@ -541,7 +777,7 @@ func (verifyFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (res
 		}
 		algErr := keyAlgName(pub)
 		if algErr == "ED25519" {
-			return verifyPrimitive(pub, sf.raw, data, "", false), nil
+			return verifyPrimitive(pub, sf.raw, data, "", false)
 		}
 		payload := data
 		prehashed := false
@@ -554,8 +790,7 @@ func (verifyFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (res
 		} else if fileDigest != nil {
 			payload, prehashed = fileDigest, true
 		}
-		ok := verifyPrimitive(pub, sf.raw, payload, orDefault(strDerefA(a.Digest)), prehashed)
-		return ok, nil
+		return verifyPrimitive(pub, sf.raw, payload, orDefault(strDerefA(a.Digest)), prehashed)
 	}
 
 	anyCheck := false
@@ -571,6 +806,9 @@ func (verifyFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (res
 					break
 				}
 				if verr != nil {
+					if isUnsupportedDigest(verr) {
+						return nil, verr
+					}
 					if d, ok2 := digestCache["file"]; ok2 {
 						fileDigest = d
 					}
@@ -590,17 +828,22 @@ func (verifyFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (res
 	if len(signedByAll) > 0 {
 		remaining := append([]*sigFetch{}, sigs...)
 		for _, signer := range signedByAll {
-			consumed := false
+			matched := false
 			var leftover []*sigFetch
 			for _, sf := range remaining {
 				ok, verr := verifyOne(signer, sf)
-				if verr == nil && ok && !consumed {
-					consumed = true // one signature per key
+				if verr != nil && isUnsupportedDigest(verr) {
+					return nil, verr
+				}
+				if verr == nil && ok {
+					// Salt removes every signature matched by this key. This is
+					// significant for duplicate signatures and repeated policies.
+					matched = true
 					continue
 				}
 				leftover = append(leftover, sf)
 			}
-			if !consumed {
+			if !matched {
 				ret["res"] = false
 				if pubkeySet {
 					ret["message"] = "Failed checking signature"
@@ -629,6 +872,11 @@ func (verifyFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (res
 
 func boolOf(b bool) bool { return b }
 
+func isUnsupportedDigest(err error) bool {
+	_, ok := err.(*unsupportedDigestError)
+	return ok
+}
+
 func signatureProvided(sig any) bool {
 	switch t := sig.(type) {
 	case nil:
@@ -636,6 +884,10 @@ func signatureProvided(sig any) bool {
 	case string:
 		return t != ""
 	case []any:
+		return len(t) > 0
+	case []string:
+		return len(t) > 0
+	case []byte:
 		return len(t) > 0
 	}
 	return true
