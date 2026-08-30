@@ -403,3 +403,189 @@ func commandArgv(commands []process.Command) [][]string {
 	}
 	return argv
 }
+
+func TestListPatchesProviderAwareRegistry(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	providers := runtime.NewProviderRegistry()
+	if err := pkgprovider.Register(providers); err != nil {
+		t.Fatal(err)
+	}
+	for _, manager := range []string{"yum", "dnf"} {
+		runner := &yumExecRecordingRunner{results: []process.CommandResult{{Stdout: []byte("\ni RHSA-1 Important foo-1\n  RHSA-1 Important bar-2\ni RHSA-2 Moderate baz-3\nmalformed\n")}}}
+		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: manager}), Providers: providers, Runner: runner}
+		for _, name := range []string{"pkg.list_patches", "pkg.list_installed_patches"} {
+			runner.results = []process.CommandResult{{Stdout: []byte("\ni RHSA-1 Important foo-1\n  RHSA-1 Important bar-2\ni RHSA-2 Moderate baz-3\nmalformed\n")}}
+			prototype, err := reg.ResolveArgs(rt, name)
+			wantPrototype := reflect.TypeOf(YumListPatchesArgs{})
+			wantNames := []string{"refresh"}
+			if name == "pkg.list_installed_patches" {
+				wantPrototype = reflect.TypeOf(YumListInstalledPatchesArgs{})
+				wantNames = []string{}
+			}
+			if err != nil || reflect.TypeOf(prototype) != wantPrototype {
+				t.Fatalf("%s/%s prototype=%T err=%v", manager, name, prototype, err)
+			}
+			if names, err := config.ArgumentNames(prototype); err != nil || !reflect.DeepEqual(names, wantNames) {
+				t.Fatalf("%s/%s names=%v err=%v", manager, name, names, err)
+			}
+			if got := reg.ProviderCapabilities(name); !reflect.DeepEqual(got, []string{"yumpkg"}) {
+				t.Fatalf("%s/%s capabilities=%v", manager, name, got)
+			}
+			var args any = &YumListPatchesArgs{Refresh: func() *bool { v := false; return &v }()}
+			if name == "pkg.list_installed_patches" {
+				args = &YumListInstalledPatchesArgs{}
+			}
+			got, err := reg.Call(context.Background(), rt, name, args)
+			want := map[string]any{"RHSA-1": map[string]any{"installed": false, "summary": []string{"foo-1", "bar-2"}}, "RHSA-2": map[string]any{"installed": true, "summary": []string{"baz-3"}}}
+			if name == "pkg.list_installed_patches" {
+				want = map[string]any{"RHSA-2": map[string]any{"installed": true, "summary": []string{"baz-3"}}}
+			}
+			if err != nil || !reflect.DeepEqual(got, want) {
+				t.Fatalf("%s/%s got=%#v err=%v", manager, name, got, err)
+			}
+			if got := commandArgv(runner.commands); len(got) != 1 || !reflect.DeepEqual(got[0], []string{manager, "--quiet", "updateinfo", "list", "all"}) {
+				t.Fatalf("%s/%s argv=%#v", manager, name, got)
+			}
+			runner.commands = nil
+		}
+	}
+	for _, manager := range []string{"apt", "zypper"} {
+		runner := &yumExecRecordingRunner{}
+		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: manager}), Providers: providers, Runner: runner}
+		for _, name := range []string{"pkg.list_patches", "pkg.list_installed_patches"} {
+			if _, err := reg.ResolveArgs(rt, name); err == nil {
+				t.Fatalf("%s unexpectedly resolved %s", manager, name)
+			}
+			if _, err := reg.Call(context.Background(), rt, name, &YumListPatchesArgs{}); err == nil || len(runner.commands) != 0 {
+				t.Fatalf("%s call %s err=%v commands=%d", manager, name, err, len(runner.commands))
+			}
+		}
+	}
+}
+
+func TestListPatchesRefreshAndInstalledFiltering(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	providers := runtime.NewProviderRegistry()
+	if err := pkgprovider.Register(providers); err != nil {
+		t.Fatal(err)
+	}
+	refresh := true
+	runner := &yumExecRecordingRunner{results: []process.CommandResult{{ExitCode: 7}, {ExitCode: 100}, {Stdout: []byte("i RHSA-1 Important foo\n  RHSA-1 Important bar\ni RHSA-2 Moderate baz\n")}}}
+	rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: "yum"}), Providers: providers, Runner: runner}
+	got, err := reg.Call(context.Background(), rt, "pkg.list_patches", &YumListPatchesArgs{Refresh: &refresh})
+	if err != nil || got == nil {
+		t.Fatalf("refresh got=%#v err=%v", got, err)
+	}
+	if want := [][]string{{"yum", "--quiet", "--assumeyes", "clean", "expire-cache"}, {"yum", "--quiet", "--assumeyes", "check-update"}, {"yum", "--quiet", "updateinfo", "list", "all"}}; !reflect.DeepEqual(commandArgv(runner.commands), want) {
+		t.Fatalf("argv=%#v", commandArgv(runner.commands))
+	}
+	runner = &yumExecRecordingRunner{results: []process.CommandResult{{Stdout: []byte(" RHSA-1 Important foo\ni RHSA-2 Moderate bar\n")}}}
+	rt.Runner = runner
+	got, err = reg.Call(context.Background(), rt, "pkg.list_installed_patches", &YumListInstalledPatchesArgs{})
+	if err != nil || !reflect.DeepEqual(got, map[string]any{"RHSA-2": map[string]any{"installed": true, "summary": []string{"bar"}}}) {
+		t.Fatalf("installed got=%#v err=%v", got, err)
+	}
+}
+
+func TestListInstalledPatchesRefreshUsesSharedContract(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	providers := runtime.NewProviderRegistry()
+	if err := pkgprovider.Register(providers); err != nil {
+		t.Fatal(err)
+	}
+	for _, manager := range []string{"yum", "dnf"} {
+		runner := &yumExecRecordingRunner{results: []process.CommandResult{{Stdout: []byte("i RHSA-1 Important foo\n")}}}
+		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: manager}), Providers: providers, Runner: runner}
+		prototype, err := reg.ResolveArgs(rt, "pkg.list_installed_patches")
+		if err != nil || reflect.TypeOf(prototype) != reflect.TypeOf(YumListInstalledPatchesArgs{}) {
+			t.Fatalf("%s prototype=%T err=%v", manager, prototype, err)
+		}
+		got, err := reg.Call(context.Background(), rt, "pkg.list_installed_patches", &YumListInstalledPatchesArgs{})
+		want := map[string]any{"RHSA-1": map[string]any{"installed": true, "summary": []string{"foo"}}}
+		if err != nil || !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s got=%#v err=%v", manager, got, err)
+		}
+		wantArgv := [][]string{{manager, "--quiet", "updateinfo", "list", "all"}}
+		if !reflect.DeepEqual(commandArgv(runner.commands), wantArgv) {
+			t.Fatalf("%s argv=%#v want=%#v", manager, commandArgv(runner.commands), wantArgv)
+		}
+	}
+}
+
+func TestListPatchesPropagatesRunnerFailuresAndRejectsOptions(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	providers := runtime.NewProviderRegistry()
+	if err := pkgprovider.Register(providers); err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range []process.CommandResult{{Err: errors.New("runner failed")}, {Err: context.Canceled}, {ExitCode: 1, Stderr: []byte("failed")}} {
+		runner := &yumExecRecordingRunner{results: []process.CommandResult{result}}
+		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: "yum"}), Providers: providers, Runner: runner}
+		got, err := reg.Call(context.Background(), rt, "pkg.list_patches", &YumListPatchesArgs{})
+		if result.ExitCode == 1 {
+			if err != nil || !reflect.DeepEqual(got, map[string]any{}) || len(runner.commands) != 1 {
+				t.Fatalf("nonzero empty got=%#v err=%v calls=%d", got, err, len(runner.commands))
+			}
+		} else if got != nil || err == nil || len(runner.commands) != 1 {
+			t.Fatalf("got=%#v err=%v calls=%d", got, err, len(runner.commands))
+		}
+	}
+	runner := &yumExecRecordingRunner{}
+	rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: "yum"}), Providers: providers, Runner: runner}
+	p, err := pkgprovider.Resolve(rt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	yp := p.(pkgprovider.YumProvider)
+	if _, err := yp.Yum(context.Background(), rt, "list_patches", map[string]any{"other": true}); err == nil || len(runner.commands) != 0 {
+		t.Fatalf("unsupported option err=%v calls=%d", err, len(runner.commands))
+	}
+}
+
+func TestListPatchesNonzeroParseableStdoutAndInstalledRejectsRefresh(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	providers := runtime.NewProviderRegistry()
+	if err := pkgprovider.Register(providers); err != nil {
+		t.Fatal(err)
+	}
+	runner := &yumExecRecordingRunner{results: []process.CommandResult{{ExitCode: 100, Stdout: []byte("i RHSA-1 Important foo\n")}}}
+	rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: "yum"}), Providers: providers, Runner: runner}
+	got, err := reg.Call(context.Background(), rt, "pkg.list_patches", &YumListPatchesArgs{})
+	if err != nil || !reflect.DeepEqual(got, map[string]any{"RHSA-1": map[string]any{"installed": true, "summary": []string{"foo"}}}) {
+		t.Fatalf("nonzero stdout got=%#v err=%v", got, err)
+	}
+	runner.commands = nil
+	refresh := true
+	if got, err := reg.Call(context.Background(), rt, "pkg.list_installed_patches", &YumListInstalledPatchesArgs{}); err != nil || got == nil {
+		t.Fatalf("installed call got=%#v err=%v", got, err)
+	}
+	if _, err := pkgprovider.Resolve(rt); err != nil {
+		t.Fatal(err)
+	}
+	provider, _ := pkgprovider.Resolve(rt)
+	if _, err := provider.(pkgprovider.YumProvider).Yum(context.Background(), rt, "list_installed_patches", map[string]any{"refresh": &refresh}); err == nil || len(runner.commands) != 1 {
+		t.Fatalf("installed refresh accepted err=%v calls=%d", err, len(runner.commands))
+	}
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	runner = &yumExecRecordingRunner{}
+	rt.Runner = runner
+	if got, err := reg.Call(canceled, rt, "pkg.list_patches", &YumListPatchesArgs{}); got != nil || !errors.Is(err, context.Canceled) || len(runner.commands) != 1 {
+		t.Fatalf("canceled got=%#v err=%v calls=%d", got, err, len(runner.commands))
+	}
+}

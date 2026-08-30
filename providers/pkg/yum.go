@@ -18,6 +18,10 @@ import (
 
 var ErrUnsupportedYUM = errors.New("YUM capability is not supported by this package provider")
 
+const yumPatchesOutputLimit = 1 << 20
+
+var yumPatchesLine = regexp.MustCompile(`^([i|\s])? ?([^\s]+) +([^\s]+) +([^\s]+)`)
+
 var yumArchitectures = map[string]struct{}{
 	"x86_64": {}, "x86_64_v2": {}, "athlon": {}, "amd64": {}, "ia32e": {}, "ia64": {}, "geode": {},
 	"i386": {}, "i486": {}, "i586": {}, "i686": {},
@@ -346,6 +350,8 @@ func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function
 		return nil, err
 	}
 	switch function {
+	case "list_patches", "list_installed_patches":
+		return yumListPatches(ctx, rt, p.spec.manager, function == "list_installed_patches", a)
 	case "list_holds":
 		return yumListHolds(ctx, rt, p.spec.manager, a)
 	case "clean_metadata":
@@ -531,6 +537,10 @@ func validateYUMArgs(function string, a map[string]any) error {
 		allowed = map[string]bool{"repo": true, "fromrepo": true, "enablerepo": true, "disablerepo": true, "branch": true, "disableexcludes": true, "setopt": true, "check_update": true}
 	case "list_holds":
 		allowed = map[string]bool{"pattern": true, "full": true}
+	case "list_patches":
+		allowed = map[string]bool{"refresh": true}
+	case "list_installed_patches":
+		allowed = map[string]bool{}
 	default:
 		return nil
 	}
@@ -562,6 +572,13 @@ func validateYUMArgs(function string, a map[string]any) error {
 			default:
 				return fmt.Errorf("argument %q must be a boolean", key)
 			}
+		}
+	}
+	if v, present := a["refresh"]; present && v != nil {
+		switch v.(type) {
+		case bool, *bool:
+		default:
+			return errors.New(`argument "refresh" must be a boolean`)
 		}
 	}
 	if v, present := a["full"]; present && v != nil {
@@ -600,6 +617,96 @@ func validateYUMArgs(function string, a map[string]any) error {
 		}
 	}
 	return nil
+}
+
+func yumListPatches(ctx context.Context, rt *runtime.Runtime, manager string, installedOnly bool, a map[string]any) (any, error) {
+	if manager != "yum" && manager != "dnf" {
+		return nil, ErrUnsupportedYUM
+	}
+	if rt == nil || rt.Runner == nil {
+		return nil, errors.New("YUM list_patches requires a runner")
+	}
+	refresh := false
+	if value, ok := a["refresh"]; ok && value != nil {
+		switch v := value.(type) {
+		case bool:
+			refresh = v
+		case *bool:
+			if v != nil {
+				refresh = *v
+			}
+		}
+	}
+	if refresh {
+		if err := yumPatchesRefreshDB(ctx, rt, manager); err != nil {
+			return nil, err
+		}
+	}
+	cmd := runtime.Command(manager, "--quiet", "updateinfo", "list", "all")
+	cmd.MaxStdoutBytes, cmd.MaxStderrBytes = yumPatchesOutputLimit, yumPatchesOutputLimit
+	res := rt.Runner.Run(ctx, cmd)
+	if res.Err != nil {
+		return nil, res.Err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	// yumpkg._get_patches uses cmd.run_stdout: a nonzero child retcode does
+	// not discard parseable stdout. Runner errors remain fatal, but otherwise
+	// parse the captured stream exactly as the source does.
+	patches := map[string]any{}
+	for _, line := range sourceSplitLines(string(res.Stdout)) {
+		match := yumPatchesLine.FindStringSubmatch(line)
+		if len(match) != 5 {
+			continue
+		}
+		advisory, packageName := match[2], match[4]
+		entry, exists := patches[advisory]
+		if !exists {
+			patches[advisory] = map[string]any{"installed": match[1] == "i", "summary": []string{packageName}}
+			continue
+		}
+		patch := entry.(map[string]any)
+		patch["summary"] = append(patch["summary"].([]string), packageName)
+		if match[1] != "i" {
+			patch["installed"] = false
+		}
+	}
+	if installedOnly {
+		for advisory, value := range patches {
+			if !value.(map[string]any)["installed"].(bool) {
+				delete(patches, advisory)
+			}
+		}
+	}
+	return patches, nil
+}
+
+// yumPatchesRefreshDB follows yumpkg.refresh_db's retcode policy.  The
+// metadata clean/check commands are best-effort: command-runner failures and
+// cancellation abort, while manager exit codes are deliberately ignored so
+// updateinfo still runs, including yum's check-update=100 result.
+func yumPatchesRefreshDB(ctx context.Context, rt *runtime.Runtime, manager string) error {
+	for _, argv := range yumPatchesRefreshCommands(rt, manager) {
+		cmd := runtime.Command(argv...)
+		cmd.MaxStdoutBytes, cmd.MaxStderrBytes = yumPatchesOutputLimit, yumPatchesOutputLimit
+		if result := rt.Runner.Run(ctx, cmd); result.Err != nil {
+			return result.Err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func yumPatchesRefreshCommands(rt *runtime.Runtime, manager string) [][]string {
+	clean := []string{manager, "--quiet", "--assumeyes", "clean", "expire-cache"}
+	check := []string{manager, "--quiet", "--assumeyes", "check-update"}
+	if yumRHEL7(rt) {
+		check = append(check, "--setopt=autocheck_running_kernel=false")
+	}
+	return [][]string{clean, check}
 }
 
 const yumHoldOutputLimit = 1 << 20
