@@ -22,7 +22,7 @@ func (r *yumExecNoCallRunner) Run(context.Context, process.Command) process.Comm
 }
 
 func TestYumLongtailRegistryAndPureCalls(t *testing.T) {
-	for _, manager := range []string{"yum", "dnf"} {
+	for _, manager := range []string{"yum", "dnf", "dnf5"} {
 		reg := runtime.NewExecRegistry()
 		if err := Register(reg); err != nil {
 			t.Fatal(err)
@@ -111,7 +111,7 @@ func TestYumLongtailRegistryAndPureCalls(t *testing.T) {
 }
 
 func TestLongtailResolveArgsProviderMatrix(t *testing.T) {
-	for _, manager := range []string{"apt", "yum", "dnf"} {
+	for _, manager := range []string{"apt", "yum", "dnf", "dnf5"} {
 		reg := runtime.NewExecRegistry()
 		if err := Register(reg); err != nil {
 			t.Fatal(err)
@@ -305,6 +305,112 @@ func TestCleanMetadataProviderAwareRegistry(t *testing.T) {
 	rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: "apt"}), Providers: providers, Runner: runner}
 	if _, err := reg.ResolveArgs(rt, "pkg.clean_metadata"); err == nil || len(runner.commands) != 0 {
 		t.Fatalf("apt resolve err=%v calls=%d", err, len(runner.commands))
+	}
+}
+
+func TestServicesNeedRestartProviderAwareRegistryMapsEveryPIDToken(t *testing.T) {
+	for _, manager := range []string{"dnf", "dnf5"} {
+		reg := runtime.NewExecRegistry()
+		if err := Register(reg); err != nil {
+			t.Fatal(err)
+		}
+		providers := runtime.NewProviderRegistry()
+		if err := pkgprovider.Register(providers); err != nil {
+			t.Fatal(err)
+		}
+		runner := &yumExecRecordingRunner{results: []process.CommandResult{
+			{Stdout: []byte("123: one\n0: zero\nnot-a-pid: text\n: empty\nno delimiter\n")},
+			{Stdout: []byte(`{"_SYSTEMD_UNIT":"sshd.service"}`)},
+			{Stdout: []byte(`{"_SYSTEMD_UNIT":"cron.service"}`)},
+			{Stdout: []byte(`{"_SYSTEMD_UNIT":"sshd.service"}`)},
+			{Stdout: []byte(`{"_SYSTEMD_UNIT":"not-a-service"}`)},
+		}}
+		rt := &runtime.Runtime{
+			Facts:     facts.ForTesting(facts.Overrides{Package: manager, Init: "systemd", OS: &facts.OSFacts{Family: facts.FamilyRedHat}}),
+			Providers: providers,
+			Runner:    runner,
+		}
+		prototype, err := reg.ResolveArgs(rt, "pkg.services_need_restart")
+		if err != nil || reflect.TypeOf(prototype) != reflect.TypeOf(struct{}{}) {
+			t.Fatalf("%s prototype=%T err=%v", manager, prototype, err)
+		}
+		if names, err := config.ArgumentNames(prototype); err != nil || len(names) != 0 {
+			t.Fatalf("%s argument names=%v err=%v", manager, names, err)
+		}
+		got, err := reg.Call(context.Background(), rt, "pkg.services_need_restart", &struct{}{})
+		if err != nil || !reflect.DeepEqual(got, []string{"cron", "sshd"}) {
+			t.Fatalf("%s got=%#v err=%v", manager, got, err)
+		}
+		want := [][]string{
+			{manager, "--quiet", "needs-restarting"},
+			{"systemctl", "--output", "json", "status", "123"},
+			{"systemctl", "--output", "json", "status", "0"},
+			{"systemctl", "--output", "json", "status", "not-a-pid"},
+			{"systemctl", "--output", "json", "status", ""},
+		}
+		if !reflect.DeepEqual(commandArgv(runner.commands), want) {
+			t.Fatalf("%s argv=%#v want=%#v", manager, commandArgv(runner.commands), want)
+		}
+		for _, command := range runner.commands {
+			if command.Shell {
+				t.Fatalf("%s used shell command=%#v", manager, command)
+			}
+		}
+	}
+}
+
+func TestServicesNeedRestartRegistryRejectsUnsupportedProvidersBeforeRunner(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	providers := runtime.NewProviderRegistry()
+	if err := pkgprovider.Register(providers); err != nil {
+		t.Fatal(err)
+	}
+	for _, manager := range []string{"yum", "zypper"} {
+		runner := &yumExecRecordingRunner{}
+		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: manager}), Providers: providers, Runner: runner}
+		if manager != "yum" {
+			if _, err := reg.ResolveArgs(rt, "pkg.services_need_restart"); err == nil {
+				t.Fatalf("%s unexpectedly resolved", manager)
+			}
+		}
+		if _, err := reg.Call(context.Background(), rt, "pkg.services_need_restart", &struct{}{}); err == nil || len(runner.commands) != 0 {
+			t.Fatalf("%s call err=%v commands=%d", manager, err, len(runner.commands))
+		}
+	}
+	for _, manager := range []string{"dnf", "dnf5"} {
+		runner := &yumExecRecordingRunner{}
+		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: manager, Init: "openrc", OS: &facts.OSFacts{Family: facts.FamilyRedHat}}), Providers: providers, Runner: runner}
+		if _, err := reg.Call(context.Background(), rt, "pkg.services_need_restart", &struct{}{}); err == nil || len(runner.commands) != 0 {
+			t.Fatalf("%s non-systemd err=%v commands=%d", manager, err, len(runner.commands))
+		}
+	}
+}
+
+func TestServicesNeedRestartRegistryPropagatesCancelAndRunnerError(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	providers := runtime.NewProviderRegistry()
+	if err := pkgprovider.Register(providers); err != nil {
+		t.Fatal(err)
+	}
+	for _, wantErr := range []error{context.Canceled, errors.New("runner failed")} {
+		runner := &yumExecRecordingRunner{results: []process.CommandResult{{Err: wantErr}}}
+		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: "dnf", Init: "systemd", OS: &facts.OSFacts{Family: facts.FamilyRedHat}}), Providers: providers, Runner: runner}
+		ctx := context.Background()
+		if wantErr == context.Canceled {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithCancel(ctx)
+			cancel()
+		}
+		got, err := reg.Call(ctx, rt, "pkg.services_need_restart", &struct{}{})
+		if got != nil || !errors.Is(err, wantErr) || len(runner.commands) != 1 {
+			t.Fatalf("want=%v got=%#v err=%v commands=%d", wantErr, got, err, len(runner.commands))
+		}
 	}
 }
 

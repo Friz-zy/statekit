@@ -477,6 +477,9 @@ func TestAPTLongtailCapabilityRejectsEveryNamedFunctionBeforeRunner(t *testing.T
 				t.Skip("shared provider-aware function")
 			}
 			r := &aptFakeRunner{}
+			if tc.name == "services_need_restart" {
+				t.Skip("provider-aware function")
+			}
 			_, err := (aptLongtailFunc{tc.name, tc.args}).Execute(context.Background(), aptExecRuntime("dnf", r), tc.args)
 			if errors.As(err, new(*runtime.UnsupportedError)) == false || len(r.calls) != 0 {
 				t.Fatalf("err=%v calls=%d", err, len(r.calls))

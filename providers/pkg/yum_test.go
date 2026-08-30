@@ -46,6 +46,64 @@ func TestYumListHoldsPinnedParsing(t *testing.T) {
 	}
 }
 
+func TestYumServicesNeedRestartUsesDNFAndSystemctlMapping(t *testing.T) {
+	for _, manager := range []string{"dnf", "dnf5"} {
+		r := &yumRecordingRunner{results: []process.CommandResult{
+			{Stdout: []byte("123: one\n456: two\n123: duplicate\ninvalid: no\n")},
+			{Stdout: []byte(`{"_SYSTEMD_UNIT":"sshd.service"}`), ExitCode: 0},
+			{Stdout: []byte(`{"_SYSTEMD_UNIT":"cron.service"}`), ExitCode: 0},
+			{Stdout: []byte(`{"_SYSTEMD_UNIT":"sshd.service"}`), ExitCode: 0},
+			{Stdout: []byte(`{"_SYSTEMD_UNIT":"ignored.service"}`), ExitCode: 1},
+		}}
+		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Init: "systemd"}), Runner: r}
+		got, err := (&commandProvider{spec: rpmSpec(manager)}).Yum(context.Background(), rt, "services_need_restart", map[string]any{})
+		if err != nil || !reflect.DeepEqual(got, []string{"cron", "sshd"}) {
+			t.Fatalf("%s got=%#v err=%v", manager, got, err)
+		}
+		if len(r.commands) != 5 || r.commands[0].Name != manager || r.commands[0].Shell || r.commands[1].Name != "systemctl" {
+			t.Fatalf("%s commands=%#v", manager, r.commands)
+		}
+	}
+}
+
+func TestYumServicesNeedRestartRejectsYumAndNonSystemdBeforeRunner(t *testing.T) {
+	for _, tc := range []struct{ manager, init, want string }{
+		{"yum", "systemd", "dnf or dnf5 is required to list outdated services."},
+		{"apt", "systemd", "YUM capability is not supported by this package provider"},
+		{"zypper", "systemd", "YUM capability is not supported by this package provider"},
+		{"dnf", "openrc", "systemd is required to list outdated services."},
+	} {
+		r := &yumNoCallRunner{}
+		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Init: tc.init}), Runner: r}
+		_, err := (&commandProvider{spec: rpmSpec(tc.manager)}).Yum(context.Background(), rt, "services_need_restart", map[string]any{})
+		if err == nil || err.Error() != tc.want || r.calls != 0 {
+			t.Fatalf("%s/%s err=%v calls=%d", tc.manager, tc.init, err, r.calls)
+		}
+	}
+}
+
+func TestYumServicesNeedRestartSkipsBadMappingsAndPropagatesRunnerErrors(t *testing.T) {
+	r := &yumRecordingRunner{results: []process.CommandResult{
+		{Stdout: []byte("1: bad\n2: no-unit\n3: failed\n4: unsafe\n")},
+		{Stdout: []byte("not json"), ExitCode: 0},
+		{Stdout: []byte(`{"_SYSTEMD_UNIT":"target"}`), ExitCode: 0},
+		{Stdout: []byte(`{"_SYSTEMD_UNIT":"bad.service"}`), ExitCode: 5},
+		{Stdout: []byte(`{"_SYSTEMD_UNIT":"bad/name.service"}`), ExitCode: 0},
+	}}
+	rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Init: "systemd"}), Runner: r}
+	got, err := (&commandProvider{spec: dnfSpec}).Yum(context.Background(), rt, "services_need_restart", map[string]any{})
+	if err != nil || !reflect.DeepEqual(got, []string{"bad/name"}) {
+		t.Fatalf("got=%#v err=%v", got, err)
+	}
+	sentinel := errors.New("runner failed")
+	r = &yumRecordingRunner{results: []process.CommandResult{{Err: sentinel}}}
+	rt.Runner = r
+	_, err = (&commandProvider{spec: dnfSpec}).Yum(context.Background(), rt, "services_need_restart", map[string]any{})
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("runner error=%v", err)
+	}
+}
+
 func TestYumListHoldsDefaultsValidationAndDNF5FailClosed(t *testing.T) {
 	r := &listHoldsRunner{results: []process.CommandResult{{Stdout: []byte("yum-plugin-versionlock 1\n")}, {Stdout: []byte("0:vim-enhanced-7.4-1.x86_64.*\n")}}}
 	p := &commandProvider{spec: rpmSpec("yum")}

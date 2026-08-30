@@ -102,7 +102,7 @@ func (f aptLongtailFunc) ArgsForProvider(providerName string) (any, error) {
 			return nil, &runtime.UnsupportedError{Kind: "provider", Name: providerName}
 		}
 		return f.prototype, nil
-	case "yum", "dnf":
+	case "yum", "dnf", "dnf5":
 		if p, ok := YumPrototype(f.name); ok {
 			return p, nil
 		}
@@ -115,7 +115,7 @@ func (f aptLongtailFunc) ArgsForProvider(providerName string) (any, error) {
 	return nil, &runtime.UnsupportedError{Kind: "provider", Name: providerName}
 }
 func (f aptLongtailFunc) ProviderArgsStrict() bool {
-	return f.name == "file_list" || f.name == "file_dict" || f.name == "info_installed" || f.name == "owner" || f.name == "clean_metadata" || f.name == "list_holds"
+	return f.name == "file_list" || f.name == "file_dict" || f.name == "info_installed" || f.name == "owner" || f.name == "clean_metadata" || f.name == "list_holds" || f.name == "services_need_restart"
 }
 func (f aptLongtailFunc) ProviderCapabilities() []string {
 	if f.name == "clean_metadata" {
@@ -123,6 +123,9 @@ func (f aptLongtailFunc) ProviderCapabilities() []string {
 	}
 	if f.name == "list_holds" {
 		return []string{"yumpkg"}
+	}
+	if f.name == "services_need_restart" {
+		return []string{"aptpkg", "yumpkg"}
 	}
 	// These public names are shared by aptpkg and yumpkg; execution dispatch
 	// remains provider-specific below. Unique APT functions stay APT-only.
@@ -151,7 +154,7 @@ func (f aptLongtailFunc) Execute(ctx context.Context, rt *runtime.Runtime, args 
 	if err != nil {
 		return nil, err
 	}
-	if yp, ok := p.(pkgprovider.YumProvider); ok && (providerName == "yum" || providerName == "dnf") {
+	if yp, ok := p.(pkgprovider.YumProvider); ok && (providerName == "yum" || providerName == "dnf" || providerName == "dnf5") {
 		argMap, err := mapArgs(f.Name(), args, prototype)
 		if err != nil {
 			return nil, err

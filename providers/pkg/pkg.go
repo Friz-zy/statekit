@@ -109,6 +109,9 @@ func rpmSpec(manager string) spec {
 	case "dnf":
 		s.binary = "dnf"
 		s.refresh = []string{"dnf", "makecache", "--timer"}
+	case "dnf5":
+		s.binary = "dnf5"
+		s.refresh = []string{"dnf5", "makecache", "--timer"}
 	case "yum":
 		s.binary = "yum"
 		s.refresh = []string{"yum", "-q", "makecache"}
@@ -230,7 +233,7 @@ func versionSuffix(manager, version string) string {
 	switch manager {
 	case "apt":
 		return "=" + version
-	case "dnf", "yum":
+	case "dnf", "dnf5", "yum":
 		return "-" + version
 	case "zypper":
 		return "=" + version
@@ -388,7 +391,7 @@ func nonEmptyLines(s string) []string {
 
 // specsByPreference orders providers for deterministic selection when facts
 // leave ambiguity.
-var specsByPreference = []spec{aptSpec, dnfSpec, yumSpec, zypperSpec, pacmanSpec, apkSpec, brewSpec, portSpec, wingetSpec, chocoSpec, scoopSpec}
+var specsByPreference = []spec{aptSpec, dnfSpec, rpmSpec("dnf5"), yumSpec, zypperSpec, pacmanSpec, apkSpec, brewSpec, portSpec, wingetSpec, chocoSpec, scoopSpec}
 
 // Register installs every manager provider plus the fact-driven selector.
 func Register(registry *runtime.ProviderRegistry) error {
@@ -412,6 +415,8 @@ func Select(f *facts.Facts) (string, error) {
 		return "apt", nil
 	case manager == "dnf":
 		return "dnf", nil
+	case manager == "dnf5":
+		return "dnf5", nil
 	case manager == "yum":
 		return "yum", nil
 	case manager == "zypper":

@@ -71,6 +71,8 @@ func YumPrototype(name string) (any, bool) {
 		return YumListPatchesArgs{}, true
 	case "list_installed_patches":
 		return YumListInstalledPatchesArgs{}, true
+	case "services_need_restart":
+		return struct{}{}, true
 	default:
 		return nil, false
 	}
@@ -92,7 +94,7 @@ func (f yumPatchesFunc) Args() any {
 }
 func (f yumPatchesFunc) ProviderKind() string { return "pkg" }
 func (f yumPatchesFunc) ArgsForProvider(providerName string) (any, error) {
-	if providerName != "yum" && providerName != "dnf" {
+	if providerName != "yum" && providerName != "dnf" && providerName != "dnf5" {
 		return nil, &runtime.UnsupportedError{Kind: "provider", Name: providerName}
 	}
 	return f.Args(), nil

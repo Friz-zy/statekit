@@ -2,6 +2,7 @@ package pkg
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -13,12 +14,14 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/friz-zy/statekit/internal/process"
 	"github.com/friz-zy/statekit/internal/runtime"
 )
 
 var ErrUnsupportedYUM = errors.New("YUM capability is not supported by this package provider")
 
 const yumPatchesOutputLimit = 1 << 20
+const yumServicesOutputLimit = 1 << 20
 
 var yumPatchesLine = regexp.MustCompile(`^([i|\s])? ?([^\s]+) +([^\s]+) +([^\s]+)`)
 
@@ -354,6 +357,8 @@ func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function
 		return yumListPatches(ctx, rt, p.spec.manager, function == "list_installed_patches", a)
 	case "list_holds":
 		return yumListHolds(ctx, rt, p.spec.manager, a)
+	case "services_need_restart":
+		return yumServicesNeedRestart(ctx, rt, p.spec.manager)
 	case "clean_metadata":
 		return yumCleanMetadata(ctx, rt, p.spec.manager, a)
 	case "file_list":
@@ -541,6 +546,8 @@ func validateYUMArgs(function string, a map[string]any) error {
 		allowed = map[string]bool{"refresh": true}
 	case "list_installed_patches":
 		allowed = map[string]bool{}
+	case "services_need_restart":
+		allowed = map[string]bool{}
 	default:
 		return nil
 	}
@@ -617,6 +624,78 @@ func validateYUMArgs(function string, a map[string]any) error {
 		}
 	}
 	return nil
+}
+
+func yumServicesNeedRestart(ctx context.Context, rt *runtime.Runtime, manager string) (any, error) {
+	if manager != "dnf" && manager != "dnf5" {
+		return nil, errors.New("dnf or dnf5 is required to list outdated services.")
+	}
+	if rt == nil || rt.Facts == nil || rt.Facts.InitSystem() != "systemd" {
+		return nil, errors.New("systemd is required to list outdated services.")
+	}
+	if rt.Runner == nil {
+		return nil, errors.New("services_need_restart requires a runner")
+	}
+	res := rt.Runner.Run(ctx, yumBoundedCommand([]string{manager, "--quiet", "needs-restarting"}))
+	if res.Err != nil {
+		return nil, res.Err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	services := map[string]struct{}{}
+	for _, line := range strings.Split(string(res.Stdout), "\n") {
+		pid, _, hasDelimiter := strings.Cut(line, ":")
+		pid = strings.TrimSpace(pid)
+		if !hasDelimiter {
+			continue
+		}
+		service, err := yumPIDToService(ctx, rt, pid)
+		if err != nil {
+			return nil, err
+		}
+		if service != "" {
+			services[service] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(services))
+	for service := range services {
+		out = append(out, service)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func yumBoundedCommand(argv []string) process.Command {
+	cmd := runtime.Command(argv...)
+	cmd.MaxStdoutBytes, cmd.MaxStderrBytes = yumServicesOutputLimit, yumServicesOutputLimit
+	return cmd
+}
+
+func yumPIDToService(ctx context.Context, rt *runtime.Runtime, pid string) (string, error) {
+	res := rt.Runner.Run(ctx, yumBoundedCommand([]string{"systemctl", "--output", "json", "status", pid}))
+	if res.Err != nil {
+		return "", res.Err
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if res.ExitCode != 0 {
+		return "", nil
+	}
+	var status map[string]any
+	if err := json.Unmarshal(res.Stdout, &status); err != nil {
+		return "", nil
+	}
+	name, ok := status["_SYSTEMD_UNIT"].(string)
+	if !ok || !strings.HasSuffix(name, ".service") {
+		return "", nil
+	}
+	name = strings.TrimSuffix(name, ".service")
+	if name == "" {
+		return "", nil
+	}
+	return name, nil
 }
 
 func yumListPatches(ctx context.Context, rt *runtime.Runtime, manager string, installedOnly bool, a map[string]any) (any, error) {
