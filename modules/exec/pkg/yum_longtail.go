@@ -69,6 +69,15 @@ type YumListHoldsArgs struct {
 	Full    *bool   `statekit:"name=full"`
 }
 
+// YumHoldArgs mirrors yumpkg.hold. The provider validates []any strictly
+// because this is the decoder-compatible representation of Salt list inputs.
+type YumHoldArgs struct {
+	Name      *string `statekit:"name=name"`
+	Pkgs      []any   `statekit:"name=pkgs"`
+	Sources   []any   `statekit:"name=sources"`
+	Normalize *bool   `statekit:"name=normalize"`
+}
+
 // YumListPatchesArgs mirrors list_patches' optional refresh argument.
 type YumListPatchesArgs struct {
 	Refresh *bool `statekit:"name=refresh"`
@@ -118,6 +127,8 @@ func YumPrototype(name string) (any, bool) {
 		return YumUpgradeAvailableArgs{}, true
 	case "list_holds":
 		return YumListHoldsArgs{}, true
+	case "hold":
+		return YumHoldArgs{}, true
 	case "list_patches":
 		return YumListPatchesArgs{}, true
 	case "list_installed_patches":

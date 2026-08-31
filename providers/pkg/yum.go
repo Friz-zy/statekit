@@ -509,6 +509,9 @@ func rpmAlnum(r rune) bool {
 func rpmSpecial(r rune) bool { return r == '~' || r == '^' }
 
 func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function string, args any) (any, error) {
+	if p.spec.manager == "zypper" && function == "hold" {
+		return nil, &runtime.UnsupportedError{Kind: "provider", Name: p.spec.manager}
+	}
 	// tdnf is intentionally not a supported provider, but list_holds must
 	// fail like Salt before attempting any command rather than falling through
 	// to a manager-specific implementation.
@@ -522,8 +525,13 @@ func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function
 	if !ok {
 		return nil, fmt.Errorf("YUM function %q: malformed arguments", function)
 	}
-	if err := validateYUMArgs(function, a); err != nil {
-		return nil, err
+	// yumpkg.hold performs _check_versionlock() before Salt validates target
+	// shapes and conflicts.  Keep this dispatch boundary limited to safe map
+	// checking and defer hold validation until after that preflight.
+	if function != "hold" {
+		if err := validateYUMArgs(function, a); err != nil {
+			return nil, err
+		}
 	}
 	switch function {
 	case "verify":
@@ -540,6 +548,8 @@ func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function
 		return yumListPatches(ctx, rt, p.spec.manager, function == "list_installed_patches", a)
 	case "list_holds":
 		return yumListHolds(ctx, rt, p.spec.manager, a)
+	case "hold":
+		return yumHold(ctx, rt, p.spec.manager, a)
 	case "services_need_restart":
 		return yumServicesNeedRestart(ctx, rt, p.spec.manager)
 	case "group_list":
@@ -858,6 +868,9 @@ func yumDownloadedPackage(fields []string, osarch string) (yumPackageInfo, bool)
 }
 
 func validateYUMArgs(function string, a map[string]any) error {
+	if function == "hold" {
+		return nil
+	}
 	allowed := map[string]bool{}
 	switch function {
 	case "file_list", "file_dict":
@@ -879,6 +892,8 @@ func validateYUMArgs(function string, a map[string]any) error {
 		}
 	case "list_holds":
 		allowed = map[string]bool{"pattern": true, "full": true}
+	case "hold":
+		allowed = map[string]bool{"name": true, "pkgs": true, "sources": true, "normalize": true}
 	case "list_patches":
 		allowed = map[string]bool{"refresh": true}
 	case "list_installed_patches":
@@ -914,6 +929,27 @@ func validateYUMArgs(function string, a map[string]any) error {
 			}
 			if _, ok := v.([]string); !ok {
 				return fmt.Errorf("argument %q must be a string list", key)
+			}
+		}
+	}
+	if function == "hold" {
+		if v, present := a["name"]; present && v != nil {
+			if _, ok := yumStringArg(a, "name"); !ok {
+				return fmt.Errorf("argument \"name\" must be a string")
+			}
+		}
+		if v, present := a["normalize"]; present && v != nil {
+			switch v.(type) {
+			case bool, *bool:
+			default:
+				return fmt.Errorf("argument \"normalize\" must be a boolean")
+			}
+		}
+		for _, key := range []string{"pkgs", "sources"} {
+			if v, present := a[key]; present && v != nil {
+				if _, ok := yumHoldItems(v); !ok {
+					return fmt.Errorf("argument %q must be a list", key)
+				}
 			}
 		}
 	}
@@ -2083,15 +2119,40 @@ func yumPatchesRefreshCommands(rt *runtime.Runtime, manager string) [][]string {
 
 const yumHoldOutputLimit = 1 << 20
 const yumHoldPattern = `[\w+]+(?:[.-][^-]+)*`
+const yumDNF5VersionlockPath = "/etc/dnf/versionlock.toml"
+const yumDNF5VersionlockLineLimit = 4096
+const yumDNF5VersionlockMaxLines = 4096
 
 func yumListHolds(ctx context.Context, rt *runtime.Runtime, manager string, a map[string]any) (any, error) {
-	if manager == "dnf5" {
-		// The standard library has no TOML parser and adding a permissive parser
-		// here would make malformed lock data unsafe to interpret. Fail closed
-		// before consulting FS; a typed TOML dependency can enable this later.
+	return yumListHoldsPolicy(ctx, rt, manager, a, true)
+}
+
+func yumListHoldsPolicy(ctx context.Context, rt *runtime.Runtime, manager string, a map[string]any, allowDNF5 bool) (any, error) {
+	if manager == "dnf5" && !allowDNF5 {
 		return nil, &runtime.UnsupportedError{Kind: "function", Name: "pkg.list_holds.dnf5"}
 	}
-	plugin, err := yumVersionlockPlugin(rt, manager)
+	if manager == "dnf5" {
+		full := true
+		if value, ok := a["full"]; ok && value != nil {
+			switch v := value.(type) {
+			case bool:
+				full = v
+			case *bool:
+				if v != nil {
+					full = *v
+				}
+			}
+		}
+		// yumpkg.list_holds performs _check_versionlock before selecting the
+		// DNF5 TOML backend.  Keep that preflight ahead of any filesystem read.
+		if err := yumCheckVersionlock(ctx, rt, manager); err != nil {
+			return nil, err
+		}
+		// DNF5 reads structured TOML, and Salt explicitly ignores pattern for
+		// this backend; do not apply the legacy text matcher to TOML values.
+		return yumListHoldsDNF5(rt, full)
+	}
+	plugin, err := yumVersionlockPluginPolicy(rt, manager, allowDNF5)
 	if err != nil {
 		return nil, err
 	}
@@ -2133,7 +2194,7 @@ func yumListHolds(ctx context.Context, rt *runtime.Runtime, manager string, a ma
 	if rt == nil || rt.Runner == nil {
 		return nil, errors.New("YUM list_holds requires a runner")
 	}
-	installed, err := (&commandProvider{spec: rpmSpec(manager)}).List(ctx, rt)
+	installed, err := yumHoldInstalled(ctx, rt, manager)
 	if err != nil {
 		return nil, err
 	}
@@ -2167,14 +2228,377 @@ func yumListHolds(ctx context.Context, rt *runtime.Runtime, manager string, a ma
 	return ret, nil
 }
 
+// yumListHoldsDNF5 reads the pinned TOML shape with bounded input.  The
+// standard library has no TOML parser, so richer or malformed documents are
+// intentionally an empty result rather than a guessed lock set.
+func yumListHoldsDNF5(rt *runtime.Runtime, full bool) ([]string, error) {
+	if rt == nil || rt.FS == nil {
+		return []string{}, nil
+	}
+	data, err := runtime.ReadFileBounded(rt.FS, yumDNF5VersionlockPath, yumHoldOutputLimit)
+	if err != nil {
+		return []string{}, nil
+	}
+	entries, ok := parseDNF5Versionlock(data)
+	if !ok {
+		return []string{}, nil
+	}
+	ret := []string{}
+	seen := map[string]bool{}
+	for _, entry := range entries {
+		value := entry.name
+		if full {
+			evr, ok := entry.equalityEVR()
+			if !ok {
+				continue
+			}
+			if !strings.Contains(evr, ":") {
+				evr = "0:" + evr
+			}
+			value = entry.name + "-" + evr + ".*"
+		}
+		if !full && seen[value] {
+			continue
+		}
+		seen[value] = true
+		ret = append(ret, value)
+	}
+	return ret, nil
+}
+
+type dnf5VersionlockCondition struct {
+	key, comparator, value          string
+	hasKey, hasComparator, hasValue bool
+}
+
+type dnf5VersionlockEntry struct {
+	name       string
+	conditions []dnf5VersionlockCondition
+}
+
+func parseDNF5Versionlock(data []byte) ([]dnf5VersionlockEntry, bool) {
+	lines := strings.Split(string(data), "\n")
+	if len(lines) > yumDNF5VersionlockMaxLines {
+		return nil, false
+	}
+	entries := []dnf5VersionlockEntry{}
+	section := ""
+	condition := -1
+	conditionFields := [3]bool{}
+	for _, raw := range lines {
+		if len(raw) > yumDNF5VersionlockLineLimit {
+			return nil, false
+		}
+		line, ok := dnf5TOMLWithoutComment(raw)
+		if !ok {
+			return nil, false
+		}
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		switch line {
+		case "[[packages]]":
+			entries = append(entries, dnf5VersionlockEntry{})
+			section, condition = "package", -1
+		case "[[packages.conditions]]":
+			if len(entries) == 0 {
+				return nil, false
+			}
+			entries[len(entries)-1].conditions = append(entries[len(entries)-1].conditions, dnf5VersionlockCondition{})
+			section, condition = "condition", len(entries[len(entries)-1].conditions)-1
+			conditionFields = [3]bool{}
+		default:
+			key, value, found := dnf5TOMLSplitAssignment(line)
+			if !found || section == "" {
+				return nil, false
+			}
+			key, value = strings.TrimSpace(key), strings.TrimSpace(value)
+			key, ok = dnf5TOMLKey(key)
+			if !ok {
+				return nil, false
+			}
+			parsed, ok := dnf5TOMLString(value)
+			if !ok {
+				return nil, false
+			}
+			switch section {
+			case "package":
+				if key != "name" || entries[len(entries)-1].name != "" {
+					return nil, false
+				}
+				entries[len(entries)-1].name = parsed
+			case "condition":
+				cond := &entries[len(entries)-1].conditions[condition]
+				switch key {
+				case "key":
+					if conditionFields[0] {
+						return nil, false
+					}
+					cond.key, cond.hasKey, conditionFields[0] = parsed, true, true
+				case "comparator":
+					if conditionFields[1] {
+						return nil, false
+					}
+					cond.comparator, cond.hasComparator, conditionFields[1] = parsed, true, true
+				case "value":
+					if conditionFields[2] {
+						return nil, false
+					}
+					cond.value, cond.hasValue, conditionFields[2] = parsed, true, true
+				default:
+					return nil, false
+				}
+			}
+		}
+	}
+	for _, entry := range entries {
+		if entry.name == "" {
+			return nil, false
+		}
+	}
+	return entries, true
+}
+
+// dnf5TOMLKey decodes TOML bare, basic, and literal keys.  Only the three
+// fields consumed by the pinned DNF5 schema are accepted after decoding;
+// malformed quoted tokens fail closed rather than being matched heuristically.
+func dnf5TOMLKey(token string) (string, bool) {
+	if token == "" {
+		return "", false
+	}
+	if token[0] == '"' || token[0] == '\'' {
+		if len(token) < 2 || token[len(token)-1] != token[0] {
+			return "", false
+		}
+		if token[0] == '\'' {
+			return dnf5TOMLLiteralString(token)
+		}
+		return dnf5TOMLBasicString(token)
+	}
+	for _, r := range token {
+		if unicode.IsSpace(r) || r == '=' || r == '#' || r == '[' || r == ']' {
+			return "", false
+		}
+	}
+	return token, true
+}
+
+// dnf5TOMLWithoutComment removes only comments that begin outside TOML basic
+// and literal strings. The pinned file shape is line-oriented, so multiline
+// strings remain deliberately unsupported and therefore fail closed.
+func dnf5TOMLWithoutComment(line string) (string, bool) {
+	var quote byte
+	escaped := false
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		if quote == '"' {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if c == '\\' {
+				escaped = true
+			} else if c == '"' {
+				quote = 0
+			}
+			continue
+		}
+		if quote == '\'' {
+			if c == '\'' {
+				quote = 0
+			}
+			continue
+		}
+		switch c {
+		case '"', '\'':
+			quote = c
+		case '#':
+			return line[:i], true
+		}
+	}
+	return line, quote == 0 && !escaped
+}
+
+func dnf5TOMLSplitAssignment(line string) (string, string, bool) {
+	var quote byte
+	escaped := false
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		if quote == '"' {
+			if escaped {
+				escaped = false
+			} else if c == '\\' {
+				escaped = true
+			} else if c == '"' {
+				quote = 0
+			}
+			continue
+		}
+		if quote == '\'' {
+			if c == '\'' {
+				quote = 0
+			}
+			continue
+		}
+		if c == '"' || c == '\'' {
+			quote = c
+		} else if c == '=' {
+			return line[:i], line[i+1:], true
+		}
+	}
+	return "", "", false
+}
+
+func dnf5TOMLString(value string) (string, bool) {
+	if len(value) < 2 {
+		return "", false
+	}
+	if value[0] == '\'' {
+		return dnf5TOMLLiteralString(value)
+	}
+	if value[0] != '"' || value[len(value)-1] != '"' {
+		return "", false
+	}
+	return dnf5TOMLBasicString(value)
+}
+
+// dnf5TOMLBasicString implements only the basic-string escapes emitted by the
+// pinned DNF5 serializer.  strconv.Unquote is intentionally not used: Go
+// accepts escapes (such as \xNN and octal) that TOML does not.
+func dnf5TOMLBasicString(value string) (string, bool) {
+	if len(value) < 2 || value[0] != '"' || value[len(value)-1] != '"' {
+		return "", false
+	}
+	var out strings.Builder
+	out.Grow(len(value) - 2)
+	for i := 1; i < len(value)-1; {
+		c := value[i]
+		if c == '"' || c < 0x20 || c == 0x7f {
+			return "", false
+		}
+		if c != '\\' {
+			r, size := utf8.DecodeRuneInString(value[i : len(value)-1])
+			if r == utf8.RuneError && size == 1 {
+				return "", false
+			}
+			out.WriteRune(r)
+			i += size
+			continue
+		}
+		i++
+		if i >= len(value)-1 {
+			return "", false
+		}
+		switch value[i] {
+		case '\\', '"':
+			out.WriteByte(value[i])
+			i++
+		case 'b', 't', 'n', 'f', 'r':
+			out.WriteByte(map[byte]byte{'b': '\b', 't': '\t', 'n': '\n', 'f': '\f', 'r': '\r'}[value[i]])
+			i++
+		case 'u', 'U':
+			digits := 4
+			if value[i] == 'U' {
+				digits = 8
+			}
+			if i+digits >= len(value) {
+				return "", false
+			}
+			code, ok := dnf5TOMLHex(value[i+1 : i+1+digits])
+			if !ok || code > utf8.MaxRune || (code >= 0xd800 && code <= 0xdfff) {
+				return "", false
+			}
+			out.WriteRune(rune(code))
+			i += digits + 1
+		default:
+			return "", false
+		}
+	}
+	return out.String(), true
+}
+
+func dnf5TOMLLiteralString(value string) (string, bool) {
+	if len(value) < 2 || value[0] != '\'' || value[len(value)-1] != '\'' {
+		return "", false
+	}
+	for i := 1; i < len(value)-1; {
+		if value[i] == '\'' || value[i] < 0x20 || value[i] == 0x7f {
+			return "", false
+		}
+		r, size := utf8.DecodeRuneInString(value[i : len(value)-1])
+		if r == utf8.RuneError && size == 1 {
+			return "", false
+		}
+		i += size
+	}
+	return value[1 : len(value)-1], true
+}
+
+func dnf5TOMLHex(value string) (uint32, bool) {
+	var result uint32
+	for _, c := range value {
+		result <<= 4
+		switch {
+		case c >= '0' && c <= '9':
+			result += uint32(c - '0')
+		case c >= 'a' && c <= 'f':
+			result += uint32(c-'a') + 10
+		case c >= 'A' && c <= 'F':
+			result += uint32(c-'A') + 10
+		default:
+			return 0, false
+		}
+	}
+	return result, true
+}
+
+func (entry dnf5VersionlockEntry) equalityEVR() (string, bool) {
+	for _, cond := range entry.conditions {
+		if cond.hasKey && cond.hasComparator && cond.hasValue && cond.key == "evr" && cond.comparator == "=" {
+			return cond.value, true
+		}
+	}
+	return "", false
+}
+
+// yumHoldInstalled is deliberately separate from the general List path: the
+// hold transaction must bound every subprocess stream before invoking Runner.
+func yumHoldInstalled(ctx context.Context, rt *runtime.Runtime, manager string) (map[string]string, error) {
+	cmd := runtime.Command(rpmSpec(manager).listInstalled...)
+	cmd.Shell = false
+	cmd.MaxStdoutBytes, cmd.MaxStderrBytes = yumHoldOutputLimit, yumHoldOutputLimit
+	res := rt.Runner.Run(ctx, cmd)
+	if res.Err != nil {
+		return nil, res.Err
+	}
+	if res.ExitCode != 0 {
+		return nil, fmt.Errorf("rpm exited with code %d: %s", res.ExitCode, res.Stderr)
+	}
+	installed := map[string]string{}
+	for _, line := range nonEmptyLines(string(res.Stdout)) {
+		name, version, ok := strings.Cut(line, " ")
+		if ok {
+			if _, seen := installed[name]; !seen {
+				installed[name] = strings.TrimSpace(version)
+			}
+		}
+	}
+	return installed, nil
+}
+
 // yumVersionlockPlugin mirrors yumpkg._versionlock_pkg using typed facts.
 // Unknown or malformed versions use the legacy RedHat branch, matching the
 // source's pre-Python-3 package choice where no major fact is available.
 func yumVersionlockPlugin(rt *runtime.Runtime, manager string) (string, error) {
+	return yumVersionlockPluginPolicy(rt, manager, false)
+}
+
+func yumVersionlockPluginPolicy(rt *runtime.Runtime, manager string, allowDNF5 bool) (string, error) {
 	if manager == "yum" {
 		return "yum-plugin-versionlock", nil
 	}
-	if manager != "dnf" {
+	if manager != "dnf" && !(allowDNF5 && manager == "dnf5") {
 		return "", &runtime.UnsupportedError{Kind: "function", Name: "pkg.list_holds." + manager}
 	}
 	if rt != nil && rt.Facts != nil {
@@ -2194,6 +2618,243 @@ func yumVersionlockPlugin(rt *runtime.Runtime, manager string) (string, error) {
 		}
 	}
 	return "python2-dnf-plugin-versionlock", nil
+}
+
+func yumHold(ctx context.Context, rt *runtime.Runtime, manager string, a map[string]any) (any, error) {
+	if rt == nil || rt.Runner == nil {
+		return nil, errors.New("YUM hold requires a runner")
+	}
+	// This is intentionally the first operation after the nil-runtime guard.
+	// The pinned yumpkg source checks the plugin and reads version locks before
+	// inspecting target presence, conflicts, types, or token values.
+	if err := yumCheckVersionlock(ctx, rt, manager); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := validateYUMHoldArgs(a); err != nil {
+		return nil, err
+	}
+	name, _ := yumStringArg(a, "name")
+	pkgs, pkgsPresent := a["pkgs"]
+	sources, sourcesPresent := a["sources"]
+	pkgItems, pkgsOK := yumHoldItems(pkgs)
+	sourceItems, sourcesOK := yumHoldItems(sources)
+	if (pkgsPresent && pkgs != nil && !pkgsOK) || (sourcesPresent && sources != nil && !sourcesOK) {
+		return nil, errors.New("hold arguments must be lists")
+	}
+	for _, item := range pkgItems {
+		if !yumHoldMappingSupported(item) {
+			return nil, &runtime.UnsupportedError{Kind: "argument", Name: "pkg.hold pkgs multi-key mapping"}
+		}
+	}
+	for _, item := range sourceItems {
+		if !yumHoldMappingSupported(item) {
+			return nil, &runtime.UnsupportedError{Kind: "argument", Name: "pkg.hold sources multi-key mapping"}
+		}
+	}
+	if pkgsPresent && pkgs != nil && len(pkgItems) > 0 && sourcesPresent && sources != nil && len(sourceItems) > 0 {
+		return nil, errors.New("Only one of pkgs or sources can be specified.")
+	}
+	targets := []string{}
+	if pkgsPresent && pkgs != nil && len(pkgItems) > 0 {
+		for _, item := range pkgItems {
+			target, ok := yumHoldTarget(item)
+			if !ok {
+				return nil, errors.New("pkgs must contain valid package names")
+			}
+			targets = append(targets, target)
+		}
+	} else if sourcesPresent && sources != nil && len(sourceItems) > 0 {
+		for _, item := range sourceItems {
+			target, ok := yumHoldSourceTarget(item)
+			if !ok {
+				return nil, errors.New("sources must contain valid package names")
+			}
+			targets = append(targets, target)
+		}
+	} else if validYUMPackageToken(name) {
+		targets = append(targets, name)
+	} else {
+		return nil, errors.New("One of name, pkgs, or sources must be specified.")
+	}
+	// This intentionally performs the second _check_versionlock required by
+	// yumpkg.hold through list_holds, before its TOML/CLI readback.
+	current, readErr := yumListHoldsPolicy(ctx, rt, manager, map[string]any{"full": false}, true)
+	if readErr != nil {
+		return nil, readErr
+	}
+	locked := map[string]bool{}
+	for _, item := range current.([]string) {
+		locked[item] = true
+	}
+	testMode := rt.Options.Test
+	ret := make(map[string]any, len(targets))
+	for _, target := range targets {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		entry := map[string]any{"name": target, "changes": map[string]any{}, "result": true, "comment": "Package " + target + " is already set to be held."}
+		if !locked[target] {
+			if testMode {
+				entry["result"] = nil
+				entry["comment"] = "Package " + target + " is set to be held."
+			} else {
+				cmd := runtime.Command(manager, "versionlock", "add", target)
+				cmd.Shell = false
+				cmd.MaxStdoutBytes, cmd.MaxStderrBytes = yumHoldOutputLimit, yumHoldOutputLimit
+				res := rt.Runner.Run(ctx, cmd)
+				if res.Err != nil {
+					return nil, res.Err
+				}
+				if err := ctx.Err(); err != nil {
+					return nil, err
+				}
+				if res.ExitCode != 0 {
+					entry["result"] = false
+					entry["comment"] = "Package " + target + " was unable to be held."
+					ret[target] = entry
+					continue
+				}
+				entry["comment"] = "Package " + target + " is now being held."
+				entry["changes"] = map[string]any{"new": "hold", "old": ""}
+			}
+		}
+		ret[target] = entry
+	}
+	return ret, nil
+}
+
+func yumCheckVersionlock(ctx context.Context, rt *runtime.Runtime, manager string) error {
+	plugin, err := yumVersionlockPluginPolicy(rt, manager, true)
+	if err != nil {
+		return err
+	}
+	installed, err := yumHoldInstalled(ctx, rt, manager)
+	if err != nil {
+		return err
+	}
+	if _, ok := installed[plugin]; !ok {
+		return fmt.Errorf("Cannot proceed, %s is not installed.", plugin)
+	}
+	return nil
+}
+
+func validateYUMHoldArgs(a map[string]any) error {
+	if a == nil {
+		return errors.New(`YUM function "hold": malformed arguments`)
+	}
+	for key := range a {
+		switch key {
+		case "name", "pkgs", "sources", "normalize":
+		default:
+			return fmt.Errorf("YUM function %q: unsupported argument %q", "hold", key)
+		}
+	}
+	if v, present := a["name"]; present && v != nil {
+		if _, ok := yumStringArg(a, "name"); !ok {
+			return fmt.Errorf("argument %q must be a string", "name")
+		}
+	}
+	if v, present := a["normalize"]; present && v != nil {
+		switch v.(type) {
+		case bool, *bool:
+		default:
+			return fmt.Errorf("argument %q must be a boolean", "normalize")
+		}
+	}
+	for _, key := range []string{"pkgs", "sources"} {
+		if v, present := a[key]; present && v != nil {
+			if _, ok := yumHoldItems(v); !ok {
+				return fmt.Errorf("argument %q must be a list", key)
+			}
+		}
+	}
+	return nil
+}
+
+// yumHoldItems converts decoder and direct-call list forms without modifying
+// the caller's slices. Multi-key mappings are rejected at the hold boundary:
+// Go maps cannot preserve the insertion order Python's next(iter(mapping))
+// relies on, so selecting a key would be silently lossy.
+func yumHoldItems(value any) ([]any, bool) {
+	switch items := value.(type) {
+	case []any:
+		return append([]any(nil), items...), true
+	case []string:
+		out := make([]any, len(items))
+		for i, item := range items {
+			out[i] = item
+		}
+		return out, true
+	case []map[string]any:
+		out := make([]any, len(items))
+		for i, item := range items {
+			out[i] = item
+		}
+		return out, true
+	case []map[string]string:
+		out := make([]any, len(items))
+		for i, item := range items {
+			out[i] = item
+		}
+		return out, true
+	default:
+		return nil, false
+	}
+}
+
+// yumHoldTarget supports the only mapping shape whose meaning is unambiguous
+// in Go: a one-key mapping. Multi-key mappings are rejected by yumHoldMapKey.
+func yumHoldTarget(value any) (string, bool) {
+	if target, ok := value.(string); ok {
+		return target, validYUMPackageToken(target)
+	}
+	switch mapping := value.(type) {
+	case map[string]any:
+		for key := range mapping {
+			return key, validYUMPackageToken(key)
+		}
+	case map[string]string:
+		for key := range mapping {
+			return key, validYUMPackageToken(key)
+		}
+	default:
+		return "", false
+	}
+	return "", false
+}
+
+func yumHoldMappingSupported(value any) bool {
+	switch mapping := value.(type) {
+	case map[string]any:
+		return len(mapping) <= 1
+	case map[string]string:
+		return len(mapping) <= 1
+	}
+	return true
+}
+
+func yumHoldSourceTarget(value any) (string, bool) {
+	switch value.(type) {
+	case map[string]any, map[string]string:
+		return yumHoldTarget(value)
+	default:
+		return "", false
+	}
+}
+
+func validYUMPackageToken(value string) bool {
+	if value == "" || strings.TrimSpace(value) != value {
+		return false
+	}
+	for _, r := range value {
+		if unicode.IsSpace(r) || unicode.IsControl(r) {
+			return false
+		}
+	}
+	return true
 }
 
 const yumMetadataOutputLimit = 1 << 20

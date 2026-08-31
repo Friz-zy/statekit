@@ -907,7 +907,7 @@ func TestYumServicesNeedRestartSkipsBadMappingsAndPropagatesRunnerErrors(t *test
 	}
 }
 
-func TestYumListHoldsDefaultsValidationAndDNF5FailClosed(t *testing.T) {
+func TestYumListHoldsDefaultsValidationAndDNF5TOMLReadback(t *testing.T) {
 	r := &listHoldsRunner{results: []process.CommandResult{{Stdout: []byte("yum-plugin-versionlock 1\n")}, {Stdout: []byte("0:vim-enhanced-7.4-1.x86_64.*\n")}}}
 	p := &commandProvider{spec: rpmSpec("yum")}
 	got, err := p.Yum(context.Background(), &runtime.Runtime{Runner: r}, "list_holds", map[string]any{})
@@ -920,9 +920,238 @@ func TestYumListHoldsDefaultsValidationAndDNF5FailClosed(t *testing.T) {
 			t.Fatalf("bad=%#v err=%v calls=%d", bad, err, len(r.commands))
 		}
 	}
-	r.commands = nil
-	if _, err := (&commandProvider{spec: rpmSpec("dnf5")}).Yum(context.Background(), &runtime.Runtime{FS: runtime.NewMemoryFS()}, "list_holds", map[string]any{}); !errors.As(err, new(*runtime.UnsupportedError)) || len(r.commands) != 0 {
-		t.Fatalf("dnf5 err=%v", err)
+	fs := runtime.NewMemoryFS()
+	if err := fs.MkdirAll("/etc/dnf", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := fs.WriteFile("/etc/dnf/versionlock.toml", []byte("[[packages]]\nname = \"vim\"\n[[packages.conditions]]\nkey = \"evr\"\ncomparator = \"=\"\nvalue = \"7.4-1\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dnfRunner := &listHoldsRunner{results: []process.CommandResult{{Stdout: []byte("python2-dnf-plugin-versionlock 1\n")}}}
+	got, err = (&commandProvider{spec: rpmSpec("dnf5")}).Yum(context.Background(), &runtime.Runtime{FS: fs, Runner: dnfRunner}, "list_holds", map[string]any{"full": false})
+	if err != nil || !reflect.DeepEqual(got, []string{"vim"}) || len(dnfRunner.commands) != 1 {
+		t.Fatalf("dnf5 got=%#v err=%v commands=%#v", got, err, dnfRunner.commands)
+	}
+}
+
+func TestYumListHoldsDNF5IgnoresPatternAndSelectsFirstEqualityEVR(t *testing.T) {
+	fs := runtime.NewMemoryFS()
+	if err := fs.MkdirAll("/etc/dnf", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	valid := []byte(`[[packages]]
+name = "alpha"
+[[packages.conditions]]
+key = "arch"
+comparator = "="
+value = "x86_64"
+[[packages.conditions]]
+key = "evr"
+comparator = "="
+value = "1-2"
+[[packages.conditions]]
+key = "evr"
+comparator = "="
+value = "9-9"
+[[packages]]
+name = "beta"
+[[packages.conditions]]
+key = "evr"
+comparator = "!="
+value = "2-3"
+[[packages]]
+name = "alpha"
+[[packages.conditions]]
+key = "repo"
+comparator = "="
+value = "base"
+`)
+	if err := fs.WriteFile("/etc/dnf/versionlock.toml", valid, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		full bool
+		args map[string]any
+		want []string
+	}{
+		{false, map[string]any{"full": false}, []string{"alpha", "beta"}},
+		{true, map[string]any{"full": true}, []string{"alpha-0:1-2.*"}},
+		{false, map[string]any{"full": false, "pattern": "^does-not-match$"}, []string{"alpha", "beta"}},
+		{true, map[string]any{"full": true, "pattern": "["}, []string{"alpha-0:1-2.*"}},
+	} {
+		r := &listHoldsRunner{results: []process.CommandResult{{Stdout: []byte("python2-dnf-plugin-versionlock 1\n")}}}
+		got, err := (&commandProvider{spec: rpmSpec("dnf5")}).Yum(context.Background(), &runtime.Runtime{FS: fs, Runner: r}, "list_holds", tc.args)
+		if err != nil || !reflect.DeepEqual(got, tc.want) || len(r.commands) != 1 {
+			t.Fatalf("full=%v got=%#v err=%v calls=%d", tc.full, got, err, len(r.commands))
+		}
+	}
+}
+
+func TestYumDNF5VersionlockTOMLCompatibility(t *testing.T) {
+	fs := runtime.NewMemoryFS()
+	if err := fs.MkdirAll("/etc/dnf", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data := `# comments may not consume quoted hashes
+[[packages]] # package header comment
+"name" = "foo#bar"
+[[packages.conditions]] # condition header comment
+"key" = "other" # key/value comment
+'comparator' = '='
+'value' = 'ignored#value'
+[[packages.conditions]]
+"key" = 'evr'
+'comparator' = "="
+"value" = '1-2'
+[[packages]]
+"name" = "escaped \"quote\" and \\slash"
+[[packages.conditions]]
+"key" = "evr"
+'comparator' = "="
+"value" = "3-4"
+`
+	if err := fs.WriteFile(yumDNF5VersionlockPath, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		full bool
+		want []string
+	}{
+		{false, []string{"foo#bar", `escaped "quote" and \slash`}},
+		{true, []string{"foo#bar-0:1-2.*", `escaped "quote" and \slash-0:3-4.*`}},
+	} {
+		r := &listHoldsRunner{results: []process.CommandResult{{Stdout: []byte("python2-dnf-plugin-versionlock 1\n")}}}
+		got, err := (&commandProvider{spec: rpmSpec("dnf5")}).Yum(context.Background(), &runtime.Runtime{FS: fs, Runner: r}, "list_holds", map[string]any{"full": tc.full, "pattern": "["})
+		if err != nil || !reflect.DeepEqual(got, tc.want) || len(r.commands) != 1 || r.commands[0].Name != "rpm" {
+			t.Fatalf("full=%v got=%#v err=%v commands=%#v", tc.full, got, err, r.commands)
+		}
+	}
+	for _, malformed := range []string{"", "[[packages]]\nname = \"unterminated\n", "[[packages.conditions]]\nkey = \"evr\"\n"} {
+		if err := fs.WriteFile(yumDNF5VersionlockPath, []byte(malformed), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		r := &listHoldsRunner{results: []process.CommandResult{{Stdout: []byte("python2-dnf-plugin-versionlock 1\n")}}}
+		got, err := (&commandProvider{spec: rpmSpec("dnf5")}).Yum(context.Background(), &runtime.Runtime{FS: fs, Runner: r}, "list_holds", map[string]any{"full": false})
+		if err != nil || !reflect.DeepEqual(got, []string{}) || len(r.commands) != 1 {
+			t.Fatalf("malformed=%q got=%#v err=%v commands=%#v", malformed, got, err, r.commands)
+		}
+	}
+}
+
+func TestDNF5TOMLBasicStringPinnedEscapeMatrix(t *testing.T) {
+	tests := []struct {
+		name, token, want string
+		valid             bool
+	}{
+		{"backslash", `"a\\b"`, "a\\b", true},
+		{"quote", `"a\"b"`, `a"b`, true},
+		{"backspace", `"a\bb"`, "a\bb", true},
+		{"tab", `"a\tb"`, "a\tb", true},
+		{"newline", `"a\nb"`, "a\nb", true},
+		{"formfeed", `"a\fb"`, "a\fb", true},
+		{"return", `"a\rb"`, "a\rb", true},
+		{"unicode", `"\u03bb"`, "λ", true},
+		{"unicode-wide", `"\U0001F642"`, "🙂", true},
+		{"go-x", `"\x41"`, "", false},
+		{"go-octal", `"\101"`, "", false},
+		{"go-a", `"\a"`, "", false},
+		{"go-v", `"\v"`, "", false},
+		{"nul", "\"a" + string([]byte{0}) + "b\"", "", false},
+		{"raw-tab", "\"a\t b\"", "", false},
+		{"raw-newline", "\"a\nb\"", "", false},
+		{"bad-hex", `"\u12G4"`, "", false},
+		{"short-hex", `"\u123"`, "", false},
+		{"surrogate", `"\uD800"`, "", false},
+		{"too-wide", `"\U00110000"`, "", false},
+		{"unknown", `"\q"`, "", false},
+		{"trailing", `"ok"x`, "", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := dnf5TOMLString(tc.token)
+			if ok != tc.valid || (ok && got != tc.want) {
+				t.Fatalf("token=%q got=%q valid=%v want=%q/%v", tc.token, got, ok, tc.want, tc.valid)
+			}
+			key, keyOK := dnf5TOMLKey(tc.token)
+			if keyOK != tc.valid || (keyOK && key != tc.want) {
+				t.Fatalf("key token=%q got=%q valid=%v want=%q/%v", tc.token, key, keyOK, tc.want, tc.valid)
+			}
+		})
+	}
+	for _, tc := range []struct {
+		token string
+		valid bool
+	}{
+		{`'literal#value'`, true}, {`'literal\\value'`, true}, {`'bad'quote'`, false},
+	} {
+		if _, ok := dnf5TOMLString(tc.token); ok != tc.valid {
+			t.Fatalf("literal token=%q valid=%v want=%v", tc.token, ok, tc.valid)
+		}
+	}
+}
+
+func TestYumListHoldsDNF5ActualRegistryEscapeFixturesFailClosed(t *testing.T) {
+	fixtures := []struct {
+		name  string
+		valid bool
+	}{
+		{`"pkg\\name"`, true}, {`"pkg\"name"`, true}, {`"pkg\b"`, true},
+		{`"pkg\t"`, true}, {`"pkg\n"`, true}, {`"pkg\f"`, true}, {`"pkg\r"`, true},
+		{`"pkg\u03bb"`, true}, {`"pkg\U0001F642"`, true},
+		{`"pkg\x41"`, false}, {`"pkg\101"`, false}, {`"pkg\a"`, false},
+		{`"pkg\v"`, false}, {`"pkg\uD800"`, false}, {`"pkg\U00110000"`, false},
+		{`"pkg\u12G4"`, false}, {`"pkg\q"`, false},
+	}
+	for _, tc := range fixtures {
+		t.Run(tc.name, func(t *testing.T) {
+			fs := runtime.NewMemoryFS()
+			if err := fs.MkdirAll("/etc/dnf", 0o755); err != nil {
+				t.Fatal(err)
+			}
+			data := "[[packages]]\nname = " + tc.name + "\n[[packages.conditions]]\nkey = \"evr\"\ncomparator = \"=\"\nvalue = \"1-2\"\n"
+			if err := fs.WriteFile(yumDNF5VersionlockPath, []byte(data), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			r := &listHoldsRunner{results: []process.CommandResult{{Stdout: []byte("python2-dnf-plugin-versionlock 1\n")}}}
+			got, err := (&commandProvider{spec: rpmSpec("dnf5")}).Yum(context.Background(), &runtime.Runtime{FS: fs, Runner: r}, "list_holds", map[string]any{"full": false, "pattern": "["})
+			if err != nil || !tc.valid && !reflect.DeepEqual(got, []string{}) || tc.valid && len(got.([]string)) != 1 || len(r.commands) != 1 || r.commands[0].Name != "rpm" {
+				t.Fatalf("valid=%v got=%#v err=%v commands=%#v", tc.valid, got, err, r.commands)
+			}
+		})
+	}
+}
+
+func TestYumHoldNonzeroAddContinuesButRunnerErrorStops(t *testing.T) {
+	results := []process.CommandResult{
+		{Stdout: []byte("yum-plugin-versionlock 1\n")},
+		{Stdout: []byte("yum-plugin-versionlock 1\n")},
+		{},
+		{ExitCode: 7},
+		{},
+	}
+	r := &yumRecordingRunner{results: results}
+	got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "hold", map[string]any{"pkgs": []any{"first", "second"}})
+	want := map[string]any{
+		"first":  map[string]any{"name": "first", "changes": map[string]any{}, "result": false, "comment": "Package first was unable to be held."},
+		"second": map[string]any{"name": "second", "changes": map[string]any{"new": "hold", "old": ""}, "result": true, "comment": "Package second is now being held."},
+	}
+	if err != nil || !reflect.DeepEqual(got, want) || len(r.commands) != 5 || r.commands[3].Args[2] != "first" || r.commands[4].Args[2] != "second" {
+		t.Fatalf("continuation got=%#v err=%v commands=%#v", got, err, r.commands)
+	}
+	sentinel := errors.New("add runner failure")
+	r = &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte("yum-plugin-versionlock 1\n")}, {Stdout: []byte("yum-plugin-versionlock 1\n")}, {}, {Err: sentinel}, {}}}
+	got, err = (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "hold", map[string]any{"pkgs": []any{"first", "second"}})
+	if got != nil || !errors.Is(err, sentinel) || len(r.commands) != 4 {
+		t.Fatalf("runner stop got=%#v err=%v commands=%#v", got, err, r.commands)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cr := &yumHoldCancelRunner{cancel: cancel, results: []process.CommandResult{
+		{Stdout: []byte("yum-plugin-versionlock 1\n")}, {Stdout: []byte("yum-plugin-versionlock 1\n")}, {}, {},
+	}}
+	got, err = (&commandProvider{spec: yumSpec}).Yum(ctx, &runtime.Runtime{Runner: cr}, "hold", map[string]any{"pkgs": []any{"first", "second"}})
+	if got != nil || !errors.Is(err, context.Canceled) || len(cr.commands) != 4 {
+		t.Fatalf("cancel stop got=%#v err=%v commands=%#v", got, err, cr.commands)
 	}
 }
 
@@ -1040,6 +1269,242 @@ func TestYumListHoldsRejectsTDNFBeforeRunner(t *testing.T) {
 	}
 }
 
+func TestYumHoldUsesBoundedPreflightAndExactMutationContract(t *testing.T) {
+	for _, manager := range []string{"yum", "dnf", "dnf5"} {
+		t.Run(manager, func(t *testing.T) {
+			plugin := "yum-plugin-versionlock"
+			if manager != "yum" {
+				plugin = "python2-dnf-plugin-versionlock"
+			}
+			r := &yumRecordingRunner{results: []process.CommandResult{
+				{Stdout: []byte(plugin + " 1\nalpha 1\n")},
+				{Stdout: []byte(plugin + " 1\nalpha 1\n")},
+				{Stdout: []byte("0:alpha-1-1.x86_64.*\n")},
+				{},
+			}}
+			rt := &runtime.Runtime{Runner: r}
+			if manager == "dnf5" {
+				fs := runtime.NewMemoryFS()
+				if err := fs.MkdirAll("/etc/dnf", 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := fs.WriteFile("/etc/dnf/versionlock.toml", []byte("[[packages]]\nname = \"alpha\"\n[[packages.conditions]]\nkey = \"evr\"\ncomparator = \"=\"\nvalue = \"1-1\"\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				rt.FS = fs
+			}
+			args := map[string]any{"name": "ignored", "pkgs": []any{"alpha", "beta"}, "normalize": true}
+			before := map[string]any{"name": args["name"], "pkgs": append([]any(nil), args["pkgs"].([]any)...), "normalize": args["normalize"]}
+			got, err := (&commandProvider{spec: rpmSpec(manager)}).Yum(context.Background(), rt, "hold", args)
+			want := map[string]any{
+				"alpha": map[string]any{"name": "alpha", "changes": map[string]any{}, "result": true, "comment": "Package alpha is already set to be held."},
+				"beta":  map[string]any{"name": "beta", "changes": map[string]any{"new": "hold", "old": ""}, "result": true, "comment": "Package beta is now being held."},
+			}
+			wantCalls := 4
+			if manager == "dnf5" {
+				wantCalls = 3
+			}
+			if err != nil || !reflect.DeepEqual(got, want) || !reflect.DeepEqual(args, before) || len(r.commands) != wantCalls {
+				t.Fatalf("got=%#v err=%v args=%#v commands=%#v", got, err, args, r.commands)
+			}
+			wantArgv := [][]string{{"rpm", "-qa", "--qf", "%{NAME} %{VERSION}\n"}, {"rpm", "-qa", "--qf", "%{NAME} %{VERSION}\n"}, {manager, "versionlock", "add", "beta"}}
+			if manager != "dnf5" {
+				wantArgv = [][]string{{"rpm", "-qa", "--qf", "%{NAME} %{VERSION}\n"}, {"rpm", "-qa", "--qf", "%{NAME} %{VERSION}\n"}, {manager, "versionlock", "list"}, {manager, "versionlock", "add", "beta"}}
+			} else {
+				wantArgv = [][]string{{"rpm", "-qa", "--qf", "%{NAME} %{VERSION}\n"}, {"rpm", "-qa", "--qf", "%{NAME} %{VERSION}\n"}, {manager, "versionlock", "add", "beta"}}
+			}
+			for i, command := range r.commands {
+				if !reflect.DeepEqual(append([]string{command.Name}, command.Args...), wantArgv[i]) || command.Shell || command.MaxStdoutBytes != yumHoldOutputLimit || command.MaxStderrBytes != yumHoldOutputLimit {
+					t.Fatalf("command[%d]=%#v", i, command)
+				}
+			}
+		})
+	}
+}
+
+func TestYumHoldPreflightsBeforeRejectingConflictsAndMalformedTargets(t *testing.T) {
+	for _, args := range []map[string]any{
+		{"name": "x", "pkgs": []any{"x"}, "sources": []any{map[string]any{"y": "file"}}},
+		{"pkgs": []any{1}}, {"sources": []any{"not-a-map"}}, {},
+	} {
+		r := &yumRecordingRunner{results: []process.CommandResult{
+			{Stdout: []byte("yum-plugin-versionlock 1\n")},
+			{Stdout: []byte{}},
+		}}
+		if _, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "hold", args); err == nil || len(r.commands) != 1 {
+			t.Fatalf("args=%#v err=%v calls=%d", args, err, len(r.commands))
+		}
+		if r.commands[0].Name != "rpm" {
+			t.Fatalf("preflight order=%#v", r.commands)
+		}
+	}
+}
+
+func TestYumHoldPinnedTestModeAndMappingShapes(t *testing.T) {
+	for _, manager := range []string{"yum", "dnf", "dnf5"} {
+		t.Run(manager, func(t *testing.T) {
+			plugin := "yum-plugin-versionlock"
+			if manager != "yum" {
+				plugin = "python2-dnf-plugin-versionlock"
+			}
+			newRuntime := func(results []process.CommandResult) (*runtime.Runtime, *yumRecordingRunner) {
+				r := &yumRecordingRunner{results: results}
+				rt := &runtime.Runtime{Runner: r, Options: runtime.RuntimeOptions{Test: true}}
+				if manager == "dnf5" {
+					fs := runtime.NewMemoryFS()
+					if err := fs.MkdirAll("/etc/dnf", 0o755); err != nil {
+						t.Fatal(err)
+					}
+					if err := fs.WriteFile(yumDNF5VersionlockPath, []byte("[[packages]]\nname = \"other\"\n"), 0o644); err != nil {
+						t.Fatal(err)
+					}
+					rt.FS = fs
+				}
+				return rt, r
+			}
+			preflight := []process.CommandResult{{Stdout: []byte(plugin + " 1\n")}, {Stdout: []byte(plugin + " 1\n")}, {}}
+			rt, r := newRuntime(preflight)
+			args := map[string]any{"pkgs": []any{"target"}}
+			got, err := (&commandProvider{spec: rpmSpec(manager)}).Yum(context.Background(), rt, "hold", args)
+			want := map[string]any{"target": map[string]any{"name": "target", "changes": map[string]any{}, "result": nil, "comment": "Package target is set to be held."}}
+			wantCalls := 3
+			if manager == "dnf5" {
+				wantCalls = 2
+			}
+			if err != nil || !reflect.DeepEqual(got, want) || len(r.commands) != wantCalls {
+				t.Fatalf("test mode got=%#v err=%v commands=%#v", got, err, r.commands)
+			}
+			for i, c := range r.commands {
+				if c.Shell || c.MaxStdoutBytes != yumHoldOutputLimit || c.MaxStderrBytes != yumHoldOutputLimit {
+					t.Fatalf("command[%d] unbounded=%#v", i, c)
+				}
+				want := []string{"rpm", "-qa", "--qf", "%{NAME} %{VERSION}\n"}
+				if i == 2 {
+					want = []string{manager, "versionlock", "list"}
+				}
+				if !reflect.DeepEqual(append([]string{c.Name}, c.Args...), want) {
+					t.Fatalf("command[%d]=%v want %v", i, c, want)
+				}
+			}
+
+			for _, tc := range []struct {
+				name   string
+				args   map[string]any
+				target string
+			}{
+				{"pkgs-map", map[string]any{"pkgs": []any{map[string]any{"pkg-a": "1-1"}}}, "pkg-a"},
+				{"sources-map", map[string]any{"sources": []any{map[string]string{"pkg-b": "file.rpm"}}}, "pkg-b"},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					before := map[string]any{}
+					for k, v := range tc.args {
+						before[k] = v
+					}
+					rt, r := newRuntime([]process.CommandResult{{Stdout: []byte(plugin + " 1\n")}, {Stdout: []byte(plugin + " 1\n")}, {}})
+					got, err := (&commandProvider{spec: rpmSpec(manager)}).Yum(context.Background(), rt, "hold", tc.args)
+					if err != nil || got.(map[string]any)[tc.target] == nil || !reflect.DeepEqual(tc.args, before) || len(r.commands) < 2 {
+						t.Fatalf("accepted mapping got=%#v err=%v args=%#v commands=%d", got, err, tc.args, len(r.commands))
+					}
+				})
+			}
+			for _, tc := range []struct {
+				name, key string
+				args      map[string]any
+			}{
+				{"pkgs", "pkgs", map[string]any{"pkgs": []any{map[string]any{"a": "1", "b": "2"}}}},
+				{"sources", "sources", map[string]any{"sources": []any{map[string]any{"a": "1", "b": "2"}}}},
+			} {
+				t.Run("reject-"+tc.name, func(t *testing.T) {
+					before := map[string]any{tc.key: append([]any(nil), tc.args[tc.key].([]any)...)}
+					rt, r := newRuntime([]process.CommandResult{{Stdout: []byte(plugin + " 1\n")}})
+					got, err := (&commandProvider{spec: rpmSpec(manager)}).Yum(context.Background(), rt, "hold", tc.args)
+					var unsupported *runtime.UnsupportedError
+					if got != nil || !errors.As(err, &unsupported) || unsupported.Name != "pkg.hold "+tc.key+" multi-key mapping" || len(r.commands) != 1 || !reflect.DeepEqual(tc.args[tc.key], before[tc.key]) {
+						t.Fatalf("rejection got=%#v err=%v commands=%#v args=%#v", got, err, r.commands, tc.args)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestYumHoldPinnedAddRetcodeAndCancellationMatrix(t *testing.T) {
+	for _, manager := range []string{"yum", "dnf", "dnf5"} {
+		t.Run(manager, func(t *testing.T) {
+			plugin := "yum-plugin-versionlock"
+			if manager != "yum" {
+				plugin = "python2-dnf-plugin-versionlock"
+			}
+			results := []process.CommandResult{{Stdout: []byte(plugin + " 1\n")}, {Stdout: []byte(plugin + " 1\n")}, {}, {ExitCode: 9}, {}}
+			if manager == "dnf5" {
+				results = []process.CommandResult{{Stdout: []byte(plugin + " 1\n")}, {Stdout: []byte(plugin + " 1\n")}, {ExitCode: 9}, {}}
+			}
+			r := &yumRecordingRunner{results: results}
+			rt := &runtime.Runtime{Runner: r}
+			if manager == "dnf5" {
+				fs := runtime.NewMemoryFS()
+				if err := fs.MkdirAll("/etc/dnf", 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := fs.WriteFile(yumDNF5VersionlockPath, []byte("[[packages]]\nname = \"other\"\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				rt.FS = fs
+			}
+			got, err := (&commandProvider{spec: rpmSpec(manager)}).Yum(context.Background(), rt, "hold", map[string]any{"pkgs": []any{"first", "second"}})
+			want := map[string]any{
+				"first":  map[string]any{"name": "first", "changes": map[string]any{}, "result": false, "comment": "Package first was unable to be held."},
+				"second": map[string]any{"name": "second", "changes": map[string]any{"new": "hold", "old": ""}, "result": true, "comment": "Package second is now being held."},
+			}
+			wantCalls := 5
+			if manager == "dnf5" {
+				wantCalls = 4
+			}
+			if err != nil || !reflect.DeepEqual(got, want) || len(r.commands) != wantCalls {
+				t.Fatalf("retcode got=%#v err=%v commands=%#v", got, err, r.commands)
+			}
+			for i, c := range r.commands {
+				if c.Shell || c.MaxStdoutBytes != yumHoldOutputLimit || c.MaxStderrBytes != yumHoldOutputLimit {
+					t.Fatalf("command[%d]=%#v", i, c)
+				}
+				want := []string{"rpm", "-qa", "--qf", "%{NAME} %{VERSION}\n"}
+				if manager != "dnf5" && i == 2 {
+					want = []string{manager, "versionlock", "list"}
+				}
+				if i == len(r.commands)-2 || i == len(r.commands)-1 {
+					want = []string{manager, "versionlock", "add", []string{"first", "second"}[i-(len(r.commands)-2)]}
+				}
+				if !reflect.DeepEqual(append([]string{c.Name}, c.Args...), want) {
+					t.Fatalf("command[%d]=%v want %v", i, c, want)
+				}
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			cr := &yumHoldCancelRunner{cancel: cancel, results: []process.CommandResult{{Stdout: []byte(plugin + " 1\n")}, {Stdout: []byte(plugin + " 1\n")}, {}, {}}}
+			if manager == "dnf5" {
+				fs := runtime.NewMemoryFS()
+				if err := fs.MkdirAll("/etc/dnf", 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := fs.WriteFile(yumDNF5VersionlockPath, []byte("[[packages]]\nname = \"other\"\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				rt = &runtime.Runtime{Runner: cr, FS: fs}
+			} else {
+				rt = &runtime.Runtime{Runner: cr}
+			}
+			got, err = (&commandProvider{spec: rpmSpec(manager)}).Yum(ctx, rt, "hold", map[string]any{"pkgs": []any{"first", "second"}})
+			wantCalls = 4
+			if manager == "dnf5" {
+				wantCalls = 3
+			}
+			if got != nil || !errors.Is(err, context.Canceled) || len(cr.commands) != wantCalls || cr.commands[wantCalls-1].Args[2] != "first" {
+				t.Fatalf("cancel got=%#v err=%v commands=%#v", got, err, cr.commands)
+			}
+			cancel()
+		})
+	}
+}
+
 type listHoldsRunner struct {
 	results  []process.CommandResult
 	commands []process.Command
@@ -1072,6 +1537,24 @@ func (r *yumNoCallRunner) Run(context.Context, process.Command) process.CommandR
 type yumRecordingRunner struct {
 	commands []process.Command
 	results  []process.CommandResult
+}
+
+type yumHoldCancelRunner struct {
+	commands []process.Command
+	results  []process.CommandResult
+	cancel   context.CancelFunc
+}
+
+func (r *yumHoldCancelRunner) Run(_ context.Context, command process.Command) process.CommandResult {
+	r.commands = append(r.commands, command)
+	result := process.CommandResult{}
+	if len(r.results) > 0 {
+		result, r.results = r.results[0], r.results[1:]
+	}
+	if len(command.Args) >= 3 && command.Args[0] == "versionlock" && command.Args[1] == "add" {
+		r.cancel()
+	}
+	return result
 }
 
 type yumBoundedErrorFS struct {

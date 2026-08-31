@@ -619,29 +619,21 @@ func (p *commandProvider) hold(ctx context.Context, rt *runtime.Runtime, hold bo
 		state = "hold"
 	}
 	ret := map[string]any{}
-	current := make(map[string]string, len(ns))
-	present := make(map[string]bool, len(ns))
 	for _, n := range ns {
-		o, err := aptRun(ctx, rt, []string{"dpkg", "--get-selections", n})
+		o, err := aptHoldResult(ctx, rt, []string{"dpkg", "--get-selections", n})
 		if err != nil {
+			if len(ret) > 0 {
+				return ret, err
+			}
 			return nil, err
 		}
 		s := parseSelections(o)
-		cur := ""
-		for k, v := range s {
-			for _, x := range v {
-				if x == n {
-					cur = k
-					present[n] = true
-				}
-			}
-		}
-		current[n] = cur
-	}
-	for _, n := range ns {
-		cur := current[n]
-		entry := map[string]any{"name": n, "changes": map[string]any{}, "result": false, "comment": ""}
-		if !present[n] {
+		// Salt's get_selections(pattern=n, state="hold") returns an empty
+		// mapping when dpkg has no readback for the target.  This is the
+		// source-level "not currently held" branch: it must not be inferred
+		// as an install state and must not reach set-selections.
+		if len(s) == 0 {
+			entry := map[string]any{"name": n, "changes": map[string]any{}, "result": false, "comment": ""}
 			if hold {
 				entry["comment"] = fmt.Sprintf("Package %s not currently held.", n)
 			} else {
@@ -649,6 +641,27 @@ func (p *commandProvider) hold(ctx context.Context, rt *runtime.Runtime, hold bo
 			}
 			ret[n] = entry
 			continue
+		}
+		cur := ""
+		present := false
+		for k, v := range s {
+			for _, x := range v {
+				if x == n {
+					cur = k
+					present = true
+				}
+			}
+		}
+		entry := map[string]any{"name": n, "changes": map[string]any{}, "result": false, "comment": ""}
+		if !present {
+			if !hold {
+				entry["comment"] = fmt.Sprintf("Package %s does not have a state.", n)
+				ret[n] = entry
+				continue
+			}
+			// A non-empty selection readback with an unrelated package is not
+			// the empty source state; retain the existing transition behavior.
+			cur = "install"
 		}
 		if cur == state {
 			entry["result"] = true
@@ -660,8 +673,25 @@ func (p *commandProvider) hold(ctx context.Context, rt *runtime.Runtime, hold bo
 			ret[n] = entry
 			continue
 		}
+		if hold && rt.Options.Test {
+			entry["result"] = nil
+			entry["comment"] = fmt.Sprintf("Package %s is set to be held.", n)
+			ret[n] = entry
+			continue
+		}
+		// Readback is deliberately completed before this second, immediate
+		// cancellation check; no dpkg mutation may begin after cancellation.
+		if err := ctx.Err(); err != nil {
+			if len(ret) > 0 {
+				return ret, err
+			}
+			return nil, err
+		}
 		in := n + " " + state + "\n"
-		if _, err = aptResultWithInput(ctx, rt, []string{"dpkg", "--set-selections"}, in); err != nil {
+		if _, err = aptHoldResultWithInput(ctx, rt, []string{"dpkg", "--set-selections"}, in); err != nil {
+			if len(ret) > 0 {
+				return ret, err
+			}
 			return nil, err
 		}
 		entry["changes"] = map[string]any{"old": cur, "new": state}
@@ -675,6 +705,43 @@ func (p *commandProvider) hold(ctx context.Context, rt *runtime.Runtime, hold bo
 	}
 	return ret, nil
 }
+
+const aptHoldOutputLimit = 1 << 20
+
+// Hold uses a narrowly scoped bounded command path because both its dpkg
+// readback and mutation consume package-derived data at the subprocess
+// boundary. Other APT commands retain their existing capture semantics.
+func aptHoldResult(ctx context.Context, rt *runtime.Runtime, argv []string) (string, error) {
+	cmd := runtime.Command(argv...)
+	cmd.Shell = false
+	cmd.MaxStdoutBytes, cmd.MaxStderrBytes = aptHoldOutputLimit, aptHoldOutputLimit
+	r := rt.Runner.Run(ctx, cmd)
+	if r.Err != nil {
+		return "", r.Err
+	}
+	if r.ExitCode != 0 {
+		return "", fmt.Errorf("%s exited with code %d: %s", argv[0], r.ExitCode, r.Stderr)
+	}
+	return string(r.Stdout), nil
+}
+
+func aptHoldResultWithInput(ctx context.Context, rt *runtime.Runtime, argv []string, in string) (string, error) {
+	cmd, err := runtime.CommandWithInputBounded(argv, in)
+	if err != nil {
+		return "", err
+	}
+	cmd.Shell = false
+	cmd.MaxStdoutBytes, cmd.MaxStderrBytes = aptHoldOutputLimit, aptHoldOutputLimit
+	r := rt.Runner.Run(ctx, cmd)
+	if r.Err != nil {
+		return "", r.Err
+	}
+	if r.ExitCode != 0 {
+		return "", fmt.Errorf("%s exited with code %d: %s", argv[0], r.ExitCode, r.Stderr)
+	}
+	return string(r.Stdout), nil
+}
+
 func aptResultWithInput(ctx context.Context, rt *runtime.Runtime, argv []string, in string) (string, error) {
 	cmd, err := runtime.CommandWithInputBounded(argv, in)
 	if err != nil {
