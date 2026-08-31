@@ -1505,6 +1505,299 @@ func TestYumHoldPinnedAddRetcodeAndCancellationMatrix(t *testing.T) {
 	}
 }
 
+func TestYumUnholdProviderMatrix(t *testing.T) {
+	for _, manager := range []string{"yum", "dnf", "dnf5"} {
+		t.Run(manager, func(t *testing.T) {
+			plugin := "yum-plugin-versionlock"
+			if manager != "yum" {
+				plugin = "python2-dnf-plugin-versionlock"
+			}
+			results := []process.CommandResult{
+				{Stdout: []byte(plugin + " 1\n")},
+				{Stdout: []byte(plugin + " 1\n")},
+			}
+			if manager == "yum" {
+				results = append(results, process.CommandResult{Stdout: []byte("0:demo-1-2.x86_64.*\n")})
+			} else if manager == "dnf" {
+				results = append(results, process.CommandResult{Stdout: []byte("demo-1-2.x86_64.*\n")})
+			}
+			results = append(results, process.CommandResult{})
+			r := &yumRecordingRunner{results: results}
+			rt := &runtime.Runtime{Runner: r}
+			if manager == "dnf5" {
+				fs := runtime.NewMemoryFS()
+				if err := fs.MkdirAll("/etc/dnf", 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := fs.WriteFile(yumDNF5VersionlockPath, []byte("[[packages]]\nname = \"demo\"\n[[packages.conditions]]\nkey = \"evr\"\ncomparator = \"=\"\nvalue = \"1-2\"\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				rt.FS = fs
+			}
+			args := map[string]any{"name": "ignored", "pkgs": []any{"demo"}}
+			before := map[string]any{"name": args["name"], "pkgs": append([]any(nil), args["pkgs"].([]any)...)}
+			got, err := (&commandProvider{spec: rpmSpec(manager)}).Yum(context.Background(), rt, "unhold", args)
+			want := map[string]any{"demo": map[string]any{"name": "demo", "changes": map[string]any{"old": "hold", "new": ""}, "result": true, "comment": "Package demo is no longer held."}}
+			if err != nil || !reflect.DeepEqual(got, want) || !reflect.DeepEqual(args, before) {
+				t.Fatalf("got=%#v err=%v args=%#v", got, err, args)
+			}
+			wantCalls := 4
+			if manager == "dnf5" {
+				wantCalls = 3
+			}
+			if len(r.commands) != wantCalls {
+				t.Fatalf("commands=%#v", r.commands)
+			}
+			wantDelete := []string{manager, "versionlock", "delete", "demo"}
+			if manager == "yum" {
+				wantDelete = []string{manager, "versionlock", "delete", "0:demo-1-2.x86_64.*"}
+			}
+			last := r.commands[len(r.commands)-1]
+			if !reflect.DeepEqual(append([]string{last.Name}, last.Args...), wantDelete) || last.Shell || last.MaxStdoutBytes != yumHoldOutputLimit || last.MaxStderrBytes != yumHoldOutputLimit {
+				t.Fatalf("delete command=%#v", last)
+			}
+		})
+	}
+}
+
+func TestYumUnholdFnmatchPythonSemantics(t *testing.T) {
+	tests := []struct {
+		pattern, name string
+		want          bool
+	}{
+		{"*demo*", "0:demo-1-2.x86_64.*", true},
+		{"a/b", "a/b", true}, // slash is ordinary data, unlike filepath.Match.
+		{"pkg[0-9]", "pkg7", true},
+		{"pkg[!0-9]", "pkga", true},
+		{"pkg[!0-9]", "pkg7", false},
+		{"[z-a]", "a", false},
+		{"[!z-a]", "a", true},
+		{"x[z-a]y", "xay", false},
+		{"x[!z-a]y", "xay", true},
+		{"[z-a]/x", "a/x", false},
+		{"[!z-a]/x", "a/x", true},
+		{"literal[", "literal[", true},
+		{"[", "[", true},
+		{"[]a]", "]", true},
+		{"[]a]", "]a", false},
+		{"[]]", "]", true},
+		{"[!]]", "a", true},
+		{"[!]]", "]", false},
+		{"[!", "[!", true},
+		{"[a-", "[a-", true},
+		{"т??[а-я]", "тест", true},
+	}
+	for _, tc := range tests {
+		if got := yumFnmatch(tc.pattern, tc.name); got != tc.want {
+			t.Errorf("yumFnmatch(%q, %q)=%v, want %v", tc.pattern, tc.name, got, tc.want)
+		}
+	}
+	if got := yumUnholdSearchLocks("yum", "a/b", []string{"0:a/b-1-1.x86_64.*", "0:ab-1-1.x86_64.*"}); len(got) != 1 || got[0] != "0:a/b-1-1.x86_64.*" {
+		t.Fatalf("slash target locks=%v", got)
+	}
+	if got := yumLockPackage("0:demo-1-2.x86_64.*"); got != "demo" {
+		t.Fatalf("_get_hold equivalent=%q", got)
+	}
+}
+
+func TestYumFnmatchAdversarialBoundedInputs(t *testing.T) {
+	tests := []struct {
+		name, pattern string
+		want          bool
+	}{
+		{"repeated stars", strings.Repeat("*", 4096), true},
+		{"repeated classes near miss", strings.Repeat("[a]", 1365), false},
+		{"repeated classes exact", strings.Repeat("[a]", 1365), true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			name := strings.Repeat("a", 1365)
+			if tc.name == "repeated stars" {
+				name = strings.Repeat("x", 4096)
+			} else if !tc.want {
+				name = name[:len(name)-1] + "b"
+			}
+			if got := yumFnmatch(tc.pattern, name); got != tc.want {
+				t.Fatalf("yumFnmatch(%d-byte pattern, %d-byte name)=%v, want %v", len(tc.pattern), len(name), got, tc.want)
+			}
+		})
+	}
+}
+
+func TestYumFnmatchHyphenClassPythonSemantics(t *testing.T) {
+	tests := []struct {
+		pattern, name string
+		want          bool
+	}{
+		{"[--0]", ".", true},
+		{"[--0]", "/", true},
+		{"[--0]", ",", false},
+		{"[--0]", "-", true},
+		{"[--0]", "0", true},
+		{"[-0]", "-", true},
+		{"[-0]", "0", true},
+		{"[-0]", ".", false},
+		{"[0-]", "0", true},
+		{"[0-]", "-", true},
+		{"[0-]", ".", false},
+		{"[z-a]", "a", false},
+		{"[z-a]", "z", false},
+		{"[!z-a]", "a", true},
+		{"[!z-a]", "z", true},
+	}
+	for _, tc := range tests {
+		if got := yumFnmatch(tc.pattern, tc.name); got != tc.want {
+			t.Errorf("yumFnmatch(%q, %q)=%v, want %v", tc.pattern, tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestYumFnmatchMalformedBracketsKeepFollowingTokensActive(t *testing.T) {
+	tests := []struct {
+		pattern, name string
+		want          bool
+	}{
+		{"[a[b*", "[a[bXYZ", true},
+		{"[a[b?", "[a[bX", true},
+		{"[]a]*[0-9]", "]a]7", true},
+		{"[a[b*", "[a[b", true},
+		{"[a[b*", "a[bXYZ", false},
+		{"[!a[b]", "x", true},
+		{"[!a[b]", "[", false},
+	}
+	for _, tc := range tests {
+		if got := yumFnmatch(tc.pattern, tc.name); got != tc.want {
+			t.Errorf("yumFnmatch(%q, %q)=%v, want %v", tc.pattern, tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestYumFnmatchRepeatedMalformedBracketsLinear(t *testing.T) {
+	pattern := strings.Repeat("[", 4096)
+	name := strings.Repeat("[", 4096)
+	if !yumFnmatch(pattern, name) {
+		t.Fatalf("yumFnmatch(%d-byte malformed pattern, %d-byte name)=false, want true", len(pattern), len(name))
+	}
+}
+
+func TestYumUnholdContinuesAfterNonzeroDelete(t *testing.T) {
+	for _, manager := range []string{"yum", "dnf", "dnf5"} {
+		t.Run(manager, func(t *testing.T) {
+			plugin := "yum-plugin-versionlock"
+			if manager != "yum" {
+				plugin = "python2-dnf-plugin-versionlock"
+			}
+			results := []process.CommandResult{{Stdout: []byte(plugin + " 1\n")}}
+			if manager == "dnf5" {
+				fs := runtime.NewMemoryFS()
+				if err := fs.MkdirAll("/etc/dnf", 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := fs.WriteFile(yumDNF5VersionlockPath, []byte("[[packages]]\nname = \"first\"\n[[packages.conditions]]\nkey = \"evr\"\ncomparator = \"=\"\nvalue = \"1-1\"\n[[packages]]\nname = \"second\"\n[[packages.conditions]]\nkey = \"evr\"\ncomparator = \"=\"\nvalue = \"1-2\"\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				results = append(results, process.CommandResult{Stdout: []byte(plugin + " 1\n")})
+				results = append(results, process.CommandResult{ExitCode: 7}, process.CommandResult{})
+				r := &yumRecordingRunner{results: results}
+				args := map[string]any{"pkgs": []any{"first", "second"}}
+				before := map[string]any{"pkgs": append([]any(nil), args["pkgs"].([]any)...)}
+				got, err := (&commandProvider{spec: rpmSpec(manager)}).Yum(context.Background(), &runtime.Runtime{FS: fs, Runner: r}, "unhold", args)
+				want := map[string]any{
+					"first":  map[string]any{"name": "first", "changes": map[string]any{}, "result": false, "comment": "Package first was unable to be unheld."},
+					"second": map[string]any{"name": "second", "changes": map[string]any{"old": "hold", "new": ""}, "result": true, "comment": "Package second is no longer held."},
+				}
+				if err != nil || !reflect.DeepEqual(got, want) || !reflect.DeepEqual(args, before) {
+					t.Fatalf("got=%#v err=%v args=%#v", got, err, args)
+				}
+				wantArgv := [][]string{{"rpm", "-qa", "--qf", "%{NAME} %{VERSION}\n"}, {"rpm", "-qa", "--qf", "%{NAME} %{VERSION}\n"}, {manager, "versionlock", "delete", "first"}, {manager, "versionlock", "delete", "second"}}
+				if len(r.commands) != len(wantArgv) {
+					t.Fatalf("commands=%#v", r.commands)
+				}
+				for i, command := range r.commands {
+					if !reflect.DeepEqual(append([]string{command.Name}, command.Args...), wantArgv[i]) || command.Shell || command.MaxStdoutBytes != yumHoldOutputLimit || command.MaxStderrBytes != yumHoldOutputLimit {
+						t.Fatalf("command[%d]=%#v", i, command)
+					}
+				}
+				return
+			}
+			list := "first-1-1.x86_64.*\nsecond-1-2.x86_64.*\n"
+			if manager == "yum" {
+				list = "0:first-1-1.x86_64.*\n0:second-1-2.x86_64.*\n"
+			}
+			results = append(results, process.CommandResult{Stdout: []byte(plugin + " 1\n")}, process.CommandResult{Stdout: []byte(list)}, process.CommandResult{ExitCode: 7}, process.CommandResult{})
+			r := &yumRecordingRunner{results: results}
+			args := map[string]any{"pkgs": []any{"first", "second"}}
+			before := map[string]any{"pkgs": append([]any(nil), args["pkgs"].([]any)...)}
+			got, err := (&commandProvider{spec: rpmSpec(manager)}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "unhold", args)
+			want := map[string]any{
+				"first":  map[string]any{"name": "first", "changes": map[string]any{}, "result": false, "comment": "Package first was unable to be unheld."},
+				"second": map[string]any{"name": "second", "changes": map[string]any{"old": "hold", "new": ""}, "result": true, "comment": "Package second is no longer held."},
+			}
+			if err != nil || !reflect.DeepEqual(got, want) || !reflect.DeepEqual(args, before) {
+				t.Fatalf("got=%#v err=%v args=%#v", got, err, args)
+			}
+			wantArgv := [][]string{{"rpm", "-qa", "--qf", "%{NAME} %{VERSION}\n"}, {"rpm", "-qa", "--qf", "%{NAME} %{VERSION}\n"}, {manager, "versionlock", "list"}}
+			deleteArg := func(lock string) []string { return []string{manager, "versionlock", "delete", lock} }
+			if manager == "yum" {
+				wantArgv = append(wantArgv, deleteArg("0:first-1-1.x86_64.*"), deleteArg("0:second-1-2.x86_64.*"))
+			} else {
+				wantArgv = append(wantArgv, deleteArg("first"), deleteArg("second"))
+			}
+			if len(r.commands) != len(wantArgv) {
+				t.Fatalf("commands=%#v", r.commands)
+			}
+			for i, command := range r.commands {
+				if !reflect.DeepEqual(append([]string{command.Name}, command.Args...), wantArgv[i]) || command.Shell || command.MaxStdoutBytes != yumHoldOutputLimit || command.MaxStderrBytes != yumHoldOutputLimit {
+					t.Fatalf("command[%d]=%#v", i, command)
+				}
+			}
+		})
+	}
+}
+
+func TestYumUnholdValidationTestModeAndFailures(t *testing.T) {
+	// Versionlock preflight precedes malformed arguments and conflicts.
+	r := &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte("yum-plugin-versionlock 1\n")}}}
+	if got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "unhold", map[string]any{"pkgs": []any{map[string]any{"a": "1", "b": "2"}}}); got != nil || err == nil || len(r.commands) != 1 {
+		t.Fatalf("validation got=%#v err=%v commands=%#v", got, err, r.commands)
+	}
+	// An unheld package is successful without mutation or delete.
+	r = &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte("yum-plugin-versionlock 1\n")}, {Stdout: []byte("yum-plugin-versionlock 1\n")}, {Stdout: []byte("other-1-1.x86_64.*\n")}}}
+	got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "unhold", map[string]any{"name": "demo"})
+	want := map[string]any{"demo": map[string]any{"name": "demo", "changes": map[string]any{}, "result": true, "comment": "Package demo is not being held."}}
+	if err != nil || !reflect.DeepEqual(got, want) || len(r.commands) != 3 {
+		t.Fatalf("unheld got=%#v err=%v commands=%#v", got, err, r.commands)
+	}
+	// Test mode reports a planned change and does not invoke delete.
+	r = &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte("yum-plugin-versionlock 1\n")}, {Stdout: []byte("yum-plugin-versionlock 1\n")}, {Stdout: []byte("0:demo-1-1.x86_64.*\n")}}}
+	rt := &runtime.Runtime{Runner: r, Options: runtime.RuntimeOptions{Test: true}}
+	got, err = (&commandProvider{spec: yumSpec}).Yum(context.Background(), rt, "unhold", map[string]any{"name": "demo"})
+	want = map[string]any{"demo": map[string]any{"name": "demo", "changes": map[string]any{}, "result": nil, "comment": "Package demo is set to be unheld."}}
+	if err != nil || !reflect.DeepEqual(got, want) || len(r.commands) != 3 {
+		t.Fatalf("test mode got=%#v err=%v commands=%#v", got, err, r.commands)
+	}
+	// Delete exit codes are per-target results; Runner errors and cancellation stop.
+	r = &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte("yum-plugin-versionlock 1\n")}, {Stdout: []byte("yum-plugin-versionlock 1\n")}, {Stdout: []byte("0:demo-1-1.x86_64.*\n")}, {ExitCode: 7}}}
+	got, err = (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "unhold", map[string]any{"name": "demo"})
+	want = map[string]any{"demo": map[string]any{"name": "demo", "changes": map[string]any{}, "result": false, "comment": "Package demo was unable to be unheld."}}
+	if err != nil || !reflect.DeepEqual(got, want) || len(r.commands) != 4 {
+		t.Fatalf("delete failure got=%#v err=%v commands=%#v", got, err, r.commands)
+	}
+	sentinel := errors.New("delete runner failure")
+	r = &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte("yum-plugin-versionlock 1\n")}, {Stdout: []byte("yum-plugin-versionlock 1\n")}, {Stdout: []byte("0:demo-1-1.x86_64.*\n")}, {Err: sentinel}}}
+	got, err = (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "unhold", map[string]any{"name": "demo"})
+	if got != nil || !errors.Is(err, sentinel) || len(r.commands) != 4 {
+		t.Fatalf("runner failure got=%#v err=%v commands=%#v", got, err, r.commands)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	r = &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte("yum-plugin-versionlock 1\n")}}}
+	got, err = (&commandProvider{spec: yumSpec}).Yum(ctx, &runtime.Runtime{Runner: r}, "unhold", map[string]any{"name": "demo"})
+	if got != nil || !errors.Is(err, context.Canceled) || len(r.commands) != 1 {
+		t.Fatalf("cancel got=%#v err=%v commands=%#v", got, err, r.commands)
+	}
+}
+
 type listHoldsRunner struct {
 	results  []process.CommandResult
 	commands []process.Command

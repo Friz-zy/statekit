@@ -509,7 +509,7 @@ func rpmAlnum(r rune) bool {
 func rpmSpecial(r rune) bool { return r == '~' || r == '^' }
 
 func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function string, args any) (any, error) {
-	if p.spec.manager == "zypper" && function == "hold" {
+	if p.spec.manager == "zypper" && (function == "hold" || function == "unhold") {
 		return nil, &runtime.UnsupportedError{Kind: "provider", Name: p.spec.manager}
 	}
 	// tdnf is intentionally not a supported provider, but list_holds must
@@ -528,7 +528,7 @@ func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function
 	// yumpkg.hold performs _check_versionlock() before Salt validates target
 	// shapes and conflicts.  Keep this dispatch boundary limited to safe map
 	// checking and defer hold validation until after that preflight.
-	if function != "hold" {
+	if function != "hold" && function != "unhold" {
 		if err := validateYUMArgs(function, a); err != nil {
 			return nil, err
 		}
@@ -550,6 +550,8 @@ func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function
 		return yumListHolds(ctx, rt, p.spec.manager, a)
 	case "hold":
 		return yumHold(ctx, rt, p.spec.manager, a)
+	case "unhold":
+		return yumUnhold(ctx, rt, p.spec.manager, a)
 	case "services_need_restart":
 		return yumServicesNeedRestart(ctx, rt, p.spec.manager)
 	case "group_list":
@@ -2633,7 +2635,7 @@ func yumHold(ctx context.Context, rt *runtime.Runtime, manager string, a map[str
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if err := validateYUMHoldArgs(a); err != nil {
+	if err := validateYUMHoldArgs("hold", a); err != nil {
 		return nil, err
 	}
 	name, _ := yumStringArg(a, "name")
@@ -2726,6 +2728,363 @@ func yumHold(ctx context.Context, rt *runtime.Runtime, manager string, a map[str
 	return ret, nil
 }
 
+// yumUnhold mirrors yumpkg.unhold's two-stage lookup: versionlock is checked
+// before argument validation, then the provider-specific lock representation
+// is read before each target is acted upon.  Delete failures are per-target;
+// runner failures and cancellation abort the transaction immediately.
+func yumUnhold(ctx context.Context, rt *runtime.Runtime, manager string, a map[string]any) (any, error) {
+	if rt == nil || rt.Runner == nil {
+		return nil, errors.New("YUM unhold requires a runner")
+	}
+	if err := yumCheckVersionlock(ctx, rt, manager); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := validateYUMHoldArgs("unhold", a); err != nil {
+		return nil, err
+	}
+	targets, err := yumUnholdTargets(a)
+	if err != nil {
+		return nil, err
+	}
+	current, err := yumListHolds(ctx, rt, manager, map[string]any{"full": manager == "yum"})
+	if err != nil {
+		return nil, err
+	}
+	locks, ok := current.([]string)
+	if !ok {
+		return nil, errors.New("YUM unhold: malformed lock list")
+	}
+
+	ret := make(map[string]any, len(targets))
+	for _, target := range targets {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		entry := map[string]any{"name": target, "changes": map[string]any{}, "result": false, "comment": ""}
+		search := yumUnholdSearchLocks(manager, target, locks)
+		if len(search) == 0 {
+			entry["result"] = true
+			entry["comment"] = fmt.Sprintf("Package %s is not being held.", target)
+			ret[target] = entry
+			continue
+		}
+		if rt.Options.Test {
+			entry["result"] = nil
+			entry["comment"] = fmt.Sprintf("Package %s is set to be unheld.", target)
+			ret[target] = entry
+			continue
+		}
+		cmd := runtime.Command(append([]string{manager, "versionlock", "delete"}, search...)...)
+		cmd.Shell = false
+		cmd.MaxStdoutBytes, cmd.MaxStderrBytes = yumHoldOutputLimit, yumHoldOutputLimit
+		res := rt.Runner.Run(ctx, cmd)
+		if res.Err != nil {
+			return nil, res.Err
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if res.ExitCode != 0 {
+			entry["comment"] = fmt.Sprintf("Package %s was unable to be unheld.", target)
+			ret[target] = entry
+			continue
+		}
+		entry["result"] = true
+		entry["changes"] = map[string]any{"new": "", "old": "hold"}
+		entry["comment"] = fmt.Sprintf("Package %s is no longer held.", target)
+		ret[target] = entry
+	}
+	return ret, nil
+}
+
+func yumUnholdTargets(a map[string]any) ([]string, error) {
+	name, _ := yumStringArg(a, "name")
+	pkgs, pkgsPresent := a["pkgs"]
+	sources, sourcesPresent := a["sources"]
+	pkgItems, pkgsOK := yumHoldItems(pkgs)
+	sourceItems, sourcesOK := yumHoldItems(sources)
+	if (pkgsPresent && pkgs != nil && !pkgsOK) || (sourcesPresent && sources != nil && !sourcesOK) {
+		return nil, errors.New("unhold arguments must be lists")
+	}
+	for _, item := range pkgItems {
+		if !yumHoldMappingSupported(item) {
+			return nil, &runtime.UnsupportedError{Kind: "argument", Name: "pkg.unhold pkgs multi-key mapping"}
+		}
+	}
+	for _, item := range sourceItems {
+		if !yumHoldMappingSupported(item) {
+			return nil, &runtime.UnsupportedError{Kind: "argument", Name: "pkg.unhold sources multi-key mapping"}
+		}
+	}
+	if pkgsPresent && pkgs != nil && len(pkgItems) > 0 && sourcesPresent && sources != nil && len(sourceItems) > 0 {
+		return nil, errors.New("Only one of pkgs or sources can be specified.")
+	}
+	targets := make([]string, 0)
+	if pkgsPresent && pkgs != nil && len(pkgItems) > 0 {
+		for _, item := range pkgItems {
+			target, ok := yumHoldTarget(item)
+			if !ok {
+				return nil, errors.New("pkgs must contain valid package names")
+			}
+			targets = append(targets, target)
+		}
+	} else if sourcesPresent && sources != nil && len(sourceItems) > 0 {
+		for _, item := range sourceItems {
+			target, ok := yumHoldSourceTarget(item)
+			if !ok {
+				return nil, errors.New("sources must contain valid package names")
+			}
+			targets = append(targets, target)
+		}
+	} else if validYUMPackageToken(name) {
+		targets = append(targets, name)
+	} else {
+		return nil, errors.New("One of name, pkgs, or sources must be specified.")
+	}
+	return targets, nil
+}
+
+func yumUnholdSearchLocks(manager, target string, locks []string) []string {
+	if manager != "yum" {
+		ret := []string{}
+		for _, lock := range locks {
+			if lock == target {
+				ret = append(ret, lock)
+			}
+		}
+		return ret
+	}
+	ret := []string{}
+	for _, lock := range locks {
+		if yumFnmatch("*"+target+"*", lock) && yumLockPackage(lock) == target {
+			ret = append(ret, lock)
+		}
+	}
+	return ret
+}
+
+// yumFnmatch implements the Python fnmatch semantics needed by yumpkg's yum
+// lock lookup. The translated expression is executed by Go's RE2 engine,
+// which guarantees linear-time matching (unlike backtracking regex engines).
+func yumFnmatch(pattern, name string) bool {
+	const maxLength = 4096
+	const maxRegexpLength = 1 << 20
+	if len(pattern) > maxLength || len(name) > maxLength {
+		return false
+	}
+	tokens := yumFnmatchTokens([]rune(pattern))
+	nameRunes := []rune(name)
+	if len(tokens) > maxLength || len(nameRunes) > maxLength {
+		return false
+	}
+	translated, ok := yumFnmatchRegexp(tokens, maxRegexpLength)
+	if !ok {
+		return false
+	}
+	re, err := regexp.Compile(translated)
+	return err == nil && re.MatchString(name)
+}
+
+func yumFnmatchRegexp(tokens []yumFnmatchToken, maxLength int) (string, bool) {
+	var b strings.Builder
+	b.WriteString("(?s)^") // dot must also match newlines, as in Python fnmatch.
+	for _, token := range tokens {
+		var part string
+		switch token.kind {
+		case '*':
+			part = ".*"
+		case '?':
+			part = "."
+		default:
+			part = yumFnmatchClassRegexp(token.class)
+			if part == "" {
+				// A positive class containing only descending ranges never matches.
+				if !token.class.negated {
+					return "", false
+				}
+				part = "." // Negation of an empty class matches every rune.
+			}
+		}
+		if b.Len()+len(part)+2 > maxLength {
+			return "", false
+		}
+		b.WriteString(part)
+	}
+	b.WriteString(`\z`)
+	return b.String(), true
+}
+
+func yumFnmatchClassRegexp(class yumFnmatchClass) string {
+	var b strings.Builder
+	if class.negated {
+		b.WriteByte('[')
+		b.WriteByte('^')
+	} else {
+		b.WriteByte('[')
+	}
+	for _, ch := range class.chars {
+		b.WriteString(fmt.Sprintf(`\x{%x}`, ch))
+	}
+	for _, pair := range class.ranges {
+		if pair[0] <= pair[1] {
+			b.WriteString(fmt.Sprintf(`\x{%x}-\x{%x}`, pair[0], pair[1]))
+		}
+	}
+	if b.Len() == 1 || (class.negated && b.Len() == 2) {
+		return ""
+	}
+	b.WriteByte(']')
+	return b.String()
+}
+
+type yumFnmatchClass struct {
+	negated bool
+	chars   []rune
+	ranges  [][2]rune
+}
+
+func (c yumFnmatchClass) matches(r rune) bool {
+	matched := false
+	for _, ch := range c.chars {
+		if ch == r {
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		for _, pair := range c.ranges {
+			if pair[0] > pair[1] {
+				continue
+			}
+			if r >= pair[0] && r <= pair[1] {
+				matched = true
+				break
+			}
+		}
+	}
+	if c.negated {
+		return !matched
+	}
+	return matched
+}
+
+type yumFnmatchToken struct {
+	kind  rune
+	class yumFnmatchClass
+}
+
+func yumFnmatchTokens(pattern []rune) []yumFnmatchToken {
+	tokens := make([]yumFnmatchToken, 0, len(pattern))
+	// Index the next closing bracket once so malformed opening brackets cannot
+	// repeatedly rescan the remaining pattern.
+	nextClose := yumFnmatchNextClose(pattern)
+	for i := 0; i < len(pattern); i++ {
+		switch pattern[i] {
+		case '*', '?':
+			tokens = append(tokens, yumFnmatchToken{kind: pattern[i]})
+		case '[':
+			class, end, ok := yumFnmatchClassAt(pattern, i, nextClose)
+			if !ok {
+				tokens = append(tokens, yumFnmatchLiteral('['))
+				continue
+			}
+			tokens = append(tokens, yumFnmatchToken{class: class})
+			i = end
+		default:
+			tokens = append(tokens, yumFnmatchLiteral(pattern[i]))
+		}
+	}
+	return tokens
+}
+
+func yumFnmatchNextClose(pattern []rune) []int {
+	nextClose := make([]int, len(pattern))
+	next := len(pattern)
+	for i := len(pattern) - 1; i >= 0; i-- {
+		if pattern[i] == ']' {
+			next = i
+		}
+		nextClose[i] = next
+	}
+	return nextClose
+}
+
+func yumFnmatchLiteral(r rune) yumFnmatchToken {
+	return yumFnmatchToken{class: yumFnmatchClass{chars: []rune{r}}}
+}
+
+func yumFnmatchClassAt(pattern []rune, start int, nextClose []int) (yumFnmatchClass, int, bool) {
+	i := start + 1
+	negated := i < len(pattern) && pattern[i] == '!'
+	if negated {
+		i++
+	}
+	// A leading ']' is data in Python's bracket expression syntax.
+	leadingClose := i < len(pattern) && pattern[i] == ']'
+	if leadingClose {
+		i++
+	}
+	contentStart := i
+	if i >= len(pattern) {
+		return yumFnmatchClass{}, start, false
+	}
+	end := nextClose[contentStart]
+	if end >= len(pattern) || (end == contentStart && !leadingClose) {
+		return yumFnmatchClass{}, start, false
+	}
+	content := pattern[contentStart:end]
+	class := yumFnmatchClass{negated: negated}
+	if leadingClose {
+		class.chars = append(class.chars, ']')
+	}
+	// Python's translator consumes a range endpoint once it has been used.
+	// Consequently the hyphen in a-b-c is literal, while the second hyphen in
+	// --0 forms the range - through 0.  A hyphen without both endpoints stays
+	// literal; descending ranges are retained and deliberately match nothing.
+	endpointAvailable := false
+	for j := 0; j < len(content); j++ {
+		if content[j] == '-' && endpointAvailable && j+1 < len(content) {
+			lo, hi := content[j-1], content[j+1]
+			// A leading hyphen is emitted as a literal by Python even when
+			// the following hyphen starts a range (as in --0). Other left
+			// endpoints are consumed by the range.
+			if lo != '-' && len(class.chars) > 0 {
+				class.chars = class.chars[:len(class.chars)-1]
+			}
+			class.ranges = append(class.ranges, [2]rune{lo, hi})
+			endpointAvailable = false
+			j++
+			continue
+		}
+		class.chars = append(class.chars, content[j])
+		endpointAvailable = true
+	}
+	return class, end, true
+}
+
+// yumLockPackage is the full-lock equivalent of yumpkg._get_hold(...,
+// full=False), stripping epoch, release, and architecture from a yum lock.
+func yumLockPackage(lock string) string {
+	lock = strings.TrimPrefix(lock, "0:")
+	if i := strings.IndexByte(lock, ':'); i >= 0 {
+		lock = lock[i+1:]
+	}
+	lock = strings.TrimSuffix(lock, ".*")
+	if i := strings.LastIndexByte(lock, '.'); i >= 0 {
+		lock = lock[:i]
+	}
+	if i := strings.LastIndexByte(lock, '-'); i >= 0 {
+		lock = lock[:i]
+	}
+	if i := strings.LastIndexByte(lock, '-'); i >= 0 {
+		lock = lock[:i]
+	}
+	return lock
+}
+
 func yumCheckVersionlock(ctx context.Context, rt *runtime.Runtime, manager string) error {
 	plugin, err := yumVersionlockPluginPolicy(rt, manager, true)
 	if err != nil {
@@ -2741,15 +3100,15 @@ func yumCheckVersionlock(ctx context.Context, rt *runtime.Runtime, manager strin
 	return nil
 }
 
-func validateYUMHoldArgs(a map[string]any) error {
+func validateYUMHoldArgs(function string, a map[string]any) error {
 	if a == nil {
-		return errors.New(`YUM function "hold": malformed arguments`)
+		return fmt.Errorf(`YUM function %q: malformed arguments`, function)
 	}
 	for key := range a {
 		switch key {
 		case "name", "pkgs", "sources", "normalize":
 		default:
-			return fmt.Errorf("YUM function %q: unsupported argument %q", "hold", key)
+			return fmt.Errorf("YUM function %q: unsupported argument %q", function, key)
 		}
 	}
 	if v, present := a["name"]; present && v != nil {

@@ -249,6 +249,141 @@ func TestHoldRegistryProviderMatrix(t *testing.T) {
 	}
 }
 
+func TestUnholdRegistryActualProviderMatrix(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	if got := reg.ProviderCapabilities("pkg.unhold"); !reflect.DeepEqual(got, []string{"aptpkg", "yumpkg"}) {
+		t.Fatalf("capabilities=%v", got)
+	}
+	for _, provider := range []string{"apt", "yum", "dnf", "dnf5", "zypper"} {
+		t.Run(provider, func(t *testing.T) {
+			r := &aptFakeRunner{}
+			family := facts.FamilyRedHat
+			if provider == "apt" {
+				family = facts.FamilyDebian
+			}
+			rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: provider, OS: &facts.OSFacts{Family: family}}), Providers: runtime.NewProviderRegistry(), Runner: r, FS: runtime.NewMemoryFS()}
+			if err := pkgprovider.Register(rt.Providers); err != nil {
+				t.Fatal(err)
+			}
+			prototype, err := reg.ResolveArgs(rt, "pkg.unhold")
+			if provider == "zypper" {
+				var unsupported *runtime.UnsupportedError
+				if err == nil || !errors.As(err, &unsupported) || len(r.calls) != 0 {
+					t.Fatalf("resolve err=%v calls=%d", err, len(r.calls))
+				}
+				got, callErr := reg.Call(context.Background(), rt, "pkg.unhold", &PackagesArgs{})
+				if got != nil || !errors.As(callErr, &unsupported) || len(r.calls) != 0 {
+					t.Fatalf("call got=%#v err=%v calls=%d", got, callErr, len(r.calls))
+				}
+				return
+			}
+			wantType := reflect.TypeOf(PackagesArgs{})
+			if provider != "apt" {
+				wantType = reflect.TypeOf(YumHoldArgs{})
+			}
+			if err != nil || reflect.TypeOf(prototype) != wantType {
+				t.Fatalf("prototype=%T err=%v", prototype, err)
+			}
+			names, err := config.ArgumentNames(prototype)
+			wantNames := []string{"name", "pkgs", "sources"}
+			if provider != "apt" {
+				wantNames = []string{"name", "normalize", "pkgs", "sources"}
+			}
+			if err != nil || !reflect.DeepEqual(names, wantNames) {
+				t.Fatalf("argument names=%v err=%v", names, err)
+			}
+			if provider == "apt" {
+				r.results = []process.CommandResult{{Stdout: []byte("demo hold\n")}, {}}
+				got, callErr := reg.Call(context.Background(), rt, "pkg.unhold", &PackagesArgs{Name: strptr("demo")})
+				want := map[string]any{"demo": map[string]any{"name": "demo", "changes": map[string]any{"old": "hold", "new": "install"}, "result": true, "comment": "Package demo is no longer being held."}}
+				if callErr != nil || !reflect.DeepEqual(got, want) || !reflect.DeepEqual(commandArgv(r.calls), [][]string{{"dpkg", "--get-selections", "demo"}, {"dpkg", "--set-selections"}}) {
+					t.Fatalf("APT got=%#v err=%v argv=%#v", got, callErr, commandArgv(r.calls))
+				}
+			} else {
+				plugin := "python2-dnf-plugin-versionlock"
+				if provider == "yum" {
+					plugin = "yum-plugin-versionlock"
+				}
+				results := []process.CommandResult{{Stdout: []byte(plugin + " 1\n")}}
+				if provider == "dnf5" {
+					results = append(results, process.CommandResult{Stdout: []byte(plugin + " 1\n")})
+					if err := rt.FS.(*runtime.MemoryFS).MkdirAll("/etc/dnf", 0o755); err != nil {
+						t.Fatal(err)
+					}
+					if err := rt.FS.WriteFile("/etc/dnf/versionlock.toml", []byte("[[packages]]\nname = \"demo\"\n[[packages.conditions]]\nkey = \"evr\"\ncomparator = \"=\"\nvalue = \"1-2\"\n"), 0o644); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					results = append(results, process.CommandResult{Stdout: []byte(plugin + " 1\n")})
+					if provider == "yum" {
+						results = append(results, process.CommandResult{Stdout: []byte("0:demo-1-2.x86_64.*\n")})
+					} else {
+						results = append(results, process.CommandResult{Stdout: []byte("demo-1-2.x86_64.*\n")})
+					}
+				}
+				results = append(results, process.CommandResult{})
+				r.results = results
+				got, callErr := reg.Call(context.Background(), rt, "pkg.unhold", &YumHoldArgs{Name: strptr("demo")})
+				want := map[string]any{"demo": map[string]any{"name": "demo", "changes": map[string]any{"old": "hold", "new": ""}, "result": true, "comment": "Package demo is no longer held."}}
+				deleteArg := "demo"
+				if provider == "yum" {
+					deleteArg = "0:demo-1-2.x86_64.*"
+				}
+				wantArgv := [][]string{{"rpm", "-qa", "--qf", "%{NAME} %{VERSION}\n"}, {"rpm", "-qa", "--qf", "%{NAME} %{VERSION}\n"}, {provider, "versionlock", "delete", deleteArg}}
+				if provider != "dnf5" {
+					wantArgv = append([][]string{{"rpm", "-qa", "--qf", "%{NAME} %{VERSION}\n"}, {"rpm", "-qa", "--qf", "%{NAME} %{VERSION}\n"}, {provider, "versionlock", "list"}}, wantArgv[2:]...)
+				}
+				if callErr != nil || !reflect.DeepEqual(got, want) || !reflect.DeepEqual(commandArgv(r.calls), wantArgv) {
+					t.Fatalf("%s got=%#v err=%v calls=%#v", provider, got, callErr, r.calls)
+				}
+				for i, command := range r.calls {
+					if command.Shell || command.MaxStdoutBytes != 1<<20 || command.MaxStderrBytes != 1<<20 {
+						t.Fatalf("%s command[%d]=%#v", provider, i, command)
+					}
+				}
+			}
+			var wrong any = &YumHoldArgs{Name: strptr("demo")}
+			if provider != "apt" {
+				wrong = &PackagesArgs{Pkgs: []string{"demo"}}
+			}
+			before := len(r.calls)
+			if got, callErr := reg.Call(context.Background(), rt, "pkg.unhold", wrong); got != nil || callErr == nil || len(r.calls) != before {
+				t.Fatalf("accepted wrong pointer provider=%s got=%#v err=%v calls=%d", provider, got, callErr, len(r.calls))
+			}
+			if provider != "apt" {
+				plugin := "python2-dnf-plugin-versionlock"
+				if provider == "yum" {
+					plugin = "yum-plugin-versionlock"
+				}
+				failResults := []process.CommandResult{{Stdout: []byte(plugin + " 1\n")}, {Stdout: []byte(plugin + " 1\n")}}
+				if provider != "dnf5" {
+					lock := "demo-1-2.x86_64.*"
+					if provider == "yum" {
+						lock = "0:" + lock
+					}
+					failResults = append(failResults, process.CommandResult{Stdout: []byte(lock + "\n")})
+				}
+				failResults = append(failResults, process.CommandResult{Err: errors.New("runner failure")})
+				failRunner := &aptFakeRunner{results: failResults}
+				rt.Runner = failRunner
+				got, callErr := reg.Call(context.Background(), rt, "pkg.unhold", &YumHoldArgs{Name: strptr("demo")})
+				if got != nil || callErr == nil || len(failRunner.calls) != len(failResults) {
+					t.Fatalf("runner failure got=%#v err=%v calls=%#v", got, callErr, failRunner.calls)
+				}
+				cancelRunner := &aptFakeRunner{results: append(failResults[:len(failResults)-1], process.CommandResult{Err: context.Canceled})}
+				rt.Runner = cancelRunner
+				got, callErr = reg.Call(context.Background(), rt, "pkg.unhold", &YumHoldArgs{Name: strptr("demo")})
+				if got != nil || !errors.Is(callErr, context.Canceled) || len(cancelRunner.calls) != len(failResults) {
+					t.Fatalf("cancel got=%#v err=%v calls=%#v", got, callErr, cancelRunner.calls)
+				}
+			}
+		})
+	}
+}
+
 func TestListHoldsDNF5RegistryQuotedTOMLKeys(t *testing.T) {
 	reg := runtime.NewExecRegistry()
 	if err := Register(reg); err != nil {
@@ -789,7 +924,7 @@ func TestAPTLongtailCapabilityRejectsYumOnlyFunctionsBeforeRunner(t *testing.T) 
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.name == "normalize_name" || tc.name == "parse_arch" || tc.name == "version_cmp" || tc.name == "file_list" || tc.name == "file_dict" || tc.name == "info_installed" || tc.name == "owner" || tc.name == "list_upgrades" || tc.name == "upgrade_available" || tc.name == "list_downloaded" {
+			if tc.name == "normalize_name" || tc.name == "parse_arch" || tc.name == "version_cmp" || tc.name == "file_list" || tc.name == "file_dict" || tc.name == "info_installed" || tc.name == "owner" || tc.name == "list_upgrades" || tc.name == "upgrade_available" || tc.name == "list_downloaded" || tc.name == "unhold" {
 				t.Skip("shared provider-aware function")
 			}
 			r := &aptFakeRunner{}
