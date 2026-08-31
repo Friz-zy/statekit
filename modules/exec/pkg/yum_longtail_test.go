@@ -370,6 +370,66 @@ func TestYumGroupInfoRegistryProviderMatrix(t *testing.T) {
 	}
 }
 
+func TestYumGroupDiffRegistryProviderMatrix(t *testing.T) {
+	for _, manager := range []string{"yum", "dnf", "dnf5"} {
+		reg := runtime.NewExecRegistry()
+		if err := Register(reg); err != nil {
+			t.Fatal(err)
+		}
+		providers := runtime.NewProviderRegistry()
+		if err := pkgprovider.Register(providers); err != nil {
+			t.Fatal(err)
+		}
+		runner := &yumExecRecordingRunner{results: []process.CommandResult{
+			{Stdout: []byte("alpha 1\ngamma 1\n")},
+			{Stdout: []byte("Group: Demo\nMandatory Packages:\n zeta\n alpha\nDefault Packages:\n gamma\n")},
+		}}
+		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: manager}), Providers: providers, Runner: runner}
+		prototype, err := reg.ResolveArgs(rt, "pkg.group_diff")
+		if err != nil || reflect.TypeOf(prototype) != reflect.TypeOf(YumGroupDiffArgs{}) {
+			t.Fatalf("%s prototype=%T err=%v", manager, prototype, err)
+		}
+		if names, err := config.ArgumentNames(prototype); err != nil || !reflect.DeepEqual(names, []string{"disablerepo", "enablerepo", "fromrepo", "name"}) {
+			t.Fatalf("%s names=%v err=%v", manager, names, err)
+		}
+		if caps := reg.ProviderCapabilities("pkg.group_diff"); !reflect.DeepEqual(caps, []string{"yumpkg"}) {
+			t.Fatalf("%s capabilities=%v", manager, caps)
+		}
+		got, err := reg.Call(context.Background(), rt, "pkg.group_diff", &YumGroupDiffArgs{Name: "Demo"})
+		want := map[string]any{
+			"mandatory":   map[string]any{"installed": []string{"alpha"}, "not installed": []string{"zeta"}},
+			"optional":    map[string]any{"installed": []string{}, "not installed": []string{}},
+			"default":     map[string]any{"installed": []string{"gamma"}, "not installed": []string{}},
+			"conditional": map[string]any{"installed": []string{}, "not installed": []string{}},
+		}
+		if err != nil || !reflect.DeepEqual(got, want) || !reflect.DeepEqual(commandArgv(runner.commands), [][]string{{"rpm", "-qa", "--qf", "%{NAME} %{VERSION}\n"}, {manager, "--quiet", "groupinfo", "Demo"}}) {
+			t.Fatalf("%s got=%#v err=%v argv=%#v", manager, got, err, commandArgv(runner.commands))
+		}
+		bad := &yumExecNoCallRunner{}
+		rt.Runner = bad
+		if got, err := reg.Call(context.Background(), rt, "pkg.group_diff", &YumGroupInfoArgs{}); got != nil || err == nil || bad.calls != 0 {
+			t.Fatalf("%s wrong pointer got=%#v err=%v calls=%d", manager, got, err, bad.calls)
+		}
+	}
+	for _, manager := range []string{"apt", "zypper"} {
+		reg := runtime.NewExecRegistry()
+		if err := Register(reg); err != nil {
+			t.Fatal(err)
+		}
+		runner := &yumExecNoCallRunner{}
+		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: manager}), Runner: runner, Providers: runtime.NewProviderRegistry()}
+		if err := pkgprovider.Register(rt.Providers); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := reg.ResolveArgs(rt, "pkg.group_diff"); err == nil {
+			t.Fatalf("%s unexpectedly resolved", manager)
+		}
+		if got, err := reg.Call(context.Background(), rt, "pkg.group_diff", &YumGroupDiffArgs{Name: "Demo"}); got != nil || err == nil || runner.calls != 0 {
+			t.Fatalf("%s got=%#v err=%v calls=%d", manager, got, err, runner.calls)
+		}
+	}
+}
+
 func TestCleanMetadataProviderAwareRegistry(t *testing.T) {
 	for _, manager := range []string{"yum", "dnf"} {
 		reg := runtime.NewExecRegistry()

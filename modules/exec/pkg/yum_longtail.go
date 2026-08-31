@@ -64,6 +64,15 @@ type YumGroupInfoArgs struct {
 	Disablerepo  any      `statekit:"name=disablerepo"`
 }
 
+// YumGroupDiffArgs mirrors yumpkg.group_diff. Unlike group_info, Salt's
+// source signature exposes no expand or ignore_groups arguments.
+type YumGroupDiffArgs struct {
+	Name        string  `statekit:"required"`
+	Fromrepo    *string `statekit:"name=fromrepo"`
+	Enablerepo  any     `statekit:"name=enablerepo"`
+	Disablerepo any     `statekit:"name=disablerepo"`
+}
+
 // YumPrototype returns the exact provider-specific argument shape for a
 // shared longtail function. Registration and dispatch remain canonical in
 // apt_longtail.go.
@@ -85,6 +94,8 @@ func YumPrototype(name string) (any, bool) {
 		return YumListInstalledPatchesArgs{}, true
 	case "group_info":
 		return YumGroupInfoArgs{}, true
+	case "group_diff":
+		return YumGroupDiffArgs{}, true
 	case "services_need_restart":
 		return struct{}{}, true
 	case "group_list":

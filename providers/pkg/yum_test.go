@@ -85,6 +85,48 @@ func TestYumGroupInfoMatchesPinnedMetadataAndSections(t *testing.T) {
 	}
 }
 
+func TestYumGroupDiffUsesListAndExpandedGroupInfoWithoutMutatingSource(t *testing.T) {
+	r := &yumRecordingRunner{results: []process.CommandResult{
+		{Stdout: []byte("alpha 1\ngamma 1\n")},
+		{Stdout: []byte("Group: Demo\nMandatory Packages:\n zeta\n alpha\nOptional Packages:\n beta\nDefault Packages:\n gamma\nConditional Packages:\n delta\n")},
+	}}
+	args := map[string]any{"name": "Demo", "fromrepo": "base", "enablerepo": []string{"extras"}, "disablerepo": "old"}
+	got, err := (&commandProvider{spec: dnfSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "group_diff", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{
+		"mandatory":   map[string]any{"installed": []string{"alpha"}, "not installed": []string{"zeta"}},
+		"optional":    map[string]any{"installed": []string{}, "not installed": []string{"beta"}},
+		"default":     map[string]any{"installed": []string{"gamma"}, "not installed": []string{}},
+		"conditional": map[string]any{"installed": []string{}, "not installed": []string{"delta"}},
+	}
+	if !reflect.DeepEqual(got, want) || !reflect.DeepEqual(args, map[string]any{"name": "Demo", "fromrepo": "base", "enablerepo": []string{"extras"}, "disablerepo": "old"}) {
+		t.Fatalf("got=%#v want=%#v args=%#v", got, want, args)
+	}
+	if len(r.commands) != 2 || !reflect.DeepEqual(r.commands[0].Args, []string{"-qa", "--qf", "%{NAME} %{VERSION}\n"}) ||
+		!reflect.DeepEqual(append([]string{r.commands[1].Name}, r.commands[1].Args...), []string{"dnf", "--quiet", "--disablerepo=*", "--enablerepo=base", "groupinfo", "Demo"}) {
+		t.Fatalf("commands=%#v", r.commands)
+	}
+}
+
+func TestYumGroupDiffRejectsUnknownAndMalformedArgumentsBeforeRunner(t *testing.T) {
+	r := &yumNoCallRunner{}
+	provider := &commandProvider{spec: yumSpec}
+	for _, args := range []map[string]any{
+		{"name": "Demo", "expand": true},
+		{"name": 1},
+		{"name": "Demo", "enablerepo": 1},
+	} {
+		if got, err := provider.Yum(context.Background(), &runtime.Runtime{Runner: r}, "group_diff", args); got != nil || err == nil {
+			t.Errorf("args=%#v got=%#v err=%v", args, got, err)
+		}
+	}
+	if r.calls != 0 {
+		t.Fatalf("runner calls=%d", r.calls)
+	}
+}
+
 func TestYumGroupInfoSplitsOnlyLFAndOmitsTerminalEmptyLine(t *testing.T) {
 	for _, tc := range []struct {
 		output string

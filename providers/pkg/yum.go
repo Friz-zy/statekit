@@ -385,6 +385,8 @@ func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function
 		return yumGroupList(ctx, rt, p.spec.manager)
 	case "group_info":
 		return yumGroupInfo(ctx, rt, p.spec.manager, a)
+	case "group_diff":
+		return yumGroupDiff(ctx, rt, p, a)
 	case "clean_metadata":
 		return yumCleanMetadata(ctx, rt, p.spec.manager, a)
 	case "file_list":
@@ -578,6 +580,8 @@ func validateYUMArgs(function string, a map[string]any) error {
 		allowed = map[string]bool{}
 	case "group_info":
 		allowed = map[string]bool{"name": true, "expand": true, "ignore_groups": true, "fromrepo": true, "enablerepo": true, "disablerepo": true}
+	case "group_diff":
+		allowed = map[string]bool{"name": true, "fromrepo": true, "enablerepo": true, "disablerepo": true}
 	default:
 		return nil
 	}
@@ -674,6 +678,15 @@ func validateYUMArgs(function string, a map[string]any) error {
 			}
 		}
 	}
+	if function == "group_diff" {
+		name, ok := yumStringArg(a, "name")
+		if !ok || name == "" {
+			return errors.New(`argument "name" must be a non-empty string`)
+		}
+		if err := validateYUMGroupToken(name); err != nil {
+			return fmt.Errorf(`argument "name": %w`, err)
+		}
+	}
 	if v, present := a["check_update"]; present && v != nil {
 		switch v.(type) {
 		case bool, *bool:
@@ -682,6 +695,50 @@ func validateYUMArgs(function string, a map[string]any) error {
 		}
 	}
 	return nil
+}
+
+// yumGroupDiff mirrors the pinned yumpkg.group_diff implementation: installed
+// packages come from list_pkgs (the provider's List method), while group
+// membership comes from group_info with expansion forced on. The source
+// yumpkg.py implementation accepts only name and the three repository options.
+func yumGroupDiff(ctx context.Context, rt *runtime.Runtime, p *commandProvider, a map[string]any) (any, error) {
+	installed, err := p.List(ctx, rt)
+	if err != nil {
+		return nil, err
+	}
+	groupArgs := map[string]any{"name": a["name"], "expand": true}
+	for _, key := range []string{"fromrepo", "enablerepo", "disablerepo"} {
+		if value, ok := a[key]; ok {
+			groupArgs[key] = value
+		}
+	}
+	infoAny, err := yumGroupInfo(ctx, rt, p.spec.manager, groupArgs)
+	if err != nil {
+		return nil, err
+	}
+	info, ok := infoAny.(map[string]any)
+	if !ok {
+		return nil, errors.New("YUM group_diff: malformed group_info result")
+	}
+	result := make(map[string]any, 4)
+	for _, category := range []string{"mandatory", "optional", "default", "conditional"} {
+		members, ok := info[category].([]string)
+		if !ok {
+			return nil, fmt.Errorf("YUM group_diff: malformed group_info %q", category)
+		}
+		// Allocate fresh slices: callers must not observe or mutate group_info's
+		// source-backed result while consuming the diff.
+		got := map[string]any{"installed": []string{}, "not installed": []string{}}
+		for _, member := range members {
+			key := "not installed"
+			if _, present := installed[member]; present {
+				key = "installed"
+			}
+			got[key] = append(got[key].([]string), member)
+		}
+		result[category] = got
+	}
+	return result, nil
 }
 
 // yumGroupList mirrors yumpkg.group_list. The command deliberately uses the
