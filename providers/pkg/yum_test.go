@@ -4,14 +4,107 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/friz-zy/statekit/internal/facts"
 	"github.com/friz-zy/statekit/internal/process"
 	"github.com/friz-zy/statekit/internal/runtime"
 )
+
+type yumFixtureDirEntry struct {
+	name     string
+	typeBits fs.FileMode
+}
+
+func (e yumFixtureDirEntry) Name() string      { return e.name }
+func (e yumFixtureDirEntry) IsDir() bool       { return e.typeBits&fs.ModeDir != 0 }
+func (e yumFixtureDirEntry) Type() fs.FileMode { return e.typeBits }
+func (e yumFixtureDirEntry) Info() (fs.FileInfo, error) {
+	return yumFixtureInfo{name: e.name, mode: e.typeBits}, nil
+}
+
+type yumFixtureInfo struct {
+	name string
+	mode fs.FileMode
+}
+
+func (i yumFixtureInfo) Name() string       { return i.name }
+func (i yumFixtureInfo) Size() int64        { return 7 }
+func (i yumFixtureInfo) Mode() fs.FileMode  { return i.mode }
+func (i yumFixtureInfo) ModTime() time.Time { return time.Unix(123, 0) }
+func (i yumFixtureInfo) IsDir() bool        { return i.mode.IsDir() }
+func (i yumFixtureInfo) Sys() any           { return nil }
+
+type yumFixtureFS struct {
+	*runtime.MemoryFS
+	entries []fs.DirEntry
+	info    map[string]fs.FileInfo
+	lstats  []string
+	stats   []string
+	root    string
+}
+
+func (f *yumFixtureFS) ReadDirBounded(name string, _ int) ([]fs.DirEntry, error) {
+	if name == f.root {
+		return f.entries, nil
+	}
+	return nil, nil
+}
+func (f *yumFixtureFS) Lstat(name string) (fs.FileInfo, error) {
+	f.lstats = append(f.lstats, name)
+	if info, ok := f.info[name]; ok {
+		return info, nil
+	}
+	return nil, fs.ErrNotExist
+}
+func (f *yumFixtureFS) Stat(name string) (fs.FileInfo, error) {
+	f.stats = append(f.stats, name)
+	return f.MemoryFS.Stat(name)
+}
+
+func TestYumDownloadedRejectsDirEntryNonregularAndLstatNonregular(t *testing.T) {
+	root := "/var/cache/yum"
+	names := []struct {
+		name string
+		mode fs.FileMode
+	}{
+		{"pipe.rpm", fs.ModeNamedPipe}, {"device.rpm", fs.ModeDevice},
+		{"socket.rpm", fs.ModeSocket}, {"char.rpm", fs.ModeCharDevice},
+		{"symlink.rpm", fs.ModeSymlink}, {"directory.rpm", fs.ModeDir},
+	}
+	entries := make([]fs.DirEntry, 0, len(names)+2)
+	for _, tc := range names {
+		entries = append(entries, yumFixtureDirEntry{name: tc.name, typeBits: tc.mode})
+	}
+	lateSymlink := root + "/late-symlink.rpm"
+	regular := root + "/regular.rpm"
+	entries = append(entries, yumFixtureDirEntry{name: "late-symlink.rpm"}, yumFixtureDirEntry{name: "regular.rpm"})
+	fsys := &yumFixtureFS{MemoryFS: runtime.NewMemoryFS(), root: root, entries: entries, info: map[string]fs.FileInfo{
+		lateSymlink: yumFixtureInfo{name: "late-symlink.rpm", mode: fs.ModeSymlink},
+	}}
+	if err := fsys.MemoryFS.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := fsys.MemoryFS.WriteFile(regular, []byte("payload"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	fsys.info[regular], _ = fsys.MemoryFS.Lstat(regular)
+	r := &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte("demo_|-0_|-1_|-(none)_|-x86_64_|-none_|-0")}}}
+	got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{FS: fsys, Runner: r, Facts: factsForYUMTest()}, "list_downloaded", map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fsys.lstats) != 2 || len(fsys.stats) != 0 || len(r.commands) != 1 || r.commands[0].Args[len(r.commands[0].Args)-1] != regular {
+		t.Fatalf("lstat/stat/query candidates: lstats=%v stats=%v commands=%v", fsys.lstats, fsys.stats, r.commands)
+	}
+	if _, ok := got.(map[string]any)["demo"]; !ok {
+		t.Fatalf("regular candidate missing: %#v", got)
+	}
+}
 
 func TestYumGroupListMatchesPinnedRawLineParsing(t *testing.T) {
 	r := &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte(
@@ -56,6 +149,178 @@ func TestYumGroupListMatchesPinnedRawLineParsing(t *testing.T) {
 		!reflect.DeepEqual(r.commands[0].Args, []string{"grouplist", "hidden"}) || r.commands[0].Shell ||
 		r.commands[0].MaxStdoutBytes != yumGroupsOutputLimit || r.commands[0].MaxStderrBytes != yumGroupsOutputLimit {
 		t.Fatalf("commands=%#v", r.commands)
+	}
+}
+
+func TestYumListDownloadedUsesCacheAndRPMQuery(t *testing.T) {
+	fs := runtime.NewMemoryFS()
+	if err := fs.MkdirAll("/var/cache/dnf/nested", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := fs.WriteFile("/var/cache/dnf/nested/pkg.rpm", []byte("rpm"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := fs.WriteFile("/var/cache/dnf/nested/ignored.txt", []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte("demo_|-1_|-2.3_|-1_|-x86_64_|-none_|-0")}}}
+	got, err := (&commandProvider{spec: dnfSpec}).Yum(context.Background(), &runtime.Runtime{FS: fs, Runner: r}, "list_downloaded", map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta := got.(map[string]any)["demo"].(map[string]any)["1:2.3-1"].(map[string]any)
+	info, statErr := fs.Stat("/var/cache/dnf/nested/pkg.rpm")
+	ctime, ctimeOK := fileCTime(info)
+	if statErr != nil || !ctimeOK || meta["path"] != "/var/cache/dnf/nested/pkg.rpm" || meta["size"] != int64(3) || meta["creation_date_time_t"] != ctime.Unix() {
+		t.Fatalf("unexpected metadata: %#v", meta)
+	}
+	if len(r.commands) != 1 || !reflect.DeepEqual(r.commands[0].Args, []string{"-qp", "--queryformat", "%{NAME}_|-%{EPOCH}_|-%{VERSION}_|-%{RELEASE}_|-%{ARCH}_|-none_|-%{INSTALLTIME}", "/var/cache/dnf/nested/pkg.rpm"}) {
+		t.Fatalf("unexpected query: %#v", r.commands)
+	}
+}
+
+func TestYumListDownloadedIgnoresAllKwargsWithoutChangingBehavior(t *testing.T) {
+	for _, manager := range []string{"yum", "dnf", "dnf5"} {
+		t.Run(manager, func(t *testing.T) {
+			makeRuntime := func(args map[string]any) (any, *yumRecordingRunner, map[string]any, error) {
+				fs := runtime.NewMemoryFS()
+				if err := fs.MkdirAll("/var/cache/"+manager+"/nested", 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := fs.WriteFile("/var/cache/"+manager+"/nested/pkg.rpm", []byte("payload"), 0o640); err != nil {
+					t.Fatal(err)
+				}
+				r := &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte("demo_|-0_|-1_|-(none)_|-x86_64_|-none_|-0")}}}
+				before := map[string]any{}
+				for k, v := range args {
+					before[k] = v
+				}
+				got, err := (&commandProvider{spec: rpmSpec(manager)}).Yum(context.Background(), &runtime.Runtime{FS: fs, Runner: r, Facts: factsForYUMTest()}, "list_downloaded", args)
+				return got, r, before, err
+			}
+			plain, plainRunner, _, err := makeRuntime(map[string]any{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			kwargs := map[string]any{"root": "/wrong", "unknown": map[string]any{"nested": true}}
+			withKwargs, kwargsRunner, before, err := makeRuntime(kwargs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(plain, withKwargs) || !reflect.DeepEqual(plainRunner.commands, kwargsRunner.commands) || !reflect.DeepEqual(kwargs, before) {
+				t.Fatalf("kwargs changed behavior: plain=%#v kwargs=%#v plainCommands=%#v kwargsCommands=%#v args=%#v", plain, withKwargs, plainRunner.commands, kwargsRunner.commands, kwargs)
+			}
+		})
+	}
+}
+
+func factsForYUMTest() *facts.Facts {
+	return facts.ForTesting(facts.Overrides{CPU: &facts.CPUFacts{Arch: "x86_64"}})
+}
+
+func TestYumListDownloadedTraversalMetadataAndBounds(t *testing.T) {
+	for _, manager := range []string{"yum", "dnf", "dnf5"} {
+		t.Run(manager, func(t *testing.T) {
+			fs := runtime.NewMemoryFS()
+			root := "/var/cache/" + manager
+			if err := fs.MkdirAll(root+"/nested", 0o755); err != nil {
+				t.Fatal(err)
+			}
+			files := map[string]string{
+				root + "/a.rpm":        "first",
+				root + "/nested/z.rpm": "last",
+				root + "/noarch.rpm":   "third",
+				root + "/ignored.txt":  "ignored",
+			}
+			for name, body := range files {
+				if err := fs.WriteFile(name, []byte(body), 0o640); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := fs.MkdirAll(root+"/directory.rpm", 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := fs.Symlink(root+"/nested", root+"/symlink.rpm"); err != nil {
+				t.Fatal(err)
+			}
+			if err := fs.Symlink(root+"/a.rpm", root+"/final-symlink.rpm"); err != nil {
+				t.Fatal(err)
+			}
+			r := &yumRecordingRunner{results: []process.CommandResult{
+				{Stdout: []byte("demo_|-2_|-2.0_|-3_|-x86_64_|-none_|-0")},
+				{Stdout: []byte("other_|-(none)_|-1.0_|-(none)_|-noarch_|-none_|-0")},
+				{Stdout: []byte("demo_|-2_|-2.0_|-3_|-x86_64_|-none_|-0")},
+			}}
+			before := map[string]any{"root": "/not-used", "unknown": "ignored"}
+			got, err := (&commandProvider{spec: rpmSpec(manager)}).Yum(context.Background(), &runtime.Runtime{FS: fs, Runner: r, Facts: factsForYUMTest()}, "list_downloaded", before)
+			if err != nil {
+				t.Fatal(err)
+			}
+			demo := got.(map[string]any)["demo"].(map[string]any)["2:2.0-3"].(map[string]any)
+			info, err := fs.Stat(root + "/nested/z.rpm")
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctime, ok := fileCTime(info)
+			if !ok {
+				t.Fatal("memory filesystem did not expose ctime")
+			}
+			wantTime := time.Unix(ctime.Unix(), 0).Local().Format("2006-01-02T15:04:05")
+			if !reflect.DeepEqual(demo, map[string]any{"path": root + "/nested/z.rpm", "size": int64(4), "creation_date_time_t": ctime.Unix(), "creation_date_time": wantTime}) {
+				t.Fatalf("duplicate/metadata result=%#v", demo)
+			}
+			other := got.(map[string]any)["other"].(map[string]any)["1.0"].(map[string]any)
+			if other["path"] != root+"/noarch.rpm" || other["size"] != int64(5) {
+				t.Fatalf("noarch result=%#v", other)
+			}
+			if len(r.commands) != 3 {
+				t.Fatalf("queried non-RPM or nonregular entries: %#v", r.commands)
+			}
+			for _, command := range r.commands {
+				if command.MaxStdoutBytes != yumDownloadedMetadataLimit || command.MaxStderrBytes != yumDownloadedMetadataLimit || !reflect.DeepEqual(command.Args[:3], []string{"-qp", "--queryformat", "%{NAME}_|-%{EPOCH}_|-%{VERSION}_|-%{RELEASE}_|-%{ARCH}_|-none_|-%{INSTALLTIME}"}) {
+					t.Fatalf("unbounded or incorrect query=%#v", command)
+				}
+			}
+			if !reflect.DeepEqual(before, map[string]any{"root": "/not-used", "unknown": "ignored"}) {
+				t.Fatal("kwargs mutated")
+			}
+		})
+	}
+}
+
+func TestYumListDownloadedQueryFailuresAndMalformedMetadata(t *testing.T) {
+	fs := runtime.NewMemoryFS()
+	if err := fs.MkdirAll("/var/cache/yum", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := fs.WriteFile("/var/cache/yum/a.rpm", []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		res  process.CommandResult
+		want error
+	}{
+		{"nonzero", process.CommandResult{ExitCode: 9, Stderr: []byte("query failed")}, errors.New("rpm exited with code 9: query failed")},
+		{"runner", process.CommandResult{Err: context.Canceled}, context.Canceled},
+		{"output-limit", process.CommandResult{Err: process.ErrOutputLimit}, process.ErrOutputLimit},
+		{"malformed", process.CommandResult{Stdout: []byte("None")}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &yumRecordingRunner{results: []process.CommandResult{tc.res}}
+			got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{FS: fs, Runner: r, Facts: factsForYUMTest()}, "list_downloaded", map[string]any{})
+			if tc.want != nil {
+				matches := errors.Is(err, tc.want)
+				if tc.name == "nonzero" {
+					matches = err != nil && err.Error() == tc.want.Error()
+				}
+				if got != nil || !matches {
+					t.Fatalf("got=%#v err=%v want=%v", got, err, tc.want)
+				}
+			} else if err != nil || !reflect.DeepEqual(got, map[string]any{}) {
+				t.Fatalf("malformed metadata got=%#v err=%v", got, err)
+			}
+		})
 	}
 }
 
@@ -807,6 +1072,74 @@ func (r *yumNoCallRunner) Run(context.Context, process.Command) process.CommandR
 type yumRecordingRunner struct {
 	commands []process.Command
 	results  []process.CommandResult
+}
+
+type yumBoundedErrorFS struct {
+	*runtime.MemoryFS
+	fail map[string]error
+}
+
+func (f *yumBoundedErrorFS) ReadDirBounded(name string, max int) ([]fs.DirEntry, error) {
+	if err := f.fail[name]; err != nil {
+		return nil, err
+	}
+	return f.MemoryFS.ReadDirBounded(name, max)
+}
+
+type yumUnboundedFS struct{ runtime.FileSystem }
+
+func TestYumListDownloadedFailureAndCapabilityMatrix(t *testing.T) {
+	for _, manager := range []string{"yum", "dnf", "dnf5"} {
+		t.Run(manager, func(t *testing.T) {
+			root := "/var/cache/" + manager
+			base := runtime.NewMemoryFS()
+			if err := base.MkdirAll(root+"/nested", 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := base.WriteFile(root+"/nested/a.rpm", []byte("payload"), 0o640); err != nil {
+				t.Fatal(err)
+			}
+
+			t.Run("missing-root", func(t *testing.T) {
+				r := &yumNoCallRunner{}
+				got, err := (&commandProvider{spec: rpmSpec(manager)}).Yum(context.Background(), &runtime.Runtime{FS: runtime.NewMemoryFS(), Runner: r}, "list_downloaded", map[string]any{})
+				if err != nil || !reflect.DeepEqual(got, map[string]any{}) || r.calls != 0 {
+					t.Fatalf("got=%#v err=%v calls=%d", got, err, r.calls)
+				}
+			})
+			t.Run("nested-read-error-suppressed", func(t *testing.T) {
+				fsys := &yumBoundedErrorFS{MemoryFS: base, fail: map[string]error{root + "/nested": fs.ErrPermission}}
+				r := &yumNoCallRunner{}
+				got, err := (&commandProvider{spec: rpmSpec(manager)}).Yum(context.Background(), &runtime.Runtime{FS: fsys, Runner: r}, "list_downloaded", map[string]any{})
+				if err != nil || !reflect.DeepEqual(got, map[string]any{}) || r.calls != 0 {
+					t.Fatalf("got=%#v err=%v calls=%d", got, err, r.calls)
+				}
+			})
+			t.Run("overflow-no-partial", func(t *testing.T) {
+				fsys := &yumBoundedErrorFS{MemoryFS: base, fail: map[string]error{root: runtime.ErrDirReadLimit}}
+				r := &yumNoCallRunner{}
+				got, err := (&commandProvider{spec: rpmSpec(manager)}).Yum(context.Background(), &runtime.Runtime{FS: fsys, Runner: r}, "list_downloaded", map[string]any{})
+				if got != nil || err == nil || r.calls != 0 {
+					t.Fatalf("got=%#v err=%v calls=%d", got, err, r.calls)
+				}
+			})
+			t.Run("unsupported-no-runner", func(t *testing.T) {
+				r := &yumNoCallRunner{}
+				fsys := &yumUnboundedFS{FileSystem: base}
+				got, err := (&commandProvider{spec: rpmSpec(manager)}).Yum(context.Background(), &runtime.Runtime{FS: fsys, Runner: r}, "list_downloaded", map[string]any{})
+				if got != nil || !errors.Is(err, runtime.ErrBoundedDirUnsupported) || r.calls != 0 {
+					t.Fatalf("got=%#v err=%v calls=%d", got, err, r.calls)
+				}
+			})
+			t.Run("runner-error-stops", func(t *testing.T) {
+				r := &yumRecordingRunner{results: []process.CommandResult{{Err: context.Canceled}}}
+				got, err := (&commandProvider{spec: rpmSpec(manager)}).Yum(context.Background(), &runtime.Runtime{FS: base, Runner: r, Facts: factsForYUMTest()}, "list_downloaded", map[string]any{"root": "/ignored"})
+				if got != nil || !errors.Is(err, context.Canceled) || len(r.commands) != 1 {
+					t.Fatalf("got=%#v err=%v calls=%d", got, err, len(r.commands))
+				}
+			})
+		})
+	}
 }
 
 func TestYumUpgradeFunctionsUsePinnedQueriesAndEVRRules(t *testing.T) {

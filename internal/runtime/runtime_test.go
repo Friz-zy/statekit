@@ -31,6 +31,17 @@ type matrixProviderAwareExec struct {
 
 type resolveNoCallRunner struct{ calls int }
 
+type boundedDirErrorFS struct {
+	FileSystem
+	err   error
+	calls int
+}
+
+func (f *boundedDirErrorFS) ReadDirBounded(string, int) ([]fs.DirEntry, error) {
+	f.calls++
+	return nil, f.err
+}
+
 func (r *resolveNoCallRunner) Run(context.Context, process.Command) process.CommandResult {
 	r.calls++
 	return process.CommandResult{}
@@ -212,7 +223,14 @@ func TestExecRegistryProviderCapabilities(t *testing.T) {
 }
 
 func TestReadFileBoundedValidationAndOSLimits(t *testing.T) {
-	dir := t.TempDir()
+	if err := os.MkdirAll(".gotmp", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := os.MkdirTemp(".gotmp", "read-bounded-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	file := filepath.Join(dir, "file")
 	if err := os.WriteFile(file, []byte("1234"), 0o600); err != nil {
 		t.Fatal(err)
@@ -232,6 +250,93 @@ func TestReadFileBoundedValidationAndOSLimits(t *testing.T) {
 		if _, err := ReadFileBounded(fsys, file, limit); !errors.Is(err, ErrInvalidReadLimit) {
 			t.Fatalf("invalid limit %d: %v", limit, err)
 		}
+	}
+}
+
+func TestReadDirBoundedMemoryAndOS(t *testing.T) {
+	memory := NewMemoryFS()
+	if err := memory.MkdirAll("/bounded", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"z", "a", "m"} {
+		if err := memory.WriteFile("/bounded/"+name, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries, err := ReadDirBounded(memory, "/bounded", 3)
+	if err != nil || len(entries) != 3 || entries[0].Name() != "a" || entries[2].Name() != "z" {
+		t.Fatalf("memory entries=%v err=%v", entries, err)
+	}
+	if _, err := ReadDirBounded(memory, "/bounded", 2); !errors.Is(err, ErrDirReadLimit) {
+		t.Fatalf("memory overflow=%v", err)
+	}
+
+	if err := os.MkdirAll(".gotmp", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := os.MkdirTemp(".gotmp", "readdir-bounded-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	for _, name := range []string{"c", "b", "a"} {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries, err = ReadDirBounded(NewOSFileSystem(), dir, 3)
+	if err != nil || len(entries) != 3 || entries[0].Name() != "a" || entries[2].Name() != "c" {
+		t.Fatalf("OS entries=%v err=%v", entries, err)
+	}
+	if _, err := ReadDirBounded(NewOSFileSystem(), dir, 2); !errors.Is(err, ErrDirReadLimit) {
+		t.Fatalf("OS overflow=%v", err)
+	}
+	if entries, err := ReadDirBounded(NewOSFileSystem(), dir, MaxBoundedDirEntries); err != nil || len(entries) != 3 {
+		t.Fatalf("OS boundary entries=%v err=%v", entries, err)
+	}
+}
+
+func TestReadDirBoundedRejectsInvalidFiniteLimitsBeforeEnumeration(t *testing.T) {
+	maxInt := int(^uint(0) >> 1)
+	for _, fsys := range []FileSystem{NewMemoryFS(), NewOSFileSystem()} {
+		for _, limit := range []int{-1, 0, MaxBoundedDirEntries + 1, maxInt} {
+			if _, err := ReadDirBounded(fsys, "/does-not-matter", limit); !errors.Is(err, ErrInvalidDirReadLimit) {
+				t.Fatalf("%T limit=%d err=%v", fsys, limit, err)
+			}
+		}
+	}
+	memory := NewMemoryFS()
+	if err := memory.MkdirAll("/boundary", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if entries, err := ReadDirBounded(memory, "/boundary", MaxBoundedDirEntries); err != nil || len(entries) != 0 {
+		t.Fatalf("boundary entries=%v err=%v", entries, err)
+	}
+}
+
+func TestReadDirBoundedDoesNotFallbackAndPropagatesCapabilityErrors(t *testing.T) {
+	base := NewMemoryFS()
+	if err := base.MkdirAll("/bounded", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"read error", fs.ErrPermission},
+		{"close error", errors.New("close failed")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &boundedDirErrorFS{FileSystem: base, err: tc.err}
+			_, err := ReadDirBounded(f, "/bounded", 1)
+			if !errors.Is(err, tc.err) || f.calls != 1 {
+				t.Fatalf("err=%v calls=%d", err, f.calls)
+			}
+		})
+	}
+	plain := &struct{ FileSystem }{FileSystem: base}
+	if _, err := ReadDirBounded(plain, "/bounded", 1); !errors.Is(err, ErrBoundedDirUnsupported) {
+		t.Fatalf("unsupported filesystem error=%v", err)
 	}
 }
 

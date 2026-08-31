@@ -1301,6 +1301,9 @@ const maxDownloadedEntries = 10000
 // fileCTime extracts the platform FileInfo ctime without substituting mtime.
 // Reflection keeps the FileSystem contract portable across Unix and Windows.
 func fileCTime(info interface{ Sys() interface{} }) (time.Time, bool) {
+	if info == nil {
+		return time.Time{}, false
+	}
 	s := info.Sys()
 	if s == nil {
 		return time.Time{}, false
@@ -1311,6 +1314,9 @@ func fileCTime(info interface{ Sys() interface{} }) (time.Time, bool) {
 			return time.Time{}, false
 		}
 		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return time.Time{}, false
 	}
 	for _, name := range []string{"Ctim", "Birthtimespec", "CreationTime"} {
 		f := v.FieldByName(name)

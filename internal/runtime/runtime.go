@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -363,6 +364,44 @@ type FileSystem interface {
 	Lchown(name string, uid, gid int) error
 }
 
+// ErrDirReadLimit reports that a bounded directory enumeration found more
+// entries than the requested limit.  It is separate from ReadDir, whose
+// compatibility semantics remain unbounded.
+var ErrDirReadLimit = errors.New("runtime: directory exceeds read limit")
+
+// ErrInvalidDirReadLimit reports a non-positive or unreasonably large bounded
+// directory limit. A positive finite ceiling is required before touching the
+// filesystem so callers cannot trigger an unbounded enumeration or overflow.
+var ErrInvalidDirReadLimit = errors.New("runtime: invalid bounded directory read limit")
+
+// MaxBoundedDirEntries is the largest directory limit accepted by
+// ReadDirBounded. It is intentionally aligned with the package-cache
+// traversal ceiling used by bounded consumers.
+const MaxBoundedDirEntries = 10000
+
+// ErrBoundedDirUnsupported identifies a filesystem without the optional
+// bounded directory capability; callers must not fall back to ReadDir.
+var ErrBoundedDirUnsupported = errors.New("runtime: bounded directory reads unsupported")
+
+// BoundedDirFileSystem is the optional capability for enumerating a directory
+// without first materializing an untrusted, unbounded entry list.
+type BoundedDirFileSystem interface {
+	ReadDirBounded(name string, max int) ([]fs.DirEntry, error)
+}
+
+// ReadDirBounded dispatches only to filesystems that implement the bounded
+// capability. Falling back to ReadDir would defeat the allocation guarantee.
+func ReadDirBounded(fsys FileSystem, name string, max int) ([]fs.DirEntry, error) {
+	if max <= 0 || max > MaxBoundedDirEntries {
+		return nil, ErrInvalidDirReadLimit
+	}
+	bounded, ok := fsys.(BoundedDirFileSystem)
+	if !ok {
+		return nil, ErrBoundedDirUnsupported
+	}
+	return bounded.ReadDirBounded(name, max)
+}
+
 // ErrReadLimit reports that a bounded filesystem read found more than the
 // requested number of bytes. It is separate from ReadFile, whose unbounded
 // compatibility semantics are retained.
@@ -468,6 +507,37 @@ func (OSFileSystem) Readlink(name string) (string, error) { return os.Readlink(n
 // ReadDir implements FileSystem.
 func (OSFileSystem) ReadDir(name string) ([]fs.DirEntry, error) { return os.ReadDir(name) }
 
+// ReadDirBounded streams at most max+1 entries, allowing overflow detection
+// without constructing an unbounded slice. Results are sorted to retain the
+// deterministic ordering of os.ReadDir.
+func (OSFileSystem) ReadDirBounded(name string, max int) ([]fs.DirEntry, error) {
+	if max <= 0 || max > MaxBoundedDirEntries {
+		return nil, ErrInvalidDirReadLimit
+	}
+	dir, err := os.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	readMax := max + 1
+	entries, readErr := dir.Readdir(readMax)
+	closeErr := dir.Close()
+	if readErr != nil && readErr != io.EOF {
+		return nil, readErr
+	}
+	if closeErr != nil {
+		return nil, closeErr
+	}
+	if len(entries) > max {
+		return nil, ErrDirReadLimit
+	}
+	result := make([]fs.DirEntry, len(entries))
+	for i := range entries {
+		result[i] = fileInfoDirEntry{info: entries[i]}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Name() < result[j].Name() })
+	return result, nil
+}
+
 // Chmod implements FileSystem.
 func (OSFileSystem) Chmod(name string, mode fs.FileMode) error { return os.Chmod(name, mode) }
 
@@ -488,6 +558,13 @@ type memNode struct {
 	uid     int
 	gid     int
 }
+
+type fileInfoDirEntry struct{ info fs.FileInfo }
+
+func (e fileInfoDirEntry) Name() string               { return e.info.Name() }
+func (e fileInfoDirEntry) IsDir() bool                { return e.info.IsDir() }
+func (e fileInfoDirEntry) Type() fs.FileMode          { return e.info.Mode().Type() }
+func (e fileInfoDirEntry) Info() (fs.FileInfo, error) { return e.info, nil }
 
 func (n *memNode) fileInfo(name string) fs.FileInfo { return memInfo{name: name, node: n} }
 
@@ -934,6 +1011,43 @@ func (m *MemoryFS) ReadDir(name string) ([]fs.DirEntry, error) {
 		rest := strings.TrimPrefix(key, prefix)
 		if strings.Contains(rest, "/") {
 			continue
+		}
+		entries = append(entries, memDirEntry{info: val.fileInfo(rest)})
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+	return entries, nil
+}
+
+// ReadDirBounded enumerates directly from the tree while holding the lock. It
+// retains no more than max+1 entries, so overflow cannot cause an unbounded
+// allocation.
+func (m *MemoryFS) ReadDirBounded(name string, max int) ([]fs.DirEntry, error) {
+	if max <= 0 || max > MaxBoundedDirEntries {
+		return nil, ErrInvalidDirReadLimit
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	node, err := m.getResolved("open", name)
+	if err != nil {
+		return nil, err
+	}
+	if !node.dir {
+		return nil, pathError("readdirent", name, syscall.ENOTDIR)
+	}
+	prefix := strings.TrimSuffix(m.norm(name), "/") + "/"
+	entries := make([]fs.DirEntry, 0)
+	count := 0
+	for key, val := range m.nodes {
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		rest := strings.TrimPrefix(key, prefix)
+		if strings.Contains(rest, "/") {
+			continue
+		}
+		count++
+		if count > max {
+			return nil, ErrDirReadLimit
 		}
 		entries = append(entries, memDirEntry{info: val.fileInfo(rest)})
 	}

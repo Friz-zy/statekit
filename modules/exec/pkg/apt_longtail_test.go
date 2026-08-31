@@ -3,9 +3,11 @@ package pkg
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/friz-zy/statekit/internal/config"
 	"github.com/friz-zy/statekit/internal/facts"
@@ -18,6 +20,65 @@ type aptFakeRunner struct {
 	results []process.CommandResult
 	calls   []process.Command
 }
+
+type registryBoundedDirErrorFS struct {
+	runtime.FileSystem
+	err error
+}
+
+func (f registryBoundedDirErrorFS) ReadDirBounded(string, int) ([]fs.DirEntry, error) {
+	return nil, f.err
+}
+
+type registryYumSpecialEntry struct{ name string }
+
+func (e registryYumSpecialEntry) Name() string               { return e.name }
+func (e registryYumSpecialEntry) IsDir() bool                { return false }
+func (e registryYumSpecialEntry) Type() fs.FileMode          { return 0 }
+func (e registryYumSpecialEntry) Info() (fs.FileInfo, error) { return e, nil }
+func (e registryYumSpecialEntry) Size() int64                { return 0 }
+func (e registryYumSpecialEntry) Mode() fs.FileMode          { return 0 }
+func (e registryYumSpecialEntry) ModTime() time.Time         { return time.Time{} }
+func (e registryYumSpecialEntry) IsDirInfo() bool            { return false }
+func (e registryYumSpecialEntry) Sys() any                   { return nil }
+
+type registryYumSpecialFS struct {
+	*runtime.MemoryFS
+	root   string
+	info   map[string]fs.FileInfo
+	writes int
+}
+
+func (f *registryYumSpecialFS) ReadDirBounded(name string, max int) ([]fs.DirEntry, error) {
+	entries, err := f.MemoryFS.ReadDirBounded(name, max)
+	if err != nil || name != f.root {
+		return entries, err
+	}
+	return append(entries, registryYumSpecialEntry{name: "redirected.rpm"}, registryYumSpecialEntry{name: "special.rpm"}), nil
+}
+
+func (f *registryYumSpecialFS) Lstat(name string) (fs.FileInfo, error) {
+	if info, ok := f.info[name]; ok {
+		return info, nil
+	}
+	return f.MemoryFS.Lstat(name)
+}
+
+func (f *registryYumSpecialFS) WriteFile(name string, data []byte, perm fs.FileMode) error {
+	f.writes++
+	return f.MemoryFS.WriteFile(name, data, perm)
+}
+
+type registryYumSpecialInfo struct {
+	mode fs.FileMode
+}
+
+func (i registryYumSpecialInfo) Name() string       { return "special.rpm" }
+func (i registryYumSpecialInfo) Size() int64        { return 0 }
+func (i registryYumSpecialInfo) Mode() fs.FileMode  { return i.mode }
+func (i registryYumSpecialInfo) ModTime() time.Time { return time.Time{} }
+func (i registryYumSpecialInfo) IsDir() bool        { return i.mode.IsDir() }
+func (i registryYumSpecialInfo) Sys() any           { return nil }
 
 func strptr(s string) *string { return &s }
 
@@ -515,7 +576,7 @@ func TestAPTLongtailCapabilityRejectsYumOnlyFunctionsBeforeRunner(t *testing.T) 
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.name == "normalize_name" || tc.name == "parse_arch" || tc.name == "version_cmp" || tc.name == "file_list" || tc.name == "file_dict" || tc.name == "info_installed" || tc.name == "owner" || tc.name == "list_upgrades" || tc.name == "upgrade_available" {
+			if tc.name == "normalize_name" || tc.name == "parse_arch" || tc.name == "version_cmp" || tc.name == "file_list" || tc.name == "file_dict" || tc.name == "info_installed" || tc.name == "owner" || tc.name == "list_upgrades" || tc.name == "upgrade_available" || tc.name == "list_downloaded" {
 				t.Skip("shared provider-aware function")
 			}
 			r := &aptFakeRunner{}
@@ -850,6 +911,183 @@ func TestUpgradeRegistryActualProviderMatrix(t *testing.T) {
 			got, err := reg.Call(context.Background(), rt, "pkg.list_upgrades", args)
 			if err != nil || got == nil || !reflect.DeepEqual(commandArgv(r.calls), tc.want) {
 				t.Fatalf("got=%#v err=%v argv=%#v", got, err, commandArgv(r.calls))
+			}
+		})
+	}
+}
+
+func TestListDownloadedRegistryActualProviderMatrix(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	for _, provider := range []string{"apt", "yum", "dnf", "dnf5", "zypper"} {
+		t.Run(provider, func(t *testing.T) {
+			r := &aptFakeRunner{}
+			family := facts.FamilyRedHat
+			if provider == "apt" {
+				family = facts.FamilyDebian
+			}
+			rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: provider, OS: &facts.OSFacts{Family: family}, CPU: &facts.CPUFacts{Arch: "x86_64"}}), Providers: runtime.NewProviderRegistry(), Runner: r, FS: runtime.NewMemoryFS()}
+			if err := pkgprovider.Register(rt.Providers); err != nil {
+				t.Fatal(err)
+			}
+			prototype, err := reg.ResolveArgs(rt, "pkg.list_downloaded")
+			if provider == "zypper" {
+				if err == nil || !errors.As(err, new(*runtime.UnsupportedError)) {
+					t.Fatalf("zypper resolve err=%v", err)
+				}
+				if got, callErr := reg.Call(context.Background(), rt, "pkg.list_downloaded", &DownloadedArgs{}); got != nil || callErr == nil || !errors.As(callErr, new(*runtime.UnsupportedError)) || len(r.calls) != 0 {
+					t.Fatalf("zypper call got=%#v err=%v calls=%d", got, callErr, len(r.calls))
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if provider == "apt" {
+				if reflect.TypeOf(prototype) != reflect.TypeOf(DownloadedArgs{}) {
+					t.Fatalf("APT prototype=%T", prototype)
+				}
+				if err := rt.FS.MkdirAll("/root/var/cache/apt/archives", 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := rt.FS.WriteFile("/root/var/cache/apt/archives/a.deb", []byte("x"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				r.results = []process.CommandResult{{Stdout: []byte("a 1\n")}}
+				got, callErr := reg.Call(context.Background(), rt, "pkg.list_downloaded", &DownloadedArgs{Root: strptr("/root")})
+				if callErr != nil || got == nil || len(r.calls) != 1 || !reflect.DeepEqual(r.calls[0].Args, []string{"-f", "/root/var/cache/apt/archives/a.deb", "Package", "Version"}) {
+					t.Fatalf("APT call got=%#v err=%v calls=%#v", got, callErr, r.calls)
+				}
+				return
+			}
+			if reflect.TypeOf(prototype) != reflect.TypeOf(struct{}{}) {
+				t.Fatalf("YUM prototype=%T", prototype)
+			}
+			root := "/var/cache/" + provider
+			for _, dir := range []string{root + "/nested/deeper"} {
+				if err := rt.FS.MkdirAll(dir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			files := map[string]string{
+				root + "/first.rpm":               "one",
+				root + "/nested/duplicate.rpm":    "two-two",
+				root + "/nested/deeper/other.rpm": "three",
+				root + "/ignored.txt":             "no",
+			}
+			for path, body := range files {
+				if err := rt.FS.WriteFile(path, []byte(body), 0o640); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := rt.FS.MkdirAll(root+"/nonregular.rpm", 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := rt.FS.Symlink(root+"/first.rpm", root+"/final-symlink.rpm"); err != nil {
+				t.Fatal(err)
+			}
+			baseFS := rt.FS.(*runtime.MemoryFS)
+			fsys := &registryYumSpecialFS{MemoryFS: baseFS, root: root, info: map[string]fs.FileInfo{
+				root + "/redirected.rpm": registryYumSpecialInfo{mode: fs.ModeSymlink},
+				root + "/special.rpm":    registryYumSpecialInfo{mode: fs.ModeNamedPipe},
+			}}
+			rt.FS = fsys
+			format := "%{NAME}_|-%{EPOCH}_|-%{VERSION}_|-%{RELEASE}_|-%{ARCH}_|-none_|-%{INSTALLTIME}"
+			r.results = []process.CommandResult{
+				{Stdout: []byte("demo_|-1_|-1.0_|-1_|-x86_64_|-none_|-0")},
+				{Stdout: []byte("demo_|-1_|-1.0_|-1_|-x86_64_|-none_|-0")},
+				{Stdout: []byte("other_|-(none)_|-2.0_|-(none)_|-x86_64_|-none_|-0")},
+			}
+			before := map[string]any{"root": "/ignored", "extra": map[string]any{"keep": true}}
+			args := &struct{}{}
+			beforeArgs := *args
+			got, callErr := reg.Call(context.Background(), rt, "pkg.list_downloaded", args)
+			if callErr != nil {
+				t.Fatalf("%s call err=%v", provider, callErr)
+			}
+			result := got.(map[string]any)
+			duplicate := result["demo"].(map[string]any)["1:1.0-1"].(map[string]any)
+			info, statErr := rt.FS.Stat(root + "/nested/duplicate.rpm")
+			if statErr != nil || info.Size() != 7 || duplicate["path"] != root+"/nested/duplicate.rpm" || duplicate["size"] != int64(7) || duplicate["creation_date_time_t"] != info.ModTime().Unix() || duplicate["creation_date_time"] != info.ModTime().Local().Format("2006-01-02T15:04:05") {
+				t.Fatalf("%s metadata=%#v stat=%v", provider, duplicate, statErr)
+			}
+			wantArgs := [][]string{{"rpm", "-qp", "--queryformat", format, root + "/first.rpm"}, {"rpm", "-qp", "--queryformat", format, root + "/nested/duplicate.rpm"}, {"rpm", "-qp", "--queryformat", format, root + "/nested/deeper/other.rpm"}}
+			if !reflect.DeepEqual(commandArgv(r.calls), wantArgs) {
+				t.Fatalf("%s argv=%#v", provider, commandArgv(r.calls))
+			}
+			for _, cmd := range r.calls {
+				if cmd.MaxStdoutBytes != 4096 || cmd.MaxStderrBytes != 4096 {
+					t.Fatalf("%s bounds=%#v", provider, cmd)
+				}
+			}
+			if !reflect.DeepEqual(before, map[string]any{"root": "/ignored", "extra": map[string]any{"keep": true}}) || *args != beforeArgs || fsys.writes != 0 {
+				t.Fatal("registry arguments mutated")
+			}
+		})
+	}
+	for _, bad := range []any{nil, 1, &DownloadedArgs{}} {
+		r := &aptFakeRunner{}
+		rt := aptExecRuntime("yum", r)
+		if got, err := reg.Call(context.Background(), rt, "pkg.list_downloaded", bad); got != nil || err == nil || len(r.calls) != 0 {
+			t.Fatalf("wrong YUM args=%T got=%#v err=%v calls=%d", bad, got, err, len(r.calls))
+		}
+	}
+}
+
+func TestListDownloadedRegistryActualProviderFailures(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	for _, provider := range []string{"yum", "dnf", "dnf5"} {
+		t.Run(provider, func(t *testing.T) {
+			managerFS := runtime.NewMemoryFS()
+			root := "/var/cache/" + provider
+			if err := managerFS.MkdirAll(root, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := managerFS.WriteFile(root+"/one.rpm", []byte("x"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			newRuntime := func(fsys runtime.FileSystem, results ...process.CommandResult) (*runtime.Runtime, *aptFakeRunner) {
+				r := &aptFakeRunner{results: results}
+				rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: provider, OS: &facts.OSFacts{Family: facts.FamilyRedHat}, CPU: &facts.CPUFacts{Arch: "x86_64"}}), Providers: runtime.NewProviderRegistry(), Runner: r, FS: fsys}
+				if err := pkgprovider.Register(rt.Providers); err != nil {
+					t.Fatal(err)
+				}
+				return rt, r
+			}
+			cases := []struct {
+				name string
+				fsys runtime.FileSystem
+				ctx  context.Context
+				res  process.CommandResult
+				want error
+			}{
+				{"missing", runtime.NewMemoryFS(), context.Background(), process.CommandResult{}, nil},
+				{"unsupported", registryBoundedDirErrorFS{FileSystem: managerFS, err: runtime.ErrBoundedDirUnsupported}, context.Background(), process.CommandResult{}, runtime.ErrBoundedDirUnsupported},
+				{"overflow", registryBoundedDirErrorFS{FileSystem: managerFS, err: runtime.ErrDirReadLimit}, context.Background(), process.CommandResult{}, runtime.ErrDirReadLimit},
+				{"runner-error", managerFS, context.Background(), process.CommandResult{Err: context.Canceled}, context.Canceled},
+				{"output-limit", managerFS, context.Background(), process.CommandResult{Err: process.ErrOutputLimit}, process.ErrOutputLimit},
+			}
+			for _, tc := range cases {
+				t.Run(tc.name, func(t *testing.T) {
+					rt, r := newRuntime(tc.fsys, tc.res)
+					ctx := tc.ctx
+					if tc.name == "runner-error" || tc.name == "output-limit" {
+						// The shared fixture is intentionally reused; registry dispatch must not mutate it.
+					}
+					got, err := reg.Call(ctx, rt, "pkg.list_downloaded", &struct{}{})
+					if tc.want == nil {
+						if err != nil || !reflect.DeepEqual(got, map[string]any{}) || len(r.calls) != 0 {
+							t.Fatalf("got=%#v err=%v calls=%d", got, err, len(r.calls))
+						}
+					} else if got != nil || (tc.name == "overflow" && err == nil) || (tc.name != "overflow" && !errors.Is(err, tc.want)) || len(r.calls) > 1 {
+						t.Fatalf("got=%#v err=%v calls=%d", got, err, len(r.calls))
+					}
+				})
 			}
 		})
 	}

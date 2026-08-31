@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"math/big"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -27,6 +30,8 @@ const yumGroupInfoOutputLimit = 1 << 20
 const yumUpgradeOutputLimit = 1 << 20
 const yumVerifyOutputLimit = 1 << 20
 const yumModifiedOutputLimit = 1 << 20
+const yumDownloadedMetadataLimit = 4096
+const yumDownloadedPathLimit = 4096
 
 var errYUMGroupNotFound = errors.New("YUM group not found")
 
@@ -525,6 +530,8 @@ func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function
 		return yumVerify(ctx, rt, p.spec.manager, a)
 	case "modified":
 		return yumModified(ctx, rt, a)
+	case "list_downloaded":
+		return yumDownloaded(ctx, rt, p.spec.manager)
 	case "list_upgrades":
 		return yumListUpgrades(ctx, rt, p.spec.manager, a)
 	case "upgrade_available":
@@ -707,6 +714,149 @@ func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function
 	}
 }
 
+// yumDownloaded mirrors yumpkg.list_downloaded exactly: the cache is always
+// rooted at /var/cache/<provider>, and the RPM header is obtained through the
+// lowpkg.bin_pkg_info query rather than by reading or executing locally.
+func yumDownloaded(ctx context.Context, rt *runtime.Runtime, manager string) (any, error) {
+	if rt == nil || rt.FS == nil {
+		return nil, &runtime.UnsupportedError{Kind: "function", Name: "pkg.list_downloaded filesystem"}
+	}
+	if rt.Runner == nil {
+		return nil, errors.New("pkg.list_downloaded runner is unavailable")
+	}
+	root := filepath.Join("/var/cache", manager)
+	ret := map[string]any{}
+	queue := []string{root}
+	seen := 0
+	for len(queue) > 0 {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if seen >= maxDownloadedEntries {
+			return nil, errors.New("pkg.list_downloaded traversal limit exceeded")
+		}
+		dir := queue[0]
+		queue = queue[1:]
+		entries, err := runtime.ReadDirBounded(rt.FS, dir, maxDownloadedEntries-seen)
+		if err != nil {
+			if errors.Is(err, runtime.ErrDirReadLimit) {
+				return nil, errors.New("pkg.list_downloaded traversal limit exceeded")
+			}
+			if errors.Is(err, runtime.ErrBoundedDirUnsupported) {
+				return nil, err
+			}
+			// os.walk(..., onerror=None) abandons unreadable directories.
+			continue
+		}
+		seen += len(entries)
+		if seen > maxDownloadedEntries {
+			return nil, errors.New("pkg.list_downloaded traversal limit exceeded")
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			candidate := filepath.Join(dir, name)
+			if len(candidate) > yumDownloadedPathLimit {
+				return nil, errors.New("pkg.list_downloaded path limit exceeded")
+			}
+			if entry.IsDir() {
+				queue = append(queue, candidate)
+				continue
+			}
+			// Reject every known nonregular final candidate before any operation
+			// that could follow it. Type()==0 is intentionally retained for Lstat
+			// validation.
+			if entry.Type()&fs.ModeType != 0 {
+				continue
+			}
+			if !strings.HasSuffix(name, ".rpm") {
+				continue
+			}
+			// Lstat is deliberately used for both validation and metadata: the
+			// package-info command accepts only the path, so there is no existing
+			// descriptor-relative/no-follow query capability to close the check-
+			// to-query replacement window. Never downgrade to Stat here.
+			info, err := rt.FS.Lstat(candidate)
+			if err != nil {
+				// os.walk(..., onerror=None) skips entries it cannot inspect.
+				continue
+			}
+			if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+				continue
+			}
+			query := []string{"rpm", "-qp", "--queryformat", "%{NAME}_|-%{EPOCH}_|-%{VERSION}_|-%{RELEASE}_|-%{ARCH}_|-none_|-%{INSTALLTIME}", candidate}
+			cmd := runtime.Command(query...)
+			cmd.MaxStdoutBytes, cmd.MaxStderrBytes = yumDownloadedMetadataLimit, yumDownloadedMetadataLimit
+			result := rt.Runner.Run(ctx, cmd)
+			if result.Err != nil {
+				return nil, result.Err
+			}
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			if result.ExitCode != 0 {
+				return nil, fmt.Errorf("rpm exited with code %d: %s", result.ExitCode, result.Stderr)
+			}
+			if len(result.Stdout) > yumDownloadedMetadataLimit {
+				return nil, errors.New("pkg.list_downloaded package metadata limit exceeded")
+			}
+			fields := strings.Split(strings.TrimSuffix(string(result.Stdout), "\n"), "_|-")
+			osarch := ""
+			if rt.Facts != nil {
+				osarch = rt.Facts.CPU().Arch
+			}
+			pkgInfo, valid := yumDownloadedPackage(fields, osarch)
+			if !valid {
+				// bin_pkg_info returns None for malformed headers; yumpkg skips it.
+				continue
+			}
+			ts, ok := fileCTime(info)
+			if !ok {
+				return nil, &runtime.UnsupportedError{Kind: "function", Name: "pkg.list_downloaded ctime"}
+			}
+			pkgTimestamp := ts.Unix()
+			meta := map[string]any{
+				"path": candidate, "size": info.Size(),
+				"creation_date_time_t": pkgTimestamp,
+				// datetime.fromtimestamp(...).isoformat() is timezone-naive;
+				// Local matches Python's runtime timezone (UTC in supported builds).
+				"creation_date_time": time.Unix(pkgTimestamp, 0).Local().Format("2006-01-02T15:04:05"),
+			}
+			versions, _ := ret[pkgInfo.name].(map[string]any)
+			if versions == nil {
+				versions = map[string]any{}
+				ret[pkgInfo.name] = versions
+			}
+			versions[pkgInfo.version] = meta // source walk order gives last-wins duplicates.
+		}
+	}
+	return ret, nil
+}
+
+// yumDownloadedPackage projects rpm_lowpkg.bin_pkg_info into yumpkg's
+// name -> EVR result shape. Epoch zero is omitted from the public key.
+func yumDownloadedPackage(fields []string, osarch string) (yumPackageInfo, bool) {
+	if len(fields) != 7 || fields[0] == "" || fields[2] == "" || fields[4] == "" {
+		return yumPackageInfo{}, false
+	}
+	epoch := fields[1]
+	if epoch == "" || epoch == "(none)" {
+		epoch = "0"
+	}
+	version := fields[2]
+	if epoch != "0" {
+		version = epoch + ":" + version
+	}
+	if fields[3] != "" && fields[3] != "(none)" {
+		version += "-" + fields[3]
+	}
+	if osarch == "" {
+		// Hermetic callers may omit facts; resolve_name treats the package
+		// architecture as the local architecture in that compatibility case.
+		osarch = fields[4]
+	}
+	return yumPackageInfo{name: yumResolvedRecordName(fields[0], fields[4], osarch), base: fields[0], arch: fields[4], version: version, repoid: fields[5]}, true
+}
+
 func validateYUMArgs(function string, a map[string]any) error {
 	allowed := map[string]bool{}
 	switch function {
@@ -745,6 +895,10 @@ func validateYUMArgs(function string, a map[string]any) error {
 		allowed = map[string]bool{"names": true, "root": true, "verify_options": true, "ignore_types": true}
 	case "modified":
 		allowed = map[string]bool{"names": true, "root": true, "size": true, "mode": true, "checksum": true, "device": true, "symlink": true, "owner": true, "group": true, "time": true, "capabilities": true}
+	case "list_downloaded":
+		// Salt's list_downloaded accepts **kwargs but does not consume any;
+		// keep this provider contract explicit rather than inventing root remapping.
+		return nil
 	default:
 		return nil
 	}
