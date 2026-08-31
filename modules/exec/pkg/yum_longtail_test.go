@@ -21,6 +21,65 @@ func (r *yumExecNoCallRunner) Run(context.Context, process.Command) process.Comm
 	panic("runner invoked")
 }
 
+func TestYumGroupListRegistryProviderMatrix(t *testing.T) {
+	for _, manager := range []string{"yum", "dnf", "dnf5"} {
+		reg := runtime.NewExecRegistry()
+		if err := Register(reg); err != nil {
+			t.Fatal(err)
+		}
+		providers := runtime.NewProviderRegistry()
+		if err := pkgprovider.Register(providers); err != nil {
+			t.Fatal(err)
+		}
+		runner := &yumExecRecordingRunner{results: []process.CommandResult{{Stdout: []byte("Installed Groups:\nCore\nDone\n")}}}
+		rt := &runtime.Runtime{
+			Facts:     facts.ForTesting(facts.Overrides{Package: manager, OS: &facts.OSFacts{Family: facts.FamilyRedHat}}),
+			Providers: providers, Runner: runner,
+		}
+		prototype, err := reg.ResolveArgs(rt, "pkg.group_list")
+		if err != nil || reflect.TypeOf(prototype) != reflect.TypeOf(struct{}{}) {
+			t.Fatalf("%s prototype=%T err=%v", manager, prototype, err)
+		}
+		if names, err := config.ArgumentNames(prototype); err != nil || len(names) != 0 {
+			t.Fatalf("%s names=%v err=%v", manager, names, err)
+		}
+		if caps := reg.ProviderCapabilities("pkg.group_list"); !reflect.DeepEqual(caps, []string{"yumpkg"}) {
+			t.Fatalf("%s capabilities=%v", manager, caps)
+		}
+		got, err := reg.Call(context.Background(), rt, "pkg.group_list", &struct{}{})
+		want := map[string]any{
+			"installed": []string{"Core"}, "available": []string{},
+			"installed environments": []string{}, "available environments": []string{},
+			"available languages": map[string]any{},
+		}
+		if err != nil || !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s got=%#v err=%v", manager, got, err)
+		}
+		if argv := commandArgv(runner.commands); !reflect.DeepEqual(argv, [][]string{{manager, "grouplist", "hidden"}}) || runner.commands[0].Shell {
+			t.Fatalf("%s argv=%#v commands=%#v", manager, argv, runner.commands)
+		}
+	}
+
+	for _, manager := range []string{"apt", "zypper", "unsupported"} {
+		reg := runtime.NewExecRegistry()
+		if err := Register(reg); err != nil {
+			t.Fatal(err)
+		}
+		providers := runtime.NewProviderRegistry()
+		if err := pkgprovider.Register(providers); err != nil {
+			t.Fatal(err)
+		}
+		runner := &yumExecRecordingRunner{}
+		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: manager}), Providers: providers, Runner: runner}
+		if _, err := reg.ResolveArgs(rt, "pkg.group_list"); err == nil {
+			t.Fatalf("%s unexpectedly resolved", manager)
+		}
+		if got, err := reg.Call(context.Background(), rt, "pkg.group_list", &struct{}{}); got != nil || err == nil || len(runner.commands) != 0 {
+			t.Fatalf("%s got=%#v err=%v commands=%d", manager, got, err, len(runner.commands))
+		}
+	}
+}
+
 func TestYumLongtailRegistryAndPureCalls(t *testing.T) {
 	for _, manager := range []string{"yum", "dnf", "dnf5"} {
 		reg := runtime.NewExecRegistry()

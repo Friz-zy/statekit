@@ -73,6 +73,8 @@ func YumPrototype(name string) (any, bool) {
 		return YumListInstalledPatchesArgs{}, true
 	case "services_need_restart":
 		return struct{}{}, true
+	case "group_list":
+		return struct{}{}, true
 	default:
 		return nil, false
 	}
@@ -119,4 +121,37 @@ func (f yumPatchesFunc) Execute(ctx context.Context, rt *runtime.Runtime, args a
 		return nil, err
 	}
 	return yp.Yum(ctx, rt, strings.TrimPrefix(f.Name(), "pkg."), argMap)
+}
+
+type yumGroupListFunc struct{}
+
+func (yumGroupListFunc) Name() string         { return "pkg.group_list" }
+func (yumGroupListFunc) Args() any            { return struct{}{} }
+func (yumGroupListFunc) ProviderKind() string { return "pkg" }
+func (yumGroupListFunc) ArgsForProvider(providerName string) (any, error) {
+	if providerName != "yum" && providerName != "dnf" && providerName != "dnf5" {
+		return nil, &runtime.UnsupportedError{Kind: "provider", Name: providerName}
+	}
+	return struct{}{}, nil
+}
+func (yumGroupListFunc) ProviderArgsStrict() bool       { return true }
+func (yumGroupListFunc) ProviderCapabilities() []string { return []string{"yumpkg"} }
+func (yumGroupListFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	p, err := pkgprovider.Resolve(rt)
+	if err != nil {
+		return nil, err
+	}
+	prototype, err := (yumGroupListFunc{}).ArgsForProvider(p.Name())
+	if err != nil {
+		return nil, err
+	}
+	yp, ok := p.(pkgprovider.YumProvider)
+	if !ok {
+		return nil, pkgprovider.ErrUnsupportedYUM
+	}
+	argMap, err := mapArgs("pkg.group_list", args, prototype)
+	if err != nil {
+		return nil, err
+	}
+	return yp.Yum(ctx, rt, "group_list", argMap)
 }

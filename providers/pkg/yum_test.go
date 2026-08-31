@@ -12,6 +12,151 @@ import (
 	"github.com/friz-zy/statekit/internal/runtime"
 )
 
+func TestYumGroupListMatchesPinnedRawLineParsing(t *testing.T) {
+	r := &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte(
+		"plugin comment\n" +
+			" Installed Groups: \n" +
+			"INSTALLED GROUPS:\n" +
+			"  Base  \n" +
+			"Base\n" +
+			"Available Groups:\n" +
+			" Tools \n" +
+			"Installed Environment Groups:\n" +
+			" Server \n" +
+			"Available Environment Groups:\n" +
+			" Desktop \n" +
+			"Available Language Groups:\n" +
+			" English [en] \n" +
+			"French [fr]\n" +
+			"malformed [\n" +
+			" Done \n" +
+			"after-whitespace-done\n" +
+			"DONE\n" +
+			"ignored after done\n",
+	)}}}
+	got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "group_list", map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{
+		"installed":              []string{"Base", "Base"},
+		"available":              []string{"Tools"},
+		"installed environments": []string{"Server"},
+		"available environments": []string{"Desktop"},
+		"available languages": map[string]any{
+			"English [en]": map[string]any{"name": "English", "language": "en"},
+			"French [fr]":  map[string]any{"name": "French", "language": "fr"},
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got=%#v want=%#v", got, want)
+	}
+	if len(r.commands) != 1 || r.commands[0].Name != "yum" ||
+		!reflect.DeepEqual(r.commands[0].Args, []string{"grouplist", "hidden"}) || r.commands[0].Shell ||
+		r.commands[0].MaxStdoutBytes != yumGroupsOutputLimit || r.commands[0].MaxStderrBytes != yumGroupsOutputLimit {
+		t.Fatalf("commands=%#v", r.commands)
+	}
+}
+
+func TestYumGroupListEmptyNonzeroRunnerErrorAndCancellation(t *testing.T) {
+	empty := &yumRecordingRunner{results: []process.CommandResult{{ExitCode: 19}}}
+	got, err := (&commandProvider{spec: dnfSpec}).Yum(context.Background(), &runtime.Runtime{Runner: empty}, "group_list", map[string]any{})
+	if err != nil || !reflect.DeepEqual(got, map[string]any{
+		"installed": []string{}, "available": []string{}, "installed environments": []string{},
+		"available environments": []string{}, "available languages": map[string]any{},
+	}) {
+		t.Fatalf("empty/nonzero got=%#v err=%v", got, err)
+	}
+	sentinel := errors.New("runner failure")
+	failed := &yumRecordingRunner{results: []process.CommandResult{{Err: sentinel}}}
+	got, err = (&commandProvider{spec: dnfSpec}).Yum(context.Background(), &runtime.Runtime{Runner: failed}, "group_list", map[string]any{})
+	if got != nil || !errors.Is(err, sentinel) {
+		t.Fatalf("runner error got=%#v err=%v", got, err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	called := &yumContextRecordingRunner{}
+	got, err = (&commandProvider{spec: dnfSpec}).Yum(ctx, &runtime.Runtime{Runner: called}, "group_list", map[string]any{})
+	if got != nil || !errors.Is(err, context.Canceled) || len(called.commands) != 1 {
+		t.Fatalf("cancel got=%#v err=%v calls=%d", got, err, len(called.commands))
+	}
+}
+
+func TestYumGroupListSplitsOnlyTerminalSeparator(t *testing.T) {
+	for _, tc := range []struct {
+		name, output string
+		want         []string
+	}{
+		{
+			name:   "lf",
+			output: "Installed Groups:\nAlpha\n\nBeta\n",
+			want:   []string{"Alpha", "", "Beta"},
+		},
+		{
+			name:   "crlf",
+			output: "Installed Groups:\r\nAlpha\r\n\r\nBeta\r\n",
+			want:   []string{},
+		},
+		{
+			name:   "no trailing separator",
+			output: "Installed Groups:\nAlpha\n\nBeta",
+			want:   []string{"Alpha", "", "Beta"},
+		},
+		{
+			name:   "done",
+			output: "Installed Groups:\nAlpha\nDone\n",
+			want:   []string{"Alpha"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte(tc.output)}}}
+			got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "group_list", map[string]any{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			groups := got.(map[string]any)["installed"].([]string)
+			if !reflect.DeepEqual(groups, tc.want) {
+				t.Fatalf("installed=%#v want=%#v", groups, tc.want)
+			}
+		})
+	}
+}
+
+func TestYumGroupListKeepsRawCRLFMarkersUnrecognized(t *testing.T) {
+	for _, tc := range []struct {
+		name, output string
+		want         []string
+	}{
+		{
+			name:   "crlf header",
+			output: "Installed Groups:\r\nAlpha\n",
+			want:   []string{},
+		},
+		{
+			name:   "crlf done",
+			output: "Installed Groups:\nBefore\r\nDone\r\nAfter\n",
+			want:   []string{"Before", "Done", "After"},
+		},
+		{
+			name:   "lf markers",
+			output: "Installed Groups:\nBefore\nDone\nAfter\n",
+			want:   []string{"Before"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte(tc.output)}}}
+			got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "group_list", map[string]any{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			groups := got.(map[string]any)["installed"].([]string)
+			if !reflect.DeepEqual(groups, tc.want) {
+				t.Fatalf("installed=%#v want %#v", groups, tc.want)
+			}
+		})
+	}
+}
+
 func TestYumListHoldsPinnedParsing(t *testing.T) {
 	for _, tc := range []struct {
 		manager string

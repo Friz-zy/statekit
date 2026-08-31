@@ -22,8 +22,10 @@ var ErrUnsupportedYUM = errors.New("YUM capability is not supported by this pack
 
 const yumPatchesOutputLimit = 1 << 20
 const yumServicesOutputLimit = 1 << 20
+const yumGroupsOutputLimit = 1 << 20
 
 var yumPatchesLine = regexp.MustCompile(`^([i|\s])? ?([^\s]+) +([^\s]+) +([^\s]+)`)
+var yumLanguageGroupLine = regexp.MustCompile(`^(.+) \[(.+)\]`)
 
 var yumArchitectures = map[string]struct{}{
 	"x86_64": {}, "x86_64_v2": {}, "athlon": {}, "amd64": {}, "ia32e": {}, "ia64": {}, "geode": {},
@@ -359,6 +361,8 @@ func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function
 		return yumListHolds(ctx, rt, p.spec.manager, a)
 	case "services_need_restart":
 		return yumServicesNeedRestart(ctx, rt, p.spec.manager)
+	case "group_list":
+		return yumGroupList(ctx, rt, p.spec.manager)
 	case "clean_metadata":
 		return yumCleanMetadata(ctx, rt, p.spec.manager, a)
 	case "file_list":
@@ -548,6 +552,8 @@ func validateYUMArgs(function string, a map[string]any) error {
 		allowed = map[string]bool{}
 	case "services_need_restart":
 		allowed = map[string]bool{}
+	case "group_list":
+		allowed = map[string]bool{}
 	default:
 		return nil
 	}
@@ -624,6 +630,71 @@ func validateYUMArgs(function string, a map[string]any) error {
 		}
 	}
 	return nil
+}
+
+// yumGroupList mirrors yumpkg.group_list. The command deliberately uses the
+// provider's selected manager and preserves the source's tolerant parsing:
+// command errors are fatal, while a nonzero child status does not discard
+// parseable stdout.
+func yumGroupList(ctx context.Context, rt *runtime.Runtime, manager string) (any, error) {
+	if manager != "yum" && manager != "dnf" && manager != "dnf5" {
+		return nil, ErrUnsupportedYUM
+	}
+	if rt == nil || rt.Runner == nil {
+		return nil, errors.New("YUM group_list requires a runner")
+	}
+	cmd := runtime.Command(manager, "grouplist", "hidden")
+	cmd.MaxStdoutBytes, cmd.MaxStderrBytes = yumGroupsOutputLimit, yumGroupsOutputLimit
+	res := rt.Runner.Run(ctx, cmd)
+	if res.Err != nil {
+		return nil, res.Err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	ret := map[string]any{
+		"installed":              []string{},
+		"available":              []string{},
+		"installed environments": []string{},
+		"available environments": []string{},
+		"available languages":    map[string]any{},
+	}
+	sectionMap := map[string]string{
+		"installed groups:":             "installed",
+		"available groups:":             "available",
+		"installed environment groups:": "installed environments",
+		"available environment groups:": "available environments",
+		"available language groups:":    "available languages",
+	}
+	key := ""
+	lines := strings.Split(string(res.Stdout), "\n")
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	for _, line := range lines {
+		lineLC := strings.ToLower(line)
+		if lineLC == "done" {
+			break
+		}
+		if section, ok := sectionMap[lineLC]; ok && section != key {
+			key = section
+			continue
+		}
+		if key == "" {
+			continue
+		}
+		trimmed := strings.TrimSpace(line)
+		if key != "available languages" {
+			ret[key] = append(ret[key].([]string), trimmed)
+			continue
+		}
+		match := yumLanguageGroupLine.FindStringSubmatch(trimmed)
+		if len(match) == 3 {
+			ret[key].(map[string]any)[trimmed] = map[string]any{"name": match[1], "language": match[2]}
+		}
+	}
+	return ret, nil
 }
 
 func yumServicesNeedRestart(ctx context.Context, rt *runtime.Runtime, manager string) (any, error) {
