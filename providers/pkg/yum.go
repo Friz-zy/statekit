@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
@@ -32,6 +34,7 @@ const yumVerifyOutputLimit = 1 << 20
 const yumModifiedOutputLimit = 1 << 20
 const yumDownloadedMetadataLimit = 4096
 const yumDownloadedPathLimit = 4096
+const yumPurgeOutputLimit = 1 << 20
 
 var errYUMGroupNotFound = errors.New("YUM group not found")
 
@@ -94,10 +97,20 @@ func yumNormalizeName(name, osarch string) string {
 		return name
 	}
 	base := name[:len(name)-len(arch)-1]
-	// Salt's rpm.resolve_name keeps the suffix only for an architecture that
-	// is distinct from the OS architecture and not a compatible 32-bit arch.
-	if arch == "noarch" || arch == osarch || (arch == "x86_64_v2" && osarch == "x86_64") || (arch == "x86_64" && osarch == "x86_64_v2") || (is32RPMArch(arch) && is32RPMArch(osarch)) || (is32ARMArch(arch) && is32ARMArch(osarch)) {
+	if yumResolveName(base, arch, osarch) == base {
 		return base
+	}
+	return name
+}
+
+// yumResolveName mirrors salt.utils.pkg.rpm.resolve_name. Record
+// architectures are not limited to ARCHES: an unknown architecture equal to
+// the OS architecture is still omitted, while a foreign unknown architecture
+// remains part of the public package key.
+func yumResolveName(name, arch, osarch string) string {
+	if !check32RPMArch(arch, osarch) && arch != osarch && arch != "noarch" &&
+		!((arch == "x86_64" || arch == "x86_64_v2") && (osarch == "x86_64" || osarch == "x86_64_v2")) {
+		return name + "." + arch
 	}
 	return name
 }
@@ -136,10 +149,7 @@ func yumRecordNameArch(value, osarch string) (string, string) {
 }
 
 func yumResolvedRecordName(base, arch, osarch string) string {
-	if arch == "" {
-		return base
-	}
-	return yumNormalizeName(base+"."+arch, osarch)
+	return yumResolveName(base, arch, osarch)
 }
 
 // yumVersionCmp implements the pure-Python fallback used by Salt's
@@ -509,6 +519,9 @@ func rpmAlnum(r rune) bool {
 func rpmSpecial(r rune) bool { return r == '~' || r == '^' }
 
 func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function string, args any) (any, error) {
+	if p.spec.manager == "zypper" && function == "purge" {
+		return nil, &runtime.UnsupportedError{Kind: "provider", Name: p.spec.manager}
+	}
 	if p.spec.manager == "zypper" && (function == "hold" || function == "unhold") {
 		return nil, &runtime.UnsupportedError{Kind: "provider", Name: p.spec.manager}
 	}
@@ -550,6 +563,8 @@ func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function
 		return yumListHolds(ctx, rt, p.spec.manager, a)
 	case "hold":
 		return yumHold(ctx, rt, p.spec.manager, a)
+	case "purge":
+		return p.yumPurge(ctx, rt, a)
 	case "unhold":
 		return yumUnhold(ctx, rt, p.spec.manager, a)
 	case "services_need_restart":
@@ -726,6 +741,546 @@ func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function
 	}
 }
 
+type purgeTarget struct {
+	name    string
+	version string
+}
+
+// purgeTargetMap preserves Python dict insertion behavior without relying on
+// Go map iteration. Deleted wildcard entries remain tombstoned so a later
+// update of the same key is appended, just as dict.pop followed by dict.update
+// would do in pkg.match_wildcard.
+type purgeTargetMap struct {
+	entries []purgeTargetMapEntry
+	index   map[string]int
+}
+
+type purgeTargetMapEntry struct {
+	target  purgeTarget
+	deleted bool
+}
+
+func newPurgeTargetMap(capacity int) *purgeTargetMap {
+	return &purgeTargetMap{
+		entries: make([]purgeTargetMapEntry, 0, capacity),
+		index:   make(map[string]int, capacity),
+	}
+}
+
+func (m *purgeTargetMap) put(target purgeTarget) {
+	if i, exists := m.index[target.name]; exists {
+		m.entries[i].target = target
+		return
+	}
+	m.index[target.name] = len(m.entries)
+	m.entries = append(m.entries, purgeTargetMapEntry{target: target})
+}
+
+func (m *purgeTargetMap) has(name string) bool {
+	_, exists := m.index[name]
+	return exists
+}
+
+func (m *purgeTargetMap) remove(name string) {
+	i, exists := m.index[name]
+	if !exists {
+		return
+	}
+	m.entries[i].deleted = true
+	delete(m.index, name)
+}
+
+func (m *purgeTargetMap) ordered() []purgeTarget {
+	out := make([]purgeTarget, 0, len(m.index))
+	for _, entry := range m.entries {
+		if !entry.deleted {
+			out = append(out, entry.target)
+		}
+	}
+	return out
+}
+
+// yumPurgeInstalledPackage keeps the RPM query order needed by
+// pkg_resource.match_wildcard. The public package map is intentionally kept
+// separately because a Go map cannot represent that order.
+type yumPurgeInstalledPackage struct {
+	name        string
+	version     string
+	sortVersion string
+}
+
+// yumPurgeTargets is the source-compatible pkg_resource.parse_targets subset
+// needed by yumpkg.purge. The no-facts form is kept for direct helper tests;
+// execution passes the target OS architecture below.
+func yumPurgeTargets(a map[string]any) ([]purgeTarget, error) {
+	return yumPurgeTargetsForArch(a, "")
+}
+
+func yumPurgeTargetsForArch(a map[string]any, osarch string) ([]purgeTarget, error) {
+	value, supplied := a["pkgs"]
+	if supplied && value != nil {
+		items, isList, empty := purgeItems(value)
+		if !isList {
+			if !sourceTargetTruthy(value) {
+				return yumPurgeNameTargetsForArch(a, osarch)
+			}
+			return nil, errors.New(`argument "pkgs" must be a list`)
+		}
+		if !empty {
+			return yumPurgePkgTargets(items, osarch)
+		}
+	}
+	// parse_targets tests pkgs by truthiness. An absent, nil, or explicitly
+	// empty package list therefore reaches the name branch.
+	return yumPurgeNameTargetsForArch(a, osarch)
+}
+
+func yumPurgeNameTargets(a map[string]any) ([]purgeTarget, error) {
+	return yumPurgeNameTargetsForArch(a, "")
+}
+
+func yumPurgeNameTargetsForArch(a map[string]any, osarch string) ([]purgeTarget, error) {
+	value, supplied := a["name"]
+	if !supplied || value == nil {
+		return nil, nil
+	}
+	name, ok := yumStringArg(a, "name")
+	if !ok {
+		if pointer, isPointer := value.(*string); isPointer && pointer == nil {
+			return nil, nil
+		}
+		return nil, errors.New(`argument "name" must be a string`)
+	}
+	if name == "" {
+		return nil, nil
+	}
+	parts := strings.Split(name, ",")
+	targets := newPurgeTargetMap(len(parts))
+	for _, part := range parts {
+		// The source name branch is a dict comprehension, so normalized commas
+		// that collide replace a prior value without changing its position. Empty
+		// comma components are still keys; they simply cannot match normal RPMs.
+		targets.put(purgeTarget{name: yumNormalizeName(part, osarch)})
+	}
+	return targets.ordered(), nil
+}
+
+func purgeItems(value any) ([]any, bool, bool) {
+	if value == nil {
+		return nil, true, true
+	}
+	v := reflect.ValueOf(value)
+	if v.Kind() != reflect.Slice && v.Kind() != reflect.Array {
+		return nil, false, false
+	}
+	if v.Len() == 0 {
+		return nil, true, true
+	}
+	items := make([]any, v.Len())
+	for i := 0; i < v.Len(); i++ {
+		items[i] = v.Index(i).Interface()
+	}
+	return items, true, false
+}
+
+// sourceTargetTruthy covers the parse_targets `elif pkgs:` gate for values
+// that a typed Go caller can supply even though they are not list targets.
+// Falsey non-lists must fall through to name; truthy non-lists are rejected by
+// the subsequent _repack_pkgs-compatible path.
+func sourceTargetTruthy(value any) bool {
+	v := purgeUnwrapValue(reflect.ValueOf(value))
+	if !v.IsValid() {
+		return false
+	}
+	switch v.Kind() {
+	case reflect.Bool:
+		return v.Bool()
+	case reflect.String, reflect.Array, reflect.Slice, reflect.Map:
+		return v.Len() != 0
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return v.Int() != 0
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return v.Uint() != 0
+	case reflect.Float32, reflect.Float64:
+		return v.Float() != 0
+	default:
+		return true
+	}
+}
+
+func parseYumPurgeTarget(item any) (purgeTarget, error) {
+	return parseYumPurgeTargetForArch(item, "")
+}
+
+func yumPurgePkgTargets(items []any, osarch string) ([]purgeTarget, error) {
+	targets := newPurgeTargetMap(len(items))
+	for _, item := range items {
+		target, err := parseYumPurgeTargetForArch(item, osarch)
+		if err != nil {
+			return nil, err
+		}
+		if targets.has(target.name) {
+			return nil, duplicatePurgeTargetsError(items)
+		}
+		targets.put(target)
+	}
+	return targets.ordered(), nil
+}
+
+func parseYumPurgeTargetForArch(item any, osarch string) (purgeTarget, error) {
+	return purgeTargetFromItem(item, func(name string) string {
+		return yumNormalizeName(name, osarch)
+	})
+}
+
+func purgeTargetFromItem(item any, normalize func(string) string) (purgeTarget, error) {
+	value := purgeUnwrapValue(reflect.ValueOf(item))
+	if !value.IsValid() {
+		return purgeTarget{}, errors.New(`pkgs entries must be source-compatible scalars or one-key mappings`)
+	}
+	if value.Kind() != reflect.Map {
+		name, err := sourcePurgeScalarString(value)
+		if err != nil {
+			return purgeTarget{}, fmt.Errorf("pkgs entry: %w", err)
+		}
+		return purgeTarget{name: normalize(name)}, nil
+	}
+	if value.Len() != 1 {
+		return purgeTarget{}, errors.New(`pkgs mapping entries must contain one package`)
+	}
+	entry := value.MapRange()
+	if !entry.Next() {
+		return purgeTarget{}, errors.New(`pkgs mapping entries must contain one package`)
+	}
+	name, err := sourcePurgeScalarString(entry.Key())
+	if err != nil {
+		return purgeTarget{}, fmt.Errorf("pkgs mapping key: %w", err)
+	}
+	target := purgeTarget{name: normalize(name)}
+	if rawVersion := purgeUnwrapValue(entry.Value()); rawVersion.IsValid() {
+		target.version, err = sourcePurgeScalarString(rawVersion)
+		if err != nil {
+			return purgeTarget{}, fmt.Errorf("pkgs mapping version: %w", err)
+		}
+	}
+	return target, nil
+}
+
+func purgeUnwrapValue(value reflect.Value) reflect.Value {
+	for value.IsValid() && value.Kind() == reflect.Interface {
+		if value.IsNil() {
+			return reflect.Value{}
+		}
+		value = value.Elem()
+	}
+	return value
+}
+
+// sourcePurgeScalarString models the scalar values accepted by
+// salt.utils.data.repack_dictlist before _repack_pkgs applies str(). Python
+// bool is an int subclass, so its source spelling is accepted as well.
+func sourcePurgeScalarString(value reflect.Value) (string, error) {
+	value = purgeUnwrapValue(value)
+	if !value.IsValid() {
+		return "None", nil
+	}
+	switch value.Kind() {
+	case reflect.String:
+		return value.String(), nil
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return strconv.FormatInt(value.Int(), 10), nil
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return strconv.FormatUint(value.Uint(), 10), nil
+	case reflect.Float32, reflect.Float64:
+		f := value.Float()
+		switch {
+		case math.IsNaN(f):
+			return "nan", nil
+		case math.IsInf(f, 1):
+			return "inf", nil
+		case math.IsInf(f, -1):
+			return "-inf", nil
+		}
+		bits := value.Type().Bits()
+		text := strconv.FormatFloat(f, 'g', -1, bits)
+		if !strings.ContainsAny(text, ".eE") {
+			text += ".0"
+		}
+		return text, nil
+	case reflect.Bool:
+		if value.Bool() {
+			return "True", nil
+		}
+		return "False", nil
+	default:
+		return "", errors.New("must be a string, numeric, or boolean scalar")
+	}
+}
+
+func duplicatePurgeTargetsError(items []any) error {
+	return fmt.Errorf("You are passing a list of packages that contains duplicated packages names: %v. This cannot be processed. In case you are targeting different versions of the same package, please target them individually", items)
+}
+
+// matchPurgeWildcard is a direct ordered projection of pkg.match_wildcard.
+// Only the final wildcard's matches survive; every literal remains in place
+// until the final dict update overlays matching keys.
+func matchPurgeWildcard(current map[string]string, ordered []string, params *purgeTargetMap) {
+	var lastMatches []purgeTarget
+	for _, request := range params.ordered() {
+		if !strings.Contains(request.name, "*") {
+			continue
+		}
+		matches := newPurgeTargetMap(len(ordered))
+		for _, installed := range ordered {
+			if _, exists := current[installed]; !exists || !purgeTargetNameMatches(request.name, installed) {
+				continue
+			}
+			matches.put(purgeTarget{name: installed, version: request.version})
+		}
+		lastMatches = matches.ordered()
+		params.remove(request.name)
+	}
+
+	// salt.utils.pkg.match_wildcard retains only the final wildcard map, then
+	// applies it after all wildcard keys were removed. Updating an existing
+	// literal changes only its value, not its insertion position.
+	for _, match := range lastMatches {
+		params.put(match)
+	}
+}
+
+func yumPurgeMatchOrdered(old map[string]string, ordered []string, requested []purgeTarget) []purgeTarget {
+	params := newPurgeTargetMap(len(requested))
+	for _, request := range requested {
+		params.put(request)
+	}
+	matchPurgeWildcard(old, ordered, params)
+
+	ret := make([]purgeTarget, 0, len(params.index))
+	for _, target := range params.ordered() {
+		installed, exists := old[target.name]
+		if !exists || (target.version != "" && !yumPurgeVersionInstalled(installed, target.version)) {
+			continue
+		}
+		ret = append(ret, target)
+	}
+	return ret
+}
+
+func purgeTargetNameMatches(pattern, installed string) bool {
+	if !strings.Contains(pattern, "*") {
+		// Salt only calls match_wildcard for parameters containing '*'; '?'
+		// and '[' are therefore literal in a plain target.
+		return pattern == installed
+	}
+	return yumFnmatch(pattern, installed)
+}
+
+func yumPurgeVersionInstalled(installed, wanted string) bool {
+	for _, version := range strings.Split(installed, ",") {
+		if version == wanted {
+			return true
+		}
+	}
+	return false
+}
+
+func yumPurgeRemovalArg(target purgeTarget) string {
+	if target.version == "" {
+		return target.name
+	}
+	name := target.name
+	arch, known := yumArch(name)
+	base := name
+	archSuffix := ""
+	if known {
+		if _, requested := yumRequestedArchitectures[arch]; requested {
+			base = name[:len(name)-len(arch)-1]
+			archSuffix = "." + arch
+		}
+	}
+	version := target.version
+	if i := strings.IndexByte(version, ':'); i >= 0 {
+		version = version[i+1:]
+	}
+	return base + "-" + version + archSuffix
+}
+
+func yumPurgeCommandArg(target purgeTarget) (string, error) {
+	arg := yumPurgeRemovalArg(target)
+	if err := validateYUMArgToken(arg); err != nil {
+		return "", fmt.Errorf("invalid package removal target %q: %w", arg, err)
+	}
+	return arg, nil
+}
+
+func yumPurgeOrderedNames(installed []yumPurgeInstalledPackage) []string {
+	ordered := make([]string, 0, len(installed))
+	seen := make(map[string]bool, len(installed))
+	for _, packageInfo := range installed {
+		if seen[packageInfo.name] {
+			continue
+		}
+		seen[packageInfo.name] = true
+		ordered = append(ordered, packageInfo.name)
+	}
+	return ordered
+}
+
+func yumPurgeInstalled(ctx context.Context, rt *runtime.Runtime) (map[string]string, []yumPurgeInstalledPackage, error) {
+	if rt == nil || rt.Runner == nil {
+		return nil, nil, errors.New("YUM purge requires a runner")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	command := runtime.Command("rpm", "-qa", "--nodigest", "--nosignature", "--queryformat", yumInstalledQueryFormat)
+	command.Shell = false
+	command.MaxStdoutBytes, command.MaxStderrBytes = yumPurgeOutputLimit, yumPurgeOutputLimit
+	result := rt.Runner.Run(ctx, command)
+	if result.Err != nil {
+		return nil, nil, result.Err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	if result.StdoutTruncated || result.StderrTruncated || len(result.Stdout) > yumPurgeOutputLimit || len(result.Stderr) > yumPurgeOutputLimit {
+		return nil, nil, process.ErrOutputLimit
+	}
+	if result.ExitCode != 0 {
+		stderr := strings.TrimSpace(string(result.Stderr))
+		if stderr == "" {
+			return nil, nil, fmt.Errorf("rpm exited with code %d", result.ExitCode)
+		}
+		return nil, nil, fmt.Errorf("rpm exited with code %d: %s", result.ExitCode, stderr)
+	}
+	osarch := ""
+	if rt.Facts != nil {
+		osarch = rt.Facts.CPU().Arch
+	}
+	installed := yumPurgeInstalledRecords(string(result.Stdout), osarch)
+	old := yumPurgePackageMap(installed)
+	return old, installed, nil
+}
+
+func yumPurgeInstalledRecords(output, osarch string) []yumPurgeInstalledPackage {
+	installed := []yumPurgeInstalledPackage{}
+	for _, line := range sourceSplitLines(output) {
+		if line == "" {
+			continue
+		}
+		fields := strings.Split(line, "_|-")
+		record, ok := yumPurgeQueryRecord(fields, osarch)
+		if !ok {
+			continue
+		}
+		installed = append(installed, record)
+	}
+	return installed
+}
+
+func yumPurgeQueryRecord(fields []string, osarch string) (yumPurgeInstalledPackage, bool) {
+	if len(fields) != 7 {
+		return yumPurgeInstalledPackage{}, false
+	}
+	base, epoch, version, release, arch := fields[0], fields[1], fields[2], fields[3], fields[4]
+	fullVersion := version
+	if epoch != "(none)" && epoch != "0" {
+		fullVersion = epoch + ":" + fullVersion
+	}
+	if release != "" {
+		fullVersion += "-" + release
+	}
+	return yumPurgeInstalledPackage{
+		name: yumResolvedRecordName(base, arch, osarch), version: fullVersion, sortVersion: version,
+	}, true
+}
+
+func yumPurgePackageMap(installed []yumPurgeInstalledPackage) map[string]string {
+	type versionRecord struct {
+		full, sort string
+	}
+	versions := map[string][]versionRecord{}
+	for _, packageInfo := range installed {
+		versions[packageInfo.name] = append(versions[packageInfo.name], versionRecord{full: packageInfo.version, sort: packageInfo.sortVersion})
+	}
+	old := make(map[string]string, len(versions))
+	for name, values := range versions {
+		sort.SliceStable(values, func(i, j int) bool { return values[i].sort < values[j].sort })
+		joined := make([]string, len(values))
+		for i, value := range values {
+			joined[i] = value.full
+		}
+		old[name] = strings.Join(joined, ",")
+	}
+	return old
+}
+
+func (p *commandProvider) yumPurge(ctx context.Context, rt *runtime.Runtime, a map[string]any) (any, error) {
+	osarch := ""
+	if rt != nil && rt.Facts != nil {
+		osarch = rt.Facts.CPU().Arch
+	}
+	requested, err := yumPurgeTargetsForArch(a, osarch)
+	if err != nil {
+		return nil, err
+	}
+	if len(requested) == 0 {
+		return map[string]any{}, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	old, installed, err := yumPurgeInstalled(ctx, rt)
+	if err != nil {
+		return nil, err
+	}
+	targets := yumPurgeMatchOrdered(old, yumPurgeOrderedNames(installed), requested)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if len(targets) == 0 {
+		return map[string]any{}, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	argv := []string{p.spec.manager, "-y", "remove"}
+	for _, target := range targets {
+		arg, err := yumPurgeCommandArg(target)
+		if err != nil {
+			return nil, err
+		}
+		argv = append(argv, arg)
+	}
+	cmd := runtime.Command(argv...)
+	cmd.Shell = false
+	cmd.MaxStdoutBytes, cmd.MaxStderrBytes = yumPurgeOutputLimit, yumPurgeOutputLimit
+	res := rt.Runner.Run(ctx, cmd)
+	if res.Err != nil {
+		return nil, res.Err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if res.StdoutTruncated || res.StderrTruncated || len(res.Stdout) > yumPurgeOutputLimit || len(res.Stderr) > yumPurgeOutputLimit {
+		return nil, process.ErrOutputLimit
+	}
+	if res.ExitCode != 0 {
+		stderr := strings.TrimSpace(string(res.Stderr))
+		if stderr == "" {
+			return nil, fmt.Errorf("%s exited with code %d", p.spec.manager, res.ExitCode)
+		}
+		return nil, fmt.Errorf("%s exited with code %d: %s", p.spec.manager, res.ExitCode, stderr)
+	}
+	newPackages, _, err := yumPurgeInstalled(ctx, rt)
+	if err != nil {
+		return nil, err
+	}
+	changes := comparePackages(old, newPackages)
+	return changes, nil
+}
+
 // yumDownloaded mirrors yumpkg.list_downloaded exactly: the cache is always
 // rooted at /var/cache/<provider>, and the RPM header is obtained through the
 // lowpkg.bin_pkg_info query rather than by reading or executing locally.
@@ -871,6 +1426,12 @@ func yumDownloadedPackage(fields []string, osarch string) (yumPackageInfo, bool)
 
 func validateYUMArgs(function string, a map[string]any) error {
 	if function == "hold" {
+		return nil
+	}
+	// yumpkg.purge is an alias that calls remove(name=name, pkgs=pkgs) and
+	// deliberately drops **kwargs. Preserve that boundary: only name and pkgs
+	// are consumed below, while all other direct-provider kwargs are ignored.
+	if function == "purge" {
 		return nil
 	}
 	allowed := map[string]bool{}
@@ -1113,7 +1674,7 @@ func validateYUMArgToken(value string) error {
 	if value == "" {
 		return errors.New("must not be empty")
 	}
-	if strings.IndexFunc(value, func(r rune) bool { return r < 0x20 || r == 0x7f || unicode.IsSpace(r) }) >= 0 {
+	if strings.IndexFunc(value, func(r rune) bool { return unicode.IsControl(r) || unicode.IsSpace(r) }) >= 0 {
 		return errors.New("must not contain control characters or whitespace")
 	}
 	if strings.HasPrefix(value, "-") {

@@ -218,6 +218,455 @@ func factsForYUMTest() *facts.Facts {
 	return facts.ForTesting(facts.Overrides{CPU: &facts.CPUFacts{Arch: "x86_64"}})
 }
 
+func yumPurgeRecord(name, epoch, version, release, arch string) string {
+	return fmt.Sprintf("%s_|-%s_|-%s_|-%s_|-%s_|-(none)_|-0\n", name, epoch, version, release, arch)
+}
+
+func yumPurgeListArgv() []string {
+	return []string{"rpm", "-qa", "--nodigest", "--nosignature", "--queryformat", yumInstalledQueryFormat}
+}
+
+func assertYumPurgeCommands(t *testing.T, commands []process.Command, want [][]string) {
+	t.Helper()
+	if got := commandArgvFromYUM(commands); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv=%#v want=%#v", got, want)
+	}
+	for i, command := range commands {
+		if command.Shell || command.MaxStdoutBytes != yumPurgeOutputLimit || command.MaxStderrBytes != yumPurgeOutputLimit {
+			t.Fatalf("command[%d]=%#v", i, command)
+		}
+	}
+}
+
+func TestYumPurgeParseTargetsPrecedenceFallbackAndSourceScalars(t *testing.T) {
+	for _, manager := range []string{"yum", "dnf", "dnf5"} {
+		t.Run(manager, func(t *testing.T) {
+			args := map[string]any{
+				// A nonempty pkgs list must take the parse_targets branch before
+				// inspecting this malformed name.
+				"name": true,
+				"pkgs": []any{
+					"literal",
+					map[string]any{"numbered.i686": int64(2)},
+					map[string]any{"decimal.i686": float64(2)},
+					map[string]any{"fraction": float64(1.5)},
+					int(17),
+					true,
+				},
+			}
+			before := map[string]any{
+				"name": true,
+				"pkgs": []any{
+					"literal",
+					map[string]any{"numbered.i686": int64(2)},
+					map[string]any{"decimal.i686": float64(2)},
+					map[string]any{"fraction": float64(1.5)},
+					int(17),
+					true,
+				},
+			}
+			old := yumPurgeRecord("literal", "0", "1", "1", "x86_64") +
+				yumPurgeRecord("numbered", "0", "2", "", "i686") +
+				yumPurgeRecord("decimal", "0", "2.0", "", "i686") +
+				yumPurgeRecord("fraction", "0", "1.5", "", "x86_64") +
+				yumPurgeRecord("17", "0", "1", "1", "x86_64") +
+				yumPurgeRecord("True", "0", "1", "1", "x86_64")
+			r := &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte(old)}, {}, {}}}
+			got, err := (&commandProvider{spec: rpmSpec(manager)}).Yum(
+				context.Background(), &runtime.Runtime{Runner: r, Facts: factsForYUMTest()}, "purge", args,
+			)
+			want := map[string]any{
+				"literal":       map[string]any{"old": "1-1", "new": ""},
+				"numbered.i686": map[string]any{"old": "2", "new": ""},
+				"decimal.i686":  map[string]any{"old": "2.0", "new": ""},
+				"fraction":      map[string]any{"old": "1.5", "new": ""},
+				"17":            map[string]any{"old": "1-1", "new": ""},
+				"True":          map[string]any{"old": "1-1", "new": ""},
+			}
+			if err != nil || !reflect.DeepEqual(got, want) || !reflect.DeepEqual(args, before) {
+				t.Fatalf("got=%#v err=%v args=%#v", got, err, args)
+			}
+			list := yumPurgeListArgv()
+			assertYumPurgeCommands(t, r.commands, [][]string{
+				list,
+				{manager, "-y", "remove", "literal", "numbered-2.i686", "decimal-2.0.i686", "fraction-1.5", "17", "True"},
+				list,
+			})
+
+			// yumpkg.purge forwards only name and pkgs to remove. In particular,
+			// split_arch and arbitrary kwargs are ignored, so removal keeps the
+			// source default split_arch=True.
+			r = &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte(
+				yumPurgeRecord("archpkg", "1", "2", "", "i686"),
+			)}, {}, {}}}
+			got, err = (&commandProvider{spec: rpmSpec(manager)}).Yum(
+				context.Background(), &runtime.Runtime{Runner: r, Facts: factsForYUMTest()}, "purge", map[string]any{
+					"pkgs": []any{map[string]any{"archpkg.i686": "1:2"}}, "split_arch": false, "ignored": map[string]any{"any": true},
+				},
+			)
+			if err != nil || !reflect.DeepEqual(got, map[string]any{"archpkg.i686": map[string]any{"old": "1:2", "new": ""}}) {
+				t.Fatalf("purge kwargs got=%#v err=%v", got, err)
+			}
+			assertYumPurgeCommands(t, r.commands, [][]string{list, {manager, "-y", "remove", "archpkg-2.i686"}, list})
+
+			// parse_targets checks pkgs truthiness. An explicitly empty list falls
+			// through to the comma-separated name branch.
+			fallback := map[string]any{"name": "first,,second", "pkgs": []any{}}
+			r = &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte(
+				yumPurgeRecord("first", "0", "1", "1", "x86_64") + yumPurgeRecord("second", "0", "2", "1", "x86_64"),
+			)}, {}, {}}}
+			got, err = (&commandProvider{spec: rpmSpec(manager)}).Yum(
+				context.Background(), &runtime.Runtime{Runner: r, Facts: factsForYUMTest()}, "purge", fallback,
+			)
+			if err != nil || !reflect.DeepEqual(got, map[string]any{
+				"first":  map[string]any{"old": "1-1", "new": ""},
+				"second": map[string]any{"old": "2-1", "new": ""},
+			}) {
+				t.Fatalf("empty pkgs fallback got=%#v err=%v", got, err)
+			}
+			assertYumPurgeCommands(t, r.commands, [][]string{list, {manager, "-y", "remove", "first", "second"}, list})
+		})
+	}
+}
+
+func TestYumPurgeDefersTargetSafetyUntilCommandBoundary(t *testing.T) {
+	for _, args := range []map[string]any{
+		{"pkgs": "foo"},
+		{"pkgs": []any{nil}},
+		{"pkgs": []any{map[string]any{"foo": "1", "bar": "2"}}},
+		{"pkgs": []any{map[string]any{"foo.x86_64": nil}, map[string]any{"foo": nil}}},
+		// Empty pkgs reaches the name branch, where the malformed name is then
+		// rejected rather than ignored.
+		{"name": true, "pkgs": []any{}},
+	} {
+		r := &yumNoCallRunner{}
+		got, err := (&commandProvider{spec: yumSpec}).Yum(
+			context.Background(), &runtime.Runtime{Runner: r, Facts: factsForYUMTest()}, "purge", args,
+		)
+		if got != nil || err == nil || r.calls != 0 {
+			t.Fatalf("args=%#v got=%#v err=%v calls=%d", args, got, err, r.calls)
+		}
+	}
+
+	// A target that cannot match an installed package is not a command-boundary
+	// value. Source-compatible target parsing therefore leaves it as a no-op.
+	r := &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte(yumPurgeRecord("other", "0", "1", "1", "x86_64"))}}}
+	got, err := (&commandProvider{spec: yumSpec}).Yum(
+		context.Background(), &runtime.Runtime{Runner: r, Facts: factsForYUMTest()}, "purge", map[string]any{"pkgs": []any{"bad\nname"}},
+	)
+	if err != nil || !reflect.DeepEqual(got, map[string]any{}) || len(r.commands) != 1 {
+		t.Fatalf("unmatched unsafe target got=%#v err=%v commands=%#v", got, err, r.commands)
+	}
+	r = &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte(yumPurgeRecord("versioned", "0", "1", "1", "x86_64"))}}}
+	got, err = (&commandProvider{spec: yumSpec}).Yum(
+		context.Background(), &runtime.Runtime{Runner: r, Facts: factsForYUMTest()}, "purge", map[string]any{"pkgs": []any{map[string]any{"versioned": "bad version"}}},
+	)
+	if err != nil || !reflect.DeepEqual(got, map[string]any{}) || len(r.commands) != 1 {
+		t.Fatalf("unmatched unsafe version got=%#v err=%v commands=%#v", got, err, r.commands)
+	}
+
+	// If a source record makes that value a real target, reject it immediately
+	// before the remove command rather than passing it through argv.
+	r = &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte(yumPurgeRecord("bad name", "0", "1", "1", "x86_64"))}}}
+	got, err = (&commandProvider{spec: yumSpec}).Yum(
+		context.Background(), &runtime.Runtime{Runner: r, Facts: factsForYUMTest()}, "purge", map[string]any{"pkgs": []any{"bad name"}},
+	)
+	if got != nil || err == nil || len(r.commands) != 1 {
+		t.Fatalf("matched unsafe target got=%#v err=%v commands=%#v", got, err, r.commands)
+	}
+}
+
+func TestYumPurgeNoTargetsOrNoInstalledTargetsDoNotMutate(t *testing.T) {
+	for _, manager := range []string{"yum", "dnf", "dnf5"} {
+		t.Run(manager, func(t *testing.T) {
+			for _, args := range []map[string]any{{"pkgs": []any{}}, {"name": "", "pkgs": []any{}}} {
+				r := &yumNoCallRunner{}
+				got, err := (&commandProvider{spec: rpmSpec(manager)}).Yum(
+					context.Background(), &runtime.Runtime{Runner: r, Facts: factsForYUMTest()}, "purge", args,
+				)
+				if err != nil || !reflect.DeepEqual(got, map[string]any{}) || r.calls != 0 {
+					t.Fatalf("no targets args=%#v got=%#v err=%v calls=%d", args, got, err, r.calls)
+				}
+			}
+
+			r := &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte(yumPurgeRecord("other", "0", "1", "1", "x86_64"))}}}
+			got, err := (&commandProvider{spec: rpmSpec(manager)}).Yum(
+				context.Background(), &runtime.Runtime{Runner: r, Facts: factsForYUMTest()}, "purge", map[string]any{"name": "missing"},
+			)
+			if err != nil || !reflect.DeepEqual(got, map[string]any{}) || len(r.commands) != 1 {
+				t.Fatalf("no installed target got=%#v err=%v commands=%#v", got, err, r.commands)
+			}
+			assertYumPurgeCommands(t, r.commands, [][]string{yumPurgeListArgv()})
+		})
+	}
+}
+
+func TestYumPurgeMatchWildcardUsesSnapshotAndLastMatchMap(t *testing.T) {
+	for _, manager := range []string{"yum", "dnf", "dnf5"} {
+		t.Run(manager, func(t *testing.T) {
+			old := yumPurgeRecord("foo1", "0", "1", "", "x86_64") +
+				yumPurgeRecord("foo2", "0", "1", "", "x86_64") +
+				yumPurgeRecord("literal", "0", "1", "", "x86_64") +
+				yumPurgeRecord("bar1", "0", "3", "", "x86_64")
+			r := &yumRecordingRunner{results: []process.CommandResult{
+				{Stdout: []byte(old)},
+				{},
+				{Stdout: []byte(yumPurgeRecord("foo2", "0", "1", "", "x86_64"))},
+			}}
+			got, err := (&commandProvider{spec: rpmSpec(manager)}).Yum(
+				context.Background(), &runtime.Runtime{Runner: r, Facts: factsForYUMTest()}, "purge", map[string]any{"pkgs": []any{
+					map[string]any{"foo*": "first"},
+					map[string]any{"foo1": "1"},
+					map[string]any{"literal": nil},
+					map[string]any{"bar*": "3"},
+				}},
+			)
+			if err != nil || !reflect.DeepEqual(got, map[string]any{
+				"foo1":    map[string]any{"old": "1", "new": ""},
+				"literal": map[string]any{"old": "1", "new": ""},
+				"bar1":    map[string]any{"old": "3", "new": ""},
+			}) {
+				t.Fatalf("last wildcard got=%#v err=%v", got, err)
+			}
+			list := yumPurgeListArgv()
+			assertYumPurgeCommands(t, r.commands, [][]string{list, {manager, "-y", "remove", "foo1-1", "literal", "bar1-3"}, list})
+
+			// With a single wildcard, update() overwrites the matching literal's
+			// value without moving it, then appends the other installed matches.
+			r = &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte(
+				yumPurgeRecord("foo1", "0", "2", "", "x86_64") + yumPurgeRecord("foo2", "0", "2", "", "x86_64"),
+			)}, {}, {}}}
+			_, err = (&commandProvider{spec: rpmSpec(manager)}).Yum(
+				context.Background(), &runtime.Runtime{Runner: r, Facts: factsForYUMTest()}, "purge", map[string]any{"pkgs": []any{
+					map[string]any{"foo*": "2"}, map[string]any{"foo1": "1"},
+				}},
+			)
+			if err != nil {
+				t.Fatalf("single wildcard err=%v", err)
+			}
+			assertYumPurgeCommands(t, r.commands, [][]string{list, {manager, "-y", "remove", "foo1-2", "foo2-2"}, list})
+		})
+	}
+}
+
+func TestYumPurgePlainQuestionAndBracketTargetsAreExact(t *testing.T) {
+	oldOutput := yumPurgeRecord("foo1", "0", "1", "1", "x86_64") +
+		yumPurgeRecord("foo?", "0", "2", "1", "x86_64") +
+		yumPurgeRecord("foo[", "0", "3", "1", "x86_64")
+	r := &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte(oldOutput)}, {}, {}}}
+	_, err := (&commandProvider{spec: yumSpec}).Yum(
+		context.Background(), &runtime.Runtime{Runner: r, Facts: factsForYUMTest()}, "purge",
+		map[string]any{"pkgs": []any{"foo?", "foo["}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertYumPurgeCommands(t, r.commands, [][]string{yumPurgeListArgv(), {"yum", "-y", "remove", "foo?", "foo["}, yumPurgeListArgv()})
+}
+
+func TestYumPurgeArchitectureMatchesPinnedRPMVectors(t *testing.T) {
+	for _, tc := range []struct {
+		name, arch, osarch, wantResolved, normalized, wantNormalized string
+	}{
+		{"x86_64", "x86_64", "x86_64", "pkg", "pkg.x86_64", "pkg"},
+		{"noarch", "noarch", "x86_64", "pkg", "pkg.noarch", "pkg"},
+		{"i686", "i686", "x86_64", "pkg.i686", "pkg.i686", "pkg.i686"},
+		{"x86_64_v2", "x86_64_v2", "x86_64", "pkg", "pkg.x86_64_v2", "pkg"},
+		{"unknown candidate equals OS arch", "mips64", "mips64", "pkg", "pkg.mips64", "pkg.mips64"},
+		{"sparc foreign", "sparcv9", "x86_64", "pkg.sparcv9", "pkg.sparcv9", "pkg.sparcv9"},
+		// rpm.ARCHES deliberately omits the separately declared SPARC tuple.
+		// resolve_name still treats a raw native record suffix as its osarch,
+		// while normalize_name leaves an unrecognized requested suffix intact.
+		{"sparc native", "sparcv9", "sparcv9", "pkg", "pkg.sparcv9", "pkg.sparcv9"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := yumResolvedRecordName("pkg", tc.arch, tc.osarch); got != tc.wantResolved {
+				t.Fatalf("resolve_name(%q, %q)=%q want %q", "pkg", tc.arch, got, tc.wantResolved)
+			}
+			if got := yumNormalizeName(tc.normalized, tc.osarch); got != tc.wantNormalized {
+				t.Fatalf("normalize_name(%q, %q)=%q want %q", tc.normalized, tc.osarch, got, tc.wantNormalized)
+			}
+		})
+	}
+
+	for _, tc := range []struct {
+		name, target, arch, wantKey, wantArg string
+	}{
+		{"x86_64", "pkg.x86_64", "x86_64", "pkg", "pkg-2"},
+		{"noarch", "pkg.noarch", "noarch", "pkg", "pkg-2"},
+		{"i686", "pkg.i686", "i686", "pkg.i686", "pkg-2.i686"},
+		{"x86_64_v2", "pkg.x86_64_v2", "x86_64_v2", "pkg", "pkg-2"},
+		{"unknown", "pkg.mips64", "mips64", "pkg.mips64", "pkg.mips64-2"},
+		{"sparc", "pkg.sparcv9", "sparcv9", "pkg.sparcv9", "pkg.sparcv9-2"},
+	} {
+		for _, manager := range []string{"yum", "dnf", "dnf5"} {
+			t.Run(manager+"/"+tc.name, func(t *testing.T) {
+				r := &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte(
+					yumPurgeRecord("pkg", "1", "2", "", tc.arch),
+				)}, {}, {}}}
+				got, err := (&commandProvider{spec: rpmSpec(manager)}).Yum(
+					context.Background(), &runtime.Runtime{Runner: r, Facts: factsForYUMTest()}, "purge", map[string]any{"pkgs": []any{map[string]any{tc.target: "1:2"}}},
+				)
+				if err != nil || !reflect.DeepEqual(got, map[string]any{tc.wantKey: map[string]any{"old": "1:2", "new": ""}}) {
+					t.Fatalf("got=%#v err=%v", got, err)
+				}
+				list := yumPurgeListArgv()
+				assertYumPurgeCommands(t, r.commands, [][]string{list, {manager, "-y", "remove", tc.wantArg}, list})
+			})
+		}
+	}
+}
+
+func TestYumPurgeMutationFailureStopsBeforePostQuery(t *testing.T) {
+	sentinel := errors.New("runner failure")
+	for _, manager := range []string{"yum", "dnf", "dnf5"} {
+		for _, tc := range []struct {
+			name   string
+			result process.CommandResult
+			check  func(error) bool
+		}{
+			{"nonzero without stderr", process.CommandResult{ExitCode: 9}, func(err error) bool {
+				return err != nil && err.Error() == fmt.Sprintf("%s exited with code 9", manager)
+			}},
+			{"nonzero with stderr", process.CommandResult{ExitCode: 9, Stderr: []byte("remove failed")}, func(err error) bool {
+				return err != nil && err.Error() == fmt.Sprintf("%s exited with code 9: remove failed", manager)
+			}},
+			{"runner error", process.CommandResult{Err: sentinel}, func(err error) bool { return errors.Is(err, sentinel) }},
+			{"canceled runner", process.CommandResult{Err: context.Canceled}, func(err error) bool { return errors.Is(err, context.Canceled) }},
+		} {
+			t.Run(manager+"/"+tc.name, func(t *testing.T) {
+				r := &yumRecordingRunner{results: []process.CommandResult{
+					{Stdout: []byte(yumPurgeRecord("foo", "0", "1", "1", "x86_64"))},
+					tc.result,
+					{Stdout: []byte("post-query-must-not-run")},
+				}}
+				got, err := (&commandProvider{spec: rpmSpec(manager)}).Yum(
+					context.Background(), &runtime.Runtime{Runner: r, Facts: factsForYUMTest()}, "purge", map[string]any{"name": "foo"},
+				)
+				if got != nil || !tc.check(err) || len(r.commands) != 2 {
+					t.Fatalf("got=%#v err=%v calls=%d", got, err, len(r.commands))
+				}
+				assertYumPurgeCommands(t, r.commands, [][]string{yumPurgeListArgv(), {manager, "-y", "remove", "foo"}})
+			})
+		}
+	}
+}
+
+func TestYumPurgeZypperReturnsDirectUnsupportedError(t *testing.T) {
+	got, err := (&commandProvider{spec: zypperSpec}).Yum(
+		context.Background(), &runtime.Runtime{Runner: &yumNoCallRunner{}}, "purge", "malformed",
+	)
+	unsupported, ok := err.(*runtime.UnsupportedError)
+	if got != nil || !ok || unsupported.Kind != "provider" || unsupported.Name != "zypper" {
+		t.Fatalf("got=%#v error=%T %v", got, err, err)
+	}
+}
+
+type yumPurgeCancelAfterRemoveRunner struct {
+	commands []process.Command
+	results  []process.CommandResult
+	cancel   context.CancelFunc
+}
+
+func (r *yumPurgeCancelAfterRemoveRunner) Run(_ context.Context, command process.Command) process.CommandResult {
+	r.commands = append(r.commands, command)
+	result := process.CommandResult{}
+	if len(r.results) > 0 {
+		result, r.results = r.results[0], r.results[1:]
+	}
+	if len(r.commands) == 2 {
+		r.cancel()
+	}
+	return result
+}
+
+func TestYumPurgeCancellationAfterSuccessfulRemoveSkipsPostQuery(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	r := &yumPurgeCancelAfterRemoveRunner{
+		cancel: cancel,
+		results: []process.CommandResult{
+			{Stdout: []byte("foo_|-0_|-1_|-1_|-x86_64_|-(none)_|-0\n")}, {},
+		},
+	}
+	got, err := (&commandProvider{spec: rpmSpec("yum")}).Yum(
+		ctx, &runtime.Runtime{Runner: r, Facts: factsForYUMTest()}, "purge", map[string]any{"name": "foo"},
+	)
+	if got != nil || !errors.Is(err, context.Canceled) || len(r.commands) != 2 {
+		t.Fatalf("got=%#v err=%v calls=%d", got, err, len(r.commands))
+	}
+	assertYumPurgeCommands(t, r.commands, [][]string{yumPurgeListArgv(), {"yum", "-y", "remove", "foo"}})
+}
+
+func TestYumPurgeRejectsOversizedCommandOutputBeforePostQuery(t *testing.T) {
+	r := &yumRecordingRunner{results: []process.CommandResult{
+		{Stdout: []byte("foo_|-0_|-1_|-1_|-x86_64_|-(none)_|-0\n")},
+		{Stdout: []byte(strings.Repeat("x", yumPurgeOutputLimit+1))},
+		{},
+	}}
+	got, err := (&commandProvider{spec: yumSpec}).Yum(
+		context.Background(), &runtime.Runtime{Runner: r, Facts: factsForYUMTest()}, "purge", map[string]any{"name": "foo"},
+	)
+	if got != nil || !errors.Is(err, process.ErrOutputLimit) || len(r.commands) != 2 {
+		t.Fatalf("got=%#v err=%v calls=%d", got, err, len(r.commands))
+	}
+	assertYumPurgeCommands(t, r.commands, [][]string{yumPurgeListArgv(), {"yum", "-y", "remove", "foo"}})
+}
+
+func TestYumPurgeEmptyInstalledSetDoesNotMutate(t *testing.T) {
+	for _, manager := range []string{"yum", "dnf", "dnf5"} {
+		t.Run(manager, func(t *testing.T) {
+			r := &yumRecordingRunner{results: []process.CommandResult{{}, {}}}
+			got, err := (&commandProvider{spec: rpmSpec(manager)}).Yum(
+				context.Background(), &runtime.Runtime{Runner: r, Facts: factsForYUMTest()}, "purge", map[string]any{"name": "missing"},
+			)
+			if err != nil || !reflect.DeepEqual(got, map[string]any{}) || len(r.commands) != 1 {
+				t.Fatalf("got=%#v err=%v calls=%d", got, err, len(r.commands))
+			}
+		})
+	}
+}
+
+func TestYumPurgeIgnoresMalformedRPMRecordsWithoutFallbackParsing(t *testing.T) {
+	for _, manager := range []string{"yum", "dnf", "dnf5"} {
+		t.Run(manager, func(t *testing.T) {
+			r := &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte(
+				"demo 1\n" + // Legacy whitespace fixtures are not RPM query records.
+					"demo_|-0_|-1_|-1_|-x86_64\n" + // Six fields.
+					"demo_|-0_|-1_|-1_|-x86_64_|-(none)_|-0_|-extra\n", // Eight fields.
+			)}}}
+			got, err := (&commandProvider{spec: rpmSpec(manager)}).Yum(
+				context.Background(), &runtime.Runtime{Runner: r, Facts: factsForYUMTest()}, "purge", map[string]any{"name": "demo"},
+			)
+			if err != nil || !reflect.DeepEqual(got, map[string]any{}) || len(r.commands) != 1 {
+				t.Fatalf("got=%#v err=%v commands=%#v", got, err, r.commands)
+			}
+			assertYumPurgeCommands(t, r.commands, [][]string{yumPurgeListArgv()})
+		})
+	}
+}
+
+func TestYumPurgeRPMRecordVersionsFollowPinnedParser(t *testing.T) {
+	records := yumPurgeInstalledRecords(
+		yumPurgeRecord("none", "(none)", "1", "(none)", "x86_64")+
+			yumPurgeRecord("empty-epoch", "", "2", "", "x86_64"),
+		"x86_64",
+	)
+	if !reflect.DeepEqual(records, []yumPurgeInstalledPackage{
+		{name: "none", version: "1-(none)", sortVersion: "1"},
+		{name: "empty-epoch", version: ":2", sortVersion: "2"},
+	}) {
+		t.Fatalf("records=%#v", records)
+	}
+}
+
+func commandArgvFromYUM(commands []process.Command) [][]string {
+	argv := make([][]string, 0, len(commands))
+	for _, command := range commands {
+		argv = append(argv, append([]string{command.Name}, command.Args...))
+	}
+	return argv
+}
+
 func TestYumListDownloadedTraversalMetadataAndBounds(t *testing.T) {
 	for _, manager := range []string{"yum", "dnf", "dnf5"} {
 		t.Run(manager, func(t *testing.T) {
@@ -2051,17 +2500,16 @@ func TestYumUpgradeAvailableArchitectureFiltering(t *testing.T) {
 		{"foo", "foo.noarch", true},
 		{"foo", "foo.x86_64", true},
 		// yumpkg.py:592-600 compares candidate pkg.arch exactly with the
-		// OS arch; its resolve_name normalization does not create an arch
-		// interchange. ARCHES excludes SPARC (rpm.py:47-56).
+		// requested architecture; x86_64_v2 is not interchangeable in this
+		// latest_version filter.
 		{"foo", "foo.x86_64_v2", false},
 		{"foo", "foo.i686", false},
 		{"foo.i686", "foo.i386", false},
 		// An unknown requested/candidate suffix uses osarch for the arch
 		// comparison, but remains part of the source package name.
 		{"foo", "foo.unknown", false},
-		// SPARC suffixes are not in rpm.ARCHES (salt/utils/pkg/rpm.py:47-56),
-		// so they remain unknown requested architectures and are not made
-		// eligible by inventing a public SPARC mapping.
+		// rpm.ARCHES omits the separately declared SPARC tuple. The requested
+		// suffix therefore falls back to osarch and cannot match a SPARC record.
 		{"foo.sparc", "foo.sparc", false},
 		{"foo.sparc", "foo.x86_64", false},
 		{"foo.i686", "foo.i686", true},

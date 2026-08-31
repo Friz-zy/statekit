@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
+	"github.com/friz-zy/statekit/internal/facts"
 	"github.com/friz-zy/statekit/internal/process"
 	"github.com/friz-zy/statekit/internal/runtime"
 )
@@ -27,6 +29,242 @@ func (r *aptHoldTestRunner) Run(_ context.Context, command process.Command) proc
 	result := r.results[0]
 	r.results = r.results[1:]
 	return result
+}
+
+type aptPurgeTestRunner struct {
+	results  []process.CommandResult
+	commands []process.Command
+	after    func(int)
+}
+
+func (r *aptPurgeTestRunner) Run(_ context.Context, command process.Command) process.CommandResult {
+	r.commands = append(r.commands, command)
+	if r.after != nil {
+		r.after(len(r.commands))
+	}
+	if len(r.results) == 0 {
+		return process.CommandResult{}
+	}
+	result := r.results[0]
+	r.results = r.results[1:]
+	return result
+}
+
+func aptPurgeRuntime(r *aptPurgeTestRunner) *runtime.Runtime {
+	return &runtime.Runtime{Runner: r, Facts: facts.ForTesting(facts.Overrides{
+		CPU: &facts.CPUFacts{Arch: "amd64"},
+	})}
+}
+
+func aptPurgeArgv(commands []process.Command) [][]string {
+	argv := make([][]string, 0, len(commands))
+	for _, command := range commands {
+		argv = append(argv, append([]string{command.Name}, command.Args...))
+	}
+	return argv
+}
+
+func assertAPTPurgeCommands(t *testing.T, commands []process.Command, want [][]string) {
+	t.Helper()
+	if got := aptPurgeArgv(commands); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv=%#v want=%#v", got, want)
+	}
+	for i, command := range commands {
+		if command.Shell || command.MaxStdoutBytes != aptPurgeOutputLimit || command.MaxStderrBytes != aptPurgeOutputLimit {
+			t.Fatalf("command[%d]=%#v", i, command)
+		}
+	}
+}
+
+func aptPurgeInstalled(name, version string) string {
+	return "install ok installed " + name + " " + version + " amd64\n"
+}
+
+func aptPurgeRemoved(name, version string) string {
+	return "deinstall ok config-files " + name + " " + version + " amd64\n"
+}
+
+func TestAPTPurgeParseTargetsPrecedenceMappingsAndCommaNames(t *testing.T) {
+	p := &commandProvider{spec: aptSpec}
+	old := aptPurgeInstalled("literal", "1") + aptPurgeInstalled("versioned", "2") + aptPurgeInstalled("native", "3")
+	new := aptPurgeRemoved("literal", "1") + aptPurgeRemoved("versioned", "2") + aptPurgeRemoved("native", "3")
+	r := &aptPurgeTestRunner{results: []process.CommandResult{{Stdout: []byte(old)}, {}, {Stdout: []byte(new)}}}
+	args := map[string]any{
+		// A truthy pkgs branch ignores this malformed name before validation.
+		"name": true,
+		"pkgs": []any{
+			"literal",
+			// _uninstall uses the repacked mapping key as its target and ignores
+			// the version value, as aptpkg.py does.
+			map[string]any{"versioned": "does-not-match"},
+			map[string]any{"native:amd64": 1.5},
+		},
+	}
+	got, err := p.Apt(context.Background(), aptPurgeRuntime(r), "purge", args)
+	want := map[string]any{
+		"removed": map[string]any{
+			"literal":   map[string]any{"old": "", "new": "1"},
+			"versioned": map[string]any{"old": "", "new": "2"},
+			"native":    map[string]any{"old": "", "new": "3"},
+		},
+		"installed": map[string]any{
+			"literal":   map[string]any{"old": "1", "new": ""},
+			"versioned": map[string]any{"old": "2", "new": ""},
+			"native":    map[string]any{"old": "3", "new": ""},
+		},
+	}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("got=%#v err=%v", got, err)
+	}
+	assertAPTPurgeCommands(t, r.commands, [][]string{
+		{"dpkg-query", "--showformat", aptPurgeQueryFormat, "-W"},
+		{"apt-get", "-q", "-y", "purge", "literal", "versioned", "native"},
+		{"dpkg-query", "--showformat", aptPurgeQueryFormat, "-W"},
+	})
+
+	// An explicitly empty list is falsey to parse_targets and therefore falls
+	// through to name. The empty comma component remains a nonmatching key.
+	r = &aptPurgeTestRunner{results: []process.CommandResult{{Stdout: []byte(
+		aptPurgeInstalled("first", "1") + aptPurgeInstalled("second", "2"),
+	)}, {}, {Stdout: []byte(aptPurgeRemoved("first", "1") + aptPurgeRemoved("second", "2"))}}}
+	got, err = p.Apt(context.Background(), aptPurgeRuntime(r), "purge", map[string]any{
+		"name": "first,,second", "pkgs": []any{},
+	})
+	if err != nil || got == nil {
+		t.Fatalf("empty pkgs fallback got=%#v err=%v", got, err)
+	}
+	assertAPTPurgeCommands(t, r.commands, [][]string{
+		{"dpkg-query", "--showformat", aptPurgeQueryFormat, "-W"},
+		{"apt-get", "-q", "-y", "purge", "first", "second"},
+		{"dpkg-query", "--showformat", aptPurgeQueryFormat, "-W"},
+	})
+
+	noCall := &aptPurgeTestRunner{}
+	_, err = p.Apt(context.Background(), aptPurgeRuntime(noCall), "purge", map[string]any{
+		"pkgs": []any{map[string]any{"same:amd64": "1"}, map[string]any{"same": "2"}},
+	})
+	if err == nil || len(noCall.commands) != 0 {
+		t.Fatalf("normalized collision err=%v calls=%d", err, len(noCall.commands))
+	}
+}
+
+func TestAPTPurgeWildcardOrderOldRemovedAndLiteralMetacharacters(t *testing.T) {
+	p := &commandProvider{spec: aptSpec}
+	old := aptPurgeInstalled("bar1", "1") + aptPurgeInstalled("foo1", "1") + aptPurgeInstalled("foo2", "1") + aptPurgeInstalled("literal", "1")
+	new := aptPurgeRemoved("foo1", "1") + aptPurgeRemoved("foo2", "1") + aptPurgeRemoved("literal", "1")
+	r := &aptPurgeTestRunner{results: []process.CommandResult{{Stdout: []byte(old + aptPurgeRemoved("stale", "2"))}, {}, {Stdout: []byte(new)}}}
+	got, err := p.Apt(context.Background(), aptPurgeRuntime(r), "purge", map[string]any{"pkgs": []any{
+		map[string]any{"bar*": "first"},
+		"foo1",
+		map[string]any{"literal": nil},
+		map[string]any{"foo*": "last"},
+		"stale",
+	}})
+	if err != nil || got == nil {
+		t.Fatalf("wildcard got=%#v err=%v", got, err)
+	}
+	// The first wildcard is discarded, the final wildcard replaces foo1's value
+	// without moving it, and the removed-only target follows installed targets.
+	assertAPTPurgeCommands(t, r.commands, [][]string{
+		{"dpkg-query", "--showformat", aptPurgeQueryFormat, "-W"},
+		{"apt-get", "-q", "-y", "purge", "foo1", "literal", "foo2", "stale"},
+		{"dpkg-query", "--showformat", aptPurgeQueryFormat, "-W"},
+	})
+
+	r = &aptPurgeTestRunner{results: []process.CommandResult{{Stdout: []byte(
+		aptPurgeInstalled("foo?", "1") + aptPurgeInstalled("foo1", "1"),
+	)}, {}, {Stdout: []byte(aptPurgeRemoved("foo?", "1"))}}}
+	_, err = p.Apt(context.Background(), aptPurgeRuntime(r), "purge", map[string]any{"pkgs": []any{"foo?"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := aptPurgeArgv(r.commands)[1]; !reflect.DeepEqual(got, []string{"apt-get", "-q", "-y", "purge", "foo?"}) {
+		t.Fatalf("plain question target argv=%#v", got)
+	}
+}
+
+func TestAPTPurgeCompletedFailureAndAbortBoundaries(t *testing.T) {
+	p := &commandProvider{spec: aptSpec}
+	old := []byte(aptPurgeInstalled("demo", "1"))
+	new := []byte(aptPurgeRemoved("demo", "1"))
+	shape := map[string]any{
+		"removed":   map[string]any{"demo": map[string]any{"old": "", "new": "1"}},
+		"installed": map[string]any{"demo": map[string]any{"old": "1", "new": ""}},
+	}
+	for _, tc := range []struct {
+		name    string
+		remove  process.CommandResult
+		wantErr bool
+	}{
+		{"nonzero stderr", process.CommandResult{ExitCode: 9, Stderr: []byte("remove failed")}, true},
+		{"nonzero empty stderr", process.CommandResult{ExitCode: 9}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &aptPurgeTestRunner{results: []process.CommandResult{{Stdout: old}, tc.remove, {Stdout: new}}}
+			got, err := p.Apt(context.Background(), aptPurgeRuntime(r), "purge", map[string]any{"pkgs": []any{"demo"}})
+			if !reflect.DeepEqual(got, shape) || (err != nil) != tc.wantErr || len(r.commands) != 3 {
+				t.Fatalf("got=%#v err=%v calls=%d", got, err, len(r.commands))
+			}
+			if tc.wantErr {
+				var purgeErr *aptPurgeError
+				if !errors.As(err, &purgeErr) || !reflect.DeepEqual(purgeErr.Info(), map[string]any{
+					"errors": []string{"remove failed"}, "changes": shape,
+				}) {
+					t.Fatalf("error=%T %v info=%#v", err, err, purgeErr.Info())
+				}
+			}
+			assertAPTPurgeCommands(t, r.commands, [][]string{
+				{"dpkg-query", "--showformat", aptPurgeQueryFormat, "-W"},
+				{"apt-get", "-q", "-y", "purge", "demo"},
+				{"dpkg-query", "--showformat", aptPurgeQueryFormat, "-W"},
+			})
+		})
+	}
+
+	sentinel := errors.New("runner failure")
+	for _, tc := range []struct {
+		name   string
+		result process.CommandResult
+		want   error
+	}{
+		{"runner error", process.CommandResult{Err: sentinel}, sentinel},
+		{"output limit", process.CommandResult{Err: process.ErrOutputLimit}, process.ErrOutputLimit},
+		{"truncated output", process.CommandResult{StdoutTruncated: true}, process.ErrOutputLimit},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &aptPurgeTestRunner{results: []process.CommandResult{{Stdout: old}, tc.result, {Stdout: []byte("must not run")}}}
+			got, err := p.Apt(context.Background(), aptPurgeRuntime(r), "purge", map[string]any{"pkgs": []any{"demo"}})
+			if got != nil || !errors.Is(err, tc.want) || len(r.commands) != 2 {
+				t.Fatalf("got=%#v err=%v calls=%d", got, err, len(r.commands))
+			}
+		})
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	r := &aptPurgeTestRunner{results: []process.CommandResult{{Stdout: old}, {}}, after: func(calls int) {
+		if calls == 2 {
+			cancel()
+		}
+	}}
+	got, err := p.Apt(ctx, aptPurgeRuntime(r), "purge", map[string]any{"pkgs": []any{"demo"}})
+	if got != nil || !errors.Is(err, context.Canceled) || len(r.commands) != 2 {
+		t.Fatalf("post-remove cancel got=%#v err=%v calls=%d", got, err, len(r.commands))
+	}
+
+	preCanceled, preCancel := context.WithCancel(context.Background())
+	preCancel()
+	r = &aptPurgeTestRunner{}
+	got, err = p.Apt(preCanceled, aptPurgeRuntime(r), "purge", map[string]any{"pkgs": []any{"demo"}})
+	if got != nil || !errors.Is(err, context.Canceled) || len(r.commands) != 0 {
+		t.Fatalf("pre-cancel got=%#v err=%v calls=%d", got, err, len(r.commands))
+	}
+
+	unsupported := &aptPurgeTestRunner{}
+	_, err = p.Apt(context.Background(), aptPurgeRuntime(unsupported), "purge", map[string]any{"pkgs": []any{map[string]any{"a": []string{"1"}}}})
+	var unsupportedErr *runtime.UnsupportedError
+	if !errors.As(err, &unsupportedErr) || len(unsupported.commands) != 0 || !strings.Contains(unsupportedErr.Name, "pkg.purge") {
+		t.Fatalf("unsupported=%T %v calls=%d", err, err, len(unsupported.commands))
+	}
 }
 
 func TestAPTHoldTestModeAndMutationGate(t *testing.T) {

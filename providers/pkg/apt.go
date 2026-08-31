@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/friz-zy/statekit/internal/process"
 	"github.com/friz-zy/statekit/internal/runtime"
 )
 
@@ -110,11 +111,7 @@ func (p *commandProvider) Apt(ctx context.Context, rt *runtime.Runtime, function
 	case "autoremove":
 		return p.autoremove(ctx, rt, boolDefault(a, "list_only", false), boolDefault(a, "purge", false))
 	case "purge":
-		ns, err := packageArgs(a)
-		if err != nil {
-			return nil, err
-		}
-		return p.uninstall(ctx, rt, "purge", ns)
+		return p.uninstall(ctx, rt, "purge", a)
 	case "upgrade":
 		return p.upgrade(ctx, rt, a)
 	case "list_upgrades":
@@ -226,6 +223,11 @@ func validateAPTArgs(function string, a map[string]any) error {
 	}
 	for _, key := range []string{"name", "pattern", "state", "path", "filter", "root", "saltenv", "pkg1", "pkg2"} {
 		if v, ok := a[key]; ok && v != nil {
+			// parse_targets evaluates a truthy pkgs branch before it touches
+			// name, including an otherwise malformed name value.
+			if function == "purge" && key == "name" {
+				continue
+			}
 			if _, good := v.(string); !good {
 				if _, ok := v.(*string); !ok {
 					return fmt.Errorf("argument %q must be a string", key)
@@ -235,6 +237,12 @@ func validateAPTArgs(function string, a map[string]any) error {
 	}
 	for _, key := range []string{"pkgs", "packages", "names", "paths"} {
 		if v, ok := a[key]; ok && v != nil {
+			// pkg_resource._repack_pkgs accepts a decoder-compatible list of
+			// scalars and one-key mappings for purge. The target helper validates
+			// that richer form after source precedence has been determined.
+			if function == "purge" && key == "pkgs" {
+				continue
+			}
 			if _, good := v.([]string); !good {
 				return fmt.Errorf("argument %q must be a list of strings", key)
 			}
@@ -511,39 +519,282 @@ func (p *commandProvider) autoremove(ctx context.Context, rt *runtime.Runtime, l
 	sort.Strings(r)
 	return r, nil
 }
-func (p *commandProvider) uninstall(ctx context.Context, rt *runtime.Runtime, action string, ns []string) (any, error) {
-	old, oldRemoved, err := packageStates(ctx, rt)
+
+const aptPurgeOutputLimit = 1 << 20
+
+const aptPurgeQueryFormat = "${Status} ${Package} ${Version} ${Architecture}\n"
+
+// aptPurgeError is the CommandExecutionError-equivalent for aptpkg._uninstall.
+// Salt returns the computed changes alongside the failure details after its
+// readback, so callers can inspect both without treating a completed apt-get
+// failure as a pre-mutation transport failure.
+type aptPurgeError struct{ info map[string]any }
+
+func (e *aptPurgeError) Error() string { return "Problem encountered removing package(s)" }
+
+func (e *aptPurgeError) Info() map[string]any { return e.info }
+
+func (p *commandProvider) uninstall(ctx context.Context, rt *runtime.Runtime, action string, a map[string]any) (any, error) {
+	params, err := aptPurgeTargets(a, aptPurgeArch(rt))
 	if err != nil {
 		return nil, err
 	}
-	targets := matchingPackages(old, ns)
+	if len(params.index) == 0 {
+		return map[string]any{}, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	old, err := aptPurgeSnapshot(ctx, rt)
+	if err != nil {
+		return nil, err
+	}
+
+	// _uninstall calls match_wildcard on the same pkg_params mapping for the
+	// installed and removed snapshots. Retain that mutation order exactly.
+	matchPurgeWildcard(old.installed, old.installedOrder, params)
+	targets, seen := aptPurgeMatchingTargets(old.installed, params, nil)
 	if action == "purge" {
-		targets = append(targets, matchingPackages(oldRemoved, ns)...)
+		matchPurgeWildcard(old.removed, old.removedOrder, params)
+		removedTargets, _ := aptPurgeMatchingTargets(old.removed, params, seen)
+		targets = append(targets, removedTargets...)
 	}
 	if len(targets) == 0 {
 		return map[string]any{}, nil
 	}
-	cmd := append([]string{"apt-get", "-q", "-y", action}, targets...)
-	_, runErr := aptRunMutation(ctx, rt, cmd)
-	if runErr != nil {
-		return map[string]any{}, runErr
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	new, newRemoved, readErr := packageStates(ctx, rt)
-	if readErr != nil {
-		return nil, readErr
-	}
-	changes := comparePackages(old, new)
-	if action == "purge" {
-		ret := map[string]any{"removed": comparePackages(oldRemoved, newRemoved), "installed": changes}
-		if runErr != nil {
-			return ret, runErr
+	for _, target := range targets {
+		if invalidAPTToken(target) {
+			return nil, fmt.Errorf("invalid package name %q", target)
 		}
-		return ret, nil
 	}
-	if runErr != nil {
-		return changes, runErr
+
+	cmd := append([]string{"apt-get", "-q", "-y", action}, targets...)
+	removeResult, err := aptPurgeRun(ctx, rt, cmd)
+	if err != nil {
+		return nil, err
 	}
-	return changes, nil
+
+	newSnapshot, err := aptPurgeSnapshot(ctx, rt)
+	if err != nil {
+		return nil, err
+	}
+	changes := comparePackages(old.installed, newSnapshot.installed)
+	var ret any = changes
+	if action == "purge" {
+		ret = map[string]any{
+			"removed":   comparePackages(old.removed, newSnapshot.removed),
+			"installed": changes,
+		}
+	}
+	if removeResult.ExitCode != 0 && len(removeResult.Stderr) != 0 {
+		return ret, &aptPurgeError{info: map[string]any{
+			"errors":  []string{string(removeResult.Stderr)},
+			"changes": ret,
+		}}
+	}
+	return ret, nil
+}
+
+func aptPurgeArch(rt *runtime.Runtime) string {
+	if rt == nil || rt.Facts == nil {
+		return ""
+	}
+	return rt.Facts.CPU().Arch
+}
+
+func aptPurgeTargets(a map[string]any, osarch string) (*purgeTargetMap, error) {
+	value, supplied := a["pkgs"]
+	if supplied && value != nil {
+		items, isList, empty := purgeItems(value)
+		if !isList {
+			if !sourceTargetTruthy(value) {
+				return aptPurgeTargetsFromName(a, osarch)
+			}
+			return nil, &runtime.UnsupportedError{Kind: "argument", Name: "pkg.purge pkgs"}
+		}
+		if !empty {
+			targets := newPurgeTargetMap(len(items))
+			for _, item := range items {
+				target, err := purgeTargetFromItem(item, func(name string) string {
+					return normalizeName(name, osarch)
+				})
+				if err != nil {
+					return nil, &runtime.UnsupportedError{Kind: "argument", Name: "pkg.purge pkgs"}
+				}
+				if targets.has(target.name) {
+					return nil, duplicatePurgeTargetsError(items)
+				}
+				targets.put(target)
+			}
+			return targets, nil
+		}
+	}
+
+	return aptPurgeTargetsFromName(a, osarch)
+}
+
+func aptPurgeTargetsFromName(a map[string]any, osarch string) (*purgeTargetMap, error) {
+	targets := newPurgeTargetMap(0)
+	value, supplied := a["name"]
+	if !supplied || value == nil {
+		return targets, nil
+	}
+	name, ok := value.(string)
+	if !ok {
+		if pointer, isPointer := value.(*string); isPointer && pointer == nil {
+			return targets, nil
+		}
+		return nil, fmt.Errorf("argument %q must be a string", "name")
+	}
+	if name == "" {
+		return targets, nil
+	}
+	for _, component := range strings.Split(name, ",") {
+		// The source name branch is a dict comprehension. It preserves an empty
+		// comma component as a nonmatching key and overwrites normalized repeats
+		// without moving their original insertion position.
+		targets.put(purgeTarget{name: normalizeName(component, osarch)})
+	}
+	return targets, nil
+}
+
+func aptPurgeMatchingTargets(current map[string]string, params *purgeTargetMap, seen map[string]bool) ([]string, map[string]bool) {
+	if seen == nil {
+		seen = map[string]bool{}
+	}
+	targets := make([]string, 0, len(params.index))
+	for _, target := range params.ordered() {
+		if _, installed := current[target.name]; !installed || seen[target.name] {
+			continue
+		}
+		seen[target.name] = true
+		targets = append(targets, target.name)
+	}
+	return targets, seen
+}
+
+type aptPurgeSnapshotResult struct {
+	installed      map[string]string
+	removed        map[string]string
+	installedOrder []string
+	removedOrder   []string
+}
+
+type aptPurgePackageList struct {
+	versions map[string][]string
+	order    []string
+}
+
+func newAPTPurgePackageList() aptPurgePackageList {
+	return aptPurgePackageList{versions: map[string][]string{}}
+}
+
+func (l *aptPurgePackageList) add(name, version string) {
+	if _, exists := l.versions[name]; !exists {
+		l.order = append(l.order, name)
+	}
+	l.versions[name] = append(l.versions[name], version)
+}
+
+func (l aptPurgePackageList) overlay(other aptPurgePackageList) aptPurgePackageList {
+	ret := newAPTPurgePackageList()
+	for _, name := range l.order {
+		ret.add(name, "")
+		ret.versions[name] = append([]string(nil), l.versions[name]...)
+	}
+	for _, name := range other.order {
+		if _, exists := ret.versions[name]; !exists {
+			ret.order = append(ret.order, name)
+		}
+		ret.versions[name] = append([]string(nil), other.versions[name]...)
+	}
+	return ret
+}
+
+func (l aptPurgePackageList) strings() map[string]string {
+	ret := make(map[string]string, len(l.versions))
+	for name, versions := range l.versions {
+		ordered := append([]string(nil), versions...)
+		sort.Strings(ordered)
+		unique := ordered[:0]
+		for _, version := range ordered {
+			if len(unique) == 0 || unique[len(unique)-1] != version {
+				unique = append(unique, version)
+			}
+		}
+		ret[name] = strings.Join(unique, ",")
+	}
+	return ret
+}
+
+func aptPurgeSnapshot(ctx context.Context, rt *runtime.Runtime) (aptPurgeSnapshotResult, error) {
+	result, err := aptPurgeRun(ctx, rt, []string{"dpkg-query", "--showformat", aptPurgeQueryFormat, "-W"})
+	if err != nil {
+		return aptPurgeSnapshotResult{}, err
+	}
+	if result.ExitCode != 0 {
+		return aptPurgeSnapshotResult{}, fmt.Errorf("dpkg-query exited with code %d: %s", result.ExitCode, result.Stderr)
+	}
+
+	installed := newAPTPurgePackageList()
+	removed := newAPTPurgePackageList()
+	purgeDesired := newAPTPurgePackageList()
+	for _, line := range strings.Split(string(result.Stdout), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 6 {
+			continue
+		}
+		lineType, status, name, version, arch := fields[0], fields[2], fields[3], fields[4], fields[5]
+		if aptPurgeArch(rt) == "amd64" && arch != "all" && arch != "amd64" {
+			name += ":" + arch
+		}
+		switch {
+		case (strings.Contains(lineType, "install") || strings.Contains(lineType, "hold")) && strings.Contains(status, "installed"):
+			installed.add(name, version)
+		case strings.Contains(lineType, "deinstall"):
+			removed.add(name, version)
+		case strings.Contains(lineType, "purge") && status == "installed":
+			purgeDesired.add(name, version)
+		}
+	}
+	effectiveInstalled := purgeDesired.overlay(installed)
+	return aptPurgeSnapshotResult{
+		installed:      effectiveInstalled.strings(),
+		removed:        removed.strings(),
+		installedOrder: append([]string(nil), effectiveInstalled.order...),
+		removedOrder:   append([]string(nil), removed.order...),
+	}, nil
+}
+
+// aptPurgeRun is the bounded shell-free subprocess boundary for every
+// _uninstall readback and mutation. A completed nonzero result is returned to
+// the caller because aptpkg._uninstall reads state before deciding whether an
+// stderr-bearing apt failure becomes a CommandExecutionError.
+func aptPurgeRun(ctx context.Context, rt *runtime.Runtime, argv []string) (process.CommandResult, error) {
+	if rt == nil || rt.Runner == nil {
+		return process.CommandResult{}, errors.New("APT purge requires a runner")
+	}
+	if err := ctx.Err(); err != nil {
+		return process.CommandResult{}, err
+	}
+	cmd := runtime.Command(argv...)
+	cmd.Shell = false
+	cmd.MaxStdoutBytes, cmd.MaxStderrBytes = aptPurgeOutputLimit, aptPurgeOutputLimit
+	result := rt.Runner.Run(ctx, cmd)
+	if result.Err != nil {
+		return process.CommandResult{}, result.Err
+	}
+	if err := ctx.Err(); err != nil {
+		return process.CommandResult{}, err
+	}
+	if result.StdoutTruncated || result.StderrTruncated || len(result.Stdout) > aptPurgeOutputLimit || len(result.Stderr) > aptPurgeOutputLimit {
+		return process.CommandResult{}, process.ErrOutputLimit
+	}
+	return result, nil
 }
 
 func aptRunIgnoreExit(ctx context.Context, rt *runtime.Runtime, argv []string) (string, error) {
@@ -554,58 +805,6 @@ func aptRunIgnoreExit(ctx context.Context, rt *runtime.Runtime, argv []string) (
 	return string(r.Stdout), nil
 }
 
-// Salt deliberately ignores an apt autoremove non-zero exit, but _uninstall
-// preserves an apt error when apt actually reported one.
-func aptRunMutation(ctx context.Context, rt *runtime.Runtime, argv []string) (string, error) {
-	r := rt.Runner.Run(ctx, runtime.Command(argv...))
-	if r.Err != nil {
-		return "", r.Err
-	}
-	if r.ExitCode != 0 && len(r.Stderr) != 0 {
-		return string(r.Stdout), fmt.Errorf("%s exited with code %d: %s", argv[0], r.ExitCode, r.Stderr)
-	}
-	return string(r.Stdout), nil
-}
-
-func packageStates(ctx context.Context, rt *runtime.Runtime) (map[string]string, map[string]string, error) {
-	o, err := aptResult(ctx, rt, []string{"dpkg-query", "--showformat", "${Status} ${Package} ${Version}\n", "-W"})
-	if err != nil {
-		return nil, nil, err
-	}
-	installed, removed := map[string]string{}, map[string]string{}
-	for _, line := range nonEmptyLines(o) {
-		f := strings.Fields(line)
-		if len(f) < 5 {
-			continue
-		}
-		name, version := f[3], f[4]
-		if f[0] == "install" || f[0] == "hold" {
-			installed[name] = version
-		} else if f[0] == "deinstall" {
-			removed[name] = version
-		}
-	}
-	return installed, removed, nil
-}
-
-func matchingPackages(installed map[string]string, patterns []string) []string {
-	seen := map[string]bool{}
-	out := []string{}
-	for _, pattern := range patterns {
-		for name := range installed {
-			matched := name == pattern
-			if strings.ContainsAny(pattern, "*?[") {
-				matched, _ = filepath.Match(pattern, name)
-			}
-			if matched && !seen[name] {
-				seen[name] = true
-				out = append(out, name)
-			}
-		}
-	}
-	sort.Strings(out)
-	return out
-}
 func (p *commandProvider) hold(ctx context.Context, rt *runtime.Runtime, hold bool, a map[string]any) (any, error) {
 	ns, err := packageArgs(a)
 	if err != nil {

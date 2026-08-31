@@ -174,6 +174,176 @@ func TestLongtailCapabilityGateBeforeRunner(t *testing.T) {
 	}
 }
 
+func TestPurgeRegistryActualProviderMatrix(t *testing.T) {
+	const aptQuery = "${Status} ${Package} ${Version} ${Architecture}\n"
+	const rpmQuery = "%{NAME}_|-%{EPOCH}_|-%{VERSION}_|-%{RELEASE}_|-%{ARCH}_|-(none)_|-%{INSTALLTIME}\n"
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	if got := reg.ProviderCapabilities("pkg.purge"); !reflect.DeepEqual(got, []string{"aptpkg", "yumpkg"}) {
+		t.Fatalf("capabilities=%v", got)
+	}
+	for _, typ := range []reflect.Type{reflect.TypeOf(PurgeArgs{}), reflect.TypeOf(YumPurgeArgs{})} {
+		if typ.NumField() != 2 || typ.Field(0).Name != "Name" || typ.Field(0).Type != reflect.TypeOf((*string)(nil)) || typ.Field(1).Name != "Pkgs" || typ.Field(1).Type != reflect.TypeOf([]any{}) {
+			t.Fatalf("purge prototype fields=%v", typ)
+		}
+		if _, exists := typ.FieldByName("SplitArch"); exists {
+			t.Fatalf("%v unexpectedly exposes split_arch", typ)
+		}
+	}
+
+	type row struct {
+		provider  string
+		prototype reflect.Type
+		call      any
+		results   []process.CommandResult
+		argv      [][]string
+		want      any
+	}
+	aptResult := map[string]any{
+		"removed":   map[string]any{"safe-name": map[string]any{"old": "", "new": "1"}},
+		"installed": map[string]any{"safe-name": map[string]any{"old": "1", "new": ""}},
+	}
+	rows := []row{
+		{
+			provider: "apt", prototype: reflect.TypeOf(PurgeArgs{}), call: &PurgeArgs{Pkgs: []any{"safe-name"}},
+			results: []process.CommandResult{{Stdout: []byte("install ok installed safe-name 1 amd64\n")}, {}, {Stdout: []byte("deinstall ok config-files safe-name 1 amd64\n")}},
+			argv:    [][]string{{"dpkg-query", "--showformat", aptQuery, "-W"}, {"apt-get", "-q", "-y", "purge", "safe-name"}, {"dpkg-query", "--showformat", aptQuery, "-W"}},
+			want:    aptResult,
+		},
+	}
+	for _, provider := range []string{"yum", "dnf", "dnf5"} {
+		rows = append(rows, row{
+			provider: provider, prototype: reflect.TypeOf(YumPurgeArgs{}), call: &YumPurgeArgs{Name: strptr("bad\nname"), Pkgs: []any{"safe-name"}},
+			results: []process.CommandResult{{Stdout: []byte("safe-name_|-0_|-1_|-1_|-x86_64_|-(none)_|-0\n")}, {}, {}},
+			argv:    [][]string{{"rpm", "-qa", "--nodigest", "--nosignature", "--queryformat", rpmQuery}, {provider, "-y", "remove", "safe-name"}, {"rpm", "-qa", "--nodigest", "--nosignature", "--queryformat", rpmQuery}},
+			want:    map[string]any{"safe-name": map[string]any{"old": "1-1", "new": ""}},
+		})
+	}
+	for _, tc := range rows {
+		t.Run(tc.provider, func(t *testing.T) {
+			r := &aptFakeRunner{results: tc.results}
+			rt := aptExecRuntime(tc.provider, r)
+			family := facts.FamilyRedHat
+			if tc.provider == "apt" {
+				family = facts.FamilyDebian
+			}
+			rt.Facts = facts.ForTesting(facts.Overrides{Package: tc.provider, CPU: &facts.CPUFacts{Arch: "x86_64"}, OS: &facts.OSFacts{Family: family}})
+			prototype, err := reg.ResolveArgs(rt, "pkg.purge")
+			if err != nil || reflect.TypeOf(prototype) != tc.prototype {
+				t.Fatalf("prototype=%T err=%v", prototype, err)
+			}
+			if names, err := config.ArgumentNames(prototype); err != nil || !reflect.DeepEqual(names, []string{"name", "pkgs"}) {
+				t.Fatalf("argument names=%v err=%v", names, err)
+			}
+			got, err := reg.Call(context.Background(), rt, "pkg.purge", tc.call)
+			if err != nil || !reflect.DeepEqual(got, tc.want) || !reflect.DeepEqual(commandArgv(r.calls), tc.argv) {
+				t.Fatalf("got=%#v err=%v argv=%#v", got, err, commandArgv(r.calls))
+			}
+			for i, command := range r.calls {
+				if command.Shell || command.MaxStdoutBytes != 1<<20 || command.MaxStderrBytes != 1<<20 {
+					t.Fatalf("command[%d]=%#v", i, command)
+				}
+			}
+			wrong := any(&PurgeArgs{})
+			if tc.provider == "apt" {
+				wrong = &YumPurgeArgs{}
+			}
+			before := len(r.calls)
+			if got, callErr := reg.Call(context.Background(), rt, "pkg.purge", wrong); got != nil || callErr == nil || len(r.calls) != before {
+				t.Fatalf("wrong pointer got=%#v err=%v calls=%d", got, callErr, len(r.calls))
+			}
+			if got, callErr := reg.Call(context.Background(), rt, "pkg.purge", map[string]any{"pkgs": []any{"safe-name"}}); got != nil || callErr == nil || len(r.calls) != before {
+				t.Fatalf("untyped args got=%#v err=%v calls=%d", got, callErr, len(r.calls))
+			}
+		})
+	}
+
+	zypperRunner := &aptFakeRunner{}
+	zypper := aptExecRuntime("zypper", zypperRunner)
+	if _, err := reg.ResolveArgs(zypper, "pkg.purge"); !errors.As(err, new(*runtime.UnsupportedError)) || len(zypperRunner.calls) != 0 {
+		t.Fatalf("zypper resolve err=%v calls=%d", err, len(zypperRunner.calls))
+	}
+	if got, err := reg.Call(context.Background(), zypper, "pkg.purge", &PurgeArgs{}); got != nil || !errors.As(err, new(*runtime.UnsupportedError)) || len(zypperRunner.calls) != 0 {
+		t.Fatalf("zypper call got=%#v err=%v calls=%d", got, err, len(zypperRunner.calls))
+	}
+}
+
+func TestPurgeRegistryFailureBoundaries(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := errors.New("purge runner failure")
+	for _, provider := range []string{"apt", "yum", "dnf", "dnf5"} {
+		t.Run(provider, func(t *testing.T) {
+			r := &aptFakeRunner{}
+			rt := aptExecRuntime(provider, r)
+			family := facts.FamilyRedHat
+			if provider == "apt" {
+				family = facts.FamilyDebian
+			}
+			rt.Facts = facts.ForTesting(facts.Overrides{Package: provider, CPU: &facts.CPUFacts{Arch: "x86_64"}, OS: &facts.OSFacts{Family: family}})
+			args := any(&PurgeArgs{Pkgs: []any{"safe-name"}})
+			old := []byte("install ok installed safe-name 1 amd64\n")
+			post := []byte("deinstall ok config-files safe-name 1 amd64\n")
+			if provider != "apt" {
+				args = &YumPurgeArgs{Pkgs: []any{"safe-name"}}
+				old = []byte("safe-name_|-0_|-1_|-1_|-x86_64_|-(none)_|-0\n")
+			}
+
+			for _, tc := range []struct {
+				name      string
+				mutation  process.CommandResult
+				wantCalls int
+				wantErr   error
+				postQuery bool
+			}{
+				{"runner", process.CommandResult{Err: sentinel}, 2, sentinel, false},
+				{"canceled", process.CommandResult{Err: context.Canceled}, 2, context.Canceled, false},
+				{"output-limit", process.CommandResult{Err: process.ErrOutputLimit}, 2, process.ErrOutputLimit, false},
+				{"nonzero", process.CommandResult{ExitCode: 9, Stderr: []byte("remove failed")}, map[bool]int{true: 3, false: 2}[provider == "apt"], nil, provider == "apt"},
+				{"nonzero-empty-stderr", process.CommandResult{ExitCode: 9}, map[bool]int{true: 3, false: 2}[provider == "apt"], nil, provider == "apt"},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					r.calls = nil
+					r.results = []process.CommandResult{{Stdout: old}, tc.mutation, {Stdout: post}}
+					got, err := reg.Call(context.Background(), rt, "pkg.purge", args)
+					if tc.postQuery {
+						if got == nil || len(r.calls) != tc.wantCalls {
+							t.Fatalf("postquery got=%#v err=%v calls=%d", got, err, len(r.calls))
+						}
+						if tc.name == "nonzero" && err == nil {
+							t.Fatalf("stderr-bearing apt failure lost error")
+						}
+						if tc.name == "nonzero-empty-stderr" && err != nil {
+							t.Fatalf("empty-stderr apt status invented error: %v", err)
+						}
+						return
+					}
+					if tc.name == "nonzero" || tc.name == "nonzero-empty-stderr" {
+						if got != nil || err == nil || len(r.calls) != tc.wantCalls {
+							t.Fatalf("nonzero got=%#v err=%v calls=%d", got, err, len(r.calls))
+						}
+						return
+					}
+					if got != nil || !errors.Is(err, tc.wantErr) || len(r.calls) != tc.wantCalls {
+						t.Fatalf("got=%#v err=%v calls=%d", got, err, len(r.calls))
+					}
+				})
+			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			r.calls = nil
+			if got, err := reg.Call(ctx, rt, "pkg.purge", args); got != nil || !errors.Is(err, context.Canceled) || len(r.calls) != 0 {
+				t.Fatalf("pre-cancel got=%#v err=%v calls=%d", got, err, len(r.calls))
+			}
+		})
+	}
+}
+
 func TestHoldRegistryProviderMatrix(t *testing.T) {
 	reg := runtime.NewExecRegistry()
 	if err := Register(reg); err != nil {
@@ -544,7 +714,7 @@ func TestLongtailProviderPreservesRunnerFailures(t *testing.T) {
 		{ExitCode: 7, Stderr: []byte("apt failed")},
 		{ExitCode: -1, Err: context.Canceled},
 	} {
-		runner := &aptFakeRunner{results: []process.CommandResult{{Stdout: []byte("install ok installed safe-name 1\n")}, result}}
+		runner := &aptFakeRunner{results: []process.CommandResult{{Stdout: []byte("install ok installed safe-name 1 amd64\n")}, result}}
 		rt := aptExecRuntime("apt", runner)
 		fn := aptLongtailFunc{"purge", PackagesArgs{}}
 		if _, err := fn.Execute(context.Background(), rt, &PackagesArgs{Pkgs: []string{"safe-name"}}); err == nil {
@@ -698,8 +868,8 @@ func TestAPTLongtailNamedRunnerContractMatrix(t *testing.T) {
 			}
 		}},
 		{"purge", func(t *testing.T) {
-			r := &aptFakeRunner{results: []process.CommandResult{{Stdout: []byte("install ok installed a 1\ninstall ok installed b 1\n")}, {}, {Stdout: []byte("deinstall ok config-files a 1\ndeinstall ok config-files b 1\n")}}}
-			got, err := (aptLongtailFunc{"purge", PurgeArgs{}}).Execute(context.Background(), aptExecRuntime("apt", r), &PurgeArgs{Pkgs: []string{"a", "b"}})
+			r := &aptFakeRunner{results: []process.CommandResult{{Stdout: []byte("install ok installed a 1 amd64\ninstall ok installed b 1 amd64\n")}, {}, {Stdout: []byte("deinstall ok config-files a 1 amd64\ndeinstall ok config-files b 1 amd64\n")}}}
+			got, err := (aptLongtailFunc{"purge", PurgeArgs{}}).Execute(context.Background(), aptExecRuntime("apt", r), &PurgeArgs{Pkgs: []any{"a", "b"}})
 			want := map[string]any{"removed": map[string]any{"a": map[string]any{"old": "", "new": "1"}, "b": map[string]any{"old": "", "new": "1"}}, "installed": map[string]any{"a": map[string]any{"old": "1", "new": ""}, "b": map[string]any{"old": "1", "new": ""}}}
 			if err != nil || !reflect.DeepEqual(got, want) || !reflect.DeepEqual(r.calls[1].Args, []string{"-q", "-y", "purge", "a", "b"}) {
 				t.Fatalf("got=%#v err=%v cmd=%#v", got, err, r.calls)
@@ -707,7 +877,7 @@ func TestAPTLongtailNamedRunnerContractMatrix(t *testing.T) {
 		}, func(t *testing.T) {
 			r := &aptFakeRunner{}
 			_, err := (aptLongtailFunc{"purge", PurgeArgs{}}).Execute(context.Background(), aptExecRuntime("apt", r), &PurgeArgs{})
-			if err != nil || len(r.calls) != 1 {
+			if err != nil || len(r.calls) != 0 {
 				t.Fatalf("empty purge: err=%v calls=%d", err, len(r.calls))
 			}
 		}},
@@ -1071,7 +1241,7 @@ func TestAPTSetSelectionsFailedQueryNeverClears(t *testing.T) {
 }
 
 func TestAPTTargetPrecedenceAndSources(t *testing.T) {
-	r := &aptFakeRunner{results: []process.CommandResult{{Stdout: []byte("install ok installed two 1\n")}, {}, {Stdout: []byte("install ok installed two 1\n")}}}
+	r := &aptFakeRunner{results: []process.CommandResult{{Stdout: []byte("install ok installed two 1 amd64\n")}, {}, {Stdout: []byte("install ok installed two 1 amd64\n")}}}
 	got, err := (&pkgproviderTestAPT{}).execute(context.Background(), aptExecRuntime("apt", r), "purge", map[string]any{"name": "one", "pkgs": []string{"two"}})
 	if err != nil || got == nil || len(r.calls) != 3 || !reflect.DeepEqual(r.calls[1].Args, []string{"-q", "-y", "purge", "two"}) {
 		t.Fatalf("pkgs precedence: got=%#v err=%v calls=%#v", got, err, r.calls)

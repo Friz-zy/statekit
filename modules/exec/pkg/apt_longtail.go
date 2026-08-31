@@ -26,8 +26,11 @@ type PackagesArgs struct {
 	Sources []any `statekit:"name=sources"`
 }
 type PurgeArgs struct {
-	Name *string  `statekit:"name=name"`
-	Pkgs []string `statekit:"name=pkgs"`
+	Name *string `statekit:"name=name"`
+	// pkg_resource.parse_targets accepts scalar entries and one-key package
+	// mappings. Keep the decoder-compatible representation instead of losing
+	// version-pinned keys before the selected provider can apply its semantics.
+	Pkgs []any `statekit:"name=pkgs"`
 }
 type FilePackagesArgs struct {
 	Packages []string `statekit:"name=packages"`
@@ -121,7 +124,7 @@ func (f aptLongtailFunc) ArgsForProvider(providerName string) (any, error) {
 	return nil, &runtime.UnsupportedError{Kind: "provider", Name: providerName}
 }
 func (f aptLongtailFunc) ProviderArgsStrict() bool {
-	return f.name == "hold" || f.name == "unhold" || f.name == "file_list" || f.name == "file_dict" || f.name == "info_installed" || f.name == "owner" || f.name == "clean_metadata" || f.name == "list_holds" || f.name == "services_need_restart" || f.name == "group_diff" || f.name == "list_upgrades" || f.name == "upgrade_available" || f.name == "list_downloaded"
+	return f.name == "purge" || f.name == "hold" || f.name == "unhold" || f.name == "file_list" || f.name == "file_dict" || f.name == "info_installed" || f.name == "owner" || f.name == "clean_metadata" || f.name == "list_holds" || f.name == "services_need_restart" || f.name == "group_diff" || f.name == "list_upgrades" || f.name == "upgrade_available" || f.name == "list_downloaded"
 }
 func (f aptLongtailFunc) ProviderCapabilities() []string {
 	if f.name == "hold" || f.name == "unhold" {
@@ -152,6 +155,9 @@ func (f aptLongtailFunc) ProviderCapabilities() []string {
 	if f.name == "version_cmp" {
 		return []string{"aptpkg", "yumpkg"}
 	}
+	if f.name == "purge" {
+		return []string{"aptpkg", "yumpkg"}
+	}
 	if f.name == "list_downloaded" {
 		return []string{"aptpkg", "yumpkg"}
 	}
@@ -173,6 +179,14 @@ func (f aptLongtailFunc) Execute(ctx context.Context, rt *runtime.Runtime, args 
 		return nil, err
 	}
 	if yp, ok := p.(pkgprovider.YumProvider); ok && (providerName == "yum" || providerName == "dnf" || providerName == "dnf5") {
+		// Keep the legacy direct-execution capability gate deterministic for
+		// callers still using the old shared PackagesArgs shape. Registry calls
+		// resolve the provider-specific YumPurgeArgs before reaching here.
+		if f.name == "purge" {
+			if _, compatible := args.(*YumPurgeArgs); !compatible {
+				return nil, &runtime.UnsupportedError{Kind: "provider", Name: providerName}
+			}
+		}
 		argMap, err := mapArgs(f.Name(), args, prototype)
 		if err != nil {
 			return nil, err

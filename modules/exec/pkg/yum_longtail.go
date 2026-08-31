@@ -78,6 +78,14 @@ type YumHoldArgs struct {
 	Normalize *bool   `statekit:"name=normalize"`
 }
 
+// YumPurgeArgs mirrors yumpkg.purge's decoder-compatible target inputs.  The
+// source implementation aliases purge to remove; mappings in pkgs preserve
+// its optional version pins instead of silently discarding them.
+type YumPurgeArgs struct {
+	Name *string `statekit:"name=name"`
+	Pkgs []any   `statekit:"name=pkgs"`
+}
+
 // YumListPatchesArgs mirrors list_patches' optional refresh argument.
 type YumListPatchesArgs struct {
 	Refresh *bool `statekit:"name=refresh"`
@@ -129,6 +137,8 @@ func YumPrototype(name string) (any, bool) {
 		return YumListHoldsArgs{}, true
 	case "hold":
 		return YumHoldArgs{}, true
+	case "purge":
+		return YumPurgeArgs{}, true
 	case "list_patches":
 		return YumListPatchesArgs{}, true
 	case "list_installed_patches":
