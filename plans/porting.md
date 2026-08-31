@@ -1662,6 +1662,43 @@ The PTD tables below are retained as an immutable audit snapshot. These
 overrides are the current status and do not delete or rewrite any original
 rows or counts.
 
+##### 2026-08-31 current status
+
+R3.2/YUM long-tail is **in progress**, not closed. Current HEAD is `e4cc409`
+(R3.2k modified), and the independent senior gate **passed**. The R3 evidence
+set contains 15 committed phase evidence commits. Gate results below are from
+the corresponding independent gate handoffs in this execution session, not
+Git author metadata.
+
+| Commit | Scope | Implementation executor role(s) | Independent gate | Result |
+|---|---|---|---|---|
+| `734b716` | Shared runtime bounded I/O/provider metadata infrastructure | `backend-engineer-middle` (R3 runtime API/stdin) + `security-engineer-middle` (bounded regular-file/component walk) | `backend-engineer-senior` (R3 runtime) + `security-engineer-senior` (R5 boundary) | passed |
+| `1312f1f` | R3.1 APT package long-tail | `backend-engineer-middle` | `backend-engineer-senior` | passed |
+| `e7064e3` | R5.1a asymmetric hardening | `security-engineer-middle` | `security-engineer-senior` | passed |
+| `721fd34` | R3.2a YUM normalize_name/parse_arch | `backend-engineer-middle` | `backend-engineer-senior` | passed |
+| `e44f5b7` | R3.2b YUM version_cmp/RPM ordering | `backend-engineer-middle` | `backend-engineer-senior` | passed |
+| `0f635dc` | R3.2c provider-aware Args/CLI and YUM metadata reachability/behavior | `backend-engineer-middle` | `backend-engineer-senior` | passed |
+| `60da7a7` | R3.2d1 clean_metadata | `backend-engineer-middle` | `backend-engineer-senior` | passed |
+| `709d99e` | R3.2d2 list_holds | `backend-engineer-middle` | `backend-engineer-senior` | passed |
+| `e357962` | R3.2d3 services_need_restart | `backend-engineer-middle` | `backend-engineer-senior` | passed |
+| `6654acd` | R3.2f group_list | `backend-engineer-middle` | `backend-engineer-senior` | passed |
+| `62773d3` | R3.2g group_info | `backend-engineer-middle` | `backend-engineer-senior` | passed |
+| `31f64cb` | R3.2h group_diff | `backend-engineer-middle` | `backend-engineer-senior` | passed |
+| `9e7fbc5` | R3.2i list_upgrades/upgrade_available plus optional integer config support | `backend-engineer-middle` + `software-engineer-middle` | `backend-engineer-senior` | passed |
+| `444dfd4` | R3.2j verify | `backend-engineer-middle` | `backend-engineer-senior` | passed |
+| `e4cc409` | R3.2k modified | `backend-engineer-middle` | `backend-engineer-senior` | passed |
+
+The current report count is 1 (`docs/differential/R3/report.yaml`). The
+implementation uses no new Go dependencies and all temporary data is
+project-local under `$PWD/.gotmp` only; external directories are prohibited.
+
+Current R3 report: `aptpkg` 34 registered / 0 pending, `yumpkg` 29 registered
+/ 10 pending, `zypperpkg` 10 registered / 32 pending; total
+`registered_public` 130. Remaining YUM pending names are exactly: `pkg.diff`,
+`pkg.download`, `pkg.group_install`, `pkg.hold`, `pkg.list_downloaded`,
+`pkg.list_repo_pkgs`, `pkg.purge`, `pkg.unhold`, `pkg.update`, and
+`pkg.upgrade`.
+
 | PTD ID / names | Current status | Evidence and explicit boundary |
 |---|---|---|
 | `PTD-EXEC-0270 file.apply_template_on_contents` | completed by `2c62e60` | Registered and integrated for `template=gotemplate` only; `template=jinja`, other engines, and `file.get_managed` templated-source handling remain deferred. |
