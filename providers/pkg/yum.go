@@ -26,6 +26,7 @@ const yumGroupsOutputLimit = 1 << 20
 const yumGroupInfoOutputLimit = 1 << 20
 const yumUpgradeOutputLimit = 1 << 20
 const yumVerifyOutputLimit = 1 << 20
+const yumModifiedOutputLimit = 1 << 20
 
 var errYUMGroupNotFound = errors.New("YUM group not found")
 
@@ -522,6 +523,8 @@ func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function
 	switch function {
 	case "verify":
 		return yumVerify(ctx, rt, p.spec.manager, a)
+	case "modified":
+		return yumModified(ctx, rt, a)
 	case "list_upgrades":
 		return yumListUpgrades(ctx, rt, p.spec.manager, a)
 	case "upgrade_available":
@@ -740,6 +743,8 @@ func validateYUMArgs(function string, a map[string]any) error {
 		allowed = map[string]bool{"name": true, "fromrepo": true, "enablerepo": true, "disablerepo": true}
 	case "verify":
 		allowed = map[string]bool{"names": true, "root": true, "verify_options": true, "ignore_types": true}
+	case "modified":
+		allowed = map[string]bool{"names": true, "root": true, "size": true, "mode": true, "checksum": true, "device": true, "symlink": true, "owner": true, "group": true, "time": true, "capabilities": true}
 	default:
 		return nil
 	}
@@ -764,6 +769,17 @@ func validateYUMArgs(function string, a map[string]any) error {
 			case string, *string:
 			default:
 				return fmt.Errorf("argument %q must be a string", key)
+			}
+		}
+	}
+	if function == "modified" {
+		for _, key := range []string{"size", "mode", "checksum", "device", "symlink", "owner", "group", "time", "capabilities"} {
+			if v, present := a[key]; present && v != nil {
+				switch v.(type) {
+				case bool, *bool:
+				default:
+					return fmt.Errorf("argument %q must be a boolean", key)
+				}
 			}
 		}
 	}
@@ -972,6 +988,140 @@ func yumVerify(ctx context.Context, rt *runtime.Runtime, manager string, a map[s
 		ignored[item] = true
 	}
 	return parseYumVerify(string(res.Stdout), ignored), nil
+}
+
+var yumModifiedFlags = []struct {
+	status byte
+	name   string
+}{
+	{'S', "size"}, {'M', "mode"}, {'5', "checksum"}, {'D', "device"},
+	{'L', "symlink"}, {'U', "owner"}, {'G', "group"}, {'T', "time"}, {'P', "capabilities"},
+}
+
+func yumModified(ctx context.Context, rt *runtime.Runtime, a map[string]any) (any, error) {
+	if rt == nil || rt.Runner == nil {
+		return nil, errors.New("YUM modified requires a runner")
+	}
+	names, err := yumModifiedNames(a["names"])
+	if err != nil {
+		return nil, err
+	}
+	root := stringArg(a["root"])
+	if root != "" {
+		if err := validateYUMArgToken(root); err != nil {
+			return nil, fmt.Errorf("argument \"root\": %w", err)
+		}
+	}
+	cmd := []string{"rpm"}
+	if root != "" {
+		cmd = append(cmd, "--root", root)
+	}
+	cmd = append(cmd, "-Va")
+	cmd = append(cmd, names...)
+	command := runtime.Command(cmd...)
+	command.MaxStdoutBytes, command.MaxStderrBytes = yumModifiedOutputLimit, yumModifiedOutputLimit
+	res := rt.Runner.Run(ctx, command)
+	if res.Err != nil {
+		return nil, res.Err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if res.ExitCode > 1 {
+		return map[string]any{"retcode": res.ExitCode, "stderr": string(res.Stderr)}, nil
+	}
+	if res.ExitCode == 0 {
+		return map[string]any{}, nil
+	}
+	parsed, err := parseYumModified(string(res.Stdout), a)
+	if err != nil {
+		return nil, err
+	}
+	return parsed, nil
+}
+
+func yumModifiedNames(value any) ([]string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	names, ok := value.([]string)
+	if !ok {
+		return nil, errors.New(`argument "names" must be a string list`)
+	}
+	for _, name := range names {
+		if err := validateYUMArgToken(name); err != nil {
+			return nil, fmt.Errorf("invalid package name %q: %w", name, err)
+		}
+	}
+	return append([]string(nil), names...), nil
+}
+
+var yumModifiedSplit = regexp.MustCompile(`\s+`)
+
+func parseYumModified(output string, args map[string]any) (map[string]any, error) {
+	all := make(map[string]any)
+	lines := strings.Split(output, "\n")
+	// salt.utils.itertools.split suppresses the delimiter-produced terminal
+	// record, but does not discard malformed records in the stream.
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	for lineNo, raw := range lines {
+		fields := yumModifiedSplit.Split(raw, -1)
+		if raw == "" || fields[0] == "" || (len(fields) != 2 && len(fields) != 3) {
+			return nil, fmt.Errorf("yum modified: malformed record on line %d", lineNo+1)
+		}
+		changes, file := fields[0], fields[len(fields)-1]
+		// rpm -Va historically emitted eight status columns.  Salt appends
+		// the capabilities column for those records before interpreting the
+		// status string, so preserve that source-compatible slot here.
+		if len(changes) == 8 {
+			changes += "."
+		}
+		stats := make([]string, 0, len(yumModifiedFlags)+1)
+		for i, flag := range yumModifiedFlags {
+			// rpm's status alphabet is extensible.  Salt's positional parser
+			// treats every non-dot marker as a change, including unknown ones.
+			if i < len(changes) && changes[i] != '.' {
+				stats = append(stats, flag.name)
+			}
+		}
+		if len(fields) == 3 {
+			stats = append(stats, "config")
+		}
+		all[file] = stats
+	}
+	filtered := make(map[string]any, len(all))
+	for file, value := range all {
+		stats := value.([]string)
+		set := make(map[string]bool, len(stats))
+		for _, stat := range stats {
+			set[stat] = true
+		}
+		include := true
+		for _, flag := range yumModifiedFlags {
+			v, present := args[flag.name]
+			if !present || v == nil {
+				continue
+			}
+			want, ok := v.(bool)
+			if !ok {
+				if ptr, ok := v.(*bool); ok && ptr != nil {
+					want = *ptr
+				} else {
+					continue
+				}
+			}
+			if want != set[flag.name] {
+				include = false
+				break
+			}
+		}
+		if include {
+			filtered[file] = stats
+		}
+	}
+	return filtered, nil
 }
 
 func yumVerifyValuesDefault(value any) ([]string, error) {

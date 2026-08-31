@@ -85,7 +85,7 @@ families:
         catalog_functions: 55
         public_functions: 39
         private_functions: 16
-        registered_public: 28
+        registered_public: 29
         pending_public:
             - pkg.diff
             - pkg.download
@@ -93,7 +93,6 @@ families:
             - pkg.hold
             - pkg.list_downloaded
             - pkg.list_repo_pkgs
-            - pkg.modified
             - pkg.purge
             - pkg.unhold
             - pkg.update
@@ -145,4 +144,4 @@ families:
 totals:
     catalog_functions: 261
     public_functions: 172
-    registered_public: 129
+    registered_public: 130

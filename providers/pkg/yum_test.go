@@ -1053,6 +1053,77 @@ func (r *yumRecordingRunner) Run(_ context.Context, command process.Command) pro
 	return result
 }
 
+func TestYumModifiedDispatchAndPinnedRecords(t *testing.T) {
+	output := "SM5DLUGTX c /all\n......... /clean\nX........ /unknown\n......... c /config\n"
+	want := map[string]any{
+		"/all":     []string{"size", "mode", "checksum", "device", "symlink", "owner", "group", "time", "capabilities", "config"},
+		"/clean":   []string{},
+		"/unknown": []string{"size"},
+		"/config":  []string{"config"},
+	}
+	for _, manager := range []string{"yum", "dnf", "dnf5"} {
+		t.Run(manager, func(t *testing.T) {
+			names := []string{"alpha", "beta"}
+			args := map[string]any{"names": names, "root": "/target"}
+			before := map[string]any{"names": []string{"alpha", "beta"}, "root": "/target"}
+			r := &yumRecordingRunner{results: []process.CommandResult{{ExitCode: 1, Stdout: []byte(output)}}}
+			got, err := (&commandProvider{spec: rpmSpec(manager)}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "modified", args)
+			if err != nil || !reflect.DeepEqual(got, want) || !reflect.DeepEqual(args, before) || !reflect.DeepEqual(names, before["names"]) {
+				t.Fatalf("got=%#v err=%v args=%#v", got, err, args)
+			}
+			if len(r.commands) != 1 || !reflect.DeepEqual(append([]string{r.commands[0].Name}, r.commands[0].Args...), []string{"rpm", "--root", "/target", "-Va", "alpha", "beta"}) || r.commands[0].Shell || r.commands[0].MaxStdoutBytes != yumModifiedOutputLimit || r.commands[0].MaxStderrBytes != yumModifiedOutputLimit {
+				t.Fatalf("command=%#v", r.commands)
+			}
+
+			noNames := &yumRecordingRunner{results: []process.CommandResult{{ExitCode: 0}}}
+			if got, err := (&commandProvider{spec: rpmSpec(manager)}).Yum(context.Background(), &runtime.Runtime{Runner: noNames}, "modified", map[string]any{}); err != nil || !reflect.DeepEqual(got, map[string]any{}) || len(noNames.commands) != 1 || !reflect.DeepEqual(noNames.commands[0].Args, []string{"-Va"}) {
+				t.Fatalf("no names got=%#v err=%v commands=%#v", got, err, noNames.commands)
+			}
+		})
+	}
+}
+
+func TestYumModifiedRetcodesErrorsCancellationAndMalformedLines(t *testing.T) {
+	sentinel := errors.New("runner failure")
+	for _, tc := range []struct {
+		name string
+		res  process.CommandResult
+		want any
+		err  error
+	}{
+		{"success", process.CommandResult{}, map[string]any{}, nil},
+		{"changes", process.CommandResult{ExitCode: 1, Stdout: []byte("S........ /file\n")}, map[string]any{"/file": []string{"size"}}, nil},
+		{"failure", process.CommandResult{ExitCode: 2, Stderr: []byte("failed")}, map[string]any{"retcode": 2, "stderr": "failed"}, nil},
+		{"runner", process.CommandResult{Err: sentinel}, nil, sentinel},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &yumRecordingRunner{results: []process.CommandResult{tc.res}}
+			got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "modified", map[string]any{})
+			if tc.err != nil {
+				if !errors.Is(err, tc.err) || got != nil {
+					t.Fatalf("got=%#v err=%v", got, err)
+				}
+				return
+			}
+			if err != nil || !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got=%#v err=%v want=%#v", got, err, tc.want)
+			}
+		})
+	}
+	for _, output := range []string{"malformed\n......... /ok\n", " ......... /leading\n", "......... /ok\n\n......... /later\n", "......... /ok\n\n"} {
+		r := &yumRecordingRunner{results: []process.CommandResult{{ExitCode: 1, Stdout: []byte(output)}}}
+		if got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "modified", map[string]any{}); got != nil || err == nil {
+			t.Fatalf("output=%q got=%#v err=%v", output, got, err)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	r := &yumContextRecordingRunner{}
+	if got, err := (&commandProvider{spec: yumSpec}).Yum(ctx, &runtime.Runtime{Runner: r}, "modified", map[string]any{}); got != nil || !errors.Is(err, context.Canceled) || len(r.commands) != 1 {
+		t.Fatalf("cancel got=%#v err=%v calls=%d", got, err, len(r.commands))
+	}
+}
+
 type yumContextRecordingRunner struct {
 	commands []process.Command
 	results  []process.CommandResult
