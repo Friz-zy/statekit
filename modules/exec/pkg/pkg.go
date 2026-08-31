@@ -170,6 +170,7 @@ func Register(reg *runtime.ExecRegistry) error {
 	}
 	for _, fn := range []runtime.ExecFunction{
 		refreshDBFunc{}, versionFunc{}, listFunc{}, installFunc{}, removeFunc{}, latestVersionFunc{},
+		verifyFunc{},
 		yumPatchesFunc{}, yumPatchesFunc{installedOnly: true},
 		yumGroupListFunc{},
 		yumGroupInfoFunc{},

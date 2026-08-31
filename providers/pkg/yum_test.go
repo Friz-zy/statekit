@@ -59,6 +59,171 @@ func TestYumGroupListMatchesPinnedRawLineParsing(t *testing.T) {
 	}
 }
 
+func TestYumVerifySourceCompatibleArgvAndParsing(t *testing.T) {
+	// Source reference: saltstack/salt/modules/rpm_lowpkg.py:159-253.
+	r := &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte("SM5DLUGTP  c /etc/demo\n"), ExitCode: 0}}}
+	got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "verify", map[string]any{
+		"root": "/target", "verify_options": "foo,bar", "ignore_types": []string{"doc"}, "names": []string{"demo"},
+	})
+	if err != nil || !reflect.DeepEqual(got, map[string]any{"/etc/demo": map[string]any{"type": "config", "mismatch": []string{"size", "mode", "md5sum", "device major/minor number", "readlink path", "user", "group", "mtime", "capabilities"}}}) {
+		t.Fatalf("got=%#v err=%v", got, err)
+	}
+	if len(r.commands) != 1 || !reflect.DeepEqual(append([]string{r.commands[0].Name}, r.commands[0].Args...), []string{"rpm", "--root", "/target", "--foo", "--bar", "-V", "demo"}) || r.commands[0].Shell {
+		t.Fatalf("command=%#v", r.commands)
+	}
+}
+
+func TestYumVerifyRejectsUnsafeOrWrongTypesBeforeRunner(t *testing.T) {
+	r := &yumNoCallRunner{}
+	p := &commandProvider{spec: yumSpec}
+	for _, args := range []map[string]any{
+		{"verify_options": 1}, {"ignore_types": []any{"doc"}}, {"verify_options": ""},
+		{"verify_options": "bad value"}, {"verify_options": "-x"}, {"names": ""}, {"root": "bad root"},
+	} {
+		if got, err := p.Yum(context.Background(), &runtime.Runtime{Runner: r}, "verify", args); got != nil || err == nil {
+			t.Errorf("args=%#v got=%#v err=%v", args, got, err)
+		}
+	}
+	if r.calls != 0 {
+		t.Fatalf("runner calls=%d", r.calls)
+	}
+}
+
+func TestYumVerifyRetcodeAndMalformedOutputHandling(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		res  process.CommandResult
+		want any
+		err  string
+	}{
+		{"empty success", process.CommandResult{}, map[string]any{}, ""},
+		{"empty failure", process.CommandResult{ExitCode: 1}, nil, "Failed to verify package(s)"},
+		{"parseable failure", process.CommandResult{ExitCode: 1, Stdout: []byte("SM5DLUGTP  c /etc/demo\n")}, map[string]any{"/etc/demo": map[string]any{"type": "config", "mismatch": []string{"size", "mode", "md5sum", "device major/minor number", "readlink path", "user", "group", "mtime", "capabilities"}}}, ""},
+		{"short", process.CommandResult{Stdout: []byte("x\n")}, map[string]any{}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &yumRecordingRunner{results: []process.CommandResult{tc.res}}
+			got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "verify", map[string]any{})
+			if tc.err != "" {
+				if err == nil || err.Error() != tc.err {
+					t.Fatalf("err=%v", err)
+				}
+				return
+			}
+			if err != nil || !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got=%#v err=%v want=%#v", got, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestYumVerifyMapsEveryPinnedMismatchAndTypeMarker(t *testing.T) {
+	flags := []struct{ flag, name string }{
+		{"S", "size"}, {"M", "mode"}, {"5", "md5sum"}, {"D", "device major/minor number"},
+		{"L", "readlink path"}, {"U", "user"}, {"G", "group"}, {"T", "mtime"}, {"P", "capabilities"},
+	}
+	for _, flag := range flags {
+		for _, marker := range []struct{ raw, mapped string }{{"c", "config"}, {"d", "doc"}, {"g", "ghost"}, {"l", "license"}, {"r", "readme"}} {
+			status := "         "
+			for i, candidate := range []string{"S", "M", "5", "D", "L", "U", "G", "T", "P"} {
+				if candidate == flag.flag {
+					status = status[:i] + flag.flag + status[i+1:]
+					break
+				}
+			}
+			output := status + "  " + marker.raw + " /etc/demo"
+			r := &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte(output)}}}
+			got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "verify", map[string]any{})
+			want := map[string]any{"/etc/demo": map[string]any{"type": marker.mapped, "mismatch": []string{flag.name}}}
+			if err != nil || !reflect.DeepEqual(got, want) {
+				t.Fatalf("%s/%s got=%#v err=%v want=%#v", flag.flag, marker.raw, got, err, want)
+			}
+		}
+	}
+}
+
+func TestYumVerifyIgnoreTypesScalarListAndCommaForms(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		ignore any
+		want   map[string]any
+	}{
+		{"scalar", "doc", map[string]any{"/etc/config": map[string]any{"type": "config", "mismatch": []string{"size"}}, "/etc/ghost": map[string]any{"type": "ghost", "mismatch": []string{"size"}}}},
+		{"list", []string{"doc", "ghost"}, map[string]any{"/etc/config": map[string]any{"type": "config", "mismatch": []string{"size"}}}},
+		{"comma", "doc,ghost", map[string]any{"/etc/config": map[string]any{"type": "config", "mismatch": []string{"size"}}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out := "S          c /etc/config\nS          d /etc/doc\nS          g /etc/ghost\n"
+			r := &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte(out)}}}
+			got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "verify", map[string]any{"ignore_types": tc.ignore})
+			if err != nil || !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got=%#v err=%v want=%#v", got, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestYumVerifyMissingMalformedAndRetcodeCasesDoNotPanic(t *testing.T) {
+	sentinel := errors.New("runner failure")
+	for _, tc := range []struct {
+		name    string
+		result  process.CommandResult
+		want    any
+		wantErr string
+	}{
+		{name: "missing", result: process.CommandResult{Stdout: []byte("missing     /etc/demo\n")}, want: map[string]any{"/etc/demo": map[string]any{"missing": true}}},
+		{name: "malformed", result: process.CommandResult{Stdout: []byte("x\nshort\n123456789012\n")}, want: map[string]any{}},
+		{name: "empty success", result: process.CommandResult{ExitCode: 0}, want: map[string]any{}},
+		{name: "empty failure", result: process.CommandResult{ExitCode: 3}, wantErr: "Failed to verify package(s)"},
+		{name: "parseable failure", result: process.CommandResult{ExitCode: 3, Stdout: []byte("S          c /etc/demo\n")}, want: map[string]any{"/etc/demo": map[string]any{"type": "config", "mismatch": []string{"size"}}}},
+		{name: "runner", result: process.CommandResult{Err: sentinel}, wantErr: "runner failure"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &yumRecordingRunner{results: []process.CommandResult{tc.result}}
+			got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "verify", map[string]any{})
+			if tc.wantErr != "" {
+				if got != nil || err == nil || err.Error() != tc.wantErr {
+					t.Fatalf("got=%#v err=%v", got, err)
+				}
+				return
+			}
+			if err != nil || !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got=%#v err=%v want=%#v", got, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestYumVerifyForwardsSafeOptionsAndDoesNotMutateInputs(t *testing.T) {
+	options := []string{"color", "nodigest"}
+	ignore := []string{"doc"}
+	args := map[string]any{"names": []string{"demo"}, "root": "/target", "verify_options": options, "ignore_types": ignore}
+	before := map[string]any{"names": []string{"demo"}, "root": "/target", "verify_options": []string{"color", "nodigest"}, "ignore_types": []string{"doc"}}
+	r := &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte("S          c /etc/demo\n")}}}
+	got, err := (&commandProvider{spec: rpmSpec("dnf5")}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "verify", args)
+	if err != nil || got == nil || !reflect.DeepEqual(args, before) {
+		t.Fatalf("got=%#v err=%v args=%#v", got, err, args)
+	}
+	if len(r.commands) != 1 || !reflect.DeepEqual(append([]string{r.commands[0].Name}, r.commands[0].Args...), []string{"rpm", "--root", "/target", "--color", "--nodigest", "-V", "demo"}) || r.commands[0].Shell {
+		t.Fatalf("command=%#v", r.commands)
+	}
+}
+
+func TestYumVerifyRejectsInvalidValuesBeforeRunner(t *testing.T) {
+	r := &yumNoCallRunner{}
+	for _, args := range []map[string]any{
+		{"verify_options": ""}, {"verify_options": "a,,b"}, {"verify_options": "a b"}, {"verify_options": "-x"},
+		{"verify_options": []string{"a", "\t"}}, {"ignore_types": 1}, {"ignore_types": []any{"doc"}}, {"names": []any{"x"}},
+	} {
+		if got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "verify", args); got != nil || err == nil {
+			t.Fatalf("args=%#v got=%#v err=%v", args, got, err)
+		}
+	}
+	if r.calls != 0 {
+		t.Fatalf("runner calls=%d", r.calls)
+	}
+}
+
 func TestYumGroupInfoMatchesPinnedMetadataAndSections(t *testing.T) {
 	r := &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte(
 		"Group : Demo\nGroup-Id : demo.id\nDescription : desc\n" +

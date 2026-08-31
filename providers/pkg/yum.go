@@ -25,6 +25,7 @@ const yumServicesOutputLimit = 1 << 20
 const yumGroupsOutputLimit = 1 << 20
 const yumGroupInfoOutputLimit = 1 << 20
 const yumUpgradeOutputLimit = 1 << 20
+const yumVerifyOutputLimit = 1 << 20
 
 var errYUMGroupNotFound = errors.New("YUM group not found")
 
@@ -519,6 +520,8 @@ func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function
 		return nil, err
 	}
 	switch function {
+	case "verify":
+		return yumVerify(ctx, rt, p.spec.manager, a)
 	case "list_upgrades":
 		return yumListUpgrades(ctx, rt, p.spec.manager, a)
 	case "upgrade_available":
@@ -735,6 +738,8 @@ func validateYUMArgs(function string, a map[string]any) error {
 		allowed = map[string]bool{"name": true, "expand": true, "ignore_groups": true, "fromrepo": true, "enablerepo": true, "disablerepo": true}
 	case "group_diff":
 		allowed = map[string]bool{"name": true, "fromrepo": true, "enablerepo": true, "disablerepo": true}
+	case "verify":
+		allowed = map[string]bool{"names": true, "root": true, "verify_options": true, "ignore_types": true}
 	default:
 		return nil
 	}
@@ -745,6 +750,9 @@ func validateYUMArgs(function string, a map[string]any) error {
 	}
 	for _, key := range []string{"packages", "paths", "names"} {
 		if v, present := a[key]; present && v != nil {
+			if function == "verify" && key == "names" {
+				continue
+			}
 			if _, ok := v.([]string); !ok {
 				return fmt.Errorf("argument %q must be a string list", key)
 			}
@@ -757,6 +765,16 @@ func validateYUMArgs(function string, a map[string]any) error {
 			default:
 				return fmt.Errorf("argument %q must be a string", key)
 			}
+		}
+	}
+	if v, present := a["verify_options"]; present && v != nil {
+		if _, err := yumVerifyValues(v); err != nil {
+			return err
+		}
+	}
+	if v, present := a["ignore_types"]; present && v != nil {
+		if _, err := yumVerifyValues(v); err != nil {
+			return err
 		}
 	}
 	for _, key := range []string{"all_versions", "ignore_epoch"} {
@@ -857,6 +875,179 @@ func validateYUMArgs(function string, a map[string]any) error {
 		}
 	}
 	return nil
+}
+
+// yumVerifyValues follows saltstack/salt/modules/rpm_lowpkg.py:180-205:
+// strings are comma-separated while list elements are passed through as-is.
+// The source accepts arbitrary option/type values; only argv-token safety is
+// enforced here because the command is executed without a shell.
+func yumVerifyValues(value any) ([]string, error) {
+	var values []string
+	switch v := value.(type) {
+	case string:
+		for _, item := range strings.Split(v, ",") {
+			values = append(values, strings.TrimSpace(item))
+		}
+	case []string:
+		values = append(values, v...)
+	default:
+		return nil, errors.New("verify options and types must be a string or string list")
+	}
+	for _, item := range values {
+		if err := validateYUMArgToken(item); err != nil {
+			return nil, fmt.Errorf("invalid rpm verify value %q: %w", item, err)
+		}
+	}
+	return values, nil
+}
+
+func validateYUMArgToken(value string) error {
+	if value == "" {
+		return errors.New("must not be empty")
+	}
+	if strings.IndexFunc(value, func(r rune) bool { return r < 0x20 || r == 0x7f || unicode.IsSpace(r) }) >= 0 {
+		return errors.New("must not contain control characters or whitespace")
+	}
+	if strings.HasPrefix(value, "-") {
+		return errors.New("must not begin with '-'")
+	}
+	return nil
+}
+
+func yumVerify(ctx context.Context, rt *runtime.Runtime, manager string, a map[string]any) (any, error) {
+	if manager != "yum" && manager != "dnf" && manager != "dnf5" {
+		return nil, ErrUnsupportedYUM
+	}
+	if rt == nil || rt.Runner == nil {
+		return nil, errors.New("YUM verify requires a runner")
+	}
+	names, err := yumVerifyNames(a["names"])
+	if err != nil {
+		return nil, err
+	}
+	cmd := []string{"rpm"}
+	if root := stringArg(a["root"]); root != "" {
+		if err := validateYUMArgToken(root); err != nil {
+			return nil, fmt.Errorf("argument \"root\": %w", err)
+		}
+		cmd = append(cmd, "--root", root)
+	}
+	options, err := yumVerifyValuesDefault(a["verify_options"])
+	if err != nil {
+		return nil, err
+	}
+	ignore, err := yumVerifyValuesDefault(a["ignore_types"])
+	if err != nil {
+		return nil, err
+	}
+	for _, option := range options {
+		cmd = append(cmd, "--"+option)
+	}
+	if len(names) == 0 {
+		cmd = append(cmd, "-Va")
+	} else {
+		cmd = append(cmd, "-V")
+		cmd = append(cmd, names...)
+	}
+	command := runtime.Command(cmd...)
+	command.Shell = false
+	command.MaxStdoutBytes, command.MaxStderrBytes = yumVerifyOutputLimit, yumVerifyOutputLimit
+	res := rt.Runner.Run(ctx, command)
+	if res.Err != nil {
+		return nil, res.Err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	stdout := strings.TrimSpace(string(res.Stdout))
+	if stdout == "" && res.ExitCode != 0 {
+		msg := "Failed to verify package(s)"
+		if len(res.Stderr) != 0 {
+			msg += ": " + string(res.Stderr)
+		}
+		return nil, errors.New(msg)
+	}
+	ignored := make(map[string]bool, len(ignore))
+	for _, item := range ignore {
+		ignored[item] = true
+	}
+	return parseYumVerify(string(res.Stdout), ignored), nil
+}
+
+func yumVerifyValuesDefault(value any) ([]string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	return yumVerifyValues(value)
+}
+
+func yumVerifyNames(value any) ([]string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	var names []string
+	switch v := value.(type) {
+	case string:
+		names = []string{v}
+	case []string:
+		names = append(names, v...)
+	default:
+		return nil, errors.New(`argument "names" must be a string or string list`)
+	}
+	for _, name := range names {
+		if err := validateYUMArgToken(name); err != nil {
+			return nil, fmt.Errorf("invalid package name %q: %w", name, err)
+		}
+	}
+	return names, nil
+}
+
+func parseYumVerify(output string, ignored map[string]bool) map[string]any {
+	ret := map[string]any{}
+	flags := []struct {
+		flag byte
+		name string
+	}{
+		{'S', "size"}, {'M', "mode"}, {'5', "md5sum"}, {'D', "device major/minor number"},
+		{'L', "readlink path"}, {'U', "user"}, {'G', "group"}, {'T', "mtime"}, {'P', "capabilities"},
+	}
+	types := map[byte]string{'c': "config", 'd': "doc", 'g': "ghost", 'l': "license", 'r': "readme"}
+	for _, raw := range strings.Split(output, "\n") {
+		if strings.TrimSpace(raw) == "" {
+			continue
+		}
+		line := raw
+		missing := strings.Contains(line, "missing")
+		if missing {
+			line = " " + line
+		}
+		if len(line) < 13 {
+			continue
+		}
+		entry := map[string]any{}
+		if missing {
+			entry["missing"] = true
+		} else {
+			entry["mismatch"] = []string{}
+		}
+		if typ, ok := types[line[11]]; ok {
+			entry["type"] = typ
+		}
+		if typ, ok := entry["type"].(string); ok && ignored[typ] {
+			continue
+		}
+		if !missing {
+			mismatch := entry["mismatch"].([]string)
+			for index, item := range flags {
+				if line[index] == byte(item.flag) {
+					mismatch = append(mismatch, item.name)
+				}
+			}
+			entry["mismatch"] = mismatch
+		}
+		ret[line[13:]] = entry
+	}
+	return ret
 }
 
 type yumPackageInfo struct {
