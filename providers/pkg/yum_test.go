@@ -58,6 +58,191 @@ func TestYumGroupListMatchesPinnedRawLineParsing(t *testing.T) {
 	}
 }
 
+func TestYumGroupInfoMatchesPinnedMetadataAndSections(t *testing.T) {
+	r := &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte(
+		"Group : Demo\nGroup-Id : demo.id\nDescription : desc\n" +
+			"Mandatory Packages:\n zeta \n!alpha\n" +
+			"Optional Packages:\n beta\nDefault Packages:\n gamma\nConditional Packages:\n delta\n",
+	)}}}
+	got, err := (&commandProvider{spec: dnfSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "group_info", map[string]any{
+		"name": "Demo", "fromrepo": "base", "expand": false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{
+		"type": "package group", "group": "Demo", "id": "demo.id", "description": "desc",
+		"mandatory": []string{"alpha", "zeta"}, "optional": []string{"beta"},
+		"default": []string{"gamma"}, "conditional": []string{"delta"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got=%#v want=%#v", got, want)
+	}
+	if len(r.commands) != 1 || !reflect.DeepEqual(append([]string{r.commands[0].Name}, r.commands[0].Args...), []string{
+		"dnf", "--quiet", "--disablerepo=*", "--enablerepo=base", "groupinfo", "Demo",
+	}) || r.commands[0].Shell || r.commands[0].MaxStdoutBytes != yumGroupInfoOutputLimit {
+		t.Fatalf("commands=%#v", r.commands)
+	}
+}
+
+func TestYumGroupInfoSplitsOnlyLFAndOmitsTerminalEmptyLine(t *testing.T) {
+	for _, tc := range []struct {
+		output string
+		want   []string
+	}{
+		{output: "", want: []string{}},
+		{output: "a", want: []string{"a"}},
+		{output: "a\n", want: []string{"a"}},
+		{output: "a\n\n", want: []string{"a", ""}},
+	} {
+		if got := yumGroupInfoLines(tc.output); !reflect.DeepEqual(got, tc.want) {
+			t.Fatalf("output=%q got=%#v want=%#v", tc.output, got, tc.want)
+		}
+	}
+
+	for _, tc := range []struct {
+		name, output          string
+		wantMeta, wantPackage string
+	}{
+		{name: "lf", output: "Group : Demo\nDescription : desc\nMandatory Packages:\n pkg\n", wantMeta: "desc", wantPackage: "pkg"},
+		{name: "cr", output: "Group : Demo\rvalue\nDescription : desc\rvalue\nMandatory Packages:\n pkg\rvalue\n", wantMeta: "desc\rvalue", wantPackage: "pkg\rvalue"},
+		{name: "crlf", output: "Group : Demo\r\nDescription : desc\r\nMandatory Packages:\r\n pkg\r\n", wantMeta: "desc", wantPackage: "pkg"},
+		{name: "vt", output: "Group : Demo\vvalue\nDescription : desc\vvalue\nMandatory Packages:\n pkg\vvalue\n", wantMeta: "desc\vvalue", wantPackage: "pkg\vvalue"},
+		{name: "ff", output: "Group : Demo\fvalue\nDescription : desc\fvalue\nMandatory Packages:\n pkg\fvalue\n", wantMeta: "desc\fvalue", wantPackage: "pkg\fvalue"},
+		{name: "nel", output: "Group : Demo\u0085value\nDescription : desc\u0085value\nMandatory Packages:\n pkg\u0085value\n", wantMeta: "desc\u0085value", wantPackage: "pkg\u0085value"},
+		{name: "record separators", output: "Group : Demo\x1cvalue\nDescription : desc\x1dvalue\nMandatory Packages:\n pkg\x1evalue\n", wantMeta: "desc\x1dvalue", wantPackage: "pkg\x1evalue"},
+		{name: "unicode separators", output: "Group : Demo\u2028value\nDescription : desc\u2029value\nMandatory Packages:\n pkg\u2028value\n", wantMeta: "desc\u2029value", wantPackage: "pkg\u2028value"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte(tc.output)}}}
+			got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "group_info", map[string]any{"name": "Demo"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			info := got.(map[string]any)
+			if info["description"] != tc.wantMeta || !reflect.DeepEqual(info["mandatory"], []string{tc.wantPackage}) {
+				t.Fatalf("got description=%q mandatory=%#v", info["description"], info["mandatory"])
+			}
+		})
+	}
+
+	// Provider parsing must be identical with and without the terminal LF.
+	for _, output := range []string{"Group : Demo\nMandatory Packages:\n pkg\n", "Group : Demo\nMandatory Packages:\n pkg"} {
+		r := &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte(output)}}}
+		got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "group_info", map[string]any{"name": "Demo"})
+		if err != nil || !reflect.DeepEqual(got.(map[string]any)["mandatory"], []string{"pkg"}) {
+			t.Fatalf("output=%q got=%#v err=%v", output, got, err)
+		}
+	}
+}
+
+func TestYumGroupInfoExpansionUsesSharedSetsAndBareFallback(t *testing.T) {
+	r := &yumRecordingRunner{results: []process.CommandResult{
+		{Stdout: []byte("Environment Group : Demo\nEnvironment-ID : demo.id\nDescription : has: a colon\nMandatory Groups:\n Child\n Child\nOptional Groups:\n Bare\n")},
+		{Stdout: []byte("Group : Child\nGroup-Id : child.id\nMandatory Packages:\n zeta\n alpha\n alpha\n")}, // @Child: not found is supplied below by the runner order
+		{Stdout: []byte("Group : Child\nGroup-Id : child.id\nMandatory Packages:\n zeta\n alpha\n alpha\n")},
+		{Stdout: []byte("Group : Bare\nMandatory Packages:\n beta\n")},
+	}}
+	// The first Child lookup must fail so the provider exercises @group then
+	// bare fallback. The recording runner is replaced with an explicit queue.
+	r.results[1] = process.CommandResult{}
+	r.results[1].ExitCode = 1
+	got, err := (&commandProvider{spec: dnfSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "group_info", map[string]any{"name": "Demo", "expand": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{"type": "environment group", "group": "Demo", "id": "demo.id", "description": "",
+		"mandatory": []string{"alpha", "zeta"}, "optional": []string{"beta"}, "default": []string{}, "conditional": []string{}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got=%#v want=%#v", got, want)
+	}
+	if len(r.commands) != 4 || r.commands[1].Args[len(r.commands[1].Args)-2] != "groupinfo" || r.commands[1].Args[len(r.commands[1].Args)-1] != "@Child" || r.commands[2].Args[len(r.commands[2].Args)-1] != "Child" {
+		t.Fatalf("commands=%#v", r.commands)
+	}
+}
+
+func TestYumGroupInfoExpansionCycleAndIgnoreGroupsAreFinite(t *testing.T) {
+	r := &yumRecordingRunner{results: []process.CommandResult{
+		{Stdout: []byte("Environment Group: Root\nMandatory Groups:\n A\nOptional Groups:\n B\n")},
+		{Stdout: []byte("Environment Group: A\nMandatory Groups:\n B\n")},
+		{Stdout: []byte("Environment Group: B\nMandatory Groups:\n A\n")},
+	}}
+	got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "group_info", map[string]any{"name": "Root", "expand": true})
+	if err != nil || len(r.commands) != 3 || !reflect.DeepEqual(got.(map[string]any)["mandatory"], []string{}) {
+		t.Fatalf("cycle got=%#v err=%v calls=%d", got, err, len(r.commands))
+	}
+	r = &yumRecordingRunner{results: []process.CommandResult{{Stdout: []byte("Environment Group: Root\nMandatory Groups:\n A\n")}}}
+	got, err = (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "group_info", map[string]any{"name": "Root", "expand": true, "ignore_groups": []string{"A"}})
+	if err != nil || len(r.commands) != 1 || !reflect.DeepEqual(got.(map[string]any)["mandatory"], []string{}) {
+		t.Fatalf("ignored got=%#v err=%v calls=%d", got, err, len(r.commands))
+	}
+}
+
+func TestYumGroupInfoRejectsMalformedEmptyRunnerAndCancellation(t *testing.T) {
+	sentinel := errors.New("runner failure")
+	cases := []struct {
+		name string
+		ctx  context.Context
+		args map[string]any
+		res  process.CommandResult
+		want error
+		text string
+	}{
+		{"empty", context.Background(), map[string]any{"name": "x"}, process.CommandResult{}, errYUMGroupNotFound, "Group 'x' not found"},
+		{"malformed", context.Background(), map[string]any{"name": "x"}, process.CommandResult{Stdout: []byte("not group metadata")}, errYUMGroupNotFound, "Group 'x' not found"},
+		{"runner", context.Background(), map[string]any{"name": "x"}, process.CommandResult{Err: sentinel}, sentinel, "runner failure"},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cases = append(cases, struct {
+		name string
+		ctx  context.Context
+		args map[string]any
+		res  process.CommandResult
+		want error
+		text string
+	}{"cancel", ctx, map[string]any{"name": "x"}, process.CommandResult{}, context.Canceled, "context canceled"})
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &yumContextRecordingRunner{results: []process.CommandResult{tc.res}}
+			got, err := (&commandProvider{spec: yumSpec}).Yum(tc.ctx, &runtime.Runtime{Runner: r}, "group_info", tc.args)
+			if got != nil || !errors.Is(err, tc.want) || err.Error() != tc.text || len(r.commands) != 1 {
+				t.Fatalf("got=%#v err=%v calls=%d", got, err, len(r.commands))
+			}
+		})
+	}
+}
+
+func TestYumGroupInfoExpansionHasGlobalNodeAndDepthLimits(t *testing.T) {
+	results := []process.CommandResult{}
+	// Use distinct source names for a deterministic breadth of fallback calls.
+	root := "Environment Group: Root\nMandatory Groups:\n"
+	for i := 0; i < 300; i++ {
+		root += fmt.Sprintf(" G%d\n", i)
+		results = append(results, process.CommandResult{ExitCode: 1}, process.CommandResult{Stdout: []byte(fmt.Sprintf("Group: G%d\n", i))})
+	}
+	results[0] = process.CommandResult{Stdout: []byte(root)}
+	r := &yumRecordingRunner{results: results}
+	_, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "group_info", map[string]any{"name": "Root", "expand": true})
+	if err == nil || err.Error() != "YUM group_info recursion limit exceeded" || len(r.commands) != yumGroupMaxNodes {
+		t.Fatalf("node limit err=%v calls=%d", err, len(r.commands))
+	}
+
+	results = []process.CommandResult{{Stdout: []byte("Environment Group: Root\nMandatory Groups:\n G0\n")}}
+	for i := 0; i < 40; i++ {
+		next := ""
+		if i < 39 {
+			next = fmt.Sprintf("Mandatory Groups:\n G%d\n", i+1)
+		}
+		results = append(results, process.CommandResult{Stdout: []byte("Environment Group: G" + fmt.Sprint(i) + "\n" + next)})
+	}
+	r = &yumRecordingRunner{results: results}
+	_, err = (&commandProvider{spec: yumSpec}).Yum(context.Background(), &runtime.Runtime{Runner: r}, "group_info", map[string]any{"name": "Root", "expand": true})
+	if err == nil || err.Error() != "YUM group_info recursion limit exceeded" {
+		t.Fatalf("depth limit err=%v calls=%d", err, len(r.commands))
+	}
+}
+
 func TestYumGroupListEmptyNonzeroRunnerErrorAndCancellation(t *testing.T) {
 	empty := &yumRecordingRunner{results: []process.CommandResult{{ExitCode: 19}}}
 	got, err := (&commandProvider{spec: dnfSpec}).Yum(context.Background(), &runtime.Runtime{Runner: empty}, "group_list", map[string]any{})

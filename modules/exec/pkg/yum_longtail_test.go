@@ -316,6 +316,60 @@ func TestLongtailResolveArgsProviderMatrix(t *testing.T) {
 	}
 }
 
+func TestYumGroupInfoRegistryProviderMatrix(t *testing.T) {
+	for _, manager := range []string{"yum", "dnf", "dnf5"} {
+		reg := runtime.NewExecRegistry()
+		if err := Register(reg); err != nil {
+			t.Fatal(err)
+		}
+		providers := runtime.NewProviderRegistry()
+		if err := pkgprovider.Register(providers); err != nil {
+			t.Fatal(err)
+		}
+		fromrepo := "base"
+		runner := &yumExecRecordingRunner{results: []process.CommandResult{{Stdout: []byte("Group: Demo\nGroup-Id: demo.id\nDescription: desc\nMandatory Packages:\n z\n")}}}
+		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: manager, OS: &facts.OSFacts{Family: facts.FamilyRedHat}}), Providers: providers, Runner: runner}
+		prototype, err := reg.ResolveArgs(rt, "pkg.group_info")
+		if err != nil || reflect.TypeOf(prototype) != reflect.TypeOf(YumGroupInfoArgs{}) {
+			t.Fatalf("%s prototype=%T err=%v", manager, prototype, err)
+		}
+		names, err := config.ArgumentNames(prototype)
+		if err != nil || !reflect.DeepEqual(names, []string{"disablerepo", "enablerepo", "expand", "fromrepo", "ignore_groups", "name"}) {
+			t.Fatalf("%s names=%v err=%v", manager, names, err)
+		}
+		if caps := reg.ProviderCapabilities("pkg.group_info"); !reflect.DeepEqual(caps, []string{"yumpkg"}) {
+			t.Fatalf("%s capabilities=%v", manager, caps)
+		}
+		got, err := reg.Call(context.Background(), rt, "pkg.group_info", &YumGroupInfoArgs{Name: "Demo", Fromrepo: &fromrepo})
+		want := map[string]any{"type": "package group", "group": "Demo", "id": "demo.id", "description": "desc", "mandatory": []string{"z"}, "optional": []string{}, "default": []string{}, "conditional": []string{}}
+		if err != nil || !reflect.DeepEqual(got, want) || !reflect.DeepEqual(commandArgv(runner.commands), [][]string{{manager, "--quiet", "--disablerepo=*", "--enablerepo=base", "groupinfo", "Demo"}}) {
+			t.Fatalf("%s got=%#v err=%v argv=%#v", manager, got, err, commandArgv(runner.commands))
+		}
+		bad := &yumExecNoCallRunner{}
+		rt.Runner = bad
+		if got, err := reg.Call(context.Background(), rt, "pkg.group_info", &AutoremoveArgs{}); got != nil || err == nil || bad.calls != 0 {
+			t.Fatalf("%s wrong args got=%#v err=%v calls=%d", manager, got, err, bad.calls)
+		}
+	}
+	for _, manager := range []string{"apt", "zypper", "unsupported"} {
+		reg := runtime.NewExecRegistry()
+		if err := Register(reg); err != nil {
+			t.Fatal(err)
+		}
+		runner := &yumExecNoCallRunner{}
+		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: manager}), Providers: runtime.NewProviderRegistry(), Runner: runner}
+		if err := pkgprovider.Register(rt.Providers); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := reg.ResolveArgs(rt, "pkg.group_info"); err == nil {
+			t.Fatalf("%s unexpectedly resolved", manager)
+		}
+		if got, err := reg.Call(context.Background(), rt, "pkg.group_info", &YumGroupInfoArgs{Name: "x"}); got != nil || err == nil || runner.calls != 0 {
+			t.Fatalf("%s got=%#v err=%v calls=%d", manager, got, err, runner.calls)
+		}
+	}
+}
+
 func TestCleanMetadataProviderAwareRegistry(t *testing.T) {
 	for _, manager := range []string{"yum", "dnf"} {
 		reg := runtime.NewExecRegistry()

@@ -23,6 +23,26 @@ var ErrUnsupportedYUM = errors.New("YUM capability is not supported by this pack
 const yumPatchesOutputLimit = 1 << 20
 const yumServicesOutputLimit = 1 << 20
 const yumGroupsOutputLimit = 1 << 20
+const yumGroupInfoOutputLimit = 1 << 20
+
+var errYUMGroupNotFound = errors.New("YUM group not found")
+
+type yumGroupNotFoundError struct {
+	name string
+}
+
+func (e *yumGroupNotFoundError) Error() string {
+	return fmt.Sprintf("Group '%s' not found", e.name)
+}
+
+func (e *yumGroupNotFoundError) Unwrap() error {
+	return errYUMGroupNotFound
+}
+
+const (
+	yumGroupMaxDepth = 32
+	yumGroupMaxNodes = 256
+)
 
 var yumPatchesLine = regexp.MustCompile(`^([i|\s])? ?([^\s]+) +([^\s]+) +([^\s]+)`)
 var yumLanguageGroupLine = regexp.MustCompile(`^(.+) \[(.+)\]`)
@@ -363,6 +383,8 @@ func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function
 		return yumServicesNeedRestart(ctx, rt, p.spec.manager)
 	case "group_list":
 		return yumGroupList(ctx, rt, p.spec.manager)
+	case "group_info":
+		return yumGroupInfo(ctx, rt, p.spec.manager, a)
 	case "clean_metadata":
 		return yumCleanMetadata(ctx, rt, p.spec.manager, a)
 	case "file_list":
@@ -554,6 +576,8 @@ func validateYUMArgs(function string, a map[string]any) error {
 		allowed = map[string]bool{}
 	case "group_list":
 		allowed = map[string]bool{}
+	case "group_info":
+		allowed = map[string]bool{"name": true, "expand": true, "ignore_groups": true, "fromrepo": true, "enablerepo": true, "disablerepo": true}
 	default:
 		return nil
 	}
@@ -585,6 +609,18 @@ func validateYUMArgs(function string, a map[string]any) error {
 			default:
 				return fmt.Errorf("argument %q must be a boolean", key)
 			}
+		}
+	}
+	if v, present := a["expand"]; present && v != nil {
+		switch v.(type) {
+		case bool, *bool:
+		default:
+			return errors.New(`argument "expand" must be a boolean`)
+		}
+	}
+	if v, present := a["ignore_groups"]; present && v != nil {
+		if _, ok := v.([]string); !ok {
+			return errors.New(`argument "ignore_groups" must be a string list`)
 		}
 	}
 	if v, present := a["refresh"]; present && v != nil {
@@ -619,6 +655,22 @@ func validateYUMArgs(function string, a map[string]any) error {
 		if v, present := a[key]; present && v != nil {
 			if _, err := yumStringListArg(a, key); err != nil {
 				return err
+			}
+		}
+	}
+	if function == "group_info" {
+		for _, key := range []string{"fromrepo"} {
+			if v, present := a[key]; present && v != nil {
+				if _, ok := yumStringArg(a, key); !ok {
+					return fmt.Errorf("argument %q must be a string", key)
+				}
+			}
+		}
+		for _, key := range []string{"enablerepo", "disablerepo"} {
+			if v, present := a[key]; present && v != nil {
+				if _, err := yumStringListArg(a, key); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -668,10 +720,7 @@ func yumGroupList(ctx context.Context, rt *runtime.Runtime, manager string) (any
 		"available language groups:":    "available languages",
 	}
 	key := ""
-	lines := strings.Split(string(res.Stdout), "\n")
-	if len(lines) > 0 && lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
-	}
+	lines := yumGroupInfoLines(string(res.Stdout))
 	for _, line := range lines {
 		lineLC := strings.ToLower(line)
 		if lineLC == "done" {
@@ -695,6 +744,233 @@ func yumGroupList(ctx context.Context, rt *runtime.Runtime, manager string) (any
 		}
 	}
 	return ret, nil
+}
+
+// yumGroupInfo mirrors yumpkg.group_info's deliberately tolerant parser. The
+// recursion guard is stricter than Salt's unbounded recursion because this
+// runtime must remain safe when repository metadata is adversarial.
+func yumGroupInfo(ctx context.Context, rt *runtime.Runtime, manager string, a map[string]any) (any, error) {
+	name, ok := yumStringArg(a, "name")
+	if !ok || name == "" {
+		return nil, errors.New(`argument "name" must be a non-empty string`)
+	}
+	if err := validateYUMGroupToken(name); err != nil {
+		return nil, fmt.Errorf(`argument "name": %w`, err)
+	}
+	expand, err := yumBoolArg(a, "expand", false)
+	if err != nil {
+		return nil, err
+	}
+	ignored := []string{}
+	if value, present := a["ignore_groups"]; present && value != nil {
+		var ok bool
+		ignored, ok = value.([]string)
+		if !ok {
+			return nil, errors.New(`argument "ignore_groups" must be a string list`)
+		}
+		ignored = append([]string(nil), ignored...)
+	}
+	options, err := yumGroupInfoOptions(a)
+	if err != nil {
+		return nil, err
+	}
+	state := &yumGroupInfoState{completedGroups: make(map[string]struct{}, len(ignored))}
+	for _, group := range ignored {
+		state.completedGroups[group] = struct{}{}
+	}
+	if expand {
+		state.completedGroups[name] = struct{}{}
+	}
+	result, err := yumGroupInfoWalk(ctx, rt, manager, name, expand, options, 0, state)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func yumGroupInfoOptions(a map[string]any) ([]string, error) {
+	fromrepo, _ := yumStringArg(a, "fromrepo")
+	if fromrepo != "" {
+		if err := validateYUMGroupToken(fromrepo); err != nil {
+			return nil, fmt.Errorf(`argument "fromrepo": %w`, err)
+		}
+		return []string{"--disablerepo=*", "--enablerepo=" + fromrepo}, nil
+	}
+	options := []string{}
+	for _, key := range []string{"disablerepo", "enablerepo"} {
+		values, err := yumStringListArg(a, key)
+		if err != nil {
+			return nil, err
+		}
+		for _, value := range values {
+			if err := validateYUMGroupToken(value); err != nil {
+				return nil, fmt.Errorf(`argument %q: %w`, key, err)
+			}
+			options = append(options, "--"+key+"="+value)
+		}
+	}
+	return options, nil
+}
+
+func validateYUMGroupToken(value string) error {
+	if err := validateYUMOption(value); err != nil {
+		return err
+	}
+	for _, r := range value {
+		switch r {
+		case ';', '|', '&', '$', '>', '<', '`':
+			return errors.New("value contains unsafe shell metacharacter")
+		}
+	}
+	return nil
+}
+
+type yumGroupInfoState struct {
+	completedGroups map[string]struct{}
+	nodes           int
+}
+
+func yumGroupInfoWalk(ctx context.Context, rt *runtime.Runtime, manager, name string, expand bool, options []string, depth int, state *yumGroupInfoState) (map[string]any, error) {
+	if depth > yumGroupMaxDepth {
+		return nil, errors.New("YUM group_info recursion limit exceeded")
+	}
+	if state.nodes >= yumGroupMaxNodes {
+		return nil, errors.New("YUM group_info recursion limit exceeded")
+	}
+	state.nodes++
+	if rt == nil || rt.Runner == nil {
+		return nil, errors.New("YUM group_info requires a runner")
+	}
+	cmdArgs := append([]string{manager, "--quiet"}, options...)
+	cmdArgs = append(cmdArgs, "groupinfo", name)
+	cmd := runtime.Command(cmdArgs...)
+	cmd.MaxStdoutBytes, cmd.MaxStderrBytes = yumGroupInfoOutputLimit, yumGroupInfoOutputLimit
+	res := rt.Runner.Run(ctx, cmd)
+	if res.Err != nil {
+		return nil, res.Err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	ret := map[string]any{
+		"mandatory": []string{}, "optional": []string{}, "default": []string{}, "conditional": []string{},
+	}
+	metadata := map[string]string{}
+	// Salt's itertools.split(out, "\n") only recognizes LF. It also omits the
+	// empty item after a terminal LF; retain that behavior without applying
+	// Python's broader splitlines() set of separators.
+	lines := strings.Split(string(res.Stdout), "\n")
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	for _, line := range lines {
+		parts := strings.Split(line, ":")
+		if len(parts) != 2 {
+			continue
+		}
+		metadata[strings.ToLower(strings.TrimSpace(parts[0]))] = strings.TrimSpace(parts[1])
+	}
+	if value, ok := metadata["environment group"]; ok {
+		ret["type"] = "environment group"
+		ret["group"] = value
+	} else if value, ok := metadata["group"]; ok {
+		ret["type"] = "package group"
+		ret["group"] = value
+	}
+	var groupValue string
+	if value, ok := metadata["environment group"]; ok {
+		groupValue = value
+	} else if value, ok := metadata["group"]; ok {
+		groupValue = value
+	}
+	var idValue string
+	if value, ok := metadata["environment-id"]; ok {
+		ret["id"] = value
+		idValue = value
+	} else if value, ok := metadata["group-id"]; ok {
+		ret["id"] = value
+		idValue = value
+	}
+	if groupValue == "" && idValue == "" {
+		return nil, &yumGroupNotFoundError{name: name}
+	}
+	if _, ok := ret["group"]; !ok {
+		ret["group"] = nil
+	}
+	if _, ok := ret["id"]; !ok {
+		ret["id"] = nil
+	}
+	ret["description"] = metadata["description"]
+	if ret["description"] == nil {
+		ret["description"] = ""
+	}
+	typeNames := []string{"mandatory", "optional", "default", "conditional"}
+	for _, typeName := range typeNames {
+		entries := map[string]struct{}{}
+		inSection := false
+		for _, raw := range lines {
+			line := strings.TrimSpace(raw)
+			line = strings.TrimLeft(line, string([]byte("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")))
+			match := regexp.MustCompile(`^(mandatory|optional|default|conditional) (?:groups|packages):\s*$`).FindStringSubmatch(strings.ToLower(line))
+			if match != nil {
+				if inSection {
+					break
+				}
+				inSection = match[1] == typeName
+				continue
+			}
+			if inSection && line != "" {
+				entries[line] = struct{}{}
+			}
+		}
+		values := map[string]struct{}{}
+		if !expand || ret["type"] != "environment group" {
+			for entry := range entries {
+				values[entry] = struct{}{}
+			}
+			ret[typeName] = sortedYUMGroupValues(values)
+			continue
+		}
+		for _, group := range sortedYUMGroupValues(entries) {
+			if _, done := state.completedGroups[group]; done {
+				continue
+			}
+			// Mark before the lookup/recursion so sibling branches and cycles share
+			// one traversal state, rather than maintaining a per-path guard.
+			state.completedGroups[group] = struct{}{}
+			expanded, expandErr := yumGroupInfoWalk(ctx, rt, manager, "@"+group, true, options, depth+1, state)
+			if errors.Is(expandErr, errYUMGroupNotFound) {
+				expanded, expandErr = yumGroupInfoWalk(ctx, rt, manager, group, true, options, depth+1, state)
+			}
+			if expandErr != nil {
+				return nil, expandErr
+			}
+			for _, category := range typeNames {
+				for _, packageName := range expanded[category].([]string) {
+					values[packageName] = struct{}{}
+				}
+			}
+		}
+		ret[typeName] = sortedYUMGroupValues(values)
+	}
+	return ret, nil
+}
+
+func yumGroupInfoLines(output string) []string {
+	lines := strings.Split(output, "\n")
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
+}
+
+func sortedYUMGroupValues(values map[string]struct{}) []string {
+	ret := make([]string, 0, len(values))
+	for value := range values {
+		ret = append(ret, value)
+	}
+	sort.Strings(ret)
+	return ret
 }
 
 func yumServicesNeedRestart(ctx context.Context, rt *runtime.Runtime, manager string) (any, error) {

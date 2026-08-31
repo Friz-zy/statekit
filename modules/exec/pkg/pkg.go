@@ -172,6 +172,7 @@ func Register(reg *runtime.ExecRegistry) error {
 		refreshDBFunc{}, versionFunc{}, listFunc{}, installFunc{}, removeFunc{}, latestVersionFunc{},
 		yumPatchesFunc{}, yumPatchesFunc{installedOnly: true},
 		yumGroupListFunc{},
+		yumGroupInfoFunc{},
 	} {
 		if err := reg.Register(fn); err != nil {
 			return err

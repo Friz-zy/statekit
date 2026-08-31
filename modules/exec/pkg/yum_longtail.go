@@ -52,6 +52,18 @@ type YumListPatchesArgs struct {
 // takes no public arguments and always calls _get_patches(installed_only=True).
 type YumListInstalledPatchesArgs struct{}
 
+// YumGroupInfoArgs mirrors yumpkg.group_info. Optional pointers preserve
+// omission semantics at the provider boundary; repository selectors retain
+// Salt's string-or-string-list input shape.
+type YumGroupInfoArgs struct {
+	Name         string   `statekit:"required"`
+	Expand       *bool    `statekit:"name=expand"`
+	IgnoreGroups []string `statekit:"name=ignore_groups"`
+	Fromrepo     *string  `statekit:"name=fromrepo"`
+	Enablerepo   any      `statekit:"name=enablerepo"`
+	Disablerepo  any      `statekit:"name=disablerepo"`
+}
+
 // YumPrototype returns the exact provider-specific argument shape for a
 // shared longtail function. Registration and dispatch remain canonical in
 // apt_longtail.go.
@@ -71,6 +83,8 @@ func YumPrototype(name string) (any, bool) {
 		return YumListPatchesArgs{}, true
 	case "list_installed_patches":
 		return YumListInstalledPatchesArgs{}, true
+	case "group_info":
+		return YumGroupInfoArgs{}, true
 	case "services_need_restart":
 		return struct{}{}, true
 	case "group_list":
@@ -154,4 +168,37 @@ func (yumGroupListFunc) Execute(ctx context.Context, rt *runtime.Runtime, args a
 		return nil, err
 	}
 	return yp.Yum(ctx, rt, "group_list", argMap)
+}
+
+type yumGroupInfoFunc struct{}
+
+func (yumGroupInfoFunc) Name() string         { return "pkg.group_info" }
+func (yumGroupInfoFunc) Args() any            { return YumGroupInfoArgs{} }
+func (yumGroupInfoFunc) ProviderKind() string { return "pkg" }
+func (yumGroupInfoFunc) ArgsForProvider(providerName string) (any, error) {
+	if providerName != "yum" && providerName != "dnf" && providerName != "dnf5" {
+		return nil, &runtime.UnsupportedError{Kind: "provider", Name: providerName}
+	}
+	return YumGroupInfoArgs{}, nil
+}
+func (yumGroupInfoFunc) ProviderArgsStrict() bool       { return true }
+func (yumGroupInfoFunc) ProviderCapabilities() []string { return []string{"yumpkg"} }
+func (yumGroupInfoFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	p, err := pkgprovider.Resolve(rt)
+	if err != nil {
+		return nil, err
+	}
+	prototype, err := (yumGroupInfoFunc{}).ArgsForProvider(p.Name())
+	if err != nil {
+		return nil, err
+	}
+	yp, ok := p.(pkgprovider.YumProvider)
+	if !ok {
+		return nil, pkgprovider.ErrUnsupportedYUM
+	}
+	argMap, err := mapArgs("pkg.group_info", args, prototype)
+	if err != nil {
+		return nil, err
+	}
+	return yp.Yum(ctx, rt, "group_info", argMap)
 }
