@@ -36,6 +36,32 @@ type YumCleanMetadataArgs struct {
 	CheckUpdate     *bool   `statekit:"name=check_update"`
 }
 
+// YumListUpgradesArgs mirrors yumpkg.list_upgrades. Repository selectors use
+// Salt's scalar-or-list shape; refresh is a pointer so omission keeps the
+// source default (true) distinct from an explicit false.
+type YumListUpgradesArgs struct {
+	Refresh         *bool   `statekit:"name=refresh"`
+	Repo            *string `statekit:"name=repo"`
+	Fromrepo        *string `statekit:"name=fromrepo"`
+	Enablerepo      any     `statekit:"name=enablerepo"`
+	Disablerepo     any     `statekit:"name=disablerepo"`
+	Disableexcludes *string `statekit:"name=disableexcludes"`
+	Branch          *string `statekit:"name=branch"`
+	Setopt          any     `statekit:"name=setopt"`
+}
+
+type YumUpgradeAvailableArgs struct {
+	Name            string  `statekit:"required"`
+	Refresh         *bool   `statekit:"name=refresh"`
+	Repo            *string `statekit:"name=repo"`
+	Fromrepo        *string `statekit:"name=fromrepo"`
+	Enablerepo      any     `statekit:"name=enablerepo"`
+	Disablerepo     any     `statekit:"name=disablerepo"`
+	Disableexcludes *string `statekit:"name=disableexcludes"`
+	Branch          *string `statekit:"name=branch"`
+	Setopt          any     `statekit:"name=setopt"`
+}
+
 // YumListHoldsArgs mirrors yumpkg.list_holds. Pointers preserve whether the
 // caller supplied an optional value; the provider applies Salt's defaults.
 type YumListHoldsArgs struct {
@@ -86,6 +112,10 @@ func YumPrototype(name string) (any, bool) {
 		return YumOwnerArgs{}, true
 	case "clean_metadata":
 		return YumCleanMetadataArgs{}, true
+	case "list_upgrades":
+		return YumListUpgradesArgs{}, true
+	case "upgrade_available":
+		return YumUpgradeAvailableArgs{}, true
 	case "list_holds":
 		return YumListHoldsArgs{}, true
 	case "list_patches":

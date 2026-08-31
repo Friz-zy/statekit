@@ -58,6 +58,48 @@ func TestLongtailCanonicalPackagesAndDispatch(t *testing.T) {
 	}
 }
 
+func TestAPTUpgradeFunctionsRegistryContract(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	r := &aptFakeRunner{results: []process.CommandResult{{Stdout: []byte("Conf z (2.0 Ubuntu:1)\n")}}}
+	rt := aptExecRuntime("apt", r)
+	for _, tc := range []struct {
+		name      string
+		wantType  reflect.Type
+		wantNames []string
+	}{
+		{"pkg.list_upgrades", reflect.TypeOf(ListUpgradesArgs{}), []string{"cache_valid_time", "dist_upgrade", "refresh"}},
+		{"pkg.upgrade_available", reflect.TypeOf(NormalizeNameArgs{}), []string{"name"}},
+	} {
+		prototype, err := reg.ResolveArgs(rt, tc.name)
+		if err != nil || reflect.TypeOf(prototype) != tc.wantType {
+			t.Fatalf("%s prototype=%T err=%v", tc.name, prototype, err)
+		}
+		if tc.name == "pkg.upgrade_available" {
+			names, err := config.ArgumentNames(prototype)
+			if err != nil || !reflect.DeepEqual(names, tc.wantNames) {
+				t.Fatalf("%s argument names=%v err=%v", tc.name, names, err)
+			}
+		}
+	}
+	if got := reg.ProviderCapabilities("pkg.list_upgrades"); !reflect.DeepEqual(got, []string{"aptpkg", "yumpkg"}) {
+		t.Fatalf("list_upgrades capabilities=%v", got)
+	}
+	if got := reg.ProviderCapabilities("pkg.upgrade_available"); !reflect.DeepEqual(got, []string{"aptpkg", "yumpkg"}) {
+		t.Fatalf("upgrade_available capabilities=%v", got)
+	}
+	refresh, dist := false, false
+	got, err := reg.Call(context.Background(), rt, "pkg.list_upgrades", &ListUpgradesArgs{Refresh: &refresh, DistUpgrade: &dist})
+	if err != nil || !reflect.DeepEqual(got, map[string]string{"z": "2.0"}) || !reflect.DeepEqual(r.calls[0].Args, []string{"--just-print", "upgrade"}) {
+		t.Fatalf("list_upgrades got=%#v err=%v calls=%#v", got, err, r.calls)
+	}
+	if _, err := reg.Call(context.Background(), rt, "pkg.list_upgrades", &YumListUpgradesArgs{}); err == nil {
+		t.Fatal("list_upgrades accepted YUM pointer for APT")
+	}
+}
+
 func TestLongtailCapabilityGateBeforeRunner(t *testing.T) {
 	runner := &aptFakeRunner{}
 	rt := aptExecRuntime("dnf", runner)
@@ -454,7 +496,7 @@ func TestAPTLongtailNamedRunnerContractMatrix(t *testing.T) {
 	}
 }
 
-func TestAPTLongtailCapabilityRejectsEveryNamedFunctionBeforeRunner(t *testing.T) {
+func TestAPTLongtailCapabilityRejectsYumOnlyFunctionsBeforeRunner(t *testing.T) {
 	cases := []struct {
 		name string
 		args any
@@ -473,7 +515,7 @@ func TestAPTLongtailCapabilityRejectsEveryNamedFunctionBeforeRunner(t *testing.T
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.name == "normalize_name" || tc.name == "parse_arch" || tc.name == "version_cmp" || tc.name == "file_list" || tc.name == "file_dict" || tc.name == "info_installed" || tc.name == "owner" {
+			if tc.name == "normalize_name" || tc.name == "parse_arch" || tc.name == "version_cmp" || tc.name == "file_list" || tc.name == "file_dict" || tc.name == "info_installed" || tc.name == "owner" || tc.name == "list_upgrades" || tc.name == "upgrade_available" {
 				t.Skip("shared provider-aware function")
 			}
 			r := &aptFakeRunner{}
@@ -653,5 +695,162 @@ func TestAPTDownloadedRecursiveAndNilFS(t *testing.T) {
 	_, err = (aptLongtailFunc{"list_downloaded", DownloadedArgs{}}).Execute(context.Background(), rt, &DownloadedArgs{})
 	if err == nil {
 		t.Fatal("nil filesystem must be unsupported")
+	}
+}
+
+// This is deliberately an actual ExecRegistry matrix, rather than direct
+// provider calls: the registry contract includes provider-specific prototypes
+// and the no-side-effect capability gate.
+func TestUpgradeRegistryActualProviderMatrix(t *testing.T) {
+	boolp := func(v bool) *bool { return &v }
+	type row struct {
+		provider string
+		name     string
+		proto    reflect.Type
+		args     []string
+		call     any
+		result   []process.CommandResult
+		argv     [][]string
+		want     any
+	}
+	rows := []row{
+		{"apt", "pkg.list_upgrades", reflect.TypeOf(ListUpgradesArgs{}), []string{"cache_valid_time", "dist_upgrade", "refresh"}, &ListUpgradesArgs{Refresh: boolp(false), DistUpgrade: boolp(false)}, []process.CommandResult{{Stdout: []byte("Conf foo (2.0 Ubuntu:1)\n")}}, [][]string{{"apt-get", "--just-print", "upgrade"}}, map[string]string{"foo": "2.0"}},
+		{"apt", "pkg.upgrade_available", reflect.TypeOf(NormalizeNameArgs{}), []string{"name"}, &NormalizeNameArgs{Name: "foo"}, []process.CommandResult{{Stdout: []byte("1.0\n")}, {Stdout: []byte("Candidate: 2.0\n")}, {ExitCode: 1}, {ExitCode: 1}, {}}, [][]string{{"dpkg-query", "-W", "-f=${Version}\n", "foo"}, {"apt-cache", "policy", "foo"}, {"dpkg", "--compare-versions", "1.0", "lt", "2.0"}, {"dpkg", "--compare-versions", "1.0", "eq", "2.0"}, {"dpkg", "--compare-versions", "1.0", "gt", "2.0"}}, true},
+		{"yum", "pkg.list_upgrades", reflect.TypeOf(YumListUpgradesArgs{}), []string{"branch", "disableexcludes", "disablerepo", "enablerepo", "fromrepo", "refresh", "repo", "setopt"}, &YumListUpgradesArgs{Refresh: boolp(false), Fromrepo: strptr("base"), Setopt: []string{"a=1"}}, []process.CommandResult{{Stdout: []byte("foo.x86_64 2.0-1 @base\n")}}, [][]string{{"yum", "--quiet", "--disablerepo=*", "--enablerepo=base", "--setopt=a=1", "list", "updates"}}, map[string]string{"foo": "2.0-1"}},
+		{"yum", "pkg.upgrade_available", reflect.TypeOf(YumUpgradeAvailableArgs{}), []string{"branch", "disableexcludes", "disablerepo", "enablerepo", "fromrepo", "name", "refresh", "repo", "setopt"}, &YumUpgradeAvailableArgs{Name: "foo", Refresh: boolp(false)}, []process.CommandResult{{Stdout: []byte("installed packages\n")}, {Stdout: []byte("foo.noarch 2.0-1 @base\n")}}, [][]string{{"rpm", "-qa", "--nodigest", "--nosignature", "--queryformat", "%{NAME}_|-%{EPOCH}_|-%{VERSION}_|-%{RELEASE}_|-%{ARCH}_|-(none)_|-%{INSTALLTIME}\n"}, {"yum", "--quiet", "list", "available", "foo"}}, true},
+	}
+	for _, tc := range rows {
+		t.Run(tc.provider+"/"+tc.name, func(t *testing.T) {
+			reg := runtime.NewExecRegistry()
+			if err := Register(reg); err != nil {
+				t.Fatal(err)
+			}
+			r := &aptFakeRunner{results: tc.result}
+			family := facts.FamilyRedHat
+			if tc.provider == "apt" {
+				family = facts.FamilyDebian
+			}
+			rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: tc.provider, OS: &facts.OSFacts{Family: family}, CPU: &facts.CPUFacts{Arch: "x86_64"}}), Providers: runtime.NewProviderRegistry(), Runner: r}
+			if err := pkgprovider.Register(rt.Providers); err != nil {
+				t.Fatal(err)
+			}
+			prototype, err := reg.ResolveArgs(rt, tc.name)
+			if err != nil || reflect.TypeOf(prototype) != tc.proto {
+				t.Fatalf("prototype=%T err=%v", prototype, err)
+			}
+			names, err := config.ArgumentNames(prototype)
+			if tc.provider == "apt" && tc.name == "pkg.list_upgrades" {
+				if err != nil || !reflect.DeepEqual(names, tc.args) {
+					t.Fatalf("arg names=%v err=%v", names, err)
+				}
+			} else if err != nil || !reflect.DeepEqual(names, tc.args) {
+				t.Fatalf("arg names=%v err=%v", names, err)
+			}
+			if got := reg.ProviderCapabilities(tc.name); !reflect.DeepEqual(got, []string{"aptpkg", "yumpkg"}) {
+				t.Fatalf("capabilities=%v", got)
+			}
+			before := reflect.ValueOf(tc.call).Elem().Interface()
+			got, err := reg.Call(context.Background(), rt, tc.name, tc.call)
+			if err != nil || !reflect.DeepEqual(got, tc.want) || !reflect.DeepEqual(commandArgv(r.calls), tc.argv) {
+				t.Fatalf("got=%#v err=%v argv=%#v", got, err, commandArgv(r.calls))
+			}
+			if !reflect.DeepEqual(reflect.ValueOf(tc.call).Elem().Interface(), before) {
+				t.Fatal("registry call mutated arguments")
+			}
+			for _, bad := range []any{nil, 1, &AutoremoveArgs{}} {
+				badRunner := &aptFakeRunner{}
+				rt.Runner = badRunner
+				if got, err := reg.Call(context.Background(), rt, tc.name, bad); got != nil || err == nil || len(badRunner.calls) != 0 {
+					t.Fatalf("bad args=%T got=%#v err=%v calls=%d", bad, got, err, len(badRunner.calls))
+				}
+			}
+		})
+	}
+
+	for _, provider := range []string{"dnf", "dnf5"} {
+		for _, name := range []string{"pkg.list_upgrades", "pkg.upgrade_available"} {
+			t.Run(provider+"/"+name, func(t *testing.T) {
+				reg := runtime.NewExecRegistry()
+				if err := Register(reg); err != nil {
+					t.Fatal(err)
+				}
+				r := &aptFakeRunner{}
+				rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: provider, OS: &facts.OSFacts{Family: facts.FamilyRedHat}, CPU: &facts.CPUFacts{Arch: "x86_64"}}), Providers: runtime.NewProviderRegistry(), Runner: r}
+				if err := pkgprovider.Register(rt.Providers); err != nil {
+					t.Fatal(err)
+				}
+				prototype, err := reg.ResolveArgs(rt, name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				args := any(&YumListUpgradesArgs{})
+				if name == "pkg.upgrade_available" {
+					args = &YumUpgradeAvailableArgs{Name: "foo", Refresh: boolp(false)}
+				}
+				if name == "pkg.list_upgrades" {
+					r.results = []process.CommandResult{{Stdout: []byte("foo.x86_64 2.0-1 @repo\n")}}
+				} else {
+					r.results = []process.CommandResult{{}, {Stdout: []byte("foo.noarch 2.0-1 @repo\n")}}
+				}
+				got, err := reg.Call(context.Background(), rt, name, args)
+				if err != nil || got == nil || reflect.TypeOf(prototype) == nil || len(r.calls) == 0 {
+					t.Fatalf("got=%#v err=%v prototype=%T calls=%d", got, err, prototype, len(r.calls))
+				}
+			})
+		}
+	}
+
+	for _, provider := range []string{"zypper"} {
+		for _, name := range []string{"pkg.list_upgrades", "pkg.upgrade_available"} {
+			t.Run(provider+"/"+name, func(t *testing.T) {
+				reg := runtime.NewExecRegistry()
+				if err := Register(reg); err != nil {
+					t.Fatal(err)
+				}
+				r := &aptFakeRunner{}
+				rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: provider}), Providers: runtime.NewProviderRegistry(), Runner: r}
+				if err := pkgprovider.Register(rt.Providers); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := reg.ResolveArgs(rt, name); !errors.As(err, new(*runtime.UnsupportedError)) {
+					t.Fatalf("resolve err=%v", err)
+				}
+				if got, err := reg.Call(context.Background(), rt, name, &YumListUpgradesArgs{}); got != nil || !errors.As(err, new(*runtime.UnsupportedError)) || len(r.calls) != 0 {
+					t.Fatalf("call got=%#v err=%v calls=%d", got, err, len(r.calls))
+				}
+			})
+		}
+	}
+	for _, tc := range []struct {
+		provider string
+		results  []process.CommandResult
+		want     [][]string
+	}{
+		{"apt", []process.CommandResult{{}, {Stdout: []byte("Conf foo (2.0 Ubuntu:1)\n")}}, [][]string{{"apt-get", "update"}, {"apt-get", "--just-print", "dist-upgrade"}}},
+		{"yum", []process.CommandResult{{}, {Stdout: []byte("foo.x86_64 2.0-1 @repo\n")}}, [][]string{{"yum", "--quiet", "--assumeyes", "clean", "expire-cache"}, {"yum", "--quiet", "list", "updates"}}},
+	} {
+		t.Run(tc.provider+"/refresh-default", func(t *testing.T) {
+			reg := runtime.NewExecRegistry()
+			if err := Register(reg); err != nil {
+				t.Fatal(err)
+			}
+			r := &aptFakeRunner{results: tc.results}
+			family := facts.FamilyRedHat
+			if tc.provider == "apt" {
+				family = facts.FamilyDebian
+			}
+			rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: tc.provider, OS: &facts.OSFacts{Family: family}, CPU: &facts.CPUFacts{Arch: "x86_64"}}), Providers: runtime.NewProviderRegistry(), Runner: r}
+			if err := pkgprovider.Register(rt.Providers); err != nil {
+				t.Fatal(err)
+			}
+			var args any = &ListUpgradesArgs{}
+			if tc.provider != "apt" {
+				args = &YumListUpgradesArgs{}
+			}
+			got, err := reg.Call(context.Background(), rt, "pkg.list_upgrades", args)
+			if err != nil || got == nil || !reflect.DeepEqual(commandArgv(r.calls), tc.want) {
+				t.Fatalf("got=%#v err=%v argv=%#v", got, err, commandArgv(r.calls))
+			}
+		})
 	}
 }

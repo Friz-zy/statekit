@@ -169,6 +169,86 @@ func TestYumLongtailRegistryAndPureCalls(t *testing.T) {
 	}
 }
 
+func TestYumUpgradeFunctionsRegistryMatrix(t *testing.T) {
+	for _, manager := range []string{"yum", "dnf", "dnf5"} {
+		reg := runtime.NewExecRegistry()
+		if err := Register(reg); err != nil {
+			t.Fatal(err)
+		}
+		providers := runtime.NewProviderRegistry()
+		if err := pkgprovider.Register(providers); err != nil {
+			t.Fatal(err)
+		}
+		r := &yumExecRecordingRunner{results: []process.CommandResult{{Stdout: []byte("foo.x86_64 2:2.0-1 @repo\n")}}}
+		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: manager, OS: &facts.OSFacts{Family: facts.FamilyRedHat}, CPU: &facts.CPUFacts{Arch: "x86_64"}}), Providers: providers, Runner: r}
+		for _, tc := range []struct {
+			name string
+			arg  any
+			want reflect.Type
+		}{
+			{"pkg.list_upgrades", &YumListUpgradesArgs{}, reflect.TypeOf(YumListUpgradesArgs{})},
+			{"pkg.upgrade_available", &YumUpgradeAvailableArgs{Name: "foo"}, reflect.TypeOf(YumUpgradeAvailableArgs{})},
+		} {
+			prototype, err := reg.ResolveArgs(rt, tc.name)
+			if err != nil || reflect.TypeOf(prototype) != tc.want {
+				t.Fatalf("%s prototype=%T err=%v", tc.name, prototype, err)
+			}
+			if caps := reg.ProviderCapabilities(tc.name); !reflect.DeepEqual(caps, []string{"aptpkg", "yumpkg"}) {
+				t.Fatalf("%s capabilities=%v", tc.name, caps)
+			}
+			if tc.name == "pkg.list_upgrades" {
+				refresh := false
+				r.results = []process.CommandResult{{Stdout: []byte("foo.x86_64 2:2.0-1 @repo\n")}}
+				got, err := reg.Call(context.Background(), rt, tc.name, &YumListUpgradesArgs{Refresh: &refresh})
+				if err != nil || !reflect.DeepEqual(got, map[string]string{"foo": "2:2.0-1"}) {
+					t.Fatalf("%s got=%#v err=%v", tc.name, got, err)
+				}
+			} else {
+				refresh := false
+				r.results = []process.CommandResult{{Stdout: []byte("foo_|-0_|-1.0_|-1_|-x86_64_|-(none)_|-0\n")}, {Stdout: []byte("foo.x86_64 2.0-1 @repo\n")}}
+				got, err := reg.Call(context.Background(), rt, tc.name, &YumUpgradeAvailableArgs{Name: "foo", Refresh: &refresh})
+				if err != nil || got != true {
+					t.Fatalf("%s got=%#v err=%v", tc.name, got, err)
+				}
+			}
+		}
+	}
+}
+
+func TestYumUpgradeFunctionsRejectNonYumProvidersBeforeRunner(t *testing.T) {
+	for _, manager := range []string{"zypper", "unsupported"} {
+		reg := runtime.NewExecRegistry()
+		if err := Register(reg); err != nil {
+			t.Fatal(err)
+		}
+		providers := runtime.NewProviderRegistry()
+		if err := pkgprovider.Register(providers); err != nil {
+			t.Fatal(err)
+		}
+		runner := &yumExecRecordingRunner{}
+		rt := &runtime.Runtime{
+			Facts: facts.ForTesting(facts.Overrides{Package: manager}), Providers: providers, Runner: runner,
+		}
+		for _, tc := range []struct {
+			name string
+			args any
+		}{
+			{"pkg.list_upgrades", &YumListUpgradesArgs{}},
+			{"pkg.upgrade_available", &YumUpgradeAvailableArgs{Name: "foo"}},
+		} {
+			if _, err := reg.ResolveArgs(rt, tc.name); err == nil {
+				t.Fatalf("%s/%s unexpectedly resolved", manager, tc.name)
+			}
+			if got, err := reg.Call(context.Background(), rt, tc.name, tc.args); got != nil || err == nil {
+				t.Fatalf("%s/%s got=%#v err=%v", manager, tc.name, got, err)
+			}
+		}
+		if len(runner.commands) != 0 {
+			t.Fatalf("%s runner calls=%d", manager, len(runner.commands))
+		}
+	}
+}
+
 func TestLongtailResolveArgsProviderMatrix(t *testing.T) {
 	for _, manager := range []string{"apt", "yum", "dnf", "dnf5"} {
 		reg := runtime.NewExecRegistry()

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/friz-zy/statekit/internal/facts"
@@ -643,6 +644,240 @@ type yumRecordingRunner struct {
 	results  []process.CommandResult
 }
 
+func TestYumUpgradeFunctionsUsePinnedQueriesAndEVRRules(t *testing.T) {
+	for _, manager := range []string{"yum", "dnf", "dnf5"} {
+		t.Run(manager, func(t *testing.T) {
+			facts := facts.ForTesting(facts.Overrides{Package: manager, OS: &facts.OSFacts{Family: facts.FamilyRedHat}, CPU: &facts.CPUFacts{Arch: "x86_64"}})
+			r := &yumRecordingRunner{results: []process.CommandResult{{}, {Stdout: []byte("foo.x86_64 2:2.0-2 @repo\nfoo.i686 9:9.0-9 @repo\n")}}}
+			p := &commandProvider{spec: rpmSpec(manager)}
+			got, err := p.Yum(context.Background(), &runtime.Runtime{Runner: r, Facts: facts}, "list_upgrades", map[string]any{})
+			if err != nil || !reflect.DeepEqual(got, map[string]string{"foo": "2:2.0-2", "foo.i686": "9:9.0-9"}) {
+				t.Fatalf("list_upgrades got=%#v err=%v", got, err)
+			}
+			action := "updates"
+			if manager != "yum" {
+				action = "--upgrades"
+			}
+			if len(r.commands) != 2 || !reflect.DeepEqual(r.commands[1].Args, append([]string{"--quiet", "list", action}, nil...)) {
+				t.Fatalf("list_upgrades commands=%#v", r.commands)
+			}
+
+			installed := "foo_|-1_|-1.0_|-1_|-x86_64_|-(none)_|-0\nfoo_|-2_|-0.9_|-9_|-x86_64_|-(none)_|-0\n"
+			r = &yumRecordingRunner{results: []process.CommandResult{{}, {}, {Stdout: []byte(installed)}, {Stdout: []byte("foo.x86_64 1:1.0-2 @repo\nfoo.x86_64 3:1.0-1 @repo\n")}}}
+			got, err = p.Yum(context.Background(), &runtime.Runtime{Runner: r, Facts: facts}, "upgrade_available", map[string]any{"name": "foo"})
+			if err != nil || got != true {
+				t.Fatalf("upgrade_available got=%#v err=%v", got, err)
+			}
+			if len(r.commands) != 4 || r.commands[2].Args[0] != "-qa" || r.commands[3].Args[len(r.commands[3].Args)-1] != "foo" {
+				t.Fatalf("upgrade_available commands=%#v", r.commands)
+			}
+		})
+	}
+}
+
+func TestYumLooseVersionCandidateOrderingMatchesPinnedSaltVectors(t *testing.T) {
+	// Derived from versions.LooseVersion.parse and _cmp in the pinned
+	// salt/utils/versions.py:73-101 and distutils' component_re.split.
+	// The RPM result is included to make the intentional comparator boundary
+	// explicit; candidate ordering must use the LooseVersion result only.
+	for _, tc := range []struct {
+		left, right string
+		loose, rpm  int
+	}{
+		{left: "1.0~rc1", right: "1.0", loose: 1, rpm: -1},
+		{left: "1.0-foo", right: "1.0-1", loose: 1, rpm: -1},
+		{left: "1.0+1", right: "1.0-1", loose: -1, rpm: 1},
+		{left: "1.0-10", right: "1.0-2", loose: 1, rpm: 1},
+		{left: "1.0-1.el10", right: "1.0-1.el9", loose: 1, rpm: 1},
+	} {
+		got := yumSign(yumLooseVersionCmp(tc.left, tc.right))
+		if got != tc.loose {
+			t.Errorf("LooseVersion(%q, %q)=%d, want %d", tc.left, tc.right, got, tc.loose)
+		}
+		if got := yumSign(yumVersionCmp(tc.left, tc.right, false)); got != tc.rpm {
+			t.Errorf("RPM(%q, %q)=%d, want %d", tc.left, tc.right, got, tc.rpm)
+		}
+	}
+}
+
+func TestYumLooseVersionDoesNotTruncateCandidates(t *testing.T) {
+	// Values beyond the former 4096-byte and 256-component cutoffs must still
+	// participate in ordering; yumUpgradeOutputLimit bounds provider input.
+	longNumeric := strings.Repeat("1", 4096)
+	if got := yumSign(yumLooseVersionCmp(longNumeric+"0", longNumeric+"1")); got != -1 {
+		t.Fatalf("long LooseVersion comparison = %d, want -1", got)
+	}
+	left := strings.Repeat("1.", 256) + "2"
+	right := strings.Repeat("1.", 256) + "1"
+	if got := yumSign(yumLooseVersionCmp(left, right)); got != 1 {
+		t.Fatalf("long component LooseVersion comparison = %d, want 1", got)
+	}
+}
+
+func TestYumUpgradeAvailableNonzeroAvailableListDiscardsCandidates(t *testing.T) {
+	r := &yumRecordingRunner{results: []process.CommandResult{
+		{},
+		{Stdout: []byte("foo.x86_64 9:9.0-1 @updates\n"), Stderr: []byte("metadata unavailable"), ExitCode: 1},
+	}}
+	rt := &runtime.Runtime{Runner: r, Facts: facts.ForTesting(facts.Overrides{OS: &facts.OSFacts{Family: facts.FamilyRedHat}, CPU: &facts.CPUFacts{Arch: "x86_64"}})}
+	got, err := (&commandProvider{spec: dnfSpec}).Yum(context.Background(), rt, "upgrade_available", map[string]any{"name": "foo", "refresh": false})
+	if err != nil || got != false {
+		t.Fatalf("got=%#v err=%v", got, err)
+	}
+	if len(r.commands) != 2 || r.commands[1].Name != "dnf" {
+		t.Fatalf("commands=%#v", r.commands)
+	}
+}
+
+func TestYumListUpgradesRetcodeHandling(t *testing.T) {
+	sentinel := errors.New("runner failed")
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	for _, tc := range []struct {
+		name   string
+		ctx    context.Context
+		result process.CommandResult
+		want   map[string]string
+		err    error
+	}{
+		{name: "nonzero parseable", result: process.CommandResult{ExitCode: 100, Stdout: []byte("foo.x86_64 1:2.0-1 @updates\n")}, want: map[string]string{"foo": "1:2.0-1"}},
+		{name: "nonzero error marker in stdout", result: process.CommandResult{ExitCode: 1, Stdout: []byte("Error: metadata unavailable\nfoo.x86_64 1:2.0-1 @updates\n")}, want: map[string]string{"Error:": "metadata", "foo": "1:2.0-1"}},
+		{name: "nonzero error marker in stderr", result: process.CommandResult{ExitCode: 1, Stdout: []byte("foo.x86_64 1:2.0-1 @updates\n"), Stderr: []byte("Error: metadata unavailable")}, want: map[string]string{"foo": "1:2.0-1"}},
+		{name: "empty", result: process.CommandResult{ExitCode: 0}, want: map[string]string{}},
+		{name: "malformed", result: process.CommandResult{ExitCode: 0, Stdout: []byte("not package\n")}, want: map[string]string{}},
+		{name: "runner error", result: process.CommandResult{Err: sentinel}, err: sentinel},
+		{name: "canceled", ctx: canceled, err: context.Canceled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := tc.ctx
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			r := &yumContextRecordingRunner{results: []process.CommandResult{tc.result}}
+			rt := &runtime.Runtime{Runner: r, Facts: facts.ForTesting(facts.Overrides{OS: &facts.OSFacts{Family: facts.FamilyRedHat}, CPU: &facts.CPUFacts{Arch: "x86_64"}})}
+			got, err := (&commandProvider{spec: dnfSpec}).Yum(ctx, rt, "list_upgrades", map[string]any{"refresh": false})
+			if tc.err != nil {
+				if got != nil || err != tc.err {
+					t.Fatalf("got=%#v err=%v want=%#v err=%v", got, err, tc.want, tc.err)
+				}
+				return
+			}
+			if !reflect.DeepEqual(got, tc.want) || err != nil {
+				t.Fatalf("got=%#v err=%v want=%#v err=%v", got, err, tc.want, tc.err)
+			}
+		})
+	}
+}
+
+func TestYumUpgradeAvailableArchitectureFiltering(t *testing.T) {
+	cases := []struct {
+		request, candidate string
+		want               bool
+	}{
+		{"foo", "foo.noarch", true},
+		{"foo", "foo.x86_64", true},
+		// yumpkg.py:592-600 compares candidate pkg.arch exactly with the
+		// OS arch; its resolve_name normalization does not create an arch
+		// interchange. ARCHES excludes SPARC (rpm.py:47-56).
+		{"foo", "foo.x86_64_v2", false},
+		{"foo", "foo.i686", false},
+		{"foo.i686", "foo.i386", false},
+		// An unknown requested/candidate suffix uses osarch for the arch
+		// comparison, but remains part of the source package name.
+		{"foo", "foo.unknown", false},
+		// SPARC suffixes are not in rpm.ARCHES (salt/utils/pkg/rpm.py:47-56),
+		// so they remain unknown requested architectures and are not made
+		// eligible by inventing a public SPARC mapping.
+		{"foo.sparc", "foo.sparc", false},
+		{"foo.sparc", "foo.x86_64", false},
+		{"foo.i686", "foo.i686", true},
+		{"foo.i686", "foo.noarch", false},
+		{"foo.i686", "foo.x86_64", false},
+		// latest_version compares the normalized candidate to the exact
+		// requested string; normalized foo does not equal foo.x86_64.
+		{"foo.x86_64", "foo.x86_64", false},
+		{"foo.x86_64", "foo.noarch", false},
+		{"foo.noarch", "foo.noarch", false},
+		{"foo.noarch", "foo.x86_64", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.request+"/"+tc.candidate, func(t *testing.T) {
+			r := &yumRecordingRunner{results: []process.CommandResult{
+				{Stdout: []byte("installed packages\n")},
+				{Stdout: []byte(tc.candidate + " 2:2.0-1 @updates\n")},
+			}}
+			rt := &runtime.Runtime{Runner: r, Facts: facts.ForTesting(facts.Overrides{OS: &facts.OSFacts{Family: facts.FamilyRedHat}, CPU: &facts.CPUFacts{Arch: "x86_64"}})}
+			got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), rt, "upgrade_available", map[string]any{"name": tc.request, "refresh": false})
+			if err != nil || got != tc.want {
+				t.Fatalf("got=%#v err=%v want=%v", got, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestYumUpgradeAvailableNoarchRequestUsesOSArchAndResolvedName(t *testing.T) {
+	// yumpkg.latest_version.py:578-583 checks the requested suffix only against
+	// salt.utils.pkg.rpm.ARCHES, which excludes noarch.  The candidate parser
+	// still sees raw foo.noarch, while rpm.resolve_name normalizes it to foo;
+	// the source then compares that normalized name with the exact request.
+	if got := yumRequestedArch("foo.noarch", "x86_64"); got != "x86_64" {
+		t.Fatalf("yumRequestedArch(foo.noarch)=%q want x86_64", got)
+	}
+	r := &yumRecordingRunner{results: []process.CommandResult{
+		{Stdout: []byte("installed packages\n")},
+		{Stdout: []byte("foo.noarch 2:2.0-1 @updates\n")},
+	}}
+	rt := &runtime.Runtime{Runner: r, Facts: facts.ForTesting(facts.Overrides{
+		OS: &facts.OSFacts{Family: facts.FamilyRedHat}, CPU: &facts.CPUFacts{Arch: "x86_64"},
+	})}
+	got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), rt, "upgrade_available", map[string]any{
+		"name": "foo.noarch", "refresh": false,
+	})
+	if err != nil || got != false {
+		t.Fatalf("newer foo.noarch got=%#v err=%v want false", got, err)
+	}
+	if records := yumPkgInfo("foo.noarch 2:2.0-1 @updates\n", "x86_64"); len(records) != 1 || records[0].name != "foo" || records[0].arch != "noarch" {
+		t.Fatalf("resolved candidate=%#v want name foo arch noarch", records)
+	}
+}
+
+func TestYumUpgradeAvailableUnknownSuffixUsesExactNameAndArch(t *testing.T) {
+	r := &yumRecordingRunner{results: []process.CommandResult{
+		{Stdout: []byte("foo.unknown_|-2_|-2.0_|-1_|-x86_64_|-(none)_|-0\n")},
+		{Stdout: []byte("foo.unknown 2:2.0-1 @updates\n")},
+	}}
+	rt := &runtime.Runtime{Runner: r, Facts: facts.ForTesting(facts.Overrides{
+		OS: &facts.OSFacts{Family: facts.FamilyRedHat}, CPU: &facts.CPUFacts{Arch: "x86_64"},
+	})}
+	got, err := (&commandProvider{spec: yumSpec}).Yum(context.Background(), rt, "upgrade_available", map[string]any{
+		"name": "foo.unknown", "refresh": false,
+	})
+	if err != nil || got != false {
+		t.Fatalf("got=%#v err=%v", got, err)
+	}
+}
+
+func TestYumPackageRecordsUseRawFinalSuffixBeforeResolveName(t *testing.T) {
+	for _, tc := range []struct {
+		value, wantName, wantBase, wantArch string
+	}{
+		{"foo", "foo", "foo", "x86_64"},
+		{"foo.x86_64", "foo", "foo", "x86_64"},
+		{"foo.i686", "foo.i686", "foo", "i686"},
+		{"foo.noarch", "foo", "foo", "noarch"},
+		{"foo.unknown", "foo.unknown", "foo", "unknown"},
+	} {
+		got := yumPkgInfo(tc.value+" 2:1.0-1 @repo\n", "x86_64")
+		if len(got) != 1 || got[0].name != tc.wantName || got[0].base != tc.wantBase || got[0].arch != tc.wantArch {
+			t.Fatalf("%q: got=%#v want name=%q base=%q arch=%q", tc.value, got, tc.wantName, tc.wantBase, tc.wantArch)
+		}
+	}
+	installed := yumInstalledPkgInfo("foo.unknown_|-0_|-1.0_|-1_|-x86_64_|-(none)_|-0\n", "x86_64")
+	if len(installed) != 1 || installed[0].name != "foo.unknown" || installed[0].arch != "x86_64" {
+		t.Fatalf("installed unknown record=%#v", installed)
+	}
+}
+
 func (r *yumRecordingRunner) Run(_ context.Context, command process.Command) process.CommandResult {
 	r.commands = append(r.commands, command)
 	if len(r.results) == 0 {
@@ -1084,6 +1319,8 @@ func TestYumNormalizeNameSourceVectors(t *testing.T) {
 		name, osarch, want string
 	}{
 		{"pkg.x86_64", "x86_64", "pkg"},
+		{"pkg.x86_64_v2", "x86_64", "pkg"},
+		{"pkg.x86_64", "x86_64_v2", "pkg"},
 		{"pkg.i686", "x86_64", "pkg.i686"},
 		{"pkg.aarch64", "aarch64", "pkg"},
 		{"pkg.noarch", "x86_64", "pkg"},

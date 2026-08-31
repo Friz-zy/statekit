@@ -24,6 +24,7 @@ const yumPatchesOutputLimit = 1 << 20
 const yumServicesOutputLimit = 1 << 20
 const yumGroupsOutputLimit = 1 << 20
 const yumGroupInfoOutputLimit = 1 << 20
+const yumUpgradeOutputLimit = 1 << 20
 
 var errYUMGroupNotFound = errors.New("YUM group not found")
 
@@ -55,6 +56,19 @@ var yumArchitectures = map[string]struct{}{
 	"alpha": {}, "alphaev4": {}, "alphaev45": {}, "alphaev5": {}, "alphaev56": {}, "alphapca56": {}, "alphaev6": {}, "alphaev67": {}, "alphaev68": {}, "alphaev7": {},
 	"armv5tel": {}, "armv5tejl": {}, "armv6l": {}, "armv6hl": {}, "armv7l": {}, "armv7hl": {}, "armv7hnl": {},
 	"aarch64": {}, "sh3": {}, "sh4": {}, "sh4a": {}, "noarch": {},
+}
+
+// yumRequestedArchitectures mirrors salt.utils.pkg.rpm.ARCHES.  Unlike the
+// parser's architecture set, ARCHES intentionally excludes the noarch
+// package marker.
+var yumRequestedArchitectures = map[string]struct{}{
+	"x86_64": {}, "x86_64_v2": {}, "athlon": {}, "amd64": {}, "ia32e": {}, "ia64": {}, "geode": {},
+	"i386": {}, "i486": {}, "i586": {}, "i686": {},
+	"ppc": {}, "ppc64": {}, "ppc64le": {}, "ppc64iseries": {}, "ppc64pseries": {},
+	"s390": {}, "s390x": {},
+	"alpha": {}, "alphaev4": {}, "alphaev45": {}, "alphaev5": {}, "alphaev56": {}, "alphapca56": {}, "alphaev6": {}, "alphaev67": {}, "alphaev68": {}, "alphaev7": {},
+	"armv5tel": {}, "armv5tejl": {}, "armv6l": {}, "armv6hl": {}, "armv7l": {}, "armv7hl": {}, "armv7hnl": {},
+	"aarch64": {}, "sh3": {}, "sh4": {}, "sh4a": {},
 }
 
 func yumArch(name string) (string, bool) {
@@ -104,6 +118,23 @@ func yumParseArch(name string) map[string]any {
 	return map[string]any{"name": name[:len(name)-len(arch)-1], "arch": arch}
 }
 
+// yumRecordNameArch follows yumpkg._yum_pkginfo's record parsing. Unlike the
+// public parse_arch operation, record parsing treats every final-dot suffix as
+// an architecture; rpm.resolve_name then retains unknown architectures.
+func yumRecordNameArch(value, osarch string) (string, string) {
+	if i := strings.LastIndexByte(value, '.'); i >= 0 {
+		return value[:i], value[i+1:]
+	}
+	return value, osarch
+}
+
+func yumResolvedRecordName(base, arch, osarch string) string {
+	if arch == "" {
+		return base
+	}
+	return yumNormalizeName(base+"."+arch, osarch)
+}
+
 // yumVersionCmp implements the pure-Python fallback used by Salt's
 // salt.utils.pkg.rpm.evr_compare. The pinned source does not validate version
 // strings before parsing them: version_to_evr supplies empty/fallback fields,
@@ -132,6 +163,119 @@ func yumVersionCmp(pkg1, pkg2 string, ignoreEpoch bool) int {
 		return c
 	}
 	return rpmVerCmp(r1, r2)
+}
+
+// yumLooseVersionCmp is the equivalent of Salt's versions.LooseVersion
+// used by yumpkg._yum_pkginfo. The pinned implementation inherits
+// distutils.LooseVersion's tokenizer: runs of ASCII digits, lowercase ASCII
+// letters, and dots are matched; dots are separators and unmatched runs are
+// retained as string components. Numeric tokens are parsed as integers,
+// converted to decimal,
+// then zfilled to width 8. If either version has a string component, the
+// resulting string-token lists are compared lexicographically (the Salt
+// override's Python-3-safe _str_version path); otherwise numeric ordering is
+// used. Provider commands enforce yumUpgradeOutputLimit before this parser is
+// called, so comparison remains bounded without changing LooseVersion values.
+func yumLooseVersionCmp(left, right string) int {
+	l, lHasString := yumLooseVersionParts(left)
+	r, rHasString := yumLooseVersionParts(right)
+	if !lHasString && !rHasString {
+		return yumLooseNumericPartsCmp(l, r)
+	}
+	for i := 0; i < len(l) && i < len(r); i++ {
+		if l[i] < r[i] {
+			return -1
+		}
+		if l[i] > r[i] {
+			return 1
+		}
+	}
+	if len(l) < len(r) {
+		return -1
+	}
+	if len(l) > len(r) {
+		return 1
+	}
+	return 0
+}
+
+func yumLooseNumericPartsCmp(left, right []string) int {
+	for i := 0; i < len(left) && i < len(right); i++ {
+		l, r := strings.TrimLeft(left[i], "0"), strings.TrimLeft(right[i], "0")
+		if l == "" {
+			l = "0"
+		}
+		if r == "" {
+			r = "0"
+		}
+		if len(l) != len(r) {
+			if len(l) < len(r) {
+				return -1
+			}
+			return 1
+		}
+		if l < r {
+			return -1
+		}
+		if l > r {
+			return 1
+		}
+	}
+	if len(left) < len(right) {
+		return -1
+	}
+	if len(left) > len(right) {
+		return 1
+	}
+	return 0
+}
+
+func yumLooseVersionParts(version string) ([]string, bool) {
+	parts := make([]string, 0, 8)
+	hasString := false
+	for i := 0; i < len(version); {
+		c := version[i]
+		switch {
+		case c >= '0' && c <= '9':
+			start := i
+			for i < len(version) && version[i] >= '0' && version[i] <= '9' {
+				i++
+			}
+			n := strings.TrimLeft(version[start:i], "0")
+			if n == "" {
+				n = "0"
+			}
+			if len(n) < 8 {
+				n = strings.Repeat("0", 8-len(n)) + n
+			}
+			parts = append(parts, n)
+		case c >= 'a' && c <= 'z':
+			start := i
+			for i < len(version) && version[i] >= 'a' && version[i] <= 'z' {
+				i++
+			}
+			parts = append(parts, version[start:i])
+			hasString = true
+		case c == '.':
+			// The delimiter itself is discarded by component_re.split().
+			i++
+		default:
+			// Unmatched runs are retained as string components by
+			// distutils.LooseVersion (not discarded). This includes release
+			// punctuation and uppercase text.
+			start := i
+			for i < len(version) {
+				c = version[i]
+				if c == '.' || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') {
+					break
+				}
+				i++
+			}
+			parts = append(parts, version[start:i])
+			hasString = true
+		}
+	}
+	return parts, hasString
 }
 
 func yumSign(v int) int {
@@ -375,6 +519,10 @@ func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function
 		return nil, err
 	}
 	switch function {
+	case "list_upgrades":
+		return yumListUpgrades(ctx, rt, p.spec.manager, a)
+	case "upgrade_available":
+		return yumUpgradeAvailable(ctx, rt, p.spec.manager, a)
 	case "list_patches", "list_installed_patches":
 		return yumListPatches(ctx, rt, p.spec.manager, function == "list_installed_patches", a)
 	case "list_holds":
@@ -568,6 +716,11 @@ func validateYUMArgs(function string, a map[string]any) error {
 		allowed = map[string]bool{"pkg1": true, "pkg2": true, "ignore_epoch": true}
 	case "clean_metadata":
 		allowed = map[string]bool{"repo": true, "fromrepo": true, "enablerepo": true, "disablerepo": true, "branch": true, "disableexcludes": true, "setopt": true, "check_update": true}
+	case "list_upgrades", "upgrade_available":
+		allowed = map[string]bool{"refresh": true, "repo": true, "fromrepo": true, "enablerepo": true, "disablerepo": true, "branch": true, "disableexcludes": true, "setopt": true}
+		if function == "upgrade_available" {
+			allowed["name"] = true
+		}
 	case "list_holds":
 		allowed = map[string]bool{"pattern": true, "full": true}
 	case "list_patches":
@@ -694,7 +847,248 @@ func validateYUMArgs(function string, a map[string]any) error {
 			return errors.New(`argument "check_update" must be a boolean`)
 		}
 	}
+	if function == "upgrade_available" {
+		name, ok := yumStringArg(a, "name")
+		if !ok || name == "" {
+			return errors.New(`argument "name" must be a non-empty string`)
+		}
+		if err := validateYUMOption(name); err != nil {
+			return fmt.Errorf(`argument "name": %w`, err)
+		}
+	}
 	return nil
+}
+
+type yumPackageInfo struct {
+	name, base, arch, version, repoid string
+}
+
+// yumPkgInfo mirrors yumpkg._yum_pkginfo: output is tokenized as whitespace,
+// headers are removed only when they occupy a complete line, and incomplete
+// triples are ignored rather than invented.
+func yumPkgInfo(output, osarch string) []yumPackageInfo {
+	lines := strings.Split(output, "\n")
+	var tokens []string
+	for _, line := range lines {
+		lower := strings.ToLower(line)
+		switch lower {
+		case "installed packages", "available packages", "available upgrades", "updated packages", "upgraded packages":
+			continue
+		}
+		tokens = append(tokens, strings.Fields(line)...)
+	}
+	ret := make([]yumPackageInfo, 0, len(tokens)/3)
+	for i := 0; i+2 < len(tokens); i += 3 {
+		base, arch := yumRecordNameArch(tokens[i], osarch)
+		name := yumResolvedRecordName(base, arch, osarch)
+		ret = append(ret, yumPackageInfo{name: name, base: base, arch: arch, version: strings.TrimRight(tokens[i+1], "-"), repoid: strings.TrimLeft(tokens[i+2], "@")})
+	}
+	return ret
+}
+
+const yumInstalledQueryFormat = "%{NAME}_|-%{EPOCH}_|-%{VERSION}_|-%{RELEASE}_|-%{ARCH}_|-(none)_|-%{INSTALLTIME}\n"
+
+// yumInstalledPkgInfo is the bounded equivalent of rpm.parse_pkginfo for the
+// list_pkgs(versions_as_list=True) data needed by latest_version.  Keeping
+// records rather than reducing to one version is important for multilib and
+// parallel RPM installs.
+func yumInstalledPkgInfo(output, osarch string) []yumPackageInfo {
+	ret := []yumPackageInfo{}
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Split(line, "_|-")
+		if len(fields) != 7 {
+			continue
+		}
+		base, epoch, version, release, arch := fields[0], fields[1], fields[2], fields[3], fields[4]
+		if base == "" || arch == "" {
+			continue
+		}
+		if epoch == "(none)" || epoch == "" {
+			epoch = "0"
+		}
+		evr := epoch + ":" + version
+		if release != "" && release != "(none)" {
+			evr += "-" + release
+		}
+		ret = append(ret, yumPackageInfo{
+			name: yumResolvedRecordName(base, arch, osarch), base: base,
+			arch: arch, version: evr, repoid: fields[5],
+		})
+	}
+	return ret
+}
+
+// yumNameMatches mirrors latest_version's source comparison: the requested
+// name is not normalized, while each package record has already passed
+// through rpm.resolve_name in yumPkgInfo/yumInstalledPkgInfo.
+func yumNameMatches(info yumPackageInfo, requested string) bool {
+	return info.name == requested
+}
+
+func yumCandidateArchMatches(info yumPackageInfo, requested, osarch string) bool {
+	arch := yumRequestedArch(requested, osarch)
+	return info.arch == "noarch" || info.arch == arch ||
+		check32RPMArch(info.arch, osarch)
+}
+
+// yumRequestedArch mirrors yumpkg.latest_version's requested-name branch.
+// Unlike candidate records, an unknown final-dot suffix is not an explicit
+// architecture and therefore falls back to the machine architecture.
+func yumRequestedArch(requested, osarch string) string {
+	if arch, known := yumArch(requested); known {
+		if _, requestedArch := yumRequestedArchitectures[arch]; requestedArch {
+			return arch
+		}
+	}
+	return osarch
+}
+
+// check32RPMArch is the pinned rpm.check_32 rule: only two 32-bit x86/ARM
+// arches are compatible. The second argument is always the OS architecture,
+// matching yumpkg.latest_version's call to rpm.check_32(pkg.arch).
+func check32RPMArch(arch, osarch string) bool {
+	return (is32RPMArch(arch) && is32RPMArch(osarch)) || (is32ARMArch(arch) && is32ARMArch(osarch))
+}
+
+func yumRefresh(ctx context.Context, rt *runtime.Runtime, manager string, options []string, checkUpdate bool) error {
+	commands := [][]string{{manager, "--quiet", "--assumeyes", "clean", "expire-cache"}}
+	if checkUpdate {
+		update := []string{manager, "--quiet", "--assumeyes", "check-update"}
+		if yumRHEL7(rt) {
+			update = append(update, "--setopt=autocheck_running_kernel=false")
+		}
+		commands = append(commands, update)
+	}
+	for _, argv := range commands {
+		argv = append(argv, options...)
+		cmd := runtime.Command(argv...)
+		cmd.MaxStdoutBytes, cmd.MaxStderrBytes = yumUpgradeOutputLimit, yumUpgradeOutputLimit
+		res := rt.Runner.Run(ctx, cmd)
+		if res.Err != nil {
+			return res.Err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func yumListUpgrades(ctx context.Context, rt *runtime.Runtime, manager string, a map[string]any) (any, error) {
+	options, err := yumMetadataOptions(a)
+	if err != nil {
+		return nil, err
+	}
+	refresh, err := yumBoolArg(a, "refresh", true)
+	if err != nil {
+		return nil, err
+	}
+	if rt == nil || rt.Runner == nil || rt.Facts == nil {
+		return nil, errors.New("YUM list_upgrades requires a runner and facts")
+	}
+	if refresh {
+		if err := yumRefresh(ctx, rt, manager, options, false); err != nil {
+			return nil, err
+		}
+	}
+	action := "updates"
+	if manager == "dnf" || manager == "dnf5" {
+		action = "--upgrades"
+	}
+	argv := append([]string{manager, "--quiet"}, options...)
+	argv = append(argv, "list", action)
+	cmd := runtime.Command(argv...)
+	cmd.MaxStdoutBytes, cmd.MaxStderrBytes = yumUpgradeOutputLimit, yumUpgradeOutputLimit
+	res := rt.Runner.Run(ctx, cmd)
+	if res.Err != nil {
+		return nil, res.Err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	// yumpkg checks for "Error:" in the result mapping, which tests keys
+	// rather than stdout/stderr; therefore every completed result is parsed.
+	ret := map[string]string{}
+	for _, info := range yumPkgInfo(string(res.Stdout), rt.Facts.CPU().Arch) {
+		ret[info.name] = info.version
+	}
+	return ret, nil
+}
+
+func yumUpgradeAvailable(ctx context.Context, rt *runtime.Runtime, manager string, a map[string]any) (any, error) {
+	name, _ := yumStringArg(a, "name")
+	options, err := yumMetadataOptions(a)
+	if err != nil {
+		return nil, err
+	}
+	if rt == nil || rt.Runner == nil || rt.Facts == nil {
+		return nil, errors.New("YUM upgrade_available requires a runner and facts")
+	}
+	refresh, err := yumBoolArg(a, "refresh", true)
+	if err != nil {
+		return nil, err
+	}
+	if refresh {
+		if err := yumRefresh(ctx, rt, manager, options, true); err != nil {
+			return nil, err
+		}
+	}
+	// This query deliberately uses the same format as rpm.QUERYFORMAT and is
+	// parsed locally. The generic Provider.List contract intentionally reduces
+	// duplicates, which is not sufficient for RPM's multiple-installed-EVR
+	// semantics.
+	installedCmd := runtime.Command("rpm", "-qa", "--nodigest", "--nosignature", "--queryformat", yumInstalledQueryFormat)
+	installedCmd.MaxStdoutBytes, installedCmd.MaxStderrBytes = yumUpgradeOutputLimit, yumUpgradeOutputLimit
+	installedResult := rt.Runner.Run(ctx, installedCmd)
+	if installedResult.Err != nil {
+		return nil, installedResult.Err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	installed := yumInstalledPkgInfo(string(installedResult.Stdout), rt.Facts.CPU().Arch)
+	argv := append([]string{manager, "--quiet"}, options...)
+	argv = append(argv, "list", "available", name)
+	cmd := runtime.Command(argv...)
+	cmd.MaxStdoutBytes, cmd.MaxStderrBytes = yumUpgradeOutputLimit, yumUpgradeOutputLimit
+	res := rt.Runner.Run(ctx, cmd)
+	if res.Err != nil {
+		return nil, res.Err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	// latest_version explicitly discards the available list when the manager
+	// completed with a nonzero retcode. This differs from list_upgrades, whose
+	// source mapping-key check still permits parsing completed stdout.
+	if res.ExitCode != 0 {
+		return false, nil
+	}
+	updates := yumPkgInfo(string(res.Stdout), rt.Facts.CPU().Arch)
+	sort.SliceStable(updates, func(i, j int) bool {
+		return yumLooseVersionCmp(updates[i].version, updates[j].version) > 0
+	})
+	for _, candidate := range updates {
+		if !yumNameMatches(candidate, name) || !yumCandidateArchMatches(candidate, name, rt.Facts.CPU().Arch) {
+			continue
+		}
+		newer := true
+		installedForName := false
+		for _, current := range installed {
+			if !yumNameMatches(current, name) {
+				continue
+			}
+			installedForName = true
+			if yumVersionCmp(current.version, candidate.version, false) >= 0 {
+				newer = false
+				break
+			}
+		}
+		if newer || !installedForName {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // yumGroupDiff mirrors the pinned yumpkg.group_diff implementation: installed

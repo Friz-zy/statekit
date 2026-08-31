@@ -85,7 +85,7 @@ families:
         catalog_functions: 55
         public_functions: 39
         private_functions: 16
-        registered_public: 25
+        registered_public: 27
         pending_public:
             - pkg.diff
             - pkg.download
@@ -93,13 +93,11 @@ families:
             - pkg.hold
             - pkg.list_downloaded
             - pkg.list_repo_pkgs
-            - pkg.list_upgrades
             - pkg.modified
             - pkg.purge
             - pkg.unhold
             - pkg.update
             - pkg.upgrade
-            - pkg.upgrade_available
             - pkg.verify
         differential_scenarios:
             - pkgrepo.yum-repo-file-lifecycle
@@ -148,4 +146,4 @@ families:
 totals:
     catalog_functions: 261
     public_functions: 172
-    registered_public: 126
+    registered_public: 128

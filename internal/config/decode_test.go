@@ -264,6 +264,151 @@ type triStringArgs struct {
 	Password *string `statekit:"name=password"`
 }
 
+type triIntArgs struct {
+	CacheValidTime *int `statekit:"name=cache_valid_time"`
+}
+
+type triInt64Args struct {
+	Value *int64 `statekit:"name=value"`
+}
+
+func TestPointerIntegerArgumentNamesAndFlag(t *testing.T) {
+	names, err := ArgumentNames(triIntArgs{})
+	if err != nil || !reflect.DeepEqual(names, []string{"cache_valid_time"}) {
+		t.Fatalf("argument names=%v err=%v", names, err)
+	}
+	fs, err := NewFlagSet("integer", triIntArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fs.Lookup("cache_valid_time") == nil {
+		t.Fatal("*int must generate a CLI string flag")
+	}
+	normalized, err := NormalizeBoolArgs([]string{"--cache_valid_time", "0"}, triIntArgs{})
+	if err != nil || !reflect.DeepEqual(normalized, []string{"--cache_valid_time", "0"}) {
+		t.Fatalf("integer flag must not be normalized as bool: %v err=%v", normalized, err)
+	}
+	args := &triIntArgs{}
+	if err := Decode(args, nil, map[string]string{"cache_valid_time": "0"}); err != nil {
+		t.Fatalf("zero flag decode: %v", err)
+	}
+	if args.CacheValidTime == nil || *args.CacheValidTime != 0 {
+		t.Fatalf("explicit zero flag = %+v", args.CacheValidTime)
+	}
+}
+
+func TestPointerIntegerStructuredTriStateAndCoercion(t *testing.T) {
+	omitted := &triIntArgs{}
+	if err := Decode(omitted, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if omitted.CacheValidTime != nil {
+		t.Fatalf("omitted integer must stay nil, got %v", *omitted.CacheValidTime)
+	}
+	for _, tc := range []struct {
+		name  string
+		value any
+		want  int
+	}{
+		{"int", 15, 15},
+		{"int64", int64(16), 16},
+		{"float", float64(17), 17},
+		{"string", "18", 18},
+		{"zero", 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			args := &triIntArgs{}
+			if err := Decode(args, map[string]any{"cache_valid_time": tc.value}, nil); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if args.CacheValidTime == nil || *args.CacheValidTime != tc.want {
+				t.Fatalf("decoded = %+v, want %d", args.CacheValidTime, tc.want)
+			}
+		})
+	}
+	args := &triIntArgs{}
+	if err := Decode(args, map[string]any{"cache_valid_time": 1}, map[string]string{"cache_valid_time": "19"}); err != nil {
+		t.Fatalf("flag precedence: %v", err)
+	}
+	if args.CacheValidTime == nil || *args.CacheValidTime != 19 {
+		t.Fatalf("flag precedence = %+v", args.CacheValidTime)
+	}
+
+	args64 := &triInt64Args{}
+	if err := Decode(args64, map[string]any{"value": int64(1)}, nil); err != nil || args64.Value == nil || *args64.Value != 1 {
+		t.Fatalf("*int64 decode = %+v err=%v", args64.Value, err)
+	}
+}
+
+func TestPointerIntegerRejectsInvalidAndOverflow(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		value any
+	}{
+		{"fraction", 1.5},
+		{"wrong type", true},
+		{"string overflow", "9223372036854775808"},
+		{"float overflow", float64(9223372036854775808)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := Decode(&triInt64Args{}, map[string]any{"value": tc.value}, nil); err == nil {
+				t.Fatal("expected deterministic conversion error")
+			}
+		})
+	}
+	if err := Decode(&triIntArgs{}, nil, map[string]string{"cache_valid_time": "9223372036854775808"}); err == nil {
+		t.Fatal("overflowing integer flag must fail")
+	}
+}
+
+func TestStructuredIntegerNativeBoundsAndNarrowRange(t *testing.T) {
+	bits := reflect.TypeOf(int(0)).Bits()
+	max := int64(1<<(bits-1) - 1)
+	min := -max - 1
+	for _, tc := range []struct {
+		name  string
+		value int64
+		want  int
+	}{
+		{"max", max, int(max)},
+		{"min", min, int(min)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			args := &sampleArgs{}
+			if err := Decode(args, map[string]any{"name": "x", "retries": tc.value}, nil); err != nil {
+				t.Fatalf("decode %s: %v", tc.name, err)
+			}
+			if args.Retries != tc.want {
+				t.Fatalf("retries = %d, want %d", args.Retries, tc.want)
+			}
+		})
+	}
+
+	narrow := reflect.New(reflect.TypeOf(int8(0))).Elem()
+	if err := setIntScalar(narrow, 127); err != nil || narrow.Int() != 127 {
+		t.Fatalf("narrow max: value=%d err=%v", narrow.Int(), err)
+	}
+	narrow.SetInt(0)
+	if err := setIntScalar(narrow, -128); err != nil || narrow.Int() != -128 {
+		t.Fatalf("narrow min: value=%d err=%v", narrow.Int(), err)
+	}
+	for _, value := range []int64{128, -129} {
+		narrow.SetInt(0)
+		if err := setIntScalar(narrow, value); err == nil {
+			t.Fatalf("set narrow %d: expected overflow", value)
+		}
+		if narrow.Int() != 0 {
+			t.Fatalf("set narrow %d changed target to %d", value, narrow.Int())
+		}
+	}
+	if bits < 64 {
+		args := &sampleArgs{}
+		if err := Decode(args, map[string]any{"name": "x", "retries": int64(max) + 1}, nil); err == nil {
+			t.Fatal("int64-to-int overflow must fail")
+		}
+	}
+}
+
 func TestPointerStringTriState(t *testing.T) {
 	args := &triStringArgs{}
 	if err := Decode(args, nil, nil); err != nil {

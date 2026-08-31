@@ -115,7 +115,7 @@ func (f aptLongtailFunc) ArgsForProvider(providerName string) (any, error) {
 	return nil, &runtime.UnsupportedError{Kind: "provider", Name: providerName}
 }
 func (f aptLongtailFunc) ProviderArgsStrict() bool {
-	return f.name == "file_list" || f.name == "file_dict" || f.name == "info_installed" || f.name == "owner" || f.name == "clean_metadata" || f.name == "list_holds" || f.name == "services_need_restart" || f.name == "group_diff"
+	return f.name == "file_list" || f.name == "file_dict" || f.name == "info_installed" || f.name == "owner" || f.name == "clean_metadata" || f.name == "list_holds" || f.name == "services_need_restart" || f.name == "group_diff" || f.name == "list_upgrades" || f.name == "upgrade_available"
 }
 func (f aptLongtailFunc) ProviderCapabilities() []string {
 	if f.name == "group_diff" {
@@ -136,6 +136,9 @@ func (f aptLongtailFunc) ProviderCapabilities() []string {
 		if f.name == name {
 			return []string{"aptpkg", "yumpkg"}
 		}
+	}
+	if f.name == "list_upgrades" || f.name == "upgrade_available" {
+		return []string{"aptpkg", "yumpkg"}
 	}
 	if f.name == "version_cmp" {
 		return []string{"aptpkg", "yumpkg"}

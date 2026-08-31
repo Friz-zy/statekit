@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"reflect"
 	"sort"
 	"strconv"
@@ -93,10 +94,11 @@ func checkSupportedKind(t reflect.Type) error {
 	case reflect.Pointer:
 		// Pointer fields carry tri-state options: nil keeps the Salt
 		// function default when the caller omits the argument entirely.
-		if t.Elem().Kind() == reflect.Bool || t.Elem().Kind() == reflect.String {
+		if t.Elem().Kind() == reflect.Bool || t.Elem().Kind() == reflect.String ||
+			t.Elem().Kind() == reflect.Int || t.Elem().Kind() == reflect.Int64 {
 			return nil
 		}
-		return fmt.Errorf("unsupported pointer type *%s (only *bool, *string)", t.Elem())
+		return fmt.Errorf("unsupported pointer type *%s (only *bool, *string, *int, *int64)", t.Elem())
 	case reflect.Slice:
 		switch t.Elem().Kind() {
 		case reflect.String:
@@ -341,6 +343,17 @@ func assignFromFlag(field reflect.Value, name, raw string) error {
 		s := raw
 		field.Set(reflect.ValueOf(&s))
 		return nil
+	} else if field.Type().Elem().Kind() == reflect.Int || field.Type().Elem().Kind() == reflect.Int64 {
+		n, err := strconv.ParseInt(raw, 10, field.Type().Elem().Bits())
+		if err != nil {
+			return fmt.Errorf("argument %q: invalid integer %q", name, raw)
+		}
+		ptr := reflect.New(field.Type().Elem())
+		if err := setIntScalar(ptr.Elem(), n); err != nil {
+			return fmt.Errorf("argument %q: %w", name, err)
+		}
+		field.Set(ptr)
+		return nil
 	}
 	switch field.Kind() {
 	case reflect.Interface:
@@ -358,7 +371,9 @@ func assignFromFlag(field reflect.Value, name, raw string) error {
 		if err != nil {
 			return fmt.Errorf("argument %q: invalid integer %q", name, raw)
 		}
-		field.SetInt(n)
+		if err := setIntScalar(field, n); err != nil {
+			return fmt.Errorf("argument %q: %w", name, err)
+		}
 	case reflect.Float64:
 		f, err := strconv.ParseFloat(raw, 64)
 		if err != nil {
@@ -391,7 +406,8 @@ func splitList(raw string) []string {
 
 func assignFromValue(field reflect.Value, name string, v any) error {
 	if field.Kind() == reflect.Pointer &&
-		(field.Type().Elem().Kind() == reflect.Bool || field.Type().Elem().Kind() == reflect.String) {
+		(field.Type().Elem().Kind() == reflect.Bool || field.Type().Elem().Kind() == reflect.String ||
+			field.Type().Elem().Kind() == reflect.Int || field.Type().Elem().Kind() == reflect.Int64) {
 		tmp := reflect.New(field.Type().Elem()).Elem()
 		if err := assignFromValue(tmp, name, v); err != nil {
 			return err
@@ -430,7 +446,9 @@ func assignFromValue(field reflect.Value, name string, v any) error {
 		if err != nil {
 			return assignError(name, v, int64(0))
 		}
-		field.SetInt(n)
+		if err := setIntScalar(field, n); err != nil {
+			return fmt.Errorf("argument %q: %w", name, err)
+		}
 	case reflect.Float64:
 		f, err := toFloatScalar(v)
 		if err != nil {
@@ -554,7 +572,8 @@ func toIntScalar(v any) (int64, error) {
 	case int64:
 		return t, nil
 	case float64:
-		if t != float64(int64(t)) {
+		if math.IsNaN(t) || math.IsInf(t, 0) || t != math.Trunc(t) ||
+			t < -9223372036854775808 || t >= 9223372036854775808 {
 			return 0, fmt.Errorf("not an integer")
 		}
 		return int64(t), nil
@@ -563,6 +582,18 @@ func toIntScalar(v any) (int64, error) {
 	default:
 		return 0, fmt.Errorf("not an integer")
 	}
+}
+
+func setIntScalar(field reflect.Value, n int64) error {
+	bits := field.Type().Bits()
+	if bits < 64 {
+		max := int64(1<<(bits-1) - 1)
+		if n < -max-1 || n > max {
+			return fmt.Errorf("integer overflow")
+		}
+	}
+	field.SetInt(n)
+	return nil
 }
 
 func toFloatScalar(v any) (float64, error) {
