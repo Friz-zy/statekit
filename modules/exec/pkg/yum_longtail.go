@@ -50,6 +50,23 @@ type YumListUpgradesArgs struct {
 	Setopt          any     `statekit:"name=setopt"`
 }
 
+// YumListRepoPkgsArgs mirrors yumpkg.list_repo_pkgs. Repository selectors and
+// setopt retain Salt's scalar-or-list inputs; optional booleans are pointers so
+// omission remains distinct from an explicit false at the provider boundary.
+// Repo, disableexcludes, and branch are the supported _get_options kwargs.
+type YumListRepoPkgsArgs struct {
+	Packages        []string `statekit:"name=packages"`
+	Fromrepo        any      `statekit:"name=fromrepo"`
+	Repo            *string  `statekit:"name=repo"`
+	Enablerepo      any      `statekit:"name=enablerepo"`
+	Disablerepo     any      `statekit:"name=disablerepo"`
+	Byrepo          *bool    `statekit:"name=byrepo"`
+	Cacheonly       *bool    `statekit:"name=cacheonly"`
+	Disableexcludes *string  `statekit:"name=disableexcludes"`
+	Branch          *string  `statekit:"name=branch"`
+	Setopt          any      `statekit:"name=setopt"`
+}
+
 type YumUpgradeAvailableArgs struct {
 	Name            string  `statekit:"required"`
 	Refresh         *bool   `statekit:"name=refresh"`
@@ -131,6 +148,8 @@ func YumPrototype(name string) (any, bool) {
 		return YumCleanMetadataArgs{}, true
 	case "list_upgrades":
 		return YumListUpgradesArgs{}, true
+	case "list_repo_pkgs":
+		return YumListRepoPkgsArgs{}, true
 	case "upgrade_available":
 		return YumUpgradeAvailableArgs{}, true
 	case "list_holds":

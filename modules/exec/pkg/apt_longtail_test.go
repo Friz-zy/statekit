@@ -1094,7 +1094,7 @@ func TestAPTLongtailCapabilityRejectsYumOnlyFunctionsBeforeRunner(t *testing.T) 
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.name == "normalize_name" || tc.name == "parse_arch" || tc.name == "version_cmp" || tc.name == "file_list" || tc.name == "file_dict" || tc.name == "info_installed" || tc.name == "owner" || tc.name == "list_upgrades" || tc.name == "upgrade_available" || tc.name == "list_downloaded" || tc.name == "unhold" {
+			if tc.name == "normalize_name" || tc.name == "parse_arch" || tc.name == "version_cmp" || tc.name == "file_list" || tc.name == "file_dict" || tc.name == "info_installed" || tc.name == "owner" || tc.name == "list_repo_pkgs" || tc.name == "list_upgrades" || tc.name == "upgrade_available" || tc.name == "list_downloaded" || tc.name == "unhold" {
 				t.Skip("shared provider-aware function")
 			}
 			r := &aptFakeRunner{}

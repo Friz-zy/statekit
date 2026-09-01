@@ -85,12 +85,11 @@ families:
         catalog_functions: 55
         public_functions: 39
         private_functions: 16
-        registered_public: 33
+        registered_public: 34
         pending_public:
             - pkg.diff
             - pkg.download
             - pkg.group_install
-            - pkg.list_repo_pkgs
             - pkg.update
             - pkg.upgrade
         differential_scenarios:
@@ -140,4 +139,4 @@ families:
 totals:
     catalog_functions: 261
     public_functions: 172
-    registered_public: 134
+    registered_public: 135

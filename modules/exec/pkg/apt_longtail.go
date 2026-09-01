@@ -124,7 +124,7 @@ func (f aptLongtailFunc) ArgsForProvider(providerName string) (any, error) {
 	return nil, &runtime.UnsupportedError{Kind: "provider", Name: providerName}
 }
 func (f aptLongtailFunc) ProviderArgsStrict() bool {
-	return f.name == "purge" || f.name == "hold" || f.name == "unhold" || f.name == "file_list" || f.name == "file_dict" || f.name == "info_installed" || f.name == "owner" || f.name == "clean_metadata" || f.name == "list_holds" || f.name == "services_need_restart" || f.name == "group_diff" || f.name == "list_upgrades" || f.name == "upgrade_available" || f.name == "list_downloaded"
+	return f.name == "purge" || f.name == "hold" || f.name == "unhold" || f.name == "file_list" || f.name == "file_dict" || f.name == "info_installed" || f.name == "owner" || f.name == "clean_metadata" || f.name == "list_holds" || f.name == "list_repo_pkgs" || f.name == "services_need_restart" || f.name == "group_diff" || f.name == "list_upgrades" || f.name == "upgrade_available" || f.name == "list_downloaded"
 }
 func (f aptLongtailFunc) ProviderCapabilities() []string {
 	if f.name == "hold" || f.name == "unhold" {
@@ -159,6 +159,9 @@ func (f aptLongtailFunc) ProviderCapabilities() []string {
 		return []string{"aptpkg", "yumpkg"}
 	}
 	if f.name == "list_downloaded" {
+		return []string{"aptpkg", "yumpkg"}
+	}
+	if f.name == "list_repo_pkgs" {
 		return []string{"aptpkg", "yumpkg"}
 	}
 	for _, name := range []string{"file_list", "file_dict", "info_installed", "owner"} {

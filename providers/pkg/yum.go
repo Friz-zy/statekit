@@ -35,6 +35,7 @@ const yumModifiedOutputLimit = 1 << 20
 const yumDownloadedMetadataLimit = 4096
 const yumDownloadedPathLimit = 4096
 const yumPurgeOutputLimit = 1 << 20
+const yumRepoPkgsOutputLimit = 1 << 20
 
 var errYUMGroupNotFound = errors.New("YUM group not found")
 
@@ -522,6 +523,9 @@ func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function
 	if p.spec.manager == "zypper" && function == "purge" {
 		return nil, &runtime.UnsupportedError{Kind: "provider", Name: p.spec.manager}
 	}
+	if p.spec.manager == "zypper" && function == "list_repo_pkgs" {
+		return nil, &runtime.UnsupportedError{Kind: "provider", Name: p.spec.manager}
+	}
 	if p.spec.manager == "zypper" && (function == "hold" || function == "unhold") {
 		return nil, &runtime.UnsupportedError{Kind: "provider", Name: p.spec.manager}
 	}
@@ -577,6 +581,8 @@ func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function
 		return yumGroupDiff(ctx, rt, p, a)
 	case "clean_metadata":
 		return yumCleanMetadata(ctx, rt, p.spec.manager, a)
+	case "list_repo_pkgs":
+		return yumListRepoPkgs(ctx, rt, p.spec.manager, a)
 	case "file_list":
 		packages, root, err := yumFilesArgs(a)
 		if err != nil {
@@ -1448,6 +1454,8 @@ func validateYUMArgs(function string, a map[string]any) error {
 		allowed = map[string]bool{"pkg1": true, "pkg2": true, "ignore_epoch": true}
 	case "clean_metadata":
 		allowed = map[string]bool{"repo": true, "fromrepo": true, "enablerepo": true, "disablerepo": true, "branch": true, "disableexcludes": true, "setopt": true, "check_update": true}
+	case "list_repo_pkgs":
+		allowed = map[string]bool{"packages": true, "fromrepo": true, "repo": true, "enablerepo": true, "disablerepo": true, "byrepo": true, "cacheonly": true, "disableexcludes": true, "branch": true, "setopt": true}
 	case "list_upgrades", "upgrade_available":
 		allowed = map[string]bool{"refresh": true, "repo": true, "fromrepo": true, "enablerepo": true, "disablerepo": true, "branch": true, "disableexcludes": true, "setopt": true}
 		if function == "upgrade_available" {
@@ -1588,17 +1596,19 @@ func validateYUMArgs(function string, a map[string]any) error {
 			return errors.New(`argument "pattern" must be a string`)
 		}
 	}
-	for _, key := range []string{"repo", "fromrepo", "branch", "disableexcludes"} {
-		if v, present := a[key]; present && v != nil {
-			if _, ok := yumStringArg(a, key); !ok {
-				return fmt.Errorf("argument %q must be a string", key)
+	if function != "list_repo_pkgs" {
+		for _, key := range []string{"repo", "fromrepo", "branch", "disableexcludes"} {
+			if v, present := a[key]; present && v != nil {
+				if _, ok := yumStringArg(a, key); !ok {
+					return fmt.Errorf("argument %q must be a string", key)
+				}
 			}
 		}
-	}
-	for _, key := range []string{"enablerepo", "disablerepo", "setopt"} {
-		if v, present := a[key]; present && v != nil {
-			if _, err := yumStringListArg(a, key); err != nil {
-				return err
+		for _, key := range []string{"enablerepo", "disablerepo", "setopt"} {
+			if v, present := a[key]; present && v != nil {
+				if _, err := yumStringListArg(a, key); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -1977,6 +1987,557 @@ func yumPkgInfo(output, osarch string) []yumPackageInfo {
 		name := yumResolvedRecordName(base, arch, osarch)
 		ret = append(ret, yumPackageInfo{name: name, base: base, arch: arch, version: strings.TrimRight(tokens[i+1], "-"), repoid: strings.TrimLeft(tokens[i+2], "@")})
 	}
+	return ret
+}
+
+// yumRepoPkgRequest is the source-compatible, ordered view of
+// yumpkg.list_repo_pkgs inputs. The generic execution decoder intentionally
+// keeps repo selectors as union values; this projection applies the source's
+// scalar/list/comma rules without mutating the caller's argument map.
+type yumRepoPkgRequest struct {
+	packages    []string
+	fromrepo    []string
+	directRepos bool
+	enablerepo  []string
+	disablerepo []string
+	byrepo      bool
+	cacheonly   bool
+	options     []string
+}
+
+func yumListRepoPkgs(ctx context.Context, rt *runtime.Runtime, manager string, args map[string]any) (any, error) {
+	request, err := yumRepoPkgRequestFromArgs(args)
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if rt == nil || rt.Runner == nil {
+		return nil, &runtime.UnsupportedError{Kind: "function", Name: "pkg.list_repo_pkgs runner"}
+	}
+	if rt.Facts == nil {
+		return nil, &runtime.UnsupportedError{Kind: "function", Name: "pkg.list_repo_pkgs facts"}
+	}
+
+	repos := append([]string(nil), request.fromrepo...)
+	if !request.directRepos {
+		repos, err = yumListRepoPkgRepos(ctx, rt, request.enablerepo, request.disablerepo)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// yumpkg has two old-yum branches which synthesize repository results from
+	// installed/available output. This port supports repository-packages only
+	// and deliberately fails closed below 3.4.3. Adding the bounded legacy
+	// two-query parser is the upgrade path if those hosts become a requirement.
+	if manager == "yum" {
+		if err := yumListRepoPkgRequireModernYum(ctx, rt); err != nil {
+			return nil, err
+		}
+	}
+
+	results := newYumRepoPkgResults()
+	for _, repo := range repos {
+		if err := yumListRepoPkgRepoID(repo); err != nil {
+			return nil, err
+		}
+		argv := []string{manager, "--quiet"}
+		argv = append(argv, request.options...)
+		argv = append(argv, "--showduplicates", "repository-packages", repo, "list")
+		if request.cacheonly {
+			argv = append(argv, "-C")
+		}
+		argv = append(argv, request.packages...)
+
+		command := runtime.Command(argv...)
+		command.Shell = false
+		command.MaxStdoutBytes, command.MaxStderrBytes = yumRepoPkgsOutputLimit, yumRepoPkgsOutputLimit
+		out := rt.Runner.Run(ctx, command)
+		if out.Err != nil {
+			return nil, out.Err
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if out.StdoutTruncated || out.StderrTruncated || len(out.Stdout) > yumRepoPkgsOutputLimit || len(out.Stderr) > yumRepoPkgsOutputLimit {
+			return nil, process.ErrOutputLimit
+		}
+		// _call_yum is invoked with ignore_retcode=True. The source only skips a
+		// completed failing command when its stdout contains Error:, otherwise it
+		// parses stdout even with a nonzero retcode.
+		if out.ExitCode != 0 && strings.Contains(string(out.Stdout), "Error:") {
+			continue
+		}
+		for _, info := range yumPkgInfo(string(out.Stdout), rt.Facts.CPU().Arch) {
+			if len(request.packages) > 0 && !yumRepoPkgMatches(request.packages, info.name) {
+				continue
+			}
+			results.add(info.repoid, info.name, info.version)
+		}
+	}
+	return results.render(request.byrepo), nil
+}
+
+func yumRepoPkgRequestFromArgs(args map[string]any) (yumRepoPkgRequest, error) {
+	packages, err := yumRepoPkgPackages(args)
+	if err != nil {
+		return yumRepoPkgRequest{}, err
+	}
+	fromrepo, direct, err := yumRepoPkgFromrepo(args)
+	if err != nil {
+		return yumRepoPkgRequest{}, err
+	}
+	enablerepo, err := yumRepoPkgSelectors(args, "enablerepo")
+	if err != nil {
+		return yumRepoPkgRequest{}, err
+	}
+	disablerepo, err := yumRepoPkgSelectors(args, "disablerepo")
+	if err != nil {
+		return yumRepoPkgRequest{}, err
+	}
+	byrepo, err := yumBoolArg(args, "byrepo", false)
+	if err != nil {
+		return yumRepoPkgRequest{}, err
+	}
+	cacheonly, err := yumBoolArg(args, "cacheonly", false)
+	if err != nil {
+		return yumRepoPkgRequest{}, err
+	}
+	options, err := yumRepoPkgOptions(args)
+	if err != nil {
+		return yumRepoPkgRequest{}, err
+	}
+	return yumRepoPkgRequest{
+		packages: packages, fromrepo: fromrepo, directRepos: direct,
+		enablerepo: enablerepo, disablerepo: disablerepo,
+		byrepo: byrepo, cacheonly: cacheonly, options: options,
+	}, nil
+}
+
+func yumRepoPkgPackages(args map[string]any) ([]string, error) {
+	value, present := args["packages"]
+	if !present || value == nil {
+		return nil, nil
+	}
+	packages, ok := value.([]string)
+	if !ok {
+		return nil, errors.New(`argument "packages" must be a string list`)
+	}
+	ret := append([]string(nil), packages...)
+	for _, pattern := range ret {
+		if strings.IndexByte(pattern, 0) >= 0 || strings.IndexFunc(pattern, unicode.IsControl) >= 0 {
+			return nil, fmt.Errorf("invalid package glob %q", pattern)
+		}
+	}
+	return ret, nil
+}
+
+// yumRepoPkgFromrepo applies the legacy repo alias only when fromrepo is
+// omitted/falsey, matching _get_options. A direct repo vector preserves the
+// caller's order and deliberately bypasses discovery and enable/disable.
+func yumRepoPkgFromrepo(args map[string]any) ([]string, bool, error) {
+	if value, present := args["fromrepo"]; present && yumRepoPkgTruthy(value) {
+		values, err := yumRepoPkgInputList(value, true, false)
+		return values, true, err
+	}
+	if value, present := args["repo"]; present && yumRepoPkgTruthy(value) {
+		text, ok := yumRepoPkgString(value)
+		if !ok {
+			return nil, false, errors.New(`argument "repo" must be a string`)
+		}
+		values, err := yumRepoPkgInputList(text, true, false)
+		return values, true, err
+	}
+	return nil, false, nil
+}
+
+// yumRepoPkgSelectors models list_repo_pkgs' scalar comma splitting while
+// retaining list order. The source removes wildcard enable/disable selectors;
+// normalize surrounding whitespace first so every '*' form is consistently
+// removed before a repository command can be constructed.
+func yumRepoPkgSelectors(args map[string]any, key string) ([]string, error) {
+	value, present := args[key]
+	if !present || !yumRepoPkgTruthy(value) {
+		return nil, nil
+	}
+	values, err := yumRepoPkgInputList(value, true, true)
+	if err != nil {
+		return nil, fmt.Errorf("argument %q: %w", key, err)
+	}
+	ret := make([]string, 0, len(values))
+	for _, value := range values {
+		if strings.TrimSpace(value) == "*" {
+			continue
+		}
+		ret = append(ret, value)
+	}
+	return ret, nil
+}
+
+// yumRepoPkgInputList mirrors Salt's split_input behavior: scalar inputs are
+// comma-separated, list entries remain entries. Scalars are stringified like
+// the source's str(value) fallback so direct provider calls retain its public
+// scalar behavior without accepting mappings or arbitrary objects.
+func yumRepoPkgInputList(value any, splitScalar, trimList bool) ([]string, error) {
+	value = yumRepoPkgDereference(value)
+	if value == nil {
+		return nil, nil
+	}
+	if items, ok := yumRepoPkgSlice(value); ok {
+		ret := make([]string, 0, len(items))
+		for _, item := range items {
+			text, ok := yumRepoPkgString(item)
+			if !ok {
+				return nil, errors.New("must be a scalar or scalar list")
+			}
+			if trimList {
+				text = strings.TrimSpace(text)
+			}
+			ret = append(ret, text)
+		}
+		return ret, nil
+	}
+	text, ok := yumRepoPkgString(value)
+	if !ok {
+		return nil, errors.New("must be a scalar or scalar list")
+	}
+	if !splitScalar {
+		return []string{text}, nil
+	}
+	parts := strings.Split(text, ",")
+	ret := make([]string, 0, len(parts))
+	for _, part := range parts {
+		ret = append(ret, strings.TrimSpace(part))
+	}
+	return ret, nil
+}
+
+func yumRepoPkgOptions(args map[string]any) ([]string, error) {
+	options := []string{}
+	for _, key := range []string{"disableexcludes", "branch"} {
+		value, present := args[key]
+		if !present || !yumRepoPkgTruthy(value) {
+			continue
+		}
+		text, ok := yumRepoPkgString(value)
+		if !ok {
+			return nil, fmt.Errorf("argument %q must be a string", key)
+		}
+		if text == "" {
+			continue
+		}
+		if err := validateYUMOption(text); err != nil {
+			return nil, fmt.Errorf("argument %q: %w", key, err)
+		}
+		options = append(options, "--"+key+"="+text)
+	}
+	setopts, err := yumRepoPkgSetopts(args)
+	if err != nil {
+		return nil, err
+	}
+	for _, value := range setopts {
+		if err := validateYUMOption(value); err != nil {
+			return nil, fmt.Errorf("argument %q: %w", "setopt", err)
+		}
+		options = append(options, "--setopt="+value)
+	}
+	return options, nil
+}
+
+func yumRepoPkgSetopts(args map[string]any) ([]string, error) {
+	value, present := args["setopt"]
+	if !present || value == nil {
+		return nil, nil
+	}
+	// split_input splits only non-list values. A list element containing a
+	// comma stays one option, exactly like salt.utils.args.split_input.
+	return yumRepoPkgInputList(value, true, false)
+}
+
+func yumRepoPkgTruthy(value any) bool {
+	value = yumRepoPkgDereference(value)
+	if value == nil {
+		return false
+	}
+	v := reflect.ValueOf(value)
+	switch v.Kind() {
+	case reflect.Bool:
+		return v.Bool()
+	case reflect.String, reflect.Array, reflect.Slice, reflect.Map:
+		return v.Len() != 0
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return v.Int() != 0
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return v.Uint() != 0
+	case reflect.Float32, reflect.Float64:
+		return v.Float() != 0
+	default:
+		return true
+	}
+}
+
+func yumRepoPkgDereference(value any) any {
+	v := reflect.ValueOf(value)
+	for v.IsValid() && (v.Kind() == reflect.Interface || v.Kind() == reflect.Pointer) {
+		if v.IsNil() {
+			return nil
+		}
+		v = v.Elem()
+	}
+	if !v.IsValid() {
+		return nil
+	}
+	return v.Interface()
+}
+
+func yumRepoPkgSlice(value any) ([]any, bool) {
+	v := reflect.ValueOf(value)
+	if !v.IsValid() || (v.Kind() != reflect.Slice && v.Kind() != reflect.Array) {
+		return nil, false
+	}
+	ret := make([]any, v.Len())
+	for i := 0; i < v.Len(); i++ {
+		ret[i] = v.Index(i).Interface()
+	}
+	return ret, true
+}
+
+func yumRepoPkgString(value any) (string, bool) {
+	value = yumRepoPkgDereference(value)
+	if value == nil {
+		return "None", true
+	}
+	switch value := value.(type) {
+	case string:
+		return value, true
+	case bool:
+		if value {
+			return "True", true
+		}
+		return "False", true
+	case int:
+		return strconv.Itoa(value), true
+	case int8, int16, int32, int64:
+		return strconv.FormatInt(reflect.ValueOf(value).Int(), 10), true
+	case uint, uint8, uint16, uint32, uint64:
+		return strconv.FormatUint(reflect.ValueOf(value).Uint(), 10), true
+	case float32:
+		return strconv.FormatFloat(float64(value), 'g', -1, 32), true
+	case float64:
+		return strconv.FormatFloat(value, 'g', -1, 64), true
+	default:
+		return "", false
+	}
+}
+
+func yumListRepoPkgRepos(ctx context.Context, rt *runtime.Runtime, enabled, disabled []string) ([]string, error) {
+	if rt == nil || rt.Exec == nil || rt.FS == nil {
+		return nil, &runtime.UnsupportedError{Kind: "function", Name: "pkg.list_repo_pkgs repo discovery"}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	fn, exists := rt.Exec.Get("pkg.list_repos")
+	if !exists {
+		return nil, &runtime.UnsupportedError{Kind: "function", Name: "pkg.list_repo_pkgs repo discovery"}
+	}
+	prototype := fn.Args()
+	prototypeType := reflect.TypeOf(prototype)
+	if prototypeType == nil || prototypeType.Kind() != reflect.Struct {
+		return nil, &runtime.UnsupportedError{Kind: "function", Name: "pkg.list_repo_pkgs repo discovery"}
+	}
+	value, err := rt.Exec.Call(ctx, rt, "pkg.list_repos", reflect.New(prototypeType).Interface())
+	if err != nil {
+		return nil, err
+	}
+	repoDefinitions, ok := value.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("pkg.list_repo_pkgs: malformed pkg.list_repos result")
+	}
+	// pkg.list_repos returns a Go map. Sort its keys before projecting selected
+	// repos so command order never inherits randomized map iteration.
+	names := make([]string, 0, len(repoDefinitions))
+	for name := range repoDefinitions {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	repos := make([]string, 0, len(names))
+	for _, name := range names {
+		enabledValue, err := yumRepoPkgEnabled(repoDefinitions[name])
+		if err != nil {
+			return nil, fmt.Errorf("pkg.list_repo_pkgs: repository %q: %w", name, err)
+		}
+		if containsString(enabled, name) || (!containsString(disabled, name) && enabledValue) {
+			repos = append(repos, name)
+		}
+	}
+	return repos, nil
+}
+
+func yumRepoPkgEnabled(value any) (bool, error) {
+	if value == nil {
+		return false, errors.New("malformed definition")
+	}
+	var enabled any = "1"
+	switch repo := value.(type) {
+	case map[string]any:
+		if candidate, exists := repo["enabled"]; exists {
+			enabled = candidate
+		}
+	case map[string]string:
+		if candidate, exists := repo["enabled"]; exists {
+			enabled = candidate
+		}
+	default:
+		return false, errors.New("malformed definition")
+	}
+	text, ok := yumRepoPkgString(enabled)
+	if !ok {
+		return false, errors.New("malformed enabled value")
+	}
+	return text == "1", nil
+}
+
+func yumListRepoPkgRequireModernYum(ctx context.Context, rt *runtime.Runtime) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	command := runtime.Command("yum", "--version")
+	command.Shell = false
+	command.MaxStdoutBytes, command.MaxStderrBytes = yumRepoPkgsOutputLimit, yumRepoPkgsOutputLimit
+	result := rt.Runner.Run(ctx, command)
+	if result.Err != nil {
+		return result.Err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if result.StdoutTruncated || result.StderrTruncated || len(result.Stdout) > yumRepoPkgsOutputLimit || len(result.Stderr) > yumRepoPkgsOutputLimit {
+		return process.ErrOutputLimit
+	}
+	lines := sourceSplitLines(string(result.Stdout))
+	if len(lines) == 0 {
+		return &runtime.UnsupportedError{Kind: "function", Name: "pkg.list_repo_pkgs yum version detection"}
+	}
+	version := strings.TrimSpace(lines[0])
+	if version == "" || version[0] < '0' || version[0] > '9' {
+		return &runtime.UnsupportedError{Kind: "function", Name: "pkg.list_repo_pkgs yum version detection"}
+	}
+	if yumLooseVersionCmp(version, "3.4.3") < 0 {
+		return &runtime.UnsupportedError{Kind: "function", Name: "pkg.list_repo_pkgs legacy yum (< 3.4.3)"}
+	}
+	return nil
+}
+
+func yumListRepoPkgRepoID(repo string) error {
+	if repo == "" {
+		return errors.New("pkg.list_repo_pkgs: repository id must be non-empty")
+	}
+	if strings.HasPrefix(repo, "-") {
+		return errors.New("pkg.list_repo_pkgs: repository id must not begin with '-'")
+	}
+	if strings.IndexByte(repo, 0) >= 0 || strings.IndexFunc(repo, unicode.IsControl) >= 0 {
+		return errors.New("pkg.list_repo_pkgs: repository id contains control characters")
+	}
+	return nil
+}
+
+func yumRepoPkgMatches(patterns []string, name string) bool {
+	for _, pattern := range patterns {
+		if yumFnmatch(pattern, name) {
+			return true
+		}
+	}
+	return false
+}
+
+type yumRepoPkgResults struct {
+	repos     []yumRepoPkgRepoResults
+	repoIndex map[string]int
+}
+
+type yumRepoPkgRepoResults struct {
+	name         string
+	packages     []yumRepoPkgPackageResults
+	packageIndex map[string]int
+}
+
+type yumRepoPkgPackageResults struct {
+	name     string
+	versions []string
+	seen     map[string]struct{}
+}
+
+func newYumRepoPkgResults() *yumRepoPkgResults {
+	return &yumRepoPkgResults{repoIndex: map[string]int{}}
+}
+
+func (r *yumRepoPkgResults) add(repo, name, version string) {
+	repoIndex, exists := r.repoIndex[repo]
+	if !exists {
+		repoIndex = len(r.repos)
+		r.repoIndex[repo] = repoIndex
+		r.repos = append(r.repos, yumRepoPkgRepoResults{name: repo, packageIndex: map[string]int{}})
+	}
+	repoResults := &r.repos[repoIndex]
+	packageIndex, exists := repoResults.packageIndex[name]
+	if !exists {
+		packageIndex = len(repoResults.packages)
+		repoResults.packageIndex[name] = packageIndex
+		repoResults.packages = append(repoResults.packages, yumRepoPkgPackageResults{name: name, seen: map[string]struct{}{}})
+	}
+	packageResults := &repoResults.packages[packageIndex]
+	if _, exists := packageResults.seen[version]; exists {
+		return
+	}
+	packageResults.seen[version] = struct{}{}
+	packageResults.versions = append(packageResults.versions, version)
+}
+
+func (r *yumRepoPkgResults) render(byrepo bool) any {
+	if byrepo {
+		ret := make(map[string]map[string][]string, len(r.repos))
+		for _, repo := range r.repos {
+			packages := make(map[string][]string, len(repo.packages))
+			for _, pkg := range repo.packages {
+				packages[pkg.name] = yumRepoPkgSortedVersions(pkg.versions)
+			}
+			ret[repo.name] = packages
+		}
+		return ret
+	}
+
+	type aggregatePackage struct {
+		name     string
+		versions []string
+	}
+	ordered := []aggregatePackage{}
+	index := map[string]int{}
+	for _, repo := range r.repos {
+		for _, pkg := range repo.packages {
+			i, exists := index[pkg.name]
+			if !exists {
+				i = len(ordered)
+				index[pkg.name] = i
+				ordered = append(ordered, aggregatePackage{name: pkg.name})
+			}
+			ordered[i].versions = append(ordered[i].versions, pkg.versions...)
+		}
+	}
+	ret := make(map[string][]string, len(ordered))
+	for _, pkg := range ordered {
+		ret[pkg.name] = yumRepoPkgSortedVersions(pkg.versions)
+	}
+	return ret
+}
+
+func yumRepoPkgSortedVersions(versions []string) []string {
+	ret := append([]string(nil), versions...)
+	sort.SliceStable(ret, func(i, j int) bool {
+		return yumLooseVersionCmp(ret[i], ret[j]) > 0
+	})
 	return ret
 }
 
