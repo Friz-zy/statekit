@@ -191,6 +191,15 @@ func TestValidationsMirrorSaltMessages(t *testing.T) {
 }
 
 func TestArgvContracts(t *testing.T) {
+	savedLookPath := lookPath
+	lookPath = func(file string) (string, error) {
+		if file == "mkswap" || strings.HasPrefix(file, "mkfs.") {
+			return "/usr/sbin/" + file, nil
+		}
+		return savedLookPath(file)
+	}
+	t.Cleanup(func() { lookPath = savedLookPath })
+
 	rt, runner := newRT(map[string]process.CommandResult{
 		"sfdisk -T":                                   {Stdout: []byte("Id  Type\n82  Linux swap\n83  Linux\n")},
 		"partprobe -- /dev/sda":                       {Stdout: []byte("")},
