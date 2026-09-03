@@ -5,8 +5,11 @@ package hosts
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/friz-zy/statekit/internal/runtime"
@@ -14,7 +17,101 @@ import (
 
 func fsFileMode(m uint32) fs.FileMode { return fs.FileMode(m) }
 
-const hostsPath = "/etc/hosts"
+const (
+	defaultHostsPath = "/etc/hosts"
+
+	// HostsPathEnv is the explicit runtime override used by hermetic harnesses.
+	HostsPathEnv = "STATEKIT_HOSTS_PATH"
+
+	maxHostsPathLength = 4096
+	// FixtureHostsRoot is the immutable trust root for hermetic hosts overrides.
+	// It deliberately does not follow TMPDIR or any other ambient setting.
+	FixtureHostsRoot = "/tmp/statekit-fixtures"
+	// Hosts files are line-oriented configuration; cap configured files so an
+	// override cannot turn a small lookup into an unbounded read.
+	maxConfiguredHostsFileSize = 1 << 20
+)
+
+var (
+	errInvalidHostsPath      = errors.New("invalid hosts path")
+	errConfiguredHostsRead   = errors.New("hosts: configured hosts file unavailable")
+	errConfiguredHostsChange = errors.New("hosts: configured hosts file is read-only")
+)
+
+// ConfigureRuntime applies syntax/scope validation to the optional hosts-file
+// override. It intentionally performs no filesystem operation: all custom reads
+// are validated again at use and bound to descriptor/no-follow semantics.
+func ConfigureRuntime(rt *runtime.Runtime) error {
+	if rt == nil {
+		return errors.New("hosts: nil runtime")
+	}
+	configured := rt.Options.HostsPath
+	if configured == "" {
+		if value, ok := os.LookupEnv(HostsPathEnv); ok {
+			configured = value
+		}
+	}
+	if configured == "" {
+		return nil
+	}
+	if err := validateConfiguredHostsPath(configured); err != nil {
+		return fmt.Errorf("%s: %w", HostsPathEnv, err)
+	}
+	rt.Options.HostsPath = configured
+	return nil
+}
+
+func validateConfiguredHostsPath(name string) error {
+	if name == "" || len(name) > maxHostsPathLength ||
+		strings.IndexByte(name, 0) >= 0 || !filepath.IsAbs(name) || filepath.Clean(name) != name {
+		return errInvalidHostsPath
+	}
+	root := filepath.Clean(FixtureHostsRoot)
+	rel, err := filepath.Rel(root, name)
+	parentPrefix := ".." + string(filepath.Separator)
+	if err != nil || rel == "." || rel == ".." || filepath.IsAbs(rel) ||
+		strings.HasPrefix(rel, parentPrefix) {
+		return errInvalidHostsPath
+	}
+	return nil
+}
+
+func hostsFilePath(rt *runtime.Runtime) string {
+	if configuredHostsPath(rt) {
+		return rt.Options.HostsPath
+	}
+	return defaultHostsPath
+}
+
+func configuredHostsPath(rt *runtime.Runtime) bool {
+	return rt != nil && rt.Options.HostsPath != ""
+}
+
+// readHostsFile is the runtime boundary for fixture-only overrides. It preserves
+// the historical /etc/hosts read while requiring descriptor/no-follow semantics.
+func readHostsFile(rt *runtime.Runtime) ([]byte, error) {
+	if configuredHostsPath(rt) {
+		if err := validateConfiguredHostsPath(rt.Options.HostsPath); err != nil {
+			return nil, errConfiguredHostsRead
+		}
+		data, err := runtime.ReadFileBounded(rt.FS, rt.Options.HostsPath, maxConfiguredHostsFileSize)
+		if err != nil {
+			return nil, errConfiguredHostsRead
+		}
+		return data, nil
+	}
+	return rt.FS.ReadFile(defaultHostsPath)
+}
+
+// Custom writes are deliberately unsupported: FileSystem has no descriptor-
+// relative mutation API capable of binding validation and replacement. Fail
+// before any filesystem operation rather than claim race-safe fixture writes.
+func rejectConfiguredHostsChange(rt *runtime.Runtime) error {
+	if configuredHostsPath(rt) {
+		return errConfiguredHostsChange
+	}
+	return nil
+}
 
 type parsedHosts struct {
 	order []string // ip order of first appearance
@@ -60,7 +157,7 @@ type listFunc struct{}
 func (listFunc) Name() string { return "hosts.list_hosts" }
 func (listFunc) Args() any    { return ListArgs{} }
 func (listFunc) Execute(_ context.Context, rt *runtime.Runtime, _ any) (any, error) {
-	data, err := rt.FS.ReadFile(hostsPath)
+	data, err := readHostsFile(rt)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +180,10 @@ func (addFunc) Name() string { return "hosts.add_host" }
 func (addFunc) Args() any    { return AddArgs{} }
 func (addFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, error) {
 	a := args.(*AddArgs)
-	data, err := rt.FS.ReadFile(hostsPath)
+	if err := rejectConfiguredHostsChange(rt); err != nil {
+		return false, err
+	}
+	data, err := readHostsFile(rt)
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +198,7 @@ func (addFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, e
 	if len(names) == 0 {
 		return true, nil
 	}
-	mode := fileMode(rt, hostsPath)
+	mode := fileMode(rt, hostsFilePath(rt))
 	if ok {
 		all := append(existing, names...)
 		parsed.byIP[a.IP] = all
@@ -150,7 +250,10 @@ func (rmFunc) Name() string { return "hosts.rm_host" }
 func (rmFunc) Args() any    { return RmArgs{} }
 func (rmFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, error) {
 	a := args.(*RmArgs)
-	data, err := rt.FS.ReadFile(hostsPath)
+	if err := rejectConfiguredHostsChange(rt); err != nil {
+		return false, err
+	}
+	data, err := readHostsFile(rt)
 	if err != nil {
 		return false, nil
 	}
@@ -173,7 +276,7 @@ func (rmFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, er
 		}
 		parsed.byIP[a.IP] = filtered
 	}
-	mode := fileMode(rt, hostsPath)
+	mode := fileMode(rt, hostsFilePath(rt))
 	return true, writeFile(rt, render(parsed), mode)
 }
 
@@ -187,8 +290,11 @@ func (getIPFunc) Name() string { return "hosts.get_ip" }
 func (getIPFunc) Args() any    { return GetIPArgs{} }
 func (getIPFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, error) {
 	a := args.(*GetIPArgs)
-	data, err := rt.FS.ReadFile(hostsPath)
+	data, err := readHostsFile(rt)
 	if err != nil {
+		if configuredHostsPath(rt) {
+			return "", err
+		}
 		return "", nil
 	}
 	parsed := parseHosts(string(data))
@@ -213,8 +319,11 @@ func (hasPairFunc) Name() string { return "hosts.has_pair" }
 func (hasPairFunc) Args() any    { return HasPairArgs{} }
 func (hasPairFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, error) {
 	a := args.(*HasPairArgs)
-	data, err := rt.FS.ReadFile(hostsPath)
+	data, err := readHostsFile(rt)
 	if err != nil {
+		if configuredHostsPath(rt) {
+			return false, err
+		}
 		return false, nil
 	}
 	parsed := parseHosts(string(data))
@@ -231,8 +340,11 @@ func (getAliasFunc) Name() string { return "hosts.get_alias" }
 func (getAliasFunc) Args() any    { return GetAliasArgs{} }
 func (getAliasFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, error) {
 	a := args.(*GetAliasArgs)
-	data, err := rt.FS.ReadFile(hostsPath)
+	data, err := readHostsFile(rt)
 	if err != nil {
+		if configuredHostsPath(rt) {
+			return []string{}, err
+		}
 		return []string{}, nil
 	}
 	parsed := parseHosts(string(data))
@@ -256,10 +368,14 @@ func (setHostFunc) Args() any    { return SetHostArgs{} }
 
 // setHost mirrors hosts.set_host: the first line matching the IP is
 // replaced, later duplicates are blanked, and an alias-less call removes
-// every entry for the IP.
-func setHost(rt *runtime.Runtime, ip, aliases, comment string) bool {
-	if _, err := rt.FS.Stat(hostsPath); err != nil {
-		return false
+// every entry for the IP. Salt compatibility reference: pinned
+// salt/modules/hosts.py:144-167.
+func setHost(rt *runtime.Runtime, ip, aliases, comment string) (bool, error) {
+	if err := rejectConfiguredHostsChange(rt); err != nil {
+		return false, err
+	}
+	if _, err := rt.FS.Stat(hostsFilePath(rt)); err != nil {
+		return false, nil
 	}
 	lineToAdd := ip + "\t\t" + aliases
 	if comment != "" {
@@ -268,9 +384,9 @@ func setHost(rt *runtime.Runtime, ip, aliases, comment string) bool {
 	if strings.TrimSpace(aliases) == "" {
 		lineToAdd = ""
 	}
-	data, err := rt.FS.ReadFile(hostsPath)
+	data, err := readHostsFile(rt)
 	if err != nil {
-		return false
+		return false, nil
 	}
 	lines := strings.Split(string(data), "\n")
 	overwritten := false
@@ -297,16 +413,16 @@ func setHost(rt *runtime.Runtime, ip, aliases, comment string) bool {
 		}
 		lines = append(lines, lineToAdd)
 	}
-	mode := fileMode(rt, hostsPath)
+	mode := fileMode(rt, hostsFilePath(rt))
 	if err := writeFile(rt, strings.Join(lines, "\n"), mode); err != nil {
-		return false
+		return false, nil
 	}
-	return true
+	return true, nil
 }
 
 func (setHostFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, error) {
 	a := args.(*SetHostArgs)
-	return setHost(rt, a.IP, a.Aliases, a.Comment), nil
+	return setHost(rt, a.IP, a.Aliases, a.Comment)
 }
 
 func fileMode(rt *runtime.Runtime, path string) fs.FileMode {
@@ -318,8 +434,11 @@ func fileMode(rt *runtime.Runtime, path string) fs.FileMode {
 }
 
 func writeFile(rt *runtime.Runtime, content string, mode fs.FileMode) error {
-	if err := rt.FS.WriteFile(hostsPath, []byte(content), mode); err != nil {
-		return fmt.Errorf("could not update %s: %w", hostsPath, err)
+	if err := rejectConfiguredHostsChange(rt); err != nil {
+		return err
+	}
+	if err := rt.FS.WriteFile(hostsFilePath(rt), []byte(content), mode); err != nil {
+		return fmt.Errorf("could not update %s: %w", hostsFilePath(rt), err)
 	}
 	return nil
 }

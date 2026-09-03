@@ -4,9 +4,11 @@ package integration
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +18,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/friz-zy/statekit/internal/bootstrap"
+	"github.com/friz-zy/statekit/internal/runtime"
+	exechosts "github.com/friz-zy/statekit/modules/exec/hosts"
 	"gopkg.in/yaml.v3"
 )
 
@@ -63,6 +68,7 @@ type fixture struct {
 	StderrContains []string       `yaml:"stderr-contains"`
 	JSON           map[string]any `yaml:"json"`
 	Tmpdir         bool           `yaml:"tmpdir"`
+	HostsFile      string         `yaml:"hosts-file"`
 }
 
 func loadFixtures(t *testing.T) []string {
@@ -115,6 +121,151 @@ func TestFixtures(t *testing.T) {
 	}
 }
 
+// fixtureProcessEnv constructs a deterministic child environment. Fixture
+// subprocesses receive only execution essentials; ambient override duplicates
+// and credential-bearing variables are never forwarded.
+func fixtureProcessEnv(ambient []string, hostsPath string) []string {
+	allowed := map[string]bool{
+		"PATH": true, "HOME": true, "LANG": true, "LC_ALL": true, "TZ": true,
+	}
+	values := make(map[string]string, len(allowed))
+	for _, entry := range ambient {
+		key, value, ok := strings.Cut(entry, "=")
+		if ok && allowed[key] {
+			values[key] = value
+		}
+	}
+	keys := []string{"PATH", "HOME", "LANG", "LC_ALL", "TZ"}
+	env := make([]string, 0, len(keys)+1)
+	for _, key := range keys {
+		if value, ok := values[key]; ok {
+			env = append(env, key+"="+value)
+		}
+	}
+	if hostsPath != "" {
+		env = append(env, exechosts.HostsPathEnv+"="+hostsPath)
+	}
+	return env
+}
+
+func TestFixtureProcessEnvFiltersAmbientAndDuplicates(t *testing.T) {
+	ambient := []string{
+		"HOME=/fixture-home",
+		"PATH=/first",
+		exechosts.HostsPathEnv + "=/ambient/not-owned",
+		"LANG=C",
+		"PATH=/last",
+		"CREDENTIAL_SHOULD_NOT_PASS=synthetic",
+	}
+	owned := filepath.Join(exechosts.FixtureHostsRoot, "fixture-owned", "hosts")
+	got := fixtureProcessEnv(ambient, owned)
+	want := []string{"PATH=/last", "HOME=/fixture-home", "LANG=C", exechosts.HostsPathEnv + "=" + owned}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("fixture environment = %#v, want %#v", got, want)
+	}
+
+	withoutOverride := fixtureProcessEnv(ambient, "")
+	for _, entry := range withoutOverride {
+		if strings.HasPrefix(entry, exechosts.HostsPathEnv+"=") {
+			t.Fatal("ambient hosts override survived filtering")
+		}
+	}
+}
+
+func fixtureHostsDir(t *testing.T) string {
+	t.Helper()
+	if err := os.Mkdir(exechosts.FixtureHostsRoot, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
+		t.Fatalf("create fixture root: %v", err)
+	}
+	info, err := os.Lstat(exechosts.FixtureHostsRoot)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0o700 {
+		t.Fatalf("unsafe fixture root")
+	}
+	dir, err := os.MkdirTemp(exechosts.FixtureHostsRoot, "integration-")
+	if err != nil {
+		t.Fatalf("create hosts fixture directory: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
+
+type buildRuntimeAuditFS struct {
+	*runtime.MemoryFS
+	rawReads     int
+	boundedReads int
+	stats        int
+	lstats       int
+	writes       int
+	renames      int
+	removes      int
+}
+
+func (a *buildRuntimeAuditFS) Stat(name string) (fs.FileInfo, error) {
+	a.stats++
+	return a.MemoryFS.Stat(name)
+}
+func (a *buildRuntimeAuditFS) Lstat(name string) (fs.FileInfo, error) {
+	a.lstats++
+	return a.MemoryFS.Lstat(name)
+}
+func (a *buildRuntimeAuditFS) ReadFile(name string) ([]byte, error) {
+	a.rawReads++
+	return a.MemoryFS.ReadFile(name)
+}
+func (a *buildRuntimeAuditFS) ReadFileBounded(name string, limit int64) ([]byte, error) {
+	a.boundedReads++
+	return a.MemoryFS.ReadFileBounded(name, limit)
+}
+func (a *buildRuntimeAuditFS) WriteFile(name string, data []byte, mode fs.FileMode) error {
+	a.writes++
+	return a.MemoryFS.WriteFile(name, data, mode)
+}
+func (a *buildRuntimeAuditFS) Rename(oldpath, newpath string) error {
+	a.renames++
+	return a.MemoryFS.Rename(oldpath, newpath)
+}
+func (a *buildRuntimeAuditFS) Remove(name string) error {
+	a.removes++
+	return a.MemoryFS.Remove(name)
+}
+
+func TestBuildRuntimeCustomHostsMutationsTouchNoFilesystem(t *testing.T) {
+	configured := filepath.Join(exechosts.FixtureHostsRoot, "nonexistent", "hosts-fixture-path-secret")
+	t.Setenv("TMPDIR", "/etc")
+	t.Setenv(exechosts.HostsPathEnv, configured)
+	rt, err := bootstrap.BuildRuntime()
+	if err != nil {
+		t.Fatalf("BuildRuntime syntax-only configuration: %v", err)
+	}
+
+	calls := []struct {
+		name     string
+		function string
+		args     any
+	}{
+		{"add", "hosts.add_host", &exechosts.AddArgs{IP: "127.0.0.2", Aliases: []string{"fixture"}}},
+		{"rm", "hosts.rm_host", &exechosts.RmArgs{IP: "127.0.0.1"}},
+		{"setHost", "hosts.set_host", &exechosts.SetHostArgs{IP: "127.0.0.1", Aliases: "fixture"}},
+	}
+	for _, tc := range calls {
+		t.Run(tc.name, func(t *testing.T) {
+			audit := &buildRuntimeAuditFS{MemoryFS: runtime.NewMemoryFS()}
+			rt.FS = audit
+			_, err := rt.Exec.Call(context.Background(), rt, tc.function, tc.args)
+			if err == nil || err.Error() != "hosts: configured hosts file is read-only" {
+				t.Fatalf("custom mutation error = %v", err)
+			}
+			if strings.Contains(err.Error(), configured) || strings.Contains(err.Error(), "fixture-path-secret") {
+				t.Fatalf("custom mutation error leaked configured path: %q", err)
+			}
+			if audit.rawReads != 0 || audit.boundedReads != 0 || audit.stats != 0 || audit.lstats != 0 ||
+				audit.writes != 0 || audit.renames != 0 || audit.removes != 0 {
+				t.Fatalf("custom mutation touched filesystem: %+v", audit)
+			}
+		})
+	}
+}
+
 func runFixture(t *testing.T, bin string, f fixture) {
 	t.Helper()
 	command := f.Command
@@ -135,7 +286,16 @@ func runFixture(t *testing.T, bin string, f fixture) {
 			f.JSON = substituted
 		}
 	}
+	var hostsPath string
+	if f.HostsFile != "" {
+		dir := fixtureHostsDir(t)
+		hostsPath = filepath.Join(dir, "hosts")
+		if err := os.WriteFile(hostsPath, []byte(f.HostsFile), 0o600); err != nil {
+			t.Fatalf("write hosts fixture: %v", err)
+		}
+	}
 	cmd := exec.Command(bin, command...)
+	cmd.Env = fixtureProcessEnv(os.Environ(), hostsPath)
 	cmd.Stdin = strings.NewReader(f.Stdin)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

@@ -63,6 +63,10 @@
       "type": "boolean",
       "description": "Allocate a fresh temp dir and substitute __TMPDIR__ tokens in command args and json expectations."
     },
+    "hosts-file": {
+      "type": "string",
+      "description": "Content for a hermetic hosts file supplied to the binary through its validated runtime hosts-path override."
+    },
     "salt": {
       "type": "object",
       "required": [

@@ -152,6 +152,9 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		Runner:    runner,
 		FS:        runtime.NewOSFileSystem(),
 	}
+	if err := exechosts.ConfigureRuntime(rt); err != nil {
+		return nil, err
+	}
 
 	if err := pkgprovider.Register(rt.Providers); err != nil {
 		return nil, err

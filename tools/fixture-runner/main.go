@@ -12,6 +12,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,6 +20,7 @@ import (
 	"sort"
 	"strings"
 
+	exechosts "github.com/friz-zy/statekit/modules/exec/hosts"
 	"gopkg.in/yaml.v3"
 )
 
@@ -32,6 +34,7 @@ type fixture struct {
 	StderrContains []string       `yaml:"stderr-contains"`
 	JSON           map[string]any `yaml:"json"`
 	Tmpdir         bool           `yaml:"tmpdir"`
+	HostsFile      string         `yaml:"hosts-file"`
 	RequiresRoot   bool           `yaml:"requires-root"`
 }
 
@@ -153,6 +156,44 @@ func inSuite(path, fixturesRoot string) bool {
 	return false
 }
 
+// fixtureProcessEnv constructs a deterministic child environment. Fixture
+// subprocesses receive only execution essentials; ambient override duplicates
+// and credential-bearing variables are never forwarded.
+func fixtureProcessEnv(ambient []string, hostsPath string) []string {
+	allowed := map[string]bool{
+		"PATH": true, "HOME": true, "LANG": true, "LC_ALL": true, "TZ": true,
+	}
+	values := make(map[string]string, len(allowed))
+	for _, entry := range ambient {
+		key, value, ok := strings.Cut(entry, "=")
+		if ok && allowed[key] {
+			values[key] = value
+		}
+	}
+	keys := []string{"PATH", "HOME", "LANG", "LC_ALL", "TZ"}
+	env := make([]string, 0, len(keys)+1)
+	for _, key := range keys {
+		if value, ok := values[key]; ok {
+			env = append(env, key+"="+value)
+		}
+	}
+	if hostsPath != "" {
+		env = append(env, exechosts.HostsPathEnv+"="+hostsPath)
+	}
+	return env
+}
+
+func makeHostsFixtureDir() (string, error) {
+	if err := os.Mkdir(exechosts.FixtureHostsRoot, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
+		return "", err
+	}
+	info, err := os.Lstat(exechosts.FixtureHostsRoot)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0o700 {
+		return "", errors.New("unsafe hosts fixture root")
+	}
+	return os.MkdirTemp(exechosts.FixtureHostsRoot, "runner-")
+}
+
 func runFixture(binPath, path string) result {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -192,8 +233,21 @@ func runFixture(binPath, path string) result {
 			f.JSON = substituted
 		}
 	}
+	var hostsPath string
+	if f.HostsFile != "" {
+		dir, err := makeHostsFixtureDir()
+		if err != nil {
+			return result{f.ID, false, fmt.Sprintf("hosts fixture tmpdir: %v", err)}
+		}
+		defer os.RemoveAll(dir)
+		hostsPath = filepath.Join(dir, "hosts")
+		if err := os.WriteFile(hostsPath, []byte(f.HostsFile), 0o600); err != nil {
+			return result{f.ID, false, fmt.Sprintf("write hosts fixture: %v", err)}
+		}
+	}
 
 	cmd := exec.Command(binPath, command...)
+	cmd.Env = fixtureProcessEnv(os.Environ(), hostsPath)
 	cmd.Stdin = strings.NewReader(f.Stdin)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

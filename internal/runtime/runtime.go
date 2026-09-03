@@ -298,6 +298,9 @@ type RuntimeOptions struct {
 	// Test is reserved for a process-wide dry-run default. Canonical test
 	// mode remains the per-state --test flag matching Salt's test=True.
 	Test bool
+	// HostsPath overrides the production hosts file when the runtime is
+	// explicitly configured. Empty selects /etc/hosts.
+	HostsPath string
 }
 
 // Command builds a shell-free argv command for the central Runner.

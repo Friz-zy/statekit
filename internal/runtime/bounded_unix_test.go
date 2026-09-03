@@ -1,4 +1,4 @@
-//go:build linux
+//go:build darwin || dragonfly || freebsd || linux || netbsd || openbsd || solaris
 
 package runtime
 
@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -65,16 +66,29 @@ func TestReadFileBoundedOSWalksComponentsAndRejectsSpecialFiles(t *testing.T) {
 	if _, err := readFileBoundedOS(fifo, 16); !errors.Is(err, ErrNonRegularFile) {
 		t.Fatalf("FIFO error = %v", err)
 	}
+}
 
-	device := filepath.Join(root, "device")
-	if err := unix.Mknod(device, unix.S_IFCHR|0o600, int(unix.Mkdev(1, 7))); err != nil {
-		if errors.Is(err, unix.EPERM) || errors.Is(err, unix.EACCES) {
-			t.Skipf("device creation unavailable: %v", err)
-		}
-		t.Fatal(err)
+func TestReadFileBoundedOSRejectsCharacterDeviceWithoutBlocking(t *testing.T) {
+	info, err := os.Lstat("/dev/null")
+	if err != nil {
+		t.Fatalf("lstat container character device: %v", err)
 	}
-	if _, err := readFileBoundedOS(device, 16); !errors.Is(err, ErrNonRegularFile) {
-		t.Fatalf("device error = %v", err)
+	if info.Mode().IsRegular() || info.Mode()&os.ModeCharDevice == 0 {
+		t.Fatalf("/dev/null mode = %v, want character device", info.Mode())
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := readFileBoundedOS("/dev/null", 16)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrNonRegularFile) {
+			t.Fatalf("character device error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("character device read blocked")
 	}
 }
 
