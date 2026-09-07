@@ -1664,7 +1664,8 @@ rows or counts.
 
 ##### 2026-09-07 current status
 
-R3.2/YUM long-tail is **complete**. Current HEAD is `f8d9e57` (R3.2t
+R3.2/YUM long-tail is **complete**. Current ledger HEAD is `e74896a`; last R3.2
+implementation commit is `f8d9e57` (R3.2t
 `pkg.diff`), and the independent senior gate **passed**. The earlier 15 phase
 rows remain recorded below; later implementation/remediation rows are added
 after them. Gate results below come from independent gate handoffs in this
