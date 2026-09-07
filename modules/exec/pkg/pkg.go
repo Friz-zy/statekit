@@ -174,6 +174,7 @@ func Register(reg *runtime.ExecRegistry) error {
 		modifiedFunc{},
 		yumPatchesFunc{}, yumPatchesFunc{installedOnly: true},
 		yumGroupListFunc{},
+		yumUpdateFunc{},
 		yumGroupInfoFunc{},
 		yumGroupInstallFunc{},
 	} {

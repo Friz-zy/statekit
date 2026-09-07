@@ -2,6 +2,7 @@ package pkg
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/friz-zy/statekit/internal/runtime"
@@ -79,6 +80,29 @@ type YumUpgradeAvailableArgs struct {
 	Setopt          any     `statekit:"name=setopt"`
 }
 
+// YumUpgradeArgs is the YUM/DNF-specific contract for pkg.upgrade and
+// pkg.update. Pointer booleans preserve an omitted source default separately
+// from explicit false; kwargs contains only source-style extra CLI options.
+type YumUpgradeArgs struct {
+	Name            *string        `statekit:"name=name"`
+	Pkgs            []any          `statekit:"name=pkgs"`
+	Refresh         *bool          `statekit:"name=refresh"`
+	CheckUpdate     *bool          `statekit:"name=check_update"`
+	SkipVerify      *bool          `statekit:"name=skip_verify"`
+	Normalize       *bool          `statekit:"name=normalize"`
+	Minimal         *bool          `statekit:"name=minimal"`
+	Obsoletes       *bool          `statekit:"name=obsoletes"`
+	DiffAttr        any            `statekit:"name=diff_attr"`
+	Repo            *string        `statekit:"name=repo"`
+	Fromrepo        *string        `statekit:"name=fromrepo"`
+	Enablerepo      any            `statekit:"name=enablerepo"`
+	Disablerepo     any            `statekit:"name=disablerepo"`
+	Disableexcludes *string        `statekit:"name=disableexcludes"`
+	Branch          *string        `statekit:"name=branch"`
+	Setopt          any            `statekit:"name=setopt"`
+	Kwargs          map[string]any `statekit:"name=kwargs"`
+}
+
 // YumListHoldsArgs mirrors yumpkg.list_holds. Pointers preserve whether the
 // caller supplied an optional value; the provider applies Salt's defaults.
 type YumListHoldsArgs struct {
@@ -154,6 +178,8 @@ func YumPrototype(name string) (any, bool) {
 		return YumListUpgradesArgs{}, true
 	case "list_repo_pkgs":
 		return YumListRepoPkgsArgs{}, true
+	case "upgrade", "update":
+		return YumUpgradeArgs{}, true
 	case "upgrade_available":
 		return YumUpgradeAvailableArgs{}, true
 	case "list_holds":
@@ -179,6 +205,46 @@ func YumPrototype(name string) (any, bool) {
 	default:
 		return nil, false
 	}
+}
+
+// yumUpdateFunc is a separate canonical YUM-only registration. Its source
+// default is obsoletes=False, while an explicit value is forwarded exactly.
+type yumUpdateFunc struct{}
+
+func (yumUpdateFunc) Name() string                   { return "pkg.update" }
+func (yumUpdateFunc) Args() any                      { return YumUpgradeArgs{} }
+func (yumUpdateFunc) ProviderKind() string           { return "pkg" }
+func (yumUpdateFunc) ProviderArgsStrict() bool       { return true }
+func (yumUpdateFunc) ProviderCapabilities() []string { return []string{"yumpkg"} }
+func (yumUpdateFunc) ArgsForProvider(providerName string) (any, error) {
+	switch providerName {
+	case "yum", "dnf", "dnf5":
+		return YumUpgradeArgs{}, nil
+	default:
+		return nil, &runtime.UnsupportedError{Kind: "provider", Name: providerName}
+	}
+}
+
+func (yumUpdateFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	if rt == nil || rt.Facts == nil || rt.Providers == nil {
+		return nil, errors.New("pkg.update requires a complete runtime")
+	}
+	p, err := pkgprovider.Resolve(rt)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := (yumUpdateFunc{}).ArgsForProvider(p.Name()); err != nil {
+		return nil, err
+	}
+	yp, ok := p.(pkgprovider.YumProvider)
+	if !ok {
+		return nil, pkgprovider.ErrUnsupportedYUM
+	}
+	argMap, err := mapArgs("pkg.update", args, YumUpgradeArgs{})
+	if err != nil {
+		return nil, err
+	}
+	return yp.Yum(ctx, rt, "update", argMap)
 }
 
 type yumPatchesFunc struct{ installedOnly bool }

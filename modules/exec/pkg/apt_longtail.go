@@ -2,6 +2,7 @@ package pkg
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -124,9 +125,12 @@ func (f aptLongtailFunc) ArgsForProvider(providerName string) (any, error) {
 	return nil, &runtime.UnsupportedError{Kind: "provider", Name: providerName}
 }
 func (f aptLongtailFunc) ProviderArgsStrict() bool {
-	return f.name == "purge" || f.name == "hold" || f.name == "unhold" || f.name == "file_list" || f.name == "file_dict" || f.name == "info_installed" || f.name == "owner" || f.name == "clean_metadata" || f.name == "list_holds" || f.name == "list_repo_pkgs" || f.name == "services_need_restart" || f.name == "group_diff" || f.name == "list_upgrades" || f.name == "upgrade_available" || f.name == "list_downloaded"
+	return f.name == "purge" || f.name == "hold" || f.name == "unhold" || f.name == "file_list" || f.name == "file_dict" || f.name == "info_installed" || f.name == "owner" || f.name == "clean_metadata" || f.name == "list_holds" || f.name == "list_repo_pkgs" || f.name == "services_need_restart" || f.name == "group_diff" || f.name == "upgrade" || f.name == "list_upgrades" || f.name == "upgrade_available" || f.name == "list_downloaded"
 }
 func (f aptLongtailFunc) ProviderCapabilities() []string {
+	if f.name == "upgrade" {
+		return []string{"aptpkg", "yumpkg"}
+	}
 	if f.name == "hold" || f.name == "unhold" {
 		return []string{"aptpkg", "yumpkg"}
 	}
@@ -172,6 +176,14 @@ func (f aptLongtailFunc) ProviderCapabilities() []string {
 	return []string{"aptpkg"}
 }
 func (f aptLongtailFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	if f.name == "upgrade" {
+		if rt == nil || rt.Facts == nil || rt.Providers == nil {
+			return nil, errors.New("pkg.upgrade requires a complete runtime")
+		}
+		if !pkgprovider.RunnerAvailable(rt.Runner) {
+			return nil, errors.New("pkg.upgrade requires a runner")
+		}
+	}
 	p, err := pkgprovider.Resolve(rt)
 	if err != nil {
 		return nil, err

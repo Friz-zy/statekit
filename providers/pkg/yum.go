@@ -580,6 +580,8 @@ func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function
 		return yumModified(ctx, rt, a)
 	case "list_downloaded":
 		return yumDownloaded(ctx, rt, p.spec.manager)
+	case "upgrade", "update":
+		return yumUpgrade(ctx, rt, p.spec.manager, function, a)
 	case "list_upgrades":
 		return yumListUpgrades(ctx, rt, p.spec.manager, a)
 	case "upgrade_available":
@@ -1481,6 +1483,8 @@ func validateYUMArgs(function string, a map[string]any) error {
 		allowed = map[string]bool{"repo": true, "fromrepo": true, "enablerepo": true, "disablerepo": true, "branch": true, "disableexcludes": true, "setopt": true, "check_update": true}
 	case "list_repo_pkgs":
 		allowed = map[string]bool{"packages": true, "fromrepo": true, "repo": true, "enablerepo": true, "disablerepo": true, "byrepo": true, "cacheonly": true, "disableexcludes": true, "branch": true, "setopt": true}
+	case "upgrade", "update":
+		allowed = map[string]bool{"name": true, "pkgs": true, "refresh": true, "check_update": true, "skip_verify": true, "normalize": true, "minimal": true, "obsoletes": true, "diff_attr": true, "repo": true, "fromrepo": true, "enablerepo": true, "disablerepo": true, "disableexcludes": true, "branch": true, "setopt": true, "kwargs": true}
 	case "list_upgrades", "upgrade_available":
 		allowed = map[string]bool{"refresh": true, "repo": true, "fromrepo": true, "enablerepo": true, "disablerepo": true, "branch": true, "disableexcludes": true, "setopt": true}
 		if function == "upgrade_available" {
@@ -1515,10 +1519,16 @@ func validateYUMArgs(function string, a map[string]any) error {
 	default:
 		return nil
 	}
-	for key := range a {
-		if !allowed[key] {
-			return fmt.Errorf("YUM function %q: unsupported argument %q", function, key)
+	for key, value := range a {
+		if allowed[key] {
+			continue
 		}
+		if function == "upgrade" || function == "update" {
+			if err := validateYUMUpgradeExtraOption(key, value); err == nil {
+				continue
+			}
+		}
+		return fmt.Errorf("YUM function %q: unsupported argument %q", function, key)
 	}
 	// group_install has scalar-or-list inputs and its refresh forwarding is
 	// validated before group lookups or any package-manager mutation.
@@ -1557,6 +1567,10 @@ func validateYUMArgs(function string, a map[string]any) error {
 		}
 	}
 	for _, key := range []string{"root", "attr", "pkg1", "pkg2", "name"} {
+		if key == "name" && (function == "upgrade" || function == "update") && yumUpgradeHasPackageTargets(a) {
+			// parse_targets checks a truthy pkgs branch before it inspects name.
+			continue
+		}
 		if v, present := a[key]; present && v != nil {
 			switch v.(type) {
 			case string, *string:
@@ -1674,6 +1688,21 @@ func validateYUMArgs(function string, a map[string]any) error {
 		case bool, *bool:
 		default:
 			return errors.New(`argument "check_update" must be a boolean`)
+		}
+	}
+	if function == "upgrade" || function == "update" {
+		for _, key := range []string{"refresh", "check_update", "skip_verify", "normalize", "minimal", "obsoletes"} {
+			if _, err := yumBoolArg(a, key, false); err != nil {
+				return err
+			}
+		}
+		if _, _, err := yumUpgradeDiffAttributes(a["diff_attr"]); err != nil {
+			return err
+		}
+		if value, present := a["kwargs"]; present && value != nil {
+			if err := validateYUMUpgradeKwargs(value); err != nil {
+				return err
+			}
 		}
 	}
 	if function == "upgrade_available" {
