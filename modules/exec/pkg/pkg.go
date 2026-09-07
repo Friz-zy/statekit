@@ -172,6 +172,7 @@ func Register(reg *runtime.ExecRegistry) error {
 		refreshDBFunc{}, versionFunc{}, listFunc{}, installFunc{}, removeFunc{}, latestVersionFunc{},
 		verifyFunc{},
 		downloadFunc{},
+		diffFunc{},
 		modifiedFunc{},
 		yumPatchesFunc{}, yumPatchesFunc{installedOnly: true},
 		yumGroupListFunc{},

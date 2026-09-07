@@ -543,6 +543,9 @@ func rpmAlnum(r rune) bool {
 func rpmSpecial(r rune) bool { return r == '~' || r == '^' }
 
 func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function string, args any) (any, error) {
+	if function == "diff" && (p.spec.manager == "apt" || p.spec.manager == "zypper") {
+		return nil, &runtime.UnsupportedError{Kind: "provider", Name: p.spec.manager}
+	}
 	if p.spec.manager == "zypper" && function == "purge" {
 		return nil, &runtime.UnsupportedError{Kind: "provider", Name: p.spec.manager}
 	}
@@ -580,6 +583,8 @@ func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function
 		return yumModified(ctx, rt, a)
 	case "download":
 		return yumDownload(ctx, rt, p.spec.manager, a)
+	case "diff":
+		return yumDiff(ctx, rt, p.spec.manager, a)
 	case "list_downloaded":
 		return yumDownloaded(ctx, rt, p.spec.manager)
 	case "upgrade", "update":
@@ -704,39 +709,7 @@ func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function
 		}
 		return map[string]any{"errors": errorsOut, "packages": ret}, nil
 	case "owner":
-		paths, root, err := yumOwnerArgs(a)
-		if err != nil {
-			return nil, err
-		}
-		if len(paths) == 0 {
-			return "", nil
-		}
-		ret := map[string]any{}
-		for _, file := range paths {
-			if strings.IndexByte(file, 0) >= 0 {
-				return nil, errors.New("argument path contains NUL")
-			}
-			cmd := []string{"rpm"}
-			if root != "" {
-				cmd = append(cmd, "--root", root)
-			}
-			cmd = append(cmd, "-qf", "--queryformat", "%{name}", file)
-			r := rt.Runner.Run(ctx, runtime.Command(cmd...))
-			if r.Err != nil {
-				return nil, r.Err
-			}
-			// cmd.run_stdout returns stdout independently of retcode. Salt then
-			// translates the rpm "not owned" diagnostic to an empty value.
-			if strings.Contains(strings.ToLower(string(r.Stdout)), "not owned") || r.ExitCode != 0 {
-				ret[file] = ""
-			} else {
-				ret[file] = string(r.Stdout)
-			}
-		}
-		if len(paths) == 1 {
-			return ret[paths[0]], nil
-		}
-		return ret, nil
+		return yumOwner(ctx, rt, a)
 	case "info_installed":
 		return yumInfoInstalled(ctx, rt, a)
 	case "normalize_name":
@@ -1475,6 +1448,8 @@ func validateYUMArgs(function string, a map[string]any) error {
 		allowed = map[string]bool{"packages": true, "root": true}
 	case "owner":
 		allowed = map[string]bool{"paths": true, "root": true}
+	case "diff":
+		allowed = map[string]bool{"paths": true}
 	case "info_installed":
 		allowed = map[string]bool{"names": true, "all_versions": true, "root": true, "attr": true}
 	case "normalize_name", "parse_arch":
@@ -4959,6 +4934,45 @@ func yumOwnerArgs(a map[string]any) ([]string, string, error) {
 	}
 	root, err := yumRoot(a)
 	return paths, root, err
+}
+
+// yumOwner keeps the pinned rpm_lowpkg.owner command and return shape in one
+// place so pkg.diff can use the exact lowpkg ownership result without adding a
+// second RPM-query implementation.
+func yumOwner(ctx context.Context, rt *runtime.Runtime, a map[string]any) (any, error) {
+	paths, root, err := yumOwnerArgs(a)
+	if err != nil {
+		return nil, err
+	}
+	if len(paths) == 0 {
+		return "", nil
+	}
+	ret := map[string]any{}
+	for _, file := range paths {
+		if strings.IndexByte(file, 0) >= 0 {
+			return nil, errors.New("argument path contains NUL")
+		}
+		cmd := []string{"rpm"}
+		if root != "" {
+			cmd = append(cmd, "--root", root)
+		}
+		cmd = append(cmd, "-qf", "--queryformat", "%{name}", file)
+		r := rt.Runner.Run(ctx, runtime.Command(cmd...))
+		if r.Err != nil {
+			return nil, r.Err
+		}
+		// cmd.run_stdout returns stdout independently of retcode. Salt then
+		// translates the rpm "not owned" diagnostic to an empty value.
+		if strings.Contains(strings.ToLower(string(r.Stdout)), "not owned") || r.ExitCode != 0 {
+			ret[file] = ""
+		} else {
+			ret[file] = string(r.Stdout)
+		}
+	}
+	if len(paths) == 1 {
+		return ret[paths[0]], nil
+	}
+	return ret, nil
 }
 func yumRoot(a map[string]any) (string, error) {
 	v, ok := a["root"]
