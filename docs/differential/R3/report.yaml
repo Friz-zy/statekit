@@ -85,10 +85,9 @@ families:
         catalog_functions: 55
         public_functions: 39
         private_functions: 16
-        registered_public: 37
+        registered_public: 38
         pending_public:
             - pkg.diff
-            - pkg.download
         differential_scenarios:
             - pkgrepo.yum-repo-file-lifecycle
             - pkgrepo.yum-copr-mapping
@@ -136,4 +135,4 @@ families:
 totals:
     catalog_functions: 261
     public_functions: 172
-    registered_public: 138
+    registered_public: 139

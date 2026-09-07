@@ -212,6 +212,12 @@ type Runner interface {
 	Run(ctx context.Context, cmd Command) CommandResult
 }
 
+// CommandAvailability is the optional, shell-free capability for checking a
+// helper before a command that relies on it mutates local state.
+type CommandAvailability interface {
+	CommandAvailable(name string) bool
+}
+
 // DefaultRunner is the production Runner backed by os/exec.
 type DefaultRunner struct {
 	model ShellModel
@@ -224,6 +230,12 @@ func NewRunner() *DefaultRunner { return &DefaultRunner{model: DefaultShellModel
 // NewRunnerWithModel overrides the shell model (platform portability tests,
 // cross-OS tooling).
 func NewRunnerWithModel(m ShellModel) *DefaultRunner { return &DefaultRunner{model: m} }
+
+// CommandAvailable resolves a helper without starting a process or a shell.
+func (DefaultRunner) CommandAvailable(name string) bool {
+	_, err := exec.LookPath(name)
+	return err == nil
+}
 
 // Run executes cmd without a shell unless Shell is explicitly set.
 func (r DefaultRunner) Run(ctx context.Context, c Command) CommandResult {

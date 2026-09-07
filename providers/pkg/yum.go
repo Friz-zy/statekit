@@ -578,6 +578,8 @@ func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function
 		return yumVerify(ctx, rt, p.spec.manager, a)
 	case "modified":
 		return yumModified(ctx, rt, a)
+	case "download":
+		return yumDownload(ctx, rt, p.spec.manager, a)
 	case "list_downloaded":
 		return yumDownloaded(ctx, rt, p.spec.manager)
 	case "upgrade", "update":
@@ -1512,6 +1514,8 @@ func validateYUMArgs(function string, a map[string]any) error {
 		allowed = map[string]bool{"names": true, "root": true, "verify_options": true, "ignore_types": true}
 	case "modified":
 		allowed = map[string]bool{"names": true, "root": true, "size": true, "mode": true, "checksum": true, "device": true, "symlink": true, "owner": true, "group": true, "time": true, "capabilities": true}
+	case "download":
+		allowed = map[string]bool{"packages": true}
 	case "list_downloaded":
 		// Salt's list_downloaded accepts **kwargs but does not consume any;
 		// keep this provider contract explicit rather than inventing root remapping.
