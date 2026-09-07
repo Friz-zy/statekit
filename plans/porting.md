@@ -1662,13 +1662,13 @@ The PTD tables below are retained as an immutable audit snapshot. These
 overrides are the current status and do not delete or rewrite any original
 rows or counts.
 
-##### 2026-08-31 current status
+##### 2026-09-07 current status
 
-R3.2/YUM long-tail is **in progress**, not closed. Current HEAD is `e4cc409`
-(R3.2k modified), and the independent senior gate **passed**. The R3 evidence
-set contains 15 committed phase evidence commits. Gate results below are from
-the corresponding independent gate handoffs in this execution session, not
-Git author metadata.
+R3.2/YUM long-tail is **complete**. Current HEAD is `f8d9e57` (R3.2t
+`pkg.diff`), and the independent senior gate **passed**. The earlier 15 phase
+rows remain recorded below; later implementation/remediation rows are added
+after them. Gate results below come from independent gate handoffs in this
+execution session, not Git author metadata.
 
 | Commit | Scope | Implementation executor role(s) | Independent gate | Result |
 |---|---|---|---|---|
@@ -1687,17 +1687,34 @@ Git author metadata.
 | `9e7fbc5` | R3.2i list_upgrades/upgrade_available plus optional integer config support | `backend-engineer-middle` + `software-engineer-middle` | `backend-engineer-senior` | passed |
 | `444dfd4` | R3.2j verify | `backend-engineer-middle` | `backend-engineer-senior` | passed |
 | `e4cc409` | R3.2k modified | `backend-engineer-middle` | `backend-engineer-senior` | passed |
+| `d252b9b` | Prior ledger update; not an implementation phase | `technical-writer-middle` | not applicable (documentation-only) | not counted |
+| `1348111` | R3.2l YUM `list_downloaded` | `backend-engineer-middle` | `backend-engineer-senior` | passed |
+| `8d9615e` | R3.2n shared `pkg.unhold` | `backend-engineer-middle` | `backend-engineer-senior` | passed |
+| `b9d7881` | R3.2o shared `pkg.purge` | `backend-engineer-lead` | `backend-engineer-senior` | passed |
+| `9c7a61a` | R3.2p YUM `list_repo_pkgs` | `backend-engineer-lead` | `backend-engineer-senior` | passed |
+| `a0a8168` | Partition integration test stabilization | `software-engineer-middle` | `qa-engineer-senior` | passed |
+| `7e93445` | Hosts fixture override security | `security-engineer-senior/lead` remediation | `security-architect-lead` | passed |
+| `525e1c9` | R3.2q YUM `group_install` | `backend-engineer-lead` | `backend-engineer-senior` | passed |
+| `7c833de` | R3.2r YUM `pkg.upgrade` + `pkg.update` | `backend-engineer-lead` + `backend-engineer-senior` fix | `backend-engineer-lead` | passed |
+| `41f0faa` | R3.2s YUM `pkg.download` | `backend-engineer-lead` | `backend-engineer-senior` | passed |
+| `f8d9e57` | R3.2t YUM `pkg.diff` | `backend-engineer-lead` | `backend-engineer-senior` | passed |
 
 The current report count is 1 (`docs/differential/R3/report.yaml`). The
 implementation uses no new Go dependencies and all temporary data is
 project-local under `$PWD/.gotmp` only; external directories are prohibited.
 
-Current R3 report: `aptpkg` 34 registered / 0 pending, `yumpkg` 29 registered
-/ 10 pending, `zypperpkg` 10 registered / 32 pending; total
-`registered_public` 130. Remaining YUM pending names are exactly: `pkg.diff`,
-`pkg.download`, `pkg.group_install`, `pkg.hold`, `pkg.list_downloaded`,
-`pkg.list_repo_pkgs`, `pkg.purge`, `pkg.unhold`, `pkg.update`, and
-`pkg.upgrade`.
+Current R3 report: `aptpkg` 34 registered / 0 pending, `yumpkg` 39 registered
+/ 0 pending, `zypperpkg` 10 registered / 32 pending; total
+`registered_public` 140. All 39 YUM public catalog functions are registered;
+no YUM entries remain pending. R3 overall remains in progress, not closed,
+because R3.3 Zypper has 32 pending public functions. Next stage: R3.3 Zypper
+long-tail; implementation and gate roles will be selected by the orchestrator
+by complexity.
+
+State environment controls: project code, tests, and builds run only in
+rootless Podman copies; the host workspace is not used for code execution;
+temporary build/test paths are inside containers (`/tmp` tmpfs) or project-local
+`.gotmp`; no new Go dependencies; no live package-manager mutation.
 
 | PTD ID / names | Current status | Evidence and explicit boundary |
 |---|---|---|
