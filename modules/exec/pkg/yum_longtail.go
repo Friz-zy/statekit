@@ -112,16 +112,20 @@ type YumListPatchesArgs struct {
 // takes no public arguments and always calls _get_patches(installed_only=True).
 type YumListInstalledPatchesArgs struct{}
 
-// YumGroupInfoArgs mirrors yumpkg.group_info. Optional pointers preserve
-// omission semantics at the provider boundary; repository selectors retain
-// Salt's string-or-string-list input shape.
-type YumGroupInfoArgs struct {
-	Name         string   `statekit:"required"`
-	Expand       *bool    `statekit:"name=expand"`
-	IgnoreGroups []string `statekit:"name=ignore_groups"`
-	Fromrepo     *string  `statekit:"name=fromrepo"`
-	Enablerepo   any      `statekit:"name=enablerepo"`
-	Disablerepo  any      `statekit:"name=disablerepo"`
+// YumGroupInfoArgs is shared with the YUM provider so group_install can call
+// the already registered pkg.group_info execution function without duplicating
+// group parsing or expansion behavior.
+type YumGroupInfoArgs = pkgprovider.YumGroupInfoArgs
+
+// YumGroupInstallArgs mirrors yumpkg.group_install. Name, skip, and include
+// retain scalar-or-list source forms. Refresh is the only currently modeled
+// pkg.install kwarg; unsupported kwargs are rejected at the registry boundary
+// rather than silently discarded by the YUM-only batch implementation.
+type YumGroupInstallArgs struct {
+	Name    any   `statekit:"required"`
+	Skip    any   `statekit:"name=skip"`
+	Include any   `statekit:"name=include"`
+	Refresh *bool `statekit:"name=refresh"`
 }
 
 // YumGroupDiffArgs mirrors yumpkg.group_diff. Unlike group_info, Salt's
@@ -164,6 +168,8 @@ func YumPrototype(name string) (any, bool) {
 		return YumListInstalledPatchesArgs{}, true
 	case "group_info":
 		return YumGroupInfoArgs{}, true
+	case "group_install":
+		return YumGroupInstallArgs{}, true
 	case "group_diff":
 		return YumGroupDiffArgs{}, true
 	case "services_need_restart":
@@ -282,4 +288,37 @@ func (yumGroupInfoFunc) Execute(ctx context.Context, rt *runtime.Runtime, args a
 		return nil, err
 	}
 	return yp.Yum(ctx, rt, "group_info", argMap)
+}
+
+type yumGroupInstallFunc struct{}
+
+func (yumGroupInstallFunc) Name() string         { return "pkg.group_install" }
+func (yumGroupInstallFunc) Args() any            { return YumGroupInstallArgs{} }
+func (yumGroupInstallFunc) ProviderKind() string { return "pkg" }
+func (yumGroupInstallFunc) ArgsForProvider(providerName string) (any, error) {
+	if providerName != "yum" && providerName != "dnf" && providerName != "dnf5" {
+		return nil, &runtime.UnsupportedError{Kind: "provider", Name: providerName}
+	}
+	return YumGroupInstallArgs{}, nil
+}
+func (yumGroupInstallFunc) ProviderArgsStrict() bool       { return true }
+func (yumGroupInstallFunc) ProviderCapabilities() []string { return []string{"yumpkg"} }
+func (yumGroupInstallFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	p, err := pkgprovider.Resolve(rt)
+	if err != nil {
+		return nil, err
+	}
+	prototype, err := (yumGroupInstallFunc{}).ArgsForProvider(p.Name())
+	if err != nil {
+		return nil, err
+	}
+	yp, ok := p.(pkgprovider.YumProvider)
+	if !ok {
+		return nil, pkgprovider.ErrUnsupportedYUM
+	}
+	argMap, err := mapArgs("pkg.group_install", args, prototype)
+	if err != nil {
+		return nil, err
+	}
+	return yp.Yum(ctx, rt, "group_install", argMap)
 }

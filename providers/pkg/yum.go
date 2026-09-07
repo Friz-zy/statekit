@@ -25,6 +25,18 @@ import (
 
 var ErrUnsupportedYUM = errors.New("YUM capability is not supported by this package provider")
 
+// YumGroupInfoArgs is the YUM-only cross-layer contract used by group_install
+// to call the already registered pkg.group_info function. Keeping this type in
+// the provider avoids widening the generic pkg.install or pkg.list_pkgs APIs.
+type YumGroupInfoArgs struct {
+	Name         string   `statekit:"required"`
+	Expand       *bool    `statekit:"name=expand"`
+	IgnoreGroups []string `statekit:"name=ignore_groups"`
+	Fromrepo     *string  `statekit:"name=fromrepo"`
+	Enablerepo   any      `statekit:"name=enablerepo"`
+	Disablerepo  any      `statekit:"name=disablerepo"`
+}
+
 const yumPatchesOutputLimit = 1 << 20
 const yumServicesOutputLimit = 1 << 20
 const yumGroupsOutputLimit = 1 << 20
@@ -35,6 +47,17 @@ const yumModifiedOutputLimit = 1 << 20
 const yumDownloadedMetadataLimit = 4096
 const yumDownloadedPathLimit = 4096
 const yumPurgeOutputLimit = 1 << 20
+const yumGroupInstallOutputLimit = 1 << 20
+
+const (
+	// group_install must remain one manager transaction, like yumpkg's
+	// install(pkgs=list(set(pkgs))). These limits keep the transaction's argv
+	// finite; raising them requires preserving that one-transaction guarantee,
+	// not silently chunking a group into multiple installs.
+	yumGroupInstallMaxGroups    = 256
+	yumGroupInstallMaxTargets   = 4096
+	yumGroupInstallMaxArgvBytes = 64 << 10
+)
 const yumRepoPkgsOutputLimit = 1 << 20
 
 var errYUMGroupNotFound = errors.New("YUM group not found")
@@ -577,6 +600,8 @@ func (p *commandProvider) Yum(ctx context.Context, rt *runtime.Runtime, function
 		return yumGroupList(ctx, rt, p.spec.manager)
 	case "group_info":
 		return yumGroupInfo(ctx, rt, p.spec.manager, a)
+	case "group_install":
+		return p.yumGroupInstall(ctx, rt, a)
 	case "group_diff":
 		return yumGroupDiff(ctx, rt, p, a)
 	case "clean_metadata":
@@ -1475,6 +1500,8 @@ func validateYUMArgs(function string, a map[string]any) error {
 		allowed = map[string]bool{}
 	case "group_info":
 		allowed = map[string]bool{"name": true, "expand": true, "ignore_groups": true, "fromrepo": true, "enablerepo": true, "disablerepo": true}
+	case "group_install":
+		allowed = map[string]bool{"name": true, "skip": true, "include": true, "refresh": true}
 	case "group_diff":
 		allowed = map[string]bool{"name": true, "fromrepo": true, "enablerepo": true, "disablerepo": true}
 	case "verify":
@@ -1492,6 +1519,11 @@ func validateYUMArgs(function string, a map[string]any) error {
 		if !allowed[key] {
 			return fmt.Errorf("YUM function %q: unsupported argument %q", function, key)
 		}
+	}
+	// group_install has scalar-or-list inputs and its refresh forwarding is
+	// validated before group lookups or any package-manager mutation.
+	if function == "group_install" {
+		return nil
 	}
 	for _, key := range []string{"packages", "paths", "names"} {
 		if v, present := a[key]; present && v != nil {
@@ -2788,6 +2820,350 @@ func yumGroupDiff(ctx context.Context, rt *runtime.Runtime, p *commandProvider, 
 		result[category] = got
 	}
 	return result, nil
+}
+
+// yumGroupInstall mirrors saltstack/salt/modules/yumpkg.py:2847-2937. It
+// deliberately calls the registered pkg.group_info function with expand left
+// unset, then performs the resulting YUM-only batch itself so the generic
+// pkg.install and pkg.list_pkgs contracts remain unchanged.
+func (p *commandProvider) yumGroupInstall(ctx context.Context, rt *runtime.Runtime, a map[string]any) (any, error) {
+	if rt == nil || rt.Exec == nil {
+		return nil, errors.New("YUM group_install requires an execution registry")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	groups, err := yumGroupInstallGroups(a["name"])
+	if err != nil {
+		return nil, err
+	}
+	if len(groups) > yumGroupInstallMaxGroups {
+		return nil, fmt.Errorf("pkg.group_install: group limit exceeded (%d)", yumGroupInstallMaxGroups)
+	}
+	skip, err := yumGroupInstallList(a["skip"], "skip")
+	if err != nil {
+		return nil, err
+	}
+	include, err := yumGroupInstallList(a["include"], "include")
+	if err != nil {
+		return nil, err
+	}
+	refresh, err := yumGroupInstallRefresh(a)
+	if err != nil {
+		return nil, err
+	}
+	for _, group := range groups {
+		if err := validateYUMGroupInstallGroup(group); err != nil {
+			return nil, fmt.Errorf("argument \"name\": %w", err)
+		}
+	}
+	skipSet := make(map[string]struct{}, len(skip))
+	for _, packageName := range skip {
+		if err := validateYUMGroupInstallPackage(packageName); err != nil {
+			return nil, fmt.Errorf("group_install package %q: %w", packageName, err)
+		}
+		skipSet[packageName] = struct{}{}
+	}
+	for _, packageName := range include {
+		if err := validateYUMGroupInstallPackage(packageName); err != nil {
+			return nil, fmt.Errorf("group_install package %q: %w", packageName, err)
+		}
+	}
+
+	targets := make([]string, 0)
+	for _, group := range groups {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		value, err := rt.Exec.Call(ctx, rt, "pkg.group_info", &YumGroupInfoArgs{Name: group})
+		if err != nil {
+			return nil, err
+		}
+		info, ok := value.(map[string]any)
+		if !ok {
+			return nil, errors.New("pkg.group_install: malformed pkg.group_info result")
+		}
+		mandatory, err := yumGroupInstallMembers(info, "mandatory")
+		if err != nil {
+			return nil, err
+		}
+		defaults, err := yumGroupInstallMembers(info, "default")
+		if err != nil {
+			return nil, err
+		}
+		targets = append(targets, mandatory...)
+		for _, packageName := range defaults {
+			if _, skipped := skipSet[packageName]; !skipped {
+				targets = append(targets, packageName)
+			}
+		}
+	}
+	targets = append(targets, include...)
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	installed, err := p.yumGroupInstallList(ctx, rt)
+	if err != nil {
+		return nil, err
+	}
+	unique := make(map[string]struct{}, len(targets))
+	for _, packageName := range targets {
+		if _, present := installed[packageName]; present {
+			continue
+		}
+		if err := validateYUMGroupInstallPackage(packageName); err != nil {
+			return nil, fmt.Errorf("pkg.group_install group member %q: %w", packageName, err)
+		}
+		unique[packageName] = struct{}{}
+	}
+	if len(unique) == 0 {
+		return map[string]any{}, nil
+	}
+	if len(unique) > yumGroupInstallMaxTargets {
+		return nil, fmt.Errorf("pkg.group_install: package target limit exceeded (%d)", yumGroupInstallMaxTargets)
+	}
+	// Salt passes list(set(pkgs)) to install. Preserve its membership and
+	// duplicate-elision semantics, but sort before argv construction because Go
+	// map iteration is nondeterministic and transactions must be reproducible.
+	resolved := make([]string, 0, len(unique))
+	for packageName := range unique {
+		resolved = append(resolved, packageName)
+	}
+	sort.Strings(resolved)
+	installArgv, err := p.yumGroupInstallArgv(resolved)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if rt.Options.Test {
+		// Execution functions have no Salt test-mode change envelope. Keep the
+		// natural no-change result after read-only resolution and never refresh
+		// or invoke the package manager in process-wide test mode.
+		return map[string]any{}, nil
+	}
+	// Salt's install(pkgs=...) refreshes after group resolution and filtering.
+	if refresh {
+		if _, err := yumGroupInstallRun(ctx, rt, p.spec.refresh); err != nil {
+			return nil, err
+		}
+	}
+	old, err := p.yumGroupInstallList(ctx, rt)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := yumGroupInstallRun(ctx, rt, installArgv); err != nil {
+		return nil, err
+	}
+	newer, err := p.yumGroupInstallList(ctx, rt)
+	if err != nil {
+		return nil, err
+	}
+	return yumGroupInstallChanges(old, newer), nil
+}
+
+func yumGroupInstallGroups(value any) ([]string, error) {
+	if value == nil {
+		return nil, errors.New("no groups specified")
+	}
+	var groups []string
+	switch value := value.(type) {
+	case string:
+		groups = strings.Split(value, ",")
+	case []string:
+		groups = append([]string(nil), value...)
+	case []any:
+		groups = make([]string, len(value))
+		for i, item := range value {
+			name, ok := item.(string)
+			if !ok {
+				return nil, errors.New("'groups' must be a list")
+			}
+			groups[i] = name
+		}
+	default:
+		return nil, errors.New("'groups' must be a list")
+	}
+	if len(groups) == 0 {
+		return nil, errors.New("no groups specified")
+	}
+	return groups, nil
+}
+
+func yumGroupInstallList(value any, name string) ([]string, error) {
+	if value == nil {
+		return []string{}, nil
+	}
+	switch value := value.(type) {
+	case string:
+		return strings.Split(value, ","), nil
+	case []string:
+		return append([]string(nil), value...), nil
+	case []any:
+		out := make([]string, len(value))
+		for i, item := range value {
+			item, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("'%s' must be a list", name)
+			}
+			out[i] = item
+		}
+		return out, nil
+	default:
+		return nil, fmt.Errorf("'%s' must be a list", name)
+	}
+}
+
+func yumGroupInstallRefresh(a map[string]any) (bool, error) {
+	value, present := a["refresh"]
+	if !present || value == nil {
+		return false, nil
+	}
+	switch value := value.(type) {
+	case bool:
+		return value, nil
+	case *bool:
+		if value == nil {
+			return false, nil
+		}
+		return *value, nil
+	default:
+		return false, errors.New(`argument "refresh" must be a boolean`)
+	}
+}
+
+func validateYUMGroupInstallGroup(value string) error {
+	if strings.HasPrefix(value, "-") {
+		return errors.New("group must not begin with '-'")
+	}
+	return validateYUMGroupToken(value)
+}
+
+func validateYUMGroupInstallPackage(value string) error {
+	if !validYUMPackageToken(value) {
+		return errors.New("package must be a non-empty token without whitespace or control characters")
+	}
+	if strings.HasPrefix(value, "-") {
+		return errors.New("package must not begin with '-'")
+	}
+	return nil
+}
+
+func yumGroupInstallMembers(info map[string]any, category string) ([]string, error) {
+	value, ok := info[category]
+	if !ok {
+		return nil, fmt.Errorf("pkg.group_install: malformed pkg.group_info %q", category)
+	}
+	members, ok := value.([]string)
+	if !ok {
+		return nil, fmt.Errorf("pkg.group_install: malformed pkg.group_info %q", category)
+	}
+	return append([]string(nil), members...), nil
+}
+
+func (p *commandProvider) yumGroupInstallList(ctx context.Context, rt *runtime.Runtime) (map[string]string, error) {
+	out, err := yumGroupInstallRun(ctx, rt, p.spec.listInstalled)
+	if err != nil {
+		return nil, err
+	}
+	packages := map[string]string{}
+	for _, line := range nonEmptyLines(out) {
+		name, version, ok := strings.Cut(line, " ")
+		if !ok {
+			continue
+		}
+		if _, seen := packages[name]; !seen {
+			packages[name] = strings.TrimSpace(version)
+		}
+	}
+	return packages, nil
+}
+
+func (p *commandProvider) yumGroupInstallArgv(names []string) ([]string, error) {
+	argv := make([]string, 0, len(p.spec.install)+len(names)-1)
+	bytes := 0
+	appendArg := func(arg string) error {
+		if len(arg) > yumGroupInstallMaxArgvBytes || bytes > yumGroupInstallMaxArgvBytes-len(arg)-1 {
+			return fmt.Errorf("pkg.group_install: install argv exceeds %d bytes", yumGroupInstallMaxArgvBytes)
+		}
+		argv = append(argv, arg)
+		bytes += len(arg) + 1
+		return nil
+	}
+	replaced := false
+	for _, arg := range p.spec.install {
+		if arg != "{name}" {
+			if err := appendArg(arg); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		replaced = true
+		for _, name := range names {
+			if err := appendArg(name); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if !replaced {
+		return nil, fmt.Errorf("%s install template has no package target", p.spec.manager)
+	}
+	return argv, nil
+}
+
+func yumGroupInstallRun(ctx context.Context, rt *runtime.Runtime, argv []string) (string, error) {
+	if rt == nil || rt.Runner == nil {
+		return "", errors.New("YUM group_install requires a runner")
+	}
+	if len(argv) == 0 {
+		return "", errors.New("YUM group_install requires a command")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	cmd := runtime.Command(argv...)
+	cmd.Shell = false
+	cmd.MaxStdoutBytes, cmd.MaxStderrBytes = yumGroupInstallOutputLimit, yumGroupInstallOutputLimit
+	result := rt.Runner.Run(ctx, cmd)
+	if result.Err != nil {
+		return "", result.Err
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if result.StdoutTruncated || result.StderrTruncated || len(result.Stdout) > yumGroupInstallOutputLimit || len(result.Stderr) > yumGroupInstallOutputLimit {
+		return "", process.ErrOutputLimit
+	}
+	if result.ExitCode != 0 {
+		return "", fmt.Errorf("%s exited with code %d: %s", argv[0], result.ExitCode, result.Stderr)
+	}
+	return string(result.Stdout), nil
+}
+
+func yumGroupInstallChanges(old, newer map[string]string) map[string]any {
+	changes := map[string]any{}
+	for name, previous := range old {
+		next, present := newer[name]
+		if !present || next != previous {
+			changes[name] = map[string]any{"old": previous, "new": next}
+		}
+	}
+	for name, next := range newer {
+		if _, present := old[name]; !present {
+			changes[name] = map[string]any{"old": "", "new": next}
+		}
+	}
+	return changes
 }
 
 // yumGroupList mirrors yumpkg.group_list. The command deliberately uses the

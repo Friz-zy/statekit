@@ -450,6 +450,111 @@ func TestYumGroupInfoRegistryProviderMatrix(t *testing.T) {
 	}
 }
 
+func TestYumGroupInstallRegistryProviderMatrix(t *testing.T) {
+	for _, manager := range []string{"yum", "dnf", "dnf5"} {
+		reg := runtime.NewExecRegistry()
+		if err := Register(reg); err != nil {
+			t.Fatal(err)
+		}
+		providers := runtime.NewProviderRegistry()
+		if err := pkgprovider.Register(providers); err != nil {
+			t.Fatal(err)
+		}
+		runner := &yumExecRecordingRunner{results: []process.CommandResult{
+			{Stdout: []byte("Group: Demo\nMandatory Packages:\n mandatory\nDefault Packages:\n default\n skip\n")},
+			{}, {}, {},
+			{Stdout: []byte("default 2\ninclude 2\nmandatory 2\n")},
+		}}
+		rt := &runtime.Runtime{
+			Facts:     facts.ForTesting(facts.Overrides{Package: manager, OS: &facts.OSFacts{Family: facts.FamilyRedHat}, CPU: &facts.CPUFacts{Arch: "x86_64"}}),
+			Exec:      reg,
+			Providers: providers,
+			Runner:    runner,
+		}
+
+		prototype, err := reg.ResolveArgs(rt, "pkg.group_install")
+		if err != nil || reflect.TypeOf(prototype) != reflect.TypeOf(YumGroupInstallArgs{}) || !reflect.DeepEqual(prototype, YumGroupInstallArgs{}) {
+			t.Fatalf("%s prototype=%#v (%T) err=%v", manager, prototype, prototype, err)
+		}
+		if fromPrototype, ok := YumPrototype("group_install"); !ok || reflect.TypeOf(fromPrototype) != reflect.TypeOf(YumGroupInstallArgs{}) {
+			t.Fatalf("%s YumPrototype=%#v ok=%t", manager, fromPrototype, ok)
+		}
+		if names, err := config.ArgumentNames(prototype); err != nil || !reflect.DeepEqual(names, []string{"include", "name", "refresh", "skip"}) {
+			t.Fatalf("%s names=%v err=%v", manager, names, err)
+		}
+		if caps := reg.ProviderCapabilities("pkg.group_install"); !reflect.DeepEqual(caps, []string{"yumpkg"}) {
+			t.Fatalf("%s capabilities=%v", manager, caps)
+		}
+		registered := 0
+		for _, name := range reg.Names() {
+			if name == "pkg.group_install" {
+				registered++
+			}
+		}
+		if registered != 1 {
+			t.Fatalf("%s group_install registrations=%d", manager, registered)
+		}
+
+		got, err := reg.Call(context.Background(), rt, "pkg.group_install", &YumGroupInstallArgs{Name: "Demo", Skip: "skip", Include: "include"})
+		want := map[string]any{
+			"default":   map[string]any{"old": "", "new": "2"},
+			"include":   map[string]any{"old": "", "new": "2"},
+			"mandatory": map[string]any{"old": "", "new": "2"},
+		}
+		if err != nil || !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s got=%#v err=%v", manager, got, err)
+		}
+		list := []string{"rpm", "-qa", "--qf", "%{NAME} %{VERSION}\n"}
+		wantArgv := [][]string{
+			{manager, "--quiet", "groupinfo", "Demo"},
+			list,
+			list,
+			{manager, "--assumeyes", "install", "default", "include", "mandatory"},
+			list,
+		}
+		if argv := commandArgv(runner.commands); !reflect.DeepEqual(argv, wantArgv) {
+			t.Fatalf("%s argv=%#v want=%#v", manager, argv, wantArgv)
+		}
+		for i, command := range runner.commands {
+			if command.Shell || command.MaxStdoutBytes != 1<<20 || command.MaxStderrBytes != 1<<20 {
+				t.Fatalf("%s command[%d]=%#v", manager, i, command)
+			}
+		}
+
+		wrongRunner := &yumExecNoCallRunner{}
+		rt.Runner = wrongRunner
+		if got, err := reg.Call(context.Background(), rt, "pkg.group_install", &AutoremoveArgs{}); got != nil || err == nil || wrongRunner.calls != 0 {
+			t.Fatalf("%s wrong pointer got=%#v err=%v calls=%d", manager, got, err, wrongRunner.calls)
+		}
+	}
+
+	for _, manager := range []string{"apt", "zypper"} {
+		reg := runtime.NewExecRegistry()
+		if err := Register(reg); err != nil {
+			t.Fatal(err)
+		}
+		providers := runtime.NewProviderRegistry()
+		if err := pkgprovider.Register(providers); err != nil {
+			t.Fatal(err)
+		}
+		runner := &yumExecNoCallRunner{}
+		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: manager}), Exec: reg, Providers: providers, Runner: runner}
+		if _, err := reg.ResolveArgs(rt, "pkg.group_install"); err == nil {
+			t.Fatalf("%s unexpectedly resolved pkg.group_install", manager)
+		} else {
+			var unsupported *runtime.UnsupportedError
+			if !errors.As(err, &unsupported) || unsupported.Kind != "provider" || unsupported.Name != manager {
+				t.Fatalf("%s resolve error=%T %v", manager, err, err)
+			}
+		}
+		got, err := reg.Call(context.Background(), rt, "pkg.group_install", &YumGroupInstallArgs{Name: "Demo"})
+		var unsupported *runtime.UnsupportedError
+		if got != nil || !errors.As(err, &unsupported) || unsupported.Kind != "provider" || unsupported.Name != manager || runner.calls != 0 {
+			t.Fatalf("%s got=%#v err=%T %v calls=%d", manager, got, err, err, runner.calls)
+		}
+	}
+}
+
 func TestYumGroupDiffRegistryProviderMatrix(t *testing.T) {
 	for _, manager := range []string{"yum", "dnf", "dnf5"} {
 		reg := runtime.NewExecRegistry()

@@ -175,6 +175,7 @@ func Register(reg *runtime.ExecRegistry) error {
 		yumPatchesFunc{}, yumPatchesFunc{installedOnly: true},
 		yumGroupListFunc{},
 		yumGroupInfoFunc{},
+		yumGroupInstallFunc{},
 	} {
 		if err := reg.Register(fn); err != nil {
 			return err
