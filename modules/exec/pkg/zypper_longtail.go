@@ -17,6 +17,17 @@ type ZypperUpgradeAvailableArgs struct {
 	Gpgautoimport *bool   `statekit:"name=gpgautoimport"`
 }
 
+// ZypperInfoAvailableArgs mirrors zypperpkg.info_available.  The source uses
+// variadic package names plus **kwargs; only kwargs with source-backed
+// repository refresh semantics are represented here.
+type ZypperInfoAvailableArgs struct {
+	Names         []string `statekit:"name=names"`
+	Refresh       *bool    `statekit:"name=refresh"`
+	Root          *string  `statekit:"name=root"`
+	Repos         any      `statekit:"name=repos"`
+	Gpgautoimport *bool    `statekit:"name=gpgautoimport"`
+}
+
 // ZypperVersionCmpArgs mirrors zypperpkg.version_cmp's source argument
 // names. It is provider-specific because aptpkg/yumpkg use pkg1/pkg2.
 type ZypperVersionCmpArgs struct {
@@ -76,6 +87,8 @@ func ZypperPrototype(name string) (any, bool) {
 		return ZypperListUpgradesArgs{}, true
 	case "upgrade_available":
 		return ZypperUpgradeAvailableArgs{}, true
+	case "info_available":
+		return ZypperInfoAvailableArgs{}, true
 	case "file_list", "file_dict":
 		return ZypperFilesArgs{}, true
 	case "info_installed":

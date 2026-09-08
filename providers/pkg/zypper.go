@@ -27,7 +27,7 @@ const (
 )
 
 // Zypper implements the explicitly ported zypperpkg functions. The six
-// lowpkg functions delegate to rpm through the central Runner. Upgrade queries
+// lowpkg functions delegate to rpm through the central Runner. Query functions
 // use zypper XML/text; unported long-tail functions remain unsupported rather
 // than being approximated through a generic RPM path.
 func (p *commandProvider) Zypper(ctx context.Context, rt *runtime.Runtime, function string, args any) (any, error) {
@@ -41,12 +41,26 @@ func (p *commandProvider) Zypper(ctx context.Context, rt *runtime.Runtime, funct
 	if !ok {
 		return nil, fmt.Errorf("Zypper function %q: malformed arguments", function)
 	}
+	// Salt returns before touching kwargs when no package names were supplied.
+	// Keep that boundary before validation so even malformed optional values do
+	// not cause a Runner or filesystem access on the empty-input path.
+	if function == "info_available" {
+		names, err := zypperPackageList(a, "names")
+		if err != nil {
+			return nil, err
+		}
+		if len(names) == 0 {
+			return map[string]any{}, nil
+		}
+	}
 	if err := validateZypperArgs(function, a); err != nil {
 		return nil, err
 	}
 	switch function {
 	case "list_upgrades", "upgrade_available":
 		return zypperUpgrades(ctx, rt, function, a)
+	case "info_available":
+		return zypperInfoAvailable(ctx, rt, a)
 	case "normalize_name":
 		return zypperNormalizeName(a["name"].(string), zypperOSArch(rt)), nil
 	case "parse_arch":
@@ -74,6 +88,9 @@ func zypperFunctionSupported(function string) bool {
 	if function == "list_upgrades" || function == "upgrade_available" {
 		return true
 	}
+	if function == "info_available" {
+		return true
+	}
 	if function == "normalize_name" || function == "parse_arch" || function == "version_cmp" {
 		return true
 	}
@@ -83,6 +100,9 @@ func zypperFunctionSupported(function string) bool {
 func validateZypperArgs(function string, args map[string]any) error {
 	if function == "list_upgrades" || function == "upgrade_available" {
 		return validateZypperUpgradeArgs(function, args)
+	}
+	if function == "info_available" {
+		return validateZypperInfoAvailableArgs(args)
 	}
 	allowed := map[string]bool{}
 	switch function {
