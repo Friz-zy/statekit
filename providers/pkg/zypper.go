@@ -61,6 +61,8 @@ func (p *commandProvider) Zypper(ctx context.Context, rt *runtime.Runtime, funct
 		return zypperUpgrades(ctx, rt, function, a)
 	case "info_available":
 		return zypperInfoAvailable(ctx, rt, a)
+	case "search":
+		return zypperSearch(ctx, rt, a)
 	case "normalize_name":
 		return zypperNormalizeName(a["name"].(string), zypperOSArch(rt)), nil
 	case "parse_arch":
@@ -88,7 +90,7 @@ func zypperFunctionSupported(function string) bool {
 	if function == "list_upgrades" || function == "upgrade_available" {
 		return true
 	}
-	if function == "info_available" {
+	if function == "info_available" || function == "search" {
 		return true
 	}
 	if function == "normalize_name" || function == "parse_arch" || function == "version_cmp" {
@@ -103,6 +105,9 @@ func validateZypperArgs(function string, args map[string]any) error {
 	}
 	if function == "info_available" {
 		return validateZypperInfoAvailableArgs(args)
+	}
+	if function == "search" {
+		return validateZypperSearchArgs(args)
 	}
 	allowed := map[string]bool{}
 	switch function {

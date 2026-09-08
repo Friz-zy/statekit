@@ -28,6 +28,27 @@ type ZypperInfoAvailableArgs struct {
 	Gpgautoimport *bool    `statekit:"name=gpgautoimport"`
 }
 
+// ZypperSearchArgs mirrors zypperpkg.search and keeps every search selector
+// explicit so the provider can reject unrecognized or mistyped options.
+type ZypperSearchArgs struct {
+	Criteria           string  `statekit:"required"`
+	Refresh            *bool   `statekit:"name=refresh"`
+	Root               *string `statekit:"name=root"`
+	Match              *string `statekit:"name=match"`
+	Provides           *bool   `statekit:"name=provides"`
+	Recommends         *bool   `statekit:"name=recommends"`
+	Requires           *bool   `statekit:"name=requires"`
+	Suggests           *bool   `statekit:"name=suggests"`
+	Conflicts          *bool   `statekit:"name=conflicts"`
+	Obsoletes          *bool   `statekit:"name=obsoletes"`
+	FileList           *bool   `statekit:"name=file_list"`
+	SearchDescriptions *bool   `statekit:"name=search_descriptions"`
+	CaseSensitive      *bool   `statekit:"name=case_sensitive"`
+	InstalledOnly      *bool   `statekit:"name=installed_only"`
+	NotInstalledOnly   *bool   `statekit:"name=not_installed_only"`
+	Details            *bool   `statekit:"name=details"`
+}
+
 // ZypperVersionCmpArgs mirrors zypperpkg.version_cmp's source argument
 // names. It is provider-specific because aptpkg/yumpkg use pkg1/pkg2.
 type ZypperVersionCmpArgs struct {
@@ -89,6 +110,8 @@ func ZypperPrototype(name string) (any, bool) {
 		return ZypperUpgradeAvailableArgs{}, true
 	case "info_available":
 		return ZypperInfoAvailableArgs{}, true
+	case "search":
+		return ZypperSearchArgs{}, true
 	case "file_list", "file_dict":
 		return ZypperFilesArgs{}, true
 	case "info_installed":
