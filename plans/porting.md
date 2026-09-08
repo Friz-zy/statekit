@@ -1662,6 +1662,34 @@ The PTD tables below are retained as an immutable audit snapshot. These
 overrides are the current status and do not delete or rewrite any original
 rows or counts.
 
+##### 2026-09-08 current status
+
+Current actual HEAD is `77c6b38`. R3.2/YUM is complete; R3.3/Zypper remains
+**in progress**. The R3.3 implementation and independent-gate ledger is:
+
+| Commit | Scope | Implementation executor role | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `8b65a10` | R3.3a Zypper pure `normalize_name`/`parse_arch`/`version_cmp` | `backend-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior/architect` | passed; scoped HUMAN exception `SDD-SANDBOX-CONTRACT-001` covered noncritical cgroup controls, with critical preflight intact |
+| `2c2c353` | R3.3b Zypper read-only RPM lowpkg surface: `file_list`/`file_dict`/`info_installed`/`modified`/`owner`/`verify` | `backend-engineer-senior` | `backend-engineer-lead` | passed; security hardening (`noscripts`/input/bounds) included |
+| `77c6b38` | R3.3c Zypper `list_upgrades`/`upgrade_available` | `backend-engineer-lead` | `backend-engineer-lead` | passed; pinned distinction between list-updates XML and `info -t package` preserved |
+
+Current R3 report: `aptpkg` 34 registered / 0 pending, `yumpkg` 39
+registered / 0 pending, `zypperpkg` 21 registered / 21 pending; total
+`registered_public` 151. The remaining Zypper pending names from the report
+are exactly: `pkg.clean_locks`, `pkg.diff`, `pkg.download`, `pkg.hold`,
+`pkg.info_available`, `pkg.list_downloaded`, `pkg.list_holds`,
+`pkg.list_installed_patches`, `pkg.list_installed_patterns`, `pkg.list_locks`,
+`pkg.list_patches`, `pkg.list_patterns`, `pkg.list_products`,
+`pkg.list_provides`, `pkg.list_repo_pkgs`, `pkg.purge`,
+`pkg.resolve_capabilities`, `pkg.search`, `pkg.services_need_restart`,
+`pkg.unhold`, and `pkg.upgrade`.
+
+Execution was Podman-only. The scoped HUMAN exception
+`SDD-SANDBOX-CONTRACT-001` covered noncritical cgroup controls; critical
+preflight and sandbox isolation remained intact, and no claim is made that
+cgroup limits were effective. No new dependencies were added and no live
+package-manager mutation was performed.
+
 ##### 2026-09-07 current status
 
 R3.2/YUM long-tail is **complete**. Current ledger HEAD is `e74896a`; last R3.2
