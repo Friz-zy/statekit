@@ -193,7 +193,7 @@ func TestYumUpgradeFunctionsRegistryMatrix(t *testing.T) {
 			if err != nil || reflect.TypeOf(prototype) != tc.want {
 				t.Fatalf("%s prototype=%T err=%v", tc.name, prototype, err)
 			}
-			if caps := reg.ProviderCapabilities(tc.name); !reflect.DeepEqual(caps, []string{"aptpkg", "yumpkg"}) {
+			if caps := reg.ProviderCapabilities(tc.name); !reflect.DeepEqual(caps, []string{"aptpkg", "yumpkg", "zypperpkg"}) {
 				t.Fatalf("%s capabilities=%v", tc.name, caps)
 			}
 			if tc.name == "pkg.list_upgrades" {
@@ -236,7 +236,7 @@ func TestYumUpgradeFunctionsRejectNonYumProvidersBeforeRunner(t *testing.T) {
 			{"pkg.list_upgrades", &YumListUpgradesArgs{}},
 			{"pkg.upgrade_available", &YumUpgradeAvailableArgs{Name: "foo"}},
 		} {
-			if _, err := reg.ResolveArgs(rt, tc.name); err == nil {
+			if _, err := reg.ResolveArgs(rt, tc.name); err == nil && manager != "zypper" {
 				t.Fatalf("%s/%s unexpectedly resolved", manager, tc.name)
 			}
 			if got, err := reg.Call(context.Background(), rt, tc.name, tc.args); got != nil || err == nil {

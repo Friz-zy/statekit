@@ -164,7 +164,7 @@ func (f aptLongtailFunc) ProviderCapabilities() []string {
 		}
 	}
 	if f.name == "list_upgrades" || f.name == "upgrade_available" {
-		return []string{"aptpkg", "yumpkg"}
+		return []string{"aptpkg", "yumpkg", "zypperpkg"}
 	}
 	if f.name == "version_cmp" {
 		return []string{"aptpkg", "yumpkg", "zypperpkg"}

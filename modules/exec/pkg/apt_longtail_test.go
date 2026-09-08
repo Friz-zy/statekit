@@ -145,10 +145,10 @@ func TestAPTUpgradeFunctionsRegistryContract(t *testing.T) {
 			}
 		}
 	}
-	if got := reg.ProviderCapabilities("pkg.list_upgrades"); !reflect.DeepEqual(got, []string{"aptpkg", "yumpkg"}) {
+	if got := reg.ProviderCapabilities("pkg.list_upgrades"); !reflect.DeepEqual(got, []string{"aptpkg", "yumpkg", "zypperpkg"}) {
 		t.Fatalf("list_upgrades capabilities=%v", got)
 	}
-	if got := reg.ProviderCapabilities("pkg.upgrade_available"); !reflect.DeepEqual(got, []string{"aptpkg", "yumpkg"}) {
+	if got := reg.ProviderCapabilities("pkg.upgrade_available"); !reflect.DeepEqual(got, []string{"aptpkg", "yumpkg", "zypperpkg"}) {
 		t.Fatalf("upgrade_available capabilities=%v", got)
 	}
 	refresh, dist := false, false
@@ -1326,7 +1326,7 @@ func TestUpgradeRegistryActualProviderMatrix(t *testing.T) {
 				t.Fatalf("arg names=%v err=%v", names, err)
 			}
 			wantCaps := []string{"aptpkg", "yumpkg"}
-			if tc.name == "pkg.file_list" || tc.name == "pkg.file_dict" || tc.name == "pkg.info_installed" || tc.name == "pkg.owner" {
+			if tc.name == "pkg.file_list" || tc.name == "pkg.file_dict" || tc.name == "pkg.info_installed" || tc.name == "pkg.owner" || tc.name == "pkg.list_upgrades" || tc.name == "pkg.upgrade_available" {
 				wantCaps = []string{"aptpkg", "yumpkg", "zypperpkg"}
 			}
 			if got := reg.ProviderCapabilities(tc.name); !reflect.DeepEqual(got, wantCaps) {
@@ -1395,10 +1395,10 @@ func TestUpgradeRegistryActualProviderMatrix(t *testing.T) {
 				if err := pkgprovider.Register(rt.Providers); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := reg.ResolveArgs(rt, name); !errors.As(err, new(*runtime.UnsupportedError)) {
+				if _, err := reg.ResolveArgs(rt, name); err != nil {
 					t.Fatalf("resolve err=%v", err)
 				}
-				if got, err := reg.Call(context.Background(), rt, name, &YumListUpgradesArgs{}); got != nil || !errors.As(err, new(*runtime.UnsupportedError)) || len(r.calls) != 0 {
+				if got, err := reg.Call(context.Background(), rt, name, &YumListUpgradesArgs{}); got != nil || err == nil || len(r.calls) != 0 {
 					t.Fatalf("call got=%#v err=%v calls=%d", got, err, len(r.calls))
 				}
 			})

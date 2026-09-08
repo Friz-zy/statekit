@@ -1,5 +1,22 @@
 package pkg
 
+type ZypperListUpgradesArgs struct {
+	Refresh       *bool   `statekit:"name=refresh"`
+	Root          *string `statekit:"name=root"`
+	Fromrepo      any     `statekit:"name=fromrepo"`
+	Repos         any     `statekit:"name=repos"`
+	Gpgautoimport *bool   `statekit:"name=gpgautoimport"`
+}
+
+type ZypperUpgradeAvailableArgs struct {
+	Name          string  `statekit:"required,name=name"`
+	Refresh       *bool   `statekit:"name=refresh"`
+	Root          *string `statekit:"name=root"`
+	Fromrepo      any     `statekit:"name=fromrepo"`
+	Repos         any     `statekit:"name=repos"`
+	Gpgautoimport *bool   `statekit:"name=gpgautoimport"`
+}
+
 // ZypperVersionCmpArgs mirrors zypperpkg.version_cmp's source argument
 // names. It is provider-specific because aptpkg/yumpkg use pkg1/pkg2.
 type ZypperVersionCmpArgs struct {
@@ -55,6 +72,10 @@ type ZypperVerifyArgs struct {
 // shared execution functions.
 func ZypperPrototype(name string) (any, bool) {
 	switch name {
+	case "list_upgrades":
+		return ZypperListUpgradesArgs{}, true
+	case "upgrade_available":
+		return ZypperUpgradeAvailableArgs{}, true
 	case "file_list", "file_dict":
 		return ZypperFilesArgs{}, true
 	case "info_installed":

@@ -27,9 +27,9 @@ const (
 )
 
 // Zypper implements the explicitly ported zypperpkg functions. The six
-// read-only functions delegate to rpm through the central Runner; all other
-// zypper long-tail functions remain unsupported rather than being
-// approximated through a generic RPM path.
+// lowpkg functions delegate to rpm through the central Runner. Upgrade queries
+// use zypper XML/text; unported long-tail functions remain unsupported rather
+// than being approximated through a generic RPM path.
 func (p *commandProvider) Zypper(ctx context.Context, rt *runtime.Runtime, function string, args any) (any, error) {
 	if p.spec.manager != "zypper" {
 		return nil, ErrUnsupportedZypper
@@ -45,6 +45,8 @@ func (p *commandProvider) Zypper(ctx context.Context, rt *runtime.Runtime, funct
 		return nil, err
 	}
 	switch function {
+	case "list_upgrades", "upgrade_available":
+		return zypperUpgrades(ctx, rt, function, a)
 	case "normalize_name":
 		return zypperNormalizeName(a["name"].(string), zypperOSArch(rt)), nil
 	case "parse_arch":
@@ -69,6 +71,9 @@ func (p *commandProvider) Zypper(ctx context.Context, rt *runtime.Runtime, funct
 }
 
 func zypperFunctionSupported(function string) bool {
+	if function == "list_upgrades" || function == "upgrade_available" {
+		return true
+	}
 	if function == "normalize_name" || function == "parse_arch" || function == "version_cmp" {
 		return true
 	}
@@ -76,6 +81,9 @@ func zypperFunctionSupported(function string) bool {
 }
 
 func validateZypperArgs(function string, args map[string]any) error {
+	if function == "list_upgrades" || function == "upgrade_available" {
+		return validateZypperUpgradeArgs(function, args)
+	}
 	allowed := map[string]bool{}
 	switch function {
 	case "normalize_name", "parse_arch":
