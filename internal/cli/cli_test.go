@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -102,7 +103,7 @@ func providerCLIAppWithFS(t *testing.T, manager string, runner *cliRecordingRunn
 }
 
 func TestProviderAwareCLIValidation(t *testing.T) {
-	for _, manager := range []string{"yum", "dnf"} {
+	for _, manager := range []string{"yum", "dnf", "zypper"} {
 		runner := &cliRecordingRunner{results: []process.CommandResult{
 			{ExitCode: 0, Stdout: []byte("LONGSIZE\n")},
 			{ExitCode: 0, Stdout: []byte("name: foo\nversion: 1\nrelease: 1\nedition: 1-1\n-----\n")},
@@ -139,6 +140,7 @@ func TestProviderAwareCLIValidation(t *testing.T) {
 		valid   bool
 	}{
 		{"yum", "pkg.file_list", true}, {"dnf", "pkg.owner", true},
+		{"zypper", "pkg.file_list", true}, {"zypper", "pkg.owner", true},
 		{"apt", "pkg.file_list", false}, {"apt", "pkg.owner", false},
 	} {
 		runner := &cliRecordingRunner{results: []process.CommandResult{{ExitCode: 0, Stdout: []byte("/x\n")}}}
@@ -154,6 +156,228 @@ func TestProviderAwareCLIValidation(t *testing.T) {
 		} else if code != ExitInvalidInput || len(runner.calls) != 0 {
 			t.Fatalf("%s %s accepted root: code=%d calls=%d", tc.manager, tc.command, code, len(runner.calls))
 		}
+	}
+}
+
+func TestZypperLowpkgCLIUsesProviderPrototypesBeforeExecution(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		args     []string
+		results  []process.CommandResult
+		calls    int
+		wantArgv []string
+	}{
+		{
+			name:     "pkg.modified",
+			args:     []string{"exec", "pkg.modified", "--packages", "demo"},
+			results:  []process.CommandResult{{ExitCode: 1, Stdout: []byte("......... /clean\n")}},
+			calls:    1,
+			wantArgv: []string{"rpm", "--noscripts", "-Va", "demo"},
+		},
+		{
+			name:     "pkg.verify",
+			args:     []string{"exec", "pkg.verify", "--names", "demo", "--verify-options", "nodigest"},
+			results:  []process.CommandResult{{ExitCode: 0}},
+			calls:    1,
+			wantArgv: []string{"rpm", "--nodigest", "--noscripts", "-V", "demo"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &cliRecordingRunner{results: tc.results}
+			code, _, errS := captureCode(t, providerCLIApp(t, "zypper", runner), append(tc.args, "-o", "json")...)
+			if code != ExitOK || errS != "" || len(runner.calls) != tc.calls {
+				t.Fatalf("code=%d err=%q calls=%d", code, errS, len(runner.calls))
+			}
+			if runner.calls[0].Shell || runner.calls[0].MaxStdoutBytes != 1<<20 || runner.calls[0].MaxStderrBytes != 1<<20 {
+				t.Fatalf("command=%#v", runner.calls[0])
+			}
+			if got := append([]string{runner.calls[0].Name}, runner.calls[0].Args...); !reflect.DeepEqual(got, tc.wantArgv) {
+				t.Fatalf("argv=%#v want=%#v", got, tc.wantArgv)
+			}
+		})
+	}
+	for _, args := range [][]string{
+		{"exec", "pkg.modified", "--names", "demo"},
+		{"exec", "pkg.verify", "--failhard"},
+	} {
+		runner := &cliRecordingRunner{}
+		code, _, _ := captureCode(t, providerCLIApp(t, "zypper", runner), append(args, "-o", "json")...)
+		if code != ExitInvalidInput || len(runner.calls) != 0 {
+			t.Fatalf("args=%v code=%d calls=%d", args, code, len(runner.calls))
+		}
+	}
+}
+
+func TestZypperLowpkgCLIVerificationDefaultsUseNoScripts(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		function string
+		wantArgv []string
+	}{
+		{name: "modified default", function: "pkg.modified", wantArgv: []string{"rpm", "--noscripts", "-Va"}},
+		{name: "verify default", function: "pkg.verify", wantArgv: []string{"rpm", "--noscripts", "-Va"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &cliRecordingRunner{results: []process.CommandResult{{ExitCode: 0}}}
+			app := providerCLIAppWithFS(t, "zypper", runner, runtime.NewMemoryFS())
+			code, out, errS := captureCode(t, app, "exec", tc.function, "-o", "json")
+			if code != ExitOK || errS != "" || out != "{}\n" || len(runner.calls) != 1 {
+				t.Fatalf("code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+			}
+			got := append([]string{runner.calls[0].Name}, runner.calls[0].Args...)
+			if !reflect.DeepEqual(got, tc.wantArgv) || runner.calls[0].Shell || runner.calls[0].MaxStdoutBytes != 1<<20 || runner.calls[0].MaxStderrBytes != 1<<20 {
+				t.Fatalf("command=%#v argv=%#v want=%#v", runner.calls[0], got, tc.wantArgv)
+			}
+		})
+	}
+}
+
+func TestZypperLowpkgCLIOutputMatrix(t *testing.T) {
+	const outputLimit = 1 << 20
+	const fileDictFormat = "%{NAME} %{VERSION}\\n"
+	const infoFormat = "version: %{VERSION}\\nname: %{NAME}\\nedition: %|EPOCH?{%{EPOCH}:}|%{VERSION}-%{RELEASE}\\n-----\\n"
+
+	cases := []struct {
+		name     string
+		argv     []string
+		results  []process.CommandResult
+		want     any
+		wantArgv [][]string
+		wantEnv  [][]string
+	}{
+		{
+			name: "file_list",
+			argv: []string{"exec", "pkg.file_list", "--packages", "demo", "--root", "/target"},
+			results: []process.CommandResult{{
+				Stdout: []byte("/usr/bin/demo\n/usr/share/doc/demo\n"),
+			}},
+			want: map[string]any{
+				"errors": []any{}, "files": []any{"/usr/bin/demo", "/usr/share/doc/demo"},
+			},
+			wantArgv: [][]string{{"rpm", "--root", "/target", "-ql", "demo"}},
+			wantEnv:  [][]string{nil},
+		},
+		{
+			name: "file_dict",
+			argv: []string{"exec", "pkg.file_dict", "--packages", "demo", "--root", "/target"},
+			results: []process.CommandResult{
+				{Stdout: []byte("demo 1\n")},
+				{Stdout: []byte("/usr/bin/demo\n/usr/share/demo\n")},
+			},
+			want: map[string]any{
+				"errors": []any{},
+				"packages": map[string]any{
+					"demo": []any{"/usr/bin/demo", "/usr/share/demo"},
+				},
+			},
+			wantArgv: [][]string{
+				{"rpm", "--root", "/target", "-q", "--queryformat", fileDictFormat, "demo"},
+				{"rpm", "-ql", "demo"},
+			},
+			wantEnv: [][]string{nil, nil},
+		},
+		{
+			name: "info_installed",
+			argv: []string{
+				"exec", "pkg.info_installed", "--names", "demo", "--root", "/target",
+				"--attr", "version", "--errors", "report",
+			},
+			results: []process.CommandResult{
+				{Stdout: []byte("LONGSIZE\n")},
+				{Stdout: []byte("name: demo\nversion: 2\nedition: 2-1\n-----\n")},
+			},
+			want: map[string]any{
+				"demo": map[string]any{"version": "2"},
+			},
+			wantArgv: [][]string{
+				{"rpm", "--querytags"},
+				{"rpm", "--root", "/target", "-q", "demo", "--queryformat", infoFormat},
+			},
+			wantEnv: [][]string{nil, {"TZ=UTC"}},
+		},
+		{
+			name:     "owner",
+			argv:     []string{"exec", "pkg.owner", "--paths", "/usr/bin/demo", "--root", "/target"},
+			results:  []process.CommandResult{{Stdout: []byte("demo")}},
+			want:     "demo",
+			wantArgv: [][]string{{"rpm", "--root", "/target", "-qf", "--queryformat", "%{name}", "/usr/bin/demo"}},
+			wantEnv:  [][]string{nil},
+		},
+		{
+			name: "modified",
+			argv: []string{
+				"exec", "pkg.modified", "--packages", "demo", "--root", "/target",
+				"--size", "--mode", "--checksum", "--device", "--symlink", "--owner",
+				"--group", "--time", "--capabilities",
+			},
+			results: []process.CommandResult{{
+				ExitCode: 1,
+				Stdout:   []byte("SM5DLUGTP c /etc/demo\n......... /etc/clean\n"),
+			}},
+			want: map[string]any{
+				"/etc/demo": []any{"size", "mode", "checksum", "device", "symlink", "owner", "group", "time", "capabilities", "config"},
+			},
+			wantArgv: [][]string{{"rpm", "--root", "/target", "--noscripts", "-Va", "demo"}},
+			wantEnv:  [][]string{nil},
+		},
+		{
+			name: "verify",
+			argv: []string{
+				"exec", "pkg.verify", "--names", "demo", "--root", "/target",
+				"--verify-options", "nodigest,noscripts,nosignature", "--ignore-types", "doc",
+			},
+			results: []process.CommandResult{{
+				ExitCode: 1,
+				Stdout:   []byte("SM5DLUGTP  c /etc/demo\n.........  d /usr/share/doc/demo\n"),
+			}},
+			want: map[string]any{
+				"/etc/demo": map[string]any{
+					"type": "config",
+					"mismatch": []any{
+						"size", "mode", "md5sum", "device major/minor number", "readlink path",
+						"user", "group", "mtime", "capabilities",
+					},
+				},
+			},
+			wantArgv: [][]string{{
+				"rpm", "--root", "/target", "--nodigest", "--noscripts", "--nosignature", "-V", "demo",
+			}},
+			wantEnv: [][]string{nil},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fsys := runtime.NewMemoryFS()
+			runner := &cliRecordingRunner{results: append([]process.CommandResult(nil), tc.results...)}
+			app := providerCLIAppWithFS(t, "zypper", runner, fsys)
+			code, out, errS := captureCode(t, app, append(tc.argv, "-o", "json")...)
+			if code != ExitOK || errS != "" {
+				t.Fatalf("code=%d out=%q err=%q", code, out, errS)
+			}
+			var got any
+			if err := json.Unmarshal([]byte(out), &got); err != nil {
+				t.Fatalf("JSON: %v (%q)", err, out)
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("result=%#v want=%#v", got, tc.want)
+			}
+			if len(runner.calls) != len(tc.wantArgv) || len(runner.results) != 0 {
+				t.Fatalf("calls=%d remaining results=%d", len(runner.calls), len(runner.results))
+			}
+			for index, command := range runner.calls {
+				gotArgv := append([]string{command.Name}, command.Args...)
+				if !reflect.DeepEqual(gotArgv, tc.wantArgv[index]) {
+					t.Fatalf("call[%d] argv=%#v want=%#v", index, gotArgv, tc.wantArgv[index])
+				}
+				if command.Shell || command.MaxStdoutBytes != outputLimit || command.MaxStderrBytes != outputLimit {
+					t.Fatalf("call[%d] unsafe bounds/runner mode: %#v", index, command)
+				}
+				if !reflect.DeepEqual(command.Env, tc.wantEnv[index]) {
+					t.Fatalf("call[%d] env=%#v want=%#v", index, command.Env, tc.wantEnv[index])
+				}
+			}
+		})
 	}
 }
 

@@ -38,7 +38,7 @@ func TestModifiedRegistryProviderContract(t *testing.T) {
 		if names, err := config.ArgumentNames(prototype); err != nil || !reflect.DeepEqual(names, []string{"capabilities", "checksum", "device", "group", "mode", "names", "owner", "root", "size", "symlink", "time"}) {
 			t.Fatalf("%s argument names=%v err=%v", manager, names, err)
 		}
-		if !reflect.DeepEqual(reg.ProviderCapabilities("pkg.modified"), []string{"yumpkg"}) {
+		if !reflect.DeepEqual(reg.ProviderCapabilities("pkg.modified"), []string{"yumpkg", "zypperpkg"}) {
 			t.Fatal("modified capability metadata changed")
 		}
 		got, err := reg.Call(context.Background(), rt, "pkg.modified", &ModifiedArgs{Names: []string{"a", "b"}})
@@ -49,7 +49,7 @@ func TestModifiedRegistryProviderContract(t *testing.T) {
 			t.Fatalf("%s command=%#v", manager, runner.commands[0])
 		}
 	}
-	for _, manager := range []string{"apt", "zypper"} {
+	for _, manager := range []string{"apt"} {
 		reg := runtime.NewExecRegistry()
 		_ = Register(reg)
 		rt, runner := modifiedRuntime(manager, process.CommandResult{})

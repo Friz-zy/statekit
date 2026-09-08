@@ -23,11 +23,13 @@ func (verifyFunc) Name() string                   { return "pkg.verify" }
 func (verifyFunc) Args() any                      { return VerifyArgs{} }
 func (verifyFunc) ProviderKind() string           { return "pkg" }
 func (verifyFunc) ProviderArgsStrict() bool       { return true }
-func (verifyFunc) ProviderCapabilities() []string { return []string{"yumpkg"} }
+func (verifyFunc) ProviderCapabilities() []string { return []string{"yumpkg", "zypperpkg"} }
 func (verifyFunc) ArgsForProvider(providerName string) (any, error) {
 	switch providerName {
 	case "yum", "dnf", "dnf5":
 		return VerifyArgs{}, nil
+	case "zypper":
+		return ZypperVerifyArgs{}, nil
 	default:
 		return nil, &runtime.UnsupportedError{Kind: "provider", Name: providerName}
 	}
@@ -38,14 +40,26 @@ func (verifyFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (a
 	if err != nil {
 		return nil, err
 	}
-	if _, err := (verifyFunc{}).ArgsForProvider(p.Name()); err != nil {
+	prototype, err := (verifyFunc{}).ArgsForProvider(p.Name())
+	if err != nil {
 		return nil, err
+	}
+	if p.Name() == "zypper" {
+		zp, ok := p.(pkgprovider.ZypperProvider)
+		if !ok {
+			return nil, pkgprovider.ErrUnsupportedZypper
+		}
+		argMap, err := mapArgs("pkg.verify", args, prototype)
+		if err != nil {
+			return nil, err
+		}
+		return zp.Zypper(ctx, rt, "verify", argMap)
 	}
 	yp, ok := p.(pkgprovider.YumProvider)
 	if !ok {
 		return nil, pkgprovider.ErrUnsupportedYUM
 	}
-	argMap, err := mapArgs("pkg.verify", args, VerifyArgs{})
+	argMap, err := mapArgs("pkg.verify", args, prototype)
 	if err != nil {
 		return nil, err
 	}

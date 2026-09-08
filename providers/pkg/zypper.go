@@ -26,15 +26,15 @@ const (
 	maxZypperEpochRunes = 1024
 )
 
-// Zypper implements only the pure functions that do not require a real
-// package-manager transaction. The remaining zypper surface is intentionally
-// deferred rather than approximated through generic RPM behavior.
+// Zypper implements the explicitly ported zypperpkg functions. The six
+// read-only functions delegate to rpm through the central Runner; all other
+// zypper long-tail functions remain unsupported rather than being
+// approximated through a generic RPM path.
 func (p *commandProvider) Zypper(ctx context.Context, rt *runtime.Runtime, function string, args any) (any, error) {
-	_ = ctx
 	if p.spec.manager != "zypper" {
 		return nil, ErrUnsupportedZypper
 	}
-	if function != "normalize_name" && function != "parse_arch" && function != "version_cmp" {
+	if !zypperFunctionSupported(function) {
 		return nil, &runtime.UnsupportedError{Kind: "function", Name: function}
 	}
 	a, ok := args.(map[string]any)
@@ -51,9 +51,28 @@ func (p *commandProvider) Zypper(ctx context.Context, rt *runtime.Runtime, funct
 		return zypperParseArch(a["name"].(string)), nil
 	case "version_cmp":
 		return zypperVersionCmp(a["ver1"].(string), a["ver2"].(string), boolDefault(a, "ignore_epoch", false)), nil
+	case "file_list":
+		return zypperFileList(ctx, rt, a)
+	case "file_dict":
+		return zypperFileDict(ctx, rt, a)
+	case "info_installed":
+		return zypperInfoInstalled(ctx, rt, a)
+	case "modified":
+		return zypperModified(ctx, rt, a)
+	case "owner":
+		return zypperOwner(ctx, rt, a)
+	case "verify":
+		return zypperVerify(ctx, rt, a)
 	default:
 		panic("unreachable")
 	}
+}
+
+func zypperFunctionSupported(function string) bool {
+	if function == "normalize_name" || function == "parse_arch" || function == "version_cmp" {
+		return true
+	}
+	return zypperLowpkgFunction(function)
 }
 
 func validateZypperArgs(function string, args map[string]any) error {
@@ -63,6 +82,8 @@ func validateZypperArgs(function string, args map[string]any) error {
 		allowed["name"] = true
 	case "version_cmp":
 		allowed["ver1"], allowed["ver2"], allowed["ignore_epoch"] = true, true, true
+	default:
+		return validateZypperLowpkgArgs(function, args)
 	}
 	for key := range args {
 		if !allowed[key] {

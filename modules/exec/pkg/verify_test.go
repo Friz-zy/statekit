@@ -34,7 +34,7 @@ func TestVerifyRegistryProviderMatrix(t *testing.T) {
 		if names, err := config.ArgumentNames(prototype); err != nil || !reflect.DeepEqual(names, []string{"ignore_types", "names", "root", "verify_options"}) {
 			t.Fatalf("%s names=%v err=%v", manager, names, err)
 		}
-		if caps := reg.ProviderCapabilities("pkg.verify"); !reflect.DeepEqual(caps, []string{"yumpkg"}) {
+		if caps := reg.ProviderCapabilities("pkg.verify"); !reflect.DeepEqual(caps, []string{"yumpkg", "zypperpkg"}) {
 			t.Fatalf("caps=%v", caps)
 		}
 		got, err := reg.Call(context.Background(), rt, "pkg.verify", &VerifyArgs{})
@@ -45,7 +45,7 @@ func TestVerifyRegistryProviderMatrix(t *testing.T) {
 			t.Fatalf("argv=%#v", r.commands[0])
 		}
 	}
-	for _, manager := range []string{"apt", "zypper"} {
+	for _, manager := range []string{"apt"} {
 		reg := runtime.NewExecRegistry()
 		_ = Register(reg)
 		providers := runtime.NewProviderRegistry()
@@ -119,7 +119,7 @@ func TestVerifyRegistryRejectsMalformedArgsAndProviderBeforeRunner(t *testing.T)
 	if err := pkgprovider.Register(providers); err != nil {
 		t.Fatal(err)
 	}
-	for _, manager := range []string{"apt", "zypper"} {
+	for _, manager := range []string{"apt"} {
 		r := &verifyExecRunner{}
 		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: manager}), Providers: providers, Runner: r}
 		if _, err := reg.ResolveArgs(rt, "pkg.verify"); err == nil {

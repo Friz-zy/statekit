@@ -122,6 +122,9 @@ func (f aptLongtailFunc) ArgsForProvider(providerName string) (any, error) {
 			}
 		}
 	case "zypper":
+		if p, ok := ZypperPrototype(f.name); ok {
+			return p, nil
+		}
 		switch f.name {
 		case "normalize_name", "parse_arch":
 			return f.prototype, nil
@@ -177,7 +180,7 @@ func (f aptLongtailFunc) ProviderCapabilities() []string {
 	}
 	for _, name := range []string{"file_list", "file_dict", "info_installed", "owner"} {
 		if f.name == name {
-			return []string{"aptpkg", "yumpkg"}
+			return []string{"aptpkg", "yumpkg", "zypperpkg"}
 		}
 	}
 	return []string{"aptpkg"}

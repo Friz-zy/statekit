@@ -29,11 +29,13 @@ func (modifiedFunc) Name() string                   { return "pkg.modified" }
 func (modifiedFunc) Args() any                      { return ModifiedArgs{} }
 func (modifiedFunc) ProviderKind() string           { return "pkg" }
 func (modifiedFunc) ProviderArgsStrict() bool       { return true }
-func (modifiedFunc) ProviderCapabilities() []string { return []string{"yumpkg"} }
+func (modifiedFunc) ProviderCapabilities() []string { return []string{"yumpkg", "zypperpkg"} }
 func (modifiedFunc) ArgsForProvider(providerName string) (any, error) {
 	switch providerName {
 	case "yum", "dnf", "dnf5":
 		return ModifiedArgs{}, nil
+	case "zypper":
+		return ZypperModifiedArgs{}, nil
 	default:
 		return nil, &runtime.UnsupportedError{Kind: "provider", Name: providerName}
 	}
@@ -44,14 +46,26 @@ func (modifiedFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) 
 	if err != nil {
 		return nil, err
 	}
-	if _, err := (modifiedFunc{}).ArgsForProvider(p.Name()); err != nil {
+	prototype, err := (modifiedFunc{}).ArgsForProvider(p.Name())
+	if err != nil {
 		return nil, err
+	}
+	if p.Name() == "zypper" {
+		zp, ok := p.(pkgprovider.ZypperProvider)
+		if !ok {
+			return nil, pkgprovider.ErrUnsupportedZypper
+		}
+		argMap, err := mapArgs("pkg.modified", args, prototype)
+		if err != nil {
+			return nil, err
+		}
+		return zp.Zypper(ctx, rt, "modified", argMap)
 	}
 	yp, ok := p.(pkgprovider.YumProvider)
 	if !ok {
 		return nil, pkgprovider.ErrUnsupportedYUM
 	}
-	argMap, err := mapArgs("pkg.modified", args, ModifiedArgs{})
+	argMap, err := mapArgs("pkg.modified", args, prototype)
 	if err != nil {
 		return nil, err
 	}

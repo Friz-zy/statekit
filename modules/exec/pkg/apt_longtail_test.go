@@ -1325,7 +1325,11 @@ func TestUpgradeRegistryActualProviderMatrix(t *testing.T) {
 			} else if err != nil || !reflect.DeepEqual(names, tc.args) {
 				t.Fatalf("arg names=%v err=%v", names, err)
 			}
-			if got := reg.ProviderCapabilities(tc.name); !reflect.DeepEqual(got, []string{"aptpkg", "yumpkg"}) {
+			wantCaps := []string{"aptpkg", "yumpkg"}
+			if tc.name == "pkg.file_list" || tc.name == "pkg.file_dict" || tc.name == "pkg.info_installed" || tc.name == "pkg.owner" {
+				wantCaps = []string{"aptpkg", "yumpkg", "zypperpkg"}
+			}
+			if got := reg.ProviderCapabilities(tc.name); !reflect.DeepEqual(got, wantCaps) {
 				t.Fatalf("capabilities=%v", got)
 			}
 			before := reflect.ValueOf(tc.call).Elem().Interface()

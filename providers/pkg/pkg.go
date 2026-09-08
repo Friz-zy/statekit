@@ -42,8 +42,8 @@ type YumProvider interface {
 	Yum(ctx context.Context, rt *runtime.Runtime, function string, args any) (any, error)
 }
 
-// ZypperProvider exposes only the explicitly implemented pure Zypper
-// capability. It is optional so other providers do not gain Zypper paths.
+// ZypperProvider exposes the explicitly implemented Zypper capability. It is
+// optional so other providers do not gain Zypper paths.
 type ZypperProvider interface {
 	Provider
 	Zypper(ctx context.Context, rt *runtime.Runtime, function string, args any) (any, error)
