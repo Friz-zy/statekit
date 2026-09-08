@@ -121,11 +121,18 @@ func (f aptLongtailFunc) ArgsForProvider(providerName string) (any, error) {
 				return f.prototype, nil
 			}
 		}
+	case "zypper":
+		switch f.name {
+		case "normalize_name", "parse_arch":
+			return f.prototype, nil
+		case "version_cmp":
+			return ZypperVersionCmpArgs{}, nil
+		}
 	}
 	return nil, &runtime.UnsupportedError{Kind: "provider", Name: providerName}
 }
 func (f aptLongtailFunc) ProviderArgsStrict() bool {
-	return f.name == "purge" || f.name == "hold" || f.name == "unhold" || f.name == "file_list" || f.name == "file_dict" || f.name == "info_installed" || f.name == "owner" || f.name == "clean_metadata" || f.name == "list_holds" || f.name == "list_repo_pkgs" || f.name == "services_need_restart" || f.name == "group_diff" || f.name == "upgrade" || f.name == "list_upgrades" || f.name == "upgrade_available" || f.name == "list_downloaded"
+	return f.name == "normalize_name" || f.name == "parse_arch" || f.name == "version_cmp" || f.name == "purge" || f.name == "hold" || f.name == "unhold" || f.name == "file_list" || f.name == "file_dict" || f.name == "info_installed" || f.name == "owner" || f.name == "clean_metadata" || f.name == "list_holds" || f.name == "list_repo_pkgs" || f.name == "services_need_restart" || f.name == "group_diff" || f.name == "upgrade" || f.name == "list_upgrades" || f.name == "upgrade_available" || f.name == "list_downloaded"
 }
 func (f aptLongtailFunc) ProviderCapabilities() []string {
 	if f.name == "upgrade" {
@@ -150,14 +157,14 @@ func (f aptLongtailFunc) ProviderCapabilities() []string {
 	// remains provider-specific below. Unique APT functions stay APT-only.
 	for _, name := range []string{"normalize_name", "parse_arch"} {
 		if f.name == name {
-			return []string{"aptpkg", "yumpkg"}
+			return []string{"aptpkg", "yumpkg", "zypperpkg"}
 		}
 	}
 	if f.name == "list_upgrades" || f.name == "upgrade_available" {
 		return []string{"aptpkg", "yumpkg"}
 	}
 	if f.name == "version_cmp" {
-		return []string{"aptpkg", "yumpkg"}
+		return []string{"aptpkg", "yumpkg", "zypperpkg"}
 	}
 	if f.name == "purge" {
 		return []string{"aptpkg", "yumpkg"}
@@ -207,6 +214,17 @@ func (f aptLongtailFunc) Execute(ctx context.Context, rt *runtime.Runtime, args 
 			return nil, err
 		}
 		return yp.Yum(ctx, rt, f.name, argMap)
+	}
+	if providerName == "zypper" {
+		zp, ok := p.(pkgprovider.ZypperProvider)
+		if !ok {
+			return nil, pkgprovider.ErrUnsupportedZypper
+		}
+		argMap, err := mapArgs(f.Name(), args, prototype)
+		if err != nil {
+			return nil, err
+		}
+		return zp.Zypper(ctx, rt, f.name, argMap)
 	}
 	ap, ok := p.(pkgprovider.AptProvider)
 	if !ok {

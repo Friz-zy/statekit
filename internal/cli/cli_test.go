@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"os"
 	"strings"
 	"testing"
@@ -56,13 +57,38 @@ func (r *cliRecordingRunner) Run(_ context.Context, command process.Command) pro
 	return result
 }
 
+type cliCountingFS struct{ calls int }
+
+func (f *cliCountingFS) fail()                                       { f.calls++; panic("pure Zypper CLI call touched filesystem") }
+func (f *cliCountingFS) Stat(string) (fs.FileInfo, error)            { f.fail(); return nil, nil }
+func (f *cliCountingFS) Lstat(string) (fs.FileInfo, error)           { f.fail(); return nil, nil }
+func (f *cliCountingFS) ReadFile(string) ([]byte, error)             { f.fail(); return nil, nil }
+func (f *cliCountingFS) WriteFile(string, []byte, fs.FileMode) error { f.fail(); return nil }
+func (f *cliCountingFS) MkdirAll(string, fs.FileMode) error          { f.fail(); return nil }
+func (f *cliCountingFS) MkdirTemp(string, string) (string, error)    { f.fail(); return "", nil }
+func (f *cliCountingFS) Remove(string) error                         { f.fail(); return nil }
+func (f *cliCountingFS) RemoveAll(string) error                      { f.fail(); return nil }
+func (f *cliCountingFS) Rename(string, string) error                 { f.fail(); return nil }
+func (f *cliCountingFS) Symlink(string, string) error                { f.fail(); return nil }
+func (f *cliCountingFS) Link(string, string) error                   { f.fail(); return nil }
+func (f *cliCountingFS) Glob(string) ([]string, error)               { f.fail(); return nil, nil }
+func (f *cliCountingFS) Readlink(string) (string, error)             { f.fail(); return "", nil }
+func (f *cliCountingFS) ReadDir(string) ([]fs.DirEntry, error)       { f.fail(); return nil, nil }
+func (f *cliCountingFS) Chmod(string, fs.FileMode) error             { f.fail(); return nil }
+func (f *cliCountingFS) Chown(string, int, int) error                { f.fail(); return nil }
+func (f *cliCountingFS) Lchown(string, int, int) error               { f.fail(); return nil }
+
 func providerCLIApp(t *testing.T, manager string, runner *cliRecordingRunner) *App {
+	return providerCLIAppWithFS(t, manager, runner, runtime.NewMemoryFS())
+}
+
+func providerCLIAppWithFS(t *testing.T, manager string, runner *cliRecordingRunner, fsys runtime.FileSystem) *App {
 	t.Helper()
 	build := func() (*runtime.Runtime, error) {
 		rt := &runtime.Runtime{
 			Exec: runtime.NewExecRegistry(), Providers: runtime.NewProviderRegistry(), Runner: runner,
 			Facts: facts.ForTesting(facts.Overrides{Package: manager, OS: &facts.OSFacts{Family: facts.FamilyRedHat}, CPU: &facts.CPUFacts{Arch: "x86_64"}}),
-			FS:    runtime.NewMemoryFS(),
+			FS:    fsys,
 		}
 		if err := pkgs.Register(rt.Exec); err != nil {
 			return nil, err
@@ -128,6 +154,72 @@ func TestProviderAwareCLIValidation(t *testing.T) {
 		} else if code != ExitInvalidInput || len(runner.calls) != 0 {
 			t.Fatalf("%s %s accepted root: code=%d calls=%d", tc.manager, tc.command, code, len(runner.calls))
 		}
+	}
+}
+
+func TestZypperVersionCmpCLIUsesSourceArgumentNames(t *testing.T) {
+	fsys := &cliCountingFS{}
+	runner := &cliRecordingRunner{}
+	app := providerCLIAppWithFS(t, "zypper", runner, fsys)
+	for _, tc := range []struct {
+		name string
+		argv []string
+		want any
+	}{
+		{"normalize_name", []string{"exec", "pkg.normalize_name", "--name", "pkg.x86_64", "-o", "json"}, "pkg"},
+		{"parse_arch", []string{"exec", "pkg.parse_arch", "--name", "pkg.x86_64", "-o", "json"}, map[string]any{"name": "pkg", "arch": "x86_64"}},
+		{"version_cmp", []string{"exec", "pkg.version_cmp", "--ver1", "1_0:1", "--ver2", "2:1", "-o", "json"}, float64(1)},
+	} {
+		code, out, errS := captureCode(t, app, tc.argv...)
+		if code != ExitOK || errS != "" || len(runner.calls) != 0 || fsys.calls != 0 {
+			t.Fatalf("%s: code=%d out=%q err=%q runner=%d fs=%d", tc.name, code, out, errS, len(runner.calls), fsys.calls)
+		}
+		var got any
+		if err := json.Unmarshal([]byte(out), &got); err != nil {
+			t.Fatalf("%s JSON: %v (%q)", tc.name, err, out)
+		}
+		switch want := tc.want.(type) {
+		case string:
+			if got != want {
+				t.Fatalf("%s result=%#v want=%#v", tc.name, got, want)
+			}
+		case float64:
+			if got != want {
+				t.Fatalf("%s result=%#v want=%#v", tc.name, got, want)
+			}
+		case map[string]any:
+			actual, ok := got.(map[string]any)
+			if !ok || len(actual) != len(want) {
+				t.Fatalf("%s result=%#v want=%#v", tc.name, got, want)
+			}
+			for key, value := range want {
+				if actual[key] != value {
+					t.Fatalf("%s result=%#v want=%#v", tc.name, got, want)
+				}
+			}
+		}
+	}
+
+	code, _, errS := captureCode(t, app, "exec", "pkg.version_cmp", "--config", `{"pkg1":"1","pkg2":"2"}`)
+	if code != ExitInvalidInput || errS == "" || len(runner.calls) != 0 || fsys.calls != 0 {
+		t.Fatalf("zypper rejected pkg1/pkg2: code=%d err=%q runner=%d fs=%d", code, errS, len(runner.calls), fsys.calls)
+	}
+}
+
+func TestZypperCLIRejectsUnsafeTokensWithoutSideEffects(t *testing.T) {
+	fsys := &cliCountingFS{}
+	runner := &cliRecordingRunner{}
+	app := providerCLIAppWithFS(t, "zypper", runner, fsys)
+	badName := "pkg.\x00secret"
+	code, _, errS := captureCode(t, app, "exec", "pkg.normalize_name", "--name", badName)
+	if code != ExitFailed || errS != "statekit: invalid package name\n" || strings.Contains(errS, "secret") || len(runner.calls) != 0 || fsys.calls != 0 {
+		t.Fatalf("name rejection: code=%d err=%q runner=%d fs=%d", code, errS, len(runner.calls), fsys.calls)
+	}
+
+	badVersion := strings.Repeat("v", 4097)
+	code, _, errS = captureCode(t, app, "exec", "pkg.version_cmp", "--ver1", badVersion, "--ver2", "1")
+	if code != ExitFailed || errS != "statekit: invalid package version\n" || strings.Contains(errS, badVersion) || len(runner.calls) != 0 || fsys.calls != 0 {
+		t.Fatalf("version rejection: code=%d err=%q runner=%d fs=%d", code, errS, len(runner.calls), fsys.calls)
 	}
 }
 

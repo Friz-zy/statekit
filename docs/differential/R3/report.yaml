@@ -93,7 +93,7 @@ families:
         catalog_functions: 54
         public_functions: 42
         private_functions: 12
-        registered_public: 10
+        registered_public: 13
         pending_public:
             - pkg.clean_locks
             - pkg.diff
@@ -115,9 +115,7 @@ families:
             - pkg.list_repo_pkgs
             - pkg.list_upgrades
             - pkg.modified
-            - pkg.normalize_name
             - pkg.owner
-            - pkg.parse_arch
             - pkg.purge
             - pkg.resolve_capabilities
             - pkg.search
@@ -126,11 +124,10 @@ families:
             - pkg.upgrade
             - pkg.upgrade_available
             - pkg.verify
-            - pkg.version_cmp
         differential_scenarios:
             - pkgrepo.zypper-ar-mr-rr
             - pkgrepo.zypper-refresh-db-parse
 totals:
     catalog_functions: 261
     public_functions: 172
-    registered_public: 140
+    registered_public: 143
