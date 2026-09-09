@@ -57,6 +57,8 @@ func (p *commandProvider) Zypper(ctx context.Context, rt *runtime.Runtime, funct
 		return nil, err
 	}
 	switch function {
+	case "list_patterns", "list_installed_patterns":
+		return zypperPatterns(ctx, rt, function, a)
 	case "list_upgrades", "upgrade_available":
 		return zypperUpgrades(ctx, rt, function, a)
 	case "info_available":
@@ -87,7 +89,7 @@ func (p *commandProvider) Zypper(ctx context.Context, rt *runtime.Runtime, funct
 }
 
 func zypperFunctionSupported(function string) bool {
-	if function == "list_upgrades" || function == "upgrade_available" {
+	if function == "list_patterns" || function == "list_installed_patterns" || function == "list_upgrades" || function == "upgrade_available" {
 		return true
 	}
 	if function == "info_available" || function == "search" {
@@ -100,6 +102,9 @@ func zypperFunctionSupported(function string) bool {
 }
 
 func validateZypperArgs(function string, args map[string]any) error {
+	if function == "list_patterns" || function == "list_installed_patterns" {
+		return validateZypperPatternArgs(function, args)
+	}
 	if function == "list_upgrades" || function == "upgrade_available" {
 		return validateZypperUpgradeArgs(function, args)
 	}

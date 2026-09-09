@@ -17,6 +17,21 @@ type ZypperUpgradeAvailableArgs struct {
 	Gpgautoimport *bool   `statekit:"name=gpgautoimport"`
 }
 
+// ZypperListPatternsArgs mirrors zypperpkg.list_patterns exactly.  The
+// source exposes only refresh and root; repository/options kwargs are not
+// invented here because this function does not support them.
+type ZypperListPatternsArgs struct {
+	Refresh *bool   `statekit:"name=refresh"`
+	Root    *string `statekit:"name=root"`
+}
+
+// ZypperListInstalledPatternsArgs mirrors
+// zypperpkg.list_installed_patterns exactly.  It has no refresh or repository
+// selector in the pinned source signature.
+type ZypperListInstalledPatternsArgs struct {
+	Root *string `statekit:"name=root"`
+}
+
 // ZypperInfoAvailableArgs mirrors zypperpkg.info_available.  The source uses
 // variadic package names plus **kwargs; only kwargs with source-backed
 // repository refresh semantics are represented here.
@@ -104,6 +119,10 @@ type ZypperVerifyArgs struct {
 // shared execution functions.
 func ZypperPrototype(name string) (any, bool) {
 	switch name {
+	case "list_patterns":
+		return ZypperListPatternsArgs{}, true
+	case "list_installed_patterns":
+		return ZypperListInstalledPatternsArgs{}, true
 	case "list_upgrades":
 		return ZypperListUpgradesArgs{}, true
 	case "upgrade_available":
