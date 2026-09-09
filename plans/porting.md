@@ -1664,7 +1664,7 @@ rows or counts.
 
 ##### 2026-09-09 current status
 
-Current actual HEAD is `9e35910`. R3.2/YUM is complete; R3.3/Zypper remains
+Current actual HEAD is `5747f83`. R3.2/YUM is complete; R3.3/Zypper remains
 **in progress**. The current R3.3 implementation and independent-gate ledger is:
 
 | Commit | Scope | Implementation executor role | Independent gate(s) | Result / boundary |
@@ -1675,16 +1675,16 @@ Current actual HEAD is `9e35910`. R3.2/YUM is complete; R3.3/Zypper remains
 | `ec91555` | R3.3d Zypper `info_available` | `backend-engineer-senior` | `backend-engineer-lead` | passed |
 | `071274b` | R3.3e Zypper `search` | `backend-engineer-senior` | `backend-engineer-lead` | passed after XML redaction/full scratch fixes |
 | `9e35910` | R3.3f Zypper `list_patterns`/`list_installed_patterns` | `backend-engineer-senior` | `backend-engineer-lead` | passed after RawToken namespace/source parity fixes |
+| `c1e0804` | R3.3g Zypper `list_locks`/`clean_locks` | `backend-engineer-senior` | `backend-engineer-lead` | passed after CRLF/ordering/first-message/cancellation source-parity fixes |
+| `5747f83` | R3.3h Zypper `hold`/`unhold` | `backend-engineer-senior` | `backend-engineer-lead` | passed |
 
 Current R3 report: `aptpkg` 34 registered / 0 pending, `yumpkg` 39
-registered / 0 pending, `zypperpkg` 25 registered / 17 pending; total
-`registered_public` 155. The remaining Zypper pending names from the report,
-in exact report order, are: `pkg.clean_locks`, `pkg.diff`, `pkg.download`,
-`pkg.hold`, `pkg.list_downloaded`, `pkg.list_holds`,
-`pkg.list_installed_patches`, `pkg.list_locks`, `pkg.list_patches`,
+registered / 0 pending, `zypperpkg` 29 registered / 13 pending; total
+`registered_public` 159. The remaining Zypper pending names from the report,
+in exact report order, are: `pkg.diff`, `pkg.download`, `pkg.list_downloaded`,
+`pkg.list_holds`, `pkg.list_installed_patches`, `pkg.list_patches`,
 `pkg.list_products`, `pkg.list_provides`, `pkg.list_repo_pkgs`, `pkg.purge`,
-`pkg.resolve_capabilities`, `pkg.services_need_restart`, `pkg.unhold`, and
-`pkg.upgrade`.
+`pkg.resolve_capabilities`, `pkg.services_need_restart`, and `pkg.upgrade`.
 
 Execution was Podman-only. The scoped HUMAN exception
 `SDD-SANDBOX-CONTRACT-001` covered noncritical cgroup controls; critical
