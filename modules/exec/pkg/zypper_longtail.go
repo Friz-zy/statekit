@@ -32,6 +32,16 @@ type ZypperListInstalledPatternsArgs struct {
 	Root *string `statekit:"name=root"`
 }
 
+// ZypperListLocksArgs mirrors zypperpkg.list_locks(root=None) exactly.
+type ZypperListLocksArgs struct {
+	Root *string `statekit:"name=root"`
+}
+
+// ZypperCleanLocksArgs mirrors zypperpkg.clean_locks(root=None) exactly.
+type ZypperCleanLocksArgs struct {
+	Root *string `statekit:"name=root"`
+}
+
 // ZypperInfoAvailableArgs mirrors zypperpkg.info_available.  The source uses
 // variadic package names plus **kwargs; only kwargs with source-backed
 // repository refresh semantics are represented here.
@@ -123,6 +133,10 @@ func ZypperPrototype(name string) (any, bool) {
 		return ZypperListPatternsArgs{}, true
 	case "list_installed_patterns":
 		return ZypperListInstalledPatternsArgs{}, true
+	case "list_locks":
+		return ZypperListLocksArgs{}, true
+	case "clean_locks":
+		return ZypperCleanLocksArgs{}, true
 	case "list_upgrades":
 		return ZypperListUpgradesArgs{}, true
 	case "upgrade_available":

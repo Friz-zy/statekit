@@ -114,6 +114,18 @@ func validateZypperUpgradeArgs(function string, args map[string]any) error {
 // zypperQueryRun centralizes bounded, cancellable zypper execution. Lock errors
 // fail promptly instead of reproducing Salt's unbounded lock/host-FS polling.
 func zypperQueryRun(ctx context.Context, rt *runtime.Runtime, root string, xmlMode, refresh bool, args []string) (string, error) {
+	return zypperXMLRun(ctx, rt, root, xmlMode, refresh, args, !refresh, false)
+}
+
+// zypperXMLMutationRun keeps the same central argv/XML boundary as queries,
+// but does not set ZYPP_READONLY_HACK and requires a genuinely successful
+// zypper exit. clean_locks is the one current caller: its mutation remains
+// entirely inside the injected Runner.
+func zypperXMLMutationRun(ctx context.Context, rt *runtime.Runtime, root string, args []string) (string, error) {
+	return zypperXMLRun(ctx, rt, root, true, false, args, false, true)
+}
+
+func zypperXMLRun(ctx context.Context, rt *runtime.Runtime, root string, xmlMode, refresh bool, args []string, readonlyHack, strictExit bool) (string, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -132,12 +144,18 @@ func zypperQueryRun(ctx context.Context, rt *runtime.Runtime, root string, xmlMo
 	}
 	argv = append(argv, args...)
 	env := []string{"LC_ALL=C"}
-	if !refresh {
+	if readonlyHack {
 		env = append(env, "ZYPP_READONLY_HACK=1")
 	}
 	result, err := zypperRPMRun(ctx, rt, argv, env)
 	if err != nil {
 		return "", err
+	}
+	if strictExit {
+		if result.ExitCode != 0 {
+			return "", fmt.Errorf("zypper command failed with exit code %d", result.ExitCode)
+		}
+		return string(result.Stdout), nil
 	}
 	switch result.ExitCode {
 	case 0, 6, 100, 101, 102, 103, 106, 107:

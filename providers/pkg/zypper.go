@@ -28,8 +28,9 @@ const (
 
 // Zypper implements the explicitly ported zypperpkg functions. The six
 // lowpkg functions delegate to rpm through the central Runner. Query functions
-// use zypper XML/text; unported long-tail functions remain unsupported rather
-// than being approximated through a generic RPM path.
+// use zypper XML/text; lock functions keep their source-specific filesystem
+// and zypper XML boundaries; unported long-tail functions remain unsupported
+// rather than being approximated through a generic RPM path.
 func (p *commandProvider) Zypper(ctx context.Context, rt *runtime.Runtime, function string, args any) (any, error) {
 	if p.spec.manager != "zypper" {
 		return nil, ErrUnsupportedZypper
@@ -59,6 +60,18 @@ func (p *commandProvider) Zypper(ctx context.Context, rt *runtime.Runtime, funct
 	switch function {
 	case "list_patterns", "list_installed_patterns":
 		return zypperPatterns(ctx, rt, function, a)
+	case "list_locks":
+		result, err := zypperListLocks(ctx, rt, a)
+		if err != nil {
+			return nil, err
+		}
+		return result, nil
+	case "clean_locks":
+		result, err := zypperCleanLocks(ctx, rt, a)
+		if err != nil {
+			return nil, err
+		}
+		return result, nil
 	case "list_upgrades", "upgrade_available":
 		return zypperUpgrades(ctx, rt, function, a)
 	case "info_available":
@@ -92,6 +105,9 @@ func zypperFunctionSupported(function string) bool {
 	if function == "list_patterns" || function == "list_installed_patterns" || function == "list_upgrades" || function == "upgrade_available" {
 		return true
 	}
+	if function == "list_locks" || function == "clean_locks" {
+		return true
+	}
 	if function == "info_available" || function == "search" {
 		return true
 	}
@@ -104,6 +120,9 @@ func zypperFunctionSupported(function string) bool {
 func validateZypperArgs(function string, args map[string]any) error {
 	if function == "list_patterns" || function == "list_installed_patterns" {
 		return validateZypperPatternArgs(function, args)
+	}
+	if function == "list_locks" || function == "clean_locks" {
+		return validateZypperLocksArgs(args)
 	}
 	if function == "list_upgrades" || function == "upgrade_available" {
 		return validateZypperUpgradeArgs(function, args)

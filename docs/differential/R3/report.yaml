@@ -93,16 +93,14 @@ families:
         catalog_functions: 54
         public_functions: 42
         private_functions: 12
-        registered_public: 25
+        registered_public: 27
         pending_public:
-            - pkg.clean_locks
             - pkg.diff
             - pkg.download
             - pkg.hold
             - pkg.list_downloaded
             - pkg.list_holds
             - pkg.list_installed_patches
-            - pkg.list_locks
             - pkg.list_patches
             - pkg.list_products
             - pkg.list_provides
@@ -118,4 +116,4 @@ families:
 totals:
     catalog_functions: 261
     public_functions: 172
-    registered_public: 155
+    registered_public: 157
