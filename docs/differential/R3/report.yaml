@@ -93,11 +93,10 @@ families:
         catalog_functions: 54
         public_functions: 42
         private_functions: 12
-        registered_public: 27
+        registered_public: 29
         pending_public:
             - pkg.diff
             - pkg.download
-            - pkg.hold
             - pkg.list_downloaded
             - pkg.list_holds
             - pkg.list_installed_patches
@@ -108,7 +107,6 @@ families:
             - pkg.purge
             - pkg.resolve_capabilities
             - pkg.services_need_restart
-            - pkg.unhold
             - pkg.upgrade
         differential_scenarios:
             - pkgrepo.zypper-ar-mr-rr
@@ -116,4 +114,4 @@ families:
 totals:
     catalog_functions: 261
     public_functions: 172
-    registered_public: 157
+    registered_public: 159

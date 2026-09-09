@@ -42,6 +42,15 @@ type ZypperCleanLocksArgs struct {
 	Root *string `statekit:"name=root"`
 }
 
+// ZypperHoldArgs mirrors zypperpkg.hold and zypperpkg.unhold exactly:
+// name, pkgs, root. pkgs entries are package names or one-key mappings
+// whose value is the requested version.
+type ZypperHoldArgs struct {
+	Name *string `statekit:"name=name"`
+	Pkgs []any   `statekit:"name=pkgs"`
+	Root *string `statekit:"name=root"`
+}
+
 // ZypperInfoAvailableArgs mirrors zypperpkg.info_available.  The source uses
 // variadic package names plus **kwargs; only kwargs with source-backed
 // repository refresh semantics are represented here.
@@ -137,6 +146,8 @@ func ZypperPrototype(name string) (any, bool) {
 		return ZypperListLocksArgs{}, true
 	case "clean_locks":
 		return ZypperCleanLocksArgs{}, true
+	case "hold", "unhold":
+		return ZypperHoldArgs{}, true
 	case "list_upgrades":
 		return ZypperListUpgradesArgs{}, true
 	case "upgrade_available":

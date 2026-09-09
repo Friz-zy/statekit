@@ -54,10 +54,21 @@ func (p *commandProvider) Zypper(ctx context.Context, rt *runtime.Runtime, funct
 			return map[string]any{}, nil
 		}
 	}
+	// hold/unhold raise the same CommandExecutionError before kwargs, the
+	// lock file, or zypper are touched when no target was supplied.
+	if function == "hold" || function == "unhold" {
+		if zypperHoldInputEmpty(a) {
+			return nil, errZypperHoldTargetsRequired
+		}
+	}
 	if err := validateZypperArgs(function, a); err != nil {
 		return nil, err
 	}
 	switch function {
+	case "hold":
+		return zypperHold(ctx, rt, a)
+	case "unhold":
+		return zypperUnhold(ctx, rt, a)
 	case "list_patterns", "list_installed_patterns":
 		return zypperPatterns(ctx, rt, function, a)
 	case "list_locks":
@@ -108,6 +119,9 @@ func zypperFunctionSupported(function string) bool {
 	if function == "list_locks" || function == "clean_locks" {
 		return true
 	}
+	if function == "hold" || function == "unhold" {
+		return true
+	}
 	if function == "info_available" || function == "search" {
 		return true
 	}
@@ -123,6 +137,9 @@ func validateZypperArgs(function string, args map[string]any) error {
 	}
 	if function == "list_locks" || function == "clean_locks" {
 		return validateZypperLocksArgs(args)
+	}
+	if function == "hold" || function == "unhold" {
+		return validateZypperHoldArgs(function, args)
 	}
 	if function == "list_upgrades" || function == "upgrade_available" {
 		return validateZypperUpgradeArgs(function, args)

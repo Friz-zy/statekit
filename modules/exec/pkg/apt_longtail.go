@@ -154,7 +154,7 @@ func (f aptLongtailFunc) ProviderCapabilities() []string {
 		return []string{"aptpkg", "yumpkg"}
 	}
 	if f.name == "hold" || f.name == "unhold" {
-		return []string{"aptpkg", "yumpkg"}
+		return []string{"aptpkg", "yumpkg", "zypperpkg"}
 	}
 	if f.name == "group_diff" {
 		return []string{"yumpkg"}

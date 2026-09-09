@@ -349,7 +349,7 @@ func TestHoldRegistryProviderMatrix(t *testing.T) {
 	if err := Register(reg); err != nil {
 		t.Fatal(err)
 	}
-	if got := reg.ProviderCapabilities("pkg.hold"); !reflect.DeepEqual(got, []string{"aptpkg", "yumpkg"}) {
+	if got := reg.ProviderCapabilities("pkg.hold"); !reflect.DeepEqual(got, []string{"aptpkg", "yumpkg", "zypperpkg"}) {
 		t.Fatalf("capabilities=%v", got)
 	}
 	aptRunner := &aptFakeRunner{results: []process.CommandResult{{Stdout: []byte("p install\n")}, {}}}
@@ -409,8 +409,13 @@ func TestHoldRegistryProviderMatrix(t *testing.T) {
 		}
 	}
 	zypperRunner := &aptFakeRunner{}
-	if _, err := reg.ResolveArgs(aptExecRuntime("zypper", zypperRunner), "pkg.hold"); !errors.As(err, new(*runtime.UnsupportedError)) || len(zypperRunner.calls) != 0 {
-		t.Fatalf("zypper err=%v calls=%d", err, len(zypperRunner.calls))
+	zypperRT := aptExecRuntime("zypper", zypperRunner)
+	prototype, err = reg.ResolveArgs(zypperRT, "pkg.hold")
+	if err != nil || reflect.TypeOf(prototype) != reflect.TypeOf(ZypperHoldArgs{}) {
+		t.Fatalf("zypper prototype=%T err=%v", prototype, err)
+	}
+	if names, err := config.ArgumentNames(prototype); err != nil || !reflect.DeepEqual(names, []string{"name", "pkgs", "root"}) {
+		t.Fatalf("zypper names=%v err=%v", names, err)
 	}
 	yumRunner := &aptFakeRunner{}
 	yumRT := aptExecRuntime("yum", yumRunner)
@@ -424,7 +429,7 @@ func TestUnholdRegistryActualProviderMatrix(t *testing.T) {
 	if err := Register(reg); err != nil {
 		t.Fatal(err)
 	}
-	if got := reg.ProviderCapabilities("pkg.unhold"); !reflect.DeepEqual(got, []string{"aptpkg", "yumpkg"}) {
+	if got := reg.ProviderCapabilities("pkg.unhold"); !reflect.DeepEqual(got, []string{"aptpkg", "yumpkg", "zypperpkg"}) {
 		t.Fatalf("capabilities=%v", got)
 	}
 	for _, provider := range []string{"apt", "yum", "dnf", "dnf5", "zypper"} {
@@ -439,31 +444,39 @@ func TestUnholdRegistryActualProviderMatrix(t *testing.T) {
 				t.Fatal(err)
 			}
 			prototype, err := reg.ResolveArgs(rt, "pkg.unhold")
-			if provider == "zypper" {
-				var unsupported *runtime.UnsupportedError
-				if err == nil || !errors.As(err, &unsupported) || len(r.calls) != 0 {
-					t.Fatalf("resolve err=%v calls=%d", err, len(r.calls))
-				}
-				got, callErr := reg.Call(context.Background(), rt, "pkg.unhold", &PackagesArgs{})
-				if got != nil || !errors.As(callErr, &unsupported) || len(r.calls) != 0 {
-					t.Fatalf("call got=%#v err=%v calls=%d", got, callErr, len(r.calls))
-				}
-				return
-			}
 			wantType := reflect.TypeOf(PackagesArgs{})
-			if provider != "apt" {
+			wantNames := []string{"name", "pkgs", "sources"}
+			if provider == "zypper" {
+				wantType = reflect.TypeOf(ZypperHoldArgs{})
+				wantNames = []string{"name", "pkgs", "root"}
+			} else if provider != "apt" {
 				wantType = reflect.TypeOf(YumHoldArgs{})
+				wantNames = []string{"name", "normalize", "pkgs", "sources"}
 			}
 			if err != nil || reflect.TypeOf(prototype) != wantType {
 				t.Fatalf("prototype=%T err=%v", prototype, err)
 			}
 			names, err := config.ArgumentNames(prototype)
-			wantNames := []string{"name", "pkgs", "sources"}
-			if provider != "apt" {
-				wantNames = []string{"name", "normalize", "pkgs", "sources"}
-			}
 			if err != nil || !reflect.DeepEqual(names, wantNames) {
 				t.Fatalf("argument names=%v err=%v", names, err)
+			}
+			if provider == "zypper" {
+				if err := rt.FS.MkdirAll("/etc/zypp", 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := rt.FS.WriteFile("/etc/zypp/locks", []byte("solvable_name: demo\nversion: == 1-2\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				name := "demo"
+				got, callErr := reg.Call(context.Background(), rt, "pkg.unhold", &ZypperHoldArgs{Name: &name})
+				want := map[string]any{"demo": map[string]any{"name": "demo", "changes": map[string]any{"new": "", "old": "hold"}, "result": true, "comment": "Package demo is no longer held."}}
+				if callErr != nil || !reflect.DeepEqual(zypperHoldPlain(t, got), want) {
+					t.Fatalf("zypper got=%#v err=%v", got, callErr)
+				}
+				if len(r.calls) != 1 || !reflect.DeepEqual(commandArgv(r.calls), [][]string{{"zypper", "--non-interactive", "--no-refresh", "rl", "demo=1-2"}}) {
+					t.Fatalf("zypper argv=%#v", commandArgv(r.calls))
+				}
+				return
 			}
 			if provider == "apt" {
 				r.results = []process.CommandResult{{Stdout: []byte("demo hold\n")}, {}}
