@@ -263,13 +263,20 @@ func (f yumPatchesFunc) Args() any {
 }
 func (f yumPatchesFunc) ProviderKind() string { return "pkg" }
 func (f yumPatchesFunc) ArgsForProvider(providerName string) (any, error) {
-	if providerName != "yum" && providerName != "dnf" && providerName != "dnf5" {
+	switch providerName {
+	case "yum", "dnf", "dnf5":
+		return f.Args(), nil
+	case "zypper":
+		if f.installedOnly {
+			return ZypperListInstalledPatchesArgs{}, nil
+		}
+		return ZypperListPatchesArgs{}, nil
+	default:
 		return nil, &runtime.UnsupportedError{Kind: "provider", Name: providerName}
 	}
-	return f.Args(), nil
 }
 func (f yumPatchesFunc) ProviderArgsStrict() bool       { return true }
-func (f yumPatchesFunc) ProviderCapabilities() []string { return []string{"yumpkg"} }
+func (f yumPatchesFunc) ProviderCapabilities() []string { return []string{"yumpkg", "zypperpkg"} }
 func (f yumPatchesFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
 	p, err := pkgprovider.Resolve(rt)
 	if err != nil {
@@ -278,6 +285,13 @@ func (f yumPatchesFunc) Execute(ctx context.Context, rt *runtime.Runtime, args a
 	prototype, err := f.ArgsForProvider(p.Name())
 	if err != nil {
 		return nil, err
+	}
+	if zp, ok := p.(pkgprovider.ZypperProvider); ok && p.Name() == "zypper" {
+		argMap, err := mapArgs(f.Name(), args, prototype)
+		if err != nil {
+			return nil, err
+		}
+		return zp.Zypper(ctx, rt, strings.TrimPrefix(f.Name(), "pkg."), argMap)
 	}
 	yp, ok := p.(pkgprovider.YumProvider)
 	if !ok {

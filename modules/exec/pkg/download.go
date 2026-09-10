@@ -19,11 +19,13 @@ func (downloadFunc) Name() string                   { return "pkg.download" }
 func (downloadFunc) Args() any                      { return DownloadArgs{} }
 func (downloadFunc) ProviderKind() string           { return "pkg" }
 func (downloadFunc) ProviderArgsStrict() bool       { return true }
-func (downloadFunc) ProviderCapabilities() []string { return []string{"yumpkg"} }
+func (downloadFunc) ProviderCapabilities() []string { return []string{"yumpkg", "zypperpkg"} }
 func (downloadFunc) ArgsForProvider(providerName string) (any, error) {
 	switch providerName {
 	case "yum", "dnf", "dnf5":
 		return DownloadArgs{}, nil
+	case "zypper":
+		return ZypperDownloadArgs{}, nil
 	default:
 		return nil, &runtime.UnsupportedError{Kind: "provider", Name: providerName}
 	}
@@ -34,14 +36,22 @@ func (downloadFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) 
 	if err != nil {
 		return nil, err
 	}
-	if _, err := (downloadFunc{}).ArgsForProvider(p.Name()); err != nil {
+	prototype, err := (downloadFunc{}).ArgsForProvider(p.Name())
+	if err != nil {
 		return nil, err
+	}
+	if zp, ok := p.(pkgprovider.ZypperProvider); ok && p.Name() == "zypper" {
+		argMap, err := mapArgs("pkg.download", args, prototype)
+		if err != nil {
+			return nil, err
+		}
+		return zp.Zypper(ctx, rt, "download", argMap)
 	}
 	yp, ok := p.(pkgprovider.YumProvider)
 	if !ok {
 		return nil, pkgprovider.ErrUnsupportedYUM
 	}
-	argMap, err := mapArgs("pkg.download", args, DownloadArgs{})
+	argMap, err := mapArgs("pkg.download", args, prototype)
 	if err != nil {
 		return nil, err
 	}

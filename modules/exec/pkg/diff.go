@@ -21,11 +21,13 @@ func (diffFunc) Name() string                   { return "pkg.diff" }
 func (diffFunc) Args() any                      { return DiffArgs{} }
 func (diffFunc) ProviderKind() string           { return "pkg" }
 func (diffFunc) ProviderArgsStrict() bool       { return true }
-func (diffFunc) ProviderCapabilities() []string { return []string{"yumpkg"} }
+func (diffFunc) ProviderCapabilities() []string { return []string{"yumpkg", "zypperpkg"} }
 func (diffFunc) ArgsForProvider(providerName string) (any, error) {
 	switch providerName {
 	case "yum", "dnf", "dnf5":
 		return DiffArgs{}, nil
+	case "zypper":
+		return ZypperDiffArgs{}, nil
 	default:
 		return nil, &runtime.UnsupportedError{Kind: "provider", Name: providerName}
 	}
@@ -39,14 +41,22 @@ func (diffFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any
 	if err != nil {
 		return nil, err
 	}
-	if _, err := (diffFunc{}).ArgsForProvider(provider.Name()); err != nil {
+	prototype, err := (diffFunc{}).ArgsForProvider(provider.Name())
+	if err != nil {
 		return nil, err
+	}
+	if zp, ok := provider.(pkgprovider.ZypperProvider); ok && provider.Name() == "zypper" {
+		argMap, err := mapArgs("pkg.diff", args, prototype)
+		if err != nil {
+			return nil, err
+		}
+		return zp.Zypper(ctx, rt, "diff", argMap)
 	}
 	yum, ok := provider.(pkgprovider.YumProvider)
 	if !ok {
 		return nil, pkgprovider.ErrUnsupportedYUM
 	}
-	argMap, err := mapArgs("pkg.diff", args, DiffArgs{})
+	argMap, err := mapArgs("pkg.diff", args, prototype)
 	if err != nil {
 		return nil, err
 	}

@@ -2,7 +2,6 @@ package pkg
 
 import (
 	"context"
-	"errors"
 	"reflect"
 	"testing"
 
@@ -108,7 +107,7 @@ func TestListRepoPkgsRegistryActualProviderMatrix(t *testing.T) {
 			if names, err := config.ArgumentNames(prototype); err != nil || !reflect.DeepEqual(names, tc.argNames) {
 				t.Fatalf("argument names=%v err=%v", names, err)
 			}
-			if caps := registry.ProviderCapabilities("pkg.list_repo_pkgs"); !reflect.DeepEqual(caps, []string{"aptpkg", "yumpkg"}) {
+			if caps := registry.ProviderCapabilities("pkg.list_repo_pkgs"); !reflect.DeepEqual(caps, []string{"aptpkg", "yumpkg", "zypperpkg"}) {
 				t.Fatalf("capabilities=%v", caps)
 			}
 			before, err := rt.FS.ReadFile("/etc/yum/repos.d/statekit.repo")
@@ -138,10 +137,11 @@ func TestListRepoPkgsRegistryActualProviderMatrix(t *testing.T) {
 	zypperRunner := &aptFakeRunner{}
 	zypper, registry := listRepoPkgsRegistryRuntime(t, "zypper", zypperRunner)
 	zypper.FS = nil // ResolveArgs and the capability gate must not require FS.
-	if prototype, err := registry.ResolveArgs(zypper, "pkg.list_repo_pkgs"); prototype != nil || !errors.As(err, new(*runtime.UnsupportedError)) {
+	prototype, err := registry.ResolveArgs(zypper, "pkg.list_repo_pkgs")
+	if err != nil || reflect.TypeOf(prototype) != reflect.TypeOf(ZypperListRepoPkgsArgs{}) {
 		t.Fatalf("zypper resolve prototype=%T err=%v", prototype, err)
 	}
-	if got, err := registry.Call(context.Background(), zypper, "pkg.list_repo_pkgs", &YumListRepoPkgsArgs{}); got != nil || !errors.As(err, new(*runtime.UnsupportedError)) || len(zypperRunner.calls) != 0 {
+	if got, err := registry.Call(context.Background(), zypper, "pkg.list_repo_pkgs", &YumListRepoPkgsArgs{}); got != nil || err == nil || len(zypperRunner.calls) != 0 {
 		t.Fatalf("zypper call got=%#v err=%v calls=%d", got, err, len(zypperRunner.calls))
 	}
 }

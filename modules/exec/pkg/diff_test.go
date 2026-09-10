@@ -126,7 +126,7 @@ func TestDiffRegistryProviderMatrixAndCanonicalRegistration(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("pkg.diff registrations=%d", count)
 	}
-	if got := reg.ProviderCapabilities("pkg.diff"); !reflect.DeepEqual(got, []string{"yumpkg"}) {
+	if got := reg.ProviderCapabilities("pkg.diff"); !reflect.DeepEqual(got, []string{"yumpkg", "zypperpkg"}) {
 		t.Fatalf("capabilities=%v", got)
 	}
 
@@ -173,7 +173,7 @@ func TestDiffRegistryProviderMatrixAndCanonicalRegistration(t *testing.T) {
 		})
 	}
 
-	for _, manager := range []string{"apt", "zypper"} {
+	for _, manager := range []string{"apt"} {
 		t.Run(manager, func(t *testing.T) {
 			rt, fsys, runner := setupDiffRegistryRuntime(t, manager)
 			prototype, err := reg.ResolveArgs(rt, "pkg.diff")
@@ -209,11 +209,14 @@ func TestDiffRegistryStrictArgsAndTestModeAvoidRunnerAndFilesystem(t *testing.T)
 }
 
 func TestDiffArgsForProviderRejectsNonYumFamilies(t *testing.T) {
-	for _, provider := range []string{"apt", "zypper"} {
+	for _, provider := range []string{"apt"} {
 		prototype, err := (diffFunc{}).ArgsForProvider(provider)
 		var unsupported *runtime.UnsupportedError
 		if prototype != nil || !errors.As(err, &unsupported) || unsupported.Name != provider {
 			t.Fatalf("provider=%s prototype=%#v err=%v", provider, prototype, err)
 		}
+	}
+	if prototype, err := (diffFunc{}).ArgsForProvider("zypper"); err != nil || reflect.TypeOf(prototype) != reflect.TypeOf(ZypperDiffArgs{}) {
+		t.Fatalf("zypper prototype=%#v err=%v", prototype, err)
 	}
 }

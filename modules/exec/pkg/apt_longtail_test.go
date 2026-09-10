@@ -1473,10 +1473,12 @@ func TestListDownloadedRegistryActualProviderMatrix(t *testing.T) {
 			}
 			prototype, err := reg.ResolveArgs(rt, "pkg.list_downloaded")
 			if provider == "zypper" {
-				if err == nil || !errors.As(err, new(*runtime.UnsupportedError)) {
-					t.Fatalf("zypper resolve err=%v", err)
+				if err != nil || reflect.TypeOf(prototype) != reflect.TypeOf(ZypperListDownloadedArgs{}) {
+					t.Fatalf("zypper resolve prototype=%T err=%v", prototype, err)
 				}
-				if got, callErr := reg.Call(context.Background(), rt, "pkg.list_downloaded", &DownloadedArgs{}); got != nil || callErr == nil || !errors.As(callErr, new(*runtime.UnsupportedError)) || len(r.calls) != 0 {
+				// The zypper pointer is the provider shape; the YUM-style
+				// pointer stays rejected before any runner use.
+				if got, callErr := reg.Call(context.Background(), rt, "pkg.list_downloaded", &DownloadedArgs{}); got != nil || callErr == nil || len(r.calls) != 0 {
 					t.Fatalf("zypper call got=%#v err=%v calls=%d", got, callErr, len(r.calls))
 				}
 				return

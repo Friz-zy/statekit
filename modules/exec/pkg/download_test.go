@@ -113,7 +113,7 @@ func TestDownloadRegistryYUMProviderMatrix(t *testing.T) {
 	if !ok || reflect.TypeOf(fn.Args()) != reflect.TypeOf(DownloadArgs{}) {
 		t.Fatalf("function=%T args=%T", fn, fn.Args())
 	}
-	if caps := reg.ProviderCapabilities("pkg.download"); !reflect.DeepEqual(caps, []string{"yumpkg"}) {
+	if caps := reg.ProviderCapabilities("pkg.download"); !reflect.DeepEqual(caps, []string{"yumpkg", "zypperpkg"}) {
 		t.Fatalf("capabilities=%v", caps)
 	}
 
@@ -165,7 +165,7 @@ func TestDownloadRegistryRejectsUnsupportedProvidersBeforeWork(t *testing.T) {
 	if err := Register(reg); err != nil {
 		t.Fatal(err)
 	}
-	for _, manager := range []string{"apt", "zypper"} {
+	for _, manager := range []string{"apt"} {
 		t.Run(manager, func(t *testing.T) {
 			rt, fsys, runner := newDownloadRegistryRuntime(t, manager)
 			prototype, err := reg.ResolveArgs(rt, "pkg.download")

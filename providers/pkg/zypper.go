@@ -61,6 +61,17 @@ func (p *commandProvider) Zypper(ctx context.Context, rt *runtime.Runtime, funct
 			return nil, errZypperHoldTargetsRequired
 		}
 	}
+	// download raises SaltInvocationError before kwargs, refresh, or zypper
+	// are touched when no package was supplied.
+	if function == "download" {
+		packages, err := zypperPackageList(a, "packages")
+		if err != nil {
+			return nil, err
+		}
+		if len(packages) == 0 {
+			return nil, errZypperDownloadPackagesRequired
+		}
+	}
 	if err := validateZypperArgs(function, a); err != nil {
 		return nil, err
 	}
@@ -119,6 +130,18 @@ func (p *commandProvider) Zypper(ctx context.Context, rt *runtime.Runtime, funct
 		return zypperUpgrade(ctx, rt, a)
 	case "purge":
 		return zypperPurge(ctx, rt, a)
+	case "list_patches", "list_installed_patches":
+		return zypperPatches(ctx, rt, function, a)
+	case "services_need_restart":
+		return zypperServicesNeedRestart(ctx, rt, a)
+	case "list_repo_pkgs":
+		return zypperListRepoPkgs(ctx, rt, a)
+	case "download":
+		return zypperDownload(ctx, rt, a)
+	case "list_downloaded":
+		return zypperListDownloaded(ctx, rt, a)
+	case "diff":
+		return zypperDiff(ctx, rt, a)
 	default:
 		panic("unreachable")
 	}
@@ -141,6 +164,12 @@ func zypperFunctionSupported(function string) bool {
 		return true
 	}
 	if function == "upgrade" || function == "purge" {
+		return true
+	}
+	if function == "list_patches" || function == "list_installed_patches" || function == "services_need_restart" {
+		return true
+	}
+	if function == "list_repo_pkgs" || function == "download" || function == "list_downloaded" || function == "diff" {
 		return true
 	}
 	if function == "normalize_name" || function == "parse_arch" || function == "version_cmp" {
@@ -182,6 +211,24 @@ func validateZypperArgs(function string, args map[string]any) error {
 	}
 	if function == "upgrade" || function == "purge" {
 		return validateZypperUpgradeMutationArgs(function, args)
+	}
+	if function == "list_patches" || function == "list_installed_patches" {
+		return validateZypperPatchArgs(function, args)
+	}
+	if function == "services_need_restart" {
+		return validateZypperServicesArgs(args)
+	}
+	if function == "list_repo_pkgs" {
+		return validateZypperRepoPkgsArgs(args)
+	}
+	if function == "download" {
+		return validateZypperDownloadArgs(args)
+	}
+	if function == "list_downloaded" {
+		return validateZypperListDownloadedArgs(args)
+	}
+	if function == "diff" {
+		return validateZypperDiffArgs(args)
 	}
 	allowed := map[string]bool{}
 	switch function {

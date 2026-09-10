@@ -169,7 +169,7 @@ func (f aptLongtailFunc) ProviderCapabilities() []string {
 		return []string{"yumpkg", "zypperpkg"}
 	}
 	if f.name == "services_need_restart" {
-		return []string{"aptpkg", "yumpkg"}
+		return []string{"aptpkg", "yumpkg", "zypperpkg"}
 	}
 	// These public names are shared by aptpkg and yumpkg; execution dispatch
 	// remains provider-specific below. Unique APT functions stay APT-only.
@@ -188,10 +188,10 @@ func (f aptLongtailFunc) ProviderCapabilities() []string {
 		return []string{"aptpkg", "yumpkg", "zypperpkg"}
 	}
 	if f.name == "list_downloaded" {
-		return []string{"aptpkg", "yumpkg"}
+		return []string{"aptpkg", "yumpkg", "zypperpkg"}
 	}
 	if f.name == "list_repo_pkgs" {
-		return []string{"aptpkg", "yumpkg"}
+		return []string{"aptpkg", "yumpkg", "zypperpkg"}
 	}
 	if f.name == "info_available" {
 		return []string{"zypperpkg"}

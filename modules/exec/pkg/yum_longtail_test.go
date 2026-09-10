@@ -726,13 +726,13 @@ func TestServicesNeedRestartRegistryRejectsUnsupportedProvidersBeforeRunner(t *t
 	if err := pkgprovider.Register(providers); err != nil {
 		t.Fatal(err)
 	}
-	for _, manager := range []string{"yum", "zypper"} {
+	for _, manager := range []string{"yum"} {
 		runner := &yumExecRecordingRunner{}
 		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: manager}), Providers: providers, Runner: runner}
-		if manager != "yum" {
-			if _, err := reg.ResolveArgs(rt, "pkg.services_need_restart"); err == nil {
-				t.Fatalf("%s unexpectedly resolved", manager)
-			}
+		// yum resolves the shared no-argument prototype; the provider itself
+		// rejects the call before any command runs.
+		if _, err := reg.ResolveArgs(rt, "pkg.services_need_restart"); err != nil {
+			t.Fatalf("%s resolve: %v", manager, err)
 		}
 		if _, err := reg.Call(context.Background(), rt, "pkg.services_need_restart", &struct{}{}); err == nil || len(runner.commands) != 0 {
 			t.Fatalf("%s call err=%v commands=%d", manager, err, len(runner.commands))
@@ -911,7 +911,7 @@ func TestListPatchesProviderAwareRegistry(t *testing.T) {
 			if names, err := config.ArgumentNames(prototype); err != nil || !reflect.DeepEqual(names, wantNames) {
 				t.Fatalf("%s/%s names=%v err=%v", manager, name, names, err)
 			}
-			if got := reg.ProviderCapabilities(name); !reflect.DeepEqual(got, []string{"yumpkg"}) {
+			if got := reg.ProviderCapabilities(name); !reflect.DeepEqual(got, []string{"yumpkg", "zypperpkg"}) {
 				t.Fatalf("%s/%s capabilities=%v", manager, name, got)
 			}
 			var args any = &YumListPatchesArgs{Refresh: func() *bool { v := false; return &v }()}
@@ -932,7 +932,7 @@ func TestListPatchesProviderAwareRegistry(t *testing.T) {
 			runner.commands = nil
 		}
 	}
-	for _, manager := range []string{"apt", "zypper"} {
+	for _, manager := range []string{"apt"} {
 		runner := &yumExecRecordingRunner{}
 		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: manager}), Providers: providers, Runner: runner}
 		for _, name := range []string{"pkg.list_patches", "pkg.list_installed_patches"} {

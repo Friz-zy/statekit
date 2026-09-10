@@ -196,6 +196,55 @@ type ZypperPurgeArgs struct {
 	Root *string  `statekit:"name=root"`
 }
 
+// ZypperListPatchesArgs mirrors zypperpkg.list_patches(refresh=False,
+// root=None). Zypper keeps a root argument that the YUM patches contract
+// does not expose.
+type ZypperListPatchesArgs struct {
+	Refresh *bool   `statekit:"name=refresh"`
+	Root    *string `statekit:"name=root"`
+}
+
+// ZypperListInstalledPatchesArgs mirrors
+// zypperpkg.list_installed_patches(root=None).
+type ZypperListInstalledPatchesArgs struct {
+	Root *string `statekit:"name=root"`
+}
+
+// ZypperServicesNeedRestartArgs mirrors
+// zypperpkg.services_need_restart(root=None).
+type ZypperServicesNeedRestartArgs struct {
+	Root *string `statekit:"name=root"`
+}
+
+// ZypperListRepoPkgsArgs mirrors zypperpkg.list_repo_pkgs(*args,
+// byrepo=False, fromrepo="", root=None). The variadic targets keep the
+// zypperpkg "pkgs" name used by the other zypper vararg contracts.
+type ZypperListRepoPkgsArgs struct {
+	Pkgs     []string `statekit:"name=pkgs"`
+	Byrepo   *bool    `statekit:"name=byrepo"`
+	Fromrepo *string  `statekit:"name=fromrepo"`
+	Root     *string  `statekit:"name=root"`
+}
+
+// ZypperDownloadArgs mirrors zypperpkg.download(*packages, refresh=False,
+// root=None).
+type ZypperDownloadArgs struct {
+	Packages []string `statekit:"name=packages"`
+	Refresh  *bool    `statekit:"name=refresh"`
+	Root     *string  `statekit:"name=root"`
+}
+
+// ZypperListDownloadedArgs mirrors zypperpkg.list_downloaded(root=None).
+type ZypperListDownloadedArgs struct {
+	Root *string `statekit:"name=root"`
+}
+
+// ZypperDiffArgs mirrors zypperpkg.diff(*paths, root=None).
+type ZypperDiffArgs struct {
+	Paths []string `statekit:"name=paths"`
+	Root  *string  `statekit:"name=root"`
+}
+
 // ZypperPrototype returns the provider-specific argument shape for the
 // read-only zypperpkg functions. Registration remains canonical in the
 // shared execution functions.
@@ -241,6 +290,20 @@ func ZypperPrototype(name string) (any, bool) {
 		return ZypperUpgradeArgs{}, true
 	case "purge":
 		return ZypperPurgeArgs{}, true
+	case "list_patches":
+		return ZypperListPatchesArgs{}, true
+	case "list_installed_patches":
+		return ZypperListInstalledPatchesArgs{}, true
+	case "services_need_restart":
+		return ZypperServicesNeedRestartArgs{}, true
+	case "list_repo_pkgs":
+		return ZypperListRepoPkgsArgs{}, true
+	case "download":
+		return ZypperDownloadArgs{}, true
+	case "list_downloaded":
+		return ZypperListDownloadedArgs{}, true
+	case "diff":
+		return ZypperDiffArgs{}, true
 	default:
 		return nil, false
 	}
