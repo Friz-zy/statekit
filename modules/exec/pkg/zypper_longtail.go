@@ -92,6 +92,33 @@ type ZypperSearchArgs struct {
 	Details            *bool   `statekit:"name=details"`
 }
 
+// ZypperListProductsArgs mirrors zypperpkg.list_products exactly: all,
+// refresh, and root, all optional with the source defaults False, False, and
+// None.
+type ZypperListProductsArgs struct {
+	All     *bool   `statekit:"name=all"`
+	Refresh *bool   `statekit:"name=refresh"`
+	Root    *string `statekit:"name=root"`
+}
+
+// ZypperListProvidesArgs mirrors zypperpkg.list_provides(root=None). Salt
+// caches the result in __context__ across one minion call; StateKit has no
+// cross-call context, so the provider recomputes the mapping per call.
+type ZypperListProvidesArgs struct {
+	Root *string `statekit:"name=root"`
+}
+
+// ZypperResolveCapabilitiesArgs mirrors zypperpkg.resolve_capabilities. The
+// source's resolve_capabilities **kwarg is exposed as an explicit optional
+// boolean defaulting to false; pkgs entries are strings or one-key
+// name-to-version mappings.
+type ZypperResolveCapabilitiesArgs struct {
+	Pkgs                []any   `statekit:"name=pkgs"`
+	Refresh             *bool   `statekit:"name=refresh"`
+	Root                *string `statekit:"name=root"`
+	ResolveCapabilities *bool   `statekit:"name=resolve_capabilities"`
+}
+
 // ZypperVersionCmpArgs mirrors zypperpkg.version_cmp's source argument
 // names. It is provider-specific because aptpkg/yumpkg use pkg1/pkg2.
 type ZypperVersionCmpArgs struct {
@@ -167,6 +194,12 @@ func ZypperPrototype(name string) (any, bool) {
 		return ZypperInfoAvailableArgs{}, true
 	case "search":
 		return ZypperSearchArgs{}, true
+	case "list_products":
+		return ZypperListProductsArgs{}, true
+	case "list_provides":
+		return ZypperListProvidesArgs{}, true
+	case "resolve_capabilities":
+		return ZypperResolveCapabilitiesArgs{}, true
 	case "file_list", "file_dict":
 		return ZypperFilesArgs{}, true
 	case "info_installed":

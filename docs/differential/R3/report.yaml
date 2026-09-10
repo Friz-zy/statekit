@@ -93,18 +93,15 @@ families:
         catalog_functions: 54
         public_functions: 42
         private_functions: 12
-        registered_public: 30
+        registered_public: 33
         pending_public:
             - pkg.diff
             - pkg.download
             - pkg.list_downloaded
             - pkg.list_installed_patches
             - pkg.list_patches
-            - pkg.list_products
-            - pkg.list_provides
             - pkg.list_repo_pkgs
             - pkg.purge
-            - pkg.resolve_capabilities
             - pkg.services_need_restart
             - pkg.upgrade
         differential_scenarios:
@@ -113,4 +110,4 @@ families:
 totals:
     catalog_functions: 261
     public_functions: 172
-    registered_public: 160
+    registered_public: 163

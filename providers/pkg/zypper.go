@@ -109,6 +109,12 @@ func (p *commandProvider) Zypper(ctx context.Context, rt *runtime.Runtime, funct
 		return zypperOwner(ctx, rt, a)
 	case "verify":
 		return zypperVerify(ctx, rt, a)
+	case "list_products":
+		return zypperListProducts(ctx, rt, a)
+	case "list_provides":
+		return zypperListProvides(ctx, rt, a)
+	case "resolve_capabilities":
+		return zypperResolveCapabilities(ctx, rt, a)
 	default:
 		panic("unreachable")
 	}
@@ -125,6 +131,9 @@ func zypperFunctionSupported(function string) bool {
 		return true
 	}
 	if function == "info_available" || function == "search" {
+		return true
+	}
+	if function == "list_products" || function == "list_provides" || function == "resolve_capabilities" {
 		return true
 	}
 	if function == "normalize_name" || function == "parse_arch" || function == "version_cmp" {
@@ -154,6 +163,15 @@ func validateZypperArgs(function string, args map[string]any) error {
 	}
 	if function == "search" {
 		return validateZypperSearchArgs(args)
+	}
+	if function == "list_products" {
+		return validateZypperProductsArgs(args)
+	}
+	if function == "list_provides" {
+		return validateZypperListProvidesArgs(args)
+	}
+	if function == "resolve_capabilities" {
+		return validateZypperResolveArgs(args)
 	}
 	allowed := map[string]bool{}
 	switch function {
