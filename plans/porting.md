@@ -1662,6 +1662,45 @@ The PTD tables below are retained as an immutable audit snapshot. These
 overrides are the current status and do not delete or rewrite any original
 rows or counts.
 
+##### 2026-09-10 current status
+
+Current actual HEAD is `b36cbea`. R3.2/YUM is complete; R3.3/Zypper is
+**complete**. The current R3.3 implementation and independent-gate ledger is:
+
+| Commit | Scope | Implementation executor role | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `8b65a10` | R3.3a Zypper pure `normalize_name`/`parse_arch`/`version_cmp` | `backend-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior/architect` | passed; scoped HUMAN exception `SDD-SANDBOX-CONTRACT-001` covered noncritical cgroup controls, with critical preflight intact |
+| `2c2c353` | R3.3b Zypper read-only RPM lowpkg surface: `file_list`/`file_dict`/`info_installed`/`modified`/`owner`/`verify` | `backend-engineer-senior` | `backend-engineer-lead` | passed; security hardening (`noscripts`/input/bounds) included |
+| `77c6b38` | R3.3c Zypper `list_upgrades`/`upgrade_available` | `backend-engineer-lead` | `backend-engineer-lead` | passed; pinned distinction between list-updates XML and `info -t package` preserved |
+| `ec91555` | R3.3d Zypper `info_available` | `backend-engineer-senior` | `backend-engineer-lead` | passed |
+| `071274b` | R3.3e Zypper `search` | `backend-engineer-senior` | `backend-engineer-lead` | passed after XML redaction/full scratch fixes |
+| `9e35910` | R3.3f Zypper `list_patterns`/`list_installed_patterns` | `backend-engineer-senior` | `backend-engineer-lead` | passed after RawToken namespace/source parity fixes |
+| `3c81dd5` | Ledger correction itself; not an implementation phase | `technical-writer-middle` | not applicable (documentation-only) | not counted |
+| `c1e0804` | R3.3g Zypper `list_locks`/`clean_locks` | `backend-engineer-senior` | `backend-engineer-lead` | passed after CRLF/ordering/first-message/cancellation parity fixes |
+| `5747f83` | R3.3h Zypper `hold`/`unhold` | `backend-engineer-senior` | `backend-engineer-lead` | passed |
+| `145106f` | Ledger update itself; not an implementation phase | `technical-writer-middle` | not applicable (documentation-only) | not counted |
+| `132f033` | R3.3i Zypper `list_holds` (shared yum/zypper) | `backend-engineer-senior` | `backend-engineer-lead` | passed after pattern-diagnostics/unknown-key sanitization fixes plus `yum.go` companion hardening |
+| `2e60ff4` | R3.3j Zypper `list_products`/`list_provides`/`resolve_capabilities` | `backend-engineer-senior` | `backend-engineer-lead` | passed (informational findings only) |
+| `3cb2031` | R3.3k Zypper `purge`/`upgrade` | `backend-engineer-senior` | `backend-engineer-lead` | passed |
+| `b36cbea` | R3.3l final batch `list_patches`/`list_installed_patches`/`services_need_restart`/`list_repo_pkgs`/`download`/`list_downloaded`/`diff` | `backend-engineer-lead` | `backend-engineer-senior` | passed (0 blocking; 3 low follow-ups documented: `ZYPP_READONLY_HACK` on download inherited from the central runner, BFS walk-order divergence, pre-existing gofmt `group_install_test.go`) |
+
+Current R3 report: `aptpkg` 34 registered / 0 pending, `yumpkg` 39
+registered / 0 pending, `zypperpkg` 42 registered / 0 pending; total
+`registered_public` 172 (165 unique + 7 shared names counted per family).
+R3.3 Zypper long-tail is **COMPLETE**; the R3 differential is now fully
+closed for all three provider families (`aptpkg` 34/0, `yumpkg` 39/0,
+`zypperpkg` 42/0).
+
+Follow-up backlog (out of R3.3 scope): lock-respecting zypper runner
+variant for the cache-writing download, BFS walk-order fidelity across
+providers, gofmt `group_install_test.go`, and `TestR43SmokeCalls` temp-dir
+isolation.
+
+Execution was Podman-only. The scoped HUMAN exception
+`SDD-SANDBOX-CONTRACT-001` covered noncritical cgroup controls; critical
+isolation remained retained. No new dependencies or live package-manager
+mutation were used.
+
 ##### 2026-09-09 current status
 
 Current actual HEAD is `5747f83`. R3.2/YUM is complete; R3.3/Zypper remains
