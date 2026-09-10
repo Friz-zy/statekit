@@ -260,11 +260,13 @@ func TestZypperProviderAwareRegistryMatrix(t *testing.T) {
 				}
 			}
 			if manager == "zypper" {
-				if _, err := reg.ResolveArgs(rt, "pkg.purge"); err == nil {
-					t.Fatal("zypper-only pure matrix unexpectedly resolved purge")
+				// Purge gained a zypper prototype; the shared APT pointer is the
+				// wrong shape and stops at the strict registry boundary.
+				if _, err := reg.ResolveArgs(rt, "pkg.purge"); err != nil {
+					t.Fatalf("zypper purge resolve: %v", err)
 				}
 				if got, err := reg.Call(context.Background(), rt, "pkg.purge", &PurgeArgs{}); got != nil || err == nil || len(runner.calls) != callsBefore {
-					t.Fatalf("unsupported purge got=%#v err=%v calls=%d", got, err, len(runner.calls))
+					t.Fatalf("shared purge pointer got=%#v err=%v calls=%d", got, err, len(runner.calls))
 				}
 			}
 		})

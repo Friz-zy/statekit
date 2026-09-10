@@ -115,6 +115,10 @@ func (p *commandProvider) Zypper(ctx context.Context, rt *runtime.Runtime, funct
 		return zypperListProvides(ctx, rt, a)
 	case "resolve_capabilities":
 		return zypperResolveCapabilities(ctx, rt, a)
+	case "upgrade":
+		return zypperUpgrade(ctx, rt, a)
+	case "purge":
+		return zypperPurge(ctx, rt, a)
 	default:
 		panic("unreachable")
 	}
@@ -134,6 +138,9 @@ func zypperFunctionSupported(function string) bool {
 		return true
 	}
 	if function == "list_products" || function == "list_provides" || function == "resolve_capabilities" {
+		return true
+	}
+	if function == "upgrade" || function == "purge" {
 		return true
 	}
 	if function == "normalize_name" || function == "parse_arch" || function == "version_cmp" {
@@ -172,6 +179,9 @@ func validateZypperArgs(function string, args map[string]any) error {
 	}
 	if function == "resolve_capabilities" {
 		return validateZypperResolveArgs(args)
+	}
+	if function == "upgrade" || function == "purge" {
+		return validateZypperUpgradeMutationArgs(function, args)
 	}
 	allowed := map[string]bool{}
 	switch function {

@@ -181,7 +181,7 @@ func TestPurgeRegistryActualProviderMatrix(t *testing.T) {
 	if err := Register(reg); err != nil {
 		t.Fatal(err)
 	}
-	if got := reg.ProviderCapabilities("pkg.purge"); !reflect.DeepEqual(got, []string{"aptpkg", "yumpkg"}) {
+	if got := reg.ProviderCapabilities("pkg.purge"); !reflect.DeepEqual(got, []string{"aptpkg", "yumpkg", "zypperpkg"}) {
 		t.Fatalf("capabilities=%v", got)
 	}
 	for _, typ := range []reflect.Type{reflect.TypeOf(PurgeArgs{}), reflect.TypeOf(YumPurgeArgs{})} {
@@ -260,12 +260,16 @@ func TestPurgeRegistryActualProviderMatrix(t *testing.T) {
 		})
 	}
 
+	// Zypper resolves its own purge prototype; the legacy APT shape is the
+	// wrong pointer and must stop at the strict registry boundary.
 	zypperRunner := &aptFakeRunner{}
 	zypper := aptExecRuntime("zypper", zypperRunner)
-	if _, err := reg.ResolveArgs(zypper, "pkg.purge"); !errors.As(err, new(*runtime.UnsupportedError)) || len(zypperRunner.calls) != 0 {
-		t.Fatalf("zypper resolve err=%v calls=%d", err, len(zypperRunner.calls))
+	prototype, err := reg.ResolveArgs(zypper, "pkg.purge")
+	if err != nil || reflect.TypeOf(prototype) != reflect.TypeOf(ZypperPurgeArgs{}) {
+		t.Fatalf("zypper resolve prototype=%T err=%v", prototype, err)
 	}
-	if got, err := reg.Call(context.Background(), zypper, "pkg.purge", &PurgeArgs{}); got != nil || !errors.As(err, new(*runtime.UnsupportedError)) || len(zypperRunner.calls) != 0 {
+	before := len(zypperRunner.calls)
+	if got, err := reg.Call(context.Background(), zypper, "pkg.purge", &PurgeArgs{}); got != nil || err == nil || len(zypperRunner.calls) != before {
 		t.Fatalf("zypper call got=%#v err=%v calls=%d", got, err, len(zypperRunner.calls))
 	}
 }

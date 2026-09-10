@@ -154,7 +154,7 @@ func (f aptLongtailFunc) ProviderCapabilities() []string {
 		return []string{"zypperpkg"}
 	}
 	if f.name == "upgrade" {
-		return []string{"aptpkg", "yumpkg"}
+		return []string{"aptpkg", "yumpkg", "zypperpkg"}
 	}
 	if f.name == "hold" || f.name == "unhold" {
 		return []string{"aptpkg", "yumpkg", "zypperpkg"}
@@ -185,7 +185,7 @@ func (f aptLongtailFunc) ProviderCapabilities() []string {
 		return []string{"aptpkg", "yumpkg", "zypperpkg"}
 	}
 	if f.name == "purge" {
-		return []string{"aptpkg", "yumpkg"}
+		return []string{"aptpkg", "yumpkg", "zypperpkg"}
 	}
 	if f.name == "list_downloaded" {
 		return []string{"aptpkg", "yumpkg"}

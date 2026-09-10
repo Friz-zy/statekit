@@ -169,6 +169,33 @@ type ZypperVerifyArgs struct {
 	IgnoreTypes   any      `statekit:"name=ignore_types"`
 }
 
+// ZypperUpgradeArgs mirrors zypperpkg.upgrade exactly: name, pkgs, refresh,
+// dryrun, dist_upgrade, fromrepo, novendorchange, skip_verify, no_recommends,
+// root, and diff_attr, all optional. Pointer scalars keep an omitted value
+// distinct from an explicit false at the provider boundary.
+type ZypperUpgradeArgs struct {
+	Name           *string  `statekit:"name=name"`
+	Pkgs           []string `statekit:"name=pkgs"`
+	Refresh        *bool    `statekit:"name=refresh"`
+	Dryrun         *bool    `statekit:"name=dryrun"`
+	DistUpgrade    *bool    `statekit:"name=dist_upgrade"`
+	Fromrepo       []string `statekit:"name=fromrepo"`
+	Novendorchange *bool    `statekit:"name=novendorchange"`
+	SkipVerify     *bool    `statekit:"name=skip_verify"`
+	NoRecommends   *bool    `statekit:"name=no_recommends"`
+	Root           *string  `statekit:"name=root"`
+	DiffAttr       []string `statekit:"name=diff_attr"`
+}
+
+// ZypperPurgeArgs mirrors zypperpkg.purge's decoder-compatible target inputs
+// (name, pkgs, root). pkgs mappings with version pins stay expressible at the
+// provider boundary; the registry shape accepts plain string entries.
+type ZypperPurgeArgs struct {
+	Name *string  `statekit:"name=name"`
+	Pkgs []string `statekit:"name=pkgs"`
+	Root *string  `statekit:"name=root"`
+}
+
 // ZypperPrototype returns the provider-specific argument shape for the
 // read-only zypperpkg functions. Registration remains canonical in the
 // shared execution functions.
@@ -210,6 +237,10 @@ func ZypperPrototype(name string) (any, bool) {
 		return ZypperOwnerArgs{}, true
 	case "verify":
 		return ZypperVerifyArgs{}, true
+	case "upgrade":
+		return ZypperUpgradeArgs{}, true
+	case "purge":
+		return ZypperPurgeArgs{}, true
 	default:
 		return nil, false
 	}

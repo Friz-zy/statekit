@@ -110,7 +110,7 @@ func TestUpgradeRegistryProviderMatrix(t *testing.T) {
 					t.Fatalf("got=%#v err=%v argv=%#v", got, err, registryUpgradeArgv(runner.commands))
 				}
 			}
-			if capabilities := registry.ProviderCapabilities("pkg.upgrade"); !reflect.DeepEqual(capabilities, []string{"aptpkg", "yumpkg"}) {
+			if capabilities := registry.ProviderCapabilities("pkg.upgrade"); !reflect.DeepEqual(capabilities, []string{"aptpkg", "yumpkg", "zypperpkg"}) {
 				t.Fatalf("capabilities=%v", capabilities)
 			}
 			bad := &registryUpgradeRunner{}
@@ -205,13 +205,21 @@ func TestUpdateRegistryYumOnlyProviderMatrix(t *testing.T) {
 		t.Run(manager+"/unsupported", func(t *testing.T) {
 			runner := &registryUpgradeRunner{}
 			rt, registry := registryUpgradeRuntime(t, manager, runner)
-			for _, name := range []string{"pkg.update", "pkg.upgrade"} {
-				if _, err := registry.ResolveArgs(rt, name); !errors.As(err, new(*runtime.UnsupportedError)) {
-					t.Fatalf("%s resolve err=%v", name, err)
-				}
-				if got, err := registry.Call(context.Background(), rt, name, &YumUpgradeArgs{}); got != nil || !errors.As(err, new(*runtime.UnsupportedError)) || len(runner.commands) != 0 {
-					t.Fatalf("%s got=%#v err=%v commands=%d", name, got, err, len(runner.commands))
-				}
+			// pkg.update remains YUM-only; its resolve fails for zypper.
+			if _, err := registry.ResolveArgs(rt, "pkg.update"); !errors.As(err, new(*runtime.UnsupportedError)) {
+				t.Fatalf("pkg.update resolve err=%v", err)
+			}
+			if got, err := registry.Call(context.Background(), rt, "pkg.update", &YumUpgradeArgs{}); got != nil || !errors.As(err, new(*runtime.UnsupportedError)) || len(runner.commands) != 0 {
+				t.Fatalf("pkg.update got=%#v err=%v commands=%d", got, err, len(runner.commands))
+			}
+			// pkg.upgrade gained the zypper prototype; the YUM pointer is the
+			// wrong shape at the strict registry boundary.
+			prototype, err := registry.ResolveArgs(rt, "pkg.upgrade")
+			if err != nil || reflect.TypeOf(prototype) != reflect.TypeOf(ZypperUpgradeArgs{}) {
+				t.Fatalf("pkg.upgrade prototype=%T err=%v", prototype, err)
+			}
+			if got, err := registry.Call(context.Background(), rt, "pkg.upgrade", &YumUpgradeArgs{}); got != nil || err == nil || len(runner.commands) != 0 {
+				t.Fatalf("pkg.upgrade got=%#v err=%v commands=%d", got, err, len(runner.commands))
 			}
 		})
 	}
