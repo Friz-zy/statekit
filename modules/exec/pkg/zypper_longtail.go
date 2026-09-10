@@ -37,6 +37,15 @@ type ZypperListLocksArgs struct {
 	Root *string `statekit:"name=root"`
 }
 
+// ZypperListHoldsArgs mirrors zypperpkg.list_holds exactly: pattern, full,
+// and root, all optional. The provider applies the source defaults (None,
+// True, None) when a pointer is nil.
+type ZypperListHoldsArgs struct {
+	Pattern *string `statekit:"name=pattern"`
+	Full    *bool   `statekit:"name=full"`
+	Root    *string `statekit:"name=root"`
+}
+
 // ZypperCleanLocksArgs mirrors zypperpkg.clean_locks(root=None) exactly.
 type ZypperCleanLocksArgs struct {
 	Root *string `statekit:"name=root"`
@@ -144,6 +153,8 @@ func ZypperPrototype(name string) (any, bool) {
 		return ZypperListInstalledPatternsArgs{}, true
 	case "list_locks":
 		return ZypperListLocksArgs{}, true
+	case "list_holds":
+		return ZypperListHoldsArgs{}, true
 	case "clean_locks":
 		return ZypperCleanLocksArgs{}, true
 	case "hold", "unhold":

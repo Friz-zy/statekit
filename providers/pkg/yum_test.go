@@ -1369,6 +1369,15 @@ func TestYumListHoldsDefaultsValidationAndDNF5TOMLReadback(t *testing.T) {
 			t.Fatalf("bad=%#v err=%v calls=%d", bad, err, len(r.commands))
 		}
 	}
+	// An unclosed group is an error kind whose native compile message echoes
+	// the whole expression, so this pins the sanitized stable category for
+	// the syntax errors that would otherwise reflect the malformed pattern.
+	const groupLeakMarker = "r33i-group-leak-marker"
+	before := len(r.commands)
+	_, err = p.Yum(context.Background(), &runtime.Runtime{Runner: r}, "list_holds", map[string]any{"pattern": "(" + groupLeakMarker})
+	if err == nil || err.Error() != `argument "pattern": invalid hold pattern` || strings.Contains(err.Error(), groupLeakMarker) || len(r.commands) != before {
+		t.Fatalf("unsafe group pattern error=%v calls=%d", err, len(r.commands))
+	}
 	fs := runtime.NewMemoryFS()
 	if err := fs.MkdirAll("/etc/dnf", 0o755); err != nil {
 		t.Fatal(err)

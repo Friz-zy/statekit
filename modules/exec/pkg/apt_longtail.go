@@ -163,7 +163,7 @@ func (f aptLongtailFunc) ProviderCapabilities() []string {
 		return []string{"yumpkg"}
 	}
 	if f.name == "list_holds" {
-		return []string{"yumpkg"}
+		return []string{"yumpkg", "zypperpkg"}
 	}
 	if f.name == "services_need_restart" {
 		return []string{"aptpkg", "yumpkg"}

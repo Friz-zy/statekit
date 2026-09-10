@@ -77,6 +77,8 @@ func (p *commandProvider) Zypper(ctx context.Context, rt *runtime.Runtime, funct
 			return nil, err
 		}
 		return result, nil
+	case "list_holds":
+		return zypperListHolds(ctx, rt, a)
 	case "clean_locks":
 		result, err := zypperCleanLocks(ctx, rt, a)
 		if err != nil {
@@ -116,7 +118,7 @@ func zypperFunctionSupported(function string) bool {
 	if function == "list_patterns" || function == "list_installed_patterns" || function == "list_upgrades" || function == "upgrade_available" {
 		return true
 	}
-	if function == "list_locks" || function == "clean_locks" {
+	if function == "list_locks" || function == "clean_locks" || function == "list_holds" {
 		return true
 	}
 	if function == "hold" || function == "unhold" {
@@ -137,6 +139,9 @@ func validateZypperArgs(function string, args map[string]any) error {
 	}
 	if function == "list_locks" || function == "clean_locks" {
 		return validateZypperLocksArgs(args)
+	}
+	if function == "list_holds" {
+		return validateZypperListHoldsArgs(args)
 	}
 	if function == "hold" || function == "unhold" {
 		return validateZypperHoldArgs(function, args)

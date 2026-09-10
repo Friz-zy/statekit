@@ -125,6 +125,15 @@ func zypperXMLMutationRun(ctx context.Context, rt *runtime.Runtime, root string,
 	return zypperXMLRun(ctx, rt, root, true, false, args, false, true)
 }
 
+// zypperExitCodeError is the ported analog of the CommandExecutionError
+// raised for zypper exit codes outside the tolerated set. It stays typed so
+// composites such as list_holds can skip exactly this failure category.
+type zypperExitCodeError struct{ exitCode int }
+
+func (e *zypperExitCodeError) Error() string {
+	return fmt.Sprintf("zypper command failed with exit code %d", e.exitCode)
+}
+
 func zypperXMLRun(ctx context.Context, rt *runtime.Runtime, root string, xmlMode, refresh bool, args []string, readonlyHack, strictExit bool) (string, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -153,7 +162,7 @@ func zypperXMLRun(ctx context.Context, rt *runtime.Runtime, root string, xmlMode
 	}
 	if strictExit {
 		if result.ExitCode != 0 {
-			return "", fmt.Errorf("zypper command failed with exit code %d", result.ExitCode)
+			return "", &zypperExitCodeError{exitCode: result.ExitCode}
 		}
 		return string(result.Stdout), nil
 	}
@@ -162,7 +171,7 @@ func zypperXMLRun(ctx context.Context, rt *runtime.Runtime, root string, xmlMode
 		return string(result.Stdout), nil
 	default:
 		// Do not expose arbitrary command output through errors.
-		return "", fmt.Errorf("zypper command failed with exit code %d", result.ExitCode)
+		return "", &zypperExitCodeError{exitCode: result.ExitCode}
 	}
 }
 

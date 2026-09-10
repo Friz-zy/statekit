@@ -798,7 +798,7 @@ func TestListHoldsProviderAwareRegistry(t *testing.T) {
 	if err := Register(reg); err != nil {
 		t.Fatal(err)
 	}
-	if got := reg.ProviderCapabilities("pkg.list_holds"); !reflect.DeepEqual(got, []string{"yumpkg"}) {
+	if got := reg.ProviderCapabilities("pkg.list_holds"); !reflect.DeepEqual(got, []string{"yumpkg", "zypperpkg"}) {
 		t.Fatalf("capabilities=%v", got)
 	}
 	for _, manager := range []string{"yum", "dnf"} {
@@ -829,7 +829,23 @@ func TestListHoldsProviderAwareRegistry(t *testing.T) {
 			t.Fatalf("%s argv=%#v", manager, got)
 		}
 	}
-	for _, manager := range []string{"apt", "zypper"} {
+	// Zypper resolves its own provider-specific prototype through the same
+	// canonical registration; its end-to-end matrix lives in
+	// zypper_holds_registry_test.go.
+	zypperProviders := runtime.NewProviderRegistry()
+	if err := pkgprovider.Register(zypperProviders); err != nil {
+		t.Fatal(err)
+	}
+	zypperRunner := &yumExecRecordingRunner{}
+	zypperRT := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{Package: "zypper"}), Providers: zypperProviders, Runner: zypperRunner}
+	prototype, err := reg.ResolveArgs(zypperRT, "pkg.list_holds")
+	if err != nil || reflect.TypeOf(prototype) != reflect.TypeOf(ZypperListHoldsArgs{}) {
+		t.Fatalf("zypper prototype=%T err=%v", prototype, err)
+	}
+	if names, err := config.ArgumentNames(prototype); err != nil || !reflect.DeepEqual(names, []string{"full", "pattern", "root"}) {
+		t.Fatalf("zypper names=%v err=%v", names, err)
+	}
+	for _, manager := range []string{"apt"} {
 		providers := runtime.NewProviderRegistry()
 		if err := pkgprovider.Register(providers); err != nil {
 			t.Fatal(err)

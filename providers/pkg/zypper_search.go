@@ -281,14 +281,19 @@ func zypperParseSearch(ctx context.Context, output, criteria string) (map[string
 		return nil, errZypperSearchInvalidXML
 	}
 	if solvables == 0 {
-		return nil, zypperSearchNoResultsError(criteria)
+		return nil, &zypperSearchNoResultsError{criteria: criteria}
 	}
 	return result, nil
 }
 
-func zypperSearchNoResultsError(criteria string) error {
-	if validZypperSearchCriteria(criteria) {
-		return fmt.Errorf("No packages found matching '%s'", criteria)
+// zypperSearchNoResultsError is the ported analog of the CommandExecutionError
+// raised by zypperpkg.search when no solvables match. It stays typed so
+// composites such as list_holds can skip exactly this failure category.
+type zypperSearchNoResultsError struct{ criteria string }
+
+func (e *zypperSearchNoResultsError) Error() string {
+	if validZypperSearchCriteria(e.criteria) {
+		return fmt.Sprintf("No packages found matching '%s'", e.criteria)
 	}
-	return errors.New("No packages found matching the supplied criteria")
+	return "No packages found matching the supplied criteria"
 }

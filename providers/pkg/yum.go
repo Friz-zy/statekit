@@ -3679,8 +3679,10 @@ func yumListHoldsPolicy(ctx context.Context, rt *runtime.Runtime, manager string
 			}
 		}
 	}
+	// The compile error is deliberately dropped: its message echoes the
+	// caller-supplied pattern, which must not surface in diagnostics.
 	if _, err := regexp.Compile(pattern); err != nil {
-		return nil, fmt.Errorf("argument \"pattern\": invalid regular expression: %w", err)
+		return nil, errors.New(`argument "pattern": invalid hold pattern`)
 	}
 	lockPattern := pattern + `-\S+`
 	if manager == "yum" {
@@ -3697,7 +3699,7 @@ func yumListHoldsPolicy(ctx context.Context, rt *runtime.Runtime, manager string
 	}
 	re, err := regexp.Compile(lockPattern)
 	if err != nil {
-		return nil, fmt.Errorf("argument \"pattern\": invalid regular expression: %w", err)
+		return nil, errors.New(`argument "pattern": invalid hold pattern`)
 	}
 	if rt == nil || rt.Runner == nil {
 		return nil, errors.New("YUM list_holds requires a runner")
