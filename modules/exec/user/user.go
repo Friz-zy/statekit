@@ -244,6 +244,9 @@ func currentUID(entries []sysfiles.PasswdEntry, name string) (int, bool) {
 
 // Register installs all user-module execution functions.
 func Register(reg *runtime.ExecRegistry) error {
+	if runtime.CurrentGOOS() == "freebsd" {
+		return registerFreeBSD(reg)
+	}
 	if runtime.CurrentGOOS() == "darwin" {
 		return registerMac(reg)
 	}

@@ -124,6 +124,9 @@ func (chGIDFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (an
 
 // Register installs all group-module execution functions.
 func Register(reg *runtime.ExecRegistry) error {
+	if runtime.CurrentGOOS() == "freebsd" {
+		return registerFreeBSD(reg)
+	}
 	if runtime.CurrentGOOS() == "darwin" {
 		return registerMac(reg)
 	}

@@ -279,3 +279,31 @@ func TestWriteSaltLock(t *testing.T) {
 		t.Fatalf("lock content wrong: %s", data)
 	}
 }
+
+func TestResolveReferenceFallsBackToLockWithoutGit(t *testing.T) {
+	// A plain directory is not a git worktree, so the git probe fails
+	// and the recorded pin resolves the reference deterministically.
+	root := t.TempDir()
+	lockPath := filepath.Join(t.TempDir(), "salt.lock")
+	if err := writeSaltLock(lockPath, ReferenceInfo{
+		Repository: "https://github.com/saltstack/salt",
+		Commit:     "8b63e700637e40d76f80a00d95c60471797c73b9",
+		Version:    "v3008.2-180-g8b63e70063",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ref, err := resolveReference(root, lockPath)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if ref.Commit != "8b63e700637e40d76f80a00d95c60471797c73b9" ||
+		ref.Version != "v3008.2-180-g8b63e70063" ||
+		ref.Repository != "https://github.com/saltstack/salt" {
+		t.Fatalf("fallback reference = %+v", ref)
+	}
+
+	// Without a lock the original failure surfaces.
+	if _, err := resolveReference(root, filepath.Join(t.TempDir(), "missing.lock")); err == nil {
+		t.Fatalf("expected git failure without lock fallback")
+	}
+}

@@ -32,7 +32,7 @@ func main() {
 }
 
 func run(saltDir, outDir, lockPath, srcRoot string) error {
-	ref, err := resolveReference(saltDir)
+	ref, err := resolveReference(saltDir, lockPath)
 	if err != nil {
 		return err
 	}

@@ -396,10 +396,18 @@ func writeYAML(path string, v any) error {
 
 // resolveReference reads the pinned commit and version from the vendored
 // Salt git tree.
-func resolveReference(saltDir string) (ReferenceInfo, error) {
+// resolveReference pins the scanned Salt revision. The git subprocess is
+// the primary source; no-git sandboxes fall back to the recorded pin in
+// the lock file so regeneration stays deterministic without a git
+// binary. The lock and the submodule it was written from are pinned
+// together, so the fallback resolves to the same revision.
+func resolveReference(saltDir, lockPath string) (ReferenceInfo, error) {
 	ref := ReferenceInfo{Repository: "https://github.com/saltstack/salt"}
 	commitBytes, err := exec.Command("git", "-C", saltDir, "rev-parse", "HEAD").Output()
 	if err != nil {
+		if locked, lockErr := readSaltLock(lockPath); lockErr == nil && locked.Commit != "" {
+			return locked, nil
+		}
 		return ref, fmt.Errorf("resolve salt commit (is the submodule initialized?): %w", err)
 	}
 	ref.Commit = strings.TrimSpace(string(commitBytes))
@@ -408,6 +416,26 @@ func resolveReference(saltDir string) (ReferenceInfo, error) {
 		ref.Version = strings.TrimSpace(string(versionBytes))
 	}
 	return ref, nil
+}
+
+// readSaltLock parses a previously written references/salt.lock pin.
+func readSaltLock(path string) (ReferenceInfo, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ReferenceInfo{}, err
+	}
+	var lock struct {
+		Repository string `yaml:"repository"`
+		Commit     string `yaml:"commit"`
+		Version    string `yaml:"version"`
+	}
+	if err := yaml.Unmarshal(data, &lock); err != nil {
+		return ReferenceInfo{}, err
+	}
+	if lock.Repository == "" {
+		lock.Repository = "https://github.com/saltstack/salt"
+	}
+	return ReferenceInfo{Repository: lock.Repository, Commit: lock.Commit, Version: lock.Version}, nil
 }
 
 // writeSaltLock persists references/salt.lock (plan section 21).

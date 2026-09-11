@@ -6,9 +6,9 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    source_inventory_count: 1001
-    catalog_intersection_count: 979
-    implemented: 979
+    source_inventory_count: 1024
+    catalog_intersection_count: 1002
+    implemented: 1002
 state:
     salt_modules: 132
     salt_functions: 669
@@ -536,12 +536,18 @@ implemented:
         - pip.upgrade_available
         - pip.version
         - pkg.add_repo_key
+        - pkg.audit
+        - pkg.autoremove
         - pkg.available_version
+        - pkg.backup
+        - pkg.check
+        - pkg.clean
         - pkg.compare_versions
         - pkg.del_repo
         - pkg.del_repo_key
         - pkg.diff
         - pkg.download
+        - pkg.fetch
         - pkg.genrepo
         - pkg.get_package_info
         - pkg.get_repo
@@ -558,27 +564,39 @@ implemented:
         - pkg.latest_version
         - pkg.list_available
         - pkg.list_installed_patches
+        - pkg.list_locked
         - pkg.list_pkgs
         - pkg.list_repo_pkgs
         - pkg.list_repos
         - pkg.list_trusted
         - pkg.list_upgrades
+        - pkg.lock
+        - pkg.locked
         - pkg.mod_repo
         - pkg.modified
         - pkg.normalize_name
+        - pkg.parse_config
         - pkg.pin
         - pkg.purge
         - pkg.refresh_db
         - pkg.remove
+        - pkg.restore
+        - pkg.search
+        - pkg.stats
         - pkg.trust
         - pkg.unhold
+        - pkg.unlock
         - pkg.unpin
         - pkg.untrust
         - pkg.update
+        - pkg.update_package_site
+        - pkg.updating
         - pkg.upgrade
         - pkg.upgrade_available
         - pkg.verify
         - pkg.version
+        - pkg.version_cmp
+        - pkg.which
         - pkg_resource.add_pkg
         - pkg_resource.check_extra_requirements
         - pkg_resource.format_pkg_list
@@ -849,15 +867,20 @@ implemented:
         - user.chgid
         - user.chgroups
         - user.chhome
+        - user.chhomephone
+        - user.chloginclass
         - user.chprofile
+        - user.chroomnumber
         - user.chshell
         - user.chuid
+        - user.chworkphone
         - user.current
         - user.delete
         - user.disable_auto_login
         - user.enable_auto_login
         - user.getUserSid
         - user.get_auto_login
+        - user.get_loginclass
         - user.get_user_sid
         - user.getent
         - user.info
