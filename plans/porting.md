@@ -1662,7 +1662,7 @@ The PTD tables below are retained as an immutable audit snapshot. These
 overrides are the current status and do not delete or rewrite any original
 rows or counts.
 
-##### 2026-09-11 current status (R5.2b x509 write-side subset)
+##### 2026-09-11 current status (R5.2b x509 write-side subset; R5.3 selinux)
 
 Actual HEAD at gate time is `f642c8e` plus the uncommitted R5.2b scope
 (`modules/exec/x509/{write.go,write_test.go,x509.go,x509_test.go}`,
@@ -1673,12 +1673,13 @@ stdlib-expressible v1 contracts shared with the `x509_v2` surface, so their
 registration under the canonical public names stays outside the
 legacy-only prohibition; `sign_remote_certificate` (master-minion publish
 surface) stays excluded and `read_crl` stays pending on its openssl-CLI
-v1 output shape (a stdlib shape is possible in the v2 round). R5.2b
+v1 output shape (a stdlib shape is possible in the v2 round). R5.2b/R5.3
 implementation and independent-gate ledger:
 
 | Commit | Scope | Implementation executor role | Independent gate(s) | Result / boundary |
 |---|---|---|---|---|
 | (this commit) | R5.2b x509 write-side subset: `write_pem`, `create_private_key`, `create_crl`, `get_signing_policy`, `create_certificate`, `create_csr`, `verify_signature`, `verify_crl` (Go stdlib substrate; zero Runner spawns, asserted by `TestWriteSideNoRunnerSpawns`) | `software-engineer-senior` | `backend-engineer-lead` | passed after gofmt fixes (0 blocking; documented boundaries: plain keys PKCS#8 `PRIVATE KEY` vs M2Crypto PKCS#1, encrypted keys keep the PKCS#1 Proc-Type/DEK-Info envelope via the deprecated `x509.EncryptPEMBlock` with uppercase-hex IV, `bits >= 512` OpenSSL floor, write_pem 0600 + CERTIFICATE-only preserve quirk with no implicit makedirs, `create_crl` digest default SHA-256 vs pyOpenSSL md5 plus the Go-required CRL Number 1, sha224 signatures upgrade to SHA-256 (no stdlib SHA-224 signature algorithm), subject RDNs in the alphabetical `sorted(subject.nid)` order with CSR wire order and kwargs in-place override, EXT_NAME_MAPPINGS profile incl. the `issuserAltName` typo key, `ca_server` → exact v1 no-space error without policy and a deterministic master-surface `UnsupportedError` with policy, missing-policy stable error instead of the v1 `kwargs.update(None)` crash, crypto/rand serials, dynamic `not_after` anchored at now (v1 quirk), always-v3 TBSCertificate, copypath `({CN}-)?{serial}.crt`, sign-key mismatch error with "does no match" typo and PEM redaction, CSR key/passphrase cross-defaults with AKI skipped and PKCS#10 version 0, `verify_signature` key-aware CheckSignature with pkey-omitted self-check semantics, `verify_crl` `CheckSignatureFrom` instead of the `openssl crl -CAfile` CLI (unloadable DER → False, PEM-entry failure still raises)). R5 differential x509/x509_v2 views 105→121 registered_public total (18 per view, 2 pending per view: `read_crl`, `sign_remote_certificate`); coverage.yaml exec implemented 943→951 (+8 x509 names), source inventory 968→976; compatibility.yaml regenerated and unchanged (`x509` already `implemented` from R5.2a); both regens through tools/salt-reference in a separate rootless Podman container (saltstack ro mount) |
+| `fe1e913` | R5.3 selinux (19 functions: fcontext/port/booleans/modules/filetype) | `software-engineer-senior` | `backend-engineer-lead` | passed (0 blocking; 4 nonblocking: 2 fidelity-edge quirks documented, regen-container uid note resolved by uid-1000 rerun byte-identical, pre-existing gofmt drift). R5.3 closes the selinux family — selinux 23/23 registered, 0 pending |
 
 PTD-EXEC rows for exactly the eight implemented write-side functions are
 flipped to [x] in §7.2: PTD-EXEC-1909, 1910, 1911, 1912, 1923, 1929,
@@ -1698,6 +1699,22 @@ read-only so `tools/salt-reference` could resolve the pinned commit
 scoped HUMAN exception `SDD-SANDBOX-CONTRACT-001` covered noncritical
 cgroup controls; critical isolation remained intact. No new dependencies,
 no host packages, no live PKI mutation, and the gate made no commit.
+
+Current R5 report counts (exact, `docs/differential/R5/report.yaml` at
+`fe1e913`): `selinux` 23 registered / 0 pending, `x509` 18 registered /
+2 pending (`read_crl`, `sign_remote_certificate`), `x509_v2` 18
+registered / 7 pending (`encode_certificate`, `encode_crl`,
+`encode_csr`, `encode_private_key`, `expires`, `read_crl`,
+`sign_remote_certificate`); totals `registered_public` 140 / 149 public
+functions. The report contains no `aptpkg`/`yumpkg` rows — the 34/0 and
+39/0 provider counts belong to the R3 report
+(`docs/differential/R3/report.yaml`) and are excluded from the R5 tally.
+Remaining R5 scope is only the x509 v2 round
+(`encode_certificate`/`encode_crl`/`encode_csr`/`encode_private_key`,
+`expires`, and `read_crl` in its stdlib shape) plus
+`sign_remote_certificate` (master-surface excluded). R5 remains in
+progress until the v2 round lands; R6/R7 runtime validation still
+requires native platform runners (E1–E4).
 
 ##### 2026-09-11 current status (R5.2a x509 read-only subset)
 
