@@ -615,9 +615,10 @@ type makedirsArgs struct {
 
 type makedirsFunc struct{}
 
-// Makedirs mirrors makedirs_: ensure the PARENT directory chain of path
-// exists, walking up and creating top-down with per-directory messages.
-func (makedirsFunc) Name() string { return "file.makedirs_" }
+// Makedirs mirrors makedirs_ (loader alias makedirs): ensure the PARENT
+// directory chain of path exists, walking up and creating top-down with
+// per-directory messages.
+func (makedirsFunc) Name() string { return "file.makedirs" }
 func (makedirsFunc) Args() any    { return makedirsArgs{} }
 func (makedirsFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
 	a := args.(*makedirsArgs)

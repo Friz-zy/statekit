@@ -370,7 +370,7 @@ type timeFunc struct{}
 // Time renders the current time through a converted strftime pattern.
 // Supported directives mirror the common subset: %A %a %B %b %d %H %I %M
 // %m %p %S %Y %y %% (documented subset).
-func (timeFunc) Name() string { return "status.time_" }
+func (timeFunc) Name() string { return "status.time" }
 func (timeFunc) Args() any    { return timeArgs{} }
 func (timeFunc) Execute(_ context.Context, _ *runtime.Runtime, args any) (any, error) {
 	a := args.(*timeArgs)

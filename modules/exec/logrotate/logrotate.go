@@ -247,7 +247,7 @@ type SetArgs struct {
 
 type SetFunc struct{}
 
-func (SetFunc) Name() string { return "logrotate.set_" }
+func (SetFunc) Name() string { return "logrotate.set" }
 func (SetFunc) Args() any    { return SetArgs{} }
 
 func (SetFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {

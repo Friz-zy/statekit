@@ -24,7 +24,7 @@ type setArgs struct {
 
 type setFunc struct{}
 
-func (setFunc) Name() string { return "logrotate.set_" }
+func (setFunc) Name() string { return "logrotate.set" }
 func (setFunc) Args() any    { return setArgs{} }
 
 func (setFunc) Apply(ctx context.Context, rt *runtime.Runtime, args any) result.StateResult {

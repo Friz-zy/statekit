@@ -142,11 +142,20 @@ func TestR7DifferentialScopeReport(t *testing.T) {
 			}
 			fam.Public++
 			target := r7Target(family, name, false)
-			if !execSet[target] {
-				fam.PendingPublic = append(fam.PendingPublic, target)
+			if execSet[target] {
+				fam.PortedPublic++
 				continue
 			}
-			fam.PortedPublic++
+			// Salt's keyword-escape convention: a trailing underscore in the
+			// catalog name resolves through __func_alias__ to the stripped
+			// loader-facing name (makedirs_ -> makedirs), mirroring the
+			// exact-name-then-alias matching in the R4 report.
+			alias := strings.TrimSuffix(target, "_")
+			if alias != target && execSet[alias] {
+				fam.PortedPublic++
+				continue
+			}
+			fam.PendingPublic = append(fam.PendingPublic, target)
 		}
 		report.Totals.Catalog += fam.Catalog
 		report.Totals.Public += fam.Public

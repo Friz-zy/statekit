@@ -693,7 +693,7 @@ type winMakedirsArgs struct {
 }
 type winMakedirsFunc struct{}
 
-func (winMakedirsFunc) Name() string        { return "file.makedirs_" }
+func (winMakedirsFunc) Name() string        { return "file.makedirs" }
 func (winMakedirsFunc) Args() any           { return winMakedirsArgs{} }
 func (winMakedirsFunc) Platforms() []string { return []string{"windows"} }
 func (winMakedirsFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (res any, err error) {

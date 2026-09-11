@@ -7,15 +7,15 @@ execution:
     salt_functions: 4284
     relevant_functions: 1351
     source_inventory_count: 1001
-    catalog_intersection_count: 976
-    implemented: 976
+    catalog_intersection_count: 979
+    implemented: 979
 state:
     salt_modules: 132
     salt_functions: 669
     relevant_functions: 197
     source_inventory_count: 50
-    catalog_intersection_count: 47
-    implemented: 47
+    catalog_intersection_count: 48
+    implemented: 48
 implemented:
     exec:
         - acl.delfacl
@@ -211,7 +211,7 @@ implemented:
         - file.list_backups_dir
         - file.lsattr
         - file.lstat
-        - file.makedirs_
+        - file.makedirs
         - file.makedirs_perms
         - file.manage_file
         - file.mkdir
@@ -385,7 +385,7 @@ implemented:
         - locale.list_avail
         - locale.set_locale
         - logrotate.get
-        - logrotate.set_
+        - logrotate.set
         - logrotate.show_conf
         - lvm.fullversion
         - lvm.lvcreate
@@ -795,7 +795,7 @@ implemented:
         - status.pid
         - status.pid_list
         - status.procs
-        - status.time_
+        - status.time
         - status.uptime
         - status.version
         - status.vmstats
@@ -1037,7 +1037,7 @@ implemented:
         - host.present
         - ini.options_absent
         - ini.options_present
-        - logrotate.set_
+        - logrotate.set
         - lvm.lv_absent
         - lvm.lv_present
         - lvm.pv_absent
