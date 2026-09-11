@@ -109,6 +109,7 @@ import (
 	execwinsmtp "github.com/friz-zy/statekit/modules/exec/win_smtp_server"
 	execwinsnmp "github.com/friz-zy/statekit/modules/exec/win_snmp"
 	execwinwua "github.com/friz-zy/statekit/modules/exec/win_wua"
+	execx509 "github.com/friz-zy/statekit/modules/exec/x509"
 	execxattr "github.com/friz-zy/statekit/modules/exec/xattr"
 	execxfs "github.com/friz-zy/statekit/modules/exec/xfs"
 	execxml "github.com/friz-zy/statekit/modules/exec/xml"
@@ -199,6 +200,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execstatus.Register,
 		execstatus.RegisterTail,
 		exectls.Register,
+		execx509.Register,
 		execuser.Register,
 		execgroup.Register,
 		execmacdefaults.Register,

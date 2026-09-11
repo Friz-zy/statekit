@@ -6,9 +6,9 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    source_inventory_count: 947
-    catalog_intersection_count: 922
-    implemented: 922
+    source_inventory_count: 968
+    catalog_intersection_count: 943
+    implemented: 943
 state:
     salt_modules: 132
     salt_functions: 669
@@ -540,11 +540,16 @@ implemented:
         - pkg.compare_versions
         - pkg.del_repo
         - pkg.del_repo_key
+        - pkg.diff
+        - pkg.download
         - pkg.genrepo
         - pkg.get_package_info
         - pkg.get_repo
         - pkg.get_repo_data
         - pkg.get_repo_keys
+        - pkg.group_info
+        - pkg.group_install
+        - pkg.group_list
         - pkg.hold
         - pkg.homebrew_prefix
         - pkg.info_installed
@@ -552,12 +557,14 @@ implemented:
         - pkg.is_trusted
         - pkg.latest_version
         - pkg.list_available
+        - pkg.list_installed_patches
         - pkg.list_pkgs
         - pkg.list_repo_pkgs
         - pkg.list_repos
         - pkg.list_trusted
         - pkg.list_upgrades
         - pkg.mod_repo
+        - pkg.modified
         - pkg.normalize_name
         - pkg.pin
         - pkg.purge
@@ -567,8 +574,10 @@ implemented:
         - pkg.unhold
         - pkg.unpin
         - pkg.untrust
+        - pkg.update
         - pkg.upgrade
         - pkg.upgrade_available
+        - pkg.verify
         - pkg.version
         - pkg_resource.add_pkg
         - pkg_resource.check_extra_requirements
@@ -764,10 +773,12 @@ implemented:
         - status.netdev
         - status.netstats
         - status.nproc
+        - status.pid
         - status.pid_list
         - status.procs
         - status.time_
         - status.uptime
+        - status.version
         - status.vmstats
         - status.w
         - sysctl.assign
@@ -946,6 +957,16 @@ implemented:
         - win_wua.list
         - win_wua.set_wu_settings
         - win_wua.uninstall
+        - x509.expired
+        - x509.get_pem_entries
+        - x509.get_pem_entry
+        - x509.get_private_key_size
+        - x509.get_public_key
+        - x509.read_certificate
+        - x509.read_certificates
+        - x509.read_csr
+        - x509.verify_private_key
+        - x509.will_expire
         - xattr.clear
         - xattr.delete
         - xattr.list
