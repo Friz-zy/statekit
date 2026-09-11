@@ -6,12 +6,14 @@
 // verify_private_key and get_public_key; R5.2b adds write_pem,
 // create_private_key, create_crl, get_signing_policy,
 // create_certificate, create_csr, verify_signature and verify_crl
-// (see write.go for their documented boundaries). sign_remote_
-// certificate and read_crl stay pending: the former is the excluded
-// master-minion publish surface, the latter's v1 output shape is
-// parsed openssl CLI text; the legacy M2Crypto surface keeps its ADR
-// 0003 terminal-exclusion boundary for everything that requires the
-// ctypes ABI or the openssl CLI parser.
+// (see write.go for their documented boundaries). R5.4 adds the
+// x509_v2 round (see v2.go): encode_certificate, encode_crl,
+// encode_csr, encode_private_key, expires and read_crl (the v2
+// cryptography dict shape; the v1 openssl-CLI-text shape is subsumed
+// by it). sign_remote_certificate stays pending: the excluded
+// master-minion publish surface; the legacy M2Crypto surface keeps its
+// ADR 0003 terminal-exclusion boundary for everything that requires
+// the ctypes ABI or the openssl CLI parser.
 //
 // The substrate mapping is library-to-library like R5.4/R5.8 (the
 // pinned source rides M2Crypto/pyOpenSSL, both libssl bindings): the
@@ -1523,9 +1525,9 @@ func decodeNsCertType(der []byte) (string, error) {
 	return strings.Join(names, ", "), nil
 }
 
-// Register installs the x509 surface: the R5.2a read-only subset and
-// the R5.2b write-side subset (one canonical registration per public
-// name, 18 total).
+// Register installs the x509 surface: the R5.2a read-only subset, the
+// R5.2b write-side subset and the R5.4 x509_v2 round (one canonical
+// registration per public name, 24 total).
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		getPemEntryFunc{},
@@ -1546,6 +1548,12 @@ func Register(reg *runtime.ExecRegistry) error {
 		createCsrFunc{},
 		verifySignatureFunc{},
 		verifyCrlFunc{},
+		encodeCertificateFunc{},
+		encodeCrlFunc{},
+		encodeCsrFunc{},
+		encodePrivateKeyFunc{},
+		expiresFunc{},
+		readCrlFunc{},
 	} {
 		if err := reg.Register(fn); err != nil {
 			return err

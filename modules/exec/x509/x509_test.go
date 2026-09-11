@@ -1115,9 +1115,11 @@ func TestRegistryCallPaths(t *testing.T) {
 
 	want := []string{
 		"x509.create_certificate", "x509.create_crl", "x509.create_csr",
-		"x509.create_private_key", "x509.expired", "x509.get_pem_entries",
-		"x509.get_pem_entry", "x509.get_private_key_size", "x509.get_public_key",
-		"x509.get_signing_policy", "x509.read_certificate", "x509.read_certificates",
+		"x509.create_private_key", "x509.encode_certificate", "x509.encode_crl",
+		"x509.encode_csr", "x509.encode_private_key", "x509.expired",
+		"x509.expires", "x509.get_pem_entries", "x509.get_pem_entry",
+		"x509.get_private_key_size", "x509.get_public_key", "x509.get_signing_policy",
+		"x509.read_certificate", "x509.read_certificates", "x509.read_crl",
 		"x509.read_csr", "x509.verify_crl", "x509.verify_private_key",
 		"x509.verify_signature", "x509.will_expire", "x509.write_pem",
 	}

@@ -85,9 +85,8 @@ families:
         catalog_functions: 40
         public_functions: 20
         private_functions: 20
-        registered_public: 18
+        registered_public: 19
         pending_public:
-            - x509.read_crl
             - x509.sign_remote_certificate
         differential_scenarios:
             - x509.legacy-m2crypto-terminal-exclusion
@@ -95,14 +94,8 @@ families:
         catalog_functions: 37
         public_functions: 25
         private_functions: 12
-        registered_public: 18
+        registered_public: 24
         pending_public:
-            - x509.encode_certificate
-            - x509.encode_crl
-            - x509.encode_csr
-            - x509.encode_private_key
-            - x509.expires
-            - x509.read_crl
             - x509.sign_remote_certificate
         differential_scenarios:
             - x509-v2.stdlib-local-pki-boundary
@@ -110,4 +103,4 @@ families:
 totals:
     catalog_functions: 232
     public_functions: 149
-    registered_public: 140
+    registered_public: 147

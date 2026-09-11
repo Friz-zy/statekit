@@ -1,7 +1,8 @@
 # ADR 0003: split the legacy x509 boundary from x509_v2
 
 Status: accepted (porting classification, 2026-08-28; additively amended
-by the 2026-09-11 R5.2a addendum and the 2026-09-11 R5.2b addendum below)
+by the 2026-09-11 R5.2a addendum, the 2026-09-11 R5.2b addendum and the
+2026-09-11 R5.4 addendum below)
 Reference revision: references/salt.lock (8b63e700637e)
 
 ## Context
@@ -168,3 +169,64 @@ collapsed `x509` family was already `implemented`; R5.2b only widens
 it, and the regenerated `docs/catalog/coverage.yaml` records the eight
 additional implemented names (18 x509 exec names total). The x509_v2
 round boundary of decision 2 is untouched.
+
+## Addendum (2026-09-11, final): R5.4 x509_v2 round landed on stdlib
+
+The dedicated v2 round that decision 2 reserved has landed. Round R5.4
+registers the six remaining stdlib-portable functions of
+`salt/modules/x509_v2.py` under their canonical public names in
+`modules/exec/x509/v2.go`, on the Go standard library only
+(`crypto/x509`, `encoding/pem`, `encoding/asn1`, `encoding/base64`):
+
+`x509.encode_certificate`, `x509.encode_crl`, `x509.encode_csr`,
+`x509.encode_private_key`, `x509.expires`, `x509.read_crl`.
+
+These are decision-2 v2-surface functions, not legacy contracts, so
+decision 1 is not implicated: no M2Crypto, pyOpenSSL, ctypes or
+`openssl` binary is reachable and the surface spawns zero processes
+(asserted by `TestV2NoRunnerNoMutation`). The substrate mapping stays
+library-to-library: `cryptography`'s serializers and parsers map onto
+`pem.EncodeToMemory`, `x509.Parse*`/`ParseRevocationList` and
+`x509.MarshalPKCS8PrivateKey`, and `salt/utils/x509.py`'s
+`load_file_or_bytes` maps onto a bounded no-symlink reader with the
+same `b64:`/inline-PEM/hex/base64 string interpretation and loader
+error text. `encode_private_key` keeps the v2 PKCS#8-always contract
+(there is no `cipher` parameter in `x509_v2.encode_private_key`), and
+`read_crl` ports the v2 dict shape: issuer keyed by the
+`NAME_ATTRS_OID` short names (first value per OID), `%Y-%m-%d %H:%M:%S`
+UTC dates, colon-stripped `dec2hex` serial keys, `signature_algorithm`
+as the OID `_name` with the dotted-string fallback, and the CRL/entry
+extension renderers including the pinned `onysomereasons`
+issuingDistributionPoint typo.
+
+Boundaries kept inside decision 3 (no new dependency, no ad hoc
+container reimplementation), all deterministic and firing only after
+the pinned pre-validations:
+
+- `pkcs7_der`, `pkcs7_pem` and `pkcs12` encodings, PKCS#7-PEM
+  certificate inputs, encrypted-PKCS#8 and PKCS#12 key inputs resolve
+  to a runtime container `UnsupportedError`: the Go standard library
+  cannot serialize or parse those containers.
+- `encode_private_key` output encryption (`BestAvailableEncryption`,
+  reached via the `passphrase` parameter) and `pkcs12` encoding resolve
+  to the same container boundary; plain output is unencrypted PKCS#8.
+  Legacy Proc-Type/DEK-Info encrypted *inputs* still decrypt through
+  the deprecated `x509.DecryptPEMBlock` with the exact password error
+  texts.
+- Certificate-profile extension families on a CRL raise the same
+  deterministic profile-boundary error the R5.2b round introduced,
+  where the source's shared renderer would render them.
+
+This addendum resolves the R5.2b clause that kept `x509.read_crl`
+pending: the single canonical registration exposes the v2 cryptography
+dict shape, which subsumes the v1 parsed-`openssl crl -text` shape,
+while the v1 OpenSSL-CLI parser itself stays excluded by decision 1.
+`x509.sign_remote_certificate` remains excluded unchanged: it is the
+master-minion `publish.publish` surface and would need its own
+peer-communication ADR. With this round the x509 family's actionable
+R5 scope is closed: the R5 report records `x509` 19/1 and `x509_v2`
+24/1 registered/pending (the pending is `sign_remote_certificate` in
+both views, counted once per family view), `docs/catalog/coverage.yaml`
+records the six additional implemented names (24 x509 exec names
+total), and the catalog regen through `tools/salt-reference` is
+byte-identical to the committed state.
