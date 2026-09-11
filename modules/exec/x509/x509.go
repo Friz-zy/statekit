@@ -1,12 +1,17 @@
 // Package x509 ports the read-only subset of Salt's legacy x509 v1
-// family (R5.2a): saltstack/salt/modules/x509.py @ pinned revision,
-// functions get_pem_entry, get_pem_entries, get_private_key_size,
-// read_certificate, read_certificates, read_csr, expired,
-// will_expire, verify_private_key and get_public_key. The write side
-// (write_pem, create_*, sign_remote_certificate, get_signing_policy,
-// verify_crl, verify_signature, read_crl) stays pending; the legacy
-// M2Crypto surface keeps its ADR 0003 terminal-exclusion boundary for
-// everything that requires the ctypes ABI or the openssl CLI parser.
+// family (R5.2a) plus the R5.2b write-side subset: saltstack/salt/
+// modules/x509.py @ pinned revision. R5.2a registered get_pem_entry,
+// get_pem_entries, get_private_key_size, read_certificate,
+// read_certificates, read_csr, expired, will_expire,
+// verify_private_key and get_public_key; R5.2b adds write_pem,
+// create_private_key, create_crl, get_signing_policy,
+// create_certificate, create_csr, verify_signature and verify_crl
+// (see write.go for their documented boundaries). sign_remote_
+// certificate and read_crl stay pending: the former is the excluded
+// master-minion publish surface, the latter's v1 output shape is
+// parsed openssl CLI text; the legacy M2Crypto surface keeps its ADR
+// 0003 terminal-exclusion boundary for everything that requires the
+// ctypes ABI or the openssl CLI parser.
 //
 // The substrate mapping is library-to-library like R5.4/R5.8 (the
 // pinned source rides M2Crypto/pyOpenSSL, both libssl bindings): the
@@ -1518,7 +1523,9 @@ func decodeNsCertType(der []byte) (string, error) {
 	return strings.Join(names, ", "), nil
 }
 
-// Register installs the R5.2a x509 read-only surface.
+// Register installs the x509 surface: the R5.2a read-only subset and
+// the R5.2b write-side subset (one canonical registration per public
+// name, 18 total).
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		getPemEntryFunc{},
@@ -1531,6 +1538,14 @@ func Register(reg *runtime.ExecRegistry) error {
 		willExpireFunc{},
 		verifyPrivateKeyFunc{},
 		getPublicKeyFunc{},
+		writePemFunc{},
+		createPrivateKeyFunc{},
+		createCrlFunc{},
+		getSigningPolicyFunc{},
+		createCertificateFunc{},
+		createCsrFunc{},
+		verifySignatureFunc{},
+		verifyCrlFunc{},
 	} {
 		if err := reg.Register(fn); err != nil {
 			return err

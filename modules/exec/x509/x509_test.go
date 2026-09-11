@@ -1114,10 +1114,12 @@ func TestRegistryCallPaths(t *testing.T) {
 	}
 
 	want := []string{
-		"x509.expired", "x509.get_pem_entries", "x509.get_pem_entry",
-		"x509.get_private_key_size", "x509.get_public_key", "x509.read_certificate",
-		"x509.read_certificates", "x509.read_csr", "x509.verify_private_key",
-		"x509.will_expire",
+		"x509.create_certificate", "x509.create_crl", "x509.create_csr",
+		"x509.create_private_key", "x509.expired", "x509.get_pem_entries",
+		"x509.get_pem_entry", "x509.get_private_key_size", "x509.get_public_key",
+		"x509.get_signing_policy", "x509.read_certificate", "x509.read_certificates",
+		"x509.read_csr", "x509.verify_crl", "x509.verify_private_key",
+		"x509.verify_signature", "x509.will_expire", "x509.write_pem",
 	}
 	names := rt.Exec.Names()
 	if len(names) != len(want) {
@@ -1171,8 +1173,10 @@ func TestCLISurface(t *testing.T) {
 	if code := app.Run([]string{"exec", "x509.read_certificate"}); code != 2 {
 		t.Fatalf("missing required exit = %d, want 2", code)
 	}
-	if code := app.Run([]string{"exec", "x509.create_certificate"}); code != 3 {
-		t.Fatalf("unregistered function exit = %d, want 3", code)
+	// create_certificate is registered by R5.2b; with no path/text
+	// targets it fails as a SaltInvocationError (exit 1).
+	if code := app.Run([]string{"exec", "x509.create_certificate"}); code != 1 {
+		t.Fatalf("create_certificate no-target exit = %d, want 1", code)
 	}
 }
 

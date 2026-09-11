@@ -6,9 +6,9 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    source_inventory_count: 968
-    catalog_intersection_count: 943
-    implemented: 943
+    source_inventory_count: 976
+    catalog_intersection_count: 951
+    implemented: 951
 state:
     salt_modules: 132
     salt_functions: 669
@@ -957,16 +957,24 @@ implemented:
         - win_wua.list
         - win_wua.set_wu_settings
         - win_wua.uninstall
+        - x509.create_certificate
+        - x509.create_crl
+        - x509.create_csr
+        - x509.create_private_key
         - x509.expired
         - x509.get_pem_entries
         - x509.get_pem_entry
         - x509.get_private_key_size
         - x509.get_public_key
+        - x509.get_signing_policy
         - x509.read_certificate
         - x509.read_certificates
         - x509.read_csr
+        - x509.verify_crl
         - x509.verify_private_key
+        - x509.verify_signature
         - x509.will_expire
+        - x509.write_pem
         - xattr.clear
         - xattr.delete
         - xattr.list

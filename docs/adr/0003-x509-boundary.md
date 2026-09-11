@@ -1,7 +1,7 @@
 # ADR 0003: split the legacy x509 boundary from x509_v2
 
 Status: accepted (porting classification, 2026-08-28; additively amended
-by the 2026-09-11 R5.2a addendum below)
+by the 2026-09-11 R5.2a addendum and the 2026-09-11 R5.2b addendum below)
 Reference revision: references/salt.lock (8b63e700637e)
 
 ## Context
@@ -99,3 +99,72 @@ family label moved from `planned` to `implemented` in
 `docs/catalog/compatibility.yaml` because StateKit now ships at least one
 function of that public family, per the label semantics; the source-level
 split stays authored here, and the x509_v2 round boundary is unchanged.
+(The write-side clause of this paragraph is superseded for eight of the
+nine listed functions by the R5.2b addendum below; `sign_remote_certificate`
+remains excluded.)
+
+## Addendum (2026-09-11, later): R5.2b write-side subset registration
+
+Round R5.2b extends the same interpretation to eight write-side functions
+of the legacy `salt/modules/x509.py` surface, registered under their
+canonical public names in `modules/exec/x509/write.go`, again on the Go
+standard library only (`crypto/x509`, `crypto/rsa`, `crypto/rand`,
+`encoding/pem`, `encoding/asn1`):
+
+`x509.write_pem`, `x509.create_private_key`, `x509.create_crl`,
+`x509.get_signing_policy`, `x509.create_certificate`, `x509.create_csr`,
+`x509.verify_signature`, `x509.verify_crl`.
+
+Like R5.2a, each registration passes the two-part test of the R5.2a
+addendum: the v1 observable contract (arguments, defaults, reply
+strings, dict shapes, error text) is stdlib-expressible, no M2Crypto,
+pyOpenSSL, ctypes or `openssl` binary is reachable (the write surface
+spawns zero processes, asserted by `TestWriteSideNoRunnerSpawns`), and
+every one of the eight names also exists in
+`salt/modules/x509_v2.py`, so no legacy-only contract is registered.
+The substrate mapping is library-to-library: where the pinned source
+rode M2Crypto's RSA generator, PEM writer, X509 builder and the
+pyOpenSSL CRL flow, the port uses `crypto/rsa`, `x509.EncryptPEMBlock`
+(the sole stdlib producer of the legacy Proc-Type/DEK-Info envelope),
+`x509.CreateCertificate`/`CreateCertificateRequest`/
+`CreateRevocationList`, and key-aware `CheckSignature` verification.
+Divergences forced by that substrate are documented in the
+`modules/exec/x509` package doc and were verified against the pinned
+revision at gate time; the material ones are: plain private keys emit
+PKCS#8 `PRIVATE KEY` where M2Crypto wrote PKCS#1 (encrypted keys keep
+the PKCS#1 + DEK-Info envelope, including the uppercase-hex IV),
+`create_crl` defaults its digest to SHA-256 where the pinned pyOpenSSL
+fallback was md5, emits the CRL Number 1 that Go requires, and
+`sha224` signatures upgrade to SHA-256 because the stdlib exposes no
+SHA-224 signature algorithm; `create_certificate` always emits a v3
+TBSCertificate (the `version` kwarg cannot lower it), anchors a
+dynamic `not_after` at now rather than at `not_before` (the v1 quirk,
+kept), and resolves `ca_server` requests to a deterministic
+master-surface `UnsupportedError` instead of the excluded
+`publish.publish` call; `create_csr` cannot lower the PKCS#10 version;
+`verify_crl` uses `CheckSignatureFrom` where the source shelled out to
+`openssl crl -CAfile` (an unloadable-but-well-formed PEM CRL is `False`
+rather than an error, matching the CLI's failure mode).
+
+Remaining exclusions after R5.2b, stated explicitly:
+
+- `x509.sign_remote_certificate` stays excluded: it is the
+  master-minion `publish.publish` surface, which is outside the
+  execution-registry substrate by decision 1 and would need its own
+  peer-communication ADR (the same boundary the tls and ssh_pki
+  families document). `create_certificate(ca_server=...)` reaches it
+  only through the deterministic unsupported error above.
+- `x509.read_crl` stays pending, not excluded: its v1 output shape is
+  parsed `openssl crl -text` CLI output (via `_parse_openssl_crl`),
+  which is the OpenSSL-parser workaround decision 1 rejects. A
+  stdlib-shape `read_crl` (`x509.ParseRevocationList`) is possible in
+  the dedicated v2 round, where `x509_v2.read_crl` already defines the
+  modern contract.
+- The M2Crypto/pyOpenSSL object-handle contracts (`asObj=True`
+  surfaces) remain unexposed, unchanged from R5.2a.
+
+The compatibility label consequences are unchanged from R5.2a: the
+collapsed `x509` family was already `implemented`; R5.2b only widens
+it, and the regenerated `docs/catalog/coverage.yaml` records the eight
+additional implemented names (18 x509 exec names total). The x509_v2
+round boundary of decision 2 is untouched.
