@@ -44,27 +44,7 @@ families:
         catalog_functions: 28
         public_functions: 23
         private_functions: 5
-        registered_public: 4
-        pending_public:
-            - selinux.fcontext_add_policy
-            - selinux.fcontext_apply_policy
-            - selinux.fcontext_delete_policy
-            - selinux.fcontext_get_policy
-            - selinux.fcontext_policy_is_applied
-            - selinux.filetype_id_to_string
-            - selinux.getsebool
-            - selinux.getsemod
-            - selinux.install_semod
-            - selinux.list_sebool
-            - selinux.list_semod
-            - selinux.port_add_policy
-            - selinux.port_delete_policy
-            - selinux.port_get_policy
-            - selinux.port_modify_policy
-            - selinux.remove_semod
-            - selinux.setsebool
-            - selinux.setsebools
-            - selinux.setsemod
+        registered_public: 23
         differential_scenarios:
             - selinux.context-policy-and-semanage-boundary
             - selinux.boolean-module-portability
@@ -130,4 +110,4 @@ families:
 totals:
     catalog_functions: 232
     public_functions: 149
-    registered_public: 121
+    registered_public: 140

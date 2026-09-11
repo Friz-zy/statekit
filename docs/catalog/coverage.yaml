@@ -6,9 +6,9 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    source_inventory_count: 976
-    catalog_intersection_count: 951
-    implemented: 951
+    source_inventory_count: 995
+    catalog_intersection_count: 970
+    implemented: 970
 state:
     salt_modules: 132
     salt_functions: 669
@@ -686,10 +686,29 @@ implemented:
         - rsync.sync
         - scsi.ls
         - scsi.rescan_all
+        - selinux.fcontext_add_policy
+        - selinux.fcontext_apply_policy
+        - selinux.fcontext_delete_policy
+        - selinux.fcontext_get_policy
+        - selinux.fcontext_policy_is_applied
+        - selinux.filetype_id_to_string
         - selinux.getconfig
         - selinux.getenforce
+        - selinux.getsebool
+        - selinux.getsemod
+        - selinux.install_semod
+        - selinux.list_sebool
+        - selinux.list_semod
+        - selinux.port_add_policy
+        - selinux.port_delete_policy
+        - selinux.port_get_policy
+        - selinux.port_modify_policy
+        - selinux.remove_semod
         - selinux.selinux_fs_path
         - selinux.setenforce
+        - selinux.setsebool
+        - selinux.setsebools
+        - selinux.setsemod
         - service.available
         - service.create
         - service.create_win_salt_restart_task

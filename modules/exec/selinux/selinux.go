@@ -1,8 +1,12 @@
 // Package selinux implements Salt-compatible SELinux inspection and control.
 //
 // Reference: saltstack/salt/modules/selinux.py @ pinned revision. Ported
-// subset: selinux_fs_path, getenforce, getconfig, setenforce. Booleans and
-// module management require policy tooling and stay unported.
+// surface: selinux_fs_path, getenforce, getconfig, setenforce (R5.2) plus
+// the R5.3 policy subset — filetype translation, semanage-driven booleans,
+// file-context and port policies, restorecon preview/apply, and semodule
+// management. Shell pipelines of the source (semanage ... | grep -E) are
+// re-implemented as in-process line filtering over the central Runner's
+// bounded output.
 package selinux
 
 import (
@@ -112,7 +116,16 @@ func (setenforceFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any
 
 // Register installs all selinux-module execution functions.
 func Register(reg *runtime.ExecRegistry) error {
-	for _, fn := range []runtime.ExecFunction{fsPathFunc{}, getenforceFunc{}, getConfigFunc{}, setenforceFunc{}} {
+	fns := []runtime.ExecFunction{
+		fsPathFunc{}, getenforceFunc{}, getConfigFunc{}, setenforceFunc{},
+		filetypeIdToStringFunc{},
+		listSeboolFunc{}, getseboolFunc{}, setseboolFunc{}, setseboolsFunc{},
+		listSemodFunc{}, getsemodFunc{}, setsemodFunc{}, installSemodFunc{}, removeSemodFunc{},
+		fcontextGetPolicyFunc{}, fcontextAddPolicyFunc{}, fcontextDeletePolicyFunc{},
+		fcontextPolicyIsAppliedFunc{}, fcontextApplyPolicyFunc{},
+		portGetPolicyFunc{}, portAddPolicyFunc{}, portModifyPolicyFunc{}, portDeletePolicyFunc{},
+	}
+	for _, fn := range fns {
 		if err := reg.Register(fn); err != nil {
 			return err
 		}
