@@ -2112,6 +2112,10 @@ temporary build/test paths are inside containers (`/tmp` tmpfs) or project-local
 | R4.9b bounded Python Jinja2 bridge | `4ba20df` | passed |
 | R4.9c gotemplate-only file integration | `2c62e60` | passed |
 | R4.9d documentation and catalog regeneration | ready for/recorded in this documentation commit | passed |
+| R6.10/R6.11 macOS mock tests — 14 test files (13 new + kcpassword fix), 141 test functions across 14 darwin families; executors: `software-engineer-senior` (R6.10), `software-engineer-senior` (R6.11) | `bc54a11` | passed (`backend-engineer-lead` gate; 0 blocking, 2 info: 13 packages vs 14 files, optional desktop header note). Runtime execution still requires a macOS runner (PTD-TEST-0015/2463); compile gates `GOOS=darwin go test -c` ×13 packages |
+| R7.5 Windows mock tests — 5 test files, 40 test functions (firewall/group/pkg/user windows-tagged compile gates + state/win_firewall untagged executable); executor: `software-engineer-senior` | `5f534b0` | passed (`backend-engineer-lead` gate) after 7 test-only fixes (call-count/probe-count assertions aligned with production idempotent paths; boundary string exact) + 2 boundary pins (firewall setter profile-validation gap pinned as current behavior; pkg.version missing → "<nil>" quirk pinned) |
+
+R6/R7 now have mock-based test coverage for every module (windows-tagged compile gates via `GOOS=windows go test -c`; untagged/state tests run on Linux). Remaining plan work: (1) native runtime validation of R6/R7 on macOS/Windows runners (E1-E4), (2) R8 blocked on E6 QEMU/VM runner, (3) PTD-PROBLEM/PTD-EXEC/PTD-STATE stale-audit reconciliation pass (0001/0002/0003-0006 and duplicates flipped; rest require per-row verification), (4) single excluded name `x509.sign_remote_certificate` (master-surface). Podman-only execution/scoped exception notes unchanged; no new deps.
 
 ### 7.1 Problems to fix
 
