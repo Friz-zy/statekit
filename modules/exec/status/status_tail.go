@@ -500,6 +500,8 @@ func RegisterTail(reg *runtime.ExecRegistry) error {
 		timeFunc{},
 		allStatusFunc{},
 		customFunc{},
+		statusPidFunc{},
+		statusVersionFunc{},
 	} {
 		if err := reg.Register(fn); err != nil {
 			return err

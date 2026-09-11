@@ -89,13 +89,11 @@ families:
         catalog_functions: 25
         public_functions: 21
         private_functions: 4
-        registered_public: 16
+        registered_public: 18
         pending_public:
             - status.master
-            - status.pid
             - status.ping_master
             - status.proxy_reconnect
-            - status.version
         differential_scenarios:
             - status.proc-parsers-long-tail-vs-procps
             - status.custom-config-projection
@@ -123,4 +121,4 @@ families:
 totals:
     catalog_functions: 233
     public_functions: 184
-    registered_public: 170
+    registered_public: 172
