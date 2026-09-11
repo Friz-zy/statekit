@@ -1664,7 +1664,7 @@ rows or counts.
 
 ##### 2026-09-10 current status
 
-Current actual HEAD is `b36cbea`. R3.2/YUM is complete; R3.3/Zypper is
+Current actual HEAD is `9f0eb4c`. R3.2/YUM is complete; R3.3/Zypper is
 **complete**. The current R3.3 implementation and independent-gate ledger is:
 
 | Commit | Scope | Implementation executor role | Independent gate(s) | Result / boundary |
@@ -1683,6 +1683,7 @@ Current actual HEAD is `b36cbea`. R3.2/YUM is complete; R3.3/Zypper is
 | `2e60ff4` | R3.3j Zypper `list_products`/`list_provides`/`resolve_capabilities` | `backend-engineer-senior` | `backend-engineer-lead` | passed (informational findings only) |
 | `3cb2031` | R3.3k Zypper `purge`/`upgrade` | `backend-engineer-senior` | `backend-engineer-lead` | passed |
 | `b36cbea` | R3.3l final batch `list_patches`/`list_installed_patches`/`services_need_restart`/`list_repo_pkgs`/`download`/`list_downloaded`/`diff` | `backend-engineer-lead` | `backend-engineer-senior` | passed (0 blocking; 3 low follow-ups documented: `ZYPP_READONLY_HACK` on download inherited from the central runner, BFS walk-order divergence, pre-existing gofmt `group_install_test.go`) |
+| `9f0eb4c` | R4-final `status.pid`/`status.version` | `software-engineer-senior` | `backend-engineer-lead` | passed (0 blocking; documented /proc-mechanism divergences). Note: closes the last two actionable R4 items — status 18/21 registered with master/ping_master/proxy_reconnect pending-by-design (master-surface exclusion contract), cp 15/24 with 9 master-fileserver/chunked-transfer pending-by-design; R4 actionable scope now complete, remaining pendings are design exclusions. Report R4 totals registered_public 172/184 |
 
 Current R3 report: `aptpkg` 34 registered / 0 pending, `yumpkg` 39
 registered / 0 pending, `zypperpkg` 42 registered / 0 pending; total
