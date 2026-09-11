@@ -1681,6 +1681,7 @@ independent-gate ledger:
 | Commit | Scope | Implementation executor role | Independent gate(s) | Result / boundary |
 |---|---|---|---|---|
 | (this commit) | R5.4 x509 v2 round: `encode_certificate`, `encode_crl`, `encode_csr`, `encode_private_key`, `expires`, `read_crl` (Go stdlib substrate; zero Runner spawns, asserted by `TestV2NoRunnerNoMutation`) | `software-engineer-senior` | `backend-engineer-lead` | passed (0 blocking; documented boundaries: `load_file_or_bytes` semantics with bounded 16 MiB no-symlink reads and `b64:`/hex/base64/PEM inline strings with the exact loader error text, pinned validation order for every encoder (encoding whitelist CommandExecutionError texts, der+append_certs, non-pkcs12 `private_key`, pkcs12-without-key) firing before any parsing, pkcs7_der/pkcs7_pem/pkcs12 encodings and PKCS#7-PEM/encrypted-PKCS#8/PKCS#12 inputs plus `BestAvailableEncryption` output resolve to deterministic container `UnsupportedError` after those validations, `encode_private_key` always re-encodes PKCS#8 with legacy Proc-Type/DEK-Info decryption through the deprecated `x509.DecryptPEMBlock` and the exact password error texts, `expires` keeps `not_valid_after <= now + days` with `days=0` default, `read_crl` ports the v2 dict shape (issuer keyed by `NAME_ATTRS_OID` short names first-value-per-OID, `%Y-%m-%d %H:%M:%S` UTC dates, colon-stripped `dec2hex` serial keys, `signature_algorithm` OID `_name` with dotted-string fallback, CRL/entry extension renderers incl. the `onysomereasons` IDP typo), certificate-profile extension families on a CRL raise the deterministic R5.2b-style profile boundary where the source would render them, no-nextUpdate CRLs format the zero time where the source would crash). R5 differential x509/x509_v2 views 140→147 `registered_public` (x509 19/1, x509_v2 24/1; the one pending per view is `sign_remote_certificate`); coverage.yaml exec implemented 970→976 (+6 canonical names), source inventory 995→1001 |
+| `47c8aac` | R5.4 x509 v2 round: `encode_certificate`/`encode_crl`/`encode_csr`/`encode_private_key`, `expires`, `read_crl` (stdlib shape) | `backend-engineer-senior` | `backend-engineer-lead` | passed (ADR 0003 R5.4 addendum; plan PTD-EXEC-1913..1916/1918/1926 flipped with evidence). R5 CLOSED: 147/149 registered; the only remaining public name is `sign_remote_certificate` (master-surface excluded; `x509_v2` view 24/1 with the same exclusion) |
 
 PTD-EXEC rows for exactly the six v2-round functions are flipped to [x]
 in §7.2: PTD-EXEC-1913, 1914, 1915, 1916, 1918 and 1926. PTD-EXEC-1928
@@ -1711,8 +1712,60 @@ committed state (catalog-golden). The scoped HUMAN exception
 isolation remained intact. No new dependencies, no host packages, no
 live PKI mutation, and the gate made no commit.
 
-##### 2026-09-11 current status (R5.2b x509 write-side subset; R5.3 selinux)
+Differential reports are the authoritative completion metric: R3 172/172,
+R4 172/184 (12 master-surface design exclusions), R5 147/149
+(`sign_remote_certificate` excluded), R6 139/139 ported, R7 219/219 ported
+(R6/R7 runtime-unproven until native runners), and R8 blocked on the E6
+QEMU/VM runner. The PTD audit checkbox tables (PTD-PROBLEM §7.1, PTD-EXEC
+§7.2, PTD-STATE §7.3) predate this session and are stale relative to the
+executed rounds: R3.1–R3.3 closed all package-provider pending items;
+R4.9/R4-final, R5.1a, R5.2a/R5.2b, R5.3 and R5.4 closed the templating/
+asymmetric/x509/selinux items (e.g. PTD-PROBLEM-0007/0008/0009 asymmetric
+fixes landed in R5.1a). An earlier draft of this paragraph claimed
+"PTD-PROBLEM-0002 test.sleep registration verified present"; that claim was
+inaccurate — at HEAD `47c8aac` the implementation was still stranded in
+`modules/exec/status/pidlist.go` and registered nowhere.
 
+##### 2026-09-11 current status (R5.5 registration reconciliation)
+
+This commit is the R5.5 registration-reconciliation round; it closes the
+two registration defects verified open at HEAD `47c8aac`:
+
+- PTD-PROBLEM-0001 closed: `modules/exec/system/system.go#Register`
+  declares exactly `system.halt`, `system.poweroff`, `system.reboot`,
+  `system.shutdown`, `system.init`, matching the pinned
+  `saltstack/salt/modules/system.py` public names, so `execsystem.Register`
+  is now wired in `internal/bootstrap/bootstrap.go#BuildRuntime` directly
+  after `execselinux.Register`. §7.1 row and PTD-EXEC evidence flipped;
+  regression `tests/porting_debt_test.go#TestBuildRuntimeRegistersSystemPowerFunctions`
+  (five `system.*` names, lookup-only enumeration spawns nothing, default
+  `system.reboot` runs `shutdown -r now` once through a recording Runner).
+- PTD-PROBLEM-0002 closed: the stranded `test.sleep` implementation moved
+  from `modules/exec/status/pidlist.go` into the owning
+  `modules/exec/test/test.go` and is registered through the existing
+  `exectest.Register`; the status package no longer declares any `test.*`
+  function. Ported semantics follow the pinned
+  `saltstack/salt/modules/test.py#sleep` exactly: the pinned revision
+  declares `sleep(length)` with no default (the stranded code's
+  default-to-5 under a `duration` argument name matched no pinned
+  contract) and sleeps `int(length)` seconds before returning `True`.
+  StateKit boundaries around the pinned behavior: the wait honors context
+  cancellation and negative lengths fail with the CPython
+  `sleep length must be non-negative` ValueError text instead of firing
+  the timer immediately. §7.1 row, PTD-EXEC-1616 and PTD-TEST-0002
+  flipped; regressions in `tests/porting_debt_test.go` and
+  `modules/exec/test/test_test.go` plus a CLI exit matrix in
+  `internal/cli/test_sleep_cli_test.go` (success exit 0 with `true`;
+  missing required `--length`, non-integer, and the pre-move `--duration`
+  spelling exit 2).
+
+Remaining reconciliation work stays open for later passes before further
+implementation rounds: PTD-PROBLEM-0003 `file.makedirs_` alias (and the
+0004/0005/0006 alias rows), PTD-TEST-2463 canonical inventory, and the
+per-row verification of the remaining stale audit entries.
+
+
+##### 2026-09-11 current status (R5.2b x509 write-side subset; R5.3 selinux)
 Actual HEAD at gate time is `f642c8e` plus the uncommitted R5.2b scope
 (`modules/exec/x509/{write.go,write_test.go,x509.go,x509_test.go}`,
 `docs/differential/R5/report.yaml`, the ADR 0003 R5.2b addendum, this plan
@@ -1972,8 +2025,8 @@ temporary build/test paths are inside containers (`/tmp` tmpfs) or project-local
 
 | Done | ID | Unique title | Class | Severity | Disposition | Owner | Exact target files/symbols | Evidence | Acceptance test ID |
 |---|---|---|---|---|---|---|---|---|---|
-| [ ] | PTD-PROBLEM-0001 | system Register omitted from BuildRuntime | registration | high | actionable | software-engineer-senior | `internal/bootstrap/bootstrap.go#BuildRuntime`; `modules/exec/system/system.go#Register` | `internal/bootstrap/bootstrap.go:161-274` omits `execsystem.Register`; `modules/exec/system/system.go#Register` declares five functions | PTD-TEST-0001 |
-| [ ] | PTD-PROBLEM-0002 | test.sleep implementation is stranded outside registration | registration | high | actionable | software-engineer-senior | `modules/exec/status/pidlist.go#testSleepFunc`; `modules/exec/test/test.go#Register`; `internal/bootstrap/bootstrap.go#BuildRuntime` | `modules/exec/status/pidlist.go:52-71`; neither `status.RegisterTail` nor `test.Register` registers `testSleepFunc` | PTD-TEST-0002 |
+| [x] | PTD-PROBLEM-0001 | system Register omitted from BuildRuntime | registration | high | actionable | software-engineer-senior | `internal/bootstrap/bootstrap.go#BuildRuntime`; `modules/exec/system/system.go#Register` | `internal/bootstrap/bootstrap.go:161-274` omits `execsystem.Register`; `modules/exec/system/system.go#Register` declares five functions. R5.5: `execsystem.Register` wired after `execselinux.Register`; five `system.*` names match pinned `saltstack/salt/modules/system.py`; regression `tests/porting_debt_test.go#TestBuildRuntimeRegistersSystemPowerFunctions` | PTD-TEST-0001 |
+| [x] | PTD-PROBLEM-0002 | test.sleep implementation is stranded outside registration | registration | high | actionable | software-engineer-senior | `modules/exec/status/pidlist.go#testSleepFunc`; `modules/exec/test/test.go#Register`; `internal/bootstrap/bootstrap.go#BuildRuntime` | `modules/exec/status/pidlist.go:52-71`; neither `status.RegisterTail` nor `test.Register` registers `testSleepFunc`. R5.5: moved to `modules/exec/test/test.go` (`sleepFunc`, pinned `test.py#sleep` semantics: required int `length`, no default, `int(length)` seconds, returns True, ctx-cancellation guard, CPython negative-length ValueError text) and registered via `exectest.Register`; status declares no `test.*`; regressions `tests/porting_debt_test.go#TestBuildRuntimeRegistersTestSleepFromOwningPackage`, `modules/exec/test/test_test.go`, `internal/cli/test_sleep_cli_test.go` | PTD-TEST-0002 |
 | [ ] | PTD-PROBLEM-0003 | file.makedirs uses the noncanonical makedirs_ loader name | compatibility | medium | actionable | software-engineer-senior | `modules/exec/file#Name`; `saltstack/salt/modules/file.py#__func_alias__` | Go inventory contains `file.makedirs_`; pinned Salt alias maps `makedirs_` to `makedirs` | PTD-TEST-0003 |
 | [ ] | PTD-PROBLEM-0004 | logrotate.set uses set_ in exec and state registries | compatibility | medium | actionable | software-engineer-senior | `modules/exec/logrotate#Name`; `modules/state/logrotate/logrotate.go#Name`; `saltstack/salt/modules/logrotate.py#__func_alias__` | Go inventories contain `logrotate.set_`; pinned exec/state loader name is `logrotate.set` | PTD-TEST-0004 |
 | [ ] | PTD-PROBLEM-0005 | status.time uses the noncanonical time_ loader name | compatibility | medium | actionable | software-engineer-senior | `modules/exec/status#Name`; `saltstack/salt/modules/status.py#__func_alias__` | Go inventory contains `status.time_`; pinned Salt alias maps `time_` to `time` | PTD-TEST-0005 |
@@ -3631,7 +3684,7 @@ temporary build/test paths are inside containers (`/tmp` tmpfs) or project-local
 | [ ] | PTD-EXEC-1613 | `test.rand_str` | actionable | software-engineer-senior | catalog `docs/catalog/exec/test.yaml#rand_str`; Salt `saltstack/salt/modules/test.py#rand_str`; tests none mapped | `modules/exec/test` (extend); unassigned-next-round; round assignment required before implementation; dependencies: config.option | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
 | [ ] | PTD-EXEC-1614 | `test.random_hash` | actionable | software-engineer-senior | catalog `docs/catalog/exec/test.yaml#random_hash`; Salt `saltstack/salt/modules/test.py#random_hash`; tests none mapped | `modules/exec/test` (extend); unassigned-next-round; round assignment required before implementation; dependencies: config.option | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
 | [ ] | PTD-EXEC-1615 | `test.retcode` | actionable | software-engineer-senior | catalog `docs/catalog/exec/test.yaml#retcode`; Salt `saltstack/salt/modules/test.py#retcode`; tests none mapped | `modules/exec/test` (extend); unassigned-next-round; round assignment required before implementation; dependencies: config.option | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
-| [ ] | PTD-EXEC-1616 | `test.sleep` | registered-missing | software-engineer-senior | catalog `docs/catalog/exec/test.yaml#sleep`; Salt `saltstack/salt/modules/test.py#sleep`; tests none mapped | `modules/exec/status/pidlist.go#Name`; `internal/bootstrap/bootstrap.go#BuildRuntime`; dependencies: none catalogued | Go `Name()` exists but BuildRuntime does not register the containing function/family |
+| [x] | PTD-EXEC-1616 | `test.sleep` | registered-missing | software-engineer-senior | catalog `docs/catalog/exec/test.yaml#sleep`; Salt `saltstack/salt/modules/test.py#sleep`; tests none mapped | `modules/exec/test/test.go#sleepFunc`; `internal/bootstrap/bootstrap.go#BuildRuntime`; dependencies: none catalogued | Go `Name()` exists but BuildRuntime does not register the containing function/family. R5.5: registered from the owning `modules/exec/test` package via `exectest.Register` and wired in `BuildRuntime`; canonical required int `length` per `docs/catalog/exec/test.yaml#sleep` (no source default); regression `tests/porting_debt_test.go#TestBuildRuntimeRegistersTestSleepFromOwningPackage` |
 | [ ] | PTD-EXEC-1617 | `test.stack` | actionable | software-engineer-senior | catalog `docs/catalog/exec/test.yaml#stack`; Salt `saltstack/salt/modules/test.py#stack`; tests none mapped | `modules/exec/test` (extend); unassigned-next-round; round assignment required before implementation; dependencies: config.option | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
 | [ ] | PTD-EXEC-1618 | `test.true` | actionable | software-engineer-senior | catalog `docs/catalog/exec/test.yaml#true_`; Salt `saltstack/salt/modules/test.py#true_`; tests none mapped | `modules/exec/test` (extend); unassigned-next-round; round assignment required before implementation; dependencies: config.option | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
 | [ ] | PTD-EXEC-1619 | `test.try` | actionable | software-engineer-senior | catalog `docs/catalog/exec/test.yaml#try_`; Salt `saltstack/salt/modules/test.py#try_`; tests none mapped | `modules/exec/test` (extend); unassigned-next-round; round assignment required before implementation; dependencies: config.option | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
@@ -4386,8 +4439,8 @@ temporary build/test paths are inside containers (`/tmp` tmpfs) or project-local
 
 | Done | ID | Specific valid test name | Disposition | Owner | Exact target file | Linked ID(s) | Kind | Exact Salt origin | Concrete acceptance assertion |
 |---|---|---|---|---|---|---|---|---|---|
-| [ ] | PTD-TEST-0001 | `TestBuildRuntimeRegistersSystemPowerFunctions` | actionable | qa-engineer-senior | `tests/porting_debt_test.go` (planned) | PTD-PROBLEM-0001 | problem regression | none mapped (StateKit-only regression) | BuildRuntime Names contains exactly `system.halt`, `system.poweroff`, `system.reboot`, `system.shutdown`, and `system.init` from `system.Register`; a fake Runner observes one call with argv `shutdown -r now` for default `system.reboot` and no call for lookup-only enumeration. |
-| [ ] | PTD-TEST-0002 | `TestBuildRuntimeRegistersTestSleepFromOwningPackage` | actionable | qa-engineer-senior | `tests/porting_debt_test.go` (planned) | PTD-PROBLEM-0002 | problem regression | none mapped (StateKit-only regression) | BuildRuntime resolves `test.sleep` from the owning `modules/exec/test` registration; invoking duration `0` returns success once, while `status.test_sleep` and duplicate registrations are absent. |
+| [x] | PTD-TEST-0001 | `TestBuildRuntimeRegistersSystemPowerFunctions` | actionable | qa-engineer-senior | `tests/porting_debt_test.go` (landed in the R5.5 reconciliation commit) | PTD-PROBLEM-0001 | problem regression | none mapped (StateKit-only regression) | BuildRuntime Names contains exactly `system.halt`, `system.poweroff`, `system.reboot`, `system.shutdown`, and `system.init` from `system.Register`; a fake Runner observes one call with argv `shutdown -r now` for default `system.reboot` and no call for lookup-only enumeration. |
+| [x] | PTD-TEST-0002 | `TestBuildRuntimeRegistersTestSleepFromOwningPackage` | actionable | qa-engineer-senior | `tests/porting_debt_test.go` (landed in the R5.5 reconciliation commit) | PTD-PROBLEM-0002 | problem regression | none mapped (StateKit-only regression) | BuildRuntime resolves `test.sleep` from the owning `modules/exec/test` registration; invoking duration `0` returns success once, while `status.test_sleep` and duplicate registrations are absent. |
 | [ ] | PTD-TEST-0003 | `TestFileMakedirsRegistersCanonicalSaltAlias` | actionable | qa-engineer-senior | `tests/porting_debt_test.go` (planned) | PTD-PROBLEM-0003 | problem regression | Go inventory contains `file.makedirs_`; pinned Salt alias maps `makedirs_` to `makedirs` | Exec Names contains `file.makedirs` and excludes `file.makedirs_`; dispatch of `file.makedirs` reaches the `makedirs_` source contract and preserves its declared defaults. |
 | [ ] | PTD-TEST-0004 | `TestLogrotateSetRegistersCanonicalAliasInExecAndState` | actionable | qa-engineer-senior | `tests/porting_debt_test.go` (planned) | PTD-PROBLEM-0004 | problem regression | Go inventories contain `logrotate.set_`; pinned exec/state loader name is `logrotate.set` | Exec and state Names each contain `logrotate.set` exactly once and exclude `logrotate.set_`; both canonical lookups dispatch successfully. |
 | [ ] | PTD-TEST-0005 | `TestStatusTimeRegistersCanonicalSaltAlias` | actionable | qa-engineer-senior | `tests/porting_debt_test.go` (planned) | PTD-PROBLEM-0005 | problem regression | Go inventory contains `status.time_`; pinned Salt alias maps `time_` to `time` | Exec Names contains `status.time` exactly once and excludes `status.time_`; lookup and dispatch use the pinned `time_` signature/defaults. |

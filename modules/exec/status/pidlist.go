@@ -9,13 +9,9 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/friz-zy/statekit/internal/runtime"
 )
-
-// timeAfter is split for hermetic tests.
-var timeAfter = time.After
 
 type pidListArgs struct {
 	Name string `statekit:"required,name=name"`
@@ -47,26 +43,4 @@ func (pidListFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (an
 		}
 	}
 	return pids, nil
-}
-
-type testSleepArgs struct {
-	Duration int `statekit:"name=duration"`
-}
-
-type testSleepFunc struct{}
-
-func (testSleepFunc) Name() string { return "test.sleep" }
-func (testSleepFunc) Args() any    { return testSleepArgs{} }
-func (testSleepFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*testSleepArgs)
-	seconds := a.Duration
-	if seconds <= 0 {
-		seconds = 5 // Salt default len=5
-	}
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-timeAfter(time.Duration(seconds) * time.Second):
-		return true, nil
-	}
 }

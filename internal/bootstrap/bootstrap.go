@@ -91,6 +91,7 @@ import (
 	execstatus "github.com/friz-zy/statekit/modules/exec/status"
 	execsysctl "github.com/friz-zy/statekit/modules/exec/sysctl"
 	execsysfs "github.com/friz-zy/statekit/modules/exec/sysfs"
+	execsystem "github.com/friz-zy/statekit/modules/exec/system"
 	exectemp "github.com/friz-zy/statekit/modules/exec/temp"
 	exectest "github.com/friz-zy/statekit/modules/exec/test"
 	executimezone "github.com/friz-zy/statekit/modules/exec/timezone"
@@ -268,6 +269,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execiptables.Register,
 		execrandom.Register,
 		execselinux.Register,
+		execsystem.Register,
 		execlvm.Register,
 		execmdadm.Register,
 		execmount.Register,
