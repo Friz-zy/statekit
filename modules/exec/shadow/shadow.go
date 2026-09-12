@@ -55,5 +55,12 @@ func (infoFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, 
 
 // Register installs all shadow-module execution functions.
 func Register(reg *runtime.ExecRegistry) error {
+	// Official Go distributions list solaris/amd64 and illumos/amd64 compile
+	// targets. This host has no native Solaris runtime runner; the branch keeps
+	// dispatch exhaustive and registerSolaris is covered by the untagged mock
+	// tests on the Linux host.
+	if runtime.CurrentGOOS() == "solaris" {
+		return registerSolaris(reg)
+	}
 	return reg.Register(infoFunc{})
 }

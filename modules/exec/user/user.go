@@ -247,6 +247,13 @@ func Register(reg *runtime.ExecRegistry) error {
 	if runtime.CurrentGOOS() == "freebsd" {
 		return registerFreeBSD(reg)
 	}
+	// Official Go distributions list solaris/amd64 and illumos/amd64 compile
+	// targets. This host has no native Solaris runtime runner; the branch keeps
+	// dispatch exhaustive and registerSolaris is covered by the untagged mock
+	// tests on the Linux host.
+	if runtime.CurrentGOOS() == "solaris" {
+		return registerSolaris(reg)
+	}
 	if runtime.CurrentGOOS() == "darwin" {
 		return registerMac(reg)
 	}

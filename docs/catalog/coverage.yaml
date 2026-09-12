@@ -6,9 +6,9 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    source_inventory_count: 1024
-    catalog_intersection_count: 1002
-    implemented: 1002
+    source_inventory_count: 1031
+    catalog_intersection_count: 1009
+    implemented: 1009
 state:
     salt_modules: 132
     salt_functions: 669
@@ -753,7 +753,14 @@ implemented:
         - service.start
         - service.status
         - service.stop
+        - shadow.default_hash
+        - shadow.del_password
+        - shadow.gen_password
         - shadow.info
+        - shadow.set_maxdays
+        - shadow.set_mindays
+        - shadow.set_password
+        - shadow.set_warndays
         - smbios.get
         - smbios.records
         - softwareupdate.download

@@ -1,10 +1,16 @@
-// R8.1 is FreeBSD-scoped: on Linux the registry deliberately filters all
-// freebsd-tagged providers, so a Linux registry-vs-catalog count would
-// falsely report every FreeBSD function as pending. This report
-// reconciles the FreeBSD source catalogs (pkgng, pw_user, pw_group)
-// against the generated implementation inventory and records the
-// runtime limitation separately; the blocking gates are the untagged
-// Linux mock tests plus the GOOS=freebsd cross-build.
+// R8 is the BSD/Solaris platform-split round: on Linux the registry
+// deliberately filters every freebsd/solaris-tagged provider, so a
+// Linux registry-vs-catalog count would falsely report all of those
+// functions as pending. This report reconciles the round's source
+// catalogs (pkgng, pw_user, pw_group; solaris_user, solaris_group,
+// solaris_shadow, solaris_system) against the generated implementation
+// inventory and records the runtime limitation separately; the
+// blocking gates are the untagged Linux mock tests plus the
+// GOOS=freebsd cross-build. Official Go distributions list solaris/amd64
+// and illumos/amd64 compile targets, but this host has no native Solaris or
+// illumos runtime runner; the Solaris surface is validated by the untagged
+// mock tests and compile-target evidence without claiming unrun runtime
+// behavior.
 package differential
 
 import (
@@ -45,14 +51,32 @@ type r8CoverageFile struct {
 	} `yaml:"implemented"`
 }
 
-var r8ScopeFamilies = []string{"pkgng", "pw_user", "pw_group"}
+var r8ScopeFamilies = []string{
+	"pkgng", "pw_user", "pw_group",
+	"solaris_user", "solaris_group", "solaris_shadow", "solaris_system",
+}
 
 // r8ScopeModule maps each platform-split Salt source module onto the Go
 // virtual family that carries its registration names.
 var r8ScopeModule = map[string]string{
-	"pkgng":    "pkg",
-	"pw_user":  "user",
-	"pw_group": "group",
+	"pkgng":          "pkg",
+	"pw_user":        "user",
+	"pw_group":       "group",
+	"solaris_user":   "user",
+	"solaris_group":  "group",
+	"solaris_shadow": "shadow",
+	"solaris_system": "system",
+}
+
+// r8ScopePlatform records each family's source platform.
+var r8ScopePlatform = map[string]string{
+	"pkgng":          "freebsd",
+	"pw_user":        "freebsd",
+	"pw_group":       "freebsd",
+	"solaris_user":   "solaris",
+	"solaris_group":  "solaris",
+	"solaris_shadow": "solaris",
+	"solaris_system": "solaris",
 }
 
 func r8TargetName(source, function string) string {
@@ -77,14 +101,18 @@ func TestR8DifferentialScopeReport(t *testing.T) {
 		implemented[name] = true
 	}
 	report := r8Report{
-		Round:         "R8",
-		Platform:      "freebsd",
-		RuntimeStatus: "FreeBSD source registration reconciled; local runtime requires a FreeBSD runner (untagged Linux mock tests plus GOOS=freebsd cross-build are the available gates)",
-		Families:      map[string]r8FamilyReport{},
+		Round:    "R8",
+		Platform: "freebsd+solaris",
+		RuntimeStatus: "FreeBSD and Solaris source registration reconciled; FreeBSD runtime requires " +
+			"a native runner; official Go compile targets include solaris/amd64 and illumos/amd64, " +
+			"but no native Solaris or illumos runtime runner is attached. Untagged Linux mock tests " +
+			"and cross-builds verify contracts and compilation only; no unrun Solaris runtime " +
+			"behavior is claimed",
+		Families: map[string]r8FamilyReport{},
 	}
 	for _, family := range r8ScopeFamilies {
 		catalogNames := loadCatalogFunctionNames(t, family)
-		fam := r8FamilyReport{Catalog: len(catalogNames), Platform: "freebsd"}
+		fam := r8FamilyReport{Catalog: len(catalogNames), Platform: r8ScopePlatform[family]}
 		for _, name := range catalogNames {
 			if strings.HasPrefix(name, "_") {
 				fam.Private++
@@ -93,9 +121,9 @@ func TestR8DifferentialScopeReport(t *testing.T) {
 			fam.Public++
 			// The generated implementation inventory is produced by the
 			// same scanner that feeds coverage. It proves every source
-			// symbol has a corresponding freebsd registration name; the
-			// separate per-function Platforms() gating and the untagged
-			// provider mock tests prove the freebsd surface itself.
+			// symbol has a corresponding per-platform registration name;
+			// the separate per-function Platforms() gating and the
+			// untagged provider mock tests prove the surface itself.
 			target := r8TargetName(family, name)
 			if !implemented[target] {
 				fam.PendingPublic = append(fam.PendingPublic, target)
