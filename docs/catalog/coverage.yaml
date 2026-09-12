@@ -6,9 +6,9 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    source_inventory_count: 1031
-    catalog_intersection_count: 1009
-    implemented: 1009
+    source_inventory_count: 1043
+    catalog_intersection_count: 1021
+    implemented: 1021
 state:
     salt_modules: 132
     salt_functions: 669
@@ -271,6 +271,18 @@ implemented:
         - firewall.set_logging_settings
         - firewall.set_settings
         - firewall.set_state
+        - fmadm.acquit
+        - fmadm.config
+        - fmadm.faulty
+        - fmadm.flush
+        - fmadm.healthy
+        - fmadm.list
+        - fmadm.load
+        - fmadm.repaired
+        - fmadm.replaced
+        - fmadm.reset
+        - fmadm.show
+        - fmadm.unload
         - git.add
         - git.clone
         - git.commit

@@ -21,6 +21,12 @@ families:
         private_functions: 3
         ported_public: 19
         platform: freebsd
+    solaris_fmadm:
+        catalog_functions: 19
+        public_functions: 12
+        private_functions: 7
+        ported_public: 12
+        platform: solaris
     solaris_group:
         catalog_functions: 5
         public_functions: 5
@@ -46,6 +52,6 @@ families:
         ported_public: 16
         platform: solaris
 totals:
-    catalog_functions: 102
-    public_functions: 89
-    ported_public: 89
+    catalog_functions: 121
+    public_functions: 101
+    ported_public: 101
