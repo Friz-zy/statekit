@@ -6,9 +6,9 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    source_inventory_count: 1057
-    catalog_intersection_count: 1035
-    implemented: 1035
+    source_inventory_count: 1060
+    catalog_intersection_count: 1038
+    implemented: 1038
 state:
     salt_modules: 132
     salt_functions: 669
@@ -49,9 +49,12 @@ implemented:
         - assistive.remove
         - asymmetric.sign
         - asymmetric.verify
+        - at._atq
         - at.at
+        - at.atc
         - at.atq
         - at.atrm
+        - at.jobcheck
         - bcache.attach
         - bcache.back_make
         - bcache.cache_make

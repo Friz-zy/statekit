@@ -4,7 +4,7 @@
 // functions as pending. This report reconciles the round's source
 // catalogs (pkgng, pw_user, pw_group; solaris_user, solaris_group,
 // solaris_shadow, solaris_system, solaris_fmadm, rbac_solaris,
-// smf_service) against the generated implementation
+// smf_service, at_solaris) against the generated implementation
 // inventory and records the runtime limitation separately; the
 // blocking gates are the untagged Linux mock tests plus the
 // GOOS=freebsd cross-build. Official Go distributions list solaris/amd64
@@ -55,7 +55,7 @@ type r8CoverageFile struct {
 var r8ScopeFamilies = []string{
 	"pkgng", "pw_user", "pw_group",
 	"solaris_user", "solaris_group", "solaris_shadow", "solaris_system", "solaris_fmadm",
-	"rbac_solaris", "smf_service",
+	"rbac_solaris", "smf_service", "at_solaris",
 }
 
 // r8ScopeModule maps each platform-split Salt source module onto the Go
@@ -71,6 +71,7 @@ var r8ScopeModule = map[string]string{
 	"solaris_fmadm":  "fmadm",
 	"rbac_solaris":   "rbac",
 	"smf_service":    "service",
+	"at_solaris":     "at",
 }
 
 // r8ScopePlatform records each family's source platform.
@@ -85,6 +86,7 @@ var r8ScopePlatform = map[string]string{
 	"solaris_fmadm":  "solaris",
 	"rbac_solaris":   "solaris",
 	"smf_service":    "solaris",
+	"at_solaris":     "solaris",
 }
 
 // r8ScopeFunctionAliases records source-level __func_alias__ names that are
@@ -92,6 +94,13 @@ var r8ScopePlatform = map[string]string{
 var r8ScopeFunctionAliases = map[string]map[string]string{
 	"solaris_fmadm": {"list_records": "list"},
 	"smf_service":   {"reload_": "reload"},
+}
+
+// at_solaris._atq is listed by the pinned catalog and is an intentional
+// StateKit execution surface for this round. Keep it in the six-function
+// public count even though its source spelling begins with an underscore.
+var r8ScopePublicUnderscores = map[string]map[string]bool{
+	"at_solaris": {"_atq": true},
 }
 
 func r8TargetName(source, function string) string {
@@ -134,7 +143,11 @@ func TestR8DifferentialScopeReport(t *testing.T) {
 		catalogNames := loadCatalogFunctionNames(t, family)
 		fam := r8FamilyReport{Catalog: len(catalogNames), Platform: r8ScopePlatform[family]}
 		for _, name := range catalogNames {
-			if strings.HasPrefix(name, "_") {
+			publicUnderscore := false
+			if names := r8ScopePublicUnderscores[family]; names != nil {
+				publicUnderscore = names[name]
+			}
+			if strings.HasPrefix(name, "_") && !publicUnderscore {
 				fam.Private++
 				continue
 			}

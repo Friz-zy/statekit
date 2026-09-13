@@ -14,8 +14,38 @@ import (
 )
 
 type atArgs struct {
-	Command  string `statekit:"required,name=command"`
-	TimeSpec string `statekit:"name=timespec"`
+	Command  string         `statekit:"required,name=command"`
+	TimeSpec string         `statekit:"name=timespec"`
+	Kwargs   map[string]any `statekit:"name=kwargs"`
+}
+
+// rejectAtRunas preserves the pinned Salt at.py boundary: Salt forwards a
+// non-empty runas value to cmd.run/cmd.run_all, but StateKit has no
+// single-user elevation boundary for this module.  Keep this as a stable,
+// value-independent UnsupportedError and reject it before touching Runner.
+func rejectAtRunas(kwargs map[string]any) error {
+	raw, present := kwargs["runas"]
+	if !present || raw == nil {
+		return nil
+	}
+	runas, ok := raw.(string)
+	if !ok {
+		return fmt.Errorf("at: runas must be a string")
+	}
+	if runas == "" {
+		return nil
+	}
+	return &runtime.UnsupportedError{Kind: "function", Name: "at.at"}
+}
+
+// validateAtTimespecOperand rejects option-like timespecs before they become
+// the first operand passed to at(1).  at's option boundary is the ASCII '-';
+// do not broaden this check to visually similar Unicode characters.
+func validateAtTimespecOperand(spec string) error {
+	if len(spec) > 0 && spec[0] == '-' {
+		return fmt.Errorf("at: invalid timespec")
+	}
+	return nil
 }
 
 type atFunc struct{}
@@ -23,10 +53,19 @@ type atFunc struct{}
 func (atFunc) Name() string { return "at.at" }
 func (atFunc) Args() any    { return atArgs{} }
 func (atFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*atArgs)
+	a, ok := args.(*atArgs)
+	if !ok || a == nil {
+		return nil, fmt.Errorf("at.at: invalid arguments")
+	}
+	if err := rejectAtRunas(a.Kwargs); err != nil {
+		return nil, err
+	}
 	spec := a.TimeSpec
 	if spec == "" {
 		return nil, fmt.Errorf("timespec is required, e.g. '10:30' or '+1min'")
+	}
+	if err := validateAtTimespecOperand(spec); err != nil {
+		return nil, err
 	}
 	res := rt.Runner.Run(ctx, process.Command{
 		Name: "at", Args: []string{spec}, Stdin: []byte(a.Command),
@@ -88,12 +127,21 @@ func (atrmFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any
 	return true, nil
 }
 
-// Register installs all at-module execution functions.
-func Register(reg *runtime.ExecRegistry) error {
+func registerGeneric(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{atFunc{}, atqFunc{}, atrmFunc{}} {
 		if err := reg.Register(fn); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// Register installs the one canonical at-family provider for the compiling
+// platform. Solaris uses at_solaris' six catalog names; every other platform
+// keeps the historical generic Linux surface unchanged.
+func Register(reg *runtime.ExecRegistry) error {
+	if runtime.CurrentGOOS() == "solaris" {
+		return registerSolaris(reg)
+	}
+	return registerGeneric(reg)
 }

@@ -3,6 +3,12 @@ round: R8
 platform: freebsd+solaris
 runtime_status: FreeBSD and Solaris source registration reconciled; FreeBSD runtime requires a native runner; official Go compile targets include solaris/amd64 and illumos/amd64, but no native Solaris or illumos runtime runner is attached. Untagged Linux mock tests and cross-builds verify contracts and compilation only; no unrun Solaris runtime behavior is claimed
 families:
+    at_solaris:
+        catalog_functions: 6
+        public_functions: 6
+        private_functions: 0
+        ported_public: 6
+        platform: solaris
     pkgng:
         catalog_functions: 35
         public_functions: 28
@@ -64,6 +70,6 @@ families:
         ported_public: 16
         platform: solaris
 totals:
-    catalog_functions: 150
-    public_functions: 129
-    ported_public: 129
+    catalog_functions: 156
+    public_functions: 135
+    ported_public: 135
