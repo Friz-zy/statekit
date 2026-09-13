@@ -18,6 +18,8 @@ import (
 	"github.com/friz-zy/statekit/internal/facts"
 	"github.com/friz-zy/statekit/internal/runtime"
 	execgroup "github.com/friz-zy/statekit/modules/exec/group"
+	execrbac "github.com/friz-zy/statekit/modules/exec/rbac"
+	execservice "github.com/friz-zy/statekit/modules/exec/service"
 	execshadow "github.com/friz-zy/statekit/modules/exec/shadow"
 	execsystem "github.com/friz-zy/statekit/modules/exec/system"
 	execuser "github.com/friz-zy/statekit/modules/exec/user"
@@ -43,6 +45,12 @@ func solarisTrackCLIApp(t *testing.T, runner *cliRecordingRunner) *App {
 			return nil, err
 		}
 		if err := execsystem.Register(rt.Exec); err != nil {
+			return nil, err
+		}
+		if err := execservice.Register(rt.Exec); err != nil {
+			return nil, err
+		}
+		if err := execrbac.Register(rt.Exec); err != nil {
 			return nil, err
 		}
 		return rt, nil

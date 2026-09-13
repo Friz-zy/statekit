@@ -3,7 +3,8 @@
 // Linux registry-vs-catalog count would falsely report all of those
 // functions as pending. This report reconciles the round's source
 // catalogs (pkgng, pw_user, pw_group; solaris_user, solaris_group,
-// solaris_shadow, solaris_system, solaris_fmadm) against the generated implementation
+// solaris_shadow, solaris_system, solaris_fmadm, rbac_solaris,
+// smf_service) against the generated implementation
 // inventory and records the runtime limitation separately; the
 // blocking gates are the untagged Linux mock tests plus the
 // GOOS=freebsd cross-build. Official Go distributions list solaris/amd64
@@ -54,6 +55,7 @@ type r8CoverageFile struct {
 var r8ScopeFamilies = []string{
 	"pkgng", "pw_user", "pw_group",
 	"solaris_user", "solaris_group", "solaris_shadow", "solaris_system", "solaris_fmadm",
+	"rbac_solaris", "smf_service",
 }
 
 // r8ScopeModule maps each platform-split Salt source module onto the Go
@@ -67,6 +69,8 @@ var r8ScopeModule = map[string]string{
 	"solaris_shadow": "shadow",
 	"solaris_system": "system",
 	"solaris_fmadm":  "fmadm",
+	"rbac_solaris":   "rbac",
+	"smf_service":    "service",
 }
 
 // r8ScopePlatform records each family's source platform.
@@ -79,12 +83,15 @@ var r8ScopePlatform = map[string]string{
 	"solaris_shadow": "solaris",
 	"solaris_system": "solaris",
 	"solaris_fmadm":  "solaris",
+	"rbac_solaris":   "solaris",
+	"smf_service":    "solaris",
 }
 
 // r8ScopeFunctionAliases records source-level __func_alias__ names that are
 // intentionally exposed under one canonical StateKit name.
 var r8ScopeFunctionAliases = map[string]map[string]string{
 	"solaris_fmadm": {"list_records": "list"},
+	"smf_service":   {"reload_": "reload"},
 }
 
 func r8TargetName(source, function string) string {

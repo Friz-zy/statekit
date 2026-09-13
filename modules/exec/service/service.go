@@ -160,6 +160,9 @@ func (enabledFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (
 
 // Register installs all service-module execution functions.
 func Register(reg *runtime.ExecRegistry) error {
+	if runtime.CurrentGOOS() == "solaris" {
+		return registerSolaris(reg)
+	}
 	if runtime.CurrentGOOS() == "darwin" {
 		return registerMac(reg)
 	}

@@ -4,10 +4,10 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 108
+    implemented: 109
     partial: 0
     excluded: 57
-    planned: 81
+    planned: 80
 implemented_families:
     - acl
     - aliases
@@ -77,6 +77,7 @@ implemented_families:
     - python
     - quota
     - raid
+    - rbac
     - reg
     - restartcheck
     - ret
@@ -232,7 +233,6 @@ planned:
     - 'puppet (planned: needs a dedicated porting round)'
     - 'pyeapi (planned: needs a dedicated porting round)'
     - 'random (planned: needs a dedicated porting round)'
-    - 'rbac (planned: needs a dedicated porting round)'
     - 'rdp (planned: needs a dedicated porting round)'
     - 'route (planned: needs a dedicated porting round)'
     - 'scp (planned: needs a dedicated porting round)'
