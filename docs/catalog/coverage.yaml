@@ -6,9 +6,9 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    source_inventory_count: 1062
-    catalog_intersection_count: 1040
-    implemented: 1040
+    source_inventory_count: 1086
+    catalog_intersection_count: 1064
+    implemented: 1064
 state:
     salt_modules: 132
     salt_functions: 669
@@ -1080,6 +1080,30 @@ implemented:
         - xml.set_attribute
         - xml.set_value
         - yaml.lint
+        - zoneadm.attach
+        - zoneadm.boot
+        - zoneadm.clone
+        - zoneadm.detach
+        - zoneadm.halt
+        - zoneadm.install
+        - zoneadm.list
+        - zoneadm.move
+        - zoneadm.ready
+        - zoneadm.reboot
+        - zoneadm.shutdown
+        - zoneadm.uninstall
+        - zoneadm.verify
+        - zonecfg.add_resource
+        - zonecfg.clear_property
+        - zonecfg.create
+        - zonecfg.create_from_template
+        - zonecfg.delete
+        - zonecfg.export
+        - zonecfg.import
+        - zonecfg.info
+        - zonecfg.remove_resource
+        - zonecfg.set_property
+        - zonecfg.update_resource
     state:
         - aliases.absent
         - aliases.present

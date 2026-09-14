@@ -81,7 +81,19 @@ families:
         private_functions: 2
         ported_public: 7
         platform: solaris
+    zoneadm:
+        catalog_functions: 15
+        public_functions: 13
+        private_functions: 2
+        ported_public: 13
+        platform: solaris
+    zonecfg:
+        catalog_functions: 18
+        public_functions: 11
+        private_functions: 7
+        ported_public: 11
+        platform: solaris
 totals:
-    catalog_functions: 182
-    public_functions: 156
-    ported_public: 156
+    catalog_functions: 215
+    public_functions: 180
+    ported_public: 180

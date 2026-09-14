@@ -117,6 +117,8 @@ import (
 	execxfs "github.com/friz-zy/statekit/modules/exec/xfs"
 	execxml "github.com/friz-zy/statekit/modules/exec/xml"
 	execyaml "github.com/friz-zy/statekit/modules/exec/yamlhelper"
+	execzoneadm "github.com/friz-zy/statekit/modules/exec/zoneadm"
+	execzonecfg "github.com/friz-zy/statekit/modules/exec/zonecfg"
 	statealiases "github.com/friz-zy/statekit/modules/state/aliases"
 	statecmd "github.com/friz-zy/statekit/modules/state/cmd"
 	statecron "github.com/friz-zy/statekit/modules/state/cron"
@@ -241,6 +243,8 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execrbac.Register,
 		execarchive.Register,
 		execat.Register,
+		execzoneadm.Register,
+		execzonecfg.Register,
 		execbcache.Register,
 		execenviron.Register,
 		execethtool.Register,

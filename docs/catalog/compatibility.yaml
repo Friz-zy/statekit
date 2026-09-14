@@ -4,9 +4,9 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 109
+    implemented: 111
     partial: 0
-    excluded: 57
+    excluded: 55
     planned: 80
 implemented_families:
     - acl
@@ -118,6 +118,8 @@ implemented_families:
     - xfs
     - xml
     - yaml
+    - zoneadm
+    - zonecfg
 excluded:
     - 'beacons (excluded: master-minion architecture (StateKit is local-only by design))'
     - 'cassandra_cql (planned: requires database/message-broker client protocol (round R9, services tier))'
@@ -174,8 +176,6 @@ excluded:
     - 'snmp (planned: requires database/message-broker client protocol (round R9, services tier))'
     - 'sqlite3 (planned: requires database/message-broker client protocol (round R9, services tier))'
     - 'vsphere (planned: cloud provider API (round R10))'
-    - 'zoneadm (planned: non-linux unix platform (round R8))'
-    - 'zonecfg (planned: non-linux unix platform (round R8))'
 planned:
     - 'alias (planned: needs a dedicated porting round)'
     - 'ansible (planned: needs a dedicated porting round)'
