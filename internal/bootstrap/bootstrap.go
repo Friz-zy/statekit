@@ -229,7 +229,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execwinsnmp.Register,
 		execwinwua.Register,
 		execshadow.Register,
-		execpkg.Register,
+		func(reg *runtime.ExecRegistry) error { return execpkg.RegisterForRuntime(reg, rt.Facts) },
 		execpkgresource.Register,
 		execpkgrepo.Register,
 		execpkgbuild.Register,

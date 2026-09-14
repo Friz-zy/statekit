@@ -69,7 +69,19 @@ families:
         private_functions: 3
         ported_public: 16
         platform: solaris
+    solarisipspkg:
+        catalog_functions: 17
+        public_functions: 14
+        private_functions: 3
+        ported_public: 14
+        platform: solaris
+    solarispkg:
+        catalog_functions: 9
+        public_functions: 7
+        private_functions: 2
+        ported_public: 7
+        platform: solaris
 totals:
-    catalog_functions: 156
-    public_functions: 135
-    ported_public: 135
+    catalog_functions: 182
+    public_functions: 156
+    ported_public: 156

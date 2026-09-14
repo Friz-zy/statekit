@@ -143,3 +143,20 @@ func parseBsdSysctl(out []byte) OSFacts {
 		Version: release,
 	}
 }
+
+// parseSolarisUname parses the bounded `uname -s -r` probe used by the
+// Solaris facts provider. Solaris reports the kernel as SunOS while Salt's
+// grain family is Solaris; accepting both one-line and split-line output keeps
+// recorded fixtures independent of the uname implementation.
+func parseSolarisUname(out []byte) OSFacts {
+	fields := strings.Fields(string(out))
+	if len(fields) < 2 || !strings.EqualFold(fields[0], "SunOS") {
+		return OSFacts{}
+	}
+	return OSFacts{
+		ID:      FamilySolaris,
+		Name:    "Solaris",
+		Family:  FamilySolaris,
+		Version: fields[1],
+	}
+}

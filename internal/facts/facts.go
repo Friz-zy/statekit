@@ -40,6 +40,7 @@ const (
 	FamilyFreeBSD = "freebsd"
 	FamilyOpenBSD = "openbsd"
 	FamilyNetBSD  = "netbsd"
+	FamilySolaris = "solaris"
 	FamilyUnknown = ""
 )
 

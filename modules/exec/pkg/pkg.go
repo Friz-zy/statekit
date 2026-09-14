@@ -171,6 +171,9 @@ func Register(reg *runtime.ExecRegistry) error {
 	if runtime.CurrentGOOS() == "windows" {
 		return registerWindows(reg)
 	}
+	if runtime.CurrentGOOS() == "solaris" {
+		return registerSolaris(reg)
+	}
 	for _, fn := range []runtime.ExecFunction{
 		refreshDBFunc{}, versionFunc{}, listFunc{}, installFunc{}, removeFunc{}, latestVersionFunc{},
 		verifyFunc{},
