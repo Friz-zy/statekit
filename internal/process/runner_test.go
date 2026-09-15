@@ -4,16 +4,20 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os/exec"
+	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf16"
 )
 
 func TestRunEcho(t *testing.T) {
 	res := NewRunner().Run(context.Background(), Command{
 		Name: "echo", Args: []string{"hello"},
 	})
-	if !res.OK() || res.ExitCode != 0 {
+	if !res.OK() || res.ExitCode != 0 || !res.Started {
 		t.Fatalf("echo failed: %+v", res)
 	}
 	if strings.TrimSpace(string(res.Stdout)) != "hello" {
@@ -28,7 +32,7 @@ func TestNonZeroExitIsDataNotError(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("non-zero exit must not set Err: %v", res.Err)
 	}
-	if res.ExitCode != 7 {
+	if res.ExitCode != 7 || !res.Started {
 		t.Fatalf("exit code = %d, want 7", res.ExitCode)
 	}
 	if res.OK() {
@@ -61,6 +65,9 @@ func TestTimeout(t *testing.T) {
 	if res.Err == nil || !strings.Contains(res.Err.Error(), "timed out") {
 		t.Fatalf("expected timeout error, got %v", res.Err)
 	}
+	if !res.Started {
+		t.Fatalf("timeout should report a started process: %+v", res)
+	}
 	if res.Duration > time.Second {
 		t.Fatalf("timeout did not fire early enough: %s", res.Duration)
 	}
@@ -75,6 +82,9 @@ func TestContextCancellation(t *testing.T) {
 	res := NewRunner().Run(ctx, Command{Name: "sleep", Args: []string{"5"}})
 	if res.Err == nil || !errors.Is(res.Err, context.Canceled) && !strings.Contains(res.Err.Error(), "canceled") {
 		t.Fatalf("expected cancellation error, got %v", res.Err)
+	}
+	if !res.Started {
+		t.Fatalf("cancellation should report a started process: %+v", res)
 	}
 }
 
@@ -116,8 +126,12 @@ func TestShellRequiresExplicitOptIn(t *testing.T) {
 
 func TestEmptyCommandRejected(t *testing.T) {
 	res := NewRunner().Run(context.Background(), Command{})
-	if res.Err == nil {
+	if res.Err == nil || res.Started {
 		t.Fatal("empty command must fail")
+	}
+	res = NewRunner().Run(context.Background(), Command{Name: "definitely-not-started"})
+	if res.Err == nil || res.Started {
+		t.Fatalf("missing executable must not report started: %+v", res)
 	}
 }
 
@@ -172,6 +186,9 @@ func TestDefaultAndInvalidOutputLimits(t *testing.T) {
 	res = NewRunner().Run(context.Background(), Command{Name: "definitely-not-started", MaxStdoutBytes: -1})
 	if !errors.Is(res.Err, ErrInvalidOutputLimit) || res.ExitCode != -1 {
 		t.Fatalf("invalid limit result = %+v", res)
+	}
+	if res.Started {
+		t.Fatal("invalid limit must not report a started process")
 	}
 	for _, limit := range []int{MaxCaptureLimit + 1, int(^uint(0) >> 1)} {
 		res = NewRunner().Run(context.Background(), Command{Name: "definitely-not-started", MaxStdoutBytes: limit})
@@ -285,6 +302,104 @@ func TestDisplayRedactionBoundaryDoesNotExposeSecretFragment(t *testing.T) {
 	got := RedactString([]string{secret}, input)
 	if len(got) > maxDisplayBytes || strings.Contains(got, "s") {
 		t.Fatalf("boundary display leaked secret fragment or exceeded bound: len=%d", len(got))
+	}
+}
+
+func TestBuildRabbitMQCommandWindowsBatchVectors(t *testing.T) {
+	path := `C:\Program Files\RabbitMQ Server\rabbitmq_server-3.12.0\sbin\rabbitmqctl.bat`
+	command, err := BuildRabbitMQCommand("windows", path, []string{"add_user", "alice", "safe value"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command.Name != "cmd.exe" || command.Shell || len(command.Args) != 4 ||
+		command.Args[0] != "/D" || command.Args[1] != "/S" || command.Args[2] != "/C" {
+		t.Fatalf("batch command wrapper=%#v", command)
+	}
+	want := `""C:\Program Files\RabbitMQ Server\rabbitmq_server-3.12.0\sbin\rabbitmqctl.bat" "add_user" "alice" "safe value""`
+	if command.Args[3] != want || command.WindowsCmdLine != "cmd.exe /D /S /C "+want {
+		t.Fatalf("batch command line=%q want %q", command.Args[3], want)
+	}
+
+	direct, err := BuildRabbitMQCommand("windows", `C:\RabbitMQ\rabbitmqctl.exe`, []string{"add_user", "alice"})
+	if err != nil || direct.WindowsCmdLine != "" || direct.Name != `C:\RabbitMQ\rabbitmqctl.exe` || direct.Shell || strings.Join(direct.Args, "|") != "add_user|alice" {
+		t.Fatalf("native helper command=%#v err=%v", direct, err)
+	}
+
+	unix, err := BuildRabbitMQCommand("linux", `C:\RabbitMQ\rabbitmqctl.bat`, []string{"status"})
+	if err != nil || unix.Name != `C:\RabbitMQ\rabbitmqctl.bat` || unix.Shell {
+		t.Fatalf("unix batch-looking command=%#v err=%v", unix, err)
+	}
+}
+
+func TestBuildRabbitMQCommandRejectsInjectionAndBounds(t *testing.T) {
+	path := `C:\RabbitMQ\rabbitmqctl.bat`
+	for name, args := range map[string][]string{
+		"control":           {"add_user", "bad\nname"},
+		"percent-expansion": {"add_user", "%PATH%"},
+		"delayed-expansion": {"add_user", "!cmd!"},
+		"embedded-quote":    {"add_user", `bad"name`},
+		"pipe":              {"add_user", "safe|whoami"},
+		"ampersand":         {"add_user", "safe&whoami"},
+		"carriage-return":   {"add_user", "bad\rname"},
+		"nul":               {"add_user", "bad\x00name"},
+		"overlong":          {"add_user", strings.Repeat("x", 1<<20)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := BuildRabbitMQCommand("windows", path, args); !errors.Is(err, ErrInvalidRabbitMQCommand) {
+				t.Fatalf("err=%v, want ErrInvalidRabbitMQCommand", err)
+			}
+		})
+	}
+}
+
+func TestRabbitMQFinalWindowsCommandLineBoundary(t *testing.T) {
+	path := `C:\Rabbit MQ\rabbitmqctl.bat`
+	base, err := BuildRabbitMQCommand("windows", path, []string{"status", ""})
+	if err != nil {
+		t.Fatal(err)
+	}
+	overhead := len(utf16.Encode([]rune(base.WindowsCmdLine)))
+	for _, text := range []string{"x", "界", "😀", " ", `\`} {
+		for _, units := range []int{8190, 8191, 8192} {
+			budget := units - overhead
+			cost := len(utf16.Encode([]rune(text)))
+			// A trailing backslash is doubled before the closing quote.
+			if text == `\` {
+				cost = 2
+			}
+			value := strings.Repeat("x", budget%cost) + strings.Repeat(text, budget/cost)
+			command, err := BuildRabbitMQCommand("windows", path, []string{"status", value})
+			if units > 8191 {
+				if !errors.Is(err, ErrInvalidRabbitMQCommand) {
+					t.Fatal("overlong final line accepted")
+				}
+				continue
+			}
+			if err != nil || len(utf16.Encode([]rune(command.WindowsCmdLine))) != units {
+				t.Fatalf("boundary units=%d error=%v", units, err)
+			}
+		}
+	}
+}
+
+func TestRabbitMQFinalWindowsCommandLineTransport(t *testing.T) {
+	command, err := BuildRabbitMQCommand("windows", `C:\Rabbit MQ\rabbitmqctl.bat`, []string{"status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	child := exec.Command(command.Name, command.Args...)
+	err = configureWindowsCommandLine(child, command)
+	if runtime.GOOS != "windows" {
+		if !errors.Is(err, ErrInvalidRabbitMQCommand) {
+			t.Fatal("Windows line accepted on non-Windows")
+		}
+		return
+	}
+	if err != nil || child.SysProcAttr == nil {
+		t.Fatal("missing native command-line transport")
+	}
+	if reflect.ValueOf(child.SysProcAttr).Elem().FieldByName("CmdLine").String() != command.WindowsCmdLine {
+		t.Fatal("CreateProcess command line was reserialized")
 	}
 }
 

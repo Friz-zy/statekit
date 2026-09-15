@@ -76,6 +76,7 @@ import (
 	execpyenv "github.com/friz-zy/statekit/modules/exec/pyenv"
 	execpython "github.com/friz-zy/statekit/modules/exec/python"
 	execquota "github.com/friz-zy/statekit/modules/exec/quota"
+	execrabbitmq "github.com/friz-zy/statekit/modules/exec/rabbitmq"
 	execrandom "github.com/friz-zy/statekit/modules/exec/random"
 	execrbac "github.com/friz-zy/statekit/modules/exec/rbac"
 	execreg "github.com/friz-zy/statekit/modules/exec/reg"
@@ -283,6 +284,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execmount.Register,
 		execpart.Register,
 		execquota.Register,
+		execrabbitmq.Register,
 		execxfs.Register,
 		execsysctl.Register,
 		execsysfs.Register,

@@ -15,9 +15,13 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
+	"unicode/utf16"
+	"unicode/utf8"
 )
 
 // RedactedPlaceholder replaces redacted secrets in rendered commands and
@@ -36,6 +40,11 @@ var ErrInvalidOutputLimit = errors.New("process: invalid output limit")
 // ErrInvalidRedaction reports a secret too large to support bounded boundary
 // redaction. Rejecting it before start keeps the accepted capture policy finite.
 var ErrInvalidRedaction = errors.New("process: invalid redaction secret")
+
+// ErrInvalidRabbitMQCommand reports a command that cannot be represented by
+// the shell-free Runner contract.  It is also returned for a batch helper
+// whose command line would cross the finite Windows command budget.
+var ErrInvalidRabbitMQCommand = errors.New("process: invalid RabbitMQ command")
 
 // DefaultCaptureLimit bounds output when a Command does not provide a limit.
 const DefaultCaptureLimit = 1 << 20
@@ -65,20 +74,138 @@ const waitDelay = 5 * time.Second
 // zero selects DefaultCaptureLimit. Redaction preserves a bounded overlap so
 // secrets crossing a read boundary are not exposed.
 type Command struct {
-	Name    string   // executable path or shell script when Shell is true
-	Args    []string // argv tail; ignored when Shell is true beyond extra sh args
-	Dir     string   // working directory; empty = inherit
-	Env     []string // nil = inherit parent environment
-	Stdin   []byte   // optional bytes piped to stdin
-	Timeout time.Duration
-	Shell   bool     // explicit opt-in: run Name via "sh -c"
-	Redact  []string // secret substrings scrubbed from output and rendering
+	// WindowsCmdLine is the complete, already-quoted CreateProcess command line.
+	// It is used only for the validated RabbitMQ batch wrapper, never reserialized.
+	WindowsCmdLine string
+	Name           string   // executable path or shell script when Shell is true
+	Args           []string // argv tail; ignored when Shell is true beyond extra sh args
+	Dir            string   // working directory; empty = inherit
+	Env            []string // nil = inherit parent environment
+	Stdin          []byte   // optional bytes piped to stdin
+	Timeout        time.Duration
+	Shell          bool     // explicit opt-in: run Name via "sh -c"
+	Redact         []string // secret substrings scrubbed from output and rendering
 	// MaxStdoutBytes and MaxStderrBytes bound captured output. Zero selects
 	// DefaultCaptureLimit; positive values override it. Negative values are
 	// rejected before the process is started. MaxCaptureLimit is the largest
 	// accepted positive value.
 	MaxStdoutBytes int
 	MaxStderrBytes int
+}
+
+const maxRabbitMQCommandBytes = 1 << 20
+
+// BuildRabbitMQCommand builds the command used by the RabbitMQ execution
+// module.  Normal executables remain direct argv commands.  The two fixed
+// RabbitMQ batch helpers are the one Windows exception: cmd.exe is invoked
+// directly (Shell remains false) and receives a fully quoted /C argument.
+//
+// The target GOOS parameter makes the Windows quoting contract testable from
+// non-Windows hosts and prevents a .bat-looking test fixture from changing
+// Unix command behavior.
+func BuildRabbitMQCommand(goos, executable string, args []string) (Command, error) {
+	if err := validateRabbitMQCommandParts(executable, args); err != nil {
+		return Command{}, err
+	}
+	if goos != "windows" || !isRabbitMQBatchExecutable(executable) {
+		return Command{
+			Name:  executable,
+			Args:  append([]string(nil), args...),
+			Shell: false,
+		}, nil
+	}
+
+	commandLine, err := windowsRabbitMQBatchCommandLine(executable, args)
+	if err != nil {
+		return Command{}, err
+	}
+	return Command{
+		Name:           "cmd.exe",
+		Args:           []string{"/D", "/S", "/C", commandLine},
+		WindowsCmdLine: "cmd.exe /D /S /C " + commandLine,
+		Shell:          false,
+	}, nil
+}
+
+func validateRabbitMQCommandParts(executable string, args []string) error {
+	total := len(executable)
+	if total > maxRabbitMQCommandBytes {
+		return ErrInvalidRabbitMQCommand
+	}
+	if err := validateRabbitMQCommandPart(executable); err != nil {
+		return err
+	}
+	for _, arg := range args {
+		if err := validateRabbitMQCommandPart(arg); err != nil {
+			return err
+		}
+		total += len(arg) + 1
+		if total > maxRabbitMQCommandBytes {
+			return ErrInvalidRabbitMQCommand
+		}
+	}
+	return nil
+}
+
+func validateRabbitMQCommandPart(value string) error {
+	if !utf8.ValidString(value) {
+		return ErrInvalidRabbitMQCommand
+	}
+	for _, char := range value {
+		if char == 0 || unicode.IsControl(char) {
+			return ErrInvalidRabbitMQCommand
+		}
+	}
+	return nil
+}
+
+func isRabbitMQBatchExecutable(executable string) bool {
+	base := executable
+	if index := strings.LastIndexAny(base, `/\\`); index >= 0 {
+		base = base[index+1:]
+	}
+	base = strings.ToLower(base)
+	return base == "rabbitmqctl.bat" || base == "rabbitmq-plugins.bat"
+}
+
+func windowsRabbitMQBatchCommandLine(executable string, args []string) (string, error) {
+	parts := make([]string, 0, len(args)+1)
+	for _, value := range append([]string{executable}, args...) {
+		quoted, err := quoteWindowsBatchArgument(value)
+		if err != nil {
+			return "", err
+		}
+		parts = append(parts, quoted)
+	}
+	// /S /C has special handling for the first and last quote.  The outer
+	// pair preserves the quoted batch path as one command while the inner
+	// pairs preserve each argv value. Shell metacharacters are rejected because
+	// the batch helper may expand arguments again.
+	commandLine := `"` + strings.Join(parts, " ") + `"`
+	if len(utf16.Encode([]rune("cmd.exe /D /S /C "+commandLine))) > 8191 {
+		return "", ErrInvalidRabbitMQCommand
+	}
+	return commandLine, nil
+}
+
+func quoteWindowsBatchArgument(value string) (string, error) {
+	// cmd.exe expands percent variables even inside double quotes, and delayed
+	// expansion can make exclamation marks executable data when the caller's
+	// environment enables it.  Rejecting both is safer than trying to infer the
+	// caller's cmd.exe mode.  Embedded quotes are likewise rejected because a
+	// batch wrapper receives %* and cannot provide a stable argv boundary for
+	// them.  These are validation failures, not shell fallbacks.
+	if strings.ContainsAny(value, `%!"|&<>^`) {
+		return "", ErrInvalidRabbitMQCommand
+	}
+	trailingSlashes := 0
+	for index := len(value) - 1; index >= 0 && value[index] == '\\'; index-- {
+		trailingSlashes++
+	}
+	if trailingSlashes > 0 {
+		value += strings.Repeat(`\`, trailingSlashes)
+	}
+	return `"` + value + `"`, nil
 }
 
 // RedactedString renders the command for comments and logs with every
@@ -102,7 +229,8 @@ func (c Command) RedactedString() string {
 type CommandResult struct {
 	Stdout          []byte
 	Stderr          []byte
-	ExitCode        int // -1 when terminated by signal or never started
+	ExitCode        int  // -1 when terminated by signal or never started
+	Started         bool // true when the child reached ProcessState
 	Duration        time.Duration
 	Err             error
 	StdoutTruncated bool
@@ -233,6 +361,10 @@ func NewRunnerWithModel(m ShellModel) *DefaultRunner { return &DefaultRunner{mod
 
 // CommandAvailable resolves a helper without starting a process or a shell.
 func (DefaultRunner) CommandAvailable(name string) bool {
+	if runtime.GOOS == "windows" && isRabbitMQBatchExecutable(name) {
+		info, err := os.Stat(name)
+		return err == nil && !info.IsDir()
+	}
 	_, err := exec.LookPath(name)
 	return err == nil
 }
@@ -282,6 +414,9 @@ func (r DefaultRunner) Run(ctx context.Context, c Command) CommandResult {
 	}
 
 	cmd := exec.CommandContext(runCtx, name, argv...)
+	if err := configureWindowsCommandLine(cmd, c); err != nil {
+		return CommandResult{ExitCode: -1, Err: err}
+	}
 	cmd.Cancel = func() error {
 		if cmd.Process != nil {
 			return cmd.Process.Signal(syscall.SIGTERM)
@@ -314,6 +449,7 @@ func (r DefaultRunner) Run(ctx context.Context, c Command) CommandResult {
 	res.StdoutTruncated = stdout.overflow || stdoutClipped
 	res.StderrTruncated = stderr.overflow || stderrClipped
 	if ps := cmd.ProcessState; ps != nil {
+		res.Started = true
 		res.ExitCode = ps.ExitCode()
 	} else {
 		res.ExitCode = -1

@@ -6,9 +6,9 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    source_inventory_count: 1086
-    catalog_intersection_count: 1064
-    implemented: 1064
+    source_inventory_count: 1123
+    catalog_intersection_count: 1101
+    implemented: 1101
 state:
     salt_modules: 132
     salt_functions: 669
@@ -694,6 +694,43 @@ implemented:
         - quota.set
         - quota.stats
         - quota.warn
+        - rabbitmq.add_user
+        - rabbitmq.add_vhost
+        - rabbitmq.change_password
+        - rabbitmq.check_password
+        - rabbitmq.clear_password
+        - rabbitmq.cluster_status
+        - rabbitmq.delete_policy
+        - rabbitmq.delete_upstream
+        - rabbitmq.delete_user
+        - rabbitmq.delete_vhost
+        - rabbitmq.disable_plugin
+        - rabbitmq.enable_plugin
+        - rabbitmq.force_reset
+        - rabbitmq.join_cluster
+        - rabbitmq.list_available_plugins
+        - rabbitmq.list_enabled_plugins
+        - rabbitmq.list_permissions
+        - rabbitmq.list_policies
+        - rabbitmq.list_queues
+        - rabbitmq.list_queues_vhost
+        - rabbitmq.list_upstreams
+        - rabbitmq.list_user_permissions
+        - rabbitmq.list_users
+        - rabbitmq.list_vhosts
+        - rabbitmq.plugin_is_enabled
+        - rabbitmq.policy_exists
+        - rabbitmq.reset
+        - rabbitmq.set_permissions
+        - rabbitmq.set_policy
+        - rabbitmq.set_upstream
+        - rabbitmq.set_user_tags
+        - rabbitmq.start_app
+        - rabbitmq.status
+        - rabbitmq.stop_app
+        - rabbitmq.upstream_exists
+        - rabbitmq.user_exists
+        - rabbitmq.vhost_exists
         - raid.add
         - raid.assemble
         - raid.create

@@ -4,9 +4,9 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 111
+    implemented: 112
     partial: 0
-    excluded: 55
+    excluded: 54
     planned: 80
 implemented_families:
     - acl
@@ -76,6 +76,7 @@ implemented_families:
     - pyenv
     - python
     - quota
+    - rabbitmq
     - raid
     - rbac
     - reg
@@ -156,7 +157,6 @@ excluded:
     - 'postgres_user (planned: requires database/message-broker client protocol (round R9, services tier))'
     - 'proxy (excluded: master-minion architecture (StateKit is local-only by design))'
     - 'publish (excluded: master-minion architecture (StateKit is local-only by design))'
-    - 'rabbitmq (planned: requires database/message-broker client protocol (round R9, services tier))'
     - 'rabbitmq_cluster (planned: requires database/message-broker client protocol (round R9, services tier))'
     - 'rabbitmq_plugin (planned: requires database/message-broker client protocol (round R9, services tier))'
     - 'rabbitmq_policy (planned: requires database/message-broker client protocol (round R9, services tier))'
