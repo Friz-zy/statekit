@@ -1662,6 +1662,17 @@ The PTD tables below are retained as an immutable audit snapshot. These
 overrides are the current status and do not delete or rewrite any original
 rows or counts.
 
+##### 2026-09-15 current status (R9.1 RabbitMQ CLI surface)
+
+R9.1 implementation and independent-gate ledger:
+
+| Commit | Scope | Implementation executor role(s) | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `d7b5269` | R9.1 RabbitMQ CLI surface: 37 public / 8 private source-derived functions | `backend-engineer-senior/lead` remediation | `backend-engineer-lead` final gate | passed; R9 public 37/37, mock-only — live broker/native Windows batch behavior not claimed; Windows `.bat` fail-closed limitations for embedded quotes/JSON/eval documented; rootless Podman full/race/vet/cross-build/module verify; R3-R8 hashes unchanged; `go.mod`/`go.sum` unchanged |
+
+R9 database-service live integration remains E5-dependent, but CLI contracts
+can progress with mocks.
+
 ##### 2026-09-11 current status (R5.4 x509 v2 round)
 
 Actual HEAD at gate time is `94e0c74` plus the uncommitted R5.4 scope
