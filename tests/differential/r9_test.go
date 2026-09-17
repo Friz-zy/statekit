@@ -34,9 +34,16 @@ import (
 // caller string reaches SQL. R9.2e adds the three read-only schema catalog
 // functions schema_exists, schema_get, and schema_list
 // (postgres.py:2444-2599) with the pinned schema-family connection
-// signature and the same client-side name matching. The generic psql_query
-// surface and the remaining mysql and postgres surfaces need their client
-// protocol boundaries and stay pending.
+// signature and the same client-side name matching. R9.2f adds the three
+// read-only role and privilege checks role_get, user_exists, and
+// has_privileges (postgres.py:1104-1170, 3574-3711): role_get reuses the
+// user_list catalog with the pinned .get(name, None) and
+// bool(role_get(...)) shapes, and has_privileges keeps the pinned owner
+// and ACL catalogs as fixed queries whose interpolated equality literals
+// are matched client-side, reproducing the pinned table, group, and
+// function privilege outcomes. The generic psql_query surface and the
+// remaining mysql and postgres surfaces need their client protocol
+// boundaries and stay pending.
 type r9FamilySpec struct {
 	Source             string
 	SourceTests        string
@@ -118,6 +125,7 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"postgres.read-only-catalog-lists",
 			"postgres.extension-and-language-catalogs",
 			"postgres.schema-catalogs",
+			"postgres.role-and-privilege-checks",
 		},
 		Evidence: []string{
 			"direct, registry, and CLI fake-Runner tests pin the exact psql argv (SQL at index 14 as the pinned test_version asserts), the clean PG environment, first-line split semantics, and the None fallthrough for empty stdout",
@@ -128,12 +136,18 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"get_available_extension and get_installed_extension keep the pinned .get(name, None) exact-case row-or-None shape, is_available_extension keeps the pinned case-insensitive name.lower() key membership, is_installed_extension keeps the pinned bool(get_installed_extension(...)) exact-case truthiness, and language_exists keeps the pinned exact-case `name in languages` membership",
 			"language_list runs the pinned get_test_list_language_csv fixture verbatim to the pinned name→name dictionary with the pinned SELECT lanname AS \"Name\" FROM pg_language SQL, and maintenance_db stays the pinned required positional",
 			"schema_list runs the pinned get_test_list_schema_csv fixture verbatim to the pinned {public, pg_toast} dictionary with only the owner and acl pair per row (the pinned SELECT pg_namespace.nspname ... LEFT JOIN pg_roles SQL byte-for-byte), schema_get keeps the pinned .get(name, None) exact-case row-or-None shape with the empty-acl pg_toast row still a hit, and schema_exists keeps the pinned bool(schema_get(...)) truthiness",
+			"role_get and user_exists keep the pinned user_list(...).get(name, None) and bool(role_get(..., return_password=False)) shapes including Salt's False-catalog AttributeError-to-None fallthrough after one psql call, and has_privileges reproduces the pinned test_has_privileges_on_table, test_has_privileges_on_group, and test_has_privileges_with_function outcomes verbatim: the pinned table ACL fixture decodes to the pinned three-role privilege dictionary, the owner shortcut, the grant-option dict equality, the ALL sorted-key equality, the strict-subset check, and the group admin_option boolean",
+			"the pinned _get_object_owner and _make_privileges_list_query interpolate caller names into SQL string literals; StateKit keeps the pinned catalogs, join shapes, and orderings as fixed COPY-wrapped queries and matches the object name, schema prefix, and group membership client-side, so no caller string reaches SQL (asserted by leak checks with names that collide with no SQL keyword or column)",
 			"password redaction is asserted on the rendered command, captured output, and returned errors; no real psql, database, or package-manager path exists",
 			"cancellation, output limits, runas rejection, nonzero-exit compatibility data, and psql-unavailable fail-closed behavior are covered without any live server",
 			"the internal parsed-version helper is pinned by LooseVersion comparison vectors because no existing package consumes it yet",
 		},
 		CompatibilityNotes: []string{
-			"R9.2c registers the version probe plus the five read-only catalog primitives db_list, db_exists, tablespace_list, tablespace_exists, and user_list; R9.2d adds the eight read-only extension and language catalog functions available_extensions, installed_extensions, get_available_extension, get_installed_extension, is_available_extension, is_installed_extension, language_list, and language_exists; R9.2e adds the three read-only schema catalog functions schema_exists, schema_get, and schema_list; the generic psql_query surface and every write path stay pending (no arbitrary-query or identifier-interpolating registration exists in this phase)",
+			"R9.2c registers the version probe plus the five read-only catalog primitives db_list, db_exists, tablespace_list, tablespace_exists, and user_list; R9.2d adds the eight read-only extension and language catalog functions available_extensions, installed_extensions, get_available_extension, get_installed_extension, is_available_extension, is_installed_extension, language_list, and language_exists; R9.2e adds the three read-only schema catalog functions schema_exists, schema_get, and schema_list; R9.2f adds the three read-only role and privilege checks role_get, user_exists, and has_privileges; the generic psql_query surface and every write path stay pending (no arbitrary-query or identifier-interpolating registration exists in this phase)",
+			"has_privileges keeps the pinned argument contract (name, object_name, object_type, privileges=None, grant_option=None, prepend=\"public\", maintenance_db, user, host, port, password, runas) with the pinned _mod_priv_opts object-type lowercasing, comma-split with optional single spaces, and uppercasing; the pinned KeyError on an unknown object type and the SaltInvocationError privilege and group-privilege rejections all map to execution errors raised before any Runner invocation",
+			"the pinned _get_object_owner and _make_privileges_list_query build SQL by formatting the caller's object name and schema prefix into single-quoted literals; StateKit replaces every interpolated equality with a client-side exact match over the same fixed catalog query (key column selected beside the pinned value column, pinned relkind filters and orderings kept, the group membership keyed by the group role's name), which is result-equivalent for every non-malicious input because each pinned equality targets a unique catalog key, and refuses the injection the pinned format permits",
+			"ACL text decodes through the pinned strip(\"{}\")/split(\",\")/split(\"/\")/split(\"=\") ladder: exactly one grantor slash and one grantee equals per entry, the empty grantee becomes public, _process_priv_part's grant-star flip and leading-star GRANT key are preserved, and NULL or malformed ACL text is the pinned ValueError mapped to an execution error whose message embeds no input",
+			"role_get and user_exists reuse the registered user_list catalog: the exact-case miss is None (never an error), Salt's False catalog from an unanswered version probe maps through the pinned AttributeError branch to None, and bool(role_get(...)) is the row's presence because a stored role row always carries the pinned columns",
 			"the schema family keeps the pinned schema_* signature (postgres.py:2444-2599): dbname is the required database positional, user is the pinned system-user argument rejected like every runas surface, and db_user/db_host/db_port/db_password project onto the shared psql connection tuple; schema rows are reduced to exactly the pinned owner/acl pair keyed by name, and schema_get/schema_exists match names client-side so no caller string reaches SQL",
 			"extension and language lookups are client-side only: get_*/is_*/language_exists match names against the fetched catalog so no caller string reaches SQL, and the installed_extensions query keeps the pinned double space after \"pg_extension a,\" byte-for-byte",
 			"available_extensions/installed_extensions store the full row under its name/extname key (no column removed, unlike db_list's Name pop), rows whose zipped prefix lacks either pinned key column are skipped, and language_list maps each Name column to itself exactly like the pinned ret[row[\"Name\"]] = row[\"Name\"]",
@@ -166,6 +180,9 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"postgres.schema_exists",
 			"postgres.schema_get",
 			"postgres.schema_list",
+			"postgres.role_get",
+			"postgres.user_exists",
+			"postgres.has_privileges",
 		},
 	},
 }
@@ -219,7 +236,7 @@ func TestR9DifferentialScopeReport(t *testing.T) {
 	registered := registeredNames(first)
 
 	report := r9Report{
-		Round:    "R9.2e",
+		Round:    "R9.2f",
 		Platform: "cross-platform",
 		RuntimeStatus: "mock-only: RabbitMQ is never started, MySQL is never connected, and PostgreSQL is never contacted; " +
 			"shell-free fake Runner tests and pure-function vectors provide the executable contract",

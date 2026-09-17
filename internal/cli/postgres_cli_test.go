@@ -851,3 +851,229 @@ func TestPostgresCLISchema(t *testing.T) {
 		t.Fatalf("failed schema_exists code=%d out=%q err=%q, want false", code, out, errS)
 	}
 }
+
+// roleCLIUsersCSV is the two-role user_list catalog for the R9.2f CLI
+// tests, with a second role whose row keeps the empty-string defaults.
+const roleCLIUsersCSV = `name,superuser,inherits privileges,can create roles,can create databases,can update system catalogs,can login,replication,connections,groups,expiry time,defaults variables
+test_user,t,t,t,t,t,t,,-1,,2017-08-16 08:57:46,
+other_user,f,f,f,f,f,f,,10,,,
+`
+
+// TestPostgresCLIRoleGetUserExists drives role_get and user_exists end to
+// end: the typed JSON row rendering, the null miss, Salt's null False
+// catalog, the boolean user_exists shapes, the required name, and the
+// runas rejection — with no password in any rendered output.
+func TestPostgresCLIRoleGetUserExists(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("9.1\n")},
+		{ExitCode: 0, Stdout: []byte(roleCLIUsersCSV)},
+	}}
+	app := postgresCLIApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "postgres.role_get",
+		"--name", "test_user", "--user", "test_user", "--host", "test_host",
+		"--port", "test_port", "--maintenance-db", "test_maint",
+		"--password", "test_pass", "-o", "json")
+	var row map[string]any
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &row) != nil {
+		t.Fatalf("role_get code=%d out=%q err=%q", code, out, errS)
+	}
+	if row["superuser"] != true || row["connections"] != nil {
+		t.Fatalf("role_get JSON row = %q", out)
+	}
+	if _, hasPassword := row["password"]; hasPassword {
+		t.Fatalf("role_get exposed password column: %q", out)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("role_get calls = %d, want 2", len(runner.calls))
+	}
+	if strings.Contains(out+errS, "test_pass") ||
+		strings.Contains(runner.calls[0].RedactedString(), "test_pass") {
+		t.Fatalf("password leaked: %q %q", out+errS, runner.calls[0].RedactedString())
+	}
+
+	// A miss renders null; the unanswered version probe (Salt's False
+	// catalog through the pinned AttributeError branch) renders null too.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("9.1\n")},
+		{ExitCode: 0, Stdout: []byte(roleCLIUsersCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.role_get", "--name", "absent_user", "-o", "json")
+	if code != ExitOK || errS != "" || strings.TrimSpace(out) != "null" {
+		t.Fatalf("role_get miss code=%d out=%q err=%q, want null", code, out, errS)
+	}
+
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("")},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.role_get", "--name", "test_user", "-o", "json")
+	if code != ExitOK || errS != "" || strings.TrimSpace(out) != "null" {
+		t.Fatalf("role_get unanswered code=%d out=%q err=%q, want null", code, out, errS)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("role_get unanswered calls = %d, want 1", len(runner.calls))
+	}
+
+	// user_exists renders the bool(dict(role_get)) shapes.
+	for _, tc := range []struct {
+		name  string
+		want  string
+		calls int
+	}{
+		{"test_user", "true", 2},
+		{"absent_user", "false", 2},
+	} {
+		runner = &cliRecordingRunner{results: []process.CommandResult{
+			{ExitCode: 0, Stdout: []byte("9.1\n")},
+			{ExitCode: 0, Stdout: []byte(roleCLIUsersCSV)},
+		}}
+		app = postgresCLIApp(t, runner)
+		code, out, errS = captureCode(t, app, "exec", "postgres.user_exists", "--name", tc.name, "-o", "json")
+		if code != ExitOK || errS != "" || strings.TrimSpace(out) != tc.want {
+			t.Fatalf("user_exists(%q) code=%d out=%q err=%q, want %s", tc.name, code, out, errS, tc.want)
+		}
+		if len(runner.calls) != tc.calls {
+			t.Fatalf("user_exists(%q) calls = %d, want %d", tc.name, len(runner.calls), tc.calls)
+		}
+	}
+
+	// The name argument is required.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.role_get", "-o", "json")
+	if code != ExitInvalidInput || len(runner.calls) != 0 {
+		t.Fatalf("role_get without name code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+
+	// runas is rejected before any Runner invocation.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.user_exists", "--name", "test_user",
+		"--runas", "postgres", "-o", "json")
+	if code != ExitFailed || !strings.Contains(errS, "runas") || len(runner.calls) != 0 {
+		t.Fatalf("user_exists runas code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+}
+
+// ownerCLITableCSV and privCLITableCSV carry the fixed table owner and
+// privilege catalogs for the CLI has_privileges flow; the ACL string is
+// the pinned get_test_privileges_list_table_csv payload verbatim.
+const (
+	ownerCLITableCSV = `schemaname,tablename,name
+public,awl,postgres
+public,other_table,postgres
+`
+	privCLITableCSV = `nspname,relname,relkind,name
+public,awl,r,"{baruwatest=arwdDxtm/baruwatest,bayestest=arwd/baruwatest,baruwa=a*r*w*d*D*x*t*m*/baruwatest}"
+`
+	privCLIGroupCSV = `member_of,rolname,admin_option
+admin,baruwa,f
+admin,baruwatest2,t
+`
+)
+
+// TestPostgresCLIHasPrivileges drives has_privileges end to end for the
+// table and group flows: the two fixed catalog queries, the boolean JSON
+// rendering, the grant-option flag, validation failures before any psql
+// call, and the nonzero-exit compatibility shape.
+func TestPostgresCLIHasPrivileges(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(ownerCLITableCSV)},
+		{ExitCode: 0, Stdout: []byte(privCLITableCSV)},
+	}}
+	app := postgresCLIApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "postgres.has_privileges",
+		"--name", "baruwa", "--object-name", "awl", "--object-type", "table",
+		"--privileges", "SELECT,INSERT", "--grant-option",
+		"--maintenance-db", "db_name", "--user", "testuser",
+		"--host", "testhost", "--port", "testport",
+		"--password", "testpassword", "-o", "json")
+	var value bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &value) != nil || value != true {
+		t.Fatalf("has_privileges code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("has_privileges calls = %d, want 2", len(runner.calls))
+	}
+	for i, call := range runner.calls {
+		sqlArg := call.Args[len(call.Args)-1]
+		if !strings.HasPrefix(sqlArg, "COPY (SELECT ") {
+			t.Fatalf("call %d SQL = %q", i, sqlArg)
+		}
+		if strings.Contains(sqlArg, "awl") || strings.Contains(sqlArg, "baruwa") {
+			t.Fatalf("call %d leaked a lookup string into SQL: %q", i, sqlArg)
+		}
+	}
+	if strings.Contains(out+errS, "COPY (SELECT") || strings.Contains(out+errS, "testpassword") {
+		t.Fatalf("CLI output leaked SQL or password: %q %q", out, errS)
+	}
+
+	// The subset miss renders false.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(ownerCLITableCSV)},
+		{ExitCode: 0, Stdout: []byte(privCLITableCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.has_privileges",
+		"--name", "bayestest", "--object-name", "awl", "--object-type", "table",
+		"--privileges", "SELECT,INSERT,TRUNCATE", "-o", "json")
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &value) != nil || value != false {
+		t.Fatalf("has_privileges miss code=%d out=%q err=%q", code, out, errS)
+	}
+
+	// The group flow: one call, membership true, admin check false.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(privCLIGroupCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.has_privileges",
+		"--name", "baruwa", "--object-name", "admin", "--object-type", "group",
+		"-o", "json")
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &value) != nil || value != true {
+		t.Fatalf("group membership code=%d out=%q err=%q", code, out, errS)
+	}
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(privCLIGroupCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.has_privileges",
+		"--name", "baruwa", "--object-name", "admin", "--object-type", "group",
+		"--grant-option", "-o", "json")
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &value) != nil || value != false {
+		t.Fatalf("group admin check code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("group calls = %d, want 1", len(runner.calls))
+	}
+
+	// Validation failures surface as exit 1 before any psql call.
+	for _, argv := range [][]string{
+		{"--name", "baruwa", "--object-name", "awl", "--object-type", "bogus", "--privileges", "SELECT"},
+		{"--name", "baruwa", "--object-name", "awl", "--object-type", "table", "--privileges", "BOGUS"},
+		{"--name", "baruwa", "--object-name", "admin", "--object-type", "group", "--privileges", "SELECT"},
+		{"--name", "baruwa", "--object-name", "awl", "--object-type", "table"},
+	} {
+		runner = &cliRecordingRunner{}
+		app = postgresCLIApp(t, runner)
+		fullArgv := append([]string{"exec", "postgres.has_privileges"}, argv...)
+		fullArgv = append(fullArgv, "-o", "json")
+		code, _, errS = captureCode(t, app, fullArgv...)
+		if code != ExitFailed || len(runner.calls) != 0 {
+			t.Fatalf("validation %v code=%d err=%q calls=%d", argv, code, errS, len(runner.calls))
+		}
+	}
+
+	// A failed connection keeps Salt's shape: no exception, false.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 2, Stderr: []byte("psql: error: connection refused")},
+		{ExitCode: 2, Stderr: []byte("psql: error: connection refused")},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.has_privileges",
+		"--name", "baruwa", "--object-name", "awl", "--object-type", "table",
+		"--privileges", "SELECT", "-o", "json")
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &value) != nil || value != false {
+		t.Fatalf("nonzero exit code=%d out=%q err=%q, want false", code, out, errS)
+	}
+}

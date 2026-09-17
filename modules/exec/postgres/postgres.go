@@ -14,6 +14,12 @@
 // schema_get, and schema_list (postgres.py:2444-2599), keeping the pinned
 // schema-family connection signature (dbname plus the db_* tuple with user
 // as the system-user argument) and matching every schema name client-side.
+// R9.2f adds the three read-only role and privilege checks role_get,
+// user_exists, and has_privileges (postgres.py:1104-1170, 3574-3711):
+// role_get/user_exists reuse the pinned user_list catalog, and
+// has_privileges keeps the pinned owner and ACL catalogs, filters, and
+// orderings as fixed queries whose pinned interpolated equality literals
+// are matched client-side, so no caller string reaches SQL.
 // Like Salt, every invocation is a shell-free psql argv executed through
 // the central Runner; this package links no database driver or protocol
 // client and never contacts a live server by itself. The catalog queries
@@ -31,6 +37,7 @@ import (
 	"io"
 	"math/big"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -111,6 +118,61 @@ const (
 		`LEFT JOIN pg_roles ON pg_roles.oid = pg_namespace.nspowner `
 	// expiryTimeLayout is the pinned strptime format for "expiry time".
 	expiryTimeLayout = "2006-01-02 15:04:05"
+	// defaultPrependSchema is the pinned has_privileges prepend default
+	// ("public"); an explicit empty prepend keeps Salt's empty-schema match.
+	defaultPrependSchema = "public"
+	// The R9.2f owner and privilege catalogs. The pinned
+	// _get_object_owner (postgres.py:3003-3123) and
+	// _make_privileges_list_query (postgres.py:2891-3000) interpolate the
+	// caller's object name and schema prefix into single-quoted SQL string
+	// literals. StateKit keeps the pinned catalogs, join shapes, and
+	// orderings but drops the interpolated WHERE equalities: the key
+	// column is selected alongside the pinned value column and matched
+	// client-side, so no caller string ever reaches SQL. Each fixed query
+	// enumerates the same rows the pinned catalog scan visits.
+	ownerTableQuery    = `SELECT schemaname, tablename, tableowner AS name FROM pg_tables`
+	ownerSequenceQuery = `SELECT nspname, relname, rolname AS name FROM pg_catalog.pg_class c ` +
+		`JOIN pg_roles r ON c.relowner = r.oid ` +
+		`JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE relkind='S'`
+	ownerSchemaQuery = `SELECT nspname, rolname AS name FROM pg_namespace n ` +
+		`JOIN pg_roles r ON n.nspowner = r.oid`
+	ownerFunctionQuery = `SELECT nspname, p.oid::regprocedure::text AS regprocedure, rolname AS name ` +
+		`FROM pg_catalog.pg_proc p ` +
+		`JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace ` +
+		`JOIN pg_catalog.pg_roles r ON p.proowner = r.oid ` +
+		`ORDER BY proname, proargtypes`
+	ownerTablespaceQuery = `SELECT spcname, rolname AS name FROM pg_tablespace t ` +
+		`JOIN pg_roles r ON t.spcowner = r.oid`
+	ownerLanguageQuery = `SELECT lanname, rolname AS name FROM pg_language l ` +
+		`JOIN pg_roles r ON l.lanowner = r.oid`
+	ownerDatabaseQuery = `SELECT datname, rolname AS name FROM pg_database d ` +
+		`JOIN pg_roles r ON d.datdba = r.oid`
+	// privilegesTableQuery keeps the pinned relkind in ('r', 'v') filter
+	// and ORDER BY relname; the nspname/relname equalities move client-side.
+	privilegesTableQuery = `SELECT nspname, relname, relkind, relacl AS name ` +
+		`FROM pg_catalog.pg_class c ` +
+		`JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace ` +
+		`WHERE relkind in ('r', 'v') ORDER BY relname`
+	// privilegesSequenceQuery keeps the pinned relkind = 'S' filter.
+	privilegesSequenceQuery = `SELECT nspname, relname, relkind, relacl AS name ` +
+		`FROM pg_catalog.pg_class c ` +
+		`JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace ` +
+		`WHERE relkind = 'S' ORDER BY relname`
+	privilegesSchemaQuery   = `SELECT nspname, nspacl AS name FROM pg_catalog.pg_namespace ORDER BY nspname`
+	privilegesFunctionQuery = `SELECT nspname, p.oid::regprocedure::text AS regprocedure, proacl AS name ` +
+		`FROM pg_catalog.pg_proc p ` +
+		`JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace ` +
+		`ORDER BY proname, proargtypes`
+	privilegesTablespaceQuery = `SELECT spcname, spcacl AS name FROM pg_catalog.pg_tablespace ORDER BY spcname`
+	privilegesLanguageQuery   = `SELECT lanname, lanacl AS name FROM pg_catalog.pg_language ORDER BY lanname`
+	privilegesDatabaseQuery   = `SELECT datname, datacl AS name FROM pg_catalog.pg_database ORDER BY datname`
+	// privilegesGroupQuery exposes the group role's name as member_of so
+	// the pinned roleid IN (SELECT oid ... WHERE rolname='{0}') membership
+	// filter becomes a client-side exact match on that column.
+	privilegesGroupQuery = `SELECT (SELECT rolname FROM pg_catalog.pg_roles rr WHERE rr.oid = m.roleid) ` +
+		`AS member_of, rolname, admin_option ` +
+		`FROM pg_catalog.pg_auth_members m ` +
+		`JOIN pg_catalog.pg_roles r ON m.member=r.oid ORDER BY rolname`
 )
 
 var (
@@ -118,7 +180,47 @@ var (
 	errPostgresPsqlUnavailable   = errors.New("postgres: psql is unavailable")
 	errPostgresRunas             = errors.New("postgres: runas is not supported by statekit")
 	errPostgresInvalidArgument   = errors.New("postgres: invalid argument")
+	errPostgresInvalidACL        = errors.New("postgres: invalid acl entry")
 )
+
+// privilegesMap ports the pinned _PRIVILEGES_MAP (postgres.py:86-101): the
+// ACL privilege characters to their privilege names, including "*" → GRANT
+// which _process_priv_part treats specially.
+var privilegesMap = map[string]string{
+	"a": "INSERT",
+	"C": "CREATE",
+	"D": "TRUNCATE",
+	"c": "CONNECT",
+	"t": "TRIGGER",
+	"r": "SELECT",
+	"U": "USAGE",
+	"T": "TEMPORARY",
+	"w": "UPDATE",
+	"X": "EXECUTE",
+	"x": "REFERENCES",
+	"d": "DELETE",
+	"m": "MAINTAIN",
+	"*": "GRANT",
+}
+
+// privilegeTypeMap ports the pinned _PRIVILEGE_TYPE_MAP
+// (postgres.py:136-144): the ACL characters valid for each object type.
+// Its keys are exactly the pinned _PRIVILEGES_OBJECTS minus group.
+var privilegeTypeMap = map[string]string{
+	"table":      "arwdDxtm",
+	"tablespace": "C",
+	"language":   "U",
+	"sequence":   "rwU",
+	"schema":     "UC",
+	"database":   "CTc",
+	"function":   "X",
+}
+
+// privSplitRE ports the pinned re.split(r"\s?,\s?", ...) separator: an
+// optional single ASCII whitespace on either side of the comma. Python's
+// str \s class is [ \t\n\r\f\v] for ASCII; Go's \s omits \v, so the class
+// is spelled out.
+var privSplitRE = regexp.MustCompile(`[ \t\n\r\f\v]?,[ \t\n\r\f\v]?`)
 
 // ---------------------------------------------------------------------------
 // version — salt/modules/postgres.py:309-332 @ pinned revision.
@@ -1523,6 +1625,498 @@ func (schemaExistsFunc) Execute(ctx context.Context, rt *runtime.Runtime, args a
 }
 
 // ---------------------------------------------------------------------------
+// role_get / user_exists — salt/modules/postgres.py:1104-1170 @ pinned
+// revision.
+
+// RoleGetArgs are the canonical postgres.role_get arguments, mirroring the
+// pinned role_get(name, user, host, port, maintenance_db, password, runas,
+// return_password=False) signature.
+type RoleGetArgs struct {
+	Name           string  `statekit:"name=name,required"`
+	User           *string `statekit:"name=user"`
+	Host           *string `statekit:"name=host"`
+	Port           *string `statekit:"name=port"`
+	MaintenanceDB  *string `statekit:"name=maintenance_db"`
+	Password       *string `statekit:"name=password"`
+	Runas          *string `statekit:"name=runas"`
+	ReturnPassword bool    `statekit:"name=return_password"`
+}
+
+func (a *RoleGetArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: a.MaintenanceDB,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+// roleGet ports the pinned role_get tail (postgres.py:1125-1138): the
+// shared user_list catalog followed by .get(name, None). When user_list
+// answers Salt's False (an unanswered version probe), the pinned .get
+// raises AttributeError, is logged, and returns None — mapped here to nil.
+// The exact-case lookup miss is None, never an error.
+func roleGet(ctx context.Context, rt *runtime.Runtime, conn *pgConnection, name string, returnPassword bool) (any, error) {
+	users, err := (userListFunc{}).Execute(ctx, rt, &UserListArgs{
+		User:           conn.User,
+		Host:           conn.Host,
+		Port:           conn.Port,
+		MaintenanceDB:  conn.MaintenanceDB,
+		Password:       conn.Password,
+		Runas:          conn.Runas,
+		ReturnPassword: returnPassword,
+	})
+	if err != nil {
+		return nil, err
+	}
+	catalog, ok := users.(map[string]map[string]any)
+	if !ok {
+		// The pinned AttributeError branch: a False catalog is None here.
+		return nil, nil
+	}
+	if row, ok := catalog[name]; ok {
+		return row, nil
+	}
+	return nil, nil
+}
+
+type roleGetFunc struct{}
+
+func (roleGetFunc) Name() string { return "postgres.role_get" }
+func (roleGetFunc) Args() any    { return RoleGetArgs{} }
+
+func (roleGetFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[RoleGetArgs](args, "postgres.role_get")
+	if err != nil {
+		return nil, err
+	}
+	return roleGet(ctx, rt, a.connection(), a.Name, a.ReturnPassword)
+}
+
+type userExistsFunc struct{}
+
+func (userExistsFunc) Name() string { return "postgres.user_exists" }
+func (userExistsFunc) Args() any    { return ExistsArgs{} }
+
+func (userExistsFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[ExistsArgs](args, "postgres.user_exists")
+	if err != nil {
+		return nil, err
+	}
+	// The pinned user_exists is bool(role_get(..., return_password=False))
+	// (postgres.py:1159-1170): None (miss or False catalog) is false and a
+	// stored role row always carries the pinned columns, so the bool is
+	// the row's presence — len>0 is the bool(dict) port.
+	row, err := roleGet(ctx, rt, a.connection(), a.Name, false)
+	if err != nil {
+		return nil, err
+	}
+	entry, ok := row.(map[string]any)
+	if !ok {
+		return false, nil
+	}
+	return len(entry) > 0, nil
+}
+
+// ---------------------------------------------------------------------------
+// has_privileges — salt/modules/postgres.py:3574-3711 @ pinned revision,
+// with the pinned _mod_priv_opts/_validate_privileges/_process_priv_parts
+// helpers (postgres.py:3184-3235) and the owner/privilege catalog queries
+// of _get_object_owner and privileges_list as client-side-filtered fixed
+// SQL.
+
+// HasPrivilegesArgs are the canonical postgres.has_privileges arguments,
+// mirroring the pinned (name, object_name, object_type, privileges=None,
+// grant_option=None, prepend="public", maintenance_db=None, user, host,
+// port, password, runas) signature. Privileges keeps Salt's None default
+// as the empty string because the pinned _mod_priv_opts collapses None to
+// "" before any use; grant_option is only ever truthiness-tested, so a
+// plain bool is exact; prepend nil means the pinned "public" default while
+// an explicit empty string keeps Salt's empty-schema match.
+type HasPrivilegesArgs struct {
+	Name          string  `statekit:"name=name,required"`
+	ObjectName    string  `statekit:"name=object_name,required"`
+	ObjectType    string  `statekit:"name=object_type,required"`
+	Privileges    string  `statekit:"name=privileges"`
+	GrantOption   bool    `statekit:"name=grant_option"`
+	Prepend       *string `statekit:"name=prepend"`
+	MaintenanceDB *string `statekit:"name=maintenance_db"`
+	User          *string `statekit:"name=user"`
+	Host          *string `statekit:"name=host"`
+	Port          *string `statekit:"name=port"`
+	Password      *string `statekit:"name=password"`
+	Runas         *string `statekit:"name=runas"`
+}
+
+func (a *HasPrivilegesArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: a.MaintenanceDB,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+// modPrivOpts ports the pinned _mod_priv_opts (postgres.py:3208-3216): the
+// object type is lowercased and the privileges string is uppercased and
+// split on optional single spaces around commas.
+func modPrivOpts(objectType, privileges string) (string, []string) {
+	return strings.ToLower(objectType), privSplitRE.Split(strings.ToUpper(privileges), -1)
+}
+
+// validatePrivileges ports the pinned _validate_privileges
+// (postgres.py:3184-3205) for has_privileges. The pinned function raises
+// KeyError on an object_type missing from _PRIVILEGE_TYPE_MAP (whose keys
+// are exactly the pinned _PRIVILEGES_OBJECTS minus group, so the separate
+// SaltInvocationError object check is subsumed) before the privilege
+// subset test; both Salt failure modes map to execution errors here, and
+// the check always precedes any Runner invocation.
+func validatePrivileges(objectType string, privs []string, privileges string) error {
+	if objectType == "group" {
+		if privileges != "" {
+			return fmt.Errorf("%w: the privileges option should not be set for object_type group",
+				errPostgresInvalidArgument)
+		}
+		return nil
+	}
+	typePerms, ok := privilegeTypeMap[objectType]
+	if !ok {
+		return fmt.Errorf("%w: invalid object_type %q provided", errPostgresInvalidArgument, objectType)
+	}
+	allowed := map[string]bool{"ALL": true}
+	for _, c := range typePerms {
+		allowed[privilegesMap[string(c)]] = true
+	}
+	for _, priv := range privs {
+		if !allowed[priv] {
+			return fmt.Errorf("%w: invalid privilege(s) %q provided for object %q",
+				errPostgresInvalidArgument, privileges, objectType)
+		}
+	}
+	return nil
+}
+
+// privCatalogQuery is one fixed catalog query plus the client-side port of
+// the pinned WHERE equality: match reports whether a row is one the pinned
+// query's interpolated literals would have selected. Missing key columns
+// never match, exactly like a server-side equality against real rows.
+type privCatalogQuery struct {
+	query string
+	match func(row map[string]string, objectName, prepend string) bool
+}
+
+// rowEquals is the exact-match helper for one key column.
+func rowEquals(row map[string]string, key, want string) bool {
+	value, ok := row[key]
+	return ok && value == want
+}
+
+// ownerQueries ports the pinned _get_object_owner queries
+// (postgres.py:3017-3107) as fixed SQL with client-side equality filters.
+var ownerQueries = map[string]privCatalogQuery{
+	"table": {ownerTableQuery, func(row map[string]string, objectName, prepend string) bool {
+		return rowEquals(row, "schemaname", prepend) && rowEquals(row, "tablename", objectName)
+	}},
+	"sequence": {ownerSequenceQuery, func(row map[string]string, objectName, prepend string) bool {
+		return rowEquals(row, "nspname", prepend) && rowEquals(row, "relname", objectName)
+	}},
+	"schema": {ownerSchemaQuery, func(row map[string]string, objectName, _ string) bool {
+		return rowEquals(row, "nspname", objectName)
+	}},
+	"function": {ownerFunctionQuery, func(row map[string]string, objectName, prepend string) bool {
+		return rowEquals(row, "nspname", prepend) && rowEquals(row, "regprocedure", objectName)
+	}},
+	"tablespace": {ownerTablespaceQuery, func(row map[string]string, objectName, _ string) bool {
+		return rowEquals(row, "spcname", objectName)
+	}},
+	"language": {ownerLanguageQuery, func(row map[string]string, objectName, _ string) bool {
+		return rowEquals(row, "lanname", objectName)
+	}},
+	"database": {ownerDatabaseQuery, func(row map[string]string, objectName, _ string) bool {
+		return rowEquals(row, "datname", objectName)
+	}},
+}
+
+// privilegesQueries ports the pinned _make_privileges_list_query queries
+// (postgres.py:2895-2998) as fixed SQL with client-side equality filters;
+// the group membership filter matches the group role's name.
+var privilegesQueries = map[string]privCatalogQuery{
+	"table": {privilegesTableQuery, func(row map[string]string, objectName, prepend string) bool {
+		return rowEquals(row, "nspname", prepend) && rowEquals(row, "relname", objectName)
+	}},
+	"sequence": {privilegesSequenceQuery, func(row map[string]string, objectName, prepend string) bool {
+		return rowEquals(row, "nspname", prepend) && rowEquals(row, "relname", objectName)
+	}},
+	"schema": {privilegesSchemaQuery, func(row map[string]string, objectName, _ string) bool {
+		return rowEquals(row, "nspname", objectName)
+	}},
+	"function": {privilegesFunctionQuery, func(row map[string]string, objectName, prepend string) bool {
+		return rowEquals(row, "nspname", prepend) && rowEquals(row, "regprocedure", objectName)
+	}},
+	"tablespace": {privilegesTablespaceQuery, func(row map[string]string, objectName, _ string) bool {
+		return rowEquals(row, "spcname", objectName)
+	}},
+	"language": {privilegesLanguageQuery, func(row map[string]string, objectName, _ string) bool {
+		return rowEquals(row, "lanname", objectName)
+	}},
+	"database": {privilegesDatabaseQuery, func(row map[string]string, objectName, _ string) bool {
+		return rowEquals(row, "datname", objectName)
+	}},
+	"group": {privilegesGroupQuery, func(row map[string]string, objectName, _ string) bool {
+		return rowEquals(row, "member_of", objectName)
+	}},
+}
+
+// getObjectOwner ports the pinned _get_object_owner tail
+// (postgres.py:3109-3123): the first matching catalog row's owner column,
+// and Salt's IndexError None when no row matches. The pinned rows[0]
+// KeyError on a short row maps to an execution error.
+func getObjectOwner(ctx context.Context, rt *runtime.Runtime, conn *pgConnection, objectName, objectType, prepend string) (*string, error) {
+	spec, ok := ownerQueries[objectType]
+	if !ok {
+		// Unreachable behind validatePrivileges; kept fail-closed.
+		return nil, fmt.Errorf("%w: invalid object_type %q provided", errPostgresInvalidArgument, objectType)
+	}
+	rows, err := psqlQueryRows(ctx, rt, conn, spec.query)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		if !spec.match(row, objectName, prepend) {
+			continue
+		}
+		owner, err := rowString(row, "name", "postgres.has_privileges")
+		if err != nil {
+			return nil, err
+		}
+		return &owner, nil
+	}
+	return nil, nil
+}
+
+// processPrivPart ports the pinned _process_priv_part
+// (postgres.py:3219-3235): each ACL character adds its mapped privilege
+// with False, and a following "*" flips the previous privilege to True
+// (the grant option). A leading "*" takes the first-branch map lookup, so
+// the mapped GRANT name is stored exactly like the pinned dictionary. An
+// unknown character is the pinned KeyError.
+func processPrivPart(perms string) (map[string]bool, error) {
+	out := map[string]bool{}
+	previous := ""
+	for _, perm := range perms {
+		name, ok := privilegesMap[string(perm)]
+		if !ok {
+			return nil, errPostgresInvalidACL
+		}
+		if previous != "" && perm == '*' {
+			out[previous] = true
+			continue
+		}
+		out[name] = false
+		previous = name
+	}
+	return out, nil
+}
+
+// parseACLGrants ports the pinned ACL ladder (postgres.py:3414-3423):
+// strip the PostgreSQL array braces, split entries on commas, require
+// exactly one "/" (the grantor) and one "=" (grantee=perms) per entry, map
+// the empty grantee to public, and decode the permission characters with
+// the pinned _process_priv_part. A NULL acl (the empty CSV field) and any
+// malformed entry are the pinned ValueError.
+func parseACLGrants(acl string) (map[string]map[string]bool, error) {
+	out := map[string]map[string]bool{}
+	for _, part := range strings.Split(strings.Trim(acl, "{}"), ",") {
+		slash := strings.Split(part, "/")
+		if len(slash) != 2 {
+			return nil, errPostgresInvalidACL
+		}
+		eq := strings.Split(slash[0], "=")
+		if len(eq) != 2 {
+			return nil, errPostgresInvalidACL
+		}
+		rolename := eq[0]
+		if rolename == "" {
+			rolename = "public"
+		}
+		perms, err := processPrivPart(eq[1])
+		if err != nil {
+			return nil, err
+		}
+		out[rolename] = perms
+	}
+	return out, nil
+}
+
+// privilegesList ports the pinned privileges_list tail
+// (postgres.py:3394-3432) behind has_privileges: object ACL rows decode
+// through the pinned ladder, and group rows map the member rolname to the
+// pinned admin_option == "t" boolean. Rows are matched client-side, so
+// the caller's object name never reaches SQL.
+func privilegesList(ctx context.Context, rt *runtime.Runtime, conn *pgConnection, objectName, objectType, prepend string) (map[string]any, error) {
+	spec, ok := privilegesQueries[objectType]
+	if !ok {
+		// Unreachable behind validatePrivileges; kept fail-closed.
+		return nil, fmt.Errorf("%w: invalid object_type %q provided", errPostgresInvalidArgument, objectType)
+	}
+	rows, err := psqlQueryRows(ctx, rt, conn, spec.query)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]any, len(rows))
+	for _, row := range rows {
+		if !spec.match(row, objectName, prepend) {
+			continue
+		}
+		if objectType == "group" {
+			rolname, err := rowString(row, "rolname", "postgres.has_privileges")
+			if err != nil {
+				return nil, err
+			}
+			adminOption, err := rowString(row, "admin_option", "postgres.has_privileges")
+			if err != nil {
+				return nil, err
+			}
+			out[rolname] = adminOption == "t"
+			continue
+		}
+		acl, err := rowString(row, "name", "postgres.has_privileges")
+		if err != nil {
+			return nil, err
+		}
+		grants, err := parseACLGrants(acl)
+		if err != nil {
+			return nil, err
+		}
+		for rolename, perms := range grants {
+			out[rolename] = perms
+		}
+	}
+	return out, nil
+}
+
+type hasPrivilegesFunc struct{}
+
+func (hasPrivilegesFunc) Name() string { return "postgres.has_privileges" }
+func (hasPrivilegesFunc) Args() any    { return HasPrivilegesArgs{} }
+
+func (hasPrivilegesFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[HasPrivilegesArgs](args, "postgres.has_privileges")
+	if err != nil {
+		return nil, err
+	}
+	// The pinned head (postgres.py:3660-3662): validation before any
+	// query, with the object type lowercased and the privileges split.
+	objectType, privs := modPrivOpts(a.ObjectType, a.Privileges)
+	if err := validatePrivileges(objectType, privs, a.Privileges); err != nil {
+		return nil, err
+	}
+	conn := a.connection()
+	prepend := defaultPrependSchema
+	if a.Prepend != nil {
+		prepend = *a.Prepend
+	}
+	if objectType != "group" {
+		owner, err := getObjectOwner(ctx, rt, conn, a.ObjectName, objectType, prepend)
+		if err != nil {
+			return nil, err
+		}
+		if owner != nil && a.Name == *owner {
+			return true, nil
+		}
+	}
+	grants, err := privilegesList(ctx, rt, conn, a.ObjectName, objectType, prepend)
+	if err != nil {
+		return nil, err
+	}
+	entry, ok := grants[a.Name]
+	if !ok {
+		return false, nil
+	}
+	if objectType == "group" {
+		// The pinned group tail: membership is True, and the grant-option
+		// check is the member's admin_option boolean itself.
+		if a.GrantOption {
+			return entry.(bool), nil
+		}
+		return true, nil
+	}
+	rolePerms := entry.(map[string]bool)
+	typePerms := privilegeTypeMap[objectType]
+	if a.GrantOption {
+		// perms == _privileges[name]: every type privilege present with
+		// the grant option and nothing else.
+		perms := make(map[string]bool, len(typePerms))
+		for _, c := range typePerms {
+			perms[privilegesMap[string(c)]] = true
+		}
+		return privMapEqual(perms, rolePerms), nil
+	}
+	hasAll := false
+	for _, priv := range privs {
+		if priv == "ALL" {
+			hasAll = true
+			break
+		}
+	}
+	if hasAll {
+		// sorted(perms) == sorted(_privileges[name]): exactly the type's
+		// privileges regardless of grant flags.
+		want := make([]string, 0, len(typePerms))
+		for _, c := range typePerms {
+			want = append(want, privilegesMap[string(c)])
+		}
+		have := make([]string, 0, len(rolePerms))
+		for name := range rolePerms {
+			have = append(have, name)
+		}
+		sort.Strings(want)
+		sort.Strings(have)
+		if len(want) != len(have) {
+			return false, nil
+		}
+		for i := range want {
+			if want[i] != have[i] {
+				return false, nil
+			}
+		}
+		return true, nil
+	}
+	// set(_privs).issubset(set(_privileges[name])): every requested
+	// privilege present, grant flag irrelevant.
+	for _, priv := range privs {
+		if _, ok := rolePerms[priv]; !ok {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// privMapEqual is Python dict equality for the privilege dictionaries:
+// same keys and same grant-option values.
+func privMapEqual(x, y map[string]bool) bool {
+	if len(x) != len(y) {
+		return false
+	}
+	for key, value := range x {
+		if y[key] != value {
+			return false
+		}
+	}
+	return true
+}
+
+// ---------------------------------------------------------------------------
 // shared helpers (rabbitmq-module conventions).
 
 func typedArgs[T any](args any, name string) (*T, error) {
@@ -1597,14 +2191,15 @@ func redactedError(err error, password *string) error {
 	return errors.New(message)
 }
 
-// Register installs the R9.2e postgres slice: the version probe, the five
+// Register installs the R9.2f postgres slice: the version probe, the five
 // R9.2c read-only catalog primitives, the eight R9.2d extension and
-// language catalog functions, and the three R9.2e schema catalog functions.
-// The remainder of the postgres family needs the generic psql query surface
-// (psql_query itself stays pending; no arbitrary-query registration exists
-// in this phase) and stays pending for later R9 rounds; the internal
-// parsed-version and psql-query helpers are intentionally not registered,
-// exactly like the pinned private functions.
+// language catalog functions, the three R9.2e schema catalog functions,
+// and the three R9.2f role and privilege checks. The remainder of the
+// postgres family needs the generic psql query surface (psql_query itself
+// stays pending; no arbitrary-query registration exists in this phase)
+// and stays pending for later R9 rounds; the internal parsed-version and
+// psql-query helpers are intentionally not registered, exactly like the
+// pinned private functions.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		versionFunc{},
@@ -1624,6 +2219,9 @@ func Register(reg *runtime.ExecRegistry) error {
 		schemaExistsFunc{},
 		schemaGetFunc{},
 		schemaListFunc{},
+		roleGetFunc{},
+		userExistsFunc{},
+		hasPrivilegesFunc{},
 	} {
 		if err := reg.Register(fn); err != nil {
 			return err
