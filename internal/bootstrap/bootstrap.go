@@ -58,6 +58,7 @@ import (
 	execmacpackage "github.com/friz-zy/statekit/modules/exec/macpackage"
 	execmdadm "github.com/friz-zy/statekit/modules/exec/mdadm"
 	execmount "github.com/friz-zy/statekit/modules/exec/mount"
+	execmysql "github.com/friz-zy/statekit/modules/exec/mysql"
 	execnacl "github.com/friz-zy/statekit/modules/exec/nacl"
 	execnetwork "github.com/friz-zy/statekit/modules/exec/network"
 	execnftables "github.com/friz-zy/statekit/modules/exec/nftables"
@@ -285,6 +286,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execpart.Register,
 		execquota.Register,
 		execrabbitmq.Register,
+		execmysql.Register,
 		execxfs.Register,
 		execsysctl.Register,
 		execsysfs.Register,

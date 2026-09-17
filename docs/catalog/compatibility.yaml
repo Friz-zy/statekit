@@ -4,9 +4,9 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 112
+    implemented: 113
     partial: 0
-    excluded: 54
+    excluded: 53
     planned: 80
 implemented_families:
     - acl
@@ -58,6 +58,7 @@ implemented_families:
     - macdefaults
     - macpackage
     - mount
+    - mysql
     - nacl
     - network
     - nftables
@@ -136,7 +137,6 @@ excluded:
     - 'match (excluded: master-minion architecture (StateKit is local-only by design))'
     - 'mine (excluded: master-minion architecture (StateKit is local-only by design))'
     - 'minion (excluded: master-minion architecture (StateKit is local-only by design))'
-    - 'mysql (planned: requires database/message-broker client protocol (round R9, services tier))'
     - 'napalm (planned: network-device stack (round R11, ADR-gated plugin boundary))'
     - 'napalm_formula (planned: network-device stack (round R11, ADR-gated plugin boundary))'
     - 'napalm_yang (planned: network-device stack (round R11, ADR-gated plugin boundary))'
