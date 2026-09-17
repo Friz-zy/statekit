@@ -430,3 +430,258 @@ func TestPostgresCLICatalogCRLF(t *testing.T) {
 		t.Fatalf("CLI output leaks password: %q %q", out, errS)
 	}
 }
+
+// pinnedCLIExtensionsCSV renders pg_available_extensions output as COPY CSV.
+const pinnedCLIExtensionsCSV = `name,default_version,installed_version,comment
+cube,1.2,,"geometric data type for points, lines, and boxes"
+plpgsql,1.0,1.0,PL/pgSQL procedural language
+`
+
+// pinnedCLIInstalledExtensionsCSV renders the pg_extension × pg_namespace
+// join of the pinned installed_extensions query as COPY CSV.
+const pinnedCLIInstalledExtensionsCSV = `oid,extname,extowner,extnamespace,extrelocatable,extversion,extconfig,extcondition,schema_name
+16386,plpgsql,10,11,f,1.0,,,pg_catalog
+`
+
+// TestPostgresCLIExtensions drives the six extension functions end to end:
+// the JSON dictionaries match the parsed catalogs, get_* render the row
+// object or null, is_* render the pinned booleans (case-insensitive
+// available, exact-case installed), and the argv embeds the fixed SQL with
+// no password leak.
+func TestPostgresCLIExtensions(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(pinnedCLIExtensionsCSV)},
+	}}
+	app := postgresCLIApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "postgres.available_extensions",
+		"--user", "test_user", "--host", "test_host", "--port", "test_port",
+		"--maintenance-db", "test_maint", "--password", "test_pass", "-o", "json")
+	var extensions map[string]map[string]string
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &extensions) != nil {
+		t.Fatalf("available_extensions code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(extensions) != 2 || extensions["cube"]["default_version"] != "1.2" ||
+		extensions["cube"]["comment"] != "geometric data type for points, lines, and boxes" ||
+		extensions["plpgsql"]["installed_version"] != "1.0" {
+		t.Fatalf("available_extensions JSON = %q", out)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d, want 1", len(runner.calls))
+	}
+	command := runner.calls[0]
+	argv := append([]string{command.Name}, command.Args...)
+	if argv[13] != "-v" || argv[14] != "datestyle=ISO,MDY" || argv[15] != "-c" ||
+		argv[16] != "COPY (select * from pg_available_extensions()) TO STDOUT WITH CSV HEADER" {
+		t.Fatalf("argv = %q", argv)
+	}
+	if strings.Contains(command.RedactedString(), "test_pass") || strings.Contains(out+errS, "test_pass") {
+		t.Fatalf("password leaked: %q %q", command.RedactedString(), out+errS)
+	}
+
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(pinnedCLIInstalledExtensionsCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.installed_extensions", "-o", "json")
+	var installed map[string]map[string]string
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &installed) != nil {
+		t.Fatalf("installed_extensions code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(installed) != 1 || installed["plpgsql"]["extversion"] != "1.0" ||
+		installed["plpgsql"]["schema_name"] != "pg_catalog" {
+		t.Fatalf("installed_extensions JSON = %q", out)
+	}
+	if strings.Contains(out+errS, "pg_namespace") {
+		t.Fatalf("CLI output leaks the source SQL: %q", out+errS)
+	}
+
+	// get_available_extension: the row object for a hit, null for a miss.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(pinnedCLIExtensionsCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.get_available_extension",
+		"--name", "cube", "-o", "json")
+	var row map[string]string
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &row) != nil ||
+		row["default_version"] != "1.2" || row["name"] != "cube" {
+		t.Fatalf("get_available_extension code=%d out=%q err=%q", code, out, errS)
+	}
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(pinnedCLIExtensionsCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.get_available_extension",
+		"--name", "absent", "-o", "json")
+	if code != ExitOK || errS != "" || strings.TrimSpace(out) != "null" {
+		t.Fatalf("get_available_extension(miss) code=%d out=%q err=%q, want null", code, out, errS)
+	}
+
+	// get_installed_extension mirrors the same contract.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(pinnedCLIInstalledExtensionsCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.get_installed_extension",
+		"--name", "plpgsql", "-o", "json")
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &row) != nil ||
+		row["extversion"] != "1.0" {
+		t.Fatalf("get_installed_extension code=%d out=%q err=%q", code, out, errS)
+	}
+
+	// is_available_extension lowercases both sides (PLPGSQL matches);
+	// is_installed_extension reads the installed catalog instead.
+	for _, tc := range []struct {
+		fn, name, csv string
+		want          bool
+	}{
+		{"is_available_extension", "PLPGSQL", pinnedCLIExtensionsCSV, true},
+		{"is_available_extension", "Cube", pinnedCLIExtensionsCSV, true},
+		{"is_available_extension", "absent", pinnedCLIExtensionsCSV, false},
+		{"is_installed_extension", "plpgsql", pinnedCLIInstalledExtensionsCSV, true},
+		{"is_installed_extension", "PLPGSQL", pinnedCLIInstalledExtensionsCSV, false},
+		{"is_installed_extension", "cube", pinnedCLIInstalledExtensionsCSV, false},
+	} {
+		runner := &cliRecordingRunner{results: []process.CommandResult{
+			{ExitCode: 0, Stdout: []byte(tc.csv)},
+		}}
+		app := postgresCLIApp(t, runner)
+		code, out, errS := captureCode(t, app, "exec", "postgres."+tc.fn,
+			"--name", tc.name, "-o", "json")
+		var value bool
+		if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &value) != nil || value != tc.want {
+			t.Fatalf("%s(%q) code=%d out=%q err=%q", tc.fn, tc.name, code, out, errS)
+		}
+		// The lookup name never reaches the SQL argument.
+		args := runner.calls[0].Args
+		if got := args[len(args)-1]; !strings.HasPrefix(got, "COPY (") || strings.Contains(got, tc.name) {
+			t.Fatalf("%s(%q) SQL arg = %q, want the fixed catalog query", tc.fn, tc.name, got)
+		}
+	}
+
+	// A failed query keeps Salt's compatibility shapes: empty catalogs,
+	// null views, false predicates.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 2, Stderr: []byte("psql: error: connection refused")},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.available_extensions", "-o", "json")
+	if code != ExitOK || errS != "" || strings.TrimSpace(out) != "{}" {
+		t.Fatalf("failed available_extensions code=%d out=%q err=%q, want {}", code, out, errS)
+	}
+
+	// runas is rejected before any Runner invocation, and the required
+	// name is validated.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.is_installed_extension",
+		"--name", "plpgsql", "--runas", "postgres", "-o", "json")
+	if code != ExitFailed || !strings.Contains(errS, "runas") || len(runner.calls) != 0 {
+		t.Fatalf("runas code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.get_available_extension", "-o", "json")
+	if code != ExitInvalidInput || !strings.Contains(errS, "name") || len(runner.calls) != 0 {
+		t.Fatalf("missing name code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+}
+
+// pinnedCLILanguageCSV is the pinned get_test_list_language_csv fixture.
+const pinnedCLILanguageCSV = "Name\ninternal\nc\nsql\nplpgsql\n"
+
+// TestPostgresCLILanguage pins the language functions end to end: the
+// name→name JSON dictionary against the pinned fixture, the exact-case
+// language_exists booleans, the required maintenance_db validation, and
+// the fixed lanname SQL with no credential leak.
+func TestPostgresCLILanguage(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(pinnedCLILanguageCSV)},
+	}}
+	app := postgresCLIApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "postgres.language_list",
+		"--maintenance-db", "testdb", "--user", "testuser", "--host", "testhost",
+		"--port", "testport", "--password", "foo", "-o", "json")
+	var languages map[string]string
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &languages) != nil {
+		t.Fatalf("language_list code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(languages) != 4 || languages["sql"] != "sql" || languages["plpgsql"] != "plpgsql" ||
+		languages["internal"] != "internal" || languages["c"] != "c" {
+		t.Fatalf("language_list JSON = %q", out)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d, want 1", len(runner.calls))
+	}
+	command := runner.calls[0]
+	argv := append([]string{command.Name}, command.Args...)
+	if argv[5] != "--username" || argv[6] != "testuser" || argv[11] != "--dbname" || argv[12] != "testdb" ||
+		argv[15] != "-c" || argv[16] != `COPY (SELECT lanname AS "Name" FROM pg_language) TO STDOUT WITH CSV HEADER` {
+		t.Fatalf("argv = %q", argv)
+	}
+	if strings.Contains(command.RedactedString(), "foo") || strings.Contains(out+errS, "foo") {
+		t.Fatalf("password leaked: %q %q", command.RedactedString(), out+errS)
+	}
+
+	for _, tc := range []struct {
+		name string
+		want bool
+	}{
+		{"sql", true},
+		{"c", true},
+		{"SQL", false},
+		{"absent", false},
+	} {
+		runner := &cliRecordingRunner{results: []process.CommandResult{
+			{ExitCode: 0, Stdout: []byte(pinnedCLILanguageCSV)},
+		}}
+		app := postgresCLIApp(t, runner)
+		code, out, errS := captureCode(t, app, "exec", "postgres.language_exists",
+			"--name", tc.name, "--maintenance-db", "testdb", "-o", "json")
+		var value bool
+		if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &value) != nil || value != tc.want {
+			t.Fatalf("language_exists(%q) code=%d out=%q err=%q", tc.name, code, out, errS)
+		}
+		args := runner.calls[0].Args
+		if got := args[len(args)-1]; got != `COPY (SELECT lanname AS "Name" FROM pg_language) TO STDOUT WITH CSV HEADER` {
+			t.Fatalf("language_exists(%q) SQL arg = %q, want the fixed catalog query", tc.name, got)
+		}
+	}
+
+	// The pinned maintenance_db positional is required: omitting it fails
+	// validation before any run, for both language functions.
+	for _, fn := range []string{"postgres.language_list", "postgres.language_exists"} {
+		runner := &cliRecordingRunner{}
+		app := postgresCLIApp(t, runner)
+		args := []string{"exec", fn}
+		if fn == "postgres.language_exists" {
+			args = append(args, "--name", "sql")
+		}
+		args = append(args, "-o", "json")
+		code, _, errS := captureCode(t, app, args...)
+		if code != ExitInvalidInput || !strings.Contains(errS, "maintenance_db") || len(runner.calls) != 0 {
+			t.Fatalf("%s missing maintenance_db code=%d err=%q calls=%d", fn, code, errS, len(runner.calls))
+		}
+	}
+
+	// A failed query keeps Salt's compatibility shapes.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 2, Stderr: []byte("psql: error: connection refused")},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.language_list",
+		"--maintenance-db", "testdb", "-o", "json")
+	if code != ExitOK || errS != "" || strings.TrimSpace(out) != "{}" {
+		t.Fatalf("failed language_list code=%d out=%q err=%q, want {}", code, out, errS)
+	}
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 2, Stderr: []byte("psql: error: connection refused")},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.language_exists",
+		"--name", "sql", "--maintenance-db", "testdb", "-o", "json")
+	var value bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &value) != nil || value != false {
+		t.Fatalf("failed language_exists code=%d out=%q err=%q, want false", code, out, errS)
+	}
+}

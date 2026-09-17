@@ -5,15 +5,19 @@
 // catalog primitives db_list, db_exists, tablespace_list,
 // tablespace_exists, and user_list (postgres.py:530-598, 768-837,
 // 986-1101) on the internal COPY-to-CSV query transport ported from the
-// pinned psql_query (postgres.py:433-524). Like Salt, every invocation is
-// a shell-free psql argv executed through the central Runner; this
-// package links no database driver or protocol client and never contacts
-// a live server by itself. The catalog queries are fixed SQL fragments —
-// no caller-controlled SQL or identifier is interpolated, so the generic
-// psql_query surface stays pending for a later round. The pinned module's
-// private helpers (_run_psql 179-235, _parsed_version 334-361, _psql_cmd
-// 386-432, psql_query's CSV parse) are ported as internal functions
-// without public registration.
+// pinned psql_query (postgres.py:433-524). R9.2d adds the eight read-only
+// extension and language catalog functions available_extensions,
+// installed_extensions, get_available_extension, get_installed_extension,
+// is_available_extension, is_installed_extension, language_list, and
+// language_exists (postgres.py:1654-1846, 2602-2695) on the same transport.
+// Like Salt, every invocation is a shell-free psql argv executed through
+// the central Runner; this package links no database driver or protocol
+// client and never contacts a live server by itself. The catalog queries
+// are fixed SQL fragments — no caller-controlled SQL or identifier is
+// interpolated, so the generic psql_query surface stays pending for a
+// later round. The pinned module's private helpers (_run_psql 179-235,
+// _parsed_version 334-361, _psql_cmd 386-432, psql_query's CSV parse)
+// are ported as internal functions without public registration.
 package postgres
 
 import (
@@ -82,6 +86,17 @@ const (
 	userListShadowJoin     = `LEFT JOIN pg_shadow ON pg_roles.oid = pg_shadow.usesysid`
 	// userFromClause is the pinned FROM segment closing the user_list query.
 	userFromClause = `FROM pg_roles `
+	// availableExtensionsQuery is the exact SQL of the pinned
+	// available_extensions() (postgres.py:1668).
+	availableExtensionsQuery = "select * from pg_available_extensions();"
+	// installedExtensionsQuery is the exact SQL of the pinned
+	// installed_extensions() (postgres.py:1699-1702), byte-for-byte
+	// including the pinned double space after "pg_extension a,".
+	installedExtensionsQuery = "select a.*, b.nspname as schema_name " +
+		"from pg_extension a,  pg_namespace b where a.extnamespace = b.oid;"
+	// languageListQuery is the exact SQL of the pinned language_list()
+	// (postgres.py:2636).
+	languageListQuery = `SELECT lanname AS "Name" FROM pg_language`
 	// expiryTimeLayout is the pinned strptime format for "expiry time".
 	expiryTimeLayout = "2006-01-02 15:04:05"
 )
@@ -1069,6 +1084,278 @@ func parseGroups(value string) ([]string, error) {
 }
 
 // ---------------------------------------------------------------------------
+// available_extensions / installed_extensions and views —
+// salt/modules/postgres.py:1654-1846 @ pinned revision.
+
+// availableExtensions ports the pinned available_extensions tail
+// (postgres.py:1679-1682): every row carrying both the "name" and
+// "default_version" columns is stored under its name with the whole row
+// preserved — no column is removed, unlike db_list's Name pop.
+func availableExtensions(ctx context.Context, rt *runtime.Runtime, conn *pgConnection) (map[string]map[string]string, error) {
+	return extensionCatalog(ctx, rt, conn, availableExtensionsQuery,
+		"name", "default_version", "postgres.available_extensions")
+}
+
+// installedExtensions ports the pinned installed_extensions tail
+// (postgres.py:1712-1716): every row carrying both the "extname" and
+// "extversion" columns is stored under its extension name.
+func installedExtensions(ctx context.Context, rt *runtime.Runtime, conn *pgConnection) (map[string]map[string]string, error) {
+	return extensionCatalog(ctx, rt, conn, installedExtensionsQuery,
+		"extname", "extversion", "postgres.installed_extensions")
+}
+
+// extensionCatalog is the shared pinned loop behind available_extensions
+// and installed_extensions: rows whose dict(zip(header,row)) shape lacks
+// either key column are skipped exactly like the pinned
+// `if "..." in row and "..." in row` guard; matching rows keep every
+// column under their name value.
+func extensionCatalog(ctx context.Context, rt *runtime.Runtime, conn *pgConnection, query, nameColumn, versionColumn, name string) (map[string]map[string]string, error) {
+	rows, err := psqlQueryRows(ctx, rt, conn, query)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]map[string]string, len(rows))
+	for _, row := range rows {
+		key, hasName := row[nameColumn]
+		if _, hasVersion := row[versionColumn]; !hasName || !hasVersion {
+			continue
+		}
+		out[key] = row
+	}
+	return out, nil
+}
+
+type availableExtensionsFunc struct{}
+
+func (availableExtensionsFunc) Name() string { return "postgres.available_extensions" }
+func (availableExtensionsFunc) Args() any    { return ListArgs{} }
+
+func (availableExtensionsFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[ListArgs](args, "postgres.available_extensions")
+	if err != nil {
+		return nil, err
+	}
+	return availableExtensions(ctx, rt, a.connection())
+}
+
+type installedExtensionsFunc struct{}
+
+func (installedExtensionsFunc) Name() string { return "postgres.installed_extensions" }
+func (installedExtensionsFunc) Args() any    { return ListArgs{} }
+
+func (installedExtensionsFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[ListArgs](args, "postgres.installed_extensions")
+	if err != nil {
+		return nil, err
+	}
+	return installedExtensions(ctx, rt, a.connection())
+}
+
+type getAvailableExtensionFunc struct{}
+
+func (getAvailableExtensionFunc) Name() string { return "postgres.get_available_extension" }
+func (getAvailableExtensionFunc) Args() any    { return ExistsArgs{} }
+
+func (getAvailableExtensionFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[ExistsArgs](args, "postgres.get_available_extension")
+	if err != nil {
+		return nil, err
+	}
+	// The pinned function is available_extensions(...).get(name, None): an
+	// exact-case key lookup whose miss is None, never an error.
+	extensions, err := availableExtensions(ctx, rt, a.connection())
+	if err != nil {
+		return nil, err
+	}
+	if row, ok := extensions[a.Name]; ok {
+		return row, nil
+	}
+	return nil, nil
+}
+
+type getInstalledExtensionFunc struct{}
+
+func (getInstalledExtensionFunc) Name() string { return "postgres.get_installed_extension" }
+func (getInstalledExtensionFunc) Args() any    { return ExistsArgs{} }
+
+func (getInstalledExtensionFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[ExistsArgs](args, "postgres.get_installed_extension")
+	if err != nil {
+		return nil, err
+	}
+	// The pinned .get(name, None) over the installed catalog.
+	installed, err := installedExtensions(ctx, rt, a.connection())
+	if err != nil {
+		return nil, err
+	}
+	if row, ok := installed[a.Name]; ok {
+		return row, nil
+	}
+	return nil, nil
+}
+
+type isAvailableExtensionFunc struct{}
+
+func (isAvailableExtensionFunc) Name() string { return "postgres.is_available_extension" }
+func (isAvailableExtensionFunc) Args() any    { return ExistsArgs{} }
+
+func (isAvailableExtensionFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[ExistsArgs](args, "postgres.is_available_extension")
+	if err != nil {
+		return nil, err
+	}
+	// The pinned membership test lowercases both sides —
+	// name.lower() in [a.lower() for a in exts] — so the lookup is
+	// case-insensitive over the catalog keys, client-side only.
+	extensions, err := availableExtensions(ctx, rt, a.connection())
+	if err != nil {
+		return nil, err
+	}
+	want := strings.ToLower(a.Name)
+	for key := range extensions {
+		if strings.ToLower(key) == want {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+type isInstalledExtensionFunc struct{}
+
+func (isInstalledExtensionFunc) Name() string { return "postgres.is_installed_extension" }
+func (isInstalledExtensionFunc) Args() any    { return ExistsArgs{} }
+
+func (isInstalledExtensionFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[ExistsArgs](args, "postgres.is_installed_extension")
+	if err != nil {
+		return nil, err
+	}
+	// The pinned bool(get_installed_extension(...)) is the exact-case
+	// lookup's truthiness: bool(None) is false and a stored row is never
+	// empty (the pinned filter guarantees both key columns), so len>0 is
+	// the bool(dict) port.
+	installed, err := installedExtensions(ctx, rt, a.connection())
+	if err != nil {
+		return nil, err
+	}
+	return len(installed[a.Name]) > 0, nil
+}
+
+// ---------------------------------------------------------------------------
+// language_list / language_exists — salt/modules/postgres.py:2602-2695 @
+// pinned revision.
+
+// LanguageListArgs are the canonical postgres.language_list arguments,
+// mirroring the pinned (maintenance_db, user, host, port, password, runas)
+// signature: maintenance_db is the required positional naming the database
+// to inspect.
+type LanguageListArgs struct {
+	MaintenanceDB string  `statekit:"name=maintenance_db,required"`
+	User          *string `statekit:"name=user"`
+	Host          *string `statekit:"name=host"`
+	Port          *string `statekit:"name=port"`
+	Password      *string `statekit:"name=password"`
+	Runas         *string `statekit:"name=runas"`
+}
+
+func (a *LanguageListArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	maintenanceDB := a.MaintenanceDB
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: &maintenanceDB,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+// LanguageExistsArgs are the canonical postgres.language_exists arguments:
+// the pinned name and maintenance_db positionals plus the shared connection
+// tuple.
+type LanguageExistsArgs struct {
+	Name          string  `statekit:"name=name,required"`
+	MaintenanceDB string  `statekit:"name=maintenance_db,required"`
+	User          *string `statekit:"name=user"`
+	Host          *string `statekit:"name=host"`
+	Port          *string `statekit:"name=port"`
+	Password      *string `statekit:"name=password"`
+	Runas         *string `statekit:"name=runas"`
+}
+
+func (a *LanguageExistsArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	maintenanceDB := a.MaintenanceDB
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: &maintenanceDB,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+// languageList ports the pinned language_list tail
+// (postgres.py:2648-2651): every row is stored under its "Name" column
+// mapped to itself — ret[row["Name"]] = row["Name"] — a plain name→name
+// dictionary, not a row shape. Salt's KeyError on a row without the column
+// maps to an error like the other catalog loops.
+func languageList(ctx context.Context, rt *runtime.Runtime, conn *pgConnection) (map[string]string, error) {
+	rows, err := psqlQueryRows(ctx, rt, conn, languageListQuery)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(rows))
+	for _, row := range rows {
+		name, ok := row["Name"]
+		if !ok {
+			return nil, errors.New(`postgres.language_list: missing column "Name"`)
+		}
+		out[name] = name
+	}
+	return out, nil
+}
+
+type languageListFunc struct{}
+
+func (languageListFunc) Name() string { return "postgres.language_list" }
+func (languageListFunc) Args() any    { return LanguageListArgs{} }
+
+func (languageListFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[LanguageListArgs](args, "postgres.language_list")
+	if err != nil {
+		return nil, err
+	}
+	return languageList(ctx, rt, a.connection())
+}
+
+type languageExistsFunc struct{}
+
+func (languageExistsFunc) Name() string { return "postgres.language_exists" }
+func (languageExistsFunc) Args() any    { return LanguageExistsArgs{} }
+
+func (languageExistsFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[LanguageExistsArgs](args, "postgres.language_exists")
+	if err != nil {
+		return nil, err
+	}
+	// The pinned `name in languages` is an exact-case membership over the
+	// name→name dictionary, client-side only.
+	languages, err := languageList(ctx, rt, a.connection())
+	if err != nil {
+		return nil, err
+	}
+	_, exists := languages[a.Name]
+	return exists, nil
+}
+
+// ---------------------------------------------------------------------------
 // shared helpers (rabbitmq-module conventions).
 
 func typedArgs[T any](args any, name string) (*T, error) {
@@ -1143,13 +1430,13 @@ func redactedError(err error, password *string) error {
 	return errors.New(message)
 }
 
-// Register installs the R9.2c postgres slice: the version probe plus the
-// five read-only catalog primitives. The remainder of the postgres family
-// needs the generic psql query surface (psql_query itself stays pending;
-// no arbitrary-query registration exists in this phase) and stays pending
-// for later R9 rounds; the internal parsed-version and psql-query helpers
-// are intentionally not registered, exactly like the pinned private
-// functions.
+// Register installs the R9.2d postgres slice: the version probe, the five
+// R9.2c read-only catalog primitives, and the eight R9.2d extension and
+// language catalog functions. The remainder of the postgres family needs
+// the generic psql query surface (psql_query itself stays pending; no
+// arbitrary-query registration exists in this phase) and stays pending for
+// later R9 rounds; the internal parsed-version and psql-query helpers are
+// intentionally not registered, exactly like the pinned private functions.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		versionFunc{},
@@ -1158,6 +1445,14 @@ func Register(reg *runtime.ExecRegistry) error {
 		tablespaceListFunc{},
 		tablespaceExistsFunc{},
 		userListFunc{},
+		availableExtensionsFunc{},
+		installedExtensionsFunc{},
+		getAvailableExtensionFunc{},
+		getInstalledExtensionFunc{},
+		isAvailableExtensionFunc{},
+		isInstalledExtensionFunc{},
+		languageListFunc{},
+		languageExistsFunc{},
 	} {
 		if err := reg.Register(fn); err != nil {
 			return err

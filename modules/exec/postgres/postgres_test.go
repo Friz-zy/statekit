@@ -336,8 +336,8 @@ func TestPostgresVersionInvalidInputs(t *testing.T) {
 	}
 }
 
-// TestPostgresRegistrySurface pins the six canonical registrations, their
-// argument prototypes, and the absence of public psql_query and
+// TestPostgresRegistrySurface pins the fourteen canonical registrations,
+// their argument prototypes, and the absence of public psql_query and
 // _parsed_version entries.
 func TestPostgresRegistrySurface(t *testing.T) {
 	reg := runtime.NewExecRegistry()
@@ -345,8 +345,16 @@ func TestPostgresRegistrySurface(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantNames := []string{
+		"postgres.available_extensions",
 		"postgres.db_exists",
 		"postgres.db_list",
+		"postgres.get_available_extension",
+		"postgres.get_installed_extension",
+		"postgres.installed_extensions",
+		"postgres.is_available_extension",
+		"postgres.is_installed_extension",
+		"postgres.language_exists",
+		"postgres.language_list",
 		"postgres.tablespace_exists",
 		"postgres.tablespace_list",
 		"postgres.user_list",
@@ -366,8 +374,14 @@ func TestPostgresRegistrySurface(t *testing.T) {
 			want = VersionArgs{}
 		case "postgres.user_list":
 			want = UserListArgs{}
-		case "postgres.db_exists", "postgres.tablespace_exists":
+		case "postgres.db_exists", "postgres.tablespace_exists",
+			"postgres.get_available_extension", "postgres.get_installed_extension",
+			"postgres.is_available_extension", "postgres.is_installed_extension":
 			want = ExistsArgs{}
+		case "postgres.language_list":
+			want = LanguageListArgs{}
+		case "postgres.language_exists":
+			want = LanguageExistsArgs{}
 		default:
 			want = ListArgs{}
 		}
@@ -393,6 +407,14 @@ func TestPostgresRegistrySurface(t *testing.T) {
 		{tablespaceListFunc{}, connection},
 		{tablespaceExistsFunc{}, append([]string{"name"}, connection...)},
 		{userListFunc{}, append(connection, "return_password")},
+		{availableExtensionsFunc{}, connection},
+		{installedExtensionsFunc{}, connection},
+		{getAvailableExtensionFunc{}, append([]string{"name"}, connection...)},
+		{getInstalledExtensionFunc{}, append([]string{"name"}, connection...)},
+		{isAvailableExtensionFunc{}, append([]string{"name"}, connection...)},
+		{isInstalledExtensionFunc{}, append([]string{"name"}, connection...)},
+		{languageListFunc{}, connection},
+		{languageExistsFunc{}, append([]string{"name"}, connection...)},
 	}
 	for _, tc := range cases {
 		names, err := config.ArgumentNames(tc.fn.Args())
@@ -1369,5 +1391,751 @@ func TestPostgresUserListCRLFGroups(t *testing.T) {
 	users := value.(map[string]map[string]any)
 	if !reflect.DeepEqual(users["test_user"]["groups"], []string{"a\r\nb", "c"}) {
 		t.Fatalf("groups = %#v, want [a<CR><LF>b c]", users["test_user"]["groups"])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// R9.2d extension and language catalog functions.
+
+// pinnedAvailableExtensionsCSV renders a pg_available_extensions catalog as
+// COPY-to-CSV output: the name, default_version, installed_version, and
+// comment columns with NULLs as empty fields and a comma-bearing comment
+// quoted exactly as psql emits it.
+const pinnedAvailableExtensionsCSV = `name,default_version,installed_version,comment
+cube,1.2,,"geometric data type for points, lines, and boxes"
+plpgsql,1.0,1.0,PL/pgSQL procedural language
+unpacked,<none>,,
+`
+
+// wantPinnedAvailableExtensions is the extension dictionary the pinned
+// available_extensions loop produces for that CSV: the whole row is stored
+// under its name, no column removed.
+var wantPinnedAvailableExtensions = map[string]map[string]string{
+	"cube": {
+		"name":              "cube",
+		"default_version":   "1.2",
+		"installed_version": "",
+		"comment":           "geometric data type for points, lines, and boxes",
+	},
+	"plpgsql": {
+		"name":              "plpgsql",
+		"default_version":   "1.0",
+		"installed_version": "1.0",
+		"comment":           "PL/pgSQL procedural language",
+	},
+	"unpacked": {
+		"name":              "unpacked",
+		"default_version":   "<none>",
+		"installed_version": "",
+		"comment":           "",
+	},
+}
+
+// TestPostgresAvailableExtensionsArgvAndParse ports the pinned
+// test_available_extensions row shape through the full transport: the CSV
+// parses to the name-keyed dictionary and the psql argv carries the pinned
+// select * from pg_available_extensions() SQL inside the COPY-to-CSV
+// wrapper.
+func TestPostgresAvailableExtensionsArgvAndParse(t *testing.T) {
+	rt, runner := newPostgresRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte(pinnedAvailableExtensionsCSV),
+	})
+	value, err := (availableExtensionsFunc{}).Execute(context.Background(), rt, fullListArgs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	extensions, ok := value.(map[string]map[string]string)
+	if !ok {
+		t.Fatalf("available_extensions type = %T", value)
+	}
+	if !reflect.DeepEqual(extensions, wantPinnedAvailableExtensions) {
+		t.Fatalf("available_extensions = %#v", extensions)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d, want 1", len(runner.calls))
+	}
+	command := runner.calls[0]
+	want := append([]string(nil), wantVersionArgv[:13]...)
+	want = append(want, "-v", "datestyle=ISO,MDY", "-c",
+		"COPY ("+availableExtensionsQuery[:len(availableExtensionsQuery)-1]+") TO STDOUT WITH CSV HEADER")
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q", got)
+	}
+	if !reflect.DeepEqual(command.Env, []string{
+		"PGPASSWORD=test_pass",
+		"PGUSER=test_user",
+		"PGHOST=test_host",
+		"PGPORT=test_port",
+	}) {
+		t.Fatalf("env = %q", command.Env)
+	}
+	if command.Shell || !reflect.DeepEqual(command.Redact, []string{"test_pass"}) {
+		t.Fatalf("unsafe command: %#v", command)
+	}
+	if command.Timeout != commandTimeout ||
+		command.MaxStdoutBytes != outputLimit || command.MaxStderrBytes != outputLimit {
+		t.Fatalf("unsafe command bounds: %#v", command)
+	}
+	if len(command.Stdin) != 0 || command.Dir != "" || command.WindowsCmdLine != "" {
+		t.Fatalf("unexpected command payload: %#v", command)
+	}
+	if rendered := command.RedactedString(); strings.Contains(rendered, "test_pass") {
+		t.Fatalf("rendered command leaks password: %q", rendered)
+	}
+}
+
+// TestPostgresAvailableExtensionsPinnedRow pins the exact pinned
+// test_available_extensions mock shape: a two-column catalog row becomes
+// {"foo": {"name": "foo", "default_version": "1"}}.
+func TestPostgresAvailableExtensionsPinnedRow(t *testing.T) {
+	rt, _ := newPostgresRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte("name,default_version\nfoo,1\n"),
+	})
+	value, err := (availableExtensionsFunc{}).Execute(context.Background(), rt, &ListArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]map[string]string{"foo": {"name": "foo", "default_version": "1"}}
+	if !reflect.DeepEqual(value, want) {
+		t.Fatalf("available_extensions = %#v, want %#v", value, want)
+	}
+}
+
+// pinnedInstalledExtensionsCSV renders a pg_extension catalog joined with
+// pg_namespace as COPY-to-CSV output: a.* columns plus the schema_name
+// projection of the pinned installed_extensions query.
+const pinnedInstalledExtensionsCSV = `oid,extname,extowner,extnamespace,extrelocatable,extversion,extconfig,extcondition,schema_name
+16386,plpgsql,10,11,f,1.0,,,pg_catalog
+16402,cube,10,2200,t,1.2,,,public
+`
+
+// wantPinnedInstalledExtensions is the extension dictionary the pinned
+// installed_extensions loop produces for that CSV.
+var wantPinnedInstalledExtensions = map[string]map[string]string{
+	"plpgsql": {
+		"oid":            "16386",
+		"extname":        "plpgsql",
+		"extowner":       "10",
+		"extnamespace":   "11",
+		"extrelocatable": "f",
+		"extversion":     "1.0",
+		"extconfig":      "",
+		"extcondition":   "",
+		"schema_name":    "pg_catalog",
+	},
+	"cube": {
+		"oid":            "16402",
+		"extname":        "cube",
+		"extowner":       "10",
+		"extnamespace":   "2200",
+		"extrelocatable": "t",
+		"extversion":     "1.2",
+		"extconfig":      "",
+		"extcondition":   "",
+		"schema_name":    "public",
+	},
+}
+
+// TestPostgresInstalledExtensionsArgvAndParse ports the pinned
+// test_installed_extensions row shape and pins the exact pinned SQL —
+// including its double space after "pg_extension a," — inside the COPY
+// transport.
+func TestPostgresInstalledExtensionsArgvAndParse(t *testing.T) {
+	rt, runner := newPostgresRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte(pinnedInstalledExtensionsCSV),
+	})
+	value, err := (installedExtensionsFunc{}).Execute(context.Background(), rt, fullListArgs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	installed, ok := value.(map[string]map[string]string)
+	if !ok {
+		t.Fatalf("installed_extensions type = %T", value)
+	}
+	if !reflect.DeepEqual(installed, wantPinnedInstalledExtensions) {
+		t.Fatalf("installed_extensions = %#v", installed)
+	}
+	command := runner.calls[0]
+	want := append([]string(nil), wantVersionArgv[:13]...)
+	want = append(want, "-v", "datestyle=ISO,MDY", "-c",
+		"COPY ("+installedExtensionsQuery[:len(installedExtensionsQuery)-1]+") TO STDOUT WITH CSV HEADER")
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q", got)
+	}
+	if !strings.Contains(installedExtensionsQuery, "pg_extension a,  pg_namespace") {
+		t.Fatalf("installed SQL lost the pinned double space: %q", installedExtensionsQuery)
+	}
+}
+
+// TestPostgresInstalledExtensionsPinnedRow pins the exact pinned
+// test_installed_extensions mock shape.
+func TestPostgresInstalledExtensionsPinnedRow(t *testing.T) {
+	rt, _ := newPostgresRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte("extname,extversion\nfoo,1\n"),
+	})
+	value, err := (installedExtensionsFunc{}).Execute(context.Background(), rt, &ListArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]map[string]string{"foo": {"extname": "foo", "extversion": "1"}}
+	if !reflect.DeepEqual(value, want) {
+		t.Fatalf("installed_extensions = %#v, want %#v", value, want)
+	}
+}
+
+// TestPostgresExtensionShortRowFilter pins the pinned column guard: rows
+// whose zipped prefix lacks the name or version column are skipped instead
+// of keyed or errored.
+func TestPostgresExtensionShortRowFilter(t *testing.T) {
+	// "foo" zips to {"name": "foo"} (no default_version) and "1.0" to
+	// {"name": "1.0"}; only the full row survives.
+	rt, _ := newPostgresRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte("name,default_version,installed_version,comment\nfoo\n1.0\nplpgsql,1.0,1.0,x\n"),
+	})
+	value, err := (availableExtensionsFunc{}).Execute(context.Background(), rt, &ListArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]map[string]string{
+		"plpgsql": {"name": "plpgsql", "default_version": "1.0", "installed_version": "1.0", "comment": "x"},
+	}
+	if !reflect.DeepEqual(value, want) {
+		t.Fatalf("available_extensions = %#v, want %#v", value, want)
+	}
+
+	// The installed loop's guard behaves identically: a two-field row zips
+	// to oid/extname and carries no extversion.
+	rt, _ = newPostgresRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte("oid,extname,extowner,extnamespace,extrelocatable,extversion,extconfig,extcondition,schema_name\nfoo\nplpgsql,10\n"),
+	})
+	value, err = (installedExtensionsFunc{}).Execute(context.Background(), rt, &ListArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(value, map[string]map[string]string{}) {
+		t.Fatalf("installed_extensions = %#v, want empty catalog", value)
+	}
+}
+
+// fullExtensionArgs is the ExistsArgs shape with every connection argument
+// supplied, mirroring fullListArgs for the name-bearing functions.
+func fullExtensionArgs(name string) *ExistsArgs {
+	return &ExistsArgs{
+		Name:          name,
+		User:          postgresString("test_user"),
+		Host:          postgresString("test_host"),
+		Port:          postgresString("test_port"),
+		MaintenanceDB: postgresString("test_maint"),
+		Password:      postgresString("test_pass"),
+	}
+}
+
+// TestPostgresGetExtensions ports the pinned get_available_extension /
+// get_installed_extension contract: an exact-case hit returns the stored
+// row and a miss returns None, with a single catalog query each.
+func TestPostgresGetExtensions(t *testing.T) {
+	rt, runner := newPostgresRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte(pinnedAvailableExtensionsCSV),
+	})
+	value, err := (getAvailableExtensionFunc{}).Execute(context.Background(), rt, fullExtensionArgs("cube"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(value, wantPinnedAvailableExtensions["cube"]) {
+		t.Fatalf("get_available_extension(cube) = %#v", value)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d, want 1", len(runner.calls))
+	}
+	if joined := strings.Join(runner.calls[0].Args, "\x00"); strings.Contains(joined, "cube") {
+		t.Fatalf("get_available_extension leaked the lookup name into argv: %q", joined)
+	}
+
+	// Misses and case mismatches are None, exactly like dict.get.
+	rt, _ = newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(pinnedAvailableExtensionsCSV)})
+	value, err = (getAvailableExtensionFunc{}).Execute(context.Background(), rt, fullExtensionArgs("missing"))
+	if err != nil || value != nil {
+		t.Fatalf("get_available_extension(missing) = %#v err = %v, want nil, nil", value, err)
+	}
+	rt, _ = newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(pinnedAvailableExtensionsCSV)})
+	value, err = (getAvailableExtensionFunc{}).Execute(context.Background(), rt, fullExtensionArgs("CUBE"))
+	if err != nil || value != nil {
+		t.Fatalf("get_available_extension(CUBE) = %#v err = %v, want nil (exact-case), nil", value, err)
+	}
+
+	rt, _ = newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(pinnedInstalledExtensionsCSV)})
+	value, err = (getInstalledExtensionFunc{}).Execute(context.Background(), rt, fullExtensionArgs("plpgsql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(value, wantPinnedInstalledExtensions["plpgsql"]) {
+		t.Fatalf("get_installed_extension(plpgsql) = %#v", value)
+	}
+	rt, _ = newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(pinnedInstalledExtensionsCSV)})
+	value, err = (getInstalledExtensionFunc{}).Execute(context.Background(), rt, fullExtensionArgs("PLPGSQL"))
+	if err != nil || value != nil {
+		t.Fatalf("get_installed_extension(PLPGSQL) = %#v err = %v, want nil (exact-case), nil", value, err)
+	}
+}
+
+// TestPostgresIsExtensions pins the two membership predicates:
+// is_available_extension lowercases both sides (the pinned
+// name.lower() in [...] test) while is_installed_extension keeps
+// bool(get_installed_extension(...)) exact-case truthiness.
+func TestPostgresIsExtensions(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		want bool
+	}{
+		{"cube", true},
+		{"PLPGSQL", true},
+		{"UnPacked", true},
+		{"missing", false},
+	} {
+		rt, runner := newPostgresRuntime(process.CommandResult{
+			ExitCode: 0,
+			Stdout:   []byte(pinnedAvailableExtensionsCSV),
+		})
+		value, err := (isAvailableExtensionFunc{}).Execute(context.Background(), rt, fullExtensionArgs(tc.name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if value != tc.want {
+			t.Fatalf("is_available_extension(%q) = %#v, want %v", tc.name, value, tc.want)
+		}
+		// The lookup never reaches SQL: the query argument stays the exact
+		// fixed catalog query.
+		args := runner.calls[0].Args
+		if got := args[len(args)-1]; got != "COPY (select * from pg_available_extensions()) TO STDOUT WITH CSV HEADER" {
+			t.Fatalf("is_available_extension(%q) SQL arg = %q, want the fixed catalog query", tc.name, got)
+		}
+	}
+
+	for _, tc := range []struct {
+		name string
+		want bool
+	}{
+		{"plpgsql", true},
+		{"cube", true},
+		{"PLPGSQL", false},
+		{"missing", false},
+	} {
+		rt, _ := newPostgresRuntime(process.CommandResult{
+			ExitCode: 0,
+			Stdout:   []byte(pinnedInstalledExtensionsCSV),
+		})
+		value, err := (isInstalledExtensionFunc{}).Execute(context.Background(), rt, fullExtensionArgs(tc.name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if value != tc.want {
+			t.Fatalf("is_installed_extension(%q) = %#v, want %v", tc.name, value, tc.want)
+		}
+	}
+}
+
+// pinnedLanguageListCSV is the get_test_list_language_csv fixture from the
+// pinned test_postgres.py, verbatim.
+const pinnedLanguageListCSV = "Name\ninternal\nc\nsql\nplpgsql\n"
+
+// wantPinnedLanguageList is the pinned test_language_list expected
+// dictionary: each Name maps to itself.
+var wantPinnedLanguageList = map[string]string{
+	"c":        "c",
+	"internal": "internal",
+	"plpgsql":  "plpgsql",
+	"sql":      "sql",
+}
+
+// fullLanguageArgs supplies every language_list connection argument with
+// the pinned test's testdb maintenance database.
+func fullLanguageArgs() *LanguageListArgs {
+	return &LanguageListArgs{
+		MaintenanceDB: "testdb",
+		User:          postgresString("testuser"),
+		Host:          postgresString("testhost"),
+		Port:          postgresString("testport"),
+		Password:      postgresString("foo"),
+	}
+}
+
+// TestPostgresLanguageListArgvAndParse ports the pinned test_language_list:
+// the pinned fixture CSV parses to the name→name dictionary, and the psql
+// argv carries the pinned SELECT lanname AS "Name" FROM pg_language SQL
+// inside the COPY-to-CSV transport with the pinned connection arguments.
+func TestPostgresLanguageListArgvAndParse(t *testing.T) {
+	rt, runner := newPostgresRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte(pinnedLanguageListCSV),
+	})
+	value, err := (languageListFunc{}).Execute(context.Background(), rt, fullLanguageArgs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(value, wantPinnedLanguageList) {
+		t.Fatalf("language_list = %#v, want %#v", value, wantPinnedLanguageList)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d, want 1", len(runner.calls))
+	}
+	command := runner.calls[0]
+	want := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--username", "testuser",
+		"--host", "testhost",
+		"--port", "testport",
+		"--dbname", "testdb",
+		"-v", "datestyle=ISO,MDY", "-c",
+		`COPY (SELECT lanname AS "Name" FROM pg_language) TO STDOUT WITH CSV HEADER`,
+	}
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+	if !reflect.DeepEqual(command.Env, []string{
+		"PGPASSWORD=foo",
+		"PGUSER=testuser",
+		"PGHOST=testhost",
+		"PGPORT=testport",
+	}) {
+		t.Fatalf("env = %q", command.Env)
+	}
+	if command.Shell || !reflect.DeepEqual(command.Redact, []string{"foo"}) {
+		t.Fatalf("unsafe command: %#v", command)
+	}
+	if command.Timeout != commandTimeout ||
+		command.MaxStdoutBytes != outputLimit || command.MaxStderrBytes != outputLimit {
+		t.Fatalf("unsafe command bounds: %#v", command)
+	}
+	if len(command.Stdin) != 0 || command.Dir != "" || command.WindowsCmdLine != "" {
+		t.Fatalf("unexpected command payload: %#v", command)
+	}
+	if rendered := command.RedactedString(); strings.Contains(rendered, "foo") {
+		t.Fatalf("rendered command leaks password: %q", rendered)
+	}
+}
+
+// TestPostgresLanguageListDefaults pins the no-connection argv: an empty
+// maintenance_db keeps Salt's _psql_cmd "postgres" fallback — the pinned
+// language_list(None) shape — with a clean environment.
+func TestPostgresLanguageListDefaults(t *testing.T) {
+	rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(pinnedLanguageListCSV)})
+	value, err := (languageListFunc{}).Execute(context.Background(), rt, &LanguageListArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(value, wantPinnedLanguageList) {
+		t.Fatalf("language_list = %#v", value)
+	}
+	command := runner.calls[0]
+	want := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--dbname", "postgres",
+		"-v", "datestyle=ISO,MDY", "-c",
+		`COPY (SELECT lanname AS "Name" FROM pg_language) TO STDOUT WITH CSV HEADER`,
+	}
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+	if command.Env == nil || len(command.Env) != 0 {
+		t.Fatalf("default env = %q, want clean empty environment", command.Env)
+	}
+	if command.Redact != nil {
+		t.Fatalf("default redact = %q, want none", command.Redact)
+	}
+}
+
+// TestPostgresLanguageExists ports the pinned language_exists contract:
+// `name in languages` is an exact-case membership against the name→name
+// dictionary.
+func TestPostgresLanguageExists(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		want bool
+	}{
+		{"sql", true},
+		{"plpgsql", true},
+		{"c", true},
+		{"SQL", false},
+		{"missing", false},
+	} {
+		rt, runner := newPostgresRuntime(process.CommandResult{
+			ExitCode: 0,
+			Stdout:   []byte(pinnedLanguageListCSV),
+		})
+		value, err := (languageExistsFunc{}).Execute(context.Background(), rt, &LanguageExistsArgs{
+			Name:          tc.name,
+			MaintenanceDB: "testdb",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if value != tc.want {
+			t.Fatalf("language_exists(%q) = %#v, want %v", tc.name, value, tc.want)
+		}
+		// The lookup never reaches SQL: the query argument stays the exact
+		// fixed catalog query.
+		args := runner.calls[0].Args
+		if got := args[len(args)-1]; got != `COPY (SELECT lanname AS "Name" FROM pg_language) TO STDOUT WITH CSV HEADER` {
+			t.Fatalf("language_exists(%q) SQL arg = %q, want the fixed catalog query", tc.name, got)
+		}
+	}
+}
+
+// TestPostgresLanguageListMissingColumn pins the KeyError mapping when a
+// row lacks the Name column.
+func TestPostgresLanguageListMissingColumn(t *testing.T) {
+	rt, _ := newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Owner\npostgres\n")})
+	_, err := (languageListFunc{}).Execute(context.Background(), rt, &LanguageListArgs{MaintenanceDB: "testdb"})
+	if err == nil || !strings.Contains(err.Error(), `"Name"`) {
+		t.Fatalf("short row err = %v, want missing Name column", err)
+	}
+}
+
+// TestPostgresExtensionLanguageCompatibilityData pins Salt's nonzero-exit
+// shape across all eight new functions: a failed query is not an
+// exception; the list catalogs empty, the get_* views return None, and the
+// predicates answer false.
+func TestPostgresExtensionLanguageCompatibilityData(t *testing.T) {
+	failed := process.CommandResult{
+		ExitCode: 2,
+		Stderr:   []byte("psql: error: connection refused"),
+	}
+	cases := []struct {
+		name string
+		run  func(rt *runtime.Runtime) (any, error)
+		want any
+	}{
+		{"available_extensions", func(rt *runtime.Runtime) (any, error) {
+			return (availableExtensionsFunc{}).Execute(context.Background(), rt, &ListArgs{})
+		}, map[string]map[string]string{}},
+		{"installed_extensions", func(rt *runtime.Runtime) (any, error) {
+			return (installedExtensionsFunc{}).Execute(context.Background(), rt, &ListArgs{})
+		}, map[string]map[string]string{}},
+		{"get_available_extension", func(rt *runtime.Runtime) (any, error) {
+			return (getAvailableExtensionFunc{}).Execute(context.Background(), rt, &ExistsArgs{Name: "cube"})
+		}, nil},
+		{"get_installed_extension", func(rt *runtime.Runtime) (any, error) {
+			return (getInstalledExtensionFunc{}).Execute(context.Background(), rt, &ExistsArgs{Name: "cube"})
+		}, nil},
+		{"is_available_extension", func(rt *runtime.Runtime) (any, error) {
+			return (isAvailableExtensionFunc{}).Execute(context.Background(), rt, &ExistsArgs{Name: "cube"})
+		}, false},
+		{"is_installed_extension", func(rt *runtime.Runtime) (any, error) {
+			return (isInstalledExtensionFunc{}).Execute(context.Background(), rt, &ExistsArgs{Name: "cube"})
+		}, false},
+		{"language_list", func(rt *runtime.Runtime) (any, error) {
+			return (languageListFunc{}).Execute(context.Background(), rt, &LanguageListArgs{MaintenanceDB: "testdb"})
+		}, map[string]string{}},
+		{"language_exists", func(rt *runtime.Runtime) (any, error) {
+			return (languageExistsFunc{}).Execute(context.Background(), rt, &LanguageExistsArgs{Name: "sql", MaintenanceDB: "testdb"})
+		}, false},
+	}
+	for _, tc := range cases {
+		rt, _ := newPostgresRuntime(failed)
+		value, err := tc.run(rt)
+		if err != nil {
+			t.Fatalf("%s nonzero exit must not error: %v", tc.name, err)
+		}
+		if !reflect.DeepEqual(value, tc.want) {
+			t.Fatalf("%s nonzero exit = %#v, want %#v", tc.name, value, tc.want)
+		}
+	}
+}
+
+// TestPostgresExtensionLanguageGuards pins the shared failure modes across
+// the eight new functions: pre-canceled context, runas rejection, redacted
+// Runner errors, output-limit violations, psql-unavailable fail-closed,
+// and the argument guards, each with zero Runner executions where the
+// guard precedes the call.
+func TestPostgresExtensionLanguageGuards(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	rt, runner := newPostgresRuntime()
+	if _, err := (availableExtensionsFunc{}).Execute(ctx, rt, fullListArgs()); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled available_extensions err = %v", err)
+	}
+	if _, err := (languageListFunc{}).Execute(ctx, rt, fullLanguageArgs()); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled language_list err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("canceled runs executed %d commands", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime()
+	langArgs := fullLanguageArgs()
+	langArgs.Runas = postgresString("postgres")
+	if _, err := (languageListFunc{}).Execute(context.Background(), rt, langArgs); !errors.Is(err, errPostgresRunas) {
+		t.Fatalf("runas language_list err = %v", err)
+	}
+	extArgs := fullExtensionArgs("cube")
+	extArgs.Runas = postgresString("postgres")
+	if _, err := (isInstalledExtensionFunc{}).Execute(context.Background(), rt, extArgs); !errors.Is(err, errPostgresRunas) {
+		t.Fatalf("runas is_installed_extension err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("runas runs executed %d commands", len(runner.calls))
+	}
+
+	rt, _ = newPostgresRuntime(process.CommandResult{
+		ExitCode: -1,
+		Err:      fmt.Errorf("exec psql --dbname test_maint: secret test_pass rejected"),
+	})
+	_, err := (installedExtensionsFunc{}).Execute(context.Background(), rt, fullListArgs())
+	if err == nil || strings.Contains(err.Error(), "test_pass") {
+		t.Fatalf("installed_extensions runner error = %v, want redacted", err)
+	}
+	if !strings.Contains(err.Error(), process.RedactedPlaceholder) {
+		t.Fatalf("installed_extensions error lacks redaction placeholder: %v", err)
+	}
+
+	for _, truncated := range []process.CommandResult{
+		{ExitCode: 0, StdoutTruncated: true, Stdout: []byte(strings.Repeat("9", outputLimit+1))},
+		{ExitCode: 0, StderrTruncated: true, Stderr: []byte(strings.Repeat("e", outputLimit+1))},
+	} {
+		rt, _ := newPostgresRuntime(truncated)
+		if _, err := (languageListFunc{}).Execute(context.Background(), rt, fullLanguageArgs()); !errors.Is(err, process.ErrOutputLimit) {
+			t.Fatalf("truncated language_list err = %v, want ErrOutputLimit", err)
+		}
+		rt, _ = newPostgresRuntime(truncated)
+		if _, err := (getAvailableExtensionFunc{}).Execute(context.Background(), rt, fullExtensionArgs("cube")); !errors.Is(err, process.ErrOutputLimit) {
+			t.Fatalf("truncated get_available_extension err = %v, want ErrOutputLimit", err)
+		}
+	}
+
+	rt, runner = newPostgresRuntime()
+	runner.available = map[string]bool{"psql": false}
+	for _, exec := range []struct {
+		name string
+		run  func() error
+	}{
+		{"available_extensions", func() error {
+			_, err := (availableExtensionsFunc{}).Execute(context.Background(), rt, fullListArgs())
+			return err
+		}},
+		{"installed_extensions", func() error {
+			_, err := (installedExtensionsFunc{}).Execute(context.Background(), rt, fullListArgs())
+			return err
+		}},
+		{"get_available_extension", func() error {
+			_, err := (getAvailableExtensionFunc{}).Execute(context.Background(), rt, fullExtensionArgs("cube"))
+			return err
+		}},
+		{"get_installed_extension", func() error {
+			_, err := (getInstalledExtensionFunc{}).Execute(context.Background(), rt, fullExtensionArgs("cube"))
+			return err
+		}},
+		{"is_available_extension", func() error {
+			_, err := (isAvailableExtensionFunc{}).Execute(context.Background(), rt, fullExtensionArgs("cube"))
+			return err
+		}},
+		{"is_installed_extension", func() error {
+			_, err := (isInstalledExtensionFunc{}).Execute(context.Background(), rt, fullExtensionArgs("cube"))
+			return err
+		}},
+		{"language_list", func() error {
+			_, err := (languageListFunc{}).Execute(context.Background(), rt, fullLanguageArgs())
+			return err
+		}},
+		{"language_exists", func() error {
+			_, err := (languageExistsFunc{}).Execute(context.Background(), rt, &LanguageExistsArgs{Name: "sql", MaintenanceDB: "testdb"})
+			return err
+		}},
+	} {
+		if err := exec.run(); !errors.Is(err, errPostgresPsqlUnavailable) {
+			t.Fatalf("%s psql-unavailable err = %v", exec.name, err)
+		}
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("unavailable psql executed %d commands", len(runner.calls))
+	}
+
+	// Wrong argument types are rejected like the pinned TypeError, and a
+	// nil Runner fails closed.
+	if _, err := (availableExtensionsFunc{}).Execute(context.Background(), nil, "bogus"); err == nil {
+		t.Fatal("available_extensions must reject non-struct args")
+	}
+	rtEmpty := &runtime.Runtime{Runner: nil, FS: runtime.NewMemoryFS()}
+	if _, err := (languageExistsFunc{}).Execute(context.Background(), rtEmpty, &LanguageExistsArgs{Name: "sql", MaintenanceDB: "testdb"}); !errors.Is(err, errPostgresRunnerUnavailable) {
+		t.Fatalf("nil runner language_exists err = %v", err)
+	}
+}
+
+// TestPostgresExtensionLanguageRegistryKeys drives the new functions
+// through the registry surface with CRLF-bearing catalog keys: the pinned
+// CSV reader keeps the embedded CRLF byte-exact, the get_* views return
+// the row dictionary, and no lookup name ever reaches argv.
+func TestPostgresExtensionLanguageRegistryKeys(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+
+	availableCSV := "name,default_version,installed_version,comment\r\n" +
+		"cube,1.2,,cube data\r\n" +
+		"\"p\r\nlpgsql\",1.0,1.0,procedural\r\n"
+	list, ok := reg.Get("postgres.available_extensions")
+	if !ok {
+		t.Fatal("postgres.available_extensions not registered")
+	}
+	rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(availableCSV)})
+	value, err := list.Execute(context.Background(), rt, &ListArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	extensions := value.(map[string]map[string]string)
+	if _, has := extensions["p\r\nlpgsql"]; !has || extensions["p\r\nlpgsql"]["comment"] != "procedural" {
+		t.Fatalf("available_extensions keys = %#v, want byte-exact embedded-CRLF key", extensions)
+	}
+	if joined := strings.Join(runner.calls[0].Args, "\x00"); !strings.Contains(joined, availableExtensionsQuery[:len(availableExtensionsQuery)-1]) {
+		t.Fatalf("available_extensions argv lacks the fixed SQL")
+	}
+
+	get, ok := reg.Get("postgres.get_available_extension")
+	if !ok {
+		t.Fatal("postgres.get_available_extension not registered")
+	}
+	rt, _ = newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(availableCSV)})
+	value, err = get.Execute(context.Background(), rt, &ExistsArgs{Name: "p\r\nlpgsql"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, ok := value.(map[string]string)
+	if !ok || row["default_version"] != "1.0" {
+		t.Fatalf("get_available_extension(CRLF name) = %#v", value)
+	}
+	if joined := strings.Join(runner.calls[len(runner.calls)-1].Args, "\x00"); strings.Contains(joined, "p\r\nlpgsql") {
+		t.Fatalf("get_available_extension leaked the lookup name into argv")
+	}
+
+	languageCSV := "Name\r\ninternal\r\n\"p\r\nlpgsql\"\r\nsql\n"
+	langList, ok := reg.Get("postgres.language_list")
+	if !ok {
+		t.Fatal("postgres.language_list not registered")
+	}
+	rt, _ = newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(languageCSV)})
+	value, err = langList.Execute(context.Background(), rt, &LanguageListArgs{MaintenanceDB: "testdb"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	languages := value.(map[string]string)
+	if _, has := languages["p\r\nlpgsql"]; !has || languages["p\r\nlpgsql"] != "p\r\nlpgsql" {
+		t.Fatalf("language_list = %#v, want embedded-CRLF name→name entry", languages)
+	}
+
+	langExists, ok := reg.Get("postgres.language_exists")
+	if !ok {
+		t.Fatal("postgres.language_exists not registered")
+	}
+	rt, _ = newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(languageCSV)})
+	value, err = langExists.Execute(context.Background(), rt, &LanguageExistsArgs{Name: "p\r\nlpgsql", MaintenanceDB: "testdb"})
+	if err != nil || value != true {
+		t.Fatalf("language_exists(CRLF name) = %#v err = %v, want true", value, err)
 	}
 }

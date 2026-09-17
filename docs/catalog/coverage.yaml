@@ -6,9 +6,9 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    source_inventory_count: 1131
-    catalog_intersection_count: 1109
-    implemented: 1109
+    source_inventory_count: 1139
+    catalog_intersection_count: 1117
+    implemented: 1117
 state:
     salt_modules: 132
     salt_functions: 669
@@ -634,8 +634,16 @@ implemented:
         - pkgutil.install
         - pkgutil.is_installed
         - pkgutil.list
+        - postgres.available_extensions
         - postgres.db_exists
         - postgres.db_list
+        - postgres.get_available_extension
+        - postgres.get_installed_extension
+        - postgres.installed_extensions
+        - postgres.is_available_extension
+        - postgres.is_installed_extension
+        - postgres.language_exists
+        - postgres.language_list
         - postgres.tablespace_exists
         - postgres.tablespace_list
         - postgres.user_list

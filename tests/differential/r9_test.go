@@ -25,9 +25,15 @@ import (
 // equivalent parsed-version helper. R9.2c extends that slice with the five
 // read-only catalog primitives db_list, db_exists, tablespace_list,
 // tablespace_exists, and user_list, pinned against the pinned pytest CSV
-// and row fixtures through the same fake-Runner transport; the generic
-// psql_query surface stays pending. The remaining mysql and postgres
-// surfaces need their client protocol boundaries and stay pending.
+// and row fixtures through the same fake-Runner transport. R9.2d adds the
+// eight read-only extension and language catalog functions
+// available_extensions, installed_extensions, get_available_extension,
+// get_installed_extension, is_available_extension, is_installed_extension,
+// language_list, and language_exists (postgres.py:1654-1846, 2602-2695),
+// with every extension and language lookup matched client-side so no
+// caller string reaches SQL. The generic psql_query surface and the
+// remaining mysql and postgres surfaces need their client protocol
+// boundaries and stay pending.
 type r9FamilySpec struct {
 	Source             string
 	SourceTests        string
@@ -107,18 +113,24 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 		Scenarios: []string{
 			"postgres.server-version-probe",
 			"postgres.read-only-catalog-lists",
+			"postgres.extension-and-language-catalogs",
 		},
 		Evidence: []string{
 			"direct, registry, and CLI fake-Runner tests pin the exact psql argv (SQL at index 14 as the pinned test_version asserts), the clean PG environment, first-line split semantics, and the None fallthrough for empty stdout",
 			"db_list, db_exists, tablespace_list, and tablespace_exists run the pinned get_test_list_db_csv and tablespace fixtures verbatim through the COPY-to-CSV transport and match the pinned expected dictionaries",
 			"user_list pins the pinned test_user_list row shape (t/f/None booleans, strptime expiry, CSV-decoded groups array, connections None) and the version-dependent 9.1/9.5 column selection including the return_password joins",
 			"the two CSV decoders are pinned by vectors generated from the pinned Python csv.reader itself (python:3.12): PostgreSQL array text with backslash-escaped elements decodes like list(csv.reader([row[\"groups\"].strip(\"{}\")]))[0] (for example {\"a\\\"b\",\"x\\\\y\"} yields [a\\b\", x\\y]), and COPY CSV rows keep embedded CRLF byte-exact inside quoted fields where Go's encoding/csv would normalize it to LF",
+			"available_extensions and installed_extensions reproduce the pinned test_available_extensions/test_installed_extensions dictionaries verbatim (the whole row stored under its name/extname key) plus realistic pg_available_extensions and pg_extension COPY CSV fixtures with the pinned short-row column filtering",
+			"get_available_extension and get_installed_extension keep the pinned .get(name, None) exact-case row-or-None shape, is_available_extension keeps the pinned case-insensitive name.lower() key membership, is_installed_extension keeps the pinned bool(get_installed_extension(...)) exact-case truthiness, and language_exists keeps the pinned exact-case `name in languages` membership",
+			"language_list runs the pinned get_test_list_language_csv fixture verbatim to the pinned name→name dictionary with the pinned SELECT lanname AS \"Name\" FROM pg_language SQL, and maintenance_db stays the pinned required positional",
 			"password redaction is asserted on the rendered command, captured output, and returned errors; no real psql, database, or package-manager path exists",
 			"cancellation, output limits, runas rejection, nonzero-exit compatibility data, and psql-unavailable fail-closed behavior are covered without any live server",
 			"the internal parsed-version helper is pinned by LooseVersion comparison vectors because no existing package consumes it yet",
 		},
 		CompatibilityNotes: []string{
-			"R9.2c registers the version probe plus the five read-only catalog primitives db_list, db_exists, tablespace_list, tablespace_exists, and user_list; the generic psql_query surface and every write path stay pending (no arbitrary-query or identifier-interpolating registration exists in this phase)",
+			"R9.2c registers the version probe plus the five read-only catalog primitives db_list, db_exists, tablespace_list, tablespace_exists, and user_list; R9.2d adds the eight read-only extension and language catalog functions available_extensions, installed_extensions, get_available_extension, get_installed_extension, is_available_extension, is_installed_extension, language_list, and language_exists; the generic psql_query surface and every write path stay pending (no arbitrary-query or identifier-interpolating registration exists in this phase)",
+			"extension and language lookups are client-side only: get_*/is_*/language_exists match names against the fetched catalog so no caller string reaches SQL, and the installed_extensions query keeps the pinned double space after \"pg_extension a,\" byte-for-byte",
+			"available_extensions/installed_extensions store the full row under its name/extname key (no column removed, unlike db_list's Name pop), rows whose zipped prefix lacks either pinned key column are skipped, and language_list maps each Name column to itself exactly like the pinned ret[row[\"Name\"]] = row[\"Name\"]",
 			"the pinned _run_psql PGPASSFILE temp-file credential transport is replaced by psql-native PGPASSWORD (with PGUSER/PGHOST/PGPORT) in an otherwise clean environment because the single-user runtime has no file-chown/elevation contract; the password is a Redact secret and never rendered",
 			"a non-zero psql exit stays compatibility data (Salt logs and returns the empty row list), while Runner failures, cancellation, and output-limit violations are errors",
 			"Salt's postgres.timeout default of 0 (unbounded) is replaced by a finite 30s ceiling as the R9 resource-control convention",
@@ -137,6 +149,14 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"postgres.tablespace_list",
 			"postgres.tablespace_exists",
 			"postgres.user_list",
+			"postgres.available_extensions",
+			"postgres.installed_extensions",
+			"postgres.get_available_extension",
+			"postgres.get_installed_extension",
+			"postgres.is_available_extension",
+			"postgres.is_installed_extension",
+			"postgres.language_list",
+			"postgres.language_exists",
 		},
 	},
 }
@@ -190,7 +210,7 @@ func TestR9DifferentialScopeReport(t *testing.T) {
 	registered := registeredNames(first)
 
 	report := r9Report{
-		Round:    "R9.2c",
+		Round:    "R9.2d",
 		Platform: "cross-platform",
 		RuntimeStatus: "mock-only: RabbitMQ is never started, MySQL is never connected, and PostgreSQL is never contacted; " +
 			"shell-free fake Runner tests and pure-function vectors provide the executable contract",
