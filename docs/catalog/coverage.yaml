@@ -6,9 +6,9 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    source_inventory_count: 1145
-    catalog_intersection_count: 1123
-    implemented: 1123
+    source_inventory_count: 1146
+    catalog_intersection_count: 1124
+    implemented: 1124
 state:
     salt_modules: 132
     salt_functions: 669
@@ -645,6 +645,7 @@ implemented:
         - postgres.is_installed_extension
         - postgres.language_exists
         - postgres.language_list
+        - postgres.privileges_list
         - postgres.role_get
         - postgres.schema_exists
         - postgres.schema_get

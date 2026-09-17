@@ -356,6 +356,7 @@ func TestPostgresRegistrySurface(t *testing.T) {
 		"postgres.is_installed_extension",
 		"postgres.language_exists",
 		"postgres.language_list",
+		"postgres.privileges_list",
 		"postgres.role_get",
 		"postgres.schema_exists",
 		"postgres.schema_get",
@@ -384,6 +385,8 @@ func TestPostgresRegistrySurface(t *testing.T) {
 			want = RoleGetArgs{}
 		case "postgres.has_privileges":
 			want = HasPrivilegesArgs{}
+		case "postgres.privileges_list":
+			want = PrivilegesListArgs{}
 		case "postgres.db_exists", "postgres.tablespace_exists",
 			"postgres.user_exists",
 			"postgres.get_available_extension", "postgres.get_installed_extension",
@@ -440,6 +443,7 @@ func TestPostgresRegistrySurface(t *testing.T) {
 			"name", "object_name", "object_type", "privileges",
 			"grant_option", "prepend",
 		}, connection...)},
+		{privilegesListFunc{}, append([]string{"name", "object_type", "prepend"}, connection...)},
 	}
 	for _, tc := range cases {
 		names, err := config.ArgumentNames(tc.fn.Args())
@@ -3400,9 +3404,442 @@ func TestPostgresRoleRegistryKeys(t *testing.T) {
 		t.Fatalf("registry has_privileges = %#v err = %v", value, err)
 	}
 
+	rt, _ = newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(privTableCSV)},
+	)
+	value, err = reg.Call(context.Background(), rt, "postgres.privileges_list",
+		&PrivilegesListArgs{Name: "awl", ObjectType: "table"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed, ok := value.(map[string]any)
+	if !ok || len(listed) != 3 {
+		t.Fatalf("registry privileges_list = %#v, want the pinned three-role dictionary", value)
+	}
+	if !reflect.DeepEqual(listed["baruwa"], wantPinnedTableACL["baruwa"]) {
+		t.Fatalf("registry privileges_list baruwa = %#v", listed["baruwa"])
+	}
+
 	// The slice additions are the only new surface: the generic query
-	// transport stays unregistered.
-	if _, err := reg.Call(context.Background(), rt, "postgres.privileges_list", &ExistsArgs{Name: "awl"}); err == nil {
-		t.Fatal("postgres.privileges_list must stay unregistered")
+	// transport and the write paths stay unregistered.
+	if _, err := reg.Call(context.Background(), rt, "postgres.privileges_grant", &ExistsArgs{Name: "awl"}); err == nil {
+		t.Fatal("postgres.privileges_grant must stay unregistered")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// privileges_list — salt/modules/postgres.py:3335-3432 @ pinned revision.
+
+func fullPrivilegesListArgs(name, objectType string) *PrivilegesListArgs {
+	return &PrivilegesListArgs{
+		Name:          name,
+		ObjectType:    objectType,
+		MaintenanceDB: postgresString("db_name"),
+		User:          postgresString("testuser"),
+		Host:          postgresString("testhost"),
+		Port:          postgresString("testport"),
+		Password:      postgresString("testpassword"),
+	}
+}
+
+// TestPostgresPrivilegesListTableArgv pins the exact one-call transport of
+// the public listing: the fixed COPY-wrapped table privilege catalog with
+// the pinned relkind filter and ordering, the connection tuple transported
+// exactly like the pinned psql_query call, and neither the object name nor
+// the schema prefix ever reaching SQL.
+func TestPostgresPrivilegesListTableArgv(t *testing.T) {
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(privTableCSV)},
+	)
+	args := fullPrivilegesListArgs("awl", "table")
+	args.Prepend = postgresString("testschema")
+	value, err := (privilegesListFunc{}).Execute(context.Background(), rt, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := value.(map[string]any); !ok {
+		t.Fatalf("privileges_list = %#v, want a dictionary", value)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d, want 1", len(runner.calls))
+	}
+	want := `COPY (SELECT nspname, relname, relkind, relacl AS name FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE relkind in ('r', 'v') ORDER BY relname) TO STDOUT WITH CSV HEADER`
+	all := append([]string{runner.calls[0].Name}, runner.calls[0].Args...)
+	if got := all[len(all)-1]; got != want {
+		t.Fatalf("SQL = %q, want %q", got, want)
+	}
+	if !strings.HasPrefix(all[0], "psql") || all[1] != "--no-align" {
+		t.Fatalf("argv head = %q", all)
+	}
+	if joined := strings.Join(runner.calls[0].Args, "\x00"); strings.Contains(joined, "awl") ||
+		strings.Contains(joined, "testschema") {
+		t.Fatalf("query leaked a lookup string into SQL: %q", joined)
+	}
+	command := runner.calls[0]
+	if command.Shell || len(command.Env) != 4 || command.Env[0] != "PGPASSWORD=testpassword" {
+		t.Fatalf("unsafe command: %#v", command)
+	}
+	if !reflect.DeepEqual(command.Redact, []string{"testpassword"}) {
+		t.Fatalf("redact = %q", command.Redact)
+	}
+}
+
+// TestPostgresPrivilegesListTable ports the pinned test_privileges_list_table
+// outcome verbatim: the pinned table ACL fixture decodes to the pinned
+// three-role grant-option dictionary, other rows (and the NULL-acl row) are
+// filtered client-side, and the empty prepend default stays "public".
+func TestPostgresPrivilegesListTable(t *testing.T) {
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(privTableCSV)},
+	)
+	value, err := (privilegesListFunc{}).Execute(context.Background(), rt,
+		fullPrivilegesListArgs("awl", "table"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{}
+	for role, perms := range wantPinnedTableACL {
+		want[role] = perms
+	}
+	if !reflect.DeepEqual(value, want) {
+		t.Fatalf("privileges_list(table) = %#v, want %#v", value, want)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d, want 1", len(runner.calls))
+	}
+}
+
+// TestPostgresPrivilegesListGroup ports the pinned test_privileges_list_group
+// outcome verbatim: every member of the named group maps to its admin_option
+// boolean, and members of other groups are filtered client-side.
+func TestPostgresPrivilegesListGroup(t *testing.T) {
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(privGroupCSV)},
+	)
+	value, err := (privilegesListFunc{}).Execute(context.Background(), rt,
+		fullPrivilegesListArgs("admin", "group"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{"baruwa": false, "baruwatest": false, "baruwatest2": true}
+	if !reflect.DeepEqual(value, want) {
+		t.Fatalf("privileges_list(group) = %#v, want %#v", value, want)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d, want 1", len(runner.calls))
+	}
+	wantSQL := `COPY (SELECT (SELECT rolname FROM pg_catalog.pg_roles rr WHERE rr.oid = m.roleid) AS member_of, rolname, admin_option FROM pg_catalog.pg_auth_members m JOIN pg_catalog.pg_roles r ON m.member=r.oid ORDER BY rolname) TO STDOUT WITH CSV HEADER`
+	if got := runner.calls[0].Args[len(runner.calls[0].Args)-1]; got != wantSQL {
+		t.Fatalf("group SQL = %q, want %q", got, wantSQL)
+	}
+
+	// The group name never reaches SQL: a distinctive name (unlike the
+	// pinned "admin", which the admin_option column name contains) is
+	// matched client-side only.
+	rt, runner = newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(privGroupCSV)},
+	)
+	value, err = (privilegesListFunc{}).Execute(context.Background(), rt,
+		fullPrivilegesListArgs("grp_leak_check", "group"))
+	if err != nil || !reflect.DeepEqual(value, map[string]any{}) {
+		t.Fatalf("group leak check = %#v err = %v, want {}", value, err)
+	}
+	if joined := strings.Join(runner.calls[0].Args, "\x00"); strings.Contains(joined, "grp_leak_check") {
+		t.Fatalf("group query leaked the group name into SQL: %q", joined)
+	}
+}
+
+// TestPostgresPrivilegesListObjectTypes sweeps every remaining object type
+// through its fixed privilege catalog, asserting the exact SQL, the
+// client-side key match, and the grantee→privilege bool-map shape.
+func TestPostgresPrivilegesListObjectTypes(t *testing.T) {
+	cases := []struct {
+		objectType string
+		objectName string
+		csv        string
+		query      string
+		want       map[string]any
+	}{
+		{
+			"sequence", "awl_seq",
+			"nspname,relname,relkind,name\n" +
+				"public,awl_seq,S,\"{baruwa=rwU*/postgres}\"\n" +
+				"public,other_seq,S,\"{other=r/postgres}\"\n",
+			`SELECT nspname, relname, relkind, relacl AS name FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE relkind = 'S' ORDER BY relname`,
+			map[string]any{"baruwa": map[string]bool{"SELECT": false, "UPDATE": false, "USAGE": true}},
+		},
+		{
+			"schema", "public",
+			`nspname,name` + "\n" +
+				`public,"{postgres=UC/postgres,=U/postgres}"` + "\n",
+			`SELECT nspname, nspacl AS name FROM pg_catalog.pg_namespace ORDER BY nspname`,
+			map[string]any{
+				"postgres": map[string]bool{"USAGE": false, "CREATE": false},
+				"public":   map[string]bool{"USAGE": false},
+			},
+		},
+		{
+			"tablespace", "pg_default",
+			`spcname,name` + "\n" +
+				`pg_default,"{postgres=C*/postgres,baruwa=C/postgres}"` + "\n",
+			`SELECT spcname, spcacl AS name FROM pg_catalog.pg_tablespace ORDER BY spcname`,
+			map[string]any{
+				"postgres": map[string]bool{"CREATE": true},
+				"baruwa":   map[string]bool{"CREATE": false},
+			},
+		},
+		{
+			"language", "plpgsql",
+			`lanname,name` + "\n" +
+				`plpgsql,"{=U/postgres,baruwa=U*/postgres}"` + "\n",
+			`SELECT lanname, lanacl AS name FROM pg_catalog.pg_language ORDER BY lanname`,
+			map[string]any{
+				"public": map[string]bool{"USAGE": false},
+				"baruwa": map[string]bool{"USAGE": true},
+			},
+		},
+		{
+			"database", "test_db",
+			`datname,name` + "\n" +
+				`test_db,"{=c/postgres,baruwa=C*T*c*/postgres}"` + "\n",
+			`SELECT datname, datacl AS name FROM pg_catalog.pg_database ORDER BY datname`,
+			map[string]any{
+				"public": map[string]bool{"CONNECT": false},
+				"baruwa": map[string]bool{"CREATE": true, "TEMPORARY": true, "CONNECT": true},
+			},
+		},
+		{
+			"function", "awl",
+			`nspname,regprocedure,name` + "\n" +
+				`public,other,"{=X/postgres}"` + "\n" +
+				`public,awl,"{baruwatest=X/baruwatest,bayestest=r/baruwatest,baruwa=X*/baruwatest}"` + "\n",
+			`SELECT nspname, p.oid::regprocedure::text AS regprocedure, proacl AS name FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace ORDER BY proname, proargtypes`,
+			map[string]any{
+				"baruwatest": map[string]bool{"EXECUTE": false},
+				"bayestest":  map[string]bool{"SELECT": false},
+				"baruwa":     map[string]bool{"EXECUTE": true},
+			},
+		},
+	}
+	for _, tc := range cases {
+		rt, runner := newPostgresRuntime(
+			process.CommandResult{ExitCode: 0, Stdout: []byte(tc.csv)},
+		)
+		value, err := (privilegesListFunc{}).Execute(context.Background(), rt,
+			fullPrivilegesListArgs(tc.objectName, tc.objectType))
+		if err != nil {
+			t.Fatalf("%s: %v", tc.objectType, err)
+		}
+		if !reflect.DeepEqual(value, tc.want) {
+			t.Fatalf("%s = %#v, want %#v", tc.objectType, value, tc.want)
+		}
+		if len(runner.calls) != 1 {
+			t.Fatalf("%s calls = %d, want 1", tc.objectType, len(runner.calls))
+		}
+		wantSQL := "COPY (" + tc.query + ") TO STDOUT WITH CSV HEADER"
+		if got := runner.calls[0].Args[len(runner.calls[0].Args)-1]; got != wantSQL {
+			t.Fatalf("%s SQL = %q, want %q", tc.objectType, got, wantSQL)
+		}
+		if joined := strings.Join(runner.calls[0].Args, "\x00"); strings.Contains(joined, tc.objectName) {
+			t.Fatalf("%s query leaked the object name into SQL: %q", tc.objectType, joined)
+		}
+	}
+}
+
+// TestPostgresPrivilegesListPrepend pins the prepend semantics: table,
+// sequence, and function lookups are qualified by the schema prefix, so a
+// different prepend selects a different row and the default is "public".
+func TestPostgresPrivilegesListPrepend(t *testing.T) {
+	csv := "nspname,relname,relkind,name\n" +
+		"public,awl,r,\"{public_role=r/postgres}\"\n" +
+		"private,awl,r,\"{private_role=r/postgres}\"\n"
+	for _, tc := range []struct {
+		prepend *string
+		want    string
+	}{
+		{nil, "public_role"},
+		{postgresString("private"), "private_role"},
+	} {
+		rt, runner := newPostgresRuntime(
+			process.CommandResult{ExitCode: 0, Stdout: []byte(csv)},
+		)
+		args := fullPrivilegesListArgs("awl", "table")
+		args.Prepend = tc.prepend
+		value, err := (privilegesListFunc{}).Execute(context.Background(), rt, args)
+		if err != nil {
+			t.Fatalf("prepend %v: %v", tc.prepend, err)
+		}
+		listed := value.(map[string]any)
+		if len(listed) != 1 {
+			t.Fatalf("prepend %v = %#v, want one grantee", tc.prepend, listed)
+		}
+		if _, ok := listed[tc.want].(map[string]bool); !ok {
+			t.Fatalf("prepend %v = %#v, want %q", tc.prepend, listed, tc.want)
+		}
+		if joined := strings.Join(runner.calls[0].Args, "\x00"); strings.Contains(joined, "private") {
+			t.Fatalf("prepend leaked into SQL: %q", joined)
+		}
+	}
+}
+
+// TestPostgresPrivilegesListValidation pins the pinned validation head:
+// unknown object types are rejected before any Runner invocation, mixed
+// case is lowercased exactly like the pinned object_type.lower(), and a
+// missing object simply returns the empty dictionary (the pinned empty
+// rows loop).
+func TestPostgresPrivilegesListValidation(t *testing.T) {
+	for _, objectType := range []string{"bogus", ""} {
+		rt, runner := newPostgresRuntime()
+		_, err := (privilegesListFunc{}).Execute(context.Background(), rt,
+			fullPrivilegesListArgs("awl", objectType))
+		if !errors.Is(err, errPostgresInvalidArgument) {
+			t.Fatalf("object_type %q err = %v, want errPostgresInvalidArgument", objectType, err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("object_type %q executed %d commands before validation", objectType, len(runner.calls))
+		}
+	}
+
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(privTableCSV)},
+	)
+	value, err := (privilegesListFunc{}).Execute(context.Background(), rt,
+		fullPrivilegesListArgs("awl", "TABLE"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listed := value.(map[string]any); len(listed) != 3 {
+		t.Fatalf("TABLE lowercase = %#v, want the pinned dictionary", listed)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("TABLE calls = %d, want 1", len(runner.calls))
+	}
+
+	// A catalog row whose ACL is NULL (empty CSV field) is the pinned
+	// ValueError from the unpack ladder, with the caller context of the
+	// public function.
+	nullACL := "nspname,relname,relkind,name\npublic,awl,r,\n"
+	rt, _ = newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(nullACL)},
+	)
+	_, err = (privilegesListFunc{}).Execute(context.Background(), rt,
+		fullPrivilegesListArgs("awl", "table"))
+	if !errors.Is(err, errPostgresInvalidACL) {
+		t.Fatalf("null acl err = %v, want errPostgresInvalidACL", err)
+	}
+
+	// Short rows carrying none of the pinned columns keep the pinned
+	// row["name"]/row["rolname"]/row["admin_option"] KeyError as an
+	// execution error naming the public function.
+	for _, tc := range []struct {
+		label      string
+		objectType string
+		objectName string
+		csv        string
+	}{
+		{"table missing name column", "table", "awl", "nspname,relname,relkind\npublic,awl,r\n"},
+		{"group missing columns", "group", "awl", "member_of\nawl\n"},
+	} {
+		rt, _ = newPostgresRuntime(
+			process.CommandResult{ExitCode: 0, Stdout: []byte(tc.csv)},
+		)
+		_, err = (privilegesListFunc{}).Execute(context.Background(), rt,
+			fullPrivilegesListArgs(tc.objectName, tc.objectType))
+		if err == nil || !strings.Contains(err.Error(), "postgres.privileges_list") {
+			t.Fatalf("%s err = %v, want a postgres.privileges_list row error", tc.label, err)
+		}
+	}
+}
+
+// TestPostgresPrivilegesListCompatibilityData pins Salt's nonzero-exit and
+// missing-object shapes: both return the empty dictionary, data not an
+// error.
+func TestPostgresPrivilegesListCompatibilityData(t *testing.T) {
+	failed := process.CommandResult{ExitCode: 2, Stderr: []byte("psql: error: connection refused")}
+	rt, _ := newPostgresRuntime(failed)
+	value, err := (privilegesListFunc{}).Execute(context.Background(), rt,
+		fullPrivilegesListArgs("awl", "table"))
+	if err != nil || !reflect.DeepEqual(value, map[string]any{}) {
+		t.Fatalf("nonzero exit = %#v err = %v, want {}, nil", value, err)
+	}
+
+	rt, _ = newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(privTableCSV)},
+	)
+	value, err = (privilegesListFunc{}).Execute(context.Background(), rt,
+		fullPrivilegesListArgs("absent_table", "table"))
+	if err != nil || !reflect.DeepEqual(value, map[string]any{}) {
+		t.Fatalf("absent object = %#v err = %v, want {}, nil", value, err)
+	}
+}
+
+// TestPostgresPrivilegesListGuards pins the shared failure modes: canceled
+// context, runas rejection, redacted Runner errors, output limits,
+// psql-unavailable fail-closed, the argument guards, and the nil Runner —
+// each with zero Runner executions where the guard precedes the call.
+func TestPostgresPrivilegesListGuards(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	rt, runner := newPostgresRuntime()
+	if _, err := (privilegesListFunc{}).Execute(ctx, rt, fullPrivilegesListArgs("awl", "table")); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("canceled run executed %d commands", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime()
+	args := fullPrivilegesListArgs("awl", "table")
+	args.Runas = postgresString("postgres")
+	if _, err := (privilegesListFunc{}).Execute(context.Background(), rt, args); !errors.Is(err, errPostgresRunas) {
+		t.Fatalf("runas err = %v, want errPostgresRunas", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("runas run executed %d commands", len(runner.calls))
+	}
+
+	rt, _ = newPostgresRuntime(process.CommandResult{
+		ExitCode: -1,
+		Err:      fmt.Errorf("exec psql --dbname db_name: secret testpassword rejected"),
+	})
+	_, err := (privilegesListFunc{}).Execute(context.Background(), rt, fullPrivilegesListArgs("awl", "table"))
+	if err == nil || strings.Contains(err.Error(), "testpassword") {
+		t.Fatalf("runner error = %v, want redacted", err)
+	}
+	if !strings.Contains(err.Error(), process.RedactedPlaceholder) {
+		t.Fatalf("error lacks redaction placeholder: %v", err)
+	}
+
+	for _, truncated := range []process.CommandResult{
+		{ExitCode: 0, StdoutTruncated: true, Stdout: []byte(strings.Repeat("9", outputLimit+1))},
+		{ExitCode: 0, StderrTruncated: true, Stderr: []byte(strings.Repeat("e", outputLimit+1))},
+	} {
+		rt, _ := newPostgresRuntime(truncated)
+		if _, err := (privilegesListFunc{}).Execute(context.Background(), rt,
+			fullPrivilegesListArgs("awl", "table")); !errors.Is(err, process.ErrOutputLimit) {
+			t.Fatalf("truncated err = %v, want ErrOutputLimit", err)
+		}
+	}
+
+	rt, runner = newPostgresRuntime()
+	runner.available = map[string]bool{"psql": false}
+	if _, err := (privilegesListFunc{}).Execute(context.Background(), rt,
+		fullPrivilegesListArgs("awl", "table")); !errors.Is(err, errPostgresPsqlUnavailable) {
+		t.Fatalf("psql-unavailable err = %v, want errPostgresPsqlUnavailable", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("unavailable psql executed %d commands", len(runner.calls))
+	}
+
+	if _, err := (privilegesListFunc{}).Execute(context.Background(), nil, "bogus"); err == nil {
+		t.Fatal("privileges_list must reject non-struct args")
+	}
+	if _, err := (privilegesListFunc{}).Execute(context.Background(), nil, &HasPrivilegesArgs{}); err == nil {
+		t.Fatal("privileges_list must reject foreign argument structs")
+	}
+	rtEmpty := &runtime.Runtime{Runner: nil, FS: runtime.NewMemoryFS()}
+	if _, err := (privilegesListFunc{}).Execute(context.Background(), rtEmpty,
+		fullPrivilegesListArgs("awl", "table")); !errors.Is(err, errPostgresRunnerUnavailable) {
+		t.Fatalf("nil runner err = %v, want errPostgresRunnerUnavailable", err)
 	}
 }

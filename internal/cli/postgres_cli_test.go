@@ -1077,3 +1077,107 @@ func TestPostgresCLIHasPrivileges(t *testing.T) {
 		t.Fatalf("nonzero exit code=%d out=%q err=%q, want false", code, out, errS)
 	}
 }
+
+// TestPostgresCLIPrivilegesList drives privileges_list end to end for the
+// table and group flows: the pinned dictionaries render as nested JSON,
+// the single fixed catalog query embeds no caller string, the required
+// arguments are validated before any psql call, and the nonzero-exit
+// compatibility shape stays the empty dictionary.
+func TestPostgresCLIPrivilegesList(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(privCLITableCSV)},
+	}}
+	app := postgresCLIApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "postgres.privileges_list",
+		"--name", "awl", "--object-type", "table", "--prepend", "public",
+		"--maintenance-db", "db_name", "--user", "testuser",
+		"--host", "testhost", "--port", "testport",
+		"--password", "testpassword", "-o", "json")
+	var table map[string]map[string]bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &table) != nil {
+		t.Fatalf("privileges_list code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(table) != 3 || table["baruwa"]["INSERT"] != true || table["baruwa"]["MAINTAIN"] != true ||
+		table["baruwatest"]["TRUNCATE"] != false || table["bayestest"]["DELETE"] != false {
+		t.Fatalf("privileges_list table JSON = %q", out)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("privileges_list calls = %d, want 1", len(runner.calls))
+	}
+	command := runner.calls[0]
+	argv := append([]string{command.Name}, command.Args...)
+	if argv[15] != "-c" || argv[16] != `COPY (SELECT nspname, relname, relkind, relacl AS name FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE relkind in ('r', 'v') ORDER BY relname) TO STDOUT WITH CSV HEADER` {
+		t.Fatalf("argv SQL = %q", argv)
+	}
+	if strings.Contains(argv[16], "awl") || strings.Contains(argv[16], "public") {
+		t.Fatalf("SQL leaked a lookup string: %q", argv[16])
+	}
+	if strings.Contains(command.RedactedString(), "testpassword") || strings.Contains(out+errS, "testpassword") {
+		t.Fatalf("password leaked: %q %q", command.RedactedString(), out+errS)
+	}
+	if strings.Contains(out+errS, "COPY (SELECT") {
+		t.Fatalf("CLI output leaked the source SQL: %q %q", out, errS)
+	}
+
+	// The group flow: each member renders as its admin_option boolean.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(privCLIGroupCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.privileges_list",
+		"--name", "admin", "--object-type", "group", "-o", "json")
+	var group map[string]bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &group) != nil {
+		t.Fatalf("group code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(group) != 2 || group["baruwa"] != false || group["baruwatest2"] != true {
+		t.Fatalf("group JSON = %q", out)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("group calls = %d, want 1", len(runner.calls))
+	}
+
+	// The two required positionals are validated before any psql call.
+	for _, argv := range [][]string{
+		{"--object-type", "table"},
+		{"--name", "awl"},
+	} {
+		runner = &cliRecordingRunner{}
+		app = postgresCLIApp(t, runner)
+		fullArgv := append([]string{"exec", "postgres.privileges_list"}, argv...)
+		fullArgv = append(fullArgv, "-o", "json")
+		code, _, errS = captureCode(t, app, fullArgv...)
+		if code != ExitInvalidInput || !strings.Contains(errS, "missing required argument") ||
+			len(runner.calls) != 0 {
+			t.Fatalf("required %v code=%d err=%q calls=%d", argv, code, errS, len(runner.calls))
+		}
+	}
+
+	// An unknown object type and runas fail before any psql call.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.privileges_list",
+		"--name", "awl", "--object-type", "bogus", "-o", "json")
+	if code != ExitFailed || !strings.Contains(errS, "object_type") || len(runner.calls) != 0 {
+		t.Fatalf("bogus object_type code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.privileges_list",
+		"--name", "awl", "--object-type", "table", "--runas", "postgres", "-o", "json")
+	if code != ExitFailed || !strings.Contains(errS, "runas") || len(runner.calls) != 0 {
+		t.Fatalf("runas code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+
+	// A failed connection keeps Salt's shape: no exception, the empty
+	// dictionary.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 2, Stderr: []byte("psql: error: connection refused")},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.privileges_list",
+		"--name", "awl", "--object-type", "table", "-o", "json")
+	if code != ExitOK || errS != "" || strings.TrimSpace(out) != "{}" {
+		t.Fatalf("nonzero exit code=%d out=%q err=%q, want {}", code, out, errS)
+	}
+}

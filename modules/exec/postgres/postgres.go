@@ -19,7 +19,12 @@
 // role_get/user_exists reuse the pinned user_list catalog, and
 // has_privileges keeps the pinned owner and ACL catalogs, filters, and
 // orderings as fixed queries whose pinned interpolated equality literals
-// are matched client-side, so no caller string reaches SQL.
+// are matched client-side, so no caller string reaches SQL. R9.2g exposes
+// the read-only ACL listing privileges_list (postgres.py:3335-3432) on the
+// same R9.2f privilege catalogs: the pinned argument contract is the
+// object name and type (no role, no privileges argument), and the pinned
+// ACL decode ladder returns each grantee's privilege bool-map (or each
+// group member's admin_option boolean).
 // Like Salt, every invocation is a shell-free psql argv executed through
 // the central Runner; this package links no database driver or protocol
 // client and never contacts a live server by itself. The catalog queries
@@ -1959,14 +1964,16 @@ func parseACLGrants(acl string) (map[string]map[string]bool, error) {
 }
 
 // privilegesList ports the pinned privileges_list tail
-// (postgres.py:3394-3432) behind has_privileges: object ACL rows decode
-// through the pinned ladder, and group rows map the member rolname to the
-// pinned admin_option == "t" boolean. Rows are matched client-side, so
-// the caller's object name never reaches SQL.
-func privilegesList(ctx context.Context, rt *runtime.Runtime, conn *pgConnection, objectName, objectType, prepend string) (map[string]any, error) {
+// (postgres.py:3410-3432) for both has_privileges and the public
+// privileges_list: object ACL rows decode through the pinned ladder, and
+// group rows map the member rolname to the pinned admin_option == "t"
+// boolean. Rows are matched client-side, so the caller's object name never
+// reaches SQL; caller names the public function for row-shape errors.
+func privilegesList(ctx context.Context, rt *runtime.Runtime, conn *pgConnection, caller, objectName, objectType, prepend string) (map[string]any, error) {
 	spec, ok := privilegesQueries[objectType]
 	if !ok {
-		// Unreachable behind validatePrivileges; kept fail-closed.
+		// Unreachable behind validatePrivileges and the privileges_list
+		// object-type check; kept fail-closed.
 		return nil, fmt.Errorf("%w: invalid object_type %q provided", errPostgresInvalidArgument, objectType)
 	}
 	rows, err := psqlQueryRows(ctx, rt, conn, spec.query)
@@ -1979,18 +1986,18 @@ func privilegesList(ctx context.Context, rt *runtime.Runtime, conn *pgConnection
 			continue
 		}
 		if objectType == "group" {
-			rolname, err := rowString(row, "rolname", "postgres.has_privileges")
+			rolname, err := rowString(row, "rolname", caller)
 			if err != nil {
 				return nil, err
 			}
-			adminOption, err := rowString(row, "admin_option", "postgres.has_privileges")
+			adminOption, err := rowString(row, "admin_option", caller)
 			if err != nil {
 				return nil, err
 			}
 			out[rolname] = adminOption == "t"
 			continue
 		}
-		acl, err := rowString(row, "name", "postgres.has_privileges")
+		acl, err := rowString(row, "name", caller)
 		if err != nil {
 			return nil, err
 		}
@@ -2035,7 +2042,7 @@ func (hasPrivilegesFunc) Execute(ctx context.Context, rt *runtime.Runtime, args 
 			return true, nil
 		}
 	}
-	grants, err := privilegesList(ctx, rt, conn, a.ObjectName, objectType, prepend)
+	grants, err := privilegesList(ctx, rt, conn, "postgres.has_privileges", a.ObjectName, objectType, prepend)
 	if err != nil {
 		return nil, err
 	}
@@ -2117,6 +2124,69 @@ func privMapEqual(x, y map[string]bool) bool {
 }
 
 // ---------------------------------------------------------------------------
+// privileges_list — salt/modules/postgres.py:3335-3432 @ pinned revision.
+
+// PrivilegesListArgs are the canonical postgres.privileges_list arguments,
+// mirroring the pinned privileges_list(name, object_type, prepend="public",
+// maintenance_db=None, user=None, host=None, port=None, password=None,
+// runas=None) signature (postgres.py:3335-3345). The pinned function lists
+// an object's ACL: name is the object, and the signature has no role and no
+// privileges argument (those belong to has_privileges).
+type PrivilegesListArgs struct {
+	Name          string  `statekit:"name=name,required"`
+	ObjectType    string  `statekit:"name=object_type,required"`
+	Prepend       *string `statekit:"name=prepend"`
+	MaintenanceDB *string `statekit:"name=maintenance_db"`
+	User          *string `statekit:"name=user"`
+	Host          *string `statekit:"name=host"`
+	Port          *string `statekit:"name=port"`
+	Password      *string `statekit:"name=password"`
+	Runas         *string `statekit:"name=runas"`
+}
+
+func (a *PrivilegesListArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: a.MaintenanceDB,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+type privilegesListFunc struct{}
+
+func (privilegesListFunc) Name() string { return "postgres.privileges_list" }
+func (privilegesListFunc) Args() any    { return PrivilegesListArgs{} }
+
+func (privilegesListFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[PrivilegesListArgs](args, "postgres.privileges_list")
+	if err != nil {
+		return nil, err
+	}
+	// The pinned head (postgres.py:3394-3398): the object type is
+	// lowercased, then unknown types are rejected before any query. Salt
+	// reaches the same failure one statement earlier — its query builder
+	// returns an unbound local for an unmatched branch, so the following
+	// SaltInvocationError is dead code for unknown types — and both pinned
+	// failure shapes map to this one execution error, raised before any
+	// Runner invocation.
+	objectType := strings.ToLower(a.ObjectType)
+	if _, ok := privilegesQueries[objectType]; !ok {
+		return nil, fmt.Errorf("%w: invalid object_type %q provided", errPostgresInvalidArgument, objectType)
+	}
+	prepend := defaultPrependSchema
+	if a.Prepend != nil {
+		prepend = *a.Prepend
+	}
+	return privilegesList(ctx, rt, a.connection(), "postgres.privileges_list", a.Name, objectType, prepend)
+}
+
+// ---------------------------------------------------------------------------
 // shared helpers (rabbitmq-module conventions).
 
 func typedArgs[T any](args any, name string) (*T, error) {
@@ -2191,15 +2261,15 @@ func redactedError(err error, password *string) error {
 	return errors.New(message)
 }
 
-// Register installs the R9.2f postgres slice: the version probe, the five
+// Register installs the R9.2g postgres slice: the version probe, the five
 // R9.2c read-only catalog primitives, the eight R9.2d extension and
 // language catalog functions, the three R9.2e schema catalog functions,
-// and the three R9.2f role and privilege checks. The remainder of the
-// postgres family needs the generic psql query surface (psql_query itself
-// stays pending; no arbitrary-query registration exists in this phase)
-// and stays pending for later R9 rounds; the internal parsed-version and
-// psql-query helpers are intentionally not registered, exactly like the
-// pinned private functions.
+// the three R9.2f role and privilege checks, and the R9.2g ACL listing
+// privileges_list. The remainder of the postgres family needs the generic
+// psql query surface (psql_query itself stays pending; no
+// arbitrary-query registration exists in this phase) and stays pending for
+// later R9 rounds; the internal parsed-version and psql-query helpers are
+// intentionally not registered, exactly like the pinned private functions.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		versionFunc{},
@@ -2222,6 +2292,7 @@ func Register(reg *runtime.ExecRegistry) error {
 		roleGetFunc{},
 		userExistsFunc{},
 		hasPrivilegesFunc{},
+		privilegesListFunc{},
 	} {
 		if err := reg.Register(fn); err != nil {
 			return err
