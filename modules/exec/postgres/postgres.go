@@ -10,6 +10,10 @@
 // installed_extensions, get_available_extension, get_installed_extension,
 // is_available_extension, is_installed_extension, language_list, and
 // language_exists (postgres.py:1654-1846, 2602-2695) on the same transport.
+// R9.2e adds the three read-only schema catalog functions schema_exists,
+// schema_get, and schema_list (postgres.py:2444-2599), keeping the pinned
+// schema-family connection signature (dbname plus the db_* tuple with user
+// as the system-user argument) and matching every schema name client-side.
 // Like Salt, every invocation is a shell-free psql argv executed through
 // the central Runner; this package links no database driver or protocol
 // client and never contacts a live server by itself. The catalog queries
@@ -97,6 +101,14 @@ const (
 	// languageListQuery is the exact SQL of the pinned language_list()
 	// (postgres.py:2636).
 	languageListQuery = `SELECT lanname AS "Name" FROM pg_language`
+	// schemaListQuery is the exact SQL of the pinned schema_list()
+	// (postgres.py:2572-2581), byte-for-byte including the pinned
+	// trailing space (psql_query strips it before the COPY wrap).
+	schemaListQuery = `SELECT pg_namespace.nspname as "name",` +
+		`pg_namespace.nspacl as "acl", ` +
+		`pg_roles.rolname as "owner" ` +
+		`FROM pg_namespace ` +
+		`LEFT JOIN pg_roles ON pg_roles.oid = pg_namespace.nspowner `
 	// expiryTimeLayout is the pinned strptime format for "expiry time".
 	expiryTimeLayout = "2006-01-02 15:04:05"
 )
@@ -1356,6 +1368,161 @@ func (languageExistsFunc) Execute(ctx context.Context, rt *runtime.Runtime, args
 }
 
 // ---------------------------------------------------------------------------
+// schema_list / schema_exists / schema_get — salt/modules/postgres.py:2444-2599
+// @ pinned revision.
+
+// SchemaListArgs are the canonical postgres.schema_list arguments, mirroring
+// the pinned schema-family signature (postgres.py:2539-2541): dbname is the
+// required database positional, user is the pinned system-user argument
+// (the psql_query runas), and db_user/db_password/db_host/db_port are the
+// connection tuple. Pointer fields keep Salt's None defaults: nil omits the
+// corresponding psql flag or environment variable.
+type SchemaListArgs struct {
+	DBName     string  `statekit:"name=dbname,required"`
+	User       *string `statekit:"name=user"`
+	DBUser     *string `statekit:"name=db_user"`
+	DBPassword *string `statekit:"name=db_password"`
+	DBHost     *string `statekit:"name=db_host"`
+	DBPort     *string `statekit:"name=db_port"`
+}
+
+// connection projects the schema-family signature onto the shared psql
+// transport tuple, mirroring the pinned psql_query(runas=user,
+// host=db_host, user=db_user, port=db_port, maintenance_db=dbname,
+// password=db_password) call (postgres.py:2583-2591).
+func (a *SchemaListArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	dbname := a.DBName
+	return &pgConnection{
+		User:          a.DBUser,
+		Host:          a.DBHost,
+		Port:          a.DBPort,
+		MaintenanceDB: &dbname,
+		Password:      a.DBPassword,
+		Runas:         a.User,
+	}
+}
+
+// SchemaArgs are the canonical postgres.schema_get and
+// postgres.schema_exists arguments: the pinned dbname and name positionals
+// plus the schema-family connection tuple.
+type SchemaArgs struct {
+	DBName     string  `statekit:"name=dbname,required"`
+	Name       string  `statekit:"name=name,required"`
+	User       *string `statekit:"name=user"`
+	DBUser     *string `statekit:"name=db_user"`
+	DBPassword *string `statekit:"name=db_password"`
+	DBHost     *string `statekit:"name=db_host"`
+	DBPort     *string `statekit:"name=db_port"`
+}
+
+func (a *SchemaArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	dbname := a.DBName
+	return &pgConnection{
+		User:          a.DBUser,
+		Host:          a.DBHost,
+		Port:          a.DBPort,
+		MaintenanceDB: &dbname,
+		Password:      a.DBPassword,
+		Runas:         a.User,
+	}
+}
+
+// schemaCatalog ports the pinned schema_list tail
+// (postgres.py:2593-2597): every row is reduced to exactly the
+// ("owner", "acl") pair and stored under its "name" column —
+// ret[row["name"]] = retrow. Salt's KeyError on a row missing any of the
+// three columns maps to an execution error in the pinned iteration order
+// (owner, then acl, then the name key).
+func schemaCatalog(ctx context.Context, rt *runtime.Runtime, conn *pgConnection) (map[string]map[string]string, error) {
+	rows, err := psqlQueryRows(ctx, rt, conn, schemaListQuery)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]map[string]string, len(rows))
+	for _, row := range rows {
+		retrow := make(map[string]string, 2)
+		for _, key := range [...]string{"owner", "acl"} {
+			value, ok := row[key]
+			if !ok {
+				return nil, fmt.Errorf("postgres.schema_list: missing column %q", key)
+			}
+			retrow[key] = value
+		}
+		name, ok := row["name"]
+		if !ok {
+			return nil, fmt.Errorf(`postgres.schema_list: missing column "name"`)
+		}
+		out[name] = retrow
+	}
+	return out, nil
+}
+
+type schemaListFunc struct{}
+
+func (schemaListFunc) Name() string { return "postgres.schema_list" }
+func (schemaListFunc) Args() any    { return SchemaListArgs{} }
+
+func (schemaListFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[SchemaListArgs](args, "postgres.schema_list")
+	if err != nil {
+		return nil, err
+	}
+	return schemaCatalog(ctx, rt, a.connection())
+}
+
+type schemaGetFunc struct{}
+
+func (schemaGetFunc) Name() string { return "postgres.schema_get" }
+func (schemaGetFunc) Args() any    { return SchemaArgs{} }
+
+func (schemaGetFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[SchemaArgs](args, "postgres.schema_get")
+	if err != nil {
+		return nil, err
+	}
+	// The pinned function is schema_list(...).get(name, None)
+	// (postgres.py:2532-2533): an exact-case key lookup whose miss is
+	// None, never an error. The pinned AttributeError branch (a non-dict
+	// schema_list) is unreachable through the fixed transport, which
+	// returns an error instead of Salt's logged False.
+	schemas, err := schemaCatalog(ctx, rt, a.connection())
+	if err != nil {
+		return nil, err
+	}
+	if row, ok := schemas[a.Name]; ok {
+		return row, nil
+	}
+	return nil, nil
+}
+
+type schemaExistsFunc struct{}
+
+func (schemaExistsFunc) Name() string { return "postgres.schema_exists" }
+func (schemaExistsFunc) Args() any    { return SchemaArgs{} }
+
+func (schemaExistsFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[SchemaArgs](args, "postgres.schema_exists")
+	if err != nil {
+		return nil, err
+	}
+	// The pinned bool(schema_get(...)) (postgres.py:2478-2488) is the
+	// stored row's truthiness: a hit always carries both pinned columns
+	// (possibly as empty strings), so len>0 is the bool(dict) port with
+	// the same exact-case lookup as schema_get.
+	schemas, err := schemaCatalog(ctx, rt, a.connection())
+	if err != nil {
+		return nil, err
+	}
+	return len(schemas[a.Name]) > 0, nil
+}
+
+// ---------------------------------------------------------------------------
 // shared helpers (rabbitmq-module conventions).
 
 func typedArgs[T any](args any, name string) (*T, error) {
@@ -1430,13 +1597,14 @@ func redactedError(err error, password *string) error {
 	return errors.New(message)
 }
 
-// Register installs the R9.2d postgres slice: the version probe, the five
-// R9.2c read-only catalog primitives, and the eight R9.2d extension and
-// language catalog functions. The remainder of the postgres family needs
-// the generic psql query surface (psql_query itself stays pending; no
-// arbitrary-query registration exists in this phase) and stays pending for
-// later R9 rounds; the internal parsed-version and psql-query helpers are
-// intentionally not registered, exactly like the pinned private functions.
+// Register installs the R9.2e postgres slice: the version probe, the five
+// R9.2c read-only catalog primitives, the eight R9.2d extension and
+// language catalog functions, and the three R9.2e schema catalog functions.
+// The remainder of the postgres family needs the generic psql query surface
+// (psql_query itself stays pending; no arbitrary-query registration exists
+// in this phase) and stays pending for later R9 rounds; the internal
+// parsed-version and psql-query helpers are intentionally not registered,
+// exactly like the pinned private functions.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		versionFunc{},
@@ -1453,6 +1621,9 @@ func Register(reg *runtime.ExecRegistry) error {
 		isInstalledExtensionFunc{},
 		languageListFunc{},
 		languageExistsFunc{},
+		schemaExistsFunc{},
+		schemaGetFunc{},
+		schemaListFunc{},
 	} {
 		if err := reg.Register(fn); err != nil {
 			return err

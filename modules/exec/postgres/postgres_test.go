@@ -355,6 +355,9 @@ func TestPostgresRegistrySurface(t *testing.T) {
 		"postgres.is_installed_extension",
 		"postgres.language_exists",
 		"postgres.language_list",
+		"postgres.schema_exists",
+		"postgres.schema_get",
+		"postgres.schema_list",
 		"postgres.tablespace_exists",
 		"postgres.tablespace_list",
 		"postgres.user_list",
@@ -382,6 +385,10 @@ func TestPostgresRegistrySurface(t *testing.T) {
 			want = LanguageListArgs{}
 		case "postgres.language_exists":
 			want = LanguageExistsArgs{}
+		case "postgres.schema_list":
+			want = SchemaListArgs{}
+		case "postgres.schema_get", "postgres.schema_exists":
+			want = SchemaArgs{}
 		default:
 			want = ListArgs{}
 		}
@@ -397,6 +404,7 @@ func TestPostgresRegistrySurface(t *testing.T) {
 		t.Fatal("postgres._parsed_version must not be publicly registered")
 	}
 	connection := []string{"host", "maintenance_db", "password", "port", "runas", "user"}
+	schemaConnection := []string{"db_host", "db_password", "db_port", "db_user", "dbname", "user"}
 	cases := []struct {
 		fn   runtime.ExecFunction
 		want []string
@@ -415,6 +423,9 @@ func TestPostgresRegistrySurface(t *testing.T) {
 		{isInstalledExtensionFunc{}, append([]string{"name"}, connection...)},
 		{languageListFunc{}, connection},
 		{languageExistsFunc{}, append([]string{"name"}, connection...)},
+		{schemaListFunc{}, schemaConnection},
+		{schemaGetFunc{}, append([]string{"name"}, schemaConnection...)},
+		{schemaExistsFunc{}, append([]string{"name"}, schemaConnection...)},
 	}
 	for _, tc := range cases {
 		names, err := config.ArgumentNames(tc.fn.Args())
@@ -2137,5 +2148,541 @@ func TestPostgresExtensionLanguageRegistryKeys(t *testing.T) {
 	value, err = langExists.Execute(context.Background(), rt, &LanguageExistsArgs{Name: "p\r\nlpgsql", MaintenanceDB: "testdb"})
 	if err != nil || value != true {
 		t.Fatalf("language_exists(CRLF name) = %#v err = %v, want true", value, err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// R9.2e schema_list / schema_exists / schema_get — pinned
+// salt/modules/postgres.py:2444-2599.
+
+// pinnedSchemaListCSV is the get_test_list_schema_csv fixture from the
+// pinned test_postgres.py, verbatim.
+const pinnedSchemaListCSV = "name,owner,acl\n" +
+	"public,postgres,\"{postgres=UC/postgres,=UC/postgres}\"\n" +
+	"pg_toast,postgres,\"\"\n"
+
+// wantPinnedSchemaList is the pinned test_schema_list expected dictionary:
+// each schema name maps to exactly the owner and acl pair.
+var wantPinnedSchemaList = map[string]map[string]string{
+	"public": {
+		"acl":   "{postgres=UC/postgres,=UC/postgres}",
+		"owner": "postgres",
+	},
+	"pg_toast": {
+		"acl":   "",
+		"owner": "postgres",
+	},
+}
+
+// fullSchemaListArgs supplies every schema_list connection argument with
+// the pinned test_schema_list values.
+func fullSchemaListArgs() *SchemaListArgs {
+	return &SchemaListArgs{
+		DBName:     "maint_db",
+		User:       nil,
+		DBUser:     postgresString("testuser"),
+		DBHost:     postgresString("testhost"),
+		DBPort:     postgresString("testport"),
+		DBPassword: postgresString("foo"),
+	}
+}
+
+// fullSchemaArgs supplies every schema_get/schema_exists argument with the
+// pinned test_schema_get values.
+func fullSchemaArgs(name string) *SchemaArgs {
+	return &SchemaArgs{
+		DBName:     "template1",
+		Name:       name,
+		DBUser:     postgresString("testuser"),
+		DBHost:     postgresString("testhost"),
+		DBPort:     postgresString("testport"),
+		DBPassword: postgresString("foo"),
+	}
+}
+
+// TestPostgresSchemaListArgvAndParse ports the pinned test_schema_list: the
+// pinned fixture CSV parses to the owner/acl dictionary, and the psql argv
+// carries the pinned pg_namespace × pg_roles SQL inside the COPY-to-CSV
+// transport with the pinned schema-family connection arguments.
+func TestPostgresSchemaListArgvAndParse(t *testing.T) {
+	rt, runner := newPostgresRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte(pinnedSchemaListCSV),
+	})
+	value, err := (schemaListFunc{}).Execute(context.Background(), rt, fullSchemaListArgs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	schemas, ok := value.(map[string]map[string]string)
+	if !ok {
+		t.Fatalf("schema_list type = %T", value)
+	}
+	if !reflect.DeepEqual(schemas, wantPinnedSchemaList) {
+		t.Fatalf("schema_list = %#v, want %#v", schemas, wantPinnedSchemaList)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d, want 1", len(runner.calls))
+	}
+	command := runner.calls[0]
+	want := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--username", "testuser",
+		"--host", "testhost",
+		"--port", "testport",
+		"--dbname", "maint_db",
+		"-v", "datestyle=ISO,MDY", "-c",
+		`COPY (SELECT pg_namespace.nspname as "name",pg_namespace.nspacl as "acl", ` +
+			`pg_roles.rolname as "owner" FROM pg_namespace LEFT JOIN ` +
+			`pg_roles ON pg_roles.oid = pg_namespace.nspowner) TO STDOUT WITH CSV HEADER`,
+	}
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+	if !reflect.DeepEqual(command.Env, []string{
+		"PGPASSWORD=foo",
+		"PGUSER=testuser",
+		"PGHOST=testhost",
+		"PGPORT=testport",
+	}) {
+		t.Fatalf("env = %q", command.Env)
+	}
+	if command.Shell || !reflect.DeepEqual(command.Redact, []string{"foo"}) {
+		t.Fatalf("unsafe command: %#v", command)
+	}
+	if command.Timeout != commandTimeout ||
+		command.MaxStdoutBytes != outputLimit || command.MaxStderrBytes != outputLimit {
+		t.Fatalf("unsafe command bounds: %#v", command)
+	}
+	if len(command.Stdin) != 0 || command.Dir != "" || command.WindowsCmdLine != "" {
+		t.Fatalf("unexpected command payload: %#v", command)
+	}
+	if rendered := command.RedactedString(); strings.Contains(rendered, "foo") {
+		t.Fatalf("rendered command leaks password: %q", rendered)
+	}
+}
+
+// TestPostgresSchemaListDefaults pins the minimal argv: the required dbname
+// positional reaches --dbname directly with a clean environment and no
+// redaction.
+func TestPostgresSchemaListDefaults(t *testing.T) {
+	rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(pinnedSchemaListCSV)})
+	value, err := (schemaListFunc{}).Execute(context.Background(), rt, &SchemaListArgs{DBName: "testdb"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(value, wantPinnedSchemaList) {
+		t.Fatalf("schema_list = %#v", value)
+	}
+	command := runner.calls[0]
+	want := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--dbname", "testdb",
+		"-v", "datestyle=ISO,MDY", "-c",
+		`COPY (SELECT pg_namespace.nspname as "name",pg_namespace.nspacl as "acl", ` +
+			`pg_roles.rolname as "owner" FROM pg_namespace LEFT JOIN ` +
+			`pg_roles ON pg_roles.oid = pg_namespace.nspowner) TO STDOUT WITH CSV HEADER`,
+	}
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+	if command.Env == nil || len(command.Env) != 0 {
+		t.Fatalf("default env = %q, want clean empty environment", command.Env)
+	}
+	if command.Redact != nil {
+		t.Fatalf("default redact = %q, want none", command.Redact)
+	}
+}
+
+// TestPostgresSchemaListMissingColumn pins the KeyError mapping when a row
+// lacks the owner, acl, or name column, in the pinned iteration order.
+func TestPostgresSchemaListMissingColumn(t *testing.T) {
+	for _, tc := range []struct {
+		csv  string
+		want string
+	}{
+		{"name,owner\npublic,postgres\n", `"acl"`},
+		{"name,acl\npublic,x\n", `"owner"`},
+		{"owner,acl\npostgres,x\n", `"name"`},
+	} {
+		rt, _ := newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(tc.csv)})
+		_, err := (schemaListFunc{}).Execute(context.Background(), rt, &SchemaListArgs{DBName: "testdb"})
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("short row %q err = %v, want missing %s column", tc.csv, err, tc.want)
+		}
+	}
+}
+
+// TestPostgresSchemaGet ports the pinned test_schema_get and
+// test_schema_get_again contract: an exact-case hit returns the owner/acl
+// row and a miss returns None, with a single catalog query whose SQL never
+// mentions the lookup name.
+func TestPostgresSchemaGet(t *testing.T) {
+	rt, runner := newPostgresRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte(pinnedSchemaListCSV),
+	})
+	value, err := (schemaGetFunc{}).Execute(context.Background(), rt, fullSchemaArgs("public"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(value, wantPinnedSchemaList["public"]) {
+		t.Fatalf("schema_get(public) = %#v", value)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d, want 1", len(runner.calls))
+	}
+	if joined := strings.Join(runner.calls[0].Args, "\x00"); strings.Contains(joined, "public") {
+		t.Fatalf("schema_get leaked the lookup name into argv: %q", joined)
+	}
+
+	// A schema absent from the catalog is None, and so is a case
+	// mismatch — the pinned .get is exact-case.
+	rt, _ = newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(pinnedSchemaListCSV)})
+	value, err = (schemaGetFunc{}).Execute(context.Background(), rt, fullSchemaArgs("absent"))
+	if err != nil || value != nil {
+		t.Fatalf("schema_get(absent) = %#v err = %v, want nil, nil", value, err)
+	}
+	rt, _ = newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(pinnedSchemaListCSV)})
+	value, err = (schemaGetFunc{}).Execute(context.Background(), rt, fullSchemaArgs("Public"))
+	if err != nil || value != nil {
+		t.Fatalf("schema_get(Public) = %#v err = %v, want nil (exact-case), nil", value, err)
+	}
+	// An empty-acl row is still a hit: the pinned pg_toast fixture row.
+	rt, _ = newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(pinnedSchemaListCSV)})
+	value, err = (schemaGetFunc{}).Execute(context.Background(), rt, fullSchemaArgs("pg_toast"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(value, map[string]string{"acl": "", "owner": "postgres"}) {
+		t.Fatalf("schema_get(pg_toast) = %#v, want empty-acl row", value)
+	}
+}
+
+// TestPostgresSchemaExists ports the pinned test_schema_exists contract:
+// bool(schema_get(...)) is the exact-case row truthiness — both pinned
+// fixture schemas exist, an empty-acl row still exists, and absent or
+// case-mismatched names do not.
+func TestPostgresSchemaExists(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		want bool
+	}{
+		{"public", true},
+		{"pg_toast", true},
+		{"absent", false},
+		{"PUBLIC", false},
+	} {
+		rt, runner := newPostgresRuntime(process.CommandResult{
+			ExitCode: 0,
+			Stdout:   []byte(pinnedSchemaListCSV),
+		})
+		value, err := (schemaExistsFunc{}).Execute(context.Background(), rt, fullSchemaArgs(tc.name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if value != tc.want {
+			t.Fatalf("schema_exists(%q) = %#v, want %v", tc.name, value, tc.want)
+		}
+		// The lookup never reaches SQL: the query argument stays the
+		// exact fixed catalog query.
+		args := runner.calls[0].Args
+		if got := args[len(args)-1]; !strings.HasPrefix(got, "COPY (SELECT pg_namespace.nspname") {
+			t.Fatalf("schema_exists(%q) SQL arg = %q, want the fixed catalog query", tc.name, got)
+		}
+		if strings.Contains(strings.Join(args, "\x00"), tc.name) {
+			t.Fatalf("schema_exists(%q) leaked the lookup name into argv", tc.name)
+		}
+	}
+}
+
+// TestPostgresSchemaCompatibilityData pins Salt's nonzero-exit shape across
+// the three schema functions: a failed query is not an exception; the list
+// is empty and the views degrade to None and false.
+func TestPostgresSchemaCompatibilityData(t *testing.T) {
+	failed := process.CommandResult{
+		ExitCode: 2,
+		Stderr:   []byte("psql: error: connection refused"),
+	}
+	rt, _ := newPostgresRuntime(failed)
+	value, err := (schemaListFunc{}).Execute(context.Background(), rt, &SchemaListArgs{DBName: "testdb"})
+	if err != nil || !reflect.DeepEqual(value, map[string]map[string]string{}) {
+		t.Fatalf("schema_list nonzero exit = %#v err = %v, want empty catalog", value, err)
+	}
+	rt, _ = newPostgresRuntime(failed)
+	value, err = (schemaGetFunc{}).Execute(context.Background(), rt, fullSchemaArgs("public"))
+	if err != nil || value != nil {
+		t.Fatalf("schema_get nonzero exit = %#v err = %v, want nil", value, err)
+	}
+	rt, _ = newPostgresRuntime(failed)
+	value, err = (schemaExistsFunc{}).Execute(context.Background(), rt, fullSchemaArgs("public"))
+	if err != nil || value != false {
+		t.Fatalf("schema_exists nonzero exit = %#v err = %v, want false", value, err)
+	}
+}
+
+// TestPostgresSchemaGuards pins the shared failure modes across the three
+// schema functions: pre-canceled context, the pinned system-user argument
+// rejected as runas, redacted Runner errors, output-limit violations,
+// psql-unavailable fail-closed, and the argument guards, each with zero
+// Runner executions where the guard precedes the call.
+func TestPostgresSchemaGuards(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	rt, runner := newPostgresRuntime()
+	if _, err := (schemaListFunc{}).Execute(ctx, rt, fullSchemaListArgs()); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled schema_list err = %v", err)
+	}
+	if _, err := (schemaGetFunc{}).Execute(ctx, rt, fullSchemaArgs("public")); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled schema_get err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("canceled runs executed %d commands", len(runner.calls))
+	}
+
+	// The pinned user argument is the system user: like every runas
+	// surface it is rejected before any Runner invocation.
+	rt, runner = newPostgresRuntime()
+	userArgs := fullSchemaListArgs()
+	userArgs.User = postgresString("postgres")
+	if _, err := (schemaListFunc{}).Execute(context.Background(), rt, userArgs); !errors.Is(err, errPostgresRunas) {
+		t.Fatalf("user schema_list err = %v, want runas rejection", err)
+	}
+	existsArgs := fullSchemaArgs("public")
+	existsArgs.User = postgresString("postgres")
+	if _, err := (schemaExistsFunc{}).Execute(context.Background(), rt, existsArgs); !errors.Is(err, errPostgresRunas) {
+		t.Fatalf("user schema_exists err = %v, want runas rejection", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("runas runs executed %d commands", len(runner.calls))
+	}
+
+	rt, _ = newPostgresRuntime(process.CommandResult{
+		ExitCode: -1,
+		Err:      fmt.Errorf("exec psql --dbname maint_db: secret foo rejected"),
+	})
+	_, err := (schemaListFunc{}).Execute(context.Background(), rt, fullSchemaListArgs())
+	if err == nil || strings.Contains(err.Error(), "foo") {
+		t.Fatalf("schema_list runner error = %v, want redacted", err)
+	}
+	if !strings.Contains(err.Error(), process.RedactedPlaceholder) {
+		t.Fatalf("schema_list error lacks redaction placeholder: %v", err)
+	}
+
+	for _, truncated := range []process.CommandResult{
+		{ExitCode: 0, StdoutTruncated: true, Stdout: []byte(strings.Repeat("9", outputLimit+1))},
+		{ExitCode: 0, StderrTruncated: true, Stderr: []byte(strings.Repeat("e", outputLimit+1))},
+	} {
+		rt, _ := newPostgresRuntime(truncated)
+		if _, err := (schemaGetFunc{}).Execute(context.Background(), rt, fullSchemaArgs("public")); !errors.Is(err, process.ErrOutputLimit) {
+			t.Fatalf("truncated schema_get err = %v, want ErrOutputLimit", err)
+		}
+		rt, _ = newPostgresRuntime(truncated)
+		if _, err := (schemaExistsFunc{}).Execute(context.Background(), rt, fullSchemaArgs("public")); !errors.Is(err, process.ErrOutputLimit) {
+			t.Fatalf("truncated schema_exists err = %v, want ErrOutputLimit", err)
+		}
+	}
+
+	rt, runner = newPostgresRuntime()
+	runner.available = map[string]bool{"psql": false}
+	for _, exec := range []struct {
+		name string
+		run  func() error
+	}{
+		{"schema_list", func() error {
+			_, err := (schemaListFunc{}).Execute(context.Background(), rt, fullSchemaListArgs())
+			return err
+		}},
+		{"schema_get", func() error {
+			_, err := (schemaGetFunc{}).Execute(context.Background(), rt, fullSchemaArgs("public"))
+			return err
+		}},
+		{"schema_exists", func() error {
+			_, err := (schemaExistsFunc{}).Execute(context.Background(), rt, fullSchemaArgs("public"))
+			return err
+		}},
+	} {
+		if err := exec.run(); !errors.Is(err, errPostgresPsqlUnavailable) {
+			t.Fatalf("%s psql-unavailable err = %v", exec.name, err)
+		}
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("unavailable psql executed %d commands", len(runner.calls))
+	}
+
+	// Wrong argument types are rejected like the pinned TypeError, and a
+	// nil Runner fails closed.
+	if _, err := (schemaListFunc{}).Execute(context.Background(), nil, "bogus"); err == nil {
+		t.Fatal("schema_list must reject non-struct args")
+	}
+	rtEmpty := &runtime.Runtime{Runner: nil, FS: runtime.NewMemoryFS()}
+	if _, err := (schemaExistsFunc{}).Execute(context.Background(), rtEmpty, fullSchemaArgs("public")); !errors.Is(err, errPostgresRunnerUnavailable) {
+		t.Fatalf("nil runner schema_exists err = %v", err)
+	}
+}
+
+// TestPostgresSchemaRegistryKeys drives the three schema functions through
+// the registry ResolveArgs+Call surface with CRLF-bearing schema names: the
+// pinned CSV reader keeps the embedded CRLF byte-exact, each invocation runs
+// on its own Runner whose single recorded command is the exact fixed catalog
+// argv, and no lookup name ever reaches argv. The guard block pins zero
+// Runner executions for the required, malformed, runas, oversize, and
+// canceled paths.
+func TestPostgresSchemaRegistryKeys(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+
+	schemaCSV := "name,owner,acl\r\n" +
+		"public,postgres,\"{postgres=UC/postgres,=UC/postgres}\"\r\n" +
+		"\"p\r\ng_toast\",postgres,\r\n"
+	// wantSchemaArgv is the exact fixed argv every schema invocation runs:
+	// the pinned never-prompt flags, the required dbname positional, and the
+	// pinned pg_namespace × pg_roles SQL inside the COPY-to-CSV transport.
+	wantSchemaArgv := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--dbname", "testdb",
+		"-v", "datestyle=ISO,MDY", "-c",
+		`COPY (SELECT pg_namespace.nspname as "name",pg_namespace.nspacl as "acl", ` +
+			`pg_roles.rolname as "owner" FROM pg_namespace LEFT JOIN ` +
+			`pg_roles ON pg_roles.oid = pg_namespace.nspowner) TO STDOUT WITH CSV HEADER`,
+	}
+	// checkRunner asserts the runner's actual recorded commands: exactly one
+	// execution with the exact fixed SQL argv and no lookup name in it.
+	checkRunner := func(runner *postgresFakeRunner, lookup string) {
+		t.Helper()
+		if len(runner.calls) != 1 {
+			t.Fatalf("runner calls = %d, want exactly 1", len(runner.calls))
+		}
+		command := runner.calls[0]
+		if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, wantSchemaArgv) {
+			t.Fatalf("argv = %q, want the exact fixed catalog argv %q", got, wantSchemaArgv)
+		}
+		if lookup != "" && strings.Contains(strings.Join(command.Args, "\x00"), lookup) {
+			t.Fatalf("lookup name %q leaked into argv: %q", lookup, command.Args)
+		}
+	}
+
+	// schema_list: ResolveArgs pins the prototype and Call with the exact
+	// SchemaListArgs returns the CRLF-keyed catalog.
+	rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(schemaCSV)})
+	prototype, err := reg.ResolveArgs(rt, "postgres.schema_list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := prototype.(SchemaListArgs); !ok {
+		t.Fatalf("schema_list prototype = %T, want SchemaListArgs", prototype)
+	}
+	value, err := reg.Call(context.Background(), rt, "postgres.schema_list", &SchemaListArgs{DBName: "testdb"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	schemas, ok := value.(map[string]map[string]string)
+	if !ok {
+		t.Fatalf("schema_list type = %T", value)
+	}
+	if _, has := schemas["p\r\ng_toast"]; !has || schemas["p\r\ng_toast"]["owner"] != "postgres" {
+		t.Fatalf("schema_list keys = %#v, want byte-exact embedded-CRLF key", schemas)
+	}
+	if len(schemas) != 2 {
+		t.Fatalf("schema_list = %#v, want both pinned rows", schemas)
+	}
+	checkRunner(runner, "")
+
+	// schema_get: the exact SchemaArgs carry the CRLF name, which stays
+	// client-side — the row dictionary comes back and argv stays fixed.
+	rt, runner = newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(schemaCSV)})
+	prototype, err = reg.ResolveArgs(rt, "postgres.schema_get")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := prototype.(SchemaArgs); !ok {
+		t.Fatalf("schema_get prototype = %T, want SchemaArgs", prototype)
+	}
+	value, err = reg.Call(context.Background(), rt, "postgres.schema_get", &SchemaArgs{DBName: "testdb", Name: "p\r\ng_toast"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, ok := value.(map[string]string)
+	if !ok || row["owner"] != "postgres" || row["acl"] != "" {
+		t.Fatalf("schema_get(CRLF name) = %#v", value)
+	}
+	checkRunner(runner, "p\r\ng_toast")
+
+	// schema_exists: bool(schema_get(...)) over the same exact SchemaArgs.
+	rt, runner = newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(schemaCSV)})
+	prototype, err = reg.ResolveArgs(rt, "postgres.schema_exists")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := prototype.(SchemaArgs); !ok {
+		t.Fatalf("schema_exists prototype = %T, want SchemaArgs", prototype)
+	}
+	value, err = reg.Call(context.Background(), rt, "postgres.schema_exists", &SchemaArgs{DBName: "testdb", Name: "p\r\ng_toast"})
+	if err != nil || value != true {
+		t.Fatalf("schema_exists(CRLF name) = %#v err = %v, want true", value, err)
+	}
+	checkRunner(runner, "p\r\ng_toast")
+
+	// Required arguments are rejected before any Runner exists: the exact
+	// argument structs fail required validation with dbname or name unset.
+	if err := config.ValidateRequired(&SchemaListArgs{}); err == nil {
+		t.Fatal("schema_list must require dbname")
+	}
+	if err := config.ValidateRequired(&SchemaArgs{Name: "public"}); err == nil {
+		t.Fatal("schema_get must require dbname")
+	}
+	if err := config.ValidateRequired(&SchemaArgs{DBName: "testdb"}); err == nil {
+		t.Fatal("schema_exists must require name")
+	}
+
+	// Malformed arguments are rejected at the registry boundary with zero
+	// Runner executions: a non-struct payload and the cross-family pointer.
+	rt, runner = newPostgresRuntime()
+	if _, err := reg.Call(context.Background(), rt, "postgres.schema_get", "bogus"); err == nil {
+		t.Fatal("schema_get must reject non-struct args")
+	}
+	if _, err := reg.Call(context.Background(), rt, "postgres.schema_exists", &SchemaListArgs{DBName: "testdb"}); err == nil {
+		t.Fatal("schema_exists must reject schema_list args")
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("malformed runs executed %d commands", len(runner.calls))
+	}
+
+	// The pinned system-user argument stays a rejected runas, an oversized
+	// dbname stays under the command-input ceiling, and a canceled context
+	// aborts — all before any Runner invocation.
+	rt, runner = newPostgresRuntime()
+	if _, err := reg.Call(context.Background(), rt, "postgres.schema_list",
+		&SchemaListArgs{DBName: "testdb", User: postgresString("postgres")}); !errors.Is(err, errPostgresRunas) {
+		t.Fatalf("user schema_list err = %v, want runas rejection", err)
+	}
+	if _, err := reg.Call(context.Background(), rt, "postgres.schema_get",
+		&SchemaArgs{DBName: "testdb", Name: "public", User: postgresString("postgres")}); !errors.Is(err, errPostgresRunas) {
+		t.Fatalf("user schema_get err = %v, want runas rejection", err)
+	}
+	if _, err := reg.Call(context.Background(), rt, "postgres.schema_exists",
+		&SchemaArgs{DBName: "testdb", Name: "public", User: postgresString("postgres")}); !errors.Is(err, errPostgresRunas) {
+		t.Fatalf("user schema_exists err = %v, want runas rejection", err)
+	}
+	oversize := strings.Repeat("d", runtime.MaxCommandInputBytes)
+	if _, err := reg.Call(context.Background(), rt, "postgres.schema_list",
+		&SchemaListArgs{DBName: oversize}); !errors.Is(err, runtime.ErrCommandInputLimit) {
+		t.Fatalf("oversize schema_list err = %v, want ErrCommandInputLimit", err)
+	}
+	if _, err := reg.Call(context.Background(), rt, "postgres.schema_get",
+		&SchemaArgs{DBName: oversize, Name: "public"}); !errors.Is(err, runtime.ErrCommandInputLimit) {
+		t.Fatalf("oversize schema_get err = %v, want ErrCommandInputLimit", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := reg.Call(ctx, rt, "postgres.schema_list", &SchemaListArgs{DBName: "testdb"}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled schema_list err = %v", err)
+	}
+	if _, err := reg.Call(ctx, rt, "postgres.schema_exists", &SchemaArgs{DBName: "testdb", Name: "public"}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled schema_exists err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("guarded runs executed %d commands", len(runner.calls))
 	}
 }

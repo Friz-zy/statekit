@@ -31,9 +31,12 @@ import (
 // get_installed_extension, is_available_extension, is_installed_extension,
 // language_list, and language_exists (postgres.py:1654-1846, 2602-2695),
 // with every extension and language lookup matched client-side so no
-// caller string reaches SQL. The generic psql_query surface and the
-// remaining mysql and postgres surfaces need their client protocol
-// boundaries and stay pending.
+// caller string reaches SQL. R9.2e adds the three read-only schema catalog
+// functions schema_exists, schema_get, and schema_list
+// (postgres.py:2444-2599) with the pinned schema-family connection
+// signature and the same client-side name matching. The generic psql_query
+// surface and the remaining mysql and postgres surfaces need their client
+// protocol boundaries and stay pending.
 type r9FamilySpec struct {
 	Source             string
 	SourceTests        string
@@ -114,6 +117,7 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"postgres.server-version-probe",
 			"postgres.read-only-catalog-lists",
 			"postgres.extension-and-language-catalogs",
+			"postgres.schema-catalogs",
 		},
 		Evidence: []string{
 			"direct, registry, and CLI fake-Runner tests pin the exact psql argv (SQL at index 14 as the pinned test_version asserts), the clean PG environment, first-line split semantics, and the None fallthrough for empty stdout",
@@ -123,12 +127,14 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"available_extensions and installed_extensions reproduce the pinned test_available_extensions/test_installed_extensions dictionaries verbatim (the whole row stored under its name/extname key) plus realistic pg_available_extensions and pg_extension COPY CSV fixtures with the pinned short-row column filtering",
 			"get_available_extension and get_installed_extension keep the pinned .get(name, None) exact-case row-or-None shape, is_available_extension keeps the pinned case-insensitive name.lower() key membership, is_installed_extension keeps the pinned bool(get_installed_extension(...)) exact-case truthiness, and language_exists keeps the pinned exact-case `name in languages` membership",
 			"language_list runs the pinned get_test_list_language_csv fixture verbatim to the pinned name→name dictionary with the pinned SELECT lanname AS \"Name\" FROM pg_language SQL, and maintenance_db stays the pinned required positional",
+			"schema_list runs the pinned get_test_list_schema_csv fixture verbatim to the pinned {public, pg_toast} dictionary with only the owner and acl pair per row (the pinned SELECT pg_namespace.nspname ... LEFT JOIN pg_roles SQL byte-for-byte), schema_get keeps the pinned .get(name, None) exact-case row-or-None shape with the empty-acl pg_toast row still a hit, and schema_exists keeps the pinned bool(schema_get(...)) truthiness",
 			"password redaction is asserted on the rendered command, captured output, and returned errors; no real psql, database, or package-manager path exists",
 			"cancellation, output limits, runas rejection, nonzero-exit compatibility data, and psql-unavailable fail-closed behavior are covered without any live server",
 			"the internal parsed-version helper is pinned by LooseVersion comparison vectors because no existing package consumes it yet",
 		},
 		CompatibilityNotes: []string{
-			"R9.2c registers the version probe plus the five read-only catalog primitives db_list, db_exists, tablespace_list, tablespace_exists, and user_list; R9.2d adds the eight read-only extension and language catalog functions available_extensions, installed_extensions, get_available_extension, get_installed_extension, is_available_extension, is_installed_extension, language_list, and language_exists; the generic psql_query surface and every write path stay pending (no arbitrary-query or identifier-interpolating registration exists in this phase)",
+			"R9.2c registers the version probe plus the five read-only catalog primitives db_list, db_exists, tablespace_list, tablespace_exists, and user_list; R9.2d adds the eight read-only extension and language catalog functions available_extensions, installed_extensions, get_available_extension, get_installed_extension, is_available_extension, is_installed_extension, language_list, and language_exists; R9.2e adds the three read-only schema catalog functions schema_exists, schema_get, and schema_list; the generic psql_query surface and every write path stay pending (no arbitrary-query or identifier-interpolating registration exists in this phase)",
+			"the schema family keeps the pinned schema_* signature (postgres.py:2444-2599): dbname is the required database positional, user is the pinned system-user argument rejected like every runas surface, and db_user/db_host/db_port/db_password project onto the shared psql connection tuple; schema rows are reduced to exactly the pinned owner/acl pair keyed by name, and schema_get/schema_exists match names client-side so no caller string reaches SQL",
 			"extension and language lookups are client-side only: get_*/is_*/language_exists match names against the fetched catalog so no caller string reaches SQL, and the installed_extensions query keeps the pinned double space after \"pg_extension a,\" byte-for-byte",
 			"available_extensions/installed_extensions store the full row under its name/extname key (no column removed, unlike db_list's Name pop), rows whose zipped prefix lacks either pinned key column are skipped, and language_list maps each Name column to itself exactly like the pinned ret[row[\"Name\"]] = row[\"Name\"]",
 			"the pinned _run_psql PGPASSFILE temp-file credential transport is replaced by psql-native PGPASSWORD (with PGUSER/PGHOST/PGPORT) in an otherwise clean environment because the single-user runtime has no file-chown/elevation contract; the password is a Redact secret and never rendered",
@@ -157,6 +163,9 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"postgres.is_installed_extension",
 			"postgres.language_list",
 			"postgres.language_exists",
+			"postgres.schema_exists",
+			"postgres.schema_get",
+			"postgres.schema_list",
 		},
 	},
 }
@@ -210,7 +219,7 @@ func TestR9DifferentialScopeReport(t *testing.T) {
 	registered := registeredNames(first)
 
 	report := r9Report{
-		Round:    "R9.2d",
+		Round:    "R9.2e",
 		Platform: "cross-platform",
 		RuntimeStatus: "mock-only: RabbitMQ is never started, MySQL is never connected, and PostgreSQL is never contacted; " +
 			"shell-free fake Runner tests and pure-function vectors provide the executable contract",

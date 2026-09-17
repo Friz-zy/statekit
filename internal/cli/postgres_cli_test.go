@@ -685,3 +685,169 @@ func TestPostgresCLILanguage(t *testing.T) {
 		t.Fatalf("failed language_exists code=%d out=%q err=%q, want false", code, out, errS)
 	}
 }
+
+// pinnedCLISchemaCSV is the pinned get_test_list_schema_csv fixture.
+const pinnedCLISchemaCSV = "name,owner,acl\n" +
+	"public,postgres,\"{postgres=UC/postgres,=UC/postgres}\"\n" +
+	"pg_toast,postgres,\"\"\n"
+
+// TestPostgresCLISchema pins the three schema functions end to end: the
+// owner/acl JSON dictionary against the pinned fixture, the schema_get row
+// object or null, the schema_exists booleans, the pinned db_* flag surface
+// with the required dbname, and the fixed pg_namespace SQL with no
+// credential leak.
+func TestPostgresCLISchema(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(pinnedCLISchemaCSV)},
+	}}
+	app := postgresCLIApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "postgres.schema_list",
+		"--dbname", "maint_db", "--db_user", "testuser", "--db_host", "testhost",
+		"--db_port", "testport", "--db_password", "foo", "-o", "json")
+	var schemas map[string]map[string]string
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &schemas) != nil {
+		t.Fatalf("schema_list code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(schemas) != 2 || schemas["public"]["acl"] != "{postgres=UC/postgres,=UC/postgres}" ||
+		schemas["public"]["owner"] != "postgres" || schemas["pg_toast"]["acl"] != "" {
+		t.Fatalf("schema_list JSON = %q", out)
+	}
+	if _, hasName := schemas["public"]["name"]; hasName {
+		t.Fatalf("schema_list exposed the name column: %q", out)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d, want 1", len(runner.calls))
+	}
+	command := runner.calls[0]
+	argv := append([]string{command.Name}, command.Args...)
+	if argv[0] != "psql" || argv[5] != "--username" || argv[6] != "testuser" ||
+		argv[7] != "--host" || argv[8] != "testhost" || argv[9] != "--port" || argv[10] != "testport" ||
+		argv[11] != "--dbname" || argv[12] != "maint_db" || argv[15] != "-c" ||
+		argv[16] != `COPY (SELECT pg_namespace.nspname as "name",pg_namespace.nspacl as "acl", `+
+			`pg_roles.rolname as "owner" FROM pg_namespace LEFT JOIN `+
+			`pg_roles ON pg_roles.oid = pg_namespace.nspowner) TO STDOUT WITH CSV HEADER` {
+		t.Fatalf("argv = %q", argv)
+	}
+	if strings.Contains(command.RedactedString(), "foo") || strings.Contains(out+errS, "foo") {
+		t.Fatalf("password leaked: %q %q", command.RedactedString(), out+errS)
+	}
+	if strings.Contains(out+errS, "pg_namespace") {
+		t.Fatalf("CLI output leaks the source SQL: %q", out+errS)
+	}
+
+	// schema_get: the owner/acl row object for a hit, null for a miss.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(pinnedCLISchemaCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.schema_get",
+		"--dbname", "template1", "--name", "public", "-o", "json")
+	var row map[string]string
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &row) != nil ||
+		row["owner"] != "postgres" || row["acl"] != "{postgres=UC/postgres,=UC/postgres}" {
+		t.Fatalf("schema_get code=%d out=%q err=%q", code, out, errS)
+	}
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(pinnedCLISchemaCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.schema_get",
+		"--dbname", "template1", "--name", "pg_catalog", "-o", "json")
+	if code != ExitOK || errS != "" || strings.TrimSpace(out) != "null" {
+		t.Fatalf("schema_get(miss) code=%d out=%q err=%q, want null", code, out, errS)
+	}
+	if joined := strings.Join(runner.calls[0].Args, "\x00"); strings.Contains(joined, "pg_catalog") {
+		t.Fatalf("schema_get leaked the lookup name into argv: %q", joined)
+	}
+
+	// schema_exists: exact-case booleans, the lookup never reaching SQL.
+	for _, tc := range []struct {
+		name string
+		want bool
+	}{
+		{"public", true},
+		{"pg_toast", true},
+		{"PUBLIC", false},
+		{"absent", false},
+	} {
+		runner := &cliRecordingRunner{results: []process.CommandResult{
+			{ExitCode: 0, Stdout: []byte(pinnedCLISchemaCSV)},
+		}}
+		app := postgresCLIApp(t, runner)
+		code, out, errS := captureCode(t, app, "exec", "postgres.schema_exists",
+			"--dbname", "template1", "--name", tc.name, "-o", "json")
+		var value bool
+		if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &value) != nil || value != tc.want {
+			t.Fatalf("schema_exists(%q) code=%d out=%q err=%q", tc.name, code, out, errS)
+		}
+		args := runner.calls[0].Args
+		if got := args[len(args)-1]; !strings.HasPrefix(got, "COPY (SELECT pg_namespace.nspname") {
+			t.Fatalf("schema_exists(%q) SQL arg = %q, want the fixed catalog query", tc.name, got)
+		}
+	}
+
+	// The pinned dbname positional is required: omitting it fails
+	// validation before any run, for all three schema functions.
+	for _, fn := range []string{"postgres.schema_list", "postgres.schema_get", "postgres.schema_exists"} {
+		runner := &cliRecordingRunner{}
+		app := postgresCLIApp(t, runner)
+		args := []string{"exec", fn}
+		if fn != "postgres.schema_list" {
+			args = append(args, "--name", "public")
+		}
+		args = append(args, "-o", "json")
+		code, _, errS := captureCode(t, app, args...)
+		if code != ExitInvalidInput || !strings.Contains(errS, "dbname") || len(runner.calls) != 0 {
+			t.Fatalf("%s missing dbname code=%d err=%q calls=%d", fn, code, errS, len(runner.calls))
+		}
+	}
+
+	// schema_get/schema_exists also require the name.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.schema_get", "--dbname", "template1", "-o", "json")
+	if code != ExitInvalidInput || !strings.Contains(errS, "name") || len(runner.calls) != 0 {
+		t.Fatalf("schema_get missing name code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+
+	// The pinned system-user argument is rejected as runas before any
+	// Runner invocation.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.schema_list",
+		"--dbname", "maint_db", "--user", "postgres", "-o", "json")
+	if code != ExitFailed || !strings.Contains(errS, "runas") || len(runner.calls) != 0 {
+		t.Fatalf("user code=%d err=%q calls=%d, want runas rejection", code, errS, len(runner.calls))
+	}
+
+	// A failed query keeps Salt's compatibility shapes: empty catalog,
+	// null view, false predicate.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 2, Stderr: []byte("psql: error: connection refused")},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.schema_list",
+		"--dbname", "maint_db", "-o", "json")
+	if code != ExitOK || errS != "" || strings.TrimSpace(out) != "{}" {
+		t.Fatalf("failed schema_list code=%d out=%q err=%q, want {}", code, out, errS)
+	}
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 2, Stderr: []byte("psql: error: connection refused")},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.schema_get",
+		"--dbname", "template1", "--name", "public", "-o", "json")
+	if code != ExitOK || errS != "" || strings.TrimSpace(out) != "null" {
+		t.Fatalf("failed schema_get code=%d out=%q err=%q, want null", code, out, errS)
+	}
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 2, Stderr: []byte("psql: error: connection refused")},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.schema_exists",
+		"--dbname", "template1", "--name", "public", "-o", "json")
+	var value bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &value) != nil || value != false {
+		t.Fatalf("failed schema_exists code=%d out=%q err=%q, want false", code, out, errS)
+	}
+}
