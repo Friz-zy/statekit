@@ -1662,6 +1662,18 @@ The PTD tables below are retained as an immutable audit snapshot. These
 overrides are the current status and do not delete or rewrite any original
 rows or counts.
 
+##### 2026-09-17 current status (R9.2a MySQL pure helpers)
+
+Actual HEAD is `924082a` (R9.2a MySQL pure helpers). R9.2a implementation and
+independent-gate ledger:
+
+| Commit | Scope | Implementation executor role(s) | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `924082a` | R9.2a MySQL pure `quote_identifier`/`tokenize_grant` (2 public registered; 48 of 50 mysql catalog names remaining, 36 pending public) | `backend-engineer-senior` | `backend-engineer-lead` | passed; rootless Podman full/race/vet/cross-build green; no DB driver, no new dependency, no live MySQL; R9 report public 39 (rabbitmq 37 + mysql 2), mysql pending 36; R3-R8 hashes unchanged; mock-only — no live database behavior claimed |
+
+The next R9 phase should be another CLI/mock-friendly family; live database
+integration (E5) remains excluded.
+
 ##### 2026-09-15 current status (R9.1 RabbitMQ CLI surface)
 
 R9.1 implementation and independent-gate ledger:
