@@ -72,6 +72,7 @@ import (
 	execpkgrepo "github.com/friz-zy/statekit/modules/exec/pkgrepo"
 	execpkgresource "github.com/friz-zy/statekit/modules/exec/pkgresource"
 	execpkgutil "github.com/friz-zy/statekit/modules/exec/pkgutil"
+	execpostgres "github.com/friz-zy/statekit/modules/exec/postgres"
 	execpower "github.com/friz-zy/statekit/modules/exec/power"
 	execps "github.com/friz-zy/statekit/modules/exec/ps"
 	execpyenv "github.com/friz-zy/statekit/modules/exec/pyenv"
@@ -287,6 +288,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execquota.Register,
 		execrabbitmq.Register,
 		execmysql.Register,
+		execpostgres.Register,
 		execxfs.Register,
 		execsysctl.Register,
 		execsysfs.Register,

@@ -4,9 +4,9 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 113
+    implemented: 114
     partial: 0
-    excluded: 53
+    excluded: 52
     planned: 80
 implemented_families:
     - acl
@@ -72,6 +72,7 @@ implemented_families:
     - pkgbuild
     - pkgrepo
     - pkgutil
+    - postgres
     - power
     - ps
     - pyenv
@@ -143,7 +144,6 @@ excluded:
     - 'nxos (planned: network-device stack (round R11, ADR-gated plugin boundary))'
     - 'nxos_api (planned: network-device stack (round R11, ADR-gated plugin boundary))'
     - 'pillar (excluded: master-minion architecture (StateKit is local-only by design))'
-    - 'postgres (planned: requires database/message-broker client protocol (round R9, services tier))'
     - 'postgres_cluster (planned: requires database/message-broker client protocol (round R9, services tier))'
     - 'postgres_database (planned: requires database/message-broker client protocol (round R9, services tier))'
     - 'postgres_default_privileges (planned: requires database/message-broker client protocol (round R9, services tier))'

@@ -20,8 +20,10 @@ import (
 // module's untagged fake-runner suite supplies the command, parser, error,
 // cancellation, bounds, and CLI evidence). R9.2a adds the mysql family's
 // driver-free pure slice: quote_identifier and tokenize_grant, pinned by
-// source-derived lexer vectors. The remaining mysql surface needs the
-// MySQL client protocol boundary and stays pending.
+// source-derived lexer vectors. R9.2b adds the postgres family's CLI-first
+// slice: the psql-backed version probe plus the internal LooseVersion-
+// equivalent parsed-version helper. The remaining mysql and postgres
+// surfaces need their client protocol boundaries and stay pending.
 type r9FamilySpec struct {
 	Source             string
 	SourceTests        string
@@ -94,10 +96,37 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"mysql.tokenize_grant",
 		},
 	},
+	"postgres": {
+		Source:      "salt/modules/postgres.py @ 8b63e700637e40d76f80a00d95c60471797c73b9",
+		SourceTests: "tests/pytests/unit/modules/test_postgres.py @ 8b63e700637e40d76f80a00d95c60471797c73b9",
+		Platform:    "cross-platform CLI wrapper",
+		Scenarios: []string{
+			"postgres.server-version-probe",
+		},
+		Evidence: []string{
+			"direct, registry, and CLI fake-Runner tests pin the exact psql argv (SQL at index 14 as the pinned test_version asserts), the clean PG environment, first-line split semantics, and the None fallthrough for empty stdout",
+			"password redaction is asserted on the rendered command, captured output, and returned errors; no real psql, database, or package-manager path exists",
+			"cancellation, output limits, runas rejection, and psql-unavailable fail-closed behavior are covered without any live server",
+			"the internal parsed-version helper is pinned by LooseVersion comparison vectors because no existing package consumes it yet",
+		},
+		CompatibilityNotes: []string{
+			"R9.2b registers only the public version probe; the remaining postgres surface needs the broader psql query boundary and stays pending",
+			"the pinned _run_psql PGPASSFILE temp-file credential transport is replaced by psql-native PGPASSWORD (with PGUSER/PGHOST/PGPORT) in an otherwise clean environment because the single-user runtime has no file-chown/elevation contract; the password is a Redact secret and never rendered",
+			"a non-zero psql exit stays compatibility data (Salt logs and still returns the empty first line), while Runner failures, cancellation, and output-limit violations are errors",
+			"Salt's postgres.timeout default of 0 (unbounded) is replaced by a finite 30s ceiling as the R9 resource-control convention",
+			"runas is rejected before Runner invocation because the central runtime is single-user and has no elevation contract; Salt's implicit postgres runas default therefore does not apply",
+			"the pinned config.option defaults (postgres.user/host/port/maintenance_db/pass/bins_dir) have no StateKit module-config surface yet, so omitted arguments keep Salt's None meaning and psql resolves through PATH only, failing closed when absent",
+			"the internal _parsed_version helper follows pinned salt/utils/versions.py:73-101: digit runs become integers, separator dots are discarded, and lists compare numerically unless either contains strings, when all integer components use zfill(8) string comparison; mixed int/string comparison is defined; the helper is deliberately not registered publicly",
+			"no postgres driver, live server, network egress, or new dependency is claimed or added",
+		},
+		RegisteredSubset: []string{
+			"postgres.version",
+		},
+	},
 }
 
 // r9FamilyOrder keeps generated map emission deterministic.
-var r9FamilyOrder = []string{"mysql", "rabbitmq"}
+var r9FamilyOrder = []string{"mysql", "postgres", "rabbitmq"}
 
 type r9FamilyReport struct {
 	Catalog            int      `yaml:"catalog_functions"`
@@ -145,9 +174,9 @@ func TestR9DifferentialScopeReport(t *testing.T) {
 	registered := registeredNames(first)
 
 	report := r9Report{
-		Round:    "R9.2a",
+		Round:    "R9.2b",
 		Platform: "cross-platform",
-		RuntimeStatus: "mock-only: RabbitMQ is never started and MySQL is never connected; " +
+		RuntimeStatus: "mock-only: RabbitMQ is never started, MySQL is never connected, and PostgreSQL is never contacted; " +
 			"shell-free fake Runner tests and pure-function vectors provide the executable contract",
 		BehavioralParity: "not claimed: live Salt/broker/database differential execution is prohibited for R9",
 		Families:         map[string]r9FamilyReport{},
