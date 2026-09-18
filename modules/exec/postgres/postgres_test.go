@@ -346,7 +346,7 @@ func TestPostgresVersionInvalidInputs(t *testing.T) {
 	}
 }
 
-// TestPostgresRegistrySurface pins the forty canonical registrations,
+// TestPostgresRegistrySurface pins the forty-one canonical registrations,
 // their argument prototypes, and the absence of public psql_query,
 // has_default_privileges, create_metadata, and _parsed_version entries.
 func TestPostgresRegistrySurface(t *testing.T) {
@@ -357,6 +357,7 @@ func TestPostgresRegistrySurface(t *testing.T) {
 	wantNames := []string{
 		"postgres.available_extensions",
 		"postgres.create_extension",
+		"postgres.db_alter",
 		"postgres.db_create",
 		"postgres.db_exists",
 		"postgres.db_list",
@@ -412,6 +413,8 @@ func TestPostgresRegistrySurface(t *testing.T) {
 			want = DbCreateArgs{}
 		case "postgres.db_remove":
 			want = DbRemoveArgs{}
+		case "postgres.db_alter":
+			want = DbAlterArgs{}
 		case "postgres.user_create":
 			want = UserCreateArgs{}
 		case "postgres.user_update":
@@ -500,6 +503,7 @@ func TestPostgresRegistrySurface(t *testing.T) {
 			"name", "tablespace", "encoding", "lc_collate", "lc_ctype", "owner", "template",
 		}, connection...)},
 		{dbRemoveFunc{}, append([]string{"name"}, connection...)},
+		{dbAlterFunc{}, append([]string{"name", "tablespace", "owner", "owner_recurse"}, connection...)},
 		{tablespaceListFunc{}, connection},
 		{tablespaceExistsFunc{}, append([]string{"name"}, connection...)},
 		{userListFunc{}, append(connection, "return_password")},
@@ -1446,9 +1450,10 @@ func TestPostgresDbRemoveValidationErrorRedaction(t *testing.T) {
 	}
 }
 
-// TestPostgresDbValidationErrorsRedactedThroughRegistry repeats both loops
+// TestPostgresDbValidationErrorsRedactedThroughRegistry repeats the loops
 // through the ExecRegistry dispatch (the path the CLI drives): the same
-// exact, marker-free stable errors and zero Runner calls.
+// exact, marker-free stable errors and zero Runner calls, plus db_alter's
+// owner_recurse UnsupportedError under the same marker overlap.
 func TestPostgresDbValidationErrorsRedactedThroughRegistry(t *testing.T) {
 	reg := runtime.NewExecRegistry()
 	if err := Register(reg); err != nil {
@@ -1470,6 +1475,16 @@ func TestPostgresDbValidationErrorsRedactedThroughRegistry(t *testing.T) {
 			Password: postgresString(postgresValidationMarker),
 		}, "postgres: invalid argument: unsupported quote character in name"})
 	}
+	for _, tc := range dbAlterRejectedFields() {
+		tc.args.Password = postgresString(postgresValidationMarker)
+		calls = append(calls, registryCall{"postgres.db_alter", tc.args, tc.want})
+	}
+	calls = append(calls, registryCall{"postgres.db_alter", &DbAlterArgs{
+		Name:         "db-" + postgresValidationMarker,
+		Owner:        postgresString(`own-` + postgresValidationMarker),
+		OwnerRecurse: postgresBool(true),
+		Password:     postgresString(postgresValidationMarker),
+	}, `unsupported function "postgres.owner_to"`})
 	for _, tc := range calls {
 		rt, runner := newPostgresRuntime()
 		_, err := reg.Call(context.Background(), rt, tc.fn, tc.args)
@@ -1564,6 +1579,466 @@ func TestPostgresDbRemoveGuards(t *testing.T) {
 	})
 	_, err = (dbRemoveFunc{}).Execute(context.Background(), rt, &DbRemoveArgs{
 		Name:     "test_db",
+		Password: postgresString("foo"),
+	})
+	if err == nil || strings.Contains(err.Error(), "foo") {
+		t.Fatalf("runner error must be redacted: %v", err)
+	}
+	if !strings.Contains(err.Error(), process.RedactedPlaceholder) {
+		t.Fatalf("error lacks redaction placeholder: %v", err)
+	}
+}
+
+// wantDbAlterStatements is the pinned two-statement sequence of
+// test_db_alter, byte-for-byte: the OWNER change before the TABLESPACE
+// change.
+var wantDbAlterStatements = []string{
+	`ALTER DATABASE "dbname" OWNER TO "otheruser"`,
+	`ALTER DATABASE "dbname" SET TABLESPACE "testspace"`,
+}
+
+// TestPostgresDbAlterArgvAndResult ports the pinned test_db_alter: both
+// statements in the pinned order, each on the full pinned argv with the
+// clean PG environment and password redaction, and the true result after
+// the TABLESPACE statement. The pinned test's runas="foo" is covered by
+// the runas rejection below because the single-user runtime rejects it
+// before execution.
+func TestPostgresDbAlterArgvAndResult(t *testing.T) {
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0},
+		process.CommandResult{ExitCode: 0},
+	)
+	value, err := (dbAlterFunc{}).Execute(context.Background(), rt, &DbAlterArgs{
+		Name:          "dbname",
+		User:          postgresString("testuser"),
+		Host:          postgresString("testhost"),
+		Port:          postgresString("testport"),
+		MaintenanceDB: postgresString("maint_db"),
+		Password:      postgresString("foo"),
+		Tablespace:    postgresString("testspace"),
+		Owner:         postgresString("otheruser"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true {
+		t.Fatalf("db_alter = %#v, want true", value)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("runner calls = %d, want 2", len(runner.calls))
+	}
+	for i, command := range runner.calls {
+		want := []string{
+			"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+			"--username", "testuser",
+			"--host", "testhost",
+			"--port", "testport",
+			"--dbname", "maint_db",
+			"-c", wantDbAlterStatements[i],
+		}
+		if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+			t.Fatalf("call %d argv = %q, want %q", i, got, want)
+		}
+		wantEnv := []string{
+			"PGPASSWORD=foo",
+			"PGUSER=testuser",
+			"PGHOST=testhost",
+			"PGPORT=testport",
+		}
+		if !reflect.DeepEqual(command.Env, wantEnv) {
+			t.Fatalf("call %d env = %q, want %q", i, command.Env, wantEnv)
+		}
+		if command.Shell {
+			t.Fatalf("call %d must run without a shell", i)
+		}
+		if command.Timeout != commandTimeout ||
+			command.MaxStdoutBytes != outputLimit || command.MaxStderrBytes != outputLimit {
+			t.Fatalf("call %d unsafe command bounds: %#v", i, command)
+		}
+		if len(command.Stdin) != 0 || command.Dir != "" || command.WindowsCmdLine != "" {
+			t.Fatalf("call %d unexpected command payload: %#v", i, command)
+		}
+		if !reflect.DeepEqual(command.Redact, []string{"foo"}) {
+			t.Fatalf("call %d redact = %#v", i, command.Redact)
+		}
+		if rendered := command.RedactedString(); strings.Contains(rendered, "foo") {
+			t.Fatalf("call %d rendered command leaks password: %q", i, rendered)
+		}
+	}
+}
+
+// TestPostgresDbAlterSingleOption pins the one-statement shapes: owner
+// alone runs only the pinned OWNER statement and tablespace alone only
+// the pinned TABLESPACE statement, with the "postgres" maintenance
+// fallback and a clean environment.
+func TestPostgresDbAlterSingleOption(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		owner bool
+		want  string
+	}{
+		{"owner only", true, wantDbAlterStatements[0]},
+		{"tablespace only", false, wantDbAlterStatements[1]},
+	} {
+		rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0})
+		args := &DbAlterArgs{Name: "dbname"}
+		if tc.owner {
+			args.Owner = postgresString("otheruser")
+		} else {
+			args.Tablespace = postgresString("testspace")
+		}
+		value, err := (dbAlterFunc{}).Execute(context.Background(), rt, args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if value != true {
+			t.Fatalf("%s db_alter = %#v, want true", tc.name, value)
+		}
+		if len(runner.calls) != 1 {
+			t.Fatalf("%s runner calls = %d, want 1", tc.name, len(runner.calls))
+		}
+		command := runner.calls[0]
+		want := []string{
+			"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+			"--dbname", "postgres",
+			"-c", tc.want,
+		}
+		if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s argv = %q, want %q", tc.name, got, want)
+		}
+		if command.Env == nil || len(command.Env) != 0 {
+			t.Fatalf("%s env = %q, want clean empty environment", tc.name, command.Env)
+		}
+		if command.Redact != nil {
+			t.Fatalf("%s redact = %q, want none", tc.name, command.Redact)
+		}
+	}
+}
+
+// TestPostgresDbAlterNoop pins the pinned any((tablespace, owner)) head:
+// nil arguments and Python-falsy explicit empty strings both answer the
+// no-op True with no Runner invocation, whatever owner_recurse carries.
+func TestPostgresDbAlterNoop(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		owner      *string
+		tablespace *string
+		recurse    *bool
+	}{
+		{"neither nil", nil, nil, nil},
+		{"neither recurse", nil, nil, postgresBool(true)},
+		{"owner empty", postgresString(""), nil, nil},
+		{"tablespace empty", nil, postgresString(""), nil},
+		{"both empty recurse", postgresString(""), postgresString(""), postgresBool(true)},
+	} {
+		rt, runner := newPostgresRuntime()
+		value, err := (dbAlterFunc{}).Execute(context.Background(), rt, &DbAlterArgs{
+			Name:         "dbname",
+			Owner:        tc.owner,
+			Tablespace:   tc.tablespace,
+			OwnerRecurse: tc.recurse,
+		})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if value != true {
+			t.Fatalf("%s db_alter = %#v, want true", tc.name, value)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s executed %d commands, want none", tc.name, len(runner.calls))
+		}
+	}
+}
+
+// TestPostgresDbAlterOwnerRecurseUnsupported pins the owner+owner_recurse
+// branch: owner_to stays pending, so the branch answers the deterministic
+// value-free UnsupportedError before any Runner invocation instead of
+// silently running the shallow ALTER OWNER — while owner_recurse without
+// a truthy owner keeps the pinned else branch, and an explicit false
+// owner_recurse runs the pinned shallow statements.
+func TestPostgresDbAlterOwnerRecurseUnsupported(t *testing.T) {
+	rt, runner := newPostgresRuntime()
+	_, err := (dbAlterFunc{}).Execute(context.Background(), rt, &DbAlterArgs{
+		Name:         "dbname",
+		Owner:        postgresString("otheruser"),
+		OwnerRecurse: postgresBool(true),
+	})
+	if err == nil || err.Error() != `unsupported function "postgres.owner_to"` {
+		t.Fatalf("owner_recurse err = %v", err)
+	}
+	var unsupported *runtime.UnsupportedError
+	if !errors.As(err, &unsupported) || unsupported.Name != "postgres.owner_to" {
+		t.Fatalf("owner_recurse err = %v, want UnsupportedError for owner_to", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("owner_recurse executed %d commands", len(runner.calls))
+	}
+
+	// owner_recurse without an owner never selects the branch: the pinned
+	// tablespace statement still runs (the pinned owner_to call passes no
+	// maintenance_db either way; the pending name is not consulted).
+	rt, runner = newPostgresRuntime(process.CommandResult{ExitCode: 0})
+	value, err := (dbAlterFunc{}).Execute(context.Background(), rt, &DbAlterArgs{
+		Name:         "dbname",
+		Tablespace:   postgresString("testspace"),
+		OwnerRecurse: postgresBool(true),
+	})
+	if err != nil {
+		t.Fatalf("owner_recurse without owner: %v", err)
+	}
+	if value != true {
+		t.Fatalf("owner_recurse without owner = %#v, want true", value)
+	}
+	if len(runner.calls) != 1 || runner.calls[0].Args[len(runner.calls[0].Args)-1] != wantDbAlterStatements[1] {
+		t.Fatalf("owner_recurse without owner calls = %d", len(runner.calls))
+	}
+
+	// An explicit false owner_recurse keeps the pinned shallow flow.
+	rt, runner = newPostgresRuntime(
+		process.CommandResult{ExitCode: 0},
+		process.CommandResult{ExitCode: 0},
+	)
+	value, err = (dbAlterFunc{}).Execute(context.Background(), rt, &DbAlterArgs{
+		Name:         "dbname",
+		Owner:        postgresString("otheruser"),
+		Tablespace:   postgresString("testspace"),
+		OwnerRecurse: postgresBool(false),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true || len(runner.calls) != 2 {
+		t.Fatalf("explicit false recurse value=%#v calls=%d", value, len(runner.calls))
+	}
+	if first := runner.calls[0].Args[len(runner.calls[0].Args)-1]; first != wantDbAlterStatements[0] {
+		t.Fatalf("explicit false recurse first statement = %q", first)
+	}
+}
+
+// TestPostgresDbAlterNonzeroRetcodeStops pins the retcode boolean and the
+// stop: the first nonzero retcode answers the pinned False and no later
+// statement runs — the OWNER change never reaches the TABLESPACE change,
+// and a failing TABLESPACE change alone still answers False after both
+// statements were attempted.
+func TestPostgresDbAlterNonzeroRetcodeStops(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		fails   int // 1-based statement index that returns nonzero
+		calls   int // runner calls before the stop
+		owner   bool
+		tablesp bool
+	}{
+		{"owner fails", 1, 1, true, true},
+		{"tablespace fails after owner", 2, 2, true, true},
+		{"tablespace fails alone", 1, 1, false, true},
+		{"owner fails alone", 1, 1, true, false},
+	} {
+		results := []process.CommandResult{}
+		for i := 1; i <= tc.calls; i++ {
+			exit := 0
+			if i == tc.fails {
+				exit = 3
+			}
+			results = append(results, process.CommandResult{
+				ExitCode: exit,
+				Stderr:   []byte(`psql: error: ERROR: database "dbname" does not exist`),
+			})
+		}
+		rt, runner := newPostgresRuntime(results...)
+		args := &DbAlterArgs{Name: "dbname"}
+		if tc.owner {
+			args.Owner = postgresString("otheruser")
+		}
+		if tc.tablesp {
+			args.Tablespace = postgresString("testspace")
+		}
+		value, err := (dbAlterFunc{}).Execute(context.Background(), rt, args)
+		if err != nil {
+			t.Fatalf("%s err = %v, want the retcode boolean only", tc.name, err)
+		}
+		if value != false {
+			t.Fatalf("%s db_alter = %#v, want false", tc.name, value)
+		}
+		if len(runner.calls) != tc.calls {
+			t.Fatalf("%s runner calls = %d, want %d", tc.name, len(runner.calls), tc.calls)
+		}
+		last := runner.calls[len(runner.calls)-1].Args[len(runner.calls[len(runner.calls)-1].Args)-1]
+		wantLast := wantDbAlterStatements[0]
+		if !tc.owner {
+			wantLast = wantDbAlterStatements[1]
+		} else if tc.calls == 2 {
+			wantLast = wantDbAlterStatements[1]
+		}
+		if last != wantLast {
+			t.Fatalf("%s last statement = %q, want %q", tc.name, last, wantLast)
+		}
+	}
+}
+
+// TestPostgresDbAlterInjection pins the fail-closed identifier boundary:
+// the pinned format strings interpolate the name, the owner, and the
+// tablespace into double-quoted identifier positions without escaping, so
+// the double quote is rejected before any Runner invocation with the
+// exact value-free stable error naming the argument key.
+func TestPostgresDbAlterInjection(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		dbname     string
+		owner      *string
+		tablespace *string
+		want       string
+	}{
+		{`name quote`, `db" )`, postgresString("own"), nil, "postgres: invalid argument: unsupported quote character in name"},
+		{"owner quote", "db", postgresString(`oth"; DROP DATABASE x; --`), nil, "postgres: invalid argument: unsupported quote character in owner"},
+		{"tablespace quote", "db", nil, postgresString(`ts" ; DROP DATABASE x; --`), "postgres: invalid argument: unsupported quote character in tablespace"},
+	} {
+		rt, runner := newPostgresRuntime()
+		_, err := (dbAlterFunc{}).Execute(context.Background(), rt, &DbAlterArgs{
+			Name:       tc.dbname,
+			Owner:      tc.owner,
+			Tablespace: tc.tablespace,
+		})
+		if err == nil || err.Error() != tc.want {
+			t.Fatalf("%s err = %v, want %q", tc.name, err, tc.want)
+		}
+		if !errors.Is(err, errPostgresInvalidArgument) {
+			t.Fatalf("%s err = %v, want invalid argument", tc.name, err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s executed %d commands", tc.name, len(runner.calls))
+		}
+	}
+}
+
+// dbAlterRejectedFields enumerates every db_alter field the fail-closed
+// identifier boundary rejects, with a rejected value embedding the marker
+// and the exact value-free stable error each rejection must return.
+func dbAlterRejectedFields() []struct {
+	field string
+	args  *DbAlterArgs
+	want  string
+} {
+	return []struct {
+		field string
+		args  *DbAlterArgs
+		want  string
+	}{
+		{
+			"name",
+			&DbAlterArgs{Name: "db-" + postgresValidationMarker + `"`, Owner: postgresString("own")},
+			"postgres: invalid argument: unsupported quote character in name",
+		},
+		{
+			"owner",
+			&DbAlterArgs{Name: "db", Owner: postgresString(`own-` + postgresValidationMarker + `"`)},
+			"postgres: invalid argument: unsupported quote character in owner",
+		},
+		{
+			"tablespace",
+			&DbAlterArgs{Name: "db", Tablespace: postgresString(`ts-` + postgresValidationMarker + `"`)},
+			"postgres: invalid argument: unsupported quote character in tablespace",
+		},
+	}
+}
+
+// TestPostgresDbAlterValidationErrorRedaction loops every rejected
+// db_alter field with a value embedding the same synthetic marker as the
+// connection password: the error must be exactly the stable argument-key
+// message — never the rejected value — and no Runner call may happen. The
+// owner_recurse UnsupportedError is value-free by construction and is
+// asserted the same way.
+func TestPostgresDbAlterValidationErrorRedaction(t *testing.T) {
+	for _, tc := range dbAlterRejectedFields() {
+		tc.args.Password = postgresString(postgresValidationMarker)
+		rt, runner := newPostgresRuntime()
+		_, err := (dbAlterFunc{}).Execute(context.Background(), rt, tc.args)
+		if err == nil || err.Error() != tc.want {
+			t.Fatalf("%s err = %v, want %q", tc.field, err, tc.want)
+		}
+		if !errors.Is(err, errPostgresInvalidArgument) {
+			t.Fatalf("%s err = %v, want invalid argument", tc.field, err)
+		}
+		if strings.Contains(err.Error(), postgresValidationMarker) {
+			t.Fatalf("%s error leaks the rejected value: %v", tc.field, err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s executed %d commands", tc.field, len(runner.calls))
+		}
+	}
+
+	// The owner_recurse branch must stay value-free under the same marker
+	// overlap: neither the owner nor the password can reach the error.
+	rt, runner := newPostgresRuntime()
+	_, err := (dbAlterFunc{}).Execute(context.Background(), rt, &DbAlterArgs{
+		Name:         "db-" + postgresValidationMarker,
+		Owner:        postgresString(`own-` + postgresValidationMarker),
+		OwnerRecurse: postgresBool(true),
+		Password:     postgresString(postgresValidationMarker),
+	})
+	if err == nil || err.Error() != `unsupported function "postgres.owner_to"` {
+		t.Fatalf("owner_recurse marker err = %v", err)
+	}
+	if strings.Contains(err.Error(), postgresValidationMarker) {
+		t.Fatalf("owner_recurse error leaks a value: %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("owner_recurse executed %d commands", len(runner.calls))
+	}
+}
+
+// TestPostgresDbAlterGuards pins cancellation, runas rejection, psql
+// unavailability, output limits, and redacted Runner errors on the first
+// statement of the flow.
+func TestPostgresDbAlterGuards(t *testing.T) {
+	rt, runner := newPostgresRuntime()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := (dbAlterFunc{}).Execute(ctx, rt, &DbAlterArgs{Name: "dbname", Owner: postgresString("own")}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("pre-canceled ctx err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("canceled run executed %d commands", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime()
+	_, err := (dbAlterFunc{}).Execute(context.Background(), rt, &DbAlterArgs{
+		Name:  "dbname",
+		Owner: postgresString("own"),
+		Runas: postgresString("postgres"),
+	})
+	if !errors.Is(err, errPostgresRunas) {
+		t.Fatalf("runas err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("runas run executed %d commands", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime()
+	runner.available = map[string]bool{"psql": false}
+	if _, err := (dbAlterFunc{}).Execute(context.Background(), rt, &DbAlterArgs{Name: "dbname", Owner: postgresString("own")}); !errors.Is(err, errPostgresPsqlUnavailable) {
+		t.Fatalf("psql unavailable err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("unavailable psql executed %d commands", len(runner.calls))
+	}
+
+	for _, truncated := range []process.CommandResult{
+		{ExitCode: 0, StdoutTruncated: true, Stdout: []byte(strings.Repeat("9", outputLimit+1))},
+		{ExitCode: 0, StderrTruncated: true, Stderr: []byte(strings.Repeat("e", outputLimit+1))},
+	} {
+		rt, _ := newPostgresRuntime(truncated)
+		if _, err := (dbAlterFunc{}).Execute(context.Background(), rt, &DbAlterArgs{Name: "dbname", Owner: postgresString("own")}); !errors.Is(err, process.ErrOutputLimit) {
+			t.Fatalf("output limit err = %v", err)
+		}
+	}
+
+	rt, _ = newPostgresRuntime(process.CommandResult{
+		ExitCode: -1,
+		Err:      fmt.Errorf("exec psql --dbname postgres: secret foo rejected"),
+	})
+	_, err = (dbAlterFunc{}).Execute(context.Background(), rt, &DbAlterArgs{
+		Name:     "dbname",
+		Owner:    postgresString("own"),
 		Password: postgresString("foo"),
 	})
 	if err == nil || strings.Contains(err.Error(), "foo") {

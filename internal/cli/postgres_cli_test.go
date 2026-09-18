@@ -1397,11 +1397,144 @@ func TestPostgresCLIDbRemove(t *testing.T) {
 	}
 }
 
-// TestPostgresCLIDbValidationRedaction loops every rejected db_create and
-// db_remove field through the CLI with the rejected value embedding the
-// same synthetic marker as --password: exit 1 must carry exactly the
-// stable statekit-prefixed validation error — never the rejected value, so
-// the marker cannot appear in any output — and no Runner call may happen.
+// TestPostgresCLIDbAlter drives the R9.2n mutation end to end: the two
+// pinned statements in the pinned order through the fake Runner, the JSON
+// true rendering, the no-op True without any psql call, the retcode-false
+// compatibility shape with its stop, the owner_recurse UnsupportedError,
+// the fail-closed identifier boundary, the required name, and the runas
+// rejection, with no password anywhere in the rendered command or CLI
+// output.
+func TestPostgresCLIDbAlter(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0},
+		{ExitCode: 0},
+	}}
+	app := postgresCLIApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "postgres.db_alter",
+		"--name", "dbname", "--owner", "otheruser", "--tablespace", "testspace",
+		"--user", "testuser", "--host", "testhost", "--port", "testport",
+		"--maintenance-db", "maint_db", "--password", "foo", "-o", "json")
+	var altered bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &altered) != nil || !altered {
+		t.Fatalf("db_alter code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("runner calls = %d, want 2", len(runner.calls))
+	}
+	wantStatements := []string{
+		`ALTER DATABASE "dbname" OWNER TO "otheruser"`,
+		`ALTER DATABASE "dbname" SET TABLESPACE "testspace"`,
+	}
+	for i, command := range runner.calls {
+		argv := append([]string{command.Name}, command.Args...)
+		if len(argv) != 15 || argv[13] != "-c" || argv[14] != wantStatements[i] {
+			t.Fatalf("call %d argv = %q", i, argv)
+		}
+		if command.Shell || len(command.Redact) != 1 || command.Redact[0] != "foo" {
+			t.Fatalf("call %d unsafe command: %#v", i, command)
+		}
+		if strings.Contains(command.RedactedString(), "foo") {
+			t.Fatalf("call %d rendered command leaks password: %q", i, command.RedactedString())
+		}
+	}
+	if strings.Contains(out+errS, "foo") {
+		t.Fatalf("CLI output leaks password: out=%q err=%q", out, errS)
+	}
+
+	// The pinned no-op head: neither owner nor tablespace answers the
+	// True without any psql call (an explicit empty string is Python-falsy
+	// the same way).
+	for _, argv := range [][]string{
+		{"--name", "dbname"},
+		{"--name", "dbname", "--owner", "", "--tablespace", ""},
+	} {
+		runner = &cliRecordingRunner{}
+		app = postgresCLIApp(t, runner)
+		fullArgv := append([]string{"exec", "postgres.db_alter"}, argv...)
+		fullArgv = append(fullArgv, "-o", "json")
+		code, out, errS = captureCode(t, app, fullArgv...)
+		var noop bool
+		if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &noop) != nil || !noop {
+			t.Fatalf("noop %v code=%d out=%q err=%q", argv, code, out, errS)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("noop %v executed %d commands", argv, len(runner.calls))
+		}
+	}
+
+	// A rejected first statement keeps Salt's retcode boolean — exit OK,
+	// JSON false — and the stop means the TABLESPACE statement never runs.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 1, Stderr: []byte(`psql: error: ERROR: database "dbname" does not exist`)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.db_alter",
+		"--name", "dbname", "--owner", "otheruser", "--tablespace", "testspace", "-o", "json")
+	var failed bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &failed) != nil || failed {
+		t.Fatalf("nonzero exit code=%d out=%q err=%q, want false", code, out, errS)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("nonzero exit calls = %d, want the stop after 1", len(runner.calls))
+	}
+
+	// owner_recurse fails with the deterministic UnsupportedError (exit 3)
+	// before any psql call, whatever the tablespace argument carries.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.db_alter",
+		"--name", "dbname", "--owner", "otheruser", "--owner-recurse",
+		"--tablespace", "testspace", "-o", "json")
+	if code != ExitUnsupported || errS != "statekit: unsupported function \"postgres.owner_to\"\n" ||
+		len(runner.calls) != 0 {
+		t.Fatalf("owner_recurse code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+
+	// Injection attempts fail closed before any psql call, with the exact
+	// value-free stable errors naming the argument key only.
+	for _, tc := range []struct {
+		name string
+		argv []string
+		want string
+	}{
+		{"name quote", []string{"--name", `db"; DROP DATABASE x; --`, "--owner", "own"}, "postgres: invalid argument: unsupported quote character in name"},
+		{"owner quote", []string{"--name", "db", "--owner", `oth"; DROP DATABASE x; --`}, "postgres: invalid argument: unsupported quote character in owner"},
+		{"tablespace quote", []string{"--name", "db", "--tablespace", `ts"; DROP DATABASE x; --`}, "postgres: invalid argument: unsupported quote character in tablespace"},
+	} {
+		runner = &cliRecordingRunner{}
+		app = postgresCLIApp(t, runner)
+		fullArgv := append([]string{"exec", "postgres.db_alter"}, tc.argv...)
+		fullArgv = append(fullArgv, "-o", "json")
+		code, _, errS = captureCode(t, app, fullArgv...)
+		if code != ExitFailed || !strings.Contains(errS, tc.want) || len(runner.calls) != 0 {
+			t.Fatalf("%s code=%d err=%q calls=%d", tc.name, code, errS, len(runner.calls))
+		}
+	}
+
+	// The required name is validated before any psql call, and runas is
+	// rejected the same way.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.db_alter",
+		"--owner", "otheruser", "-o", "json")
+	if code != ExitInvalidInput || !strings.Contains(errS, "name") || len(runner.calls) != 0 {
+		t.Fatalf("missing name code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.db_alter",
+		"--name", "dbname", "--owner", "otheruser", "--runas", "postgres", "-o", "json")
+	if code != ExitFailed || !strings.Contains(errS, "runas") || len(runner.calls) != 0 {
+		t.Fatalf("runas code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+}
+
+// TestPostgresCLIDbValidationRedaction loops every rejected db_create,
+// db_remove, and db_alter field through the CLI with the rejected value
+// embedding the same synthetic marker as --password: exit 1 must carry
+// exactly the stable statekit-prefixed validation error — never the
+// rejected value, so the marker cannot appear in any output — and no
+// Runner call may happen.
 func TestPostgresCLIDbValidationRedaction(t *testing.T) {
 	const marker = "pgmark-7f3c-secret"
 	for _, tc := range []struct {
@@ -1427,6 +1560,12 @@ func TestPostgresCLIDbValidationRedaction(t *testing.T) {
 			"statekit: postgres: invalid argument: unsupported quote character in name\n"},
 		{"postgres.db_remove", []string{"--name", `x"-` + marker},
 			"statekit: postgres: invalid argument: unsupported quote character in name\n"},
+		{"postgres.db_alter", []string{"--name", `db-` + marker + `"`, "--owner", "own"},
+			"statekit: postgres: invalid argument: unsupported quote character in name\n"},
+		{"postgres.db_alter", []string{"--name", "db", "--owner", `own-` + marker + `"`},
+			"statekit: postgres: invalid argument: unsupported quote character in owner\n"},
+		{"postgres.db_alter", []string{"--name", "db", "--tablespace", `ts-` + marker + `"`},
+			"statekit: postgres: invalid argument: unsupported quote character in tablespace\n"},
 	} {
 		runner := &cliRecordingRunner{}
 		app := postgresCLIApp(t, runner)

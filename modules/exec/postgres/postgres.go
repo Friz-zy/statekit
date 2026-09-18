@@ -122,15 +122,30 @@
 // before any Runner invocation; create_metadata itself stays pending
 // exactly like a later name and exists only as the internal lifecycle
 // helper create_extension consumes.
+// R9.2n adds the database mutation db_alter (postgres.py:676-724): the
+// pinned any((tablespace, owner)) head (a no-op True with no Runner
+// invocation when neither carries a truthy value), then the pinned
+// statement sequence — ALTER DATABASE "name" OWNER TO "owner" before
+// ALTER DATABASE "name" SET TABLESPACE "tablespace" — each through the
+// central maintenance-database connection. The pinned owner+owner_recurse
+// branch delegates to owner_to, which stays pending, so that branch is a
+// deterministic value-free UnsupportedError raised before any mutation
+// rather than a silent shallow ALTER OWNER; the port also checks every
+// statement's retcode instead of only the pinned loop's last-overwritten
+// ret, stopping at the first failure with the pinned False. The three
+// double-quoted identifier positions the pinned format strings interpolate
+// unescaped are validated fail-closed with the shared value-free
+// rejections before any Runner invocation.
 // Like Salt, every invocation is a shell-free psql argv executed through
 // the central Runner; this package links no database driver or protocol
 // client and never contacts a live server by itself. The catalog queries
 // are fixed SQL fragments — no caller-controlled SQL or identifier is
 // interpolated — and the R9.2h write paths construct only the pinned
-// CREATE DATABASE and REVOKE/terminate/DROP statements with validated
-// identifier and literal quoting, and the R9.2i role paths construct
-// only the pinned CREATE/ALTER/DROP ROLE and GRANT statements with the
-// same validated identifiers, so the generic psql_query surface stays
+// CREATE DATABASE and REVOKE/terminate/DROP statements, the R9.2n path
+// only the pinned ALTER DATABASE OWNER/TABLESPACE statements, and the
+// R9.2i role paths construct only the pinned CREATE/ALTER/DROP ROLE and
+// GRANT statements with the same validated identifiers, so the generic
+// psql_query surface stays
 // pending for a later round. The pinned module's private helpers (_run_psql 179-235,
 // _parsed_version 334-361, _psql_cmd 386-432, psql_query's CSV parse,
 // _role_cmd_args 1271-1365, _add_role_flag 1173-1184,
@@ -1485,6 +1500,131 @@ func (dbRemoveFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) 
 			// flow; the port carries the retcode only, so captured server
 			// output and credentials can never travel through the error.
 			return nil, fmt.Errorf("postgres.db_remove: Failed: retcode=%d", result.ExitCode)
+		}
+	}
+	return true, nil
+}
+
+// ---------------------------------------------------------------------------
+// db_alter — salt/modules/postgres.py:676-724 @ pinned revision.
+
+// DbAlterArgs are the canonical postgres.db_alter arguments, mirroring the
+// pinned db_alter(name, user, host, port, maintenance_db, password,
+// tablespace, owner, owner_recurse, runas) signature
+// (postgres.py:676-687). Pointer fields keep Salt's None defaults: nil
+// omits the value entirely, and owner_recurse nil keeps the pinned False.
+type DbAlterArgs struct {
+	Name          string  `statekit:"name=name,required"`
+	User          *string `statekit:"name=user"`
+	Host          *string `statekit:"name=host"`
+	Port          *string `statekit:"name=port"`
+	MaintenanceDB *string `statekit:"name=maintenance_db"`
+	Password      *string `statekit:"name=password"`
+	Tablespace    *string `statekit:"name=tablespace"`
+	Owner         *string `statekit:"name=owner"`
+	OwnerRecurse  *bool   `statekit:"name=owner_recurse"`
+	Runas         *string `statekit:"name=runas"`
+}
+
+func (a *DbAlterArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: a.MaintenanceDB,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+type dbAlterFunc struct{}
+
+func (dbAlterFunc) Name() string { return "postgres.db_alter" }
+func (dbAlterFunc) Args() any    { return DbAlterArgs{} }
+
+// Execute ports the pinned db_alter flow (postgres.py:697-724): the
+// any((tablespace, owner)) head answers the pinned no-op True with no
+// Runner invocation when neither argument carries a truthy value (Python
+// truthiness makes an explicit empty string the same as None, so both omit
+// the statement), the owner+owner_recurse branch delegates to owner_to —
+// which stays pending exactly like a later name, so the branch surfaces a
+// deterministic value-free UnsupportedError before any mutation instead of
+// silently degrading to the shallow ALTER OWNER the else branch would run —
+// and otherwise the pinned statements run in the pinned order, the OWNER
+// change before the TABLESPACE change, each through the same central
+// maintenance-database connection. The identifier boundary is the
+// StateKit addition: the pinned format strings interpolate the name, the
+// owner, and the tablespace into double-quoted identifier positions
+// without escaping, so each is rejected fail-closed before any Runner
+// invocation with the shared value-free error naming only the argument
+// key. The pinned tail reads only the loop's last-overwritten ret, so a
+// failed OWNER change followed by a successful TABLESPACE change answers
+// True; the port instead checks every retcode — a rejected statement is
+// the pinned boolean false and stops the flow, never an error, and no
+// later statement runs after a failed one.
+func (dbAlterFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[DbAlterArgs](args, "postgres.db_alter")
+	if err != nil {
+		return nil, err
+	}
+	// The pinned any((tablespace, owner)): only truthy values select a
+	// statement, so None and the explicit empty string are the same here.
+	owner := a.Owner != nil && *a.Owner != ""
+	tablespace := a.Tablespace != nil && *a.Tablespace != ""
+	if !owner && !tablespace {
+		// The pinned "Nothing todo?" early True: no Runner invocation.
+		return true, nil
+	}
+	if strings.Contains(a.Name, `"`) {
+		// The name reaches the double-quoted identifier position of both
+		// pinned statements (and owner_to's own statements); the only
+		// character that can escape that context is rejected value-free.
+		return nil, ddlValidationError("name")
+	}
+	if owner && strings.Contains(*a.Owner, `"`) {
+		return nil, ddlValidationError("owner")
+	}
+	if tablespace && strings.Contains(*a.Tablespace, `"`) {
+		return nil, ddlValidationError("tablespace")
+	}
+	if owner && pointerBool(a.OwnerRecurse) {
+		// The pinned branch calls owner_to(name, owner, user=..., host=...,
+		// port=..., password=..., runas=...) — the recursive REASSIGN OWNED
+		// flow. owner_to is not registered in this phase, so the branch
+		// cannot run its pinned flow; failing with the fixed UnsupportedError
+		// (never a value from the arguments) keeps the unsupported surface
+		// explicit instead of silently performing the shallow ALTER OWNER.
+		return nil, &runtime.UnsupportedError{Kind: "function", Name: "postgres.owner_to"}
+	}
+	// The pinned statement order: OWNER before TABLESPACE, each statement
+	// on the full pinned psql argv exactly as the pinned test asserts.
+	var queries []string
+	if owner {
+		queries = append(queries, `ALTER DATABASE "`+a.Name+`" OWNER TO "`+*a.Owner+`"`)
+	}
+	if tablespace {
+		queries = append(queries, `ALTER DATABASE "`+a.Name+`" SET TABLESPACE "`+*a.Tablespace+`"`)
+	}
+	for _, query := range queries {
+		argv := psqlArgv(
+			pointerString(a.User),
+			pointerString(a.Host),
+			pointerString(a.Port),
+			pointerString(a.MaintenanceDB),
+			"-c", query,
+		)
+		result, err := runPsql(ctx, rt, argv, a.connection())
+		if err != nil {
+			return nil, err
+		}
+		if result.ExitCode != 0 {
+			// The pinned ret["retcode"] != 0 → False, compatibility data:
+			// a rejected ALTER is the boolean false, never an error, and
+			// the flow stops so no later mutation follows a failed one.
+			return false, nil
 		}
 	}
 	return true, nil
@@ -5407,7 +5547,7 @@ func redactedError(err error, secrets ...string) error {
 	return errors.New(message)
 }
 
-// Register installs the R9.2m postgres slice: the version probe, the five
+// Register installs the R9.2n postgres slice: the version probe, the five
 // R9.2c read-only catalog primitives, the R9.2h write paths db_create and
 // db_remove, the eight R9.2d extension and language catalog functions,
 // the three R9.2e schema catalog functions, the three R9.2f role and
@@ -5416,17 +5556,19 @@ func redactedError(err error, secrets ...string) error {
 // group mutations group_create, group_update, and group_remove, the
 // R9.2k privilege mutations privileges_grant and privileges_revoke, the
 // R9.2l default-privilege family default_privileges_list,
-// default_privileges_grant, and default_privileges_revoke, and the R9.2m
+// default_privileges_grant, and default_privileges_revoke, the R9.2m
 // schema, extension, and language mutations schema_create,
 // schema_remove, create_extension, drop_extension, language_create, and
-// language_remove. The remainder of the postgres family needs the
-// generic psql query surface (psql_query itself stays pending; no
-// arbitrary-query registration exists in this phase) and stays pending
-// for later R9 rounds; the internal parsed-version, psql-query,
-// role-statement, has-default-privileges, and create-metadata helpers
-// are intentionally not registered, exactly like the pinned private
-// functions (create_metadata keeps its pending public name until a later
-// round registers it).
+// language_remove, and the R9.2n database mutation db_alter (whose
+// owner_recurse branch answers the pending owner_to name with the fixed
+// UnsupportedError instead of a shallow ALTER OWNER). The remainder of the
+// postgres family needs the generic psql query surface (psql_query itself
+// stays pending; no arbitrary-query registration exists in this phase) and
+// stays pending for later R9 rounds; the internal parsed-version,
+// psql-query, role-statement, has-default-privileges, and
+// create-metadata helpers are intentionally not registered, exactly like
+// the pinned private functions (create_metadata keeps its pending public
+// name until a later round registers it).
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		versionFunc{},
@@ -5434,6 +5576,7 @@ func Register(reg *runtime.ExecRegistry) error {
 		dbExistsFunc{},
 		dbCreateFunc{},
 		dbRemoveFunc{},
+		dbAlterFunc{},
 		tablespaceListFunc{},
 		tablespaceExistsFunc{},
 		userListFunc{},
