@@ -1662,6 +1662,56 @@ The PTD tables below are retained as an immutable audit snapshot. These
 overrides are the current status and do not delete or rewrite any original
 rows or counts.
 
+##### 2026-09-17 current status (R9.2c-R9.2f PostgreSQL catalog, extension/language, schema, and role/privilege read-only queries)
+
+Backfill: the four read-only PostgreSQL phases between R9.2b and R9.2g,
+recorded so the ledger is contiguous. Commit hashes and dates are verified
+against the repository history (all four landed on 2026-09-17); scopes,
+counts and gate outcomes follow the dispatch record. Actual repository HEAD
+remains `a655e17` (R9.2j), as recorded in the section below.
+
+| Commit | Scope | Implementation executor role(s) | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `c6c1e0b` | R9.2c PostgreSQL catalog read-only: `db_list`/`db_exists`/`tablespace_list`/`tablespace_exists`/`user_list` registered (5 public) | `backend-engineer-senior` | `backend-engineer-senior/lead` | passed after CSV CRLF/backslash fixes; postgres 6 registered / 44 pending, R9 totals registered_public 45 of 125; mock-only fake-Runner contract — no DB driver, no live PostgreSQL, live DB/broker integration excluded behind E5; no `go.mod`/`go.sum` change (no new dependency); R3-R8 report hashes unchanged; Podman-only full/race/vet/cross-build green |
+| `dbabc10` | R9.2d PostgreSQL extension/language queries: `available_extensions`/`installed_extensions`/get/is/language list/exists registered (8 public) | `backend-engineer-senior` | `backend-engineer-senior/lead` | passed; postgres 14 registered / 36 pending, totals 53 of 125; mock-only fake-Runner contract — no DB driver, no live PostgreSQL, live DB/broker integration excluded behind E5; no `go.mod`/`go.sum` change (no new dependency); R3-R8 report hashes unchanged; Podman-only full/race/vet/cross-build green |
+| `00e9148` | R9.2e PostgreSQL schema queries: `schema_list`/`schema_get`/`schema_exists` registered (3 public) | `backend-engineer-senior` | `backend-engineer-senior/lead` | passed after CWD fixture rerun; postgres 17 registered / 33 pending, totals 56 of 125; mock-only fake-Runner contract — no DB driver, no live PostgreSQL, live DB/broker integration excluded behind E5; no `go.mod`/`go.sum` change (no new dependency); R3-R8 report hashes unchanged; Podman-only full/race/vet/cross-build green |
+| `cea81ec` | R9.2f PostgreSQL role/privilege queries: `role_get`/`user_exists`/`has_privileges` registered (3 public) | `backend-engineer-senior` | `backend-engineer-senior/lead` | passed; postgres 20 registered / 30 pending, totals 59 of 125; mock-only fake-Runner contract — no DB driver, no live PostgreSQL, live DB/broker integration excluded behind E5; no `go.mod`/`go.sum` change (no new dependency); R3-R8 report hashes unchanged; Podman-only full/race/vet/cross-build green |
+
+##### 2026-09-18 current status (R9.2g-R9.2j PostgreSQL privileges, database, user, and group mutations)
+
+Actual HEAD is `a655e17` (R9.2j PostgreSQL group mutations). R9.2g-R9.2j
+implementation and independent-gate ledger:
+
+| Commit | Scope | Implementation executor role(s) | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `baccf84` | R9.2g `privileges_list` registered (1 public; read-only ACL listing over the R9.2f fixed privilege catalogs, per the report's R9.2c-R9.2j compatibility notes) | `backend-engineer-senior` | `backend-engineer-lead` | passed; postgres 21 registered / 29 pending, R9 totals registered_public 60 of 125; mock-only fake-Runner contract — no DB driver, no live PostgreSQL, no new dependency |
+| `75171c5` | R9.2h `db_create`/`db_remove` registered (2 public; the first write paths as fixed pinned statements) | `backend-engineer-senior` | `backend-engineer-lead` | passed after validation redaction fix; postgres 23 registered / 27 pending, totals 62 of 125; mock-only — no DB driver, no live PostgreSQL, no new dependency |
+| `4276cb1` | R9.2i `user_create`/`user_update`/`user_remove` registered (3 public; role mutations on the pinned `_role_create`/`_role_update`/`_role_remove` flow) | `backend-engineer-senior` | `backend-engineer-lead` | passed after preflight-secret/CLI raw-error redaction fixes; postgres 26 registered / 24 pending, totals 65 of 125; mock-only — no DB driver, no live PostgreSQL, no new dependency |
+| `a655e17` | R9.2j `group_create`/`group_update`/`group_remove` registered (3 public; group mutations on the same flow with `typ_="group"`) | `backend-engineer-senior` | `backend-engineer-lead` | passed; postgres 29 registered / 21 pending, totals 68 of 125; mock-only — no DB driver, no live PostgreSQL, no new dependency |
+
+Note: the R9.2h row records commit `75171c5`; the hash `dbabc10` named in the
+dispatch instruction is the earlier R9.2d extension/language catalog commit,
+not the database-mutations phase.
+
+Current R9 report (`docs/differential/R9/report.yaml` at `a655e17`, `round:
+R9.2j`, `repeat_stable: true`): rabbitmq 37/37 registered, mysql 2/38 (36
+pending), postgres 29/50 (21 pending); totals registered_public 68 of 125
+public functions (57 pending) across 172 catalog functions. The remaining
+postgres names from the report, in exact report order, stay pending:
+`create_extension`, `create_metadata`, `datadir_exists`, `datadir_init`,
+`db_alter`, `default_privileges_grant`, `default_privileges_list`,
+`default_privileges_revoke`, `drop_extension`, `has_default_privileges`,
+`language_create`, `language_remove`, `owner_to`, `privileges_grant`,
+`privileges_revoke`, `psql_query`, `schema_create`, `schema_remove`,
+`tablespace_alter`, `tablespace_create`, `tablespace_remove`. R9 remains
+open — no closure claim is made. The report pins the mock-only boundary —
+RabbitMQ is never started, MySQL is never connected, PostgreSQL is never
+contacted; no database driver is linked — and live database/broker
+integration stays excluded behind E5. The prior differential report hashes
+for R3-R8 are unchanged (the report's `prior_report_sha256` block matches
+the committed R3-R8 reports), and none of the four commits touched
+`go.mod`/`go.sum` (no new dependency).
+
 ##### 2026-09-17 current status (R9.2b PostgreSQL version probe)
 
 Actual HEAD is `23fba61` (R9.2b PostgreSQL version probe). R9.2b
