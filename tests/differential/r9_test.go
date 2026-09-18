@@ -45,9 +45,14 @@ import (
 // privileges_list (postgres.py:3335-3432) on the R9.2f privilege catalogs
 // and ACL decode ladder, reproducing the pinned
 // test_privileges_list_table and test_privileges_list_group dictionaries
-// verbatim. The generic psql_query surface and the remaining mysql and
-// postgres surfaces need their client protocol boundaries and stay
-// pending.
+// verbatim. R9.2h adds the family's first write paths, db_create and
+// db_remove (postgres.py:601-607, 610-673, 727-762): the pinned CREATE
+// DATABASE statement with the pinned _quote_ddl_value quoting and option
+// order, and the pinned three-statement REVOKE, backend-termination, and
+// DROP flow with its first-nonzero-retcode abort, with the raw-interpolated
+// identifier positions validated fail-closed. The generic psql_query
+// surface and the remaining mysql and postgres surfaces need their client
+// protocol boundaries and stay pending.
 type r9FamilySpec struct {
 	Source             string
 	SourceTests        string
@@ -127,6 +132,7 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 		Scenarios: []string{
 			"postgres.server-version-probe",
 			"postgres.read-only-catalog-lists",
+			"postgres.database-create-remove",
 			"postgres.extension-and-language-catalogs",
 			"postgres.schema-catalogs",
 			"postgres.role-and-privilege-checks",
@@ -143,12 +149,18 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"role_get and user_exists keep the pinned user_list(...).get(name, None) and bool(role_get(..., return_password=False)) shapes including Salt's False-catalog AttributeError-to-None fallthrough after one psql call, and has_privileges reproduces the pinned test_has_privileges_on_table, test_has_privileges_on_group, and test_has_privileges_with_function outcomes verbatim: the pinned table ACL fixture decodes to the pinned three-role privilege dictionary, the owner shortcut, the grant-option dict equality, the ALL sorted-key equality, the strict-subset check, and the group admin_option boolean",
 			"privileges_list reproduces the pinned test_privileges_list_table and test_privileges_list_group dictionaries verbatim on the R9.2f fixed privilege catalogs: the pinned table ACL fixture decodes to the pinned three-role grant-option dictionary and the pinned group fixture maps every member rolname to its admin_option boolean, with the public grantee, grant stars, the leading GRANT star, the pinned NULL/malformed-ACL ValueError shape, the prepend schema qualification, and the per-object-type fixed SQL asserted for all eight object types",
 			"the pinned _get_object_owner and _make_privileges_list_query interpolate caller names into SQL string literals; StateKit keeps the pinned catalogs, join shapes, and orderings as fixed COPY-wrapped queries and matches the object name, schema prefix, and group membership client-side, so no caller string reaches SQL (asserted by leak checks with names that collide with no SQL keyword or column)",
+			"db_create reproduces the pinned test_db_create and test_db_create_empty_string_param statements byte-for-byte (the pinned runas argument is rejected before execution by the single-user runtime) including the pinned OrderedDict option order and the pinned bare TEMPLATE identifier, db_remove reproduces the pinned three-call REVOKE, pg_terminate_backend, and DROP sequence of test_db_remove with each statement on the full pinned argv, and the pinned test_db_create_with_trivial_sql_injection SaltInvocationError plus the name, template, owner, and tablespace injection attempts are rejected before any Runner invocation",
+			"db_create answers exactly the pinned retcode boolean (a rejected CREATE is false, never an error) and db_remove aborts on the first nonzero retcode like the pinned raise Exception(f\"Failed: ret={ret}\"), never reaching the DROP for a missing database and returning true immediately after a successful DROP with no post-query",
 			"password redaction is asserted on the rendered command, captured output, and returned errors; no real psql, database, or package-manager path exists",
 			"cancellation, output limits, runas rejection, nonzero-exit compatibility data, and psql-unavailable fail-closed behavior are covered without any live server",
 			"the internal parsed-version helper is pinned by LooseVersion comparison vectors because no existing package consumes it yet",
 		},
 		CompatibilityNotes: []string{
-			"R9.2c registers the version probe plus the five read-only catalog primitives db_list, db_exists, tablespace_list, tablespace_exists, and user_list; R9.2d adds the eight read-only extension and language catalog functions available_extensions, installed_extensions, get_available_extension, get_installed_extension, is_available_extension, is_installed_extension, language_list, and language_exists; R9.2e adds the three read-only schema catalog functions schema_exists, schema_get, and schema_list; R9.2f adds the three read-only role and privilege checks role_get, user_exists, and has_privileges; R9.2g adds the read-only ACL listing privileges_list; the generic psql_query surface and every write path stay pending (no arbitrary-query or identifier-interpolating registration exists in this phase)",
+			"R9.2c registers the version probe plus the five read-only catalog primitives db_list, db_exists, tablespace_list, tablespace_exists, and user_list; R9.2d adds the eight read-only extension and language catalog functions available_extensions, installed_extensions, get_available_extension, get_installed_extension, is_available_extension, is_installed_extension, language_list, and language_exists; R9.2e adds the three read-only schema catalog functions schema_exists, schema_get, and schema_list; R9.2f adds the three read-only role and privilege checks role_get, user_exists, and has_privileges; R9.2g adds the read-only ACL listing privileges_list; R9.2h adds the first write paths db_create and db_remove as fixed pinned statements; the generic psql_query surface and every other write path stay pending (no arbitrary-query registration exists in this phase)",
+			"db_create and db_remove keep the pinned argument contracts (postgres.py:610-624, 727-735) and the pinned fixed statements: values keep _quote_ddl_value's None omission, quote-character SaltInvocationError, and single/double quoting in the pinned OrderedDict option order (TABLESPACE, OWNER, TEMPLATE, ENCODING, LC_COLLATE, LC_CTYPE), an explicit empty string stays the pinned quoted empty value, and the template stays the pinned bare identifier",
+			"the identifier positions the pinned source interpolates raw are validated fail-closed before any Runner invocation: the db_create name may not contain the double quote that escapes its identifier context, the db_remove name may not contain either quote character because the pinned flow uses it as both a double-quoted identifier and the single-quoted datname literal, and the unquoted TEMPLATE option must be a bare PostgreSQL identifier ([A-Za-z0-9_$]+); the pinned format strings permit injection in all three positions (the pinned _quote_ddl_value TODO admits the escaping is unimplemented), which StateKit refuses",
+			"db_create returns exactly the pinned ret[\"retcode\"] == 0 boolean (a rejected CREATE is compatibility false, never an error) and db_remove aborts on the first nonzero retcode like the pinned raise Exception(f\"Failed: ret={ret}\"), with the port's error carrying the retcode only so no captured server output or credential travels through exceptions; db_remove returns true immediately after the pinned DROP with no post-query, and a missing database aborts at the pinned REVOKE before any termination or DROP is attempted",
+			"neither function has a test mode or an existence preflight in the pinned source (db_exists is not consulted), so neither exists here: db_create issues exactly one statement and db_remove keeps the pinned non-transactional three-statement sequence; the pinned db_remove has no maintenance-database guard, so the maintenance name is not special-cased and PostgreSQL itself is the rejection point for dropping the database psql is connected to",
 			"has_privileges keeps the pinned argument contract (name, object_name, object_type, privileges=None, grant_option=None, prepend=\"public\", maintenance_db, user, host, port, password, runas) with the pinned _mod_priv_opts object-type lowercasing, comma-split with optional single spaces, and uppercasing; the pinned KeyError on an unknown object type and the SaltInvocationError privilege and group-privilege rejections all map to execution errors raised before any Runner invocation",
 			"privileges_list keeps the pinned argument contract (name, object_type, prepend=\"public\", maintenance_db, user, host, port, password, runas) exactly as the pinned signature and docs/catalog/exec/postgres.yaml#privileges_list declare it: the function lists an object's ACL, so name is the object and no role or privileges argument exists (those belong to has_privileges); the pinned head lowercases the object type, and Salt's dead SaltInvocationError after the unbound-local query builder maps to the same invalid-object_type execution error raised before any Runner invocation; a NULL or malformed ACL stays the pinned ValueError and a missing object returns the empty dictionary",
 			"the pinned _get_object_owner and _make_privileges_list_query build SQL by formatting the caller's object name and schema prefix into single-quoted literals; StateKit replaces every interpolated equality with a client-side exact match over the same fixed catalog query (key column selected beside the pinned value column, pinned relkind filters and orderings kept, the group membership keyed by the group role's name), which is result-equivalent for every non-malicious input because each pinned equality targets a unique catalog key, and refuses the injection the pinned format permits",
@@ -172,6 +184,8 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"postgres.version",
 			"postgres.db_list",
 			"postgres.db_exists",
+			"postgres.db_create",
+			"postgres.db_remove",
 			"postgres.tablespace_list",
 			"postgres.tablespace_exists",
 			"postgres.user_list",
@@ -243,7 +257,7 @@ func TestR9DifferentialScopeReport(t *testing.T) {
 	registered := registeredNames(first)
 
 	report := r9Report{
-		Round:    "R9.2g",
+		Round:    "R9.2h",
 		Platform: "cross-platform",
 		RuntimeStatus: "mock-only: RabbitMQ is never started, MySQL is never connected, and PostgreSQL is never contacted; " +
 			"shell-free fake Runner tests and pure-function vectors provide the executable contract",

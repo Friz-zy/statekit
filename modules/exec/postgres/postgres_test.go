@@ -346,8 +346,10 @@ func TestPostgresRegistrySurface(t *testing.T) {
 	}
 	wantNames := []string{
 		"postgres.available_extensions",
+		"postgres.db_create",
 		"postgres.db_exists",
 		"postgres.db_list",
+		"postgres.db_remove",
 		"postgres.get_available_extension",
 		"postgres.get_installed_extension",
 		"postgres.has_privileges",
@@ -379,6 +381,10 @@ func TestPostgresRegistrySurface(t *testing.T) {
 		switch name {
 		case "postgres.version":
 			want = VersionArgs{}
+		case "postgres.db_create":
+			want = DbCreateArgs{}
+		case "postgres.db_remove":
+			want = DbRemoveArgs{}
 		case "postgres.user_list":
 			want = UserListArgs{}
 		case "postgres.role_get":
@@ -423,6 +429,10 @@ func TestPostgresRegistrySurface(t *testing.T) {
 		{versionFunc{}, connection},
 		{dbListFunc{}, connection},
 		{dbExistsFunc{}, append([]string{"name"}, connection...)},
+		{dbCreateFunc{}, append([]string{
+			"name", "tablespace", "encoding", "lc_collate", "lc_ctype", "owner", "template",
+		}, connection...)},
+		{dbRemoveFunc{}, append([]string{"name"}, connection...)},
 		{tablespaceListFunc{}, connection},
 		{tablespaceExistsFunc{}, append([]string{"name"}, connection...)},
 		{userListFunc{}, append(connection, "return_password")},
@@ -738,6 +748,719 @@ func TestPostgresDbListNonzeroExitKeepsCompatibilityData(t *testing.T) {
 	}
 	if value != false {
 		t.Fatalf("db_exists on failed query = %#v, want false", value)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// db_create / db_remove — pinned test_db_create, test_db_create_
+// empty_string_param, test_db_create_with_trivial_sql_injection, and
+// test_db_remove (tests/pytests/unit/modules/test_postgres.py:340-433,
+// 502-592).
+
+// TestPostgresDbCreateArgvAndResult ports the pinned test_db_create: the
+// exact psql argv with the pinned statement at index 14, the clean PG
+// environment, password redaction, and the retcode-boolean result. The
+// pinned test's runas="foo" is covered by the runas rejection below
+// because the single-user runtime rejects it before execution.
+func TestPostgresDbCreateArgvAndResult(t *testing.T) {
+	rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0})
+	value, err := (dbCreateFunc{}).Execute(context.Background(), rt, &DbCreateArgs{
+		Name:          "dbname",
+		User:          postgresString("testuser"),
+		Host:          postgresString("testhost"),
+		Port:          postgresString("testport"),
+		MaintenanceDB: postgresString("maint_db"),
+		Password:      postgresString("foo"),
+		Tablespace:    postgresString("testspace"),
+		Owner:         postgresString("otheruser"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true {
+		t.Fatalf("db_create = %#v, want true", value)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d, want 1", len(runner.calls))
+	}
+	command := runner.calls[0]
+	want := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--username", "testuser",
+		"--host", "testhost",
+		"--port", "testport",
+		"--dbname", "maint_db",
+		"-c", `CREATE DATABASE "dbname" WITH TABLESPACE = "testspace" OWNER = "otheruser"`,
+	}
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+	if all := append([]string{command.Name}, command.Args...); all[14] != want[14] {
+		t.Fatalf("argv[14] = %q, want the pinned CREATE DATABASE statement", all[14])
+	}
+	wantEnv := []string{
+		"PGPASSWORD=foo",
+		"PGUSER=testuser",
+		"PGHOST=testhost",
+		"PGPORT=testport",
+	}
+	if !reflect.DeepEqual(command.Env, wantEnv) {
+		t.Fatalf("env = %q, want %q", command.Env, wantEnv)
+	}
+	if command.Shell {
+		t.Fatal("psql must run without a shell")
+	}
+	if command.Timeout != commandTimeout ||
+		command.MaxStdoutBytes != outputLimit || command.MaxStderrBytes != outputLimit {
+		t.Fatalf("unsafe command bounds: %#v", command)
+	}
+	if len(command.Stdin) != 0 || command.Dir != "" || command.WindowsCmdLine != "" {
+		t.Fatalf("unexpected command payload: %#v", command)
+	}
+	if !reflect.DeepEqual(command.Redact, []string{"foo"}) {
+		t.Fatalf("redact = %q", command.Redact)
+	}
+	if rendered := command.RedactedString(); strings.Contains(rendered, "foo") {
+		t.Fatalf("rendered command leaks password: %q", rendered)
+	}
+}
+
+// TestPostgresDbCreateEmptyStringParam ports the pinned
+// test_db_create_empty_string_param: an explicit empty lc_collate stays
+// the pinned quoted empty literal, the numeric port renders through the
+// shared argv, and the statement keeps the pinned option order.
+func TestPostgresDbCreateEmptyStringParam(t *testing.T) {
+	rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0})
+	value, err := (dbCreateFunc{}).Execute(context.Background(), rt, &DbCreateArgs{
+		Name:          "dbname",
+		LcCollate:     postgresString(""),
+		Encoding:      postgresString("utf8"),
+		User:          postgresString("testuser"),
+		Host:          postgresString("testhost"),
+		Port:          postgresString("1234"),
+		MaintenanceDB: postgresString("maint_db"),
+		Password:      postgresString("foo"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true {
+		t.Fatalf("db_create = %#v, want true", value)
+	}
+	command := runner.calls[0]
+	want := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--username", "testuser",
+		"--host", "testhost",
+		"--port", "1234",
+		"--dbname", "maint_db",
+		"-c", `CREATE DATABASE "dbname" WITH ENCODING = 'utf8' LC_COLLATE = ''`,
+	}
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+}
+
+// TestPostgresDbCreateAllOptions pins the full pinned OrderedDict option
+// order — TABLESPACE, OWNER, TEMPLATE, ENCODING, LC_COLLATE, LC_CTYPE —
+// including the pinned bare (unquoted) TEMPLATE identifier.
+func TestPostgresDbCreateAllOptions(t *testing.T) {
+	rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0})
+	_, err := (dbCreateFunc{}).Execute(context.Background(), rt, &DbCreateArgs{
+		Name:       "mydb",
+		Tablespace: postgresString("ts"),
+		Owner:      postgresString("own"),
+		Template:   postgresString("template0"),
+		Encoding:   postgresString("UTF8"),
+		LcCollate:  postgresString("en_US.UTF-8"),
+		LcCtype:    postgresString("en_US.UTF-8"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `CREATE DATABASE "mydb" WITH TABLESPACE = "ts" OWNER = "own" ` +
+		`TEMPLATE = template0 ENCODING = 'UTF8' LC_COLLATE = 'en_US.UTF-8' ` +
+		`LC_CTYPE = 'en_US.UTF-8'`
+	if got := runner.calls[0].Args[len(runner.calls[0].Args)-1]; got != want {
+		t.Fatalf("statement = %q, want %q", got, want)
+	}
+}
+
+// TestPostgresDbCreateDefaults pins the no-option shape: exactly the
+// pinned CREATE DATABASE head, the "postgres" maintenance fallback, a
+// clean environment, and no redaction.
+func TestPostgresDbCreateDefaults(t *testing.T) {
+	rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0})
+	value, err := (dbCreateFunc{}).Execute(context.Background(), rt, &DbCreateArgs{Name: "dbname"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true {
+		t.Fatalf("db_create = %#v, want true", value)
+	}
+	command := runner.calls[0]
+	want := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--dbname", "postgres",
+		"-c", `CREATE DATABASE "dbname"`,
+	}
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+	if command.Env == nil || len(command.Env) != 0 {
+		t.Fatalf("default env = %q, want clean empty environment", command.Env)
+	}
+	if command.Redact != nil {
+		t.Fatalf("default redact = %q, want none", command.Redact)
+	}
+}
+
+// TestPostgresDbCreateTrivialSQLInjection ports the pinned
+// test_db_create_with_trivial_sql_injection: the pinned _quote_ddl_value
+// SaltInvocationError for a quote character in a literal value, raised
+// before any Runner invocation, as the value-free stable error naming the
+// rejected argument key.
+func TestPostgresDbCreateTrivialSQLInjection(t *testing.T) {
+	rt, runner := newPostgresRuntime()
+	_, err := (dbCreateFunc{}).Execute(context.Background(), rt, &DbCreateArgs{
+		Name:      "dbname",
+		LcCollate: postgresString("foo' ENCODING='utf8"),
+	})
+	if err == nil || err.Error() != "postgres: invalid argument: unsupported quote character in lc_collate" {
+		t.Fatalf("trivial sqli err = %v", err)
+	}
+	if !errors.Is(err, errPostgresInvalidArgument) {
+		t.Fatalf("trivial sqli err = %v, want invalid argument", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("injected value executed %d commands", len(runner.calls))
+	}
+	// The double-quoted identifier positions carry the same rejection.
+	for _, tc := range []struct {
+		name  string
+		owner *string
+	}{
+		{"owner", postgresString(`oth"er`)},
+	} {
+		rt, runner := newPostgresRuntime()
+		_, err := (dbCreateFunc{}).Execute(context.Background(), rt, &DbCreateArgs{
+			Name:  "dbname",
+			Owner: tc.owner,
+		})
+		if err == nil || err.Error() != `postgres: invalid argument: unsupported quote character in owner` {
+			t.Fatalf("%s sqli err = %v", tc.name, err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s injected value executed %d commands", tc.name, len(runner.calls))
+		}
+	}
+}
+
+// TestPostgresDbCreateInjectionIdentifiers pins the fail-closed boundary at
+// the identifier positions the pinned source interpolates raw: the
+// double-quoted database name and the unquoted TEMPLATE option, each with
+// its exact value-free stable error.
+func TestPostgresDbCreateInjectionIdentifiers(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		dbname   string
+		template *string
+		want     string
+	}{
+		{`name quote`, `db" )`, nil, "postgres: invalid argument: unsupported quote character in name"},
+		{"template quote", "db", postgresString(`tpl"; DROP DATABASE x; --`), "postgres: invalid argument: unsupported template identifier"},
+		{"template literal", "db", postgresString(`tpl' `), "postgres: invalid argument: unsupported template identifier"},
+		{"template statement", "db", postgresString(`tpl; DROP DATABASE x`), "postgres: invalid argument: unsupported template identifier"},
+		{"template whitespace", "db", postgresString("tpl ENCODING='latin1'"), "postgres: invalid argument: unsupported template identifier"},
+		{"template empty", "db", postgresString(""), "postgres: invalid argument: unsupported template identifier"},
+	} {
+		rt, runner := newPostgresRuntime()
+		_, err := (dbCreateFunc{}).Execute(context.Background(), rt, &DbCreateArgs{
+			Name:     tc.dbname,
+			Template: tc.template,
+		})
+		if err == nil || err.Error() != tc.want {
+			t.Fatalf("%s err = %v, want %q", tc.name, err, tc.want)
+		}
+		if !errors.Is(err, errPostgresInvalidArgument) {
+			t.Fatalf("%s err = %v, want invalid argument", tc.name, err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s executed %d commands", tc.name, len(runner.calls))
+		}
+	}
+}
+
+// TestPostgresDbCreateNonzeroExitIsFalse pins the pinned tail
+// ret["retcode"] == 0: a rejected CREATE is the boolean false, never an
+// exception.
+func TestPostgresDbCreateNonzeroExitIsFalse(t *testing.T) {
+	rt, _ := newPostgresRuntime(process.CommandResult{
+		ExitCode: 1,
+		Stderr:   []byte(`psql: error: ERROR: database "dbname" already exists`),
+	})
+	value, err := (dbCreateFunc{}).Execute(context.Background(), rt, &DbCreateArgs{Name: "dbname"})
+	if err != nil {
+		t.Fatalf("nonzero exit must not error: %v", err)
+	}
+	if value != false {
+		t.Fatalf("db_create = %#v, want false", value)
+	}
+}
+
+// TestPostgresDbCreateGuards pins cancellation, runas rejection, psql
+// unavailability, output limits, and redacted Runner errors.
+func TestPostgresDbCreateGuards(t *testing.T) {
+	rt, runner := newPostgresRuntime()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := (dbCreateFunc{}).Execute(ctx, rt, &DbCreateArgs{Name: "dbname"}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("pre-canceled ctx err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("canceled run executed %d commands", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime()
+	_, err := (dbCreateFunc{}).Execute(context.Background(), rt, &DbCreateArgs{
+		Name:  "dbname",
+		Runas: postgresString("postgres"),
+	})
+	if !errors.Is(err, errPostgresRunas) {
+		t.Fatalf("runas err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("runas run executed %d commands", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime()
+	runner.available = map[string]bool{"psql": false}
+	if _, err := (dbCreateFunc{}).Execute(context.Background(), rt, &DbCreateArgs{Name: "dbname"}); !errors.Is(err, errPostgresPsqlUnavailable) {
+		t.Fatalf("psql unavailable err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("unavailable psql executed %d commands", len(runner.calls))
+	}
+
+	for _, truncated := range []process.CommandResult{
+		{ExitCode: 0, StdoutTruncated: true, Stdout: []byte(strings.Repeat("9", outputLimit+1))},
+		{ExitCode: 0, StderrTruncated: true, Stderr: []byte(strings.Repeat("e", outputLimit+1))},
+	} {
+		rt, _ := newPostgresRuntime(truncated)
+		if _, err := (dbCreateFunc{}).Execute(context.Background(), rt, &DbCreateArgs{Name: "dbname"}); !errors.Is(err, process.ErrOutputLimit) {
+			t.Fatalf("output limit err = %v", err)
+		}
+	}
+
+	rt, _ = newPostgresRuntime(process.CommandResult{
+		ExitCode: -1,
+		Err:      fmt.Errorf("exec psql --dbname postgres: secret foo rejected"),
+	})
+	_, err = (dbCreateFunc{}).Execute(context.Background(), rt, &DbCreateArgs{
+		Name:     "dbname",
+		Password: postgresString("foo"),
+	})
+	if err == nil || strings.Contains(err.Error(), "foo") {
+		t.Fatalf("runner error must be redacted: %v", err)
+	}
+	if !strings.Contains(err.Error(), process.RedactedPlaceholder) {
+		t.Fatalf("error lacks redaction placeholder: %v", err)
+	}
+}
+
+// wantDbRemoveStatements is the pinned three-statement sequence of
+// test_db_remove, byte-for-byte.
+var wantDbRemoveStatements = []string{
+	`REVOKE CONNECT ON DATABASE "test_db" FROM public;`,
+	"SELECT pid, pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'test_db' AND pid <> pg_backend_pid();",
+	`DROP DATABASE "test_db";`,
+}
+
+// TestPostgresDbRemoveArgvAndResult ports the pinned test_db_remove: the
+// three fixed statements in the pinned order, each on the full pinned argv
+// and clean environment, with the true result after the DROP.
+func TestPostgresDbRemoveArgvAndResult(t *testing.T) {
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0},
+		process.CommandResult{ExitCode: 0},
+		process.CommandResult{ExitCode: 0},
+	)
+	value, err := (dbRemoveFunc{}).Execute(context.Background(), rt, &DbRemoveArgs{
+		Name:          "test_db",
+		User:          postgresString("testuser"),
+		Host:          postgresString("testhost"),
+		Port:          postgresString("testport"),
+		MaintenanceDB: postgresString("maint_db"),
+		Password:      postgresString("foo"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true {
+		t.Fatalf("db_remove = %#v, want true", value)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("runner calls = %d, want 3", len(runner.calls))
+	}
+	for i, command := range runner.calls {
+		want := []string{
+			"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+			"--username", "testuser",
+			"--host", "testhost",
+			"--port", "testport",
+			"--dbname", "maint_db",
+			"-c", wantDbRemoveStatements[i],
+		}
+		if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+			t.Fatalf("call %d argv = %q, want %q", i, got, want)
+		}
+		wantEnv := []string{
+			"PGPASSWORD=foo",
+			"PGUSER=testuser",
+			"PGHOST=testhost",
+			"PGPORT=testport",
+		}
+		if !reflect.DeepEqual(command.Env, wantEnv) {
+			t.Fatalf("call %d env = %q, want %q", i, command.Env, wantEnv)
+		}
+		if command.Shell {
+			t.Fatalf("call %d must run without a shell", i)
+		}
+		if command.Timeout != commandTimeout ||
+			command.MaxStdoutBytes != outputLimit || command.MaxStderrBytes != outputLimit {
+			t.Fatalf("call %d unsafe command bounds: %#v", i, command)
+		}
+		if !reflect.DeepEqual(command.Redact, []string{"foo"}) {
+			t.Fatalf("call %d redact = %#v", i, command.Redact)
+		}
+	}
+	// No statement runs after the DROP.
+	if last := runner.calls[2].Args[len(runner.calls[2].Args)-1]; last != `DROP DATABASE "test_db";` {
+		t.Fatalf("last statement = %q, want the DROP", last)
+	}
+}
+
+// TestPostgresDbRemoveNonzeroAborts pins the pinned raise
+// Exception(f"Failed: ret=...") semantics: the first nonzero retcode
+// aborts the flow, so a missing database (the REVOKE fails) never reaches
+// the backend termination or the DROP, and a failure on the termination or
+// the DROP stops at exactly that statement.
+func TestPostgresDbRemoveNonzeroAborts(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		fails  int // 1-based statement index that returns nonzero
+		calls  int // runner calls before the abort
+		retMsg string
+	}{
+		{"missing db fails revoke", 1, 1, "Failed: retcode=1"},
+		{"termination fails", 2, 2, "Failed: retcode=2"},
+		{"drop fails", 3, 3, "Failed: retcode=3"},
+	} {
+		results := []process.CommandResult{}
+		for i := 1; i <= 3; i++ {
+			exit := 0
+			if i == tc.fails {
+				exit = i
+			}
+			results = append(results, process.CommandResult{
+				ExitCode: exit,
+				Stderr:   []byte("psql: error: FATAL: database does not exist"),
+			})
+		}
+		rt, runner := newPostgresRuntime(results...)
+		value, err := (dbRemoveFunc{}).Execute(context.Background(), rt, &DbRemoveArgs{Name: "test_db"})
+		if err == nil || !strings.Contains(err.Error(), tc.retMsg) {
+			t.Fatalf("%s err = %v, want %q", tc.name, err, tc.retMsg)
+		}
+		if value != nil {
+			t.Fatalf("%s value = %#v, want nil", tc.name, value)
+		}
+		if len(runner.calls) != tc.calls {
+			t.Fatalf("%s runner calls = %d, want %d", tc.name, len(runner.calls), tc.calls)
+		}
+		last := runner.calls[len(runner.calls)-1].Args[len(runner.calls[len(runner.calls)-1].Args)-1]
+		if last != wantDbRemoveStatements[tc.calls-1] {
+			t.Fatalf("%s last statement = %q, want %q", tc.name, last, wantDbRemoveStatements[tc.calls-1])
+		}
+		// The error must not carry captured server output.
+		failing := results[tc.fails-1]
+		if err != nil && strings.Contains(err.Error(), string(failing.Stderr)) {
+			t.Fatalf("%s error embeds captured stderr: %v", tc.name, err)
+		}
+	}
+}
+
+// TestPostgresDbRemoveInjection pins the fail-closed name boundary: the
+// pinned flow interpolates the name into both a double-quoted identifier
+// and a single-quoted datname literal, so either quote character is
+// rejected before any Runner invocation with the exact value-free stable
+// error.
+func TestPostgresDbRemoveInjection(t *testing.T) {
+	for _, name := range []string{
+		`x'; DROP DATABASE postgres; --`,
+		`x" ; DROP DATABASE postgres; --`,
+	} {
+		rt, runner := newPostgresRuntime()
+		_, err := (dbRemoveFunc{}).Execute(context.Background(), rt, &DbRemoveArgs{Name: name})
+		if err == nil || err.Error() != "postgres: invalid argument: unsupported quote character in name" {
+			t.Fatalf("injected name %q err = %v", name, err)
+		}
+		if !errors.Is(err, errPostgresInvalidArgument) {
+			t.Fatalf("injected name %q err = %v, want invalid argument", name, err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("injected name %q executed %d commands", name, len(runner.calls))
+		}
+	}
+}
+
+// postgresValidationMarker is the synthetic password marker for the
+// validation-redaction tests: every rejected field value embeds it and the
+// connection password is set to the same string, so any leak of a rejected
+// value through a validation error is a password leak on the CLI exit
+// path, where the error is raised before any Runner invocation and
+// therefore before any Command.Redact or redactedError pass runs.
+const postgresValidationMarker = "pgmark-7f3c-secret"
+
+// dbCreateRejectedFields enumerates every db_create field the fixed
+// statement construction rejects, with a rejected value embedding the
+// marker, and the exact value-free stable error each rejection must
+// return.
+func dbCreateRejectedFields() []struct {
+	field string
+	args  *DbCreateArgs
+	want  string
+} {
+	return []struct {
+		field string
+		args  *DbCreateArgs
+		want  string
+	}{
+		{
+			"name",
+			&DbCreateArgs{Name: "db-" + postgresValidationMarker + `"`},
+			"postgres: invalid argument: unsupported quote character in name",
+		},
+		{
+			"tablespace",
+			&DbCreateArgs{Name: "db", Tablespace: postgresString(`ts-` + postgresValidationMarker + `"`)},
+			"postgres: invalid argument: unsupported quote character in tablespace",
+		},
+		{
+			"owner",
+			&DbCreateArgs{Name: "db", Owner: postgresString(`own-` + postgresValidationMarker + `"`)},
+			"postgres: invalid argument: unsupported quote character in owner",
+		},
+		{
+			"template",
+			&DbCreateArgs{Name: "db", Template: postgresString(`tpl-` + postgresValidationMarker)},
+			"postgres: invalid argument: unsupported template identifier",
+		},
+		{
+			"encoding",
+			&DbCreateArgs{Name: "db", Encoding: postgresString(`enc-` + postgresValidationMarker + `'`)},
+			"postgres: invalid argument: unsupported quote character in encoding",
+		},
+		{
+			"lc_collate",
+			&DbCreateArgs{Name: "db", LcCollate: postgresString(`lcc-` + postgresValidationMarker + `'`)},
+			"postgres: invalid argument: unsupported quote character in lc_collate",
+		},
+		{
+			"lc_ctype",
+			&DbCreateArgs{Name: "db", LcCtype: postgresString(`lct-` + postgresValidationMarker + `'`)},
+			"postgres: invalid argument: unsupported quote character in lc_ctype",
+		},
+	}
+}
+
+// dbRemoveRejectedNames enumerates the db_remove name rejections — both
+// quote characters of its double-quoted-identifier and single-quoted-
+// literal contexts — with values embedding the marker.
+func dbRemoveRejectedNames() []string {
+	return []string{
+		`x'-` + postgresValidationMarker,
+		`x"-` + postgresValidationMarker,
+		postgresValidationMarker + `'"`,
+	}
+}
+
+// TestPostgresDbCreateValidationErrorRedaction loops every rejected
+// db_create field with a value embedding the same synthetic marker as the
+// connection password: the error must be exactly the stable argument-key
+// message under the exact invalid-argument category — never the rejected
+// value, so the marker cannot leak — and no Runner call may happen.
+func TestPostgresDbCreateValidationErrorRedaction(t *testing.T) {
+	for _, tc := range dbCreateRejectedFields() {
+		tc.args.Password = postgresString(postgresValidationMarker)
+		rt, runner := newPostgresRuntime()
+		_, err := (dbCreateFunc{}).Execute(context.Background(), rt, tc.args)
+		if err == nil || err.Error() != tc.want {
+			t.Fatalf("%s err = %v, want %q", tc.field, err, tc.want)
+		}
+		if !errors.Is(err, errPostgresInvalidArgument) {
+			t.Fatalf("%s err = %v, want invalid argument", tc.field, err)
+		}
+		if strings.Contains(err.Error(), postgresValidationMarker) {
+			t.Fatalf("%s error leaks the rejected value: %v", tc.field, err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s executed %d commands", tc.field, len(runner.calls))
+		}
+	}
+}
+
+// TestPostgresDbRemoveValidationErrorRedaction loops the rejected
+// db_remove names with values embedding the same synthetic marker as the
+// connection password, asserting the same value-free stable error and zero
+// Runner calls.
+func TestPostgresDbRemoveValidationErrorRedaction(t *testing.T) {
+	for _, name := range dbRemoveRejectedNames() {
+		rt, runner := newPostgresRuntime()
+		_, err := (dbRemoveFunc{}).Execute(context.Background(), rt, &DbRemoveArgs{
+			Name:     name,
+			Password: postgresString(postgresValidationMarker),
+		})
+		if err == nil || err.Error() != "postgres: invalid argument: unsupported quote character in name" {
+			t.Fatalf("name %q err = %v", name, err)
+		}
+		if !errors.Is(err, errPostgresInvalidArgument) {
+			t.Fatalf("name %q err = %v, want invalid argument", name, err)
+		}
+		if strings.Contains(err.Error(), postgresValidationMarker) {
+			t.Fatalf("name %q error leaks the rejected value: %v", name, err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("name %q executed %d commands", name, len(runner.calls))
+		}
+	}
+}
+
+// TestPostgresDbValidationErrorsRedactedThroughRegistry repeats both loops
+// through the ExecRegistry dispatch (the path the CLI drives): the same
+// exact, marker-free stable errors and zero Runner calls.
+func TestPostgresDbValidationErrorsRedactedThroughRegistry(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	type registryCall struct {
+		fn   string
+		args any
+		want string
+	}
+	calls := []registryCall{}
+	for _, tc := range dbCreateRejectedFields() {
+		tc.args.Password = postgresString(postgresValidationMarker)
+		calls = append(calls, registryCall{"postgres.db_create", tc.args, tc.want})
+	}
+	for _, name := range dbRemoveRejectedNames() {
+		calls = append(calls, registryCall{"postgres.db_remove", &DbRemoveArgs{
+			Name:     name,
+			Password: postgresString(postgresValidationMarker),
+		}, "postgres: invalid argument: unsupported quote character in name"})
+	}
+	for _, tc := range calls {
+		rt, runner := newPostgresRuntime()
+		_, err := reg.Call(context.Background(), rt, tc.fn, tc.args)
+		if err == nil || err.Error() != tc.want {
+			t.Fatalf("%s err = %v, want %q", tc.fn, err, tc.want)
+		}
+		if strings.Contains(err.Error(), postgresValidationMarker) {
+			t.Fatalf("%s error leaks the rejected value: %v", tc.fn, err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s executed %d commands", tc.fn, len(runner.calls))
+		}
+	}
+}
+
+// TestPostgresDbRemoveMaintenanceNotSpecialCased pins the pinned source's
+// lack of a maintenance-database guard: the name equal to the maintenance
+// database still gets exactly the three pinned statements, and PostgreSQL
+// itself is the only rejection point.
+func TestPostgresDbRemoveMaintenanceNotSpecialCased(t *testing.T) {
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0},
+		process.CommandResult{ExitCode: 0},
+		process.CommandResult{ExitCode: 0},
+	)
+	value, err := (dbRemoveFunc{}).Execute(context.Background(), rt, &DbRemoveArgs{
+		Name:          "postgres",
+		MaintenanceDB: postgresString("postgres"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true {
+		t.Fatalf("db_remove = %#v, want true", value)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("runner calls = %d, want 3", len(runner.calls))
+	}
+	if first := runner.calls[0].Args[len(runner.calls[0].Args)-1]; first != `REVOKE CONNECT ON DATABASE "postgres" FROM public;` {
+		t.Fatalf("first statement = %q", first)
+	}
+}
+
+// TestPostgresDbRemoveGuards pins cancellation, runas rejection, psql
+// unavailability, output limits, and redacted Runner errors on the first
+// statement of the flow.
+func TestPostgresDbRemoveGuards(t *testing.T) {
+	rt, runner := newPostgresRuntime()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := (dbRemoveFunc{}).Execute(ctx, rt, &DbRemoveArgs{Name: "test_db"}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("pre-canceled ctx err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("canceled run executed %d commands", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime()
+	_, err := (dbRemoveFunc{}).Execute(context.Background(), rt, &DbRemoveArgs{
+		Name:  "test_db",
+		Runas: postgresString("postgres"),
+	})
+	if !errors.Is(err, errPostgresRunas) {
+		t.Fatalf("runas err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("runas run executed %d commands", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime()
+	runner.available = map[string]bool{"psql": false}
+	if _, err := (dbRemoveFunc{}).Execute(context.Background(), rt, &DbRemoveArgs{Name: "test_db"}); !errors.Is(err, errPostgresPsqlUnavailable) {
+		t.Fatalf("psql unavailable err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("unavailable psql executed %d commands", len(runner.calls))
+	}
+
+	for _, truncated := range []process.CommandResult{
+		{ExitCode: 0, StdoutTruncated: true, Stdout: []byte(strings.Repeat("9", outputLimit+1))},
+		{ExitCode: 0, StderrTruncated: true, Stderr: []byte(strings.Repeat("e", outputLimit+1))},
+	} {
+		rt, _ := newPostgresRuntime(truncated)
+		if _, err := (dbRemoveFunc{}).Execute(context.Background(), rt, &DbRemoveArgs{Name: "test_db"}); !errors.Is(err, process.ErrOutputLimit) {
+			t.Fatalf("output limit err = %v", err)
+		}
+	}
+
+	rt, _ = newPostgresRuntime(process.CommandResult{
+		ExitCode: -1,
+		Err:      fmt.Errorf("exec psql --dbname postgres: secret foo rejected"),
+	})
+	_, err = (dbRemoveFunc{}).Execute(context.Background(), rt, &DbRemoveArgs{
+		Name:     "test_db",
+		Password: postgresString("foo"),
+	})
+	if err == nil || strings.Contains(err.Error(), "foo") {
+		t.Fatalf("runner error must be redacted: %v", err)
+	}
+	if !strings.Contains(err.Error(), process.RedactedPlaceholder) {
+		t.Fatalf("error lacks redaction placeholder: %v", err)
 	}
 }
 

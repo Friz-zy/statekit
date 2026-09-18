@@ -24,13 +24,28 @@
 // same R9.2f privilege catalogs: the pinned argument contract is the
 // object name and type (no role, no privileges argument), and the pinned
 // ACL decode ladder returns each grantee's privilege bool-map (or each
-// group member's admin_option boolean).
+// group member's admin_option boolean). R9.2h adds the family's first
+// write paths, db_create and db_remove (postgres.py:601-607, 610-673,
+// 727-762): db_create builds the pinned CREATE DATABASE statement with the
+// pinned _quote_ddl_value quoting in the pinned option order and returns
+// the retcode boolean, and db_remove runs the pinned three-statement
+// REVOKE, backend-termination, and DROP sequence with its first-nonzero
+// abort. The identifier positions the pinned source interpolates raw —
+// the database name and the unquoted TEMPLATE option — are validated
+// fail-closed, so no caller string can alter either fixed statement, and
+// every such rejection is value-free: the error names only the fixed
+// argument key under the shared invalid-argument category, so a rejected
+// value carrying a caller secret cannot leak through the CLI exit path
+// where it is raised (before any Runner invocation, and therefore before
+// any Command.Redact or redactedError pass runs).
 // Like Salt, every invocation is a shell-free psql argv executed through
 // the central Runner; this package links no database driver or protocol
 // client and never contacts a live server by itself. The catalog queries
 // are fixed SQL fragments — no caller-controlled SQL or identifier is
-// interpolated, so the generic psql_query surface stays pending for a
-// later round. The pinned module's private helpers (_run_psql 179-235,
+// interpolated — and the R9.2h write paths construct only the pinned
+// CREATE DATABASE and REVOKE/terminate/DROP statements with validated
+// identifier and literal quoting, so the generic psql_query surface stays
+// pending for a later round. The pinned module's private helpers (_run_psql 179-235,
 // _parsed_version 334-361, _psql_cmd 386-432, psql_query's CSV parse)
 // are ported as internal functions without public registration.
 package postgres
@@ -993,6 +1008,258 @@ func nameKeyedCatalog(ctx context.Context, rt *runtime.Runtime, conn *pgConnecti
 		out[key] = entry
 	}
 	return out, nil
+}
+
+// ---------------------------------------------------------------------------
+// db_create / db_remove — salt/modules/postgres.py:601-607, 610-673, 727-762
+// @ pinned revision.
+
+// quoteDDLValue ports the pinned _quote_ddl_value (postgres.py:601-607) for
+// a non-None value: a value carrying the quote character is the pinned
+// SaltInvocationError and any other value is wrapped in that character.
+// Salt's own TODO admits this is not full escaping; the None-omission half
+// stays at the pinned with_args loop below, and the identifier positions
+// the pinned source interpolates raw (the database name and the unquoted
+// TEMPLATE option) are validated fail-closed here instead of passing the
+// injection the pinned format strings permit. The rejection error carries
+// only the fixed argument key, never the rejected value: it is raised
+// before any Runner invocation, where no redaction pass could strip a
+// caller secret the value embeds.
+func quoteDDLValue(value, quote, key string) (string, error) {
+	if strings.Contains(value, quote) {
+		return "", ddlValidationError(key)
+	}
+	return quote + value + quote, nil
+}
+
+// ddlValidationError is the stable, value-free rejection shared by every
+// db_create/db_remove identifier and DDL-literal validation: the fixed
+// argument key under the exact pinned invalid-argument category, with no
+// rejected value, SQL fragment, or wrapped error, so the message is a
+// constant for a given key.
+func ddlValidationError(key string) error {
+	return fmt.Errorf("%w: unsupported quote character in %s",
+		errPostgresInvalidArgument, key)
+}
+
+// bareIdentifierRE is the PostgreSQL unquoted-identifier class the pinned
+// db_create interpolates the TEMPLATE option into without any quoting: a
+// non-empty run of ASCII letters, digits, underscores, and dollar signs.
+// Nothing outside it can alter the fixed statement shape.
+var bareIdentifierRE = regexp.MustCompile(`^[A-Za-z0-9_$]+$`)
+
+// DbCreateArgs are the canonical postgres.db_create arguments, mirroring
+// the pinned db_create(name, user, host, port, maintenance_db, password,
+// tablespace, encoding, lc_collate, lc_ctype, owner, template, runas)
+// signature (postgres.py:610-624). Pointer fields keep Salt's None
+// defaults: nil omits the option (or psql flag) entirely, while an explicit
+// empty string keeps the pinned quoted empty value.
+type DbCreateArgs struct {
+	Name          string  `statekit:"name=name,required"`
+	User          *string `statekit:"name=user"`
+	Host          *string `statekit:"name=host"`
+	Port          *string `statekit:"name=port"`
+	MaintenanceDB *string `statekit:"name=maintenance_db"`
+	Password      *string `statekit:"name=password"`
+	Tablespace    *string `statekit:"name=tablespace"`
+	Encoding      *string `statekit:"name=encoding"`
+	LcCollate     *string `statekit:"name=lc_collate"`
+	LcCtype       *string `statekit:"name=lc_ctype"`
+	Owner         *string `statekit:"name=owner"`
+	Template      *string `statekit:"name=template"`
+	Runas         *string `statekit:"name=runas"`
+}
+
+func (a *DbCreateArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: a.MaintenanceDB,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+// dbCreateQuery ports the pinned statement construction
+// (postgres.py:638-661): the CREATE DATABASE head, then the pinned
+// OrderedDict option order TABLESPACE, OWNER, TEMPLATE, ENCODING,
+// LC_COLLATE, LC_CTYPE joined as " WITH KEY = VALUE" chunks for every
+// non-None value. Values keep the pinned quoting exactly: double quotes
+// for the tablespace and owner identifiers, single quotes for the encoding
+// and locale literals, and the template stays the pinned bare identifier.
+// The whole statement (and therefore every SaltInvocationError) is built
+// before any Runner invocation, exactly like the pinned function formats
+// first and executes once, and every rejection is value-free.
+func dbCreateQuery(a *DbCreateArgs) (string, error) {
+	if strings.Contains(a.Name, `"`) {
+		// The pinned head formats the name into double quotes unescaped;
+		// StateKit fails closed on the only character that can escape a
+		// double-quoted identifier.
+		return "", ddlValidationError("name")
+	}
+	query := `CREATE DATABASE "` + a.Name + `"`
+	var chunks []string
+	for _, opt := range []struct {
+		key   string
+		arg   string // statekit argument name for the value-free error
+		value *string
+		quote string // "" marks the pinned raw unquoted TEMPLATE position
+	}{
+		{"TABLESPACE", "tablespace", a.Tablespace, `"`},
+		{"OWNER", "owner", a.Owner, `"`},
+		{"TEMPLATE", "template", a.Template, ""},
+		{"ENCODING", "encoding", a.Encoding, "'"},
+		{"LC_COLLATE", "lc_collate", a.LcCollate, "'"},
+		{"LC_CTYPE", "lc_ctype", a.LcCtype, "'"},
+	} {
+		if opt.value == nil {
+			// Salt's with_args loop keeps None options out entirely.
+			continue
+		}
+		if opt.quote == "" {
+			if !bareIdentifierRE.MatchString(*opt.value) {
+				// Value-free like every identifier/DDL rejection: the fixed
+				// argument key only, never the rejected template value.
+				return "", fmt.Errorf("%w: unsupported template identifier",
+					errPostgresInvalidArgument)
+			}
+			chunks = append(chunks, opt.key, "=", *opt.value)
+			continue
+		}
+		quoted, err := quoteDDLValue(*opt.value, opt.quote, opt.arg)
+		if err != nil {
+			return "", err
+		}
+		chunks = append(chunks, opt.key, "=", quoted)
+	}
+	if len(chunks) > 0 {
+		query += " WITH " + strings.Join(chunks, " ")
+	}
+	return query, nil
+}
+
+type dbCreateFunc struct{}
+
+func (dbCreateFunc) Name() string { return "postgres.db_create" }
+func (dbCreateFunc) Args() any    { return DbCreateArgs{} }
+
+func (dbCreateFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[DbCreateArgs](args, "postgres.db_create")
+	if err != nil {
+		return nil, err
+	}
+	// The pinned source runs one fixed CREATE DATABASE statement over the
+	// central maintenance-database connection with no test mode and no
+	// db_exists preflight, so exactly that exists here.
+	query, err := dbCreateQuery(a)
+	if err != nil {
+		return nil, err
+	}
+	argv := psqlArgv(
+		pointerString(a.User),
+		pointerString(a.Host),
+		pointerString(a.Port),
+		pointerString(a.MaintenanceDB),
+		"-c", query,
+	)
+	result, err := runPsql(ctx, rt, argv, a.connection())
+	if err != nil {
+		return nil, err
+	}
+	// The pinned tail is exactly ret["retcode"] == 0: a rejected CREATE is
+	// the boolean false, never an exception.
+	return result.ExitCode == 0, nil
+}
+
+// DbRemoveArgs are the canonical postgres.db_remove arguments, mirroring
+// the pinned db_remove(name, user, host, port, maintenance_db, password,
+// runas) signature (postgres.py:727-735).
+type DbRemoveArgs struct {
+	Name          string  `statekit:"name=name,required"`
+	User          *string `statekit:"name=user"`
+	Host          *string `statekit:"name=host"`
+	Port          *string `statekit:"name=port"`
+	MaintenanceDB *string `statekit:"name=maintenance_db"`
+	Password      *string `statekit:"name=password"`
+	Runas         *string `statekit:"name=runas"`
+}
+
+func (a *DbRemoveArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: a.MaintenanceDB,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+type dbRemoveFunc struct{}
+
+func (dbRemoveFunc) Name() string { return "postgres.db_remove" }
+func (dbRemoveFunc) Args() any    { return DbRemoveArgs{} }
+
+// Execute ports the pinned db_remove flow (postgres.py:745-762): exactly
+// three fixed statements in the pinned order — the public CONNECT
+// revocation, the pg_stat_activity backend termination keyed by the datname
+// literal, and the DROP — each through the same central
+// maintenance-database connection, aborting on the first nonzero retcode
+// and returning true only after the DROP, with no statement after it (no
+// existence re-check, no cleanup query). The name is validated for both of
+// its quote contexts up front because the pinned format strings interpolate
+// it raw, and that rejection — like every db_create/db_remove validation —
+// is value-free: it names the argument key only, so a name carrying a
+// caller secret cannot leak through the error raised before any Runner
+// invocation. The flow keeps the pinned non-transactional statement sequence
+// and has no test mode, and the pinned source has no maintenance-database
+// guard, so the maintenance name is not special-cased — PostgreSQL itself
+// rejects dropping the database psql is connected to.
+func (dbRemoveFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[DbRemoveArgs](args, "postgres.db_remove")
+	if err != nil {
+		return nil, err
+	}
+	if strings.ContainsAny(a.Name, `"'`) {
+		// The name reaches both a double-quoted identifier and the pinned
+		// single-quoted datname literal; neither context has an escaping
+		// escape in the pinned source, so both quote characters are
+		// rejected before any Runner invocation, with the value-free
+		// stable error.
+		return nil, ddlValidationError("name")
+	}
+	for _, query := range []string{
+		`REVOKE CONNECT ON DATABASE "` + a.Name + `" FROM public;`,
+		"SELECT pid, pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '" +
+			a.Name + "' AND pid <> pg_backend_pid();",
+		`DROP DATABASE "` + a.Name + `";`,
+	} {
+		argv := psqlArgv(
+			pointerString(a.User),
+			pointerString(a.Host),
+			pointerString(a.Port),
+			pointerString(a.MaintenanceDB),
+			"-c", query,
+		)
+		result, err := runPsql(ctx, rt, argv, a.connection())
+		if err != nil {
+			return nil, err
+		}
+		if result.ExitCode != 0 {
+			// The pinned raise Exception(f"Failed: ret={ret}") aborts the
+			// flow; the port carries the retcode only, so captured server
+			// output and credentials can never travel through the error.
+			return nil, fmt.Errorf("postgres.db_remove: Failed: retcode=%d", result.ExitCode)
+		}
+	}
+	return true, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -2261,20 +2528,23 @@ func redactedError(err error, password *string) error {
 	return errors.New(message)
 }
 
-// Register installs the R9.2g postgres slice: the version probe, the five
-// R9.2c read-only catalog primitives, the eight R9.2d extension and
-// language catalog functions, the three R9.2e schema catalog functions,
-// the three R9.2f role and privilege checks, and the R9.2g ACL listing
-// privileges_list. The remainder of the postgres family needs the generic
-// psql query surface (psql_query itself stays pending; no
-// arbitrary-query registration exists in this phase) and stays pending for
-// later R9 rounds; the internal parsed-version and psql-query helpers are
-// intentionally not registered, exactly like the pinned private functions.
+// Register installs the R9.2h postgres slice: the version probe, the five
+// R9.2c read-only catalog primitives, the R9.2h write paths db_create and
+// db_remove, the eight R9.2d extension and language catalog functions,
+// the three R9.2e schema catalog functions, the three R9.2f role and
+// privilege checks, and the R9.2g ACL listing privileges_list. The
+// remainder of the postgres family needs the generic psql query surface
+// (psql_query itself stays pending; no arbitrary-query registration
+// exists in this phase) and stays pending for later R9 rounds; the
+// internal parsed-version and psql-query helpers are intentionally not
+// registered, exactly like the pinned private functions.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		versionFunc{},
 		dbListFunc{},
 		dbExistsFunc{},
+		dbCreateFunc{},
+		dbRemoveFunc{},
 		tablespaceListFunc{},
 		tablespaceExistsFunc{},
 		userListFunc{},

@@ -1181,3 +1181,211 @@ func TestPostgresCLIPrivilegesList(t *testing.T) {
 		t.Fatalf("nonzero exit code=%d out=%q err=%q, want {}", code, out, errS)
 	}
 }
+
+// TestPostgresCLIDbCreate drives the R9.2h write path end to end: the
+// pinned CREATE DATABASE statement through the fake Runner, the JSON true
+// rendering, the retcode-false compatibility shape, the fail-closed
+// identifier boundary, the required name, and the runas rejection, with no
+// password anywhere in the rendered command or CLI output.
+func TestPostgresCLIDbCreate(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0},
+	}}
+	app := postgresCLIApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "postgres.db_create",
+		"--name", "dbname", "--tablespace", "testspace", "--owner", "otheruser",
+		"--user", "testuser", "--host", "testhost", "--port", "testport",
+		"--maintenance-db", "maint_db", "--password", "foo", "-o", "json")
+	var created bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &created) != nil || !created {
+		t.Fatalf("db_create code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d, want 1", len(runner.calls))
+	}
+	command := runner.calls[0]
+	argv := append([]string{command.Name}, command.Args...)
+	if len(argv) != 15 || argv[13] != "-c" ||
+		argv[14] != `CREATE DATABASE "dbname" WITH TABLESPACE = "testspace" OWNER = "otheruser"` {
+		t.Fatalf("argv = %q", argv)
+	}
+	if len(command.Env) != 4 || command.Env[0] != "PGPASSWORD=foo" ||
+		command.Shell || len(command.Redact) != 1 || command.Redact[0] != "foo" {
+		t.Fatalf("unsafe command: %#v", command)
+	}
+	if strings.Contains(command.RedactedString(), "foo") || strings.Contains(out+errS, "foo") {
+		t.Fatalf("password leaked: %q %q", command.RedactedString(), out+errS)
+	}
+
+	// A rejected CREATE keeps Salt's retcode boolean: exit OK, JSON false.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 1, Stderr: []byte(`psql: error: ERROR: database "dbname" already exists`)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.db_create", "--name", "dbname", "-o", "json")
+	var failed bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &failed) != nil || failed {
+		t.Fatalf("nonzero exit code=%d out=%q err=%q, want false", code, out, errS)
+	}
+
+	// Injection attempts fail closed before any psql call, with the
+	// value-free stable errors naming the argument key only.
+	for _, tc := range []struct {
+		name string
+		argv []string
+		want string
+	}{
+		{"name quote", []string{"--name", `db"; DROP DATABASE x; --`}, "postgres: invalid argument: unsupported quote character in name"},
+		{"template sqli", []string{"--name", "db", "--template", "tpl; DROP DATABASE x"}, "postgres: invalid argument: unsupported template identifier"},
+		{"literal sqli", []string{"--name", "db", "--lc-collate", "foo' ENCODING='utf8"}, "postgres: invalid argument: unsupported quote character in lc_collate"},
+	} {
+		runner = &cliRecordingRunner{}
+		app = postgresCLIApp(t, runner)
+		fullArgv := append(append([]string{"exec", "postgres.db_create"}, tc.argv...), "-o", "json")
+		code, _, errS = captureCode(t, app, fullArgv...)
+		if code != ExitFailed || !strings.Contains(errS, tc.want) || len(runner.calls) != 0 {
+			t.Fatalf("%s code=%d err=%q calls=%d", tc.name, code, errS, len(runner.calls))
+		}
+	}
+
+	// The required name is validated before any psql call, and runas is
+	// rejected the same way.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.db_create", "-o", "json")
+	if code != ExitInvalidInput || !strings.Contains(errS, "name") || len(runner.calls) != 0 {
+		t.Fatalf("missing name code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.db_create",
+		"--name", "dbname", "--runas", "postgres", "-o", "json")
+	if code != ExitFailed || !strings.Contains(errS, "runas") || len(runner.calls) != 0 {
+		t.Fatalf("runas code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+}
+
+// TestPostgresCLIDbRemove drives the R9.2h removal flow end to end: the
+// three pinned statements in order, the JSON true rendering, the
+// first-nonzero abort with its retcode-only error, the fail-closed name
+// boundary, and no password in any rendered or CLI output.
+func TestPostgresCLIDbRemove(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0},
+		{ExitCode: 0},
+		{ExitCode: 0},
+	}}
+	app := postgresCLIApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "postgres.db_remove",
+		"--name", "test_db", "--user", "testuser", "--host", "testhost",
+		"--port", "testport", "--maintenance-db", "maint_db", "--password", "foo", "-o", "json")
+	var removed bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &removed) != nil || !removed {
+		t.Fatalf("db_remove code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("runner calls = %d, want 3", len(runner.calls))
+	}
+	wantStatements := []string{
+		`REVOKE CONNECT ON DATABASE "test_db" FROM public;`,
+		"SELECT pid, pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'test_db' AND pid <> pg_backend_pid();",
+		`DROP DATABASE "test_db";`,
+	}
+	for i, command := range runner.calls {
+		argv := append([]string{command.Name}, command.Args...)
+		if len(argv) != 15 || argv[13] != "-c" || argv[14] != wantStatements[i] {
+			t.Fatalf("call %d argv = %q", i, argv)
+		}
+		if command.Shell || len(command.Redact) != 1 || command.Redact[0] != "foo" {
+			t.Fatalf("call %d unsafe command: %#v", i, command)
+		}
+		if strings.Contains(command.RedactedString(), "foo") {
+			t.Fatalf("call %d rendered command leaks password: %q", i, command.RedactedString())
+		}
+	}
+	if strings.Contains(out+errS, "foo") {
+		t.Fatalf("CLI output leaks password: out=%q err=%q", out, errS)
+	}
+
+	// A missing database aborts on the first statement with the pinned
+	// Failed shape and never reaches the DROP.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 1, Stderr: []byte(`psql: error: ERROR: database "test_db" does not exist`)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.db_remove", "--name", "test_db", "-o", "json")
+	if code != ExitFailed || !strings.Contains(errS, "Failed: retcode=1") || len(runner.calls) != 1 {
+		t.Fatalf("missing db code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+	if strings.Contains(errS, "does not exist") {
+		t.Fatalf("error embeds captured stderr: %q", errS)
+	}
+
+	// Injection attempts fail closed before any psql call, with the exact
+	// value-free stable error.
+	for _, name := range []string{`x'; DROP DATABASE postgres; --`, `x" `} {
+		runner = &cliRecordingRunner{}
+		app = postgresCLIApp(t, runner)
+		code, _, errS = captureCode(t, app, "exec", "postgres.db_remove", "--name", name, "-o", "json")
+		if code != ExitFailed ||
+			!strings.Contains(errS, "postgres: invalid argument: unsupported quote character in name") ||
+			len(runner.calls) != 0 {
+			t.Fatalf("injected name %q code=%d err=%q calls=%d", name, code, errS, len(runner.calls))
+		}
+	}
+
+	// The required name is validated before any psql call.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.db_remove", "-o", "json")
+	if code != ExitInvalidInput || !strings.Contains(errS, "name") || len(runner.calls) != 0 {
+		t.Fatalf("missing name code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+}
+
+// TestPostgresCLIDbValidationRedaction loops every rejected db_create and
+// db_remove field through the CLI with the rejected value embedding the
+// same synthetic marker as --password: exit 1 must carry exactly the
+// stable statekit-prefixed validation error — never the rejected value, so
+// the marker cannot appear in any output — and no Runner call may happen.
+func TestPostgresCLIDbValidationRedaction(t *testing.T) {
+	const marker = "pgmark-7f3c-secret"
+	for _, tc := range []struct {
+		fn   string
+		argv []string
+		want string
+	}{
+		{"postgres.db_create", []string{"--name", `db-` + marker + `"`},
+			"statekit: postgres: invalid argument: unsupported quote character in name\n"},
+		{"postgres.db_create", []string{"--name", "db", "--tablespace", `ts-` + marker + `"`},
+			"statekit: postgres: invalid argument: unsupported quote character in tablespace\n"},
+		{"postgres.db_create", []string{"--name", "db", "--owner", `own-` + marker + `"`},
+			"statekit: postgres: invalid argument: unsupported quote character in owner\n"},
+		{"postgres.db_create", []string{"--name", "db", "--template", `tpl-` + marker},
+			"statekit: postgres: invalid argument: unsupported template identifier\n"},
+		{"postgres.db_create", []string{"--name", "db", "--encoding", `enc-` + marker + `'`},
+			"statekit: postgres: invalid argument: unsupported quote character in encoding\n"},
+		{"postgres.db_create", []string{"--name", "db", "--lc-collate", `lcc-` + marker + `'`},
+			"statekit: postgres: invalid argument: unsupported quote character in lc_collate\n"},
+		{"postgres.db_create", []string{"--name", "db", "--lc-ctype", `lct-` + marker + `'`},
+			"statekit: postgres: invalid argument: unsupported quote character in lc_ctype\n"},
+		{"postgres.db_remove", []string{"--name", `x'-` + marker},
+			"statekit: postgres: invalid argument: unsupported quote character in name\n"},
+		{"postgres.db_remove", []string{"--name", `x"-` + marker},
+			"statekit: postgres: invalid argument: unsupported quote character in name\n"},
+	} {
+		runner := &cliRecordingRunner{}
+		app := postgresCLIApp(t, runner)
+		argv := append([]string{"exec", tc.fn, "--password", marker}, tc.argv...)
+		argv = append(argv, "-o", "json")
+		code, out, errS := captureCode(t, app, argv...)
+		if code != ExitFailed || errS != tc.want || len(runner.calls) != 0 {
+			t.Fatalf("%s %s code=%d err=%q calls=%d, want err %q",
+				tc.fn, tc.argv, code, errS, len(runner.calls), tc.want)
+		}
+		if strings.Contains(out+errS, marker) {
+			t.Fatalf("%s %s output leaks the rejected value: out=%q err=%q",
+				tc.fn, tc.argv, out, errS)
+		}
+	}
+}
