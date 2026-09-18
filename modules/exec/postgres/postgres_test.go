@@ -362,6 +362,9 @@ func TestPostgresRegistrySurface(t *testing.T) {
 		"postgres.db_remove",
 		"postgres.get_available_extension",
 		"postgres.get_installed_extension",
+		"postgres.group_create",
+		"postgres.group_remove",
+		"postgres.group_update",
 		"postgres.has_privileges",
 		"postgres.installed_extensions",
 		"postgres.is_available_extension",
@@ -404,6 +407,12 @@ func TestPostgresRegistrySurface(t *testing.T) {
 			want = UserUpdateArgs{}
 		case "postgres.user_remove":
 			want = UserRemoveArgs{}
+		case "postgres.group_create":
+			want = GroupCreateArgs{}
+		case "postgres.group_update":
+			want = GroupUpdateArgs{}
+		case "postgres.group_remove":
+			want = GroupRemoveArgs{}
 		case "postgres.user_list":
 			want = UserListArgs{}
 		case "postgres.role_get":
@@ -435,13 +444,9 @@ func TestPostgresRegistrySurface(t *testing.T) {
 			t.Fatalf("%s prototype = %#v, want zero-value defaults %#v", name, fn.Args(), want)
 		}
 	}
-	// The generic query surface, the group family, and the private helpers
-	// stay unregistered.
+	// The generic query surface and the private helpers stay unregistered.
 	for _, pending := range []string{
 		"postgres.psql_query",
-		"postgres.group_create",
-		"postgres.group_update",
-		"postgres.group_remove",
 		"postgres._parsed_version",
 	} {
 		if _, ok := reg.Get(pending); ok {
@@ -488,6 +493,15 @@ func TestPostgresRegistrySurface(t *testing.T) {
 			"valid_until", "groups",
 		}, connection...)},
 		{userRemoveFunc{}, append([]string{"username"}, connection...)},
+		{groupCreateFunc{}, append([]string{
+			"groupname", "createdb", "createroles", "encrypted", "login",
+			"inherit", "superuser", "replication", "rolepassword", "groups",
+		}, connection...)},
+		{groupUpdateFunc{}, append([]string{
+			"groupname", "createdb", "createroles", "encrypted", "inherit",
+			"login", "superuser", "replication", "rolepassword", "groups",
+		}, connection...)},
+		{groupRemoveFunc{}, append([]string{"groupname"}, connection...)},
 		{hasPrivilegesFunc{}, append([]string{
 			"name", "object_name", "object_type", "privileges",
 			"grant_option", "prepend",
@@ -4503,6 +4517,35 @@ func TestPostgresRoleVerifierRedaction(t *testing.T) {
 		}
 	}
 
+	// The group statements carry the same inventory: a group CREATE ROLE
+	// and a group ALTER ROLE with the md5 verifier scrub the digest and
+	// plaintext from a leak error through the registry path.
+	for _, tc := range []struct {
+		fn   string
+		args any
+	}{
+		{"postgres.group_create", &GroupCreateArgs{Groupname: "newgroup",
+			Password: postgresString("conn_pw"), Rolepassword: "foobar"}},
+		{"postgres.group_update", &GroupUpdateArgs{Groupname: "testgroup",
+			Password: postgresString("conn_pw"), Rolepassword: "foobar"}},
+	} {
+		rt, runner := newLeakRuntime(groupMutationsCSV)
+		reg := runtime.NewExecRegistry()
+		if err := Register(reg); err != nil {
+			t.Fatal(err)
+		}
+		rt.Exec = reg
+		_, err := rt.Exec.Call(context.Background(), rt, tc.fn, tc.args)
+		if err == nil {
+			t.Fatal("expected the leak runner error")
+		}
+		for _, marker := range []string{"foobar", "'foobar'", md5Digest, "conn_pw"} {
+			if strings.Contains(err.Error(), marker) || strings.Contains(runner.calls[2].RedactedString(), marker) {
+				t.Fatalf("%s leak of %q: %v", tc.fn, marker, err)
+			}
+		}
+	}
+
 	// A plaintext UNENCRYPTED statement redacts the doubled form too.
 	rt, runner = newLeakRuntime(absentRoleCSV)
 	_, err = (userCreateFunc{}).Execute(context.Background(), rt, &UserCreateArgs{
@@ -5035,6 +5078,536 @@ func TestPostgresUserValidationErrorsRedactedThroughRegistry(t *testing.T) {
 			"postgres: invalid argument: unsupported quote character in username", 0},
 	} {
 		rt, runner := newMutationRuntime()
+		rt.Exec = runtime.NewExecRegistry()
+		if err := Register(rt.Exec); err != nil {
+			t.Fatal(err)
+		}
+		_, err := rt.Exec.Call(context.Background(), rt, tc.fn, tc.args)
+		if err == nil || err.Error() != tc.want {
+			t.Fatalf("%s err = %v, want %q", tc.fn, err, tc.want)
+		}
+		if strings.Contains(err.Error(), marker) {
+			t.Fatalf("%s error leaks the rejected value: %v", tc.fn, err)
+		}
+		if len(runner.calls) != tc.calls {
+			t.Fatalf("%s executed %d commands, want %d", tc.fn, len(runner.calls), tc.calls)
+		}
+	}
+}
+
+// groupMutationsCSV is the user_list catalog for the R9.2j group flows:
+// testgroup exists as a non-superuser group role, super_role a superuser,
+// and created names are absent.
+const groupMutationsCSV = `name,superuser,inherits privileges,can create roles,can create databases,can update system catalogs,can login,replication,connections,groups,expiry time,defaults variables
+testgroup,f,t,f,f,f,f,,-1,,,
+super_role,t,t,f,f,f,t,,-1,,,
+`
+
+// groupAbsentCSV is a catalog whose only role is super_role, so create
+// flows for testgroup reach their statement (the pinned test_group_create
+// mocks user_exists False).
+const groupAbsentCSV = `name,superuser,inherits privileges,can create roles,can create databases,can update system catalogs,can login,replication,connections,groups,expiry time,defaults variables
+super_role,t,t,f,f,f,t,,-1,,,
+`
+
+// newGroupMutationRuntime seeds the version probe and role catalog answers
+// the group_create/group_update/group_remove preflights and post-checks
+// consume.
+func newGroupMutationRuntime(results ...process.CommandResult) (*runtime.Runtime, *postgresFakeRunner) {
+	return newPostgresRuntime(append([]process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("9.1\n")},           // version probe
+		{ExitCode: 0, Stdout: []byte(groupMutationsCSV)}, // role catalog
+	}, results...)...)
+}
+
+// newGroupCreateRuntime seeds the version probe and a catalog without
+// testgroup, so the pinned test_group_create vector reaches its statement.
+func newGroupCreateRuntime(results ...process.CommandResult) (*runtime.Runtime, *postgresFakeRunner) {
+	return newPostgresRuntime(append([]process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("9.1\n")},        // version probe
+		{ExitCode: 0, Stdout: []byte(groupAbsentCSV)}, // role catalog
+	}, results...)...)
+}
+
+// TestPostgresGroupCreateArgvAndResult ports the pinned test_group_create
+// (test_postgres.py:595-620): the exact group-typed statement on the full
+// argv — the pinned INHERIT NOLOGIN defaults, the UNENCRYPTED PASSWORD
+// literal, and the self-referential GRANT of groups="testgroup" — after
+// the preflight catalog pair, with the rolepassword redacted out of the
+// rendered command.
+func TestPostgresGroupCreateArgvAndResult(t *testing.T) {
+	rt, runner := newGroupCreateRuntime(process.CommandResult{ExitCode: 0})
+	value, err := (groupCreateFunc{}).Execute(context.Background(), rt, &GroupCreateArgs{
+		Groupname:     "testgroup",
+		User:          postgresString("testuser"),
+		Host:          postgresString("testhost"),
+		Port:          postgresString("testport"),
+		MaintenanceDB: postgresString("maint_db"),
+		Password:      postgresString("foo"),
+		Createdb:      postgresBool(false),
+		Encrypted:     false,
+		Superuser:     postgresBool(false),
+		Replication:   postgresBool(false),
+		Rolepassword:  "testrolepass",
+		Groups:        "testgroup",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true {
+		t.Fatalf("group_create = %#v, want true", value)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("runner calls = %d, want 3 (preflight pair plus CREATE)", len(runner.calls))
+	}
+	command := runner.calls[2]
+	want := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--username", "testuser",
+		"--host", "testhost",
+		"--port", "testport",
+		"--dbname", "maint_db",
+		"-c", `CREATE ROLE "testgroup" WITH  INHERIT NOCREATEDB ` +
+			`NOSUPERUSER NOREPLICATION NOLOGIN UNENCRYPTED PASSWORD ` +
+			`'testrolepass'; GRANT "testgroup" TO "testgroup"`,
+	}
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+	if got := append([]string{command.Name}, command.Args...); got[14] != want[14] {
+		t.Fatalf("argv[14] = %q, want the pinned CREATE ROLE statement", got[14])
+	}
+	wantEnv := []string{
+		"PGPASSWORD=foo",
+		"PGUSER=testuser",
+		"PGHOST=testhost",
+		"PGPORT=testport",
+	}
+	if !reflect.DeepEqual(command.Env, wantEnv) {
+		t.Fatalf("env = %q, want %q", command.Env, wantEnv)
+	}
+	if command.Shell {
+		t.Fatal("psql must run without a shell")
+	}
+	if command.Timeout != commandTimeout ||
+		command.MaxStdoutBytes != outputLimit || command.MaxStderrBytes != outputLimit {
+		t.Fatalf("unsafe command bounds: %#v", command)
+	}
+	// The statement-carried secret set: the quote-escaped plaintext literal
+	// first, then the plaintext, then the connection password.
+	if !reflect.DeepEqual(command.Redact, []string{"'testrolepass'", "testrolepass", "foo"}) {
+		t.Fatalf("redact = %q", command.Redact)
+	}
+	if rendered := command.RedactedString(); strings.Contains(rendered, "testrolepass") ||
+		strings.Contains(rendered, "foo") || strings.Contains(rendered, "'testrolepass'") {
+		t.Fatalf("rendered command leaks a password: %q", rendered)
+	}
+}
+
+// TestPostgresGroupCreateDefaults pins the no-argument group shape: the
+// pinned group-typed INHERIT NOLOGIN defaults are the only clauses (the
+// pinned double space after WITH kept), the maintenance fallback applies,
+// the environment is clean, and nothing is redacted. The pinned group
+// signatures carry no connlimit or valid_until, so a groups-less call
+// renders no other clause.
+func TestPostgresGroupCreateDefaults(t *testing.T) {
+	rt, runner := newGroupCreateRuntime(process.CommandResult{ExitCode: 0})
+	value, err := (groupCreateFunc{}).Execute(context.Background(), rt, &GroupCreateArgs{
+		Groupname: "plaingroup",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true {
+		t.Fatalf("group_create = %#v, want true", value)
+	}
+	command := runner.calls[2]
+	want := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--dbname", "postgres",
+		"-c", `CREATE ROLE "plaingroup" WITH  INHERIT NOLOGIN`,
+	}
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+	if command.Env == nil || len(command.Env) != 0 {
+		t.Fatalf("default env = %q, want clean empty environment", command.Env)
+	}
+	if command.Redact != nil {
+		t.Fatalf("default redact = %q, want none", command.Redact)
+	}
+}
+
+// TestPostgresGroupCreateExistsIsFalse pins the pinned preflight no-op: an
+// existing role is the logged-and-False answer after exactly the two
+// catalog calls, with no CREATE statement issued.
+func TestPostgresGroupCreateExistsIsFalse(t *testing.T) {
+	rt, runner := newGroupMutationRuntime()
+	value, err := (groupCreateFunc{}).Execute(context.Background(), rt, &GroupCreateArgs{
+		Groupname:    "testgroup",
+		Rolepassword: "secret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != false {
+		t.Fatalf("group_create(existing) = %#v, want false", value)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("runner calls = %d, want 2 preflight calls only", len(runner.calls))
+	}
+}
+
+// TestPostgresGroupUpdateArgvAndResult ports the pinned test_group_update
+// (test_postgres.py:664-692): the exact ALTER ROLE statement matching the
+// pinned regex ('ALTER.* "testgroup" .* UNENCRYPTED PASSWORD') with the
+// db_role-keyed superuser skip against the stored non-superuser row, no
+// inherit/login defaults, and the pinned quoted connection user, after the
+// two preflight calls.
+func TestPostgresGroupUpdateArgvAndResult(t *testing.T) {
+	rt, runner := newGroupMutationRuntime(process.CommandResult{ExitCode: 0})
+	value, err := (groupUpdateFunc{}).Execute(context.Background(), rt, &GroupUpdateArgs{
+		Groupname:     "testgroup",
+		User:          postgresString(`"testuser"`),
+		Host:          postgresString("testhost"),
+		Port:          postgresString("testport"),
+		MaintenanceDB: postgresString("maint_db"),
+		Password:      postgresString("foo"),
+		Createdb:      postgresBool(false),
+		Encrypted:     false,
+		Replication:   postgresBool(false),
+		Rolepassword:  "test_role_pass",
+		Groups:        "testgroup",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true {
+		t.Fatalf("group_update = %#v, want true", value)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("runner calls = %d, want 3 (preflight pair plus ALTER)", len(runner.calls))
+	}
+	command := runner.calls[2]
+	want := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--username", `"testuser"`,
+		"--host", "testhost",
+		"--port", "testport",
+		"--dbname", "maint_db",
+		"-c", `ALTER ROLE "testgroup" WITH  NOCREATEDB NOREPLICATION ` +
+			`UNENCRYPTED PASSWORD 'test_role_pass'; GRANT "testgroup" TO "testgroup"`,
+	}
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+	if got := append([]string{command.Name}, command.Args...); !regexp.MustCompile(
+		`ALTER.* "testgroup" .* UNENCRYPTED PASSWORD`).MatchString(got[14]) {
+		t.Fatalf("argv[14] = %q, want the pinned ALTER ROLE shape", got[14])
+	}
+	if !reflect.DeepEqual(command.Redact, []string{"'test_role_pass'", "test_role_pass", "foo"}) {
+		t.Fatalf("redact = %q", command.Redact)
+	}
+	if strings.Contains(command.RedactedString(), "test_role_pass") ||
+		strings.Contains(command.RedactedString(), "'test_role_pass'") {
+		t.Fatalf("rendered command leaks the rolepassword: %q", command.RedactedString())
+	}
+}
+
+// TestPostgresGroupUpdateShapes pins the remaining group update contract:
+// the md5 default verifier renders behind ENCRYPTED with the digest
+// Redacted, the explicit inherit/login clauses render in the pinned order
+// when requested, a missing role answers false after the preflight pair,
+// and a rejected ALTER keeps the retcode boolean.
+func TestPostgresGroupUpdateShapes(t *testing.T) {
+	rt, runner := newGroupMutationRuntime(process.CommandResult{ExitCode: 0})
+	_, err := (groupUpdateFunc{}).Execute(context.Background(), rt, &GroupUpdateArgs{
+		Groupname:    "testgroup",
+		Rolepassword: "foobar",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := md5Password("testgroup", "foobar")
+	want := `ALTER ROLE "testgroup" WITH  ENCRYPTED PASSWORD '` + digest + `'`
+	if got := userCreateStatement(runner); got != want {
+		t.Fatalf("md5 statement = %q, want %q", got, want)
+	}
+	if !reflect.DeepEqual(runner.calls[2].Redact,
+		[]string{"'" + digest + "'", digest, "foobar"}) {
+		t.Fatalf("md5 redact = %q", runner.calls[2].Redact)
+	}
+
+	rt, runner = newGroupMutationRuntime(process.CommandResult{ExitCode: 0})
+	_, err = (groupUpdateFunc{}).Execute(context.Background(), rt, &GroupUpdateArgs{
+		Groupname:   "testgroup",
+		Inherit:     postgresBool(true),
+		Login:       postgresBool(true),
+		Createroles: postgresBool(true),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = `ALTER ROLE "testgroup" WITH  INHERIT CREATEROLE LOGIN`
+	if got := userCreateStatement(runner); got != want {
+		t.Fatalf("flags statement = %q, want %q", got, want)
+	}
+
+	rt, runner = newGroupMutationRuntime()
+	value, err := (groupUpdateFunc{}).Execute(context.Background(), rt, &GroupUpdateArgs{
+		Groupname:    "absent_group",
+		Rolepassword: "secret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != false {
+		t.Fatalf("group_update(missing) = %#v, want false", value)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("runner calls = %d, want 2 preflight calls only", len(runner.calls))
+	}
+
+	rt, _ = newGroupMutationRuntime(process.CommandResult{
+		ExitCode: 1,
+		Stderr:   []byte(`psql: error: ERROR: role "testgroup" cannot be altered`),
+	})
+	value, err = (groupUpdateFunc{}).Execute(context.Background(), rt, &GroupUpdateArgs{
+		Groupname: "testgroup",
+	})
+	if err != nil || value != false {
+		t.Fatalf("nonzero ALTER = %#v err = %v, want false", value, err)
+	}
+}
+
+// TestPostgresGroupRemoveArgvAndResult ports the pinned test_group_remove
+// (test_postgres.py:623-661): the preflight pair, the exact 15-element
+// DROP ROLE argv of the pinned assert_called_once_with, and the post-check
+// pair deciding true.
+func TestPostgresGroupRemoveArgvAndResult(t *testing.T) {
+	rt, runner := newGroupMutationRuntime(
+		process.CommandResult{ExitCode: 0}, // DROP ROLE (retcode ignored)
+		process.CommandResult{ExitCode: 0, Stdout: []byte("9.1\n")},
+		process.CommandResult{ExitCode: 0, Stdout: []byte("name,superuser,inherits privileges,can create roles,can create databases,can update system catalogs,can login,replication,connections,groups,expiry time,defaults variables\nsuper_role,t,t,f,f,f,t,,-1,,,\n")},
+	)
+	value, err := (groupRemoveFunc{}).Execute(context.Background(), rt, &GroupRemoveArgs{
+		Groupname:     "testgroup",
+		User:          postgresString("testuser"),
+		Host:          postgresString("testhost"),
+		Port:          postgresString("testport"),
+		MaintenanceDB: postgresString("maint_db"),
+		Password:      postgresString("foo"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true {
+		t.Fatalf("group_remove = %#v, want true", value)
+	}
+	if len(runner.calls) != 5 {
+		t.Fatalf("runner calls = %d, want 5 (preflight, DROP, post-check)", len(runner.calls))
+	}
+	command := runner.calls[2]
+	want := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--username", "testuser",
+		"--host", "testhost",
+		"--port", "testport",
+		"--dbname", "maint_db",
+		"-c", `DROP ROLE "testgroup"`,
+	}
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+	if !reflect.DeepEqual(command.Redact, []string{"foo"}) {
+		t.Fatalf("redact = %q", command.Redact)
+	}
+	if strings.Contains(command.RedactedString(), "foo") {
+		t.Fatalf("rendered command leaks the password: %q", command.RedactedString())
+	}
+	// No statement runs after the post-check pair.
+	if last := runner.calls[4]; strings.HasPrefix(last.Args[len(last.Args)-1], "DROP") {
+		t.Fatalf("unexpected second DROP: %q", last.Args)
+	}
+}
+
+// TestPostgresGroupRemoveShapes pins the remaining pinned flows: a missing
+// role is the logged-and-False no-op with no DROP, and a failed DROP that
+// leaves the role present is the logged-and-False answer after the full
+// five-call flow.
+func TestPostgresGroupRemoveShapes(t *testing.T) {
+	rt, runner := newGroupMutationRuntime()
+	value, err := (groupRemoveFunc{}).Execute(context.Background(), rt, &GroupRemoveArgs{
+		Groupname: "absent_group",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != false {
+		t.Fatalf("group_remove(missing) = %#v, want false", value)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("missing-role calls = %d, want 2", len(runner.calls))
+	}
+
+	// The DROP retcode is ignored; the role still exists afterwards, so
+	// the pinned answer is false after all five calls.
+	rt, runner = newGroupMutationRuntime(
+		process.CommandResult{ExitCode: 1, Stderr: []byte("psql: error: ERROR: role cannot be dropped")},
+		process.CommandResult{ExitCode: 0, Stdout: []byte("9.1\n")},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(groupMutationsCSV)},
+	)
+	value, err = (groupRemoveFunc{}).Execute(context.Background(), rt, &GroupRemoveArgs{
+		Groupname: "testgroup",
+	})
+	if err != nil || value != false {
+		t.Fatalf("group_remove(failed drop) = %#v err = %v, want false", value, err)
+	}
+	if len(runner.calls) != 5 {
+		t.Fatalf("failed-drop calls = %d, want 5", len(runner.calls))
+	}
+}
+
+// TestPostgresGroupCreateGuards pins the shared transport guards for the
+// group create path: pre-cancellation, runas rejection, psql-unavailable
+// fail-closed, and the redacted Runner error covering the rolepassword
+// too.
+func TestPostgresGroupCreateGuards(t *testing.T) {
+	rt, runner := newPostgresRuntime()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := (groupCreateFunc{}).Execute(ctx, rt, &GroupCreateArgs{Groupname: "g"}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("pre-canceled ctx err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("canceled run executed %d commands", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime()
+	_, err := (groupCreateFunc{}).Execute(context.Background(), rt, &GroupCreateArgs{
+		Groupname: "g",
+		Runas:     postgresString("postgres"),
+	})
+	if !errors.Is(err, errPostgresRunas) {
+		t.Fatalf("runas err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("runas run executed %d commands", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime()
+	runner.available = map[string]bool{"psql": false}
+	if _, err := (groupCreateFunc{}).Execute(context.Background(), rt, &GroupCreateArgs{Groupname: "g"}); !errors.Is(err, errPostgresPsqlUnavailable) {
+		t.Fatalf("psql unavailable err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("unavailable psql executed %d commands", len(runner.calls))
+	}
+
+	for _, truncated := range []process.CommandResult{
+		{ExitCode: 0, StdoutTruncated: true, Stdout: []byte(strings.Repeat("9", outputLimit+1))},
+		{ExitCode: 0, StderrTruncated: true, Stderr: []byte(strings.Repeat("e", outputLimit+1))},
+	} {
+		rt, _ := newGroupMutationRuntime(truncated)
+		if _, err := (groupCreateFunc{}).Execute(context.Background(), rt, &GroupCreateArgs{Groupname: "g"}); !errors.Is(err, process.ErrOutputLimit) {
+			t.Fatalf("output limit err = %v", err)
+		}
+	}
+
+	rt, _ = newGroupMutationRuntime(process.CommandResult{
+		ExitCode: -1,
+		Err:      fmt.Errorf("exec psql -c: secret group_pw rejected"),
+	})
+	_, err = (groupCreateFunc{}).Execute(context.Background(), rt, &GroupCreateArgs{
+		Groupname:    "g",
+		Password:     postgresString("conn_pw"),
+		Rolepassword: "group_pw",
+	})
+	if err == nil || strings.Contains(err.Error(), "group_pw") || strings.Contains(err.Error(), "conn_pw") {
+		t.Fatalf("runner error must be redacted: %v", err)
+	}
+	if !strings.Contains(err.Error(), process.RedactedPlaceholder) {
+		t.Fatalf("error lacks redaction placeholder: %v", err)
+	}
+}
+
+// TestPostgresGroupRemoveGuards pins the fail-closed name boundary and the
+// shared transport guards for the group remove path: the value-free
+// identifier rejection before any Runner invocation, runas rejection, and
+// pre-cancellation.
+func TestPostgresGroupRemoveGuards(t *testing.T) {
+	rt, runner := newPostgresRuntime()
+	_, err := (groupRemoveFunc{}).Execute(context.Background(), rt, &GroupRemoveArgs{
+		Groupname: `x"; DROP ROLE postgres; --`,
+	})
+	if err == nil || err.Error() != "postgres: invalid argument: unsupported quote character in groupname" {
+		t.Fatalf("injected name err = %v", err)
+	}
+	if !errors.Is(err, errPostgresInvalidArgument) {
+		t.Fatalf("injected name err = %v, want invalid argument", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("injected name executed %d commands", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime()
+	_, err = (groupRemoveFunc{}).Execute(context.Background(), rt, &GroupRemoveArgs{
+		Groupname: "g",
+		Runas:     postgresString("postgres"),
+	})
+	if !errors.Is(err, errPostgresRunas) {
+		t.Fatalf("runas err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("runas run executed %d commands", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := (groupRemoveFunc{}).Execute(ctx, rt, &GroupRemoveArgs{Groupname: "g"}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("pre-canceled ctx err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("canceled run executed %d commands", len(runner.calls))
+	}
+}
+
+// TestPostgresGroupValidationErrorsRedactedThroughRegistry loops every
+// rejected group_create/group_update/group_remove field through the
+// registry Call path with the rejected value embedding a synthetic marker:
+// the stable value-free error must carry no marker and no Runner call may
+// happen beyond the read-only preflight pair the pinned flow runs first.
+func TestPostgresGroupValidationErrorsRedactedThroughRegistry(t *testing.T) {
+	const marker = "pgmark-7f3c-secret"
+	for _, tc := range []struct {
+		fn    string
+		args  any
+		want  string
+		calls int
+	}{
+		{"postgres.group_create", &GroupCreateArgs{Groupname: `g-` + marker + `"`},
+			"postgres: invalid argument: unsupported quote character in groupname", 0},
+		{"postgres.group_create", &GroupCreateArgs{Groupname: "g", Groups: []string{`m-` + marker + `"`}},
+			"postgres: invalid argument: unsupported quote character in groups", 0},
+		{"postgres.group_create", &GroupCreateArgs{Groupname: "g", Groups: `ok,m-` + marker + `"`},
+			"postgres: invalid argument: unsupported quote character in groups", 0},
+		{"postgres.group_create", &GroupCreateArgs{Groupname: "g", Groups: map[string]any{marker: "x"}},
+			"postgres: invalid argument", 0},
+		{"postgres.group_create", &GroupCreateArgs{Groupname: "g", Encrypted: marker, Rolepassword: marker},
+			"postgres: invalid argument: unknown password algorithm", 2},
+		{"postgres.group_update", &GroupUpdateArgs{Groupname: `g-` + marker + `"`},
+			"postgres: invalid argument: unsupported quote character in groupname", 0},
+		{"postgres.group_update", &GroupUpdateArgs{Groupname: "g", Groups: []string{`m-` + marker + `"`}},
+			"postgres: invalid argument: unsupported quote character in groups", 0},
+		{"postgres.group_update", &GroupUpdateArgs{Groupname: "g", Groups: `m,` + marker + `"`},
+			"postgres: invalid argument: unsupported quote character in groups", 0},
+		{"postgres.group_update", &GroupUpdateArgs{Groupname: "testgroup", Encrypted: marker, Rolepassword: marker},
+			"postgres: invalid argument: unknown password algorithm", 2},
+		{"postgres.group_remove", &GroupRemoveArgs{Groupname: `g"-` + marker},
+			"postgres: invalid argument: unsupported quote character in groupname", 0},
+	} {
+		rt, runner := newGroupMutationRuntime()
 		rt.Exec = runtime.NewExecRegistry()
 		if err := Register(rt.Exec); err != nil {
 			t.Fatal(err)
@@ -6048,7 +6621,8 @@ func TestPostgresPrivilegesListGuards(t *testing.T) {
 // generation or mutation. Every marker is synthetic test data.
 func TestPostgresRolePreflightRedaction(t *testing.T) {
 	for _, entry := range []string{"direct", "registry"} {
-		for _, function := range []string{"postgres.user_create", "postgres.user_update"} {
+		for _, function := range []string{"postgres.user_create", "postgres.user_update",
+			"postgres.group_create", "postgres.group_update"} {
 			for _, overlap := range []string{"password", "host", "user", "maintenance_db", "sql", "md5", "scram", "apostrophe"} {
 				for _, failAt := range []int{1, 2} {
 					t.Run(fmt.Sprintf("%s/%s/%s/%d", entry, function, overlap, failAt), func(t *testing.T) {
@@ -6085,6 +6659,16 @@ func TestPostgresRolePreflightRedaction(t *testing.T) {
 						if function == "postgres.user_update" {
 							fn = userUpdateFunc{}
 							args = &UserUpdateArgs{Username: a.Username, Rolepassword: a.Rolepassword, Encrypted: a.Encrypted,
+								Host: a.Host, User: a.User, MaintenanceDB: a.MaintenanceDB, Password: a.Password}
+						}
+						if function == "postgres.group_create" {
+							fn = groupCreateFunc{}
+							args = &GroupCreateArgs{Groupname: "testgroup", Rolepassword: a.Rolepassword, Encrypted: a.Encrypted,
+								Host: a.Host, User: a.User, MaintenanceDB: a.MaintenanceDB, Password: a.Password}
+						}
+						if function == "postgres.group_update" {
+							fn = groupUpdateFunc{}
+							args = &GroupUpdateArgs{Groupname: "testgroup", Rolepassword: a.Rolepassword, Encrypted: a.Encrypted,
 								Host: a.Host, User: a.User, MaintenanceDB: a.MaintenanceDB, Password: a.Password}
 						}
 						var value any

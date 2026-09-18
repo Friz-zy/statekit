@@ -58,6 +58,13 @@
 // placed in the SQL (plus that verifier's quote-escaped literal) are all
 // Redact secrets that never appear in a rendered command, captured
 // output, or returned error.
+// R9.2j adds the group mutation family group_create, group_update, and
+// group_remove (postgres.py:2098-2225 through the same
+// _role_create/_role_update/_role_remove flow with typ_="group"): the
+// pinned group signatures carry neither connlimit nor valid_until, create
+// applies the pinned group-typed INHERIT NOLOGIN defaults (update applies
+// none, exactly like the user family), and the identifier rejection names
+// the groupname argument key for the group family.
 // Like Salt, every invocation is a shell-free psql argv executed through
 // the central Runner; this package links no database driver or protocol
 // client and never contacts a live server by itself. The catalog queries
@@ -2355,10 +2362,13 @@ func (g roleGroups) grantEntries() []string {
 }
 
 // roleOptions carries the pinned _role_cmd_args inputs for one statement.
-// typ keeps the pinned typ_: "user" for the create path (whose inherit and
-// login defaults apply), "role" for the update path (whose _role_cmd_args
-// call passes no typ_, so no defaults apply). dbRole is the update path's
-// stored role row for the pinned superuser skip; nil on create.
+// typ keeps the pinned typ_: "user" or "group" for the create paths (whose
+// inherit and login defaults apply — INHERIT and NOLOGIN for groups), and
+// "role" for the update paths (whose _role_cmd_args call passes no typ_, so
+// no defaults apply). dbRole is the update path's stored role row for the
+// pinned superuser skip; nil on create. The group family's pinned
+// signatures carry neither connlimit nor valid_until, so those stay nil
+// there.
 type roleOptions struct {
 	name         string
 	typ          string
@@ -2501,11 +2511,12 @@ func roleStatement(verb string, o roleOptions) (string, []string, error) {
 // validateRoleIdentifiers fails closed on the double quote at the
 // identifier positions the pinned source interpolates raw — the role name
 // of every CREATE/ALTER/DROP ROLE and GRANT statement and each GRANT group
-// entry the pinned split produces — with the shared value-free rejection,
-// before any Runner invocation.
-func validateRoleIdentifiers(name string, groups []string) error {
+// entry the pinned split produces — with the shared value-free rejection
+// naming only the fixed argument key (username for the user family,
+// groupname for the group family), before any Runner invocation.
+func validateRoleIdentifiers(name, nameKey string, groups []string) error {
 	if strings.Contains(name, `"`) {
-		return ddlValidationError("username")
+		return ddlValidationError(nameKey)
 	}
 	for _, group := range groups {
 		if strings.Contains(group, `"`) {
@@ -2617,7 +2628,7 @@ func (userCreateFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any
 	if err != nil {
 		return nil, err
 	}
-	if err := validateRoleIdentifiers(a.Username, groups.grantEntries()); err != nil {
+	if err := validateRoleIdentifiers(a.Username, "username", groups.grantEntries()); err != nil {
 		return nil, err
 	}
 	conn := a.connection()
@@ -2735,7 +2746,7 @@ func (userUpdateFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any
 	if err != nil {
 		return nil, err
 	}
-	if err := validateRoleIdentifiers(a.Username, groups.grantEntries()); err != nil {
+	if err := validateRoleIdentifiers(a.Username, "username", groups.grantEntries()); err != nil {
 		return nil, err
 	}
 	conn := a.connection()
@@ -2836,6 +2847,330 @@ func (userRemoveFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any
 		return nil, err
 	}
 	exists, err = roleUserExists(ctx, rt, conn, a.Username)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		// The pinned "Failed to delete user 'x'." log-and-False.
+		return false, nil
+	}
+	return true, nil
+}
+
+// ---------------------------------------------------------------------------
+// group_create/group_update/group_remove — salt/modules/postgres.py:2098-2225
+// @ pinned revision, delegating to the same _role_create/_role_update/
+// _role_remove flows as the user family with typ_="group": the pinned
+// group-typed inherit/login defaults (INHERIT NOLOGIN) on create, the
+// pinned no-default update clause machine with the db_role superuser skip,
+// and the pinned DROP ROLE post-check flow.
+
+// GroupCreateArgs are the canonical postgres.group_create arguments,
+// mirroring the pinned group_create(groupname, user, host, port,
+// maintenance_db, password, createdb, createroles, encrypted, login,
+// inherit, superuser, replication, rolepassword, groups, runas) signature
+// (postgres.py:2098-2115). The pinned group signature carries neither
+// connlimit nor valid_until, so neither argument exists here. Pointer and
+// union fields keep Salt's None defaults: nil or an absent value omits the
+// clause (or applies the pinned group-typed INHERIT/NOLOGIN defaults),
+// while an explicit empty string keeps the pinned falsy-string behavior.
+// Encrypted, Rolepassword, and Groups are type-preserving unions exactly
+// like the user family.
+type GroupCreateArgs struct {
+	Groupname     string  `statekit:"name=groupname,required"`
+	User          *string `statekit:"name=user"`
+	Host          *string `statekit:"name=host"`
+	Port          *string `statekit:"name=port"`
+	MaintenanceDB *string `statekit:"name=maintenance_db"`
+	Password      *string `statekit:"name=password"`
+	Createdb      *bool   `statekit:"name=createdb"`
+	Createroles   *bool   `statekit:"name=createroles"`
+	Encrypted     any     `statekit:"name=encrypted"`
+	Login         *bool   `statekit:"name=login"`
+	Inherit       *bool   `statekit:"name=inherit"`
+	Superuser     *bool   `statekit:"name=superuser"`
+	Replication   *bool   `statekit:"name=replication"`
+	Rolepassword  any     `statekit:"name=rolepassword"`
+	Groups        any     `statekit:"name=groups"`
+	Runas         *string `statekit:"name=runas"`
+}
+
+func (a *GroupCreateArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: a.MaintenanceDB,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+// roleOptions projects the create arguments onto the statement builder
+// with the pinned typ_="group" whose inherit/login defaults render
+// INHERIT NOLOGIN. The groups union normalizes separately so Execute can
+// validate the exact GRANT entries the pinned split produces before any
+// Runner invocation.
+func (a *GroupCreateArgs) roleOptions(groups roleGroups) roleOptions {
+	return roleOptions{
+		name:         a.Groupname,
+		typ:          "group",
+		encrypted:    normalizeSaltScalar(a.Encrypted),
+		login:        a.Login,
+		inherit:      a.Inherit,
+		createdb:     a.Createdb,
+		createroles:  a.Createroles,
+		superuser:    a.Superuser,
+		groups:       groups,
+		replication:  a.Replication,
+		rolepassword: normalizeSaltScalar(a.Rolepassword),
+	}
+}
+
+type groupCreateFunc struct{}
+
+func (groupCreateFunc) Name() string { return "postgres.group_create" }
+func (groupCreateFunc) Args() any    { return GroupCreateArgs{} }
+
+// Execute ports the pinned _role_create flow for typ_="group"
+// (postgres.py:1368-1431 through group_create at 2098-2146): the
+// user_exists preflight whose hit is the logged-and-False no-op, the
+// pinned CREATE ROLE statement with the group-typed INHERIT NOLOGIN
+// defaults, and the pinned ret["retcode"] == 0 boolean. The identifier
+// boundary is checked before any Runner invocation;
+// statement-construction errors (the pinned unknown-algorithm ValueError
+// and the saslprep bound) surface after the read-only preflight exactly
+// where the pinned format raises.
+func (groupCreateFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[GroupCreateArgs](args, "postgres.group_create")
+	if err != nil {
+		return nil, err
+	}
+	groups, err := normalizeRoleGroups(a.Groups)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateRoleIdentifiers(a.Groupname, "groupname", groups.grantEntries()); err != nil {
+		return nil, err
+	}
+	conn := a.connection()
+	if password := normalizeSaltScalar(a.Rolepassword); password.isStr() {
+		conn.Secrets = secretList(password.s)
+	}
+	exists, err := roleUserExists(ctx, rt, conn, a.Groupname)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		// The pinned "Group 'x' already exists" log-and-False.
+		return false, nil
+	}
+	statement, secrets, err := roleStatement("CREATE ROLE", a.roleOptions(groups))
+	if err != nil {
+		return nil, err
+	}
+	argv := psqlArgv(
+		pointerString(a.User),
+		pointerString(a.Host),
+		pointerString(a.Port),
+		pointerString(a.MaintenanceDB),
+		"-c", statement,
+	)
+	result, err := runPsqlSecrets(ctx, rt, argv, conn, secrets)
+	if err != nil {
+		return nil, err
+	}
+	return result.ExitCode == 0, nil
+}
+
+// GroupUpdateArgs are the canonical postgres.group_update arguments,
+// mirroring the pinned group_update(groupname, user, host, port,
+// maintenance_db, password, createdb, createroles, encrypted, inherit,
+// login, superuser, replication, rolepassword, groups, runas) signature
+// (postgres.py:2149-2166). Like group_create, the pinned group signature
+// carries neither connlimit nor valid_until. Encrypted, Rolepassword, and
+// Groups keep the same type-preserving union contract as the user family.
+type GroupUpdateArgs struct {
+	Groupname     string  `statekit:"name=groupname,required"`
+	User          *string `statekit:"name=user"`
+	Host          *string `statekit:"name=host"`
+	Port          *string `statekit:"name=port"`
+	MaintenanceDB *string `statekit:"name=maintenance_db"`
+	Password      *string `statekit:"name=password"`
+	Createdb      *bool   `statekit:"name=createdb"`
+	Createroles   *bool   `statekit:"name=createroles"`
+	Encrypted     any     `statekit:"name=encrypted"`
+	Inherit       *bool   `statekit:"name=inherit"`
+	Login         *bool   `statekit:"name=login"`
+	Superuser     *bool   `statekit:"name=superuser"`
+	Replication   *bool   `statekit:"name=replication"`
+	Rolepassword  any     `statekit:"name=rolepassword"`
+	Groups        any     `statekit:"name=groups"`
+	Runas         *string `statekit:"name=runas"`
+}
+
+func (a *GroupUpdateArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: a.MaintenanceDB,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+// roleOptions projects the update arguments onto the statement builder
+// with the pinned update-path typ_: _role_update passes typ_="group" only
+// to its log line, so its _role_cmd_args call defaults to "role" and no
+// inherit/login defaults apply.
+func (a *GroupUpdateArgs) roleOptions(dbRole map[string]any, groups roleGroups) roleOptions {
+	return roleOptions{
+		name:         a.Groupname,
+		typ:          "role",
+		encrypted:    normalizeSaltScalar(a.Encrypted),
+		login:        a.Login,
+		inherit:      a.Inherit,
+		createdb:     a.Createdb,
+		createroles:  a.Createroles,
+		superuser:    a.Superuser,
+		groups:       groups,
+		replication:  a.Replication,
+		rolepassword: normalizeSaltScalar(a.Rolepassword),
+		dbRole:       dbRole,
+	}
+}
+
+type groupUpdateFunc struct{}
+
+func (groupUpdateFunc) Name() string { return "postgres.group_update" }
+func (groupUpdateFunc) Args() any    { return GroupUpdateArgs{} }
+
+// Execute ports the pinned _role_update flow for typ_="group"
+// (postgres.py:1487-1556 through group_update at 2149-2196): the role_get
+// preflight whose miss is the logged-and-False no-op, the pinned ALTER
+// ROLE statement with the db_role-keyed superuser skip and no
+// inherit/login defaults, and the pinned ret["retcode"] == 0 boolean.
+// The identifier boundary is checked before any Runner invocation;
+// statement-construction errors surface after the read-only preflight
+// exactly where the pinned format raises.
+func (groupUpdateFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[GroupUpdateArgs](args, "postgres.group_update")
+	if err != nil {
+		return nil, err
+	}
+	groups, err := normalizeRoleGroups(a.Groups)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateRoleIdentifiers(a.Groupname, "groupname", groups.grantEntries()); err != nil {
+		return nil, err
+	}
+	conn := a.connection()
+	if password := normalizeSaltScalar(a.Rolepassword); password.isStr() {
+		conn.Secrets = secretList(password.s)
+	}
+	row, err := roleGet(ctx, rt, conn, a.Groupname, false)
+	if err != nil {
+		return nil, err
+	}
+	if row == nil {
+		// The pinned "Group 'x' could not be found" log-and-False.
+		return false, nil
+	}
+	dbRole, _ := row.(map[string]any)
+	statement, secrets, err := roleStatement("ALTER ROLE", a.roleOptions(dbRole, groups))
+	if err != nil {
+		return nil, err
+	}
+	argv := psqlArgv(
+		pointerString(a.User),
+		pointerString(a.Host),
+		pointerString(a.Port),
+		pointerString(a.MaintenanceDB),
+		"-c", statement,
+	)
+	result, err := runPsqlSecrets(ctx, rt, argv, conn, secrets)
+	if err != nil {
+		return nil, err
+	}
+	return result.ExitCode == 0, nil
+}
+
+// GroupRemoveArgs are the canonical postgres.group_remove arguments,
+// mirroring the pinned group_remove(groupname, user, host, port,
+// maintenance_db, password, runas) signature (postgres.py:2199-2207).
+type GroupRemoveArgs struct {
+	Groupname     string  `statekit:"name=groupname,required"`
+	User          *string `statekit:"name=user"`
+	Host          *string `statekit:"name=host"`
+	Port          *string `statekit:"name=port"`
+	MaintenanceDB *string `statekit:"name=maintenance_db"`
+	Password      *string `statekit:"name=password"`
+	Runas         *string `statekit:"name=runas"`
+}
+
+func (a *GroupRemoveArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: a.MaintenanceDB,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+type groupRemoveFunc struct{}
+
+func (groupRemoveFunc) Name() string { return "postgres.group_remove" }
+func (groupRemoveFunc) Args() any    { return GroupRemoveArgs{} }
+
+// Execute ports the pinned _role_remove flow through group_remove
+// (postgres.py:1613-1651, 2199-2225): the user_exists preflight whose
+// miss is the logged-and-False no-op, the fixed DROP ROLE statement whose
+// retcode the pinned source ignores (only Runner failures, cancellation,
+// and output-limit violations are errors here, like Salt's raised
+// transport exceptions), and the final user_exists re-check that decides
+// the boolean — true only when the role is gone. The identifier boundary
+// is checked before any Runner invocation.
+func (groupRemoveFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[GroupRemoveArgs](args, "postgres.group_remove")
+	if err != nil {
+		return nil, err
+	}
+	if strings.Contains(a.Groupname, `"`) {
+		return nil, ddlValidationError("groupname")
+	}
+	conn := a.connection()
+	exists, err := roleUserExists(ctx, rt, conn, a.Groupname)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		// The pinned "User 'x' does not exist" log-and-False.
+		return false, nil
+	}
+	argv := psqlArgv(
+		pointerString(a.User),
+		pointerString(a.Host),
+		pointerString(a.Port),
+		pointerString(a.MaintenanceDB),
+		"-c", `DROP ROLE "`+a.Groupname+`"`,
+	)
+	if _, err := runPsql(ctx, rt, argv, conn); err != nil {
+		return nil, err
+	}
+	exists, err = roleUserExists(ctx, rt, conn, a.Groupname)
 	if err != nil {
 		return nil, err
 	}
@@ -3391,12 +3726,13 @@ func redactedError(err error, secrets ...string) error {
 	return errors.New(message)
 }
 
-// Register installs the R9.2i postgres slice: the version probe, the five
+// Register installs the R9.2j postgres slice: the version probe, the five
 // R9.2c read-only catalog primitives, the R9.2h write paths db_create and
 // db_remove, the eight R9.2d extension and language catalog functions,
 // the three R9.2e schema catalog functions, the three R9.2f role and
-// privilege checks, the R9.2g ACL listing privileges_list, and the R9.2i
-// role mutations user_create, user_update, and user_remove. The
+// privilege checks, the R9.2g ACL listing privileges_list, the R9.2i
+// role mutations user_create, user_update, and user_remove, and the R9.2j
+// group mutations group_create, group_update, and group_remove. The
 // remainder of the postgres family needs the generic psql query surface
 // (psql_query itself stays pending; no arbitrary-query registration
 // exists in this phase) and stays pending for later R9 rounds; the
@@ -3430,6 +3766,9 @@ func Register(reg *runtime.ExecRegistry) error {
 		userCreateFunc{},
 		userUpdateFunc{},
 		userRemoveFunc{},
+		groupCreateFunc{},
+		groupUpdateFunc{},
+		groupRemoveFunc{},
 	} {
 		if err := reg.Register(fn); err != nil {
 			return err

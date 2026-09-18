@@ -1408,6 +1408,20 @@ test_username,f,f,f,f,f,f,,-1,,,
 super_role,t,t,f,f,f,t,,-1,,,
 `
 
+// groupMutationsCSV is the user_list catalog for the R9.2j CLI group
+// flows: testgroup exists as a non-superuser group role, super_role a
+// superuser, and created names are absent.
+const groupMutationsCSV = `name,superuser,inherits privileges,can create roles,can create databases,can update system catalogs,can login,replication,connections,groups,expiry time,defaults variables
+testgroup,f,t,f,f,f,f,,-1,,,
+super_role,t,t,f,f,f,t,,-1,,,
+`
+
+// groupAbsentCSV is a catalog whose only role is super_role, so CLI
+// create flows for testgroup reach their statement.
+const groupAbsentCSV = `name,superuser,inherits privileges,can create roles,can create databases,can update system catalogs,can login,replication,connections,groups,expiry time,defaults variables
+super_role,t,t,f,f,f,t,,-1,,,
+`
+
 // TestPostgresCLIUserCreate drives the R9.2i create path end to end with
 // the pinned test_user_create arguments as flags: the pinned CREATE ROLE
 // statement on the full argv after the preflight pair, both passwords in
@@ -1814,18 +1828,6 @@ func TestPostgresCLIUserRemove(t *testing.T) {
 		t.Fatalf("failed drop calls = %d, want 5", len(runner.calls))
 	}
 
-	// The group family stays pending: exit 3, no calls.
-	runner = &cliRecordingRunner{}
-	app = postgresCLIApp(t, runner)
-	code, _, _ = captureCode(t, app, "exec", "postgres.group_create",
-		"--groupname", "grp", "-o", "json")
-	if code != ExitUnsupported {
-		t.Fatalf("group_create code=%d, want ExitUnsupported", code)
-	}
-	if len(runner.calls) != 0 {
-		t.Fatalf("group_create executed %d commands", len(runner.calls))
-	}
-
 	// The required username fails validation before any run, and an
 	// injected name fails closed the same way.
 	runner = &cliRecordingRunner{}
@@ -1840,6 +1842,279 @@ func TestPostgresCLIUserRemove(t *testing.T) {
 		"--username", `x"-`+"pgmark", "-o", "json")
 	if code != ExitFailed ||
 		!strings.Contains(errS, "postgres: invalid argument: unsupported quote character in username") ||
+		len(runner.calls) != 0 {
+		t.Fatalf("injected name code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+}
+
+// TestPostgresCLIGroupCreate drives the R9.2j group create path end to end
+// with the pinned test_group_create arguments as flags: the pinned
+// group-typed INHERIT NOLOGIN CREATE ROLE statement on the full argv after
+// the preflight pair, both passwords in the Redact list and neither in any
+// rendered or CLI output, the default INHERIT NOLOGIN shape, and the
+// JSON true rendering.
+func TestPostgresCLIGroupCreate(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("9.1\n")},
+		{ExitCode: 0, Stdout: []byte(groupAbsentCSV)},
+		{ExitCode: 0},
+	}}
+	app := postgresCLIApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "postgres.group_create",
+		"--groupname", "testgroup", "--user", "testuser", "--host", "testhost",
+		"--port", "testport", "--maintenance-db", "maint_db",
+		"--password", "foo", "--createdb=false", "--superuser=false",
+		"--replication=false", "--rolepassword", "testrolepass",
+		"--groups", "testgroup", "--config", `{"encrypted": false}`, "-o", "json")
+	var created bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &created) != nil || !created {
+		t.Fatalf("group_create code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("runner calls = %d, want 3", len(runner.calls))
+	}
+	command := runner.calls[2]
+	argv := append([]string{command.Name}, command.Args...)
+	if len(argv) != 15 || argv[13] != "-c" ||
+		argv[14] != `CREATE ROLE "testgroup" WITH  INHERIT NOCREATEDB `+
+			`NOSUPERUSER NOREPLICATION NOLOGIN UNENCRYPTED PASSWORD `+
+			`'testrolepass'; GRANT "testgroup" TO "testgroup"` {
+		t.Fatalf("argv = %q", argv)
+	}
+	if len(command.Env) != 4 || command.Env[0] != "PGPASSWORD=foo" ||
+		command.Shell || len(command.Redact) != 3 ||
+		command.Redact[0] != "'testrolepass'" ||
+		command.Redact[1] != "testrolepass" || command.Redact[2] != "foo" {
+		t.Fatalf("unsafe command: %#v", command)
+	}
+	if rendered := command.RedactedString(); strings.Contains(rendered, "foo") ||
+		strings.Contains(rendered, "testrolepass") ||
+		strings.Contains(rendered, "'testrolepass'") {
+		t.Fatalf("rendered command leaks a password: %q", rendered)
+	}
+	if strings.Contains(out+errS, "foo") || strings.Contains(out+errS, "testrolepass") {
+		t.Fatalf("CLI output leaks a password: out=%q err=%q", out, errS)
+	}
+
+	// The default group statement is exactly the pinned group-typed
+	// INHERIT NOLOGIN defaults: no connlimit or valid_until exists.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("9.1\n")},
+		{ExitCode: 0, Stdout: []byte(groupAbsentCSV)},
+		{ExitCode: 0},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.group_create",
+		"--groupname", "newgroup", "-o", "json")
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &created) != nil || !created {
+		t.Fatalf("defaults code=%d out=%q err=%q", code, out, errS)
+	}
+	defaults := runner.calls[2].Args
+	if got := defaults[len(defaults)-1]; got != `CREATE ROLE "newgroup" WITH  INHERIT NOLOGIN` {
+		t.Fatalf("defaults statement = %q", got)
+	}
+
+	// An existing role answers false after exactly the preflight pair.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("9.1\n")},
+		{ExitCode: 0, Stdout: []byte(groupMutationsCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.group_create",
+		"--groupname", "testgroup", "-o", "json")
+	var exists bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &exists) != nil || exists {
+		t.Fatalf("existing code=%d out=%q err=%q, want false", code, out, errS)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("existing calls = %d, want 2", len(runner.calls))
+	}
+
+	// The required groupname fails validation before any run, and runas
+	// is rejected the same way.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.group_create", "-o", "json")
+	if code != ExitInvalidInput || !strings.Contains(errS, "groupname") || len(runner.calls) != 0 {
+		t.Fatalf("missing groupname code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.group_create",
+		"--groupname", "newgroup", "--runas", "postgres", "-o", "json")
+	if code != ExitFailed || !strings.Contains(errS, "runas") || len(runner.calls) != 0 {
+		t.Fatalf("runas code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+}
+
+// TestPostgresCLIGroupUpdate drives the R9.2j group update path end to end
+// with the pinned test_group_update arguments as flags: the exact pinned
+// ALTER ROLE statement with the db_role superuser skip, no inherit/login
+// defaults, the rolepassword redaction, the missing-group false shape,
+// and the value-free identifier rejection.
+func TestPostgresCLIGroupUpdate(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("9.1\n")},
+		{ExitCode: 0, Stdout: []byte(groupMutationsCSV)},
+		{ExitCode: 0},
+	}}
+	app := postgresCLIApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "postgres.group_update",
+		"--groupname", "testgroup", "--user", `"testuser"`, "--host", "testhost",
+		"--port", "testport", "--maintenance-db", "maint_db",
+		"--password", "foo", "--createdb=false", "--replication=false",
+		"--rolepassword", "test_role_pass", "--groups", "testgroup",
+		"--config", `{"encrypted": false}`, "-o", "json")
+	var updated bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &updated) != nil || !updated {
+		t.Fatalf("group_update code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("runner calls = %d, want 3", len(runner.calls))
+	}
+	command := runner.calls[2]
+	argv := append([]string{command.Name}, command.Args...)
+	if len(argv) != 15 || argv[13] != "-c" ||
+		argv[14] != `ALTER ROLE "testgroup" WITH  NOCREATEDB NOREPLICATION `+
+			`UNENCRYPTED PASSWORD 'test_role_pass'; GRANT "testgroup" TO "testgroup"` {
+		t.Fatalf("argv = %q", argv)
+	}
+	if command.Shell || len(command.Redact) != 3 ||
+		command.Redact[0] != "'test_role_pass'" ||
+		command.Redact[1] != "test_role_pass" || command.Redact[2] != "foo" {
+		t.Fatalf("unsafe command: %#v", command)
+	}
+	if strings.Contains(command.RedactedString(), "test_role_pass") ||
+		strings.Contains(out+errS, "test_role_pass") {
+		t.Fatalf("rolepassword leaked: %q %q", command.RedactedString(), out+errS)
+	}
+
+	// A missing group answers false after the preflight pair.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("9.1\n")},
+		{ExitCode: 0, Stdout: []byte(groupMutationsCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.group_update",
+		"--groupname", "absent_group", "-o", "json")
+	var missing bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &missing) != nil || missing {
+		t.Fatalf("missing code=%d out=%q err=%q, want false", code, out, errS)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("missing calls = %d, want 2", len(runner.calls))
+	}
+
+	// Injection attempts fail closed before any psql call with the exact
+	// value-free stable error naming the groupname key.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.group_update",
+		"--groupname", `g"; DROP ROLE postgres; --`, "-o", "json")
+	if code != ExitFailed ||
+		!strings.Contains(errS, "postgres: invalid argument: unsupported quote character in groupname") ||
+		len(runner.calls) != 0 {
+		t.Fatalf("injected groupname code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+
+	// The required groupname fails validation before any run.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.group_update", "-o", "json")
+	if code != ExitInvalidInput || !strings.Contains(errS, "groupname") || len(runner.calls) != 0 {
+		t.Fatalf("missing groupname code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+}
+
+// TestPostgresCLIGroupRemove drives the R9.2j group remove path end to
+// end: the pinned five-call flow (preflight pair, DROP ROLE, post-check
+// pair), the exact pinned DROP argv, the JSON true/false renderings, the
+// missing-group no-op, and the value-free identifier rejection.
+func TestPostgresCLIGroupRemove(t *testing.T) {
+	goneCSV := "name,superuser,inherits privileges,can create roles,can create databases,can update system catalogs,can login,replication,connections,groups,expiry time,defaults variables\n" +
+		"super_role,t,t,f,f,f,t,,-1,,,\n"
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("9.1\n")},
+		{ExitCode: 0, Stdout: []byte(groupMutationsCSV)},
+		{ExitCode: 0}, // DROP ROLE (retcode ignored by the pinned flow)
+		{ExitCode: 0, Stdout: []byte("9.1\n")},
+		{ExitCode: 0, Stdout: []byte(goneCSV)},
+	}}
+	app := postgresCLIApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "postgres.group_remove",
+		"--groupname", "testgroup", "--user", "testuser", "--host", "testhost",
+		"--port", "testport", "--maintenance-db", "maint_db",
+		"--password", "foo", "-o", "json")
+	var removed bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &removed) != nil || !removed {
+		t.Fatalf("group_remove code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 5 {
+		t.Fatalf("runner calls = %d, want 5", len(runner.calls))
+	}
+	command := runner.calls[2]
+	argv := append([]string{command.Name}, command.Args...)
+	if len(argv) != 15 || argv[13] != "-c" || argv[14] != `DROP ROLE "testgroup"` {
+		t.Fatalf("argv = %q", argv)
+	}
+	if command.Shell || len(command.Redact) != 1 || command.Redact[0] != "foo" {
+		t.Fatalf("unsafe command: %#v", command)
+	}
+	if strings.Contains(command.RedactedString(), "foo") ||
+		strings.Contains(out+errS, "foo") {
+		t.Fatalf("password leaked: %q %q", command.RedactedString(), out+errS)
+	}
+
+	// A missing group answers false after the preflight pair, with no DROP.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("9.1\n")},
+		{ExitCode: 0, Stdout: []byte(goneCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.group_remove",
+		"--groupname", "testgroup", "-o", "json")
+	var missing bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &missing) != nil || missing {
+		t.Fatalf("missing code=%d out=%q err=%q, want false", code, out, errS)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("missing calls = %d, want 2", len(runner.calls))
+	}
+
+	// The failed DROP that leaves the group present answers false after
+	// the full flow.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("9.1\n")},
+		{ExitCode: 0, Stdout: []byte(groupMutationsCSV)},
+		{ExitCode: 1, Stderr: []byte("psql: error: ERROR: role cannot be dropped")},
+		{ExitCode: 0, Stdout: []byte("9.1\n")},
+		{ExitCode: 0, Stdout: []byte(groupMutationsCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.group_remove",
+		"--groupname", "testgroup", "-o", "json")
+	var failed bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &failed) != nil || failed {
+		t.Fatalf("failed drop code=%d out=%q err=%q, want false", code, out, errS)
+	}
+	if len(runner.calls) != 5 {
+		t.Fatalf("failed drop calls = %d, want 5", len(runner.calls))
+	}
+
+	// The required groupname fails validation before any run, and an
+	// injected name fails closed the same way.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.group_remove", "-o", "json")
+	if code != ExitInvalidInput || !strings.Contains(errS, "groupname") || len(runner.calls) != 0 {
+		t.Fatalf("missing groupname code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.group_remove",
+		"--groupname", `g"-`+"pgmark", "-o", "json")
+	if code != ExitFailed ||
+		!strings.Contains(errS, "postgres: invalid argument: unsupported quote character in groupname") ||
 		len(runner.calls) != 0 {
 		t.Fatalf("injected name code=%d err=%q calls=%d", code, errS, len(runner.calls))
 	}
@@ -1883,6 +2158,30 @@ func TestPostgresCLIUserValidationRedaction(t *testing.T) {
 			}},
 		{"postgres.user_remove", []string{"--username", `u"-` + marker},
 			"statekit: postgres: invalid argument: unsupported quote character in username\n", 0, nil},
+		{"postgres.group_create", []string{"--groupname", `g-` + marker + `"`},
+			"statekit: postgres: invalid argument: unsupported quote character in groupname\n", 0, nil},
+		{"postgres.group_create", []string{"--groupname", "g", "--groups", `m-` + marker + `"`},
+			"statekit: postgres: invalid argument: unsupported quote character in groups\n", 0, nil},
+		{"postgres.group_create", []string{"--groupname", "g", "--groups", `ok,m-` + marker + `"`},
+			"statekit: postgres: invalid argument: unsupported quote character in groups\n", 0, nil},
+		{"postgres.group_create", []string{"--groupname", "g", "--encrypted", marker, "--rolepassword", marker},
+			"statekit: postgres: invalid argument: unknown password algorithm\n", 2,
+			[]process.CommandResult{
+				{ExitCode: 0, Stdout: []byte("9.1\n")},
+				{ExitCode: 0, Stdout: []byte(groupMutationsCSV)},
+			}},
+		{"postgres.group_update", []string{"--groupname", `g-` + marker + `"`},
+			"statekit: postgres: invalid argument: unsupported quote character in groupname\n", 0, nil},
+		{"postgres.group_update", []string{"--groupname", "g", "--groups", `m,` + marker + `"`},
+			"statekit: postgres: invalid argument: unsupported quote character in groups\n", 0, nil},
+		{"postgres.group_update", []string{"--groupname", "testgroup", "--encrypted", marker, "--rolepassword", marker},
+			"statekit: postgres: invalid argument: unknown password algorithm\n", 2,
+			[]process.CommandResult{
+				{ExitCode: 0, Stdout: []byte("9.1\n")},
+				{ExitCode: 0, Stdout: []byte(groupMutationsCSV)},
+			}},
+		{"postgres.group_remove", []string{"--groupname", `g"-` + marker},
+			"statekit: postgres: invalid argument: unsupported quote character in groupname\n", 0, nil},
 	} {
 		runner := &cliRecordingRunner{results: tc.results}
 		app := postgresCLIApp(t, runner)
@@ -1920,7 +2219,8 @@ func (r *statementLeakRunner) Run(_ context.Context, command process.Command) pr
 }
 
 func TestPostgresCLIUserRawStatementRedaction(t *testing.T) {
-	for _, function := range []string{"postgres.user_create", "postgres.user_update"} {
+	for _, function := range []string{"postgres.user_create", "postgres.user_update",
+		"postgres.group_create", "postgres.group_update"} {
 		for _, tc := range []struct {
 			name, password string
 			encrypted      any
@@ -1934,19 +2234,32 @@ func TestPostgresCLIUserRawStatementRedaction(t *testing.T) {
 		} {
 			t.Run(function+"/"+tc.name, func(t *testing.T) {
 				const connection = "synthetic_connection_marker"
+				catalog := userMutationsCSV
+				if strings.HasPrefix(function, "postgres.group_") {
+					catalog = groupMutationsCSV
+				}
 				runner := &statementLeakRunner{results: []process.CommandResult{
-					{ExitCode: 0, Stdout: []byte("9.1\n")}, {ExitCode: 0, Stdout: []byte(userMutationsCSV)},
+					{ExitCode: 0, Stdout: []byte("9.1\n")}, {ExitCode: 0, Stdout: []byte(catalog)},
 				}}
-				username, verb := "testuser", "CREATE ROLE"
+				nameFlag, roleName, verb := "--username", "testuser", "CREATE ROLE"
 				if function == "postgres.user_update" {
-					username, verb = "test_username", "ALTER ROLE"
+					roleName, verb = "test_username", "ALTER ROLE"
+				}
+				if function == "postgres.group_create" {
+					roleName = "newgroup"
+				}
+				if function == "postgres.group_update" {
+					nameFlag, roleName, verb = "--groupname", "testgroup", "ALTER ROLE"
+				}
+				if strings.HasPrefix(function, "postgres.group_") {
+					nameFlag = "--groupname"
 				}
 				config, err := json.Marshal(map[string]any{"encrypted": tc.encrypted, "rolepassword": tc.password})
 				if err != nil {
 					t.Fatal(err)
 				}
 				code, stdout, stderr := captureCode(t, postgresCLIApp(t, runner), "exec", function,
-					"--username", username, "--password", connection, "--config", string(config), "-o", "json")
+					nameFlag, roleName, "--password", connection, "--config", string(config), "-o", "json")
 				if code != ExitFailed || stdout != "" || stderr == "" || len(runner.calls) != 3 {
 					t.Fatal("CLI did not report the injected statement error")
 				}
