@@ -73,7 +73,16 @@ import (
 // membership forms with WITH ADMIN OPTION on the grant side and WITH
 // GRANT OPTION on the object side, and the pinned raw role name of the
 // REVOKE tail, with every raw or unescaped identifier position validated
-// fail-closed before any Runner invocation. The generic psql_query
+// fail-closed before any Runner invocation. R9.2l adds the
+// default-privilege family default_privileges_list,
+// default_privileges_grant, and default_privileges_revoke
+// (postgres.py:3238-3332, 3435-3571, 3714-3877, 3880-4006 through the
+// pinned pg_default_acl catalogs and the _mod_defpriv_opts/
+// _validate_default_privileges head): the fixed
+// ALTER DEFAULT PRIVILEGES statements with the pinned grant_option
+// on-part asymmetry, the has_default_privileges preflight without its own
+// grant_option, and the pinned dict_keys.sort() ALL comparison mapped to
+// a fixed value-free error. The generic psql_query
 // surface and the remaining mysql and postgres surfaces need their client
 // protocol boundaries and stay pending.
 type r9FamilySpec struct {
@@ -156,6 +165,7 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"postgres.server-version-probe",
 			"postgres.read-only-catalog-lists",
 			"postgres.database-create-remove",
+			"postgres.default-privileges-list-grant-revoke",
 			"postgres.role-user-create-update-remove",
 			"postgres.role-group-create-update-remove",
 			"postgres.privileges-grant-revoke",
@@ -192,9 +202,17 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"password redaction is asserted on the rendered command, captured output, and returned errors; no real psql, database, or package-manager path exists",
 			"cancellation, output limits, runas rejection, nonzero-exit compatibility data, and psql-unavailable fail-closed behavior are covered without any live server",
 			"the internal parsed-version helper is pinned by LooseVersion comparison vectors because no existing package consumes it yet",
+			"default_privileges_list reproduces the pinned pg_default_acl decode on the R9.2l fixed catalogs: the pinned table/sequence/function scans keep their defaclobjtype constants, join shapes (including the pinned double spaces the pinned \" \".join leaves), and nspname orderings as fixed COPY-wrapped queries with the schema prefix matched client-side, the schema branch keys the object name on the reused pg_namespace catalog, the group branch reuses the R9.2f membership catalog, and the decode ladder runs over the pinned _DEFAULT_PRIVILEGES_MAP (no CONNECT, TEMPORARY, or MAINTAIN, so those characters stay the pinned KeyError) with the public grantee, grant stars, the leading GRANT star, the NULL/malformed ValueError, and the missing-object empty dictionary all asserted; the pinned pytests do not cover the family (only the postgres_default_privileges state maps it), so the vectors are source-derived",
+			"the default-privilege mutations keep the pinned statement construction exactly, asserted byte-for-byte on the full pinned argv for every branch: the group membership forms with WITH ADMIN OPTION only on the grant side and both names raw on the revoke side, the ALL TABLES/SEQUENCES/FUNCTIONS IN SCHEMA variants the pinned object_name.upper() == \"ALL\" comparison selects (a lowercase \"all\" selects them too), the raw role name of the REVOKE tail, and the pinned asymmetry where the grant_option non-ALL branch interpolates the on-part into IN SCHEMA (the schema-qualified double-quoted table/sequence name, the bare function name, the plain quoted schema name) while every other branch interpolates the bare schema prefix — and the pinned revoke's computed-but-unused on_part is not ported",
+			"the pinned has_default_privileges preflight semantics are pinned end to end (the function itself stays unregistered exactly like a later pending name): both mutations issue it without their own grant_option so the membership/subset check decides the no-op, the owner shortcut satisfies the preflight after the owner query alone, the grant-option dict equality and the group admin_option boolean are pinned by direct white-box vectors, and the pinned ALL comparison defperms.sort() == _defprivileges[name].keys().sort() evaluates dict_keys.sort(), which raises AttributeError before any boolean — mapped here to a fixed value-free execution error, so an ALL grant or revoke against a grantee already holding a default ACL entry errors while an absent grantee yields preflight False: revoke is a no-op, but grant proceeds to mutation and returns its retcode result (asserted direct and through both mutation preflights)",
+			"the identifier positions the pinned ALTER DEFAULT PRIVILEGES format strings interpolate raw or quote without escaping are validated fail-closed before any Runner invocation: the grantee role name (quoted on the grant side, raw on the revoke tail), the group object name in both directions, every schema prefix that reaches an IN SCHEMA clause, and the on-part object positions of the grant_option branch (quote-free for the quoted positions, bare PostgreSQL identifiers for the raw ones); each rejection is value-free naming only the fixed argument key (asserted by synthetic marker vectors direct and through the CLI), and the pinned CONNECT/TEMPORARY/MAINTAIN rejections of the _DEFAULT_PRIVILEGES allowlist are pinned value-free the same way",
 		},
 		CompatibilityNotes: []string{
-			"R9.2c registers the version probe plus the five read-only catalog primitives db_list, db_exists, tablespace_list, tablespace_exists, and user_list; R9.2d adds the eight read-only extension and language catalog functions available_extensions, installed_extensions, get_available_extension, get_installed_extension, is_available_extension, is_installed_extension, language_list, and language_exists; R9.2e adds the three read-only schema catalog functions schema_exists, schema_get, and schema_list; R9.2f adds the three read-only role and privilege checks role_get, user_exists, and has_privileges; R9.2g adds the read-only ACL listing privileges_list; R9.2h adds the first write paths db_create and db_remove as fixed pinned statements; R9.2i adds the role mutations user_create, user_update, and user_remove on the pinned _role_create/_role_update/_role_remove flow; R9.2j adds the group mutations group_create, group_update, and group_remove on the same flow with typ_=\"group\"; R9.2k adds the privilege mutations privileges_grant and privileges_revoke as fixed pinned statements; the generic psql_query surface and every other write path stay pending (no arbitrary-query registration exists in this phase)",
+			"R9.2c registers the version probe plus the five read-only catalog primitives db_list, db_exists, tablespace_list, tablespace_exists, and user_list; R9.2d adds the eight read-only extension and language catalog functions available_extensions, installed_extensions, get_available_extension, get_installed_extension, is_available_extension, is_installed_extension, language_list, and language_exists; R9.2e adds the three read-only schema catalog functions schema_exists, schema_get, and schema_list; R9.2f adds the three read-only role and privilege checks role_get, user_exists, and has_privileges; R9.2g adds the read-only ACL listing privileges_list; R9.2h adds the first write paths db_create and db_remove as fixed pinned statements; R9.2i adds the role mutations user_create, user_update, and user_remove on the pinned _role_create/_role_update/_role_remove flow; R9.2j adds the group mutations group_create, group_update, and group_remove on the same flow with typ_=\"group\"; R9.2k adds the privilege mutations privileges_grant and privileges_revoke as fixed pinned statements; R9.2l adds the default-privilege family default_privileges_list, default_privileges_grant, and default_privileges_revoke as fixed pinned statements; the generic psql_query surface and every other write path stay pending (no arbitrary-query registration exists in this phase)",
+			"the default-privilege family keeps the pinned argument contracts (postgres.py:3238-3248, 3714-3727, 3880-3892): default_privileges_list carries (name, object_type, prepend=\"public\", maintenance_db, user, host, port, password, runas) with no role or privileges argument, the mutations carry (name, object_name, object_type, defprivileges=None, prepend=\"public\", ...) with grant_option existing only on the grant side exactly like the pinned signatures, defprivileges keeping Salt's None default as the empty string the pinned _mod_defpriv_opts collapses to, and prepend nil meaning the pinned \"public\" default while an explicit empty string keeps Salt's empty-schema handling",
+			"the pinned _make_default_privileges_list_query interpolates the schema prefix and the group role name into single-quoted SQL literals; StateKit keeps the pinned pg_default_acl catalogs, join shapes, defaclobjtype constants, and orderings as fixed COPY-wrapped queries and matches the schema prefix, the schema object name, and the group membership client-side (reusing the R9.2f schema and membership catalogs on the branches whose pinned SQL is identical), which is result-equivalent for every non-malicious input and refuses the injection the pinned format permits",
+			"the pinned has_default_privileges ALL comparison evaluates list.sort() == dict_keys.sort(), an AttributeError before any boolean; StateKit maps that deterministic pinned failure to a fixed value-free execution error (no caller value enters it), and the pinned computed-but-unused on_part of the revoke flow is not ported",
+			"the identifier positions the pinned ALTER DEFAULT PRIVILEGES format strings interpolate raw or quote without escaping are validated fail-closed before any Runner invocation with the shared value-free rejections naming only the fixed argument key (name, object_name, or prepend); the on-part object positions reach SQL only on the grant_option branch and are validated only there, because the plain statements interpolate no object name at all",
 			"privileges_grant and privileges_revoke keep the pinned argument contracts (postgres.py:4009-4022, 4170-4182): the shared (name, object_name, object_type, privileges=None, prepend=\"public\", maintenance_db, user, host, port, password, runas) tuple with grant_option existing only on the grant side exactly like the pinned signatures, privileges keeping Salt's None default as the empty string the pinned _mod_priv_opts collapses to, grant_option only ever truthiness-tested, and prepend nil meaning the pinned \"public\" default while an explicit empty string keeps Salt's empty-schema handling",
 			"user_create, user_update, and user_remove keep the pinned argument contracts (postgres.py:1433-1452, 1559-1578, 2066-2074) including the union-typed encrypted, rolepassword, and groups arguments with pinned type preservation: bools stay bools and strings stay the exact strings — the strings \"true\"/\"False\" keep their source semantics (a literal hashed password for rolepassword, the unknown-algorithm rejection for encrypted) instead of being silently retyped, only the CLI decoder translates typed bool flags to bools (so a real boolean reaches these unions through structured input), numeric zeros keep Python's 0 == False tuple membership, and groups keeps its string/list tri-state with the exact pinned split (no trimming, no empty-element dropping) so the CLI flag and structured decoding both retain the raw string",
 			"the role statements keep the pinned construction exactly: the clause-less statement keeps the pinned trailing space after WITH and any clause renders the pinned double space, the WITH-strip tail of _role_cmd_args is dead code for these call paths (the inner sub_cmd is always the empty string), Salt spells the verb CREATE ROLE for users too, and _role_update passes no typ_ so the inherit and login defaults genuinely do not apply on update",
@@ -250,6 +268,9 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"postgres.privileges_list",
 			"postgres.privileges_grant",
 			"postgres.privileges_revoke",
+			"postgres.default_privileges_list",
+			"postgres.default_privileges_grant",
+			"postgres.default_privileges_revoke",
 			"postgres.user_create",
 			"postgres.user_update",
 			"postgres.user_remove",
@@ -309,7 +330,7 @@ func TestR9DifferentialScopeReport(t *testing.T) {
 	registered := registeredNames(first)
 
 	report := r9Report{
-		Round:    "R9.2k",
+		Round:    "R9.2l",
 		Platform: "cross-platform",
 		RuntimeStatus: "mock-only: RabbitMQ is never started, MySQL is never connected, and PostgreSQL is never contacted; " +
 			"shell-free fake Runner tests and pure-function vectors provide the executable contract",

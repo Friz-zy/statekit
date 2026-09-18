@@ -82,6 +82,28 @@
 // before any Runner invocation: quoted positions may not carry the
 // double quote, and raw positions (the revoke role name, the group name,
 // and every schema prefix) must be bare PostgreSQL identifiers.
+// R9.2l adds the default-privilege family default_privileges_list,
+// default_privileges_grant, and default_privileges_revoke
+// (postgres.py:3238-3332, 3435-3571, 3714-3877, 3880-4006 through the
+// pinned _make_default_privileges_list_query pg_default_acl catalogs and
+// the _mod_defpriv_opts/_validate_default_privileges head): the list keeps
+// the pinned pg_default_acl/pg_namespace/pg_auth_members catalogs with the
+// pinned defaclobjtype filters and orderings as fixed queries whose
+// interpolated nspname/rolname equalities move client-side, the mutations
+// keep the pinned ALTER DEFAULT PRIVILEGES statement construction exactly
+// (including the pinned asymmetry where the grant_option non-ALL branch
+// interpolates the on-part into IN SCHEMA while every other branch uses
+// the bare schema prefix, and the pinned revoke's computed-but-unused
+// on-part), and the has_default_privileges preflight the pinned mutations
+// issue without their own grant_option decides the logged-and-False no-op.
+// The pinned has_default_privileges ALL comparison evaluates
+// list.sort() == dict.keys().sort(), which Python rejects with
+// AttributeError before any boolean, so that branch is a fixed value-free
+// execution error here. The identifier positions the pinned format
+// strings interpolate raw or quote without escaping — the grantee role
+// name, the group name, the schema prefix, and the on-part object
+// positions of the grant_option branch — are validated fail-closed with
+// value-free errors before any Runner invocation.
 // Like Salt, every invocation is a shell-free psql argv executed through
 // the central Runner; this package links no database driver or protocol
 // client and never contacts a live server by itself. The catalog queries
@@ -258,6 +280,39 @@ const (
 		`AS member_of, rolname, admin_option ` +
 		`FROM pg_catalog.pg_auth_members m ` +
 		`JOIN pg_catalog.pg_roles r ON m.member=r.oid ORDER BY rolname`
+	// The R9.2l default-privilege catalogs. The pinned
+	// _make_default_privileges_list_query (postgres.py:2808-2888)
+	// interpolates the schema prefix into the single-quoted nspname
+	// equality of the table/sequence/function pg_default_acl scans.
+	// StateKit keeps the pinned catalogs, join shapes, constant
+	// defaclobjtype filters, and orderings — byte-for-byte including the
+	// pinned double spaces the " ".join leaves after "aid.oid " and
+	// "nsp " and the pinned "defaclobjtype ='x'" spacing — but drops the
+	// interpolated equality: nspname is selected alongside the pinned
+	// value column and matched client-side, so no caller string reaches
+	// SQL. The pinned schema and group branches are the same fixed
+	// queries privilegesList already runs, so those are reused.
+	defPrivTableQuery = `SELECT nspname, defacl.defaclacl AS name ` +
+		`FROM pg_default_acl defacl ` +
+		`JOIN pg_authid aid ` +
+		`ON defacl.defaclrole = aid.oid  ` +
+		`JOIN pg_namespace nsp  ` +
+		`ON nsp.oid = defacl.defaclnamespace ` +
+		`WHERE defaclobjtype ='r' ORDER BY nspname`
+	defPrivSequenceQuery = `SELECT nspname, defacl.defaclacl AS name ` +
+		`FROM pg_default_acl defacl ` +
+		`JOIN pg_authid aid ` +
+		`ON defacl.defaclrole = aid.oid  ` +
+		`JOIN pg_namespace nsp  ` +
+		`ON nsp.oid = defacl.defaclnamespace ` +
+		`WHERE defaclobjtype ='S' ORDER BY nspname`
+	defPrivFunctionQuery = `SELECT nspname, defacl.defaclacl AS name ` +
+		`FROM pg_default_acl defacl ` +
+		`JOIN pg_authid aid ` +
+		`ON defacl.defaclrole = aid.oid  ` +
+		`JOIN pg_namespace nsp  ` +
+		`ON nsp.oid = defacl.defaclnamespace ` +
+		`WHERE defaclobjtype ='f' ORDER BY nspname`
 )
 
 var (
@@ -273,6 +328,14 @@ var (
 	// union-typed and may carry (or overlap) a credential, asserted by the
 	// synthetic secret-overlap tests.
 	errPostgresUnknownPasswordAlgorithm = fmt.Errorf("%w: unknown password algorithm", errPostgresInvalidArgument)
+	// errPostgresDefprivilegesAllCompare is the fixed, value-free form of
+	// the pinned has_default_privileges ALL comparison
+	// (postgres.py:3564-3566): Python evaluates
+	// defperms.sort() == _defprivileges[name].keys().sort(), and dict_keys
+	// carries no sort method, so the branch raises AttributeError before
+	// producing a boolean. StateKit maps that deterministic pinned failure
+	// to this execution error; no caller value ever enters it.
+	errPostgresDefprivilegesAllCompare = fmt.Errorf("%w: default privileges all comparison unavailable", errPostgresInvalidArgument)
 )
 
 // privilegesMap ports the pinned _PRIVILEGES_MAP (postgres.py:86-101): the
@@ -306,6 +369,36 @@ var privilegeTypeMap = map[string]string{
 	"schema":     "UC",
 	"database":   "CTc",
 	"function":   "X",
+}
+
+// defPrivilegesMap ports the pinned _DEFAULT_PRIVILEGES_MAP
+// (postgres.py:102-114): the default-ACL privilege characters to their
+// privilege names. It is the pinned _PRIVILEGES_MAP minus CONNECT,
+// TEMPORARY, and MAINTAIN, so those characters are unknown on default
+// ACLs exactly like the pinned KeyError.
+var defPrivilegesMap = map[string]string{
+	"a": "INSERT",
+	"C": "CREATE",
+	"D": "TRUNCATE",
+	"t": "TRIGGER",
+	"r": "SELECT",
+	"U": "USAGE",
+	"w": "UPDATE",
+	"X": "EXECUTE",
+	"x": "REFERENCES",
+	"d": "DELETE",
+	"*": "GRANT",
+}
+
+// defPrivilegeTypeMap ports the pinned _DEFAULT_PRIVILEGE_TYPE_MAP
+// (postgres.py:145-150): the default-ACL characters valid for each object
+// type. Its keys are exactly the pinned _DEFAULT_PRIVILEGES_OBJECTS minus
+// group (postgres.py:115-123).
+var defPrivilegeTypeMap = map[string]string{
+	"table":    "arwdDxt",
+	"sequence": "rwU",
+	"schema":   "UC",
+	"function": "X",
 }
 
 // privSplitRE ports the pinned re.split(r"\s?,\s?", ...) separator: an
@@ -3386,10 +3479,24 @@ func getObjectOwner(ctx context.Context, rt *runtime.Runtime, conn *pgConnection
 // the mapped GRANT name is stored exactly like the pinned dictionary. An
 // unknown character is the pinned KeyError.
 func processPrivPart(perms string) (map[string]bool, error) {
+	return processACLPart(perms, privilegesMap)
+}
+
+// processDefPrivPart ports the pinned _process_defpriv_part
+// (postgres.py:3165-3181): the identical ladder over the default-ACL
+// map, whose missing CONNECT/TEMPORARY/MAINTAIN characters make those the
+// pinned KeyError here.
+func processDefPrivPart(perms string) (map[string]bool, error) {
+	return processACLPart(perms, defPrivilegesMap)
+}
+
+// processACLPart is the shared _process_priv_part ladder parameterized on
+// the ACL character map.
+func processACLPart(perms string, table map[string]string) (map[string]bool, error) {
 	out := map[string]bool{}
 	previous := ""
 	for _, perm := range perms {
-		name, ok := privilegesMap[string(perm)]
+		name, ok := table[string(perm)]
 		if !ok {
 			return nil, errPostgresInvalidACL
 		}
@@ -3410,6 +3517,18 @@ func processPrivPart(perms string) (map[string]bool, error) {
 // the pinned _process_priv_part. A NULL acl (the empty CSV field) and any
 // malformed entry are the pinned ValueError.
 func parseACLGrants(acl string) (map[string]map[string]bool, error) {
+	return parseACLGrantsWith(acl, processPrivPart)
+}
+
+// parseDefACLGrants is the same pinned ladder decoding through the
+// default-ACL _process_defpriv_part map.
+func parseDefACLGrants(acl string) (map[string]map[string]bool, error) {
+	return parseACLGrantsWith(acl, processDefPrivPart)
+}
+
+// parseACLGrantsWith is the pinned ACL ladder parameterized on the
+// per-entry permission decoder.
+func parseACLGrantsWith(acl string, decode func(string) (map[string]bool, error)) (map[string]map[string]bool, error) {
 	out := map[string]map[string]bool{}
 	for _, part := range strings.Split(strings.Trim(acl, "{}"), ",") {
 		slash := strings.Split(part, "/")
@@ -3424,7 +3543,7 @@ func parseACLGrants(acl string) (map[string]map[string]bool, error) {
 		if rolename == "" {
 			rolename = "public"
 		}
-		perms, err := processPrivPart(eq[1])
+		perms, err := decode(eq[1])
 		if err != nil {
 			return nil, err
 		}
@@ -3973,6 +4092,551 @@ func (privilegesRevokeFunc) Execute(ctx context.Context, rt *runtime.Runtime, ar
 }
 
 // ---------------------------------------------------------------------------
+// default_privileges — salt/modules/postgres.py:3238-3332, 3435-3571,
+// 3714-3877, 3880-4006 @ pinned revision, with the shared
+// _mod_defpriv_opts/_validate_default_privileges head (postgres.py:3126-3162).
+
+// defPrivilegesQueries ports the pinned _make_default_privileges_list_query
+// branches (postgres.py:2808-2888) as fixed SQL with client-side equality
+// filters: table/sequence/function match the schema prefix against nspname
+// (the pinned {0} receives prepend on those branches), schema matches the
+// object name against nspname (the pinned {0} receives the name), and group
+// matches the group role's name on the shared membership catalog.
+var defPrivilegesQueries = map[string]privCatalogQuery{
+	"table": {defPrivTableQuery, func(row map[string]string, objectName, prepend string) bool {
+		return rowEquals(row, "nspname", prepend)
+	}},
+	"sequence": {defPrivSequenceQuery, func(row map[string]string, objectName, prepend string) bool {
+		return rowEquals(row, "nspname", prepend)
+	}},
+	"schema": {privilegesSchemaQuery, func(row map[string]string, objectName, _ string) bool {
+		return rowEquals(row, "nspname", objectName)
+	}},
+	"function": {defPrivFunctionQuery, func(row map[string]string, objectName, prepend string) bool {
+		return rowEquals(row, "nspname", prepend)
+	}},
+	"group": {privilegesGroupQuery, func(row map[string]string, objectName, _ string) bool {
+		return rowEquals(row, "member_of", objectName)
+	}},
+}
+
+// validateDefaultPrivileges ports the pinned _validate_default_privileges
+// (postgres.py:3126-3151). The pinned function indexes
+// _DEFAULT_PRIVILEGE_TYPE_MAP first, so an object type outside that map
+// (whose keys are exactly the pinned _DEFAULT_PRIVILEGES_OBJECTS minus
+// group) raises KeyError before the separate SaltInvocationError object
+// check — both failure modes map to execution errors here, and the check
+// always precedes any Runner invocation. Like the R9.2f convention the
+// privilege rejection is value-free: the pinned message interpolates the
+// rejected defprivileges value, which may carry or overlap a caller
+// secret, so the port names only the fixed failure.
+func validateDefaultPrivileges(objectType string, privs []string, privileges string) error {
+	if objectType == "group" {
+		if privileges != "" {
+			return fmt.Errorf("%w: the default privileges option should not be set for object_type group",
+				errPostgresInvalidArgument)
+		}
+		return nil
+	}
+	typePerms, ok := defPrivilegeTypeMap[objectType]
+	if !ok {
+		return fmt.Errorf("%w: invalid object_type", errPostgresInvalidArgument)
+	}
+	allowed := map[string]bool{"ALL": true}
+	for _, c := range typePerms {
+		allowed[defPrivilegesMap[string(c)]] = true
+	}
+	for _, priv := range privs {
+		if !allowed[priv] {
+			return fmt.Errorf("%w: invalid default privileges", errPostgresInvalidArgument)
+		}
+	}
+	return nil
+}
+
+// defaultPrivilegesList ports the pinned default_privileges_list tail
+// (postgres.py:3310-3332): object pg_default_acl rows decode through the
+// pinned ladder with the default-ACL _process_defpriv_part map, and group
+// rows map the member rolname to the pinned admin_option == "t" boolean.
+// Rows are matched client-side, so the caller's schema prefix and object
+// name never reach SQL; caller names the public function for row-shape
+// errors.
+func defaultPrivilegesList(ctx context.Context, rt *runtime.Runtime, conn *pgConnection, caller, objectName, objectType, prepend string) (map[string]any, error) {
+	spec, ok := defPrivilegesQueries[objectType]
+	if !ok {
+		// Unreachable behind the public object-type check and
+		// validateDefaultPrivileges; kept fail-closed.
+		return nil, fmt.Errorf("%w: invalid object_type %q provided", errPostgresInvalidArgument, objectType)
+	}
+	rows, err := psqlQueryRows(ctx, rt, conn, spec.query)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]any, len(rows))
+	for _, row := range rows {
+		if !spec.match(row, objectName, prepend) {
+			continue
+		}
+		if objectType == "group" {
+			rolname, err := rowString(row, "rolname", caller)
+			if err != nil {
+				return nil, err
+			}
+			adminOption, err := rowString(row, "admin_option", caller)
+			if err != nil {
+				return nil, err
+			}
+			out[rolname] = adminOption == "t"
+			continue
+		}
+		acl, err := rowString(row, "name", caller)
+		if err != nil {
+			return nil, err
+		}
+		grants, err := parseDefACLGrants(acl)
+		if err != nil {
+			return nil, err
+		}
+		for rolename, perms := range grants {
+			out[rolename] = perms
+		}
+	}
+	return out, nil
+}
+
+// DefaultPrivilegesListArgs are the canonical
+// postgres.default_privileges_list arguments, mirroring the pinned
+// default_privileges_list(name, object_type, prepend="public",
+// maintenance_db=None, user, host, port, password, runas) signature
+// (postgres.py:3238-3248): name is the object whose default privileges are
+// listed (the group role name for object_type group, the schema name for
+// object_type schema, and otherwise the object whose owning schema the
+// prepend prefix names).
+type DefaultPrivilegesListArgs struct {
+	Name          string  `statekit:"name=name,required"`
+	ObjectType    string  `statekit:"name=object_type,required"`
+	Prepend       *string `statekit:"name=prepend"`
+	MaintenanceDB *string `statekit:"name=maintenance_db"`
+	User          *string `statekit:"name=user"`
+	Host          *string `statekit:"name=host"`
+	Port          *string `statekit:"name=port"`
+	Password      *string `statekit:"name=password"`
+	Runas         *string `statekit:"name=runas"`
+}
+
+func (a *DefaultPrivilegesListArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: a.MaintenanceDB,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+type defaultPrivilegesListFunc struct{}
+
+func (defaultPrivilegesListFunc) Name() string { return "postgres.default_privileges_list" }
+func (defaultPrivilegesListFunc) Args() any    { return DefaultPrivilegesListArgs{} }
+
+func (defaultPrivilegesListFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[DefaultPrivilegesListArgs](args, "postgres.default_privileges_list")
+	if err != nil {
+		return nil, err
+	}
+	// The pinned head (postgres.py:3294-3298): the object type is
+	// lowercased, then unknown types are rejected before any query. Salt
+	// reaches the same failure one statement earlier — its query builder
+	// returns an unbound local for an unmatched branch, so the following
+	// SaltInvocationError is dead code for unknown types — and both pinned
+	// failure shapes map to this one execution error, raised before any
+	// Runner invocation.
+	objectType := strings.ToLower(a.ObjectType)
+	if _, ok := defPrivilegesQueries[objectType]; !ok {
+		return nil, fmt.Errorf("%w: invalid object_type", errPostgresInvalidArgument)
+	}
+	prepend := defaultPrependSchema
+	if a.Prepend != nil {
+		prepend = *a.Prepend
+	}
+	return defaultPrivilegesList(ctx, rt, a.connection(), "postgres.default_privileges_list", a.Name, objectType, prepend)
+}
+
+// hasDefaultPrivileges is the internal decision core of the pinned
+// has_default_privileges (postgres.py:3516-3571) that the default-privilege
+// mutations run as their preflight: the owner shortcut over the shared
+// owner catalog, the default-ACL decode, and the pinned membership,
+// grant-option, ALL, and subset comparisons. The object type arrives
+// lowercased and the privileges split from a completed
+// modPrivOpts/validateDefaultPrivileges pass, exactly the state the pinned
+// function is in after its own head. The pinned ALL comparison
+// defperms.sort() == _defprivileges[name].keys().sort() evaluates
+// list.sort() == dict_keys.sort(): dict_keys carries no sort method, so
+// Python raises AttributeError before producing a boolean — StateKit maps
+// that deterministic pinned failure to this fixed value-free error.
+func hasDefaultPrivileges(ctx context.Context, rt *runtime.Runtime, conn *pgConnection, caller, name, objectName, objectType string, privs []string, grantOption bool, prepend string) (bool, error) {
+	if objectType != "group" {
+		owner, err := getObjectOwner(ctx, rt, conn, caller, objectName, objectType, prepend)
+		if err != nil {
+			return false, err
+		}
+		if owner != nil && name == *owner {
+			return true, nil
+		}
+	}
+	grants, err := defaultPrivilegesList(ctx, rt, conn, caller, objectName, objectType, prepend)
+	if err != nil {
+		return false, err
+	}
+	entry, ok := grants[name]
+	if !ok {
+		return false, nil
+	}
+	if objectType == "group" {
+		// The pinned group tail: membership is True, and the grant-option
+		// check is the member's admin_option boolean itself.
+		if grantOption {
+			return entry.(bool), nil
+		}
+		return true, nil
+	}
+	rolePerms := entry.(map[string]bool)
+	typePerms := defPrivilegeTypeMap[objectType]
+	if grantOption {
+		// defperms == _defprivileges[name]: every type privilege present
+		// with the grant option and nothing else.
+		perms := make(map[string]bool, len(typePerms))
+		for _, c := range typePerms {
+			perms[defPrivilegesMap[string(c)]] = true
+		}
+		return privMapEqual(perms, rolePerms), nil
+	}
+	for _, priv := range privs {
+		if priv == "ALL" {
+			return false, errPostgresDefprivilegesAllCompare
+		}
+	}
+	// set(_defprivs).issubset(set(_defprivileges[name])): every requested
+	// privilege present, grant flag irrelevant.
+	for _, priv := range privs {
+		if _, ok := rolePerms[priv]; !ok {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// DefaultPrivilegesGrantArgs are the canonical
+// postgres.default_privileges_grant arguments, mirroring the pinned
+// default_privileges_grant(name, object_name, object_type,
+// defprivileges=None, grant_option=None, prepend="public", maintenance_db,
+// user, host, port, password, runas) signature (postgres.py:3714-3727).
+// DefPrivileges keeps Salt's None default as the empty string because the
+// pinned _mod_defpriv_opts collapses None to "" before any use;
+// grant_option is only ever truthiness-tested, so a plain bool is exact;
+// prepend nil means the pinned "public" default while an explicit empty
+// string keeps Salt's empty-schema handling.
+type DefaultPrivilegesGrantArgs struct {
+	Name          string  `statekit:"name=name,required"`
+	ObjectName    string  `statekit:"name=object_name,required"`
+	ObjectType    string  `statekit:"name=object_type,required"`
+	DefPrivileges string  `statekit:"name=defprivileges"`
+	GrantOption   bool    `statekit:"name=grant_option"`
+	Prepend       *string `statekit:"name=prepend"`
+	MaintenanceDB *string `statekit:"name=maintenance_db"`
+	User          *string `statekit:"name=user"`
+	Host          *string `statekit:"name=host"`
+	Port          *string `statekit:"name=port"`
+	Password      *string `statekit:"name=password"`
+	Runas         *string `statekit:"name=runas"`
+}
+
+func (a *DefaultPrivilegesGrantArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: a.MaintenanceDB,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+// DefaultPrivilegesRevokeArgs are the canonical
+// postgres.default_privileges_revoke arguments, mirroring the pinned
+// default_privileges_revoke(name, object_name, object_type,
+// defprivileges=None, prepend="public", maintenance_db, user, host, port,
+// password, runas) signature (postgres.py:3880-3892): the pinned revoke
+// signature carries no grant_option, so none exists here either.
+type DefaultPrivilegesRevokeArgs struct {
+	Name          string  `statekit:"name=name,required"`
+	ObjectName    string  `statekit:"name=object_name,required"`
+	ObjectType    string  `statekit:"name=object_type,required"`
+	DefPrivileges string  `statekit:"name=defprivileges"`
+	Prepend       *string `statekit:"name=prepend"`
+	MaintenanceDB *string `statekit:"name=maintenance_db"`
+	User          *string `statekit:"name=user"`
+	Host          *string `statekit:"name=host"`
+	Port          *string `statekit:"name=port"`
+	Password      *string `statekit:"name=password"`
+	Runas         *string `statekit:"name=runas"`
+}
+
+func (a *DefaultPrivilegesRevokeArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: a.MaintenanceDB,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+// validateDefPrivIdentifiers fails closed on every position the pinned
+// ALTER DEFAULT PRIVILEGES format strings interpolate raw or quote without
+// escaping, before any Runner invocation (postgres.py:3825-3865,
+// 3987-3994). The grantee role name is quoted in every grant statement but
+// raw in the REVOKE tail, the group object name is raw in both directions,
+// and the schema prefix lands raw in every IN SCHEMA clause. The
+// grant_option non-ALL grant branch is the pinned asymmetry: its {2}
+// receives the on-part — prepend."object" for table/sequence, the bare
+// object name for function, and the plain quoted object name for schema —
+// instead of the schema prefix, so those object positions reach SQL only
+// there and are checked only there; the plain statements interpolate no
+// object name at all (the pinned revoke even computes an on_part it never
+// uses). Quoted positions may not carry the double quote; raw positions
+// must be bare PostgreSQL identifiers. Every rejection is value-free.
+func validateDefPrivIdentifiers(name, objectName, objectType string, revoke, grantOption bool, prepend string) error {
+	if revoke {
+		// The pinned REVOKE tail interpolates the role name raw in both
+		// variants.
+		if !bareIdentifierRE.MatchString(name) {
+			return privIdentifierValidationError("name")
+		}
+	} else if strings.Contains(name, `"`) {
+		return ddlValidationError("name")
+	}
+	if objectType == "group" {
+		// The pinned group statements interpolate the group name raw in
+		// both directions.
+		if !bareIdentifierRE.MatchString(objectName) {
+			return privIdentifierValidationError("object_name")
+		}
+		return nil
+	}
+	if privSchemaQualified(objectType) && strings.ToUpper(objectName) == "ALL" {
+		// The ALL-variant statements carry no object name; only their raw
+		// schema prefix reaches SQL.
+		if !bareIdentifierRE.MatchString(prepend) {
+			return privIdentifierValidationError("prepend")
+		}
+		return nil
+	}
+	if grantOption && !revoke {
+		// The pinned grant_option else-branch interpolates the on-part
+		// raw into IN SCHEMA (postgres.py:3849-3852).
+		switch objectType {
+		case "table", "sequence":
+			if !bareIdentifierRE.MatchString(prepend) {
+				return privIdentifierValidationError("prepend")
+			}
+			if strings.Contains(objectName, `"`) {
+				return ddlValidationError("object_name")
+			}
+		case "function":
+			if !bareIdentifierRE.MatchString(objectName) {
+				return privIdentifierValidationError("object_name")
+			}
+		default:
+			// schema: the on-part is the plain double-quoted object name.
+			if strings.Contains(objectName, `"`) {
+				return ddlValidationError("object_name")
+			}
+		}
+		return nil
+	}
+	// The plain statements interpolate only the raw schema prefix; the
+	// revoke role name was checked above.
+	if !bareIdentifierRE.MatchString(prepend) {
+		return privIdentifierValidationError("prepend")
+	}
+	return nil
+}
+
+// defaultPrivilegesGrantQuery ports the pinned statement construction
+// (postgres.py:3823-3865): the comma-joined uppercased privileges, the
+// on-part (schema-qualified double-quoted for table/sequence, bare for
+// function, plain double-quoted otherwise), and the pinned variants —
+// group membership with WITH ADMIN OPTION, the ALL
+// TABLES/SEQUENCES/FUNCTIONS IN SCHEMA form, and the plain forms — with
+// the role name double-quoted in every variant and WITH GRANT OPTION
+// confined to the grant side. The pinned asymmetry is preserved exactly:
+// the grant_option non-ALL branch interpolates the on-part into IN SCHEMA
+// while every other branch interpolates the bare schema prefix, and the
+// no-option ALL and non-ALL branches are byte-identical. Callers must have
+// passed validateDefPrivIdentifiers first; the builder itself never
+// validates so it can stay an exact port of the pinned format strings.
+func defaultPrivilegesGrantQuery(name, objectName, objectType string, privs []string, grantOption bool, prepend string) string {
+	grants := strings.Join(privs, ",")
+	typeKeyword := strings.ToUpper(objectType)
+	var onPart string
+	switch objectType {
+	case "table", "sequence":
+		onPart = prepend + `."` + objectName + `"`
+	case "function":
+		onPart = objectName
+	default:
+		onPart = `"` + objectName + `"`
+	}
+	switch {
+	case objectType == "group" && grantOption:
+		return `ALTER DEFAULT PRIVILEGES GRANT ` + objectName + ` TO "` + name + `" WITH ADMIN OPTION`
+	case objectType == "group":
+		return `ALTER DEFAULT PRIVILEGES GRANT ` + objectName + ` TO "` + name + `"`
+	case privSchemaQualified(objectType) && strings.ToUpper(objectName) == "ALL" && grantOption:
+		return `ALTER DEFAULT PRIVILEGES IN SCHEMA ` + prepend + ` GRANT ` + grants + ` ON ` + typeKeyword + `S TO "` + name + `" WITH GRANT OPTION`
+	case grantOption:
+		return `ALTER DEFAULT PRIVILEGES IN SCHEMA ` + onPart + ` GRANT ` + grants + ` ON ` + typeKeyword + `S TO "` + name + `" WITH GRANT OPTION`
+	default:
+		return `ALTER DEFAULT PRIVILEGES IN SCHEMA ` + prepend + ` GRANT ` + grants + ` ON ` + typeKeyword + `S TO "` + name + `"`
+	}
+}
+
+// defaultPrivilegesRevokeQuery ports the pinned statement construction
+// (postgres.py:3980-3994): the group membership form with both names raw,
+// and the object form with the bare schema prefix in IN SCHEMA and the raw
+// role name the pinned REVOKE interpolates — there is no ALL-variant and
+// no grant_option in the pinned revoke flow (the on_part the pinned source
+// computes at postgres.py:3982-3985 is never used and is not ported).
+// Callers must have passed validateDefPrivIdentifiers first.
+func defaultPrivilegesRevokeQuery(name, objectName, objectType string, privs []string, prepend string) string {
+	grants := strings.Join(privs, ",")
+	if objectType == "group" {
+		return `ALTER DEFAULT PRIVILEGES REVOKE ` + objectName + ` FROM ` + name
+	}
+	return `ALTER DEFAULT PRIVILEGES IN SCHEMA ` + prepend + ` REVOKE ` + grants + ` ON ` + strings.ToUpper(objectType) + `S FROM ` + name
+}
+
+type defaultPrivilegesGrantFunc struct{}
+
+func (defaultPrivilegesGrantFunc) Name() string { return "postgres.default_privileges_grant" }
+func (defaultPrivilegesGrantFunc) Args() any    { return DefaultPrivilegesGrantArgs{} }
+
+// Execute ports the pinned default_privileges_grant flow
+// (postgres.py:3796-3877): the shared _mod_defpriv_opts/
+// _validate_default_privileges head, the has_default_privileges preflight
+// the pinned source issues without its own grant_option argument (so the
+// membership/subset check — never the admin/grant-option or ALL variant —
+// decides the no-op), the logged-and-False already-granted short circuit
+// with no mutation statement, the pinned ALTER DEFAULT PRIVILEGES
+// statement, and the pinned ret["retcode"] == 0 boolean. The identifier
+// boundary is the StateKit addition, checked before any Runner invocation.
+func (defaultPrivilegesGrantFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[DefaultPrivilegesGrantArgs](args, "postgres.default_privileges_grant")
+	if err != nil {
+		return nil, err
+	}
+	objectType, privs := modPrivOpts(a.ObjectType, a.DefPrivileges)
+	if err := validateDefaultPrivileges(objectType, privs, a.DefPrivileges); err != nil {
+		return nil, err
+	}
+	prepend := defaultPrependSchema
+	if a.Prepend != nil {
+		prepend = *a.Prepend
+	}
+	if err := validateDefPrivIdentifiers(a.Name, a.ObjectName, objectType, false, a.GrantOption, prepend); err != nil {
+		return nil, err
+	}
+	has, err := hasDefaultPrivileges(ctx, rt, a.connection(), "postgres.default_privileges_grant",
+		a.Name, a.ObjectName, objectType, privs, false, prepend)
+	if err != nil {
+		return nil, err
+	}
+	if has {
+		// The pinned "The object: %s of type: %s already has default
+		// privileges: %s set" log-and-False no-op.
+		return false, nil
+	}
+	query := defaultPrivilegesGrantQuery(a.Name, a.ObjectName, objectType, privs, a.GrantOption, prepend)
+	argv := psqlArgv(
+		pointerString(a.User),
+		pointerString(a.Host),
+		pointerString(a.Port),
+		pointerString(a.MaintenanceDB),
+		"-c", query,
+	)
+	result, err := runPsql(ctx, rt, argv, a.connection())
+	if err != nil {
+		return nil, err
+	}
+	return result.ExitCode == 0, nil
+}
+
+type defaultPrivilegesRevokeFunc struct{}
+
+func (defaultPrivilegesRevokeFunc) Name() string { return "postgres.default_privileges_revoke" }
+func (defaultPrivilegesRevokeFunc) Args() any    { return DefaultPrivilegesRevokeArgs{} }
+
+// Execute ports the pinned default_privileges_revoke flow
+// (postgres.py:3953-4006): the shared head, the has_default_privileges
+// preflight (again without any grant_option) whose miss is the
+// logged-and-False no-op with no mutation statement, the pinned ALTER
+// DEFAULT PRIVILEGES REVOKE statement, and the pinned ret["retcode"] == 0
+// boolean. The identifier boundary is the StateKit addition, checked
+// before any Runner invocation.
+func (defaultPrivilegesRevokeFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[DefaultPrivilegesRevokeArgs](args, "postgres.default_privileges_revoke")
+	if err != nil {
+		return nil, err
+	}
+	objectType, privs := modPrivOpts(a.ObjectType, a.DefPrivileges)
+	if err := validateDefaultPrivileges(objectType, privs, a.DefPrivileges); err != nil {
+		return nil, err
+	}
+	prepend := defaultPrependSchema
+	if a.Prepend != nil {
+		prepend = *a.Prepend
+	}
+	if err := validateDefPrivIdentifiers(a.Name, a.ObjectName, objectType, true, false, prepend); err != nil {
+		return nil, err
+	}
+	has, err := hasDefaultPrivileges(ctx, rt, a.connection(), "postgres.default_privileges_revoke",
+		a.Name, a.ObjectName, objectType, privs, false, prepend)
+	if err != nil {
+		return nil, err
+	}
+	if !has {
+		// The pinned "The object: %s of type: %s does not have default
+		// privileges: %s set" log-and-False no-op.
+		return false, nil
+	}
+	query := defaultPrivilegesRevokeQuery(a.Name, a.ObjectName, objectType, privs, prepend)
+	argv := psqlArgv(
+		pointerString(a.User),
+		pointerString(a.Host),
+		pointerString(a.Port),
+		pointerString(a.MaintenanceDB),
+		"-c", query,
+	)
+	result, err := runPsql(ctx, rt, argv, a.connection())
+	if err != nil {
+		return nil, err
+	}
+	return result.ExitCode == 0, nil
+}
+
+// ---------------------------------------------------------------------------
 // shared helpers (rabbitmq-module conventions).
 
 func typedArgs[T any](args any, name string) (*T, error) {
@@ -4059,19 +4723,22 @@ func redactedError(err error, secrets ...string) error {
 	return errors.New(message)
 }
 
-// Register installs the R9.2k postgres slice: the version probe, the five
+// Register installs the R9.2l postgres slice: the version probe, the five
 // R9.2c read-only catalog primitives, the R9.2h write paths db_create and
 // db_remove, the eight R9.2d extension and language catalog functions,
 // the three R9.2e schema catalog functions, the three R9.2f role and
 // privilege checks, the R9.2g ACL listing privileges_list, the R9.2i
 // role mutations user_create, user_update, and user_remove, the R9.2j
-// group mutations group_create, group_update, and group_remove, and the
-// R9.2k privilege mutations privileges_grant and privileges_revoke. The
+// group mutations group_create, group_update, and group_remove, the
+// R9.2k privilege mutations privileges_grant and privileges_revoke, and
+// the R9.2l default-privilege family default_privileges_list,
+// default_privileges_grant, and default_privileges_revoke. The
 // remainder of the postgres family needs the generic psql query surface
 // (psql_query itself stays pending; no arbitrary-query registration
 // exists in this phase) and stays pending for later R9 rounds; the
-// internal parsed-version, psql-query, and role-statement helpers are
-// intentionally not registered, exactly like the pinned private functions.
+// internal parsed-version, psql-query, role-statement, and
+// has-default-privileges helpers are intentionally not registered,
+// exactly like the pinned private functions.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		versionFunc{},
@@ -4099,6 +4766,9 @@ func Register(reg *runtime.ExecRegistry) error {
 		privilegesListFunc{},
 		privilegesGrantFunc{},
 		privilegesRevokeFunc{},
+		defaultPrivilegesListFunc{},
+		defaultPrivilegesGrantFunc{},
+		defaultPrivilegesRevokeFunc{},
 		userCreateFunc{},
 		userUpdateFunc{},
 		userRemoveFunc{},

@@ -987,6 +987,24 @@ admin,baruwatest2,t
 // table and group flows: the two fixed catalog queries, the boolean JSON
 // rendering, the grant-option flag, validation failures before any psql
 // call, and the nonzero-exit compatibility shape.
+func TestPostgresCLIDefaultPrivilegesListValidationRedaction(t *testing.T) {
+	const marker = "synthetic_defpriv_list_marker"
+	for _, objectType := range []string{marker, "invalid_" + marker + "_type"} {
+		t.Run(objectType, func(t *testing.T) {
+			runner := &cliRecordingRunner{}
+			app := postgresCLIApp(t, runner)
+			code, out, errS := captureCode(t, app, "exec", "postgres.default_privileges_list",
+				"--name", "awl", "--object-type", objectType, "--password", marker, "-o", "json")
+			if code != ExitFailed || out != "" || errS != "statekit: postgres: invalid argument: invalid object_type\n" {
+				t.Fatal("expected exit failure, empty stdout and stable value-free stderr")
+			}
+			if strings.Contains(out+errS, marker) || len(runner.calls) != 0 {
+				t.Fatal("validation leaked input or invoked Runner")
+			}
+		})
+	}
+}
+
 func TestPostgresCLIPrivilegesValidationRedaction(t *testing.T) {
 	const marker = "synthetic_privilege_marker"
 	for _, function := range []string{"postgres.privileges_grant", "postgres.privileges_revoke", "postgres.has_privileges"} {
@@ -2676,6 +2694,430 @@ func TestPostgresCLIPrivilegesMutationFailures(t *testing.T) {
 	code, out, errS = captureCode(t, app, "exec", "postgres.privileges_grant",
 		"--name", "baruwa", "--object-name", "awl", "--object-type", "table",
 		"--privileges", "SELECT", "--password", "testpassword", "-o", "json")
+	if code != ExitFailed || out != "" || errS == "" {
+		t.Fatalf("runner failure code=%d out=%q err=%q", code, out, errS)
+	}
+	if strings.Contains(out+errS, "testpassword") || !strings.Contains(errS, process.RedactedPlaceholder) {
+		t.Fatalf("CLI error was not redacted: %q", errS)
+	}
+	if strings.Contains(leak.calls[2].RedactedString(), "testpassword") {
+		t.Fatalf("rendered command leaks password: %q", leak.calls[2].RedactedString())
+	}
+}
+
+// defCLITableCSV renders the fixed pg_default_acl table catalog where
+// baruwa holds the plain SELECT,INSERT subset, for the CLI default-
+// privilege flows.
+const defCLITableCSV = `nspname,name
+public,"{baruwa=ar/public}"
+`
+
+// defCLIGrantTableCSV renders the catalog where baruwa holds nothing, so
+// the CLI grant preflight answers false.
+const defCLIGrantTableCSV = `nspname,name
+public,"{bayestest=arw/baruwatest}"
+`
+
+// TestPostgresCLIDefaultPrivilegesList drives the R9.2l list path end to
+// end: the fixed COPY-wrapped pg_default_acl catalog query on the full
+// argv, the JSON dictionary rendering with the decoded bool-maps, the
+// pinned prepend default, and no password anywhere in the rendered
+// command or CLI output.
+func TestPostgresCLIDefaultPrivilegesList(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(defCLITableCSV)},
+	}}
+	app := postgresCLIApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "postgres.default_privileges_list",
+		"--name", "awl", "--object-type", "table",
+		"--maintenance-db", "db_name", "--user", "testuser",
+		"--host", "testhost", "--port", "testport",
+		"--password", "testpassword", "-o", "json")
+	var listed map[string]map[string]bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &listed) != nil ||
+		len(listed) != 1 {
+		t.Fatalf("list code=%d out=%q err=%q", code, out, errS)
+	}
+	if entry, ok := listed["baruwa"]; !ok || entry["INSERT"] || entry["SELECT"] {
+		t.Fatalf("list decode = %q, want baruwa's plain INSERT/SELECT pair", out)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("list calls = %d, want 1", len(runner.calls))
+	}
+	command := runner.calls[0]
+	argv := append([]string{command.Name}, command.Args...)
+	if len(argv) != 17 || argv[11] != "--dbname" || argv[12] != "db_name" ||
+		argv[13] != "-v" || argv[15] != "-c" ||
+		!strings.Contains(argv[16], "pg_default_acl") ||
+		!strings.Contains(argv[16], "defaclobjtype ='r'") ||
+		!strings.HasPrefix(argv[16], "COPY (") {
+		t.Fatalf("argv = %q", argv)
+	}
+	if len(command.Env) != 4 || command.Env[0] != "PGPASSWORD=testpassword" ||
+		command.Shell || len(command.Redact) != 1 || command.Redact[0] != "testpassword" {
+		t.Fatalf("unsafe command: %#v", command)
+	}
+	if strings.Contains(command.RedactedString(), "testpassword") || strings.Contains(out+errS, "testpassword") {
+		t.Fatalf("password leaked: %q %q", command.RedactedString(), out+errS)
+	}
+
+	// The group form maps members to their admin_option booleans.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(privCLIGroupCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.default_privileges_list",
+		"--name", "admin", "--object-type", "group", "-o", "json")
+	var members map[string]bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &members) != nil ||
+		len(members) != 2 || members["baruwa"] || !members["baruwatest2"] {
+		t.Fatalf("group list code=%d out=%q err=%q", code, out, errS)
+	}
+}
+
+// TestPostgresCLIDefaultPrivilegesGrant drives the R9.2l grant path end
+// to end: the pinned ALTER DEFAULT PRIVILEGES statements after the
+// owner-plus-catalog preflight pair (including the grant_option branch
+// whose IN SCHEMA carries the on-part, the ALL TABLES IN SCHEMA variant,
+// and the group ADMIN OPTION form), the JSON true rendering, and no
+// password anywhere in the rendered command or CLI output.
+func TestPostgresCLIDefaultPrivilegesGrant(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(ownerCLITableCSV)},
+		{ExitCode: 0, Stdout: []byte(defCLIGrantTableCSV)},
+		{ExitCode: 0},
+	}}
+	app := postgresCLIApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "postgres.default_privileges_grant",
+		"--name", "baruwa", "--object-name", "awl", "--object-type", "table",
+		"--defprivileges", "ALL", "--grant-option",
+		"--maintenance-db", "db_name", "--user", "testuser",
+		"--host", "testhost", "--port", "testport",
+		"--password", "testpassword", "-o", "json")
+	var granted bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &granted) != nil || !granted {
+		t.Fatalf("grant code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("grant calls = %d, want 3", len(runner.calls))
+	}
+	command := runner.calls[2]
+	argv := append([]string{command.Name}, command.Args...)
+	if len(argv) != 15 || argv[13] != "-c" ||
+		argv[14] != `ALTER DEFAULT PRIVILEGES IN SCHEMA public."awl" GRANT ALL ON TABLES TO "baruwa" WITH GRANT OPTION` {
+		t.Fatalf("argv = %q", argv)
+	}
+	if len(command.Env) != 4 || command.Env[0] != "PGPASSWORD=testpassword" ||
+		command.Shell || len(command.Redact) != 1 || command.Redact[0] != "testpassword" {
+		t.Fatalf("unsafe command: %#v", command)
+	}
+	if strings.Contains(command.RedactedString(), "testpassword") || strings.Contains(out+errS, "testpassword") {
+		t.Fatalf("password leaked: %q %q", command.RedactedString(), out+errS)
+	}
+
+	for _, tc := range []struct {
+		label     string
+		argv      []string
+		results   []process.CommandResult
+		statement string
+	}{
+		{
+			"table plain", []string{"--object-name", "awl", "--object-type", "table", "--defprivileges", "ALL"},
+			[]process.CommandResult{
+				{ExitCode: 0, Stdout: []byte(ownerCLITableCSV)},
+				{ExitCode: 0, Stdout: []byte(defCLIGrantTableCSV)},
+				{ExitCode: 0},
+			},
+			`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO "baruwa"`,
+		},
+		{
+			"all tables in schema", []string{"--object-name", "ALL", "--object-type", "table", "--defprivileges", "SELECT"},
+			[]process.CommandResult{
+				{ExitCode: 0, Stdout: []byte(ownerCLITableCSV)},
+				{ExitCode: 0, Stdout: []byte(defCLIGrantTableCSV)},
+				{ExitCode: 0},
+			},
+			`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO "baruwa"`,
+		},
+		{
+			"function with option", []string{"--object-name", "fawl", "--object-type", "function",
+				"--defprivileges", "EXECUTE", "--grant-option"},
+			[]process.CommandResult{
+				{ExitCode: 0, Stdout: []byte(ownerCLIFunctionCSV)},
+				{ExitCode: 0, Stdout: []byte(defCLIGrantTableCSV)},
+				{ExitCode: 0},
+			},
+			`ALTER DEFAULT PRIVILEGES IN SCHEMA fawl GRANT EXECUTE ON FUNCTIONS TO "baruwa" WITH GRANT OPTION`,
+		},
+	} {
+		runner := &cliRecordingRunner{results: tc.results}
+		app := postgresCLIApp(t, runner)
+		fullArgv := append([]string{"exec", "postgres.default_privileges_grant", "--name", "baruwa"}, tc.argv...)
+		fullArgv = append(fullArgv, "-o", "json")
+		code, out, errS := captureCode(t, app, fullArgv...)
+		var granted bool
+		if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &granted) != nil || !granted {
+			t.Fatalf("%s code=%d out=%q err=%q", tc.label, code, out, errS)
+		}
+		if got := runner.calls[2].Args[len(runner.calls[2].Args)-1]; got != tc.statement {
+			t.Fatalf("%s statement = %q, want %q", tc.label, got, tc.statement)
+		}
+	}
+
+	// The group grant: one membership preflight, then the raw membership
+	// GRANT with ADMIN OPTION.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(privCLIGrantGroupCSV)},
+		{ExitCode: 0},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.default_privileges_grant",
+		"--name", "baruwa", "--object-name", "admins", "--object-type", "group",
+		"--grant-option", "-o", "json")
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &granted) != nil || !granted {
+		t.Fatalf("group grant code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("group grant calls = %d, want 2", len(runner.calls))
+	}
+	if got := runner.calls[1].Args[len(runner.calls[1].Args)-1]; got != `ALTER DEFAULT PRIVILEGES GRANT admins TO "baruwa" WITH ADMIN OPTION` {
+		t.Fatalf("group grant statement = %q", got)
+	}
+}
+
+// TestPostgresCLIDefaultPrivilegesRevoke drives the R9.2l revoke path
+// end to end: the pinned REVOKE statements — including the raw role name
+// of the REVOKE tail — after a preflight pair that answers held, the
+// group form, the JSON true rendering, and no password in any rendered
+// or CLI output.
+func TestPostgresCLIDefaultPrivilegesRevoke(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(ownerCLITableCSV)},
+		{ExitCode: 0, Stdout: []byte(defCLITableCSV)},
+		{ExitCode: 0},
+	}}
+	app := postgresCLIApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "postgres.default_privileges_revoke",
+		"--name", "baruwa", "--object-name", "awl", "--object-type", "table",
+		"--defprivileges", "SELECT,INSERT", "--maintenance-db", "db_name",
+		"--user", "testuser", "--host", "testhost", "--port", "testport",
+		"--password", "testpassword", "-o", "json")
+	var revoked bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &revoked) != nil || !revoked {
+		t.Fatalf("revoke code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("revoke calls = %d, want 3", len(runner.calls))
+	}
+	command := runner.calls[2]
+	argv := append([]string{command.Name}, command.Args...)
+	if len(argv) != 15 || argv[13] != "-c" ||
+		argv[14] != `ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE SELECT,INSERT ON TABLES FROM baruwa` {
+		t.Fatalf("argv = %q", argv)
+	}
+	if len(command.Redact) != 1 || command.Redact[0] != "testpassword" ||
+		command.Shell ||
+		strings.Contains(command.RedactedString(), "testpassword") ||
+		strings.Contains(out+errS, "testpassword") {
+		t.Fatalf("unsafe command or leak: %#v %q %q", command, out, errS)
+	}
+
+	// The group form: one membership preflight where baruwa is a member,
+	// then the raw REVOKE.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(privCLIGroupCSV)},
+		{ExitCode: 0},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.default_privileges_revoke",
+		"--name", "baruwa", "--object-name", "admin", "--object-type", "group", "-o", "json")
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &revoked) != nil || !revoked {
+		t.Fatalf("group revoke code=%d out=%q err=%q", code, out, errS)
+	}
+	if got := runner.calls[1].Args[len(runner.calls[1].Args)-1]; got != "ALTER DEFAULT PRIVILEGES REVOKE admin FROM baruwa" {
+		t.Fatalf("group revoke statement = %q", got)
+	}
+}
+
+// TestPostgresCLIDefaultPrivilegesMutationFailures pins the CLI failure
+// and no-op surface of both mutations: the already-granted and
+// nothing-held no-ops answering JSON false without a mutation call, the
+// fail-closed identifier boundary with the value-free stable errors, the
+// pinned validation failures, the required arguments, the runas
+// rejection, the nonzero-exit retcode boolean, and the redacted
+// mutation-time Runner error.
+func TestPostgresCLIDefaultPrivilegesMutationFailures(t *testing.T) {
+	// Grant to the role that already holds the subset: false after the
+	// preflight pair, no third call.
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(ownerCLITableCSV)},
+		{ExitCode: 0, Stdout: []byte(defCLITableCSV)},
+	}}
+	app := postgresCLIApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "postgres.default_privileges_grant",
+		"--name", "baruwa", "--object-name", "awl", "--object-type", "table",
+		"--defprivileges", "SELECT", "-o", "json")
+	var noop bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &noop) != nil || noop {
+		t.Fatalf("already-granted code=%d out=%q err=%q, want false", code, out, errS)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("already-granted calls = %d, want 2", len(runner.calls))
+	}
+
+	// Revoke from a role that holds nothing: false after the preflight
+	// pair, no third call.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(ownerCLITableCSV)},
+		{ExitCode: 0, Stdout: []byte(defCLIGrantTableCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.default_privileges_revoke",
+		"--name", "baruwa", "--object-name", "awl", "--object-type", "table",
+		"--defprivileges", "SELECT,INSERT", "-o", "json")
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &noop) != nil || noop {
+		t.Fatalf("nothing-held code=%d out=%q err=%q, want false", code, out, errS)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("nothing-held calls = %d, want 2", len(runner.calls))
+	}
+
+	// A rejected statement keeps the pinned retcode boolean: exit OK,
+	// JSON false.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(ownerCLITableCSV)},
+		{ExitCode: 0, Stdout: []byte(defCLIGrantTableCSV)},
+		{ExitCode: 1, Stderr: []byte(`psql: error: ERROR: relation "awl" does not exist`)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.default_privileges_grant",
+		"--name", "baruwa", "--object-name", "awl", "--object-type", "table",
+		"--defprivileges", "SELECT", "-o", "json")
+	var failed bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &failed) != nil || failed {
+		t.Fatalf("nonzero exit code=%d out=%q err=%q, want false", code, out, errS)
+	}
+
+	// Injection attempts fail closed before any psql call, with the exact
+	// value-free stable errors naming the argument key only.
+	const marker = "pgmark-7f3c-secret"
+	for _, tc := range []struct {
+		fn   string
+		argv []string
+		want string
+	}{
+		{"postgres.default_privileges_grant", []string{"--name", `baruwa-` + marker + `"`,
+			"--object-name", "awl", "--object-type", "table", "--defprivileges", "SELECT"},
+			"statekit: postgres: invalid argument: unsupported quote character in name\n"},
+		{"postgres.default_privileges_grant", []string{"--name", "baruwa", "--object-name", `admins; ` + marker,
+			"--object-type", "group"},
+			"statekit: postgres: invalid argument: unsupported identifier in object_name\n"},
+		{"postgres.default_privileges_grant", []string{"--name", "baruwa", "--object-name", "awl",
+			"--object-type", "table", "--defprivileges", "SELECT", "--prepend", `pub ` + marker},
+			"statekit: postgres: invalid argument: unsupported identifier in prepend\n"},
+		{"postgres.default_privileges_revoke", []string{"--name", `baruwa; ` + marker, "--object-name", "awl",
+			"--object-type", "table", "--defprivileges", "SELECT"},
+			"statekit: postgres: invalid argument: unsupported identifier in name\n"},
+		{"postgres.default_privileges_revoke", []string{"--name", "baruwa", "--object-name", `admi` + marker,
+			"--object-type", "group"},
+			"statekit: postgres: invalid argument: unsupported identifier in object_name\n"},
+	} {
+		runner := &cliRecordingRunner{}
+		app := postgresCLIApp(t, runner)
+		argv := append([]string{"exec", tc.fn, "--password", marker}, tc.argv...)
+		argv = append(argv, "-o", "json")
+		code, out, errS := captureCode(t, app, argv...)
+		if code != ExitFailed || errS != tc.want || len(runner.calls) != 0 {
+			t.Fatalf("%s %v code=%d err=%q calls=%d, want err %q",
+				tc.fn, tc.argv, code, errS, len(runner.calls), tc.want)
+		}
+		if strings.Contains(out+errS, marker) {
+			t.Fatalf("%s output leaks the rejected value: out=%q err=%q", tc.fn, out, errS)
+		}
+	}
+
+	// The pinned validation failures also fail before any psql call.
+	for _, argv := range [][]string{
+		{"--name", "baruwa", "--object-name", "awl", "--object-type", "bogus", "--defprivileges", "SELECT"},
+		{"--name", "baruwa", "--object-name", "awl", "--object-type", "table", "--defprivileges", "BOGUS"},
+		{"--name", "baruwa", "--object-name", "awl", "--object-type", "table", "--defprivileges", "CONNECT"},
+		{"--name", "baruwa", "--object-name", "awl", "--object-type", "table"},
+		{"--name", "baruwa", "--object-name", "admin", "--object-type", "group", "--defprivileges", "SELECT"},
+	} {
+		for _, fn := range []string{"postgres.default_privileges_grant", "postgres.default_privileges_revoke"} {
+			runner := &cliRecordingRunner{}
+			app := postgresCLIApp(t, runner)
+			fullArgv := append([]string{"exec", fn}, argv...)
+			fullArgv = append(fullArgv, "-o", "json")
+			code, _, errS := captureCode(t, app, fullArgv...)
+			if code != ExitFailed || len(runner.calls) != 0 {
+				t.Fatalf("%s validation %v code=%d err=%q calls=%d", fn, argv, code, errS, len(runner.calls))
+			}
+		}
+	}
+
+	// The three required positionals are validated before any psql call.
+	for _, missing := range []string{"--name", "--object-name", "--object-type"} {
+		for _, fn := range []string{"postgres.default_privileges_grant", "postgres.default_privileges_revoke"} {
+			runner := &cliRecordingRunner{}
+			app := postgresCLIApp(t, runner)
+			argv := []string{"exec", fn}
+			for _, flag := range []string{"--name", "--object-name", "--object-type"} {
+				if flag == missing {
+					continue
+				}
+				argv = append(argv, flag, "value")
+			}
+			argv = append(argv, "-o", "json")
+			code, _, errS := captureCode(t, app, argv...)
+			if code != ExitInvalidInput || !strings.Contains(errS, "missing required argument") ||
+				len(runner.calls) != 0 {
+				t.Fatalf("%s missing %s code=%d err=%q calls=%d", fn, missing, code, errS, len(runner.calls))
+			}
+		}
+	}
+
+	// The default_privileges_list required positionals too.
+	for _, missing := range []string{"--name", "--object-type"} {
+		runner := &cliRecordingRunner{}
+		app := postgresCLIApp(t, runner)
+		argv := []string{"exec", "postgres.default_privileges_list"}
+		for _, flag := range []string{"--name", "--object-type"} {
+			if flag == missing {
+				continue
+			}
+			argv = append(argv, flag, "value")
+		}
+		argv = append(argv, "-o", "json")
+		code, _, errS := captureCode(t, app, argv...)
+		if code != ExitInvalidInput || !strings.Contains(errS, "missing required argument") ||
+			len(runner.calls) != 0 {
+			t.Fatalf("list missing %s code=%d err=%q calls=%d", missing, code, errS, len(runner.calls))
+		}
+	}
+
+	// runas is rejected before any Runner invocation.
+	for _, fn := range []string{"postgres.default_privileges_grant", "postgres.default_privileges_revoke"} {
+		runner := &cliRecordingRunner{}
+		app := postgresCLIApp(t, runner)
+		code, _, errS := captureCode(t, app, "exec", fn,
+			"--name", "baruwa", "--object-name", "awl", "--object-type", "table",
+			"--defprivileges", "SELECT", "--runas", "postgres", "-o", "json")
+		if code != ExitFailed || !strings.Contains(errS, "runas") || len(runner.calls) != 0 {
+			t.Fatalf("%s runas code=%d err=%q calls=%d", fn, code, errS, len(runner.calls))
+		}
+	}
+
+	// A mutation-time Runner failure whose raw text embeds argv and the
+	// environment surfaces redacted through the CLI.
+	leak := &statementLeakRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(ownerCLITableCSV)},
+		{ExitCode: 0, Stdout: []byte(defCLIGrantTableCSV)},
+	}}
+	app = postgresCLIApp(t, leak)
+	code, out, errS = captureCode(t, app, "exec", "postgres.default_privileges_grant",
+		"--name", "baruwa", "--object-name", "awl", "--object-type", "table",
+		"--defprivileges", "SELECT", "--password", "testpassword", "-o", "json")
 	if code != ExitFailed || out != "" || errS == "" {
 		t.Fatalf("runner failure code=%d out=%q err=%q", code, out, errS)
 	}
