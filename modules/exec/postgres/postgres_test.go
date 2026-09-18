@@ -346,9 +346,9 @@ func TestPostgresVersionInvalidInputs(t *testing.T) {
 	}
 }
 
-// TestPostgresRegistrySurface pins the thirty-four canonical registrations,
+// TestPostgresRegistrySurface pins the forty canonical registrations,
 // their argument prototypes, and the absence of public psql_query,
-// has_default_privileges, and _parsed_version entries.
+// has_default_privileges, create_metadata, and _parsed_version entries.
 func TestPostgresRegistrySurface(t *testing.T) {
 	reg := runtime.NewExecRegistry()
 	if err := Register(reg); err != nil {
@@ -356,6 +356,7 @@ func TestPostgresRegistrySurface(t *testing.T) {
 	}
 	wantNames := []string{
 		"postgres.available_extensions",
+		"postgres.create_extension",
 		"postgres.db_create",
 		"postgres.db_exists",
 		"postgres.db_list",
@@ -363,6 +364,7 @@ func TestPostgresRegistrySurface(t *testing.T) {
 		"postgres.default_privileges_grant",
 		"postgres.default_privileges_list",
 		"postgres.default_privileges_revoke",
+		"postgres.drop_extension",
 		"postgres.get_available_extension",
 		"postgres.get_installed_extension",
 		"postgres.group_create",
@@ -372,15 +374,19 @@ func TestPostgresRegistrySurface(t *testing.T) {
 		"postgres.installed_extensions",
 		"postgres.is_available_extension",
 		"postgres.is_installed_extension",
+		"postgres.language_create",
 		"postgres.language_exists",
 		"postgres.language_list",
+		"postgres.language_remove",
 		"postgres.privileges_grant",
 		"postgres.privileges_list",
 		"postgres.privileges_revoke",
 		"postgres.role_get",
+		"postgres.schema_create",
 		"postgres.schema_exists",
 		"postgres.schema_get",
 		"postgres.schema_list",
+		"postgres.schema_remove",
 		"postgres.tablespace_exists",
 		"postgres.tablespace_list",
 		"postgres.user_create",
@@ -436,6 +442,16 @@ func TestPostgresRegistrySurface(t *testing.T) {
 			want = DefaultPrivilegesGrantArgs{}
 		case "postgres.default_privileges_revoke":
 			want = DefaultPrivilegesRevokeArgs{}
+		case "postgres.create_extension":
+			want = CreateExtensionArgs{}
+		case "postgres.drop_extension":
+			want = DropExtensionArgs{}
+		case "postgres.language_create", "postgres.language_remove":
+			want = LanguageMutationArgs{}
+		case "postgres.schema_create":
+			want = SchemaCreateArgs{}
+		case "postgres.schema_remove":
+			want = SchemaRemoveArgs{}
 		case "postgres.db_exists", "postgres.tablespace_exists",
 			"postgres.user_exists",
 			"postgres.get_available_extension", "postgres.get_installed_extension",
@@ -459,11 +475,13 @@ func TestPostgresRegistrySurface(t *testing.T) {
 			t.Fatalf("%s prototype = %#v, want zero-value defaults %#v", name, fn.Args(), want)
 		}
 	}
-	// The generic query surface and the private helpers stay unregistered.
+	// The generic query surface and the private helpers stay unregistered;
+	// create_metadata keeps its pending public name until a later round.
 	for _, pending := range []string{
 		"postgres.psql_query",
 		"postgres._parsed_version",
 		"postgres.has_default_privileges",
+		"postgres.create_metadata",
 	} {
 		if _, ok := reg.Get(pending); ok {
 			t.Fatalf("%s must not be publicly registered", pending)
@@ -491,11 +509,19 @@ func TestPostgresRegistrySurface(t *testing.T) {
 		{getInstalledExtensionFunc{}, append([]string{"name"}, connection...)},
 		{isAvailableExtensionFunc{}, append([]string{"name"}, connection...)},
 		{isInstalledExtensionFunc{}, append([]string{"name"}, connection...)},
+		{createExtensionFunc{}, append([]string{
+			"name", "if_not_exists", "schema", "ext_version", "from_version",
+		}, connection...)},
+		{dropExtensionFunc{}, append([]string{"name", "if_exists", "restrict", "cascade"}, connection...)},
 		{languageListFunc{}, connection},
 		{languageExistsFunc{}, append([]string{"name"}, connection...)},
+		{languageCreateFunc{}, append([]string{"name"}, connection...)},
+		{languageRemoveFunc{}, append([]string{"name"}, connection...)},
 		{schemaListFunc{}, schemaConnection},
 		{schemaGetFunc{}, append([]string{"name"}, schemaConnection...)},
 		{schemaExistsFunc{}, append([]string{"name"}, schemaConnection...)},
+		{schemaCreateFunc{}, append([]string{"name", "owner"}, schemaConnection...)},
+		{schemaRemoveFunc{}, append([]string{"name"}, schemaConnection...)},
 		{roleGetFunc{}, append(append([]string{"name"}, connection...), "return_password")},
 		{userExistsFunc{}, append([]string{"name"}, connection...)},
 		{userCreateFunc{}, append([]string{
@@ -9236,6 +9262,1347 @@ func TestPostgresTransportSecretNormalization(t *testing.T) {
 			if strings.Contains(output, secret) {
 				t.Fatal("transport leaked a secret form")
 			}
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// R9.2m schema_create / schema_remove — pinned
+// salt/modules/postgres.py:2316-2366, 2369-2441.
+
+// schemaMutationCSV is the schema catalog with testschema present: the
+// schema_create preflight hit and both schema_remove checks' hit answer.
+const schemaMutationCSV = "name,owner,acl\n" +
+	"public,postgres,\"{postgres=UC/postgres,=UC/postgres}\"\n" +
+	"testschema,postgres,\"\"\n"
+
+// schemaAbsentCSV is the same catalog without testschema: the create
+// preflight miss and the remove post-check miss.
+const schemaAbsentCSV = "name,owner,acl\n" +
+	"public,postgres,\"{postgres=UC/postgres,=UC/postgres}\"\n"
+
+// TestPostgresSchemaCreateArgvAndResult ports the pinned test_schema_create
+// (test_postgres.py:1320-1357): the exact pinned argv — every connection
+// flag, the maintenance database, and the CREATE SCHEMA statement — after
+// the one catalog preflight call, with the db_password redacted. The
+// pinned runas="user" argument is rejected before execution by the
+// single-user runtime, so it is absent here.
+func TestPostgresSchemaCreateArgvAndResult(t *testing.T) {
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(schemaAbsentCSV)},
+		process.CommandResult{ExitCode: 0},
+	)
+	value, err := (schemaCreateFunc{}).Execute(context.Background(), rt, &SchemaCreateArgs{
+		DBName:     "maint_db",
+		Name:       "testschema",
+		DBUser:     postgresString("testuser"),
+		DBHost:     postgresString("testhost"),
+		DBPort:     postgresString("testport"),
+		DBPassword: postgresString("testpassword"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true {
+		t.Fatalf("schema_create = %#v, want true", value)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("runner calls = %d, want 2 (preflight plus CREATE)", len(runner.calls))
+	}
+	command := runner.calls[1]
+	want := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--username", "testuser",
+		"--host", "testhost",
+		"--port", "testport",
+		"--dbname", "maint_db",
+		"-c", `CREATE SCHEMA "testschema"`,
+	}
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+	wantEnv := []string{
+		"PGPASSWORD=testpassword",
+		"PGUSER=testuser",
+		"PGHOST=testhost",
+		"PGPORT=testport",
+	}
+	if !reflect.DeepEqual(command.Env, wantEnv) {
+		t.Fatalf("env = %q, want %q", command.Env, wantEnv)
+	}
+	if command.Shell {
+		t.Fatal("psql must run without a shell")
+	}
+	if command.Timeout != commandTimeout ||
+		command.MaxStdoutBytes != outputLimit || command.MaxStderrBytes != outputLimit {
+		t.Fatalf("unsafe command bounds: %#v", command)
+	}
+	if !reflect.DeepEqual(command.Redact, []string{"testpassword"}) {
+		t.Fatalf("redact = %q", command.Redact)
+	}
+	if strings.Contains(command.RedactedString(), "testpassword") {
+		t.Fatalf("rendered command leaks the password: %q", command.RedactedString())
+	}
+}
+
+// TestPostgresSchemaCreateShapes pins the remaining pinned create flows: an
+// existing schema is the logged-and-False no-op after one catalog call, the
+// AUTHORIZATION owner clause renders exactly, and a rejected CREATE answers
+// the pinned retcode boolean false, never an error.
+func TestPostgresSchemaCreateShapes(t *testing.T) {
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(schemaMutationCSV)},
+	)
+	value, err := (schemaCreateFunc{}).Execute(context.Background(), rt, &SchemaCreateArgs{
+		DBName: "test_db",
+		Name:   "testschema",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != false {
+		t.Fatalf("schema_create(existing) = %#v, want false", value)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("existing calls = %d, want 1", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(schemaAbsentCSV)},
+		process.CommandResult{ExitCode: 0},
+	)
+	value, err = (schemaCreateFunc{}).Execute(context.Background(), rt, &SchemaCreateArgs{
+		DBName: "maint_db",
+		Name:   "testschema",
+		Owner:  postgresString("owner_role"),
+	})
+	if err != nil || value != true {
+		t.Fatalf("owner clause = %#v err = %v, want true", value, err)
+	}
+	statement := runner.calls[1].Args
+	if got := statement[len(statement)-1]; got != `CREATE SCHEMA "testschema" AUTHORIZATION "owner_role"` {
+		t.Fatalf("owner statement = %q", got)
+	}
+
+	rt, _ = newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(schemaAbsentCSV)},
+		process.CommandResult{ExitCode: 1, Stderr: []byte(`psql: error: ERROR: permission denied for database`)},
+	)
+	value, err = (schemaCreateFunc{}).Execute(context.Background(), rt, &SchemaCreateArgs{
+		DBName: "maint_db",
+		Name:   "testschema",
+	})
+	if err != nil || value != false {
+		t.Fatalf("rejected CREATE = %#v err = %v, want false", value, err)
+	}
+
+	// An empty-string owner keeps the pinned quoted empty identifier.
+	rt, runner = newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(schemaAbsentCSV)},
+		process.CommandResult{ExitCode: 0},
+	)
+	if _, err := (schemaCreateFunc{}).Execute(context.Background(), rt, &SchemaCreateArgs{
+		DBName: "maint_db",
+		Name:   "testschema",
+		Owner:  postgresString(""),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	statement = runner.calls[1].Args
+	if got := statement[len(statement)-1]; got != `CREATE SCHEMA "testschema" AUTHORIZATION ""` {
+		t.Fatalf("empty owner statement = %q", got)
+	}
+}
+
+// TestPostgresSchemaRemoveArgvAndResult ports the pinned test_schema_remove
+// (test_postgres.py:1374-1411): the preflight catalog hit, the exact pinned
+// DROP SCHEMA argv, and the post-check miss deciding true — three calls,
+// with the DROP retcode never consulted.
+func TestPostgresSchemaRemoveArgvAndResult(t *testing.T) {
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(schemaMutationCSV)},
+		process.CommandResult{ExitCode: 0},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(schemaAbsentCSV)},
+	)
+	value, err := (schemaRemoveFunc{}).Execute(context.Background(), rt, &SchemaRemoveArgs{
+		DBName:     "maint_db",
+		Name:       "testschema",
+		DBUser:     postgresString("testuser"),
+		DBHost:     postgresString("testhost"),
+		DBPort:     postgresString("testport"),
+		DBPassword: postgresString("testpassword"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true {
+		t.Fatalf("schema_remove = %#v, want true", value)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("runner calls = %d, want 3 (preflight, DROP, post-check)", len(runner.calls))
+	}
+	command := runner.calls[1]
+	want := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--username", "testuser",
+		"--host", "testhost",
+		"--port", "testport",
+		"--dbname", "maint_db",
+		"-c", `DROP SCHEMA "testschema"`,
+	}
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+	if !reflect.DeepEqual(command.Redact, []string{"testpassword"}) {
+		t.Fatalf("redact = %q", command.Redact)
+	}
+	if strings.Contains(command.RedactedString(), "testpassword") {
+		t.Fatalf("rendered command leaks the password: %q", command.RedactedString())
+	}
+	// The post-check is the catalog query, never a second DROP.
+	if last := runner.calls[2]; strings.HasPrefix(last.Args[len(last.Args)-1], "DROP") {
+		t.Fatalf("unexpected second DROP: %q", last.Args)
+	}
+}
+
+// TestPostgresSchemaRemoveShapes pins the remaining pinned remove flows: a
+// missing schema is the logged-and-False no-op after one catalog call (the
+// pinned user=None preflight keeps the db_* tuple), a failed DROP that
+// leaves the schema present is the logged-and-False answer after all three
+// calls, and the pinned flow's user argument reaches the DROP — rejected
+// by the single-user runtime after the connection-less preflight.
+func TestPostgresSchemaRemoveShapes(t *testing.T) {
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(schemaAbsentCSV)},
+	)
+	value, err := (schemaRemoveFunc{}).Execute(context.Background(), rt, &SchemaRemoveArgs{
+		DBName: "test_db",
+		Name:   "testschema",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != false {
+		t.Fatalf("schema_remove(missing) = %#v, want false", value)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("missing calls = %d, want 1", len(runner.calls))
+	}
+
+	// The DROP retcode is ignored; the schema still exists afterwards, so
+	// the pinned answer is false after all three calls.
+	rt, runner = newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(schemaMutationCSV)},
+		process.CommandResult{ExitCode: 1, Stderr: []byte("psql: error: ERROR: dependent objects exist")},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(schemaMutationCSV)},
+	)
+	value, err = (schemaRemoveFunc{}).Execute(context.Background(), rt, &SchemaRemoveArgs{
+		DBName: "maint_db",
+		Name:   "testschema",
+	})
+	if err != nil || value != false {
+		t.Fatalf("schema_remove(failed drop) = %#v err = %v, want false", value, err)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("failed-drop calls = %d, want 3", len(runner.calls))
+	}
+
+	// The pinned user argument is the psql runas of the DROP and the
+	// post-check, but the pinned preflight drops it explicitly: the
+	// catalog call runs first and the runas rejection fires at the DROP.
+	rt, runner = newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(schemaMutationCSV)},
+	)
+	_, err = (schemaRemoveFunc{}).Execute(context.Background(), rt, &SchemaRemoveArgs{
+		DBName: "maint_db",
+		Name:   "testschema",
+		User:   postgresString("user"),
+	})
+	if !errors.Is(err, errPostgresRunas) {
+		t.Fatalf("user runas err = %v", err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runas flow calls = %d, want 1 (connection-less preflight only)", len(runner.calls))
+	}
+}
+
+// TestPostgresSchemaMutationGuards pins the fail-closed identifier boundary
+// and the shared transport guards for the schema family: the value-free
+// quote rejections before any Runner invocation, the create preflight's
+// runas rejection through the pinned user argument, and pre-cancellation.
+func TestPostgresSchemaMutationGuards(t *testing.T) {
+	rt, runner := newPostgresRuntime()
+	_, err := (schemaCreateFunc{}).Execute(context.Background(), rt, &SchemaCreateArgs{
+		DBName: "maint_db",
+		Name:   `x"; DROP SCHEMA public; --`,
+	})
+	if err == nil || err.Error() != "postgres: invalid argument: unsupported quote character in name" {
+		t.Fatalf("injected name err = %v", err)
+	}
+	if !errors.Is(err, errPostgresInvalidArgument) {
+		t.Fatalf("injected name err = %v, want invalid argument", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("injected name executed %d commands", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime()
+	_, err = (schemaCreateFunc{}).Execute(context.Background(), rt, &SchemaCreateArgs{
+		DBName: "maint_db",
+		Name:   "testschema",
+		Owner:  postgresString(`o"; DROP ROLE postgres; --`),
+	})
+	if err == nil || err.Error() != "postgres: invalid argument: unsupported quote character in owner" {
+		t.Fatalf("injected owner err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("injected owner executed %d commands", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime()
+	_, err = (schemaRemoveFunc{}).Execute(context.Background(), rt, &SchemaRemoveArgs{
+		DBName: "maint_db",
+		Name:   `x"; DROP SCHEMA public; --`,
+	})
+	if err == nil || err.Error() != "postgres: invalid argument: unsupported quote character in name" {
+		t.Fatalf("remove injected name err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("remove injected name executed %d commands", len(runner.calls))
+	}
+
+	// The create preflight passes the pinned user argument as the runas,
+	// so it rejects before any Runner invocation.
+	rt, runner = newPostgresRuntime()
+	_, err = (schemaCreateFunc{}).Execute(context.Background(), rt, &SchemaCreateArgs{
+		DBName: "maint_db",
+		Name:   "testschema",
+		User:   postgresString("user"),
+	})
+	if !errors.Is(err, errPostgresRunas) {
+		t.Fatalf("create runas err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("create runas executed %d commands", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := (schemaCreateFunc{}).Execute(ctx, rt, &SchemaCreateArgs{DBName: "d", Name: "s"}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("pre-canceled ctx err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("canceled run executed %d commands", len(runner.calls))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// R9.2m create_extension / drop_extension / create_metadata — pinned
+// salt/modules/postgres.py:1895-1962, 1965-2063, 1849-1892.
+
+// extMutAvailableCSV is the pg_available_extensions catalog naming foo.
+const extMutAvailableCSV = "name,default_version,comment\nfoo,1.4,foo extension\n"
+
+// extMutHeaderCSV is an empty installed-extensions catalog (header only).
+const extMutHeaderCSV = "extname,extversion,extrelocatable,schema_name\n"
+
+// extMutInstalledCSV is an installed catalog whose foo row is relocatable,
+// parked in public, and older than 1.4: the TO_MOVE and TO_UPGRADE source.
+const extMutInstalledCSV = "extname,extversion,extrelocatable,schema_name\n" +
+	"foo,0.8,t,foo\n"
+
+// extMutCurrentCSV is an installed catalog whose foo row is up to date and
+// already parked in the target schema: plain INSTALLED metadata.
+const extMutCurrentCSV = "extname,extversion,extrelocatable,schema_name\n" +
+	"foo,1.4,t,b\n"
+
+// extMutSettledABCSV is the settled catalog for the full-options CREATE
+// vector: the requested schema "a" and version "b" leave plain INSTALLED.
+const extMutSettledABCSV = "extname,extversion,extrelocatable,schema_name\n" +
+	"foo,b,t,a\n"
+
+// extMutSettledCSV is the settled catalog for the ALTER vectors: the
+// pinned ext_version "a" and target schema "b" leave plain INSTALLED.
+const extMutSettledCSV = "extname,extversion,extrelocatable,schema_name\n" +
+	"foo,a,t,b\n"
+
+// TestPostgresCreateExtensionArgvAndResult ports the create half of the
+// pinned test_create_extension_newerthan sequence: the fresh CREATE (with
+// and without the full WITH clause set) on the full pinned argv with the
+// pinned space before the semicolon, and the failed CREATE answering
+// False through the recomputed metadata.
+func TestPostgresCreateExtensionArgvAndResult(t *testing.T) {
+	// create succeeded: NOT_INSTALLED → INSTALLED.
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(extMutHeaderCSV)}, // metadata
+		process.CommandResult{ExitCode: 0, Stdout: []byte(extMutAvailableCSV)},
+		process.CommandResult{ExitCode: 0}, // CREATE EXTENSION
+		process.CommandResult{ExitCode: 0, Stdout: []byte(extMutCurrentCSV)},
+	)
+	value, err := (createExtensionFunc{}).Execute(context.Background(), rt, &CreateExtensionArgs{
+		Name:          "foo",
+		User:          postgresString("testuser"),
+		Host:          postgresString("testhost"),
+		Port:          postgresString("testport"),
+		MaintenanceDB: postgresString("maint_db"),
+		Password:      postgresString("testpassword"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true {
+		t.Fatalf("create_extension = %#v, want true", value)
+	}
+	if len(runner.calls) != 4 {
+		t.Fatalf("runner calls = %d, want 4 (metadata, available, CREATE, metadata)", len(runner.calls))
+	}
+	command := runner.calls[2]
+	want := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--username", "testuser",
+		"--host", "testhost",
+		"--port", "testport",
+		"--dbname", "maint_db",
+		"-c", `CREATE EXTENSION IF NOT EXISTS "foo" ;`,
+	}
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+	if !reflect.DeepEqual(command.Redact, []string{"testpassword"}) {
+		t.Fatalf("redact = %q", command.Redact)
+	}
+	if strings.Contains(command.RedactedString(), "testpassword") {
+		t.Fatalf("rendered command leaks the password: %q", command.RedactedString())
+	}
+
+	// The full WITH clause set renders the pinned order and spacing.
+	rt, runner = newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(extMutHeaderCSV)},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(extMutAvailableCSV)},
+		process.CommandResult{ExitCode: 0},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(extMutSettledABCSV)},
+	)
+	value, err = (createExtensionFunc{}).Execute(context.Background(), rt, &CreateExtensionArgs{
+		Name:        "foo",
+		Schema:      postgresString("a"),
+		ExtVersion:  postgresString("b"),
+		FromVersion: postgresString("c"),
+	})
+	if err != nil || value != true {
+		t.Fatalf("full options = %#v err = %v, want true", value, err)
+	}
+	statement := runner.calls[2].Args
+	if got := statement[len(statement)-1]; got != `CREATE EXTENSION IF NOT EXISTS "foo" WITH SCHEMA "a" VERSION b FROM c ;` {
+		t.Fatalf("full options statement = %q", got)
+	}
+
+	// create failed: the recomputed metadata still says NOT_INSTALLED.
+	rt, runner = newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(extMutHeaderCSV)},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(extMutAvailableCSV)},
+		process.CommandResult{ExitCode: 1, Stderr: []byte("psql: error: ERROR: extension not available")},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(extMutHeaderCSV)},
+	)
+	value, err = (createExtensionFunc{}).Execute(context.Background(), rt, &CreateExtensionArgs{Name: "foo"})
+	if err != nil || value != false {
+		t.Fatalf("failed create = %#v err = %v, want false", value, err)
+	}
+	if len(runner.calls) != 4 {
+		t.Fatalf("failed create calls = %d, want 4", len(runner.calls))
+	}
+}
+
+// TestPostgresCreateExtensionAlterFlows ports the ALTER half of the pinned
+// test_create_extension_newerthan sequence: move+upgrade, move only,
+// upgrade only, and the failed move and upgrade tails — each statement
+// byte-for-byte on the full argv with the per-clause semicolons.
+func TestPostgresCreateExtensionAlterFlows(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		schema     string
+		extVersion string
+		firstCSV   string
+		lastCSV    string
+		want       string
+		value      bool
+	}{
+		{
+			name:       "move and upgrade",
+			schema:     "b",
+			extVersion: "a",
+			firstCSV:   extMutInstalledCSV,
+			lastCSV:    extMutSettledCSV,
+			want:       `ALTER EXTENSION "foo" SET SCHEMA "b"; ALTER EXTENSION "foo" UPDATE TO a;`,
+			value:      true,
+		},
+		{
+			name:     "move only",
+			schema:   "b",
+			firstCSV: extMutInstalledCSV,
+			lastCSV:  extMutCurrentCSV,
+			want:     `ALTER EXTENSION "foo" SET SCHEMA "b";`,
+			value:    true,
+		},
+		{
+			name:       "upgrade only",
+			extVersion: "a",
+			firstCSV:   extMutInstalledCSV,
+			lastCSV:    extMutSettledCSV,
+			want:       `ALTER EXTENSION "foo" UPDATE TO a;`,
+			value:      true,
+		},
+		{
+			name:       "upgrade failed",
+			schema:     "b",
+			extVersion: "a",
+			firstCSV:   extMutInstalledCSV,
+			lastCSV:    extMutInstalledCSV,
+			want:       `ALTER EXTENSION "foo" SET SCHEMA "b"; ALTER EXTENSION "foo" UPDATE TO a;`,
+			value:      false,
+		},
+		{
+			name:     "move failed",
+			schema:   "b",
+			firstCSV: extMutInstalledCSV,
+			lastCSV:  extMutInstalledCSV,
+			want:     `ALTER EXTENSION "foo" SET SCHEMA "b";`,
+			value:    false,
+		},
+	} {
+		rt, runner := newPostgresRuntime(
+			process.CommandResult{ExitCode: 0, Stdout: []byte(tc.firstCSV)},
+			process.CommandResult{ExitCode: 0, Stdout: []byte(extMutAvailableCSV)},
+			process.CommandResult{ExitCode: 0},
+			process.CommandResult{ExitCode: 0, Stdout: []byte(tc.lastCSV)},
+		)
+		args := &CreateExtensionArgs{Name: "foo"}
+		if tc.schema != "" {
+			args.Schema = postgresString(tc.schema)
+		}
+		if tc.extVersion != "" {
+			args.ExtVersion = postgresString(tc.extVersion)
+		}
+		value, err := (createExtensionFunc{}).Execute(context.Background(), rt, args)
+		if err != nil {
+			t.Fatalf("%s err = %v", tc.name, err)
+		}
+		if value != tc.value {
+			t.Fatalf("%s = %#v, want %v", tc.name, value, tc.value)
+		}
+		if len(runner.calls) != 4 {
+			t.Fatalf("%s calls = %d, want 4", tc.name, len(runner.calls))
+		}
+		statement := runner.calls[2].Args
+		if got := statement[len(statement)-1]; got != tc.want {
+			t.Fatalf("%s statement = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestPostgresCreateExtensionUnavailable pins the is_available_extension
+// gate: an unavailable extension issues no statement at all, and the
+// boolean is decided purely by the recomputed metadata — an installed but
+// unavailable extension is True, a missing one False.
+func TestPostgresCreateExtensionUnavailable(t *testing.T) {
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(extMutHeaderCSV)},
+		process.CommandResult{ExitCode: 0, Stdout: []byte("name,default_version\nbar,1.0\n")},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(extMutHeaderCSV)},
+	)
+	value, err := (createExtensionFunc{}).Execute(context.Background(), rt, &CreateExtensionArgs{Name: "foo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != false {
+		t.Fatalf("unavailable create = %#v, want false", value)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("unavailable calls = %d, want 3 (no statement)", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(extMutCurrentCSV)},
+		process.CommandResult{ExitCode: 0, Stdout: []byte("name,default_version\nbar,1.0\n")},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(extMutCurrentCSV)},
+	)
+	value, err = (createExtensionFunc{}).Execute(context.Background(), rt, &CreateExtensionArgs{Name: "foo"})
+	if err != nil || value != true {
+		t.Fatalf("installed unavailable = %#v err = %v, want true", value, err)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("installed unavailable calls = %d, want 3", len(runner.calls))
+	}
+
+	// The availability match is case-insensitive like the pinned
+	// is_available_extension, while the installed lookup stays exact-case.
+	rt, runner = newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(extMutHeaderCSV)},
+		process.CommandResult{ExitCode: 0, Stdout: []byte("name,default_version\nFOO,1.4\n")},
+		process.CommandResult{ExitCode: 0},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(extMutCurrentCSV)},
+	)
+	value, err = (createExtensionFunc{}).Execute(context.Background(), rt, &CreateExtensionArgs{Name: "foo"})
+	if err != nil || value != true {
+		t.Fatalf("case-insensitive availability = %#v err = %v, want true", value, err)
+	}
+}
+
+// TestPostgresCreateMetadataVectors pins the internal create_metadata
+// ladder directly: the exact-case miss, the LooseVersion TO_UPGRADE
+// comparisons (including the pinned .get fallbacks), the relocatable
+// TO_MOVE conditions, and the is-not-None versus truthiness distinction
+// between the metadata checks and the clause guards.
+func TestPostgresCreateMetadataVectors(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		csv        string
+		extVersion *string
+		schema     *string
+		want       []string
+	}{{
+		name: "miss is not installed",
+		csv:  extMutHeaderCSV,
+		want: []string{extFlagNotInstalled},
+	},
+		{
+			name: "plain hit is installed",
+			csv:  extMutCurrentCSV,
+			want: []string{extFlagInstalled},
+		},
+		{
+			name:       "older extversion to upgrade",
+			csv:        extMutInstalledCSV,
+			extVersion: postgresString("1.4"),
+			want:       []string{extFlagInstalled, extFlagToUpgrade},
+		},
+		{
+			name:       "equal extversion stays installed",
+			csv:        extMutCurrentCSV,
+			extVersion: postgresString("1.4"),
+			want:       []string{extFlagInstalled},
+		},
+		{
+			name:       "newer requested extversion no flag",
+			csv:        extMutCurrentCSV,
+			extVersion: postgresString("1.0"),
+			want:       []string{extFlagInstalled},
+		},
+		{
+			name:       "numeric looser ordering 0.10 after 0.8",
+			csv:        "extname,extversion,extrelocatable,schema_name\nfoo,0.8,t,foo\n",
+			extVersion: postgresString("0.10"),
+			want:       []string{extFlagInstalled, extFlagToUpgrade},
+		},
+		{
+			name:   "relocatable different schema to move",
+			csv:    extMutInstalledCSV,
+			schema: postgresString("b"),
+			want:   []string{extFlagInstalled, extFlagToMove},
+		},
+		{
+			name:   "same schema stays installed",
+			csv:    extMutInstalledCSV,
+			schema: postgresString("foo"),
+			want:   []string{extFlagInstalled},
+		},
+		{
+			name:   "non-relocatable never moves",
+			csv:    "extname,extversion,extrelocatable,schema_name\nfoo,0.8,f,foo\n",
+			schema: postgresString("b"),
+			want:   []string{extFlagInstalled},
+		},
+		{
+			name: "missing columns fall back to the caller values",
+			csv:  "extname,extversion,extrelocatable\nfoo,,t\n",
+			// extversion present but empty and schema_name absent: the
+			// pinned .get fallbacks make the version compare
+			// LooseVersion("") < LooseVersion("1.4") while the missing
+			// schema_name defaults to the caller's schema, which never
+			// differs — so TO_MOVE cannot fire without the column.
+			extVersion: postgresString("1.4"),
+			schema:     postgresString("b"),
+			want:       []string{extFlagInstalled, extFlagToUpgrade},
+		},
+		{
+			name: "nil arguments never trigger a flag",
+			csv:  extMutInstalledCSV,
+			want: []string{extFlagInstalled},
+		},
+		{
+			name:       "empty-string extversion is not none",
+			csv:        extMutInstalledCSV,
+			extVersion: postgresString(""),
+			want:       []string{extFlagInstalled},
+		},
+		{
+			name:   "empty-string schema is not none",
+			csv:    extMutInstalledCSV,
+			schema: postgresString(""),
+			want:   []string{extFlagInstalled, extFlagToMove},
+		},
+	} {
+		rt, _ := newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(tc.csv)})
+		got, err := createMetadata(context.Background(), rt, &pgConnection{}, "foo", tc.extVersion, tc.schema)
+		if err != nil {
+			t.Fatalf("%s err = %v", tc.name, err)
+		}
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Fatalf("%s metadata = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestPostgresDropExtensionArgvAndResult ports the pinned
+// test_drop_extension2/3/1 trio plus the clause variants: the never
+// installed no-DROP True, the installed-then-gone DROP on the exact
+// pinned argv (default CASCADE and the pinned space before the
+// semicolon), and the still-installed False.
+func TestPostgresDropExtensionArgvAndResult(t *testing.T) {
+	// test_drop_extension2: never installed, still absent — True with no
+	// DROP statement.
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(extMutHeaderCSV)},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(extMutHeaderCSV)},
+	)
+	value, err := (dropExtensionFunc{}).Execute(context.Background(), rt, &DropExtensionArgs{Name: "foo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true {
+		t.Fatalf("drop_extension(absent) = %#v, want true", value)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("absent calls = %d, want 2 (no DROP)", len(runner.calls))
+	}
+
+	// test_drop_extension3: installed, then gone — the exact pinned argv.
+	rt, runner = newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(extMutCurrentCSV)},
+		process.CommandResult{ExitCode: 0},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(extMutHeaderCSV)},
+	)
+	value, err = (dropExtensionFunc{}).Execute(context.Background(), rt, &DropExtensionArgs{
+		Name:          "foo",
+		User:          postgresString("testuser"),
+		Host:          postgresString("testhost"),
+		Port:          postgresString("testport"),
+		MaintenanceDB: postgresString("maint_db"),
+		Password:      postgresString("testpassword"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true {
+		t.Fatalf("drop_extension = %#v, want true", value)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("runner calls = %d, want 3 (preflight, DROP, post-check)", len(runner.calls))
+	}
+	command := runner.calls[1]
+	want := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--username", "testuser",
+		"--host", "testhost",
+		"--port", "testport",
+		"--dbname", "maint_db",
+		"-c", `DROP EXTENSION foo CASCADE ;`,
+	}
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+	if !reflect.DeepEqual(command.Redact, []string{"testpassword"}) {
+		t.Fatalf("redact = %q", command.Redact)
+	}
+	if strings.Contains(command.RedactedString(), "testpassword") {
+		t.Fatalf("rendered command leaks the password: %q", command.RedactedString())
+	}
+
+	// test_drop_extension1: installed, still installed — False after the
+	// full three-call flow.
+	rt, runner = newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(extMutCurrentCSV)},
+		process.CommandResult{ExitCode: 1, Stderr: []byte("psql: error: ERROR: dependent objects")},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(extMutCurrentCSV)},
+	)
+	value, err = (dropExtensionFunc{}).Execute(context.Background(), rt, &DropExtensionArgs{Name: "foo"})
+	if err != nil || value != false {
+		t.Fatalf("failed drop = %#v err = %v, want false", value, err)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("failed drop calls = %d, want 3", len(runner.calls))
+	}
+
+	// Clause variants keep the pinned join: IF EXISTS, RESTRICT, and the
+	// clause-less shape when both cascade and restrict are false.
+	for _, tc := range []struct {
+		name                        string
+		ifExists, cascade, restrict *bool
+		want                        string
+	}{
+		{"if exists", postgresBool(true), nil, nil, `DROP EXTENSION IF EXISTS foo CASCADE ;`},
+		{"restrict", nil, postgresBool(false), postgresBool(true), `DROP EXTENSION foo RESTRICT ;`},
+		{"no clauses", nil, postgresBool(false), postgresBool(false), `DROP EXTENSION foo ;`},
+		{"explicit cascade", nil, postgresBool(true), nil, `DROP EXTENSION foo CASCADE ;`},
+	} {
+		rt, runner = newPostgresRuntime(
+			process.CommandResult{ExitCode: 0, Stdout: []byte(extMutCurrentCSV)},
+			process.CommandResult{ExitCode: 0},
+			process.CommandResult{ExitCode: 0, Stdout: []byte(extMutHeaderCSV)},
+		)
+		value, err := (dropExtensionFunc{}).Execute(context.Background(), rt, &DropExtensionArgs{
+			Name:     "foo",
+			IfExists: tc.ifExists,
+			Cascade:  tc.cascade,
+			Restrict: tc.restrict,
+		})
+		if err != nil || value != true {
+			t.Fatalf("%s = %#v err = %v, want true", tc.name, value, err)
+		}
+		statement := runner.calls[1].Args
+		if got := statement[len(statement)-1]; got != tc.want {
+			t.Fatalf("%s statement = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestPostgresExtensionMutationGuards pins the fail-closed identifier
+// boundaries of the extension family: the raw DROP name must be a bare
+// identifier, the quoted create positions may not carry the double quote,
+// the raw version tokens may not carry anything outside the version class,
+// runas rejects before any Runner invocation, and pre-cancellation holds.
+func TestPostgresExtensionMutationGuards(t *testing.T) {
+	for _, tc := range []struct {
+		fn   string
+		args any
+		want string
+	}{
+		{
+			fn:   "postgres.drop_extension",
+			args: &DropExtensionArgs{Name: `foo; DROP SCHEMA public`},
+			want: "postgres: invalid argument: unsupported identifier in name",
+		},
+		{
+			fn:   "postgres.drop_extension",
+			args: &DropExtensionArgs{Name: `f"oo`},
+			want: "postgres: invalid argument: unsupported identifier in name",
+		},
+		{
+			fn:   "postgres.drop_extension",
+			args: &DropExtensionArgs{Name: ""},
+			want: "postgres: invalid argument: unsupported identifier in name",
+		},
+		{
+			fn:   "postgres.create_extension",
+			args: &CreateExtensionArgs{Name: `fo"o`},
+			want: "postgres: invalid argument: unsupported quote character in name",
+		},
+		{
+			fn:   "postgres.create_extension",
+			args: &CreateExtensionArgs{Name: "foo", Schema: postgresString(`a"; DROP SCHEMA public; --`)},
+			want: "postgres: invalid argument: unsupported quote character in schema",
+		},
+		{
+			fn:   "postgres.create_extension",
+			args: &CreateExtensionArgs{Name: "foo", ExtVersion: postgresString("1.0; DROP SCHEMA public")},
+			want: "postgres: invalid argument: unsupported identifier in ext_version",
+		},
+		{
+			fn:   "postgres.create_extension",
+			args: &CreateExtensionArgs{Name: "foo", FromVersion: postgresString("1.0--x")},
+			want: "postgres: invalid argument: unsupported identifier in from_version",
+		},
+	} {
+		rt, runner := newPostgresRuntime()
+		var err error
+		switch tc.fn {
+		case "postgres.drop_extension":
+			_, err = (dropExtensionFunc{}).Execute(context.Background(), rt, tc.args.(*DropExtensionArgs))
+		case "postgres.create_extension":
+			_, err = (createExtensionFunc{}).Execute(context.Background(), rt, tc.args.(*CreateExtensionArgs))
+		}
+		if err == nil || err.Error() != tc.want {
+			t.Fatalf("%s err = %v, want %q", tc.fn, err, tc.want)
+		}
+		if !errors.Is(err, errPostgresInvalidArgument) {
+			t.Fatalf("%s err = %v, want invalid argument", tc.fn, err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s executed %d commands", tc.fn, len(runner.calls))
+		}
+	}
+
+	// A dot is a legal version token: the dotted version passes
+	// validation (only the canceled context stops the flow, proving no
+	// invalid-argument rejection fired).
+	rt, runner := newPostgresRuntime()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := (createExtensionFunc{}).Execute(ctx, rt, &CreateExtensionArgs{
+		Name:       "foo",
+		ExtVersion: postgresString("1.4.0"),
+	}); !errors.Is(err, context.Canceled) || errors.Is(err, errPostgresInvalidArgument) {
+		t.Fatalf("dotted version err = %v, want cancellation (not a rejection)", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("canceled dotted-version run executed %d commands", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime()
+	_, err := (dropExtensionFunc{}).Execute(context.Background(), rt, &DropExtensionArgs{
+		Name:  "foo",
+		Runas: postgresString("postgres"),
+	})
+	if !errors.Is(err, errPostgresRunas) {
+		t.Fatalf("runas err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("runas executed %d commands", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime()
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	cancel2()
+	if _, err := (createExtensionFunc{}).Execute(ctx2, rt, &CreateExtensionArgs{Name: "foo"}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("pre-canceled ctx err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("canceled run executed %d commands", len(runner.calls))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// R9.2m language_create / language_remove — pinned
+// salt/modules/postgres.py:2698-2750, 2753-2805.
+
+// languageMutationCSV is the pinned get_test_list_language_csv fixture.
+const languageMutationCSV = "Name\ninternal\nc\nsql\nplpgsql\n"
+
+// TestPostgresLanguageCreateArgvAndResult ports the pinned
+// test_language_create (test_postgres.py:1474-1514): the exact pinned argv
+// after the connection-less preflight, the pinned quirk that the preflight
+// catalog call carries none of the connection arguments, and the retcode
+// boolean. The pinned runas="user" argument is rejected before execution
+// by the single-user runtime, so it is absent here.
+func TestPostgresLanguageCreateArgvAndResult(t *testing.T) {
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(languageMutationCSV)},
+		process.CommandResult{ExitCode: 0},
+	)
+	value, err := (languageCreateFunc{}).Execute(context.Background(), rt, &LanguageMutationArgs{
+		Name:          "plpythonu",
+		MaintenanceDB: "testdb",
+		User:          postgresString("testuser"),
+		Host:          postgresString("testhost"),
+		Port:          postgresString("testport"),
+		Password:      postgresString("testpassword"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true {
+		t.Fatalf("language_create = %#v, want true", value)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("runner calls = %d, want 2 (preflight plus CREATE)", len(runner.calls))
+	}
+	// The pinned preflight passes only (name, maintenance_db): the
+	// catalog call carries no connection flags at all.
+	preflight := append([]string{runner.calls[0].Name}, runner.calls[0].Args...)
+	joined := strings.Join(preflight, "\x00")
+	for _, flag := range []string{"--username", "--host", "--port"} {
+		if strings.Contains(joined, flag) {
+			t.Fatalf("preflight argv carries %s: %q", flag, preflight)
+		}
+	}
+	if !strings.Contains(joined, "\x00--dbname\x00testdb\x00") {
+		t.Fatalf("preflight argv = %q, want the maintenance database", preflight)
+	}
+	command := runner.calls[1]
+	want := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--username", "testuser",
+		"--host", "testhost",
+		"--port", "testport",
+		"--dbname", "testdb",
+		"-c", "CREATE LANGUAGE plpythonu",
+	}
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+	if !reflect.DeepEqual(command.Redact, []string{"testpassword"}) {
+		t.Fatalf("redact = %q", command.Redact)
+	}
+	if strings.Contains(command.RedactedString(), "testpassword") {
+		t.Fatalf("rendered command leaks the password: %q", command.RedactedString())
+	}
+}
+
+// TestPostgresLanguageCreateShapes pins the pinned existing-language no-op
+// and the rejected-CREATE retcode boolean.
+func TestPostgresLanguageCreateShapes(t *testing.T) {
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(languageMutationCSV)},
+	)
+	value, err := (languageCreateFunc{}).Execute(context.Background(), rt, &LanguageMutationArgs{
+		Name:          "plpgsql",
+		MaintenanceDB: "testdb",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != false {
+		t.Fatalf("language_create(existing) = %#v, want false", value)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("existing calls = %d, want 1", len(runner.calls))
+	}
+
+	rt, _ = newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(languageMutationCSV)},
+		process.CommandResult{ExitCode: 1, Stderr: []byte("psql: error: ERROR: language already exists")},
+	)
+	value, err = (languageCreateFunc{}).Execute(context.Background(), rt, &LanguageMutationArgs{
+		Name:          "plpythonu",
+		MaintenanceDB: "testdb",
+	})
+	if err != nil || value != false {
+		t.Fatalf("rejected CREATE = %#v err = %v, want false", value, err)
+	}
+}
+
+// TestPostgresLanguageRemoveArgvAndResult ports the pinned
+// test_language_remove (test_postgres.py:1534-1574): the exact pinned
+// argv, the connection-less preflight quirk, and the retcode boolean with
+// no post-check in the pinned flow.
+func TestPostgresLanguageRemoveArgvAndResult(t *testing.T) {
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(languageMutationCSV)},
+		process.CommandResult{ExitCode: 0},
+	)
+	value, err := (languageRemoveFunc{}).Execute(context.Background(), rt, &LanguageMutationArgs{
+		Name:          "plpgsql",
+		MaintenanceDB: "testdb",
+		User:          postgresString("testuser"),
+		Host:          postgresString("testhost"),
+		Port:          postgresString("testport"),
+		Password:      postgresString("testpassword"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true {
+		t.Fatalf("language_remove = %#v, want true", value)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("runner calls = %d, want 2 (preflight plus DROP)", len(runner.calls))
+	}
+	preflight := append([]string{runner.calls[0].Name}, runner.calls[0].Args...)
+	joinedPreflight := strings.Join(preflight, "\x00")
+	for _, flag := range []string{"--username", "--host", "--port"} {
+		if strings.Contains(joinedPreflight, flag) {
+			t.Fatalf("preflight argv carries %s: %q", flag, preflight)
+		}
+	}
+	command := runner.calls[1]
+	want := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--username", "testuser",
+		"--host", "testhost",
+		"--port", "testport",
+		"--dbname", "testdb",
+		"-c", "DROP LANGUAGE plpgsql",
+	}
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+}
+
+// TestPostgresLanguageRemoveShapes pins the pinned missing-language no-op
+// (test_language_remove_non_exist) and the rejected-DROP retcode boolean.
+func TestPostgresLanguageRemoveShapes(t *testing.T) {
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(languageMutationCSV)},
+	)
+	value, err := (languageRemoveFunc{}).Execute(context.Background(), rt, &LanguageMutationArgs{
+		Name:          "plpythonu",
+		MaintenanceDB: "testdb",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != false {
+		t.Fatalf("language_remove(missing) = %#v, want false", value)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("missing calls = %d, want 1", len(runner.calls))
+	}
+
+	rt, _ = newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(languageMutationCSV)},
+		process.CommandResult{ExitCode: 1, Stderr: []byte("psql: error: ERROR: language is required")},
+	)
+	value, err = (languageRemoveFunc{}).Execute(context.Background(), rt, &LanguageMutationArgs{
+		Name:          "plpgsql",
+		MaintenanceDB: "testdb",
+	})
+	if err != nil || value != false {
+		t.Fatalf("rejected DROP = %#v err = %v, want false", value, err)
+	}
+}
+
+// The catalog preflight must redact without using the caller's authentication.
+func TestPostgresLanguagePreflightRedaction(t *testing.T) {
+	const marker = "synthetic-language-preflight-marker"
+	for _, name := range []string{"postgres.language_create", "postgres.language_remove"} {
+		for _, registry := range []bool{false, true} {
+			for _, db := range []string{"maintenance", "db_" + marker + "_overlap"} {
+				t.Run(fmt.Sprintf("%s/registry=%t/overlap=%t", name, registry, strings.Contains(db, marker)), func(t *testing.T) {
+					rt, runner := newPostgresRuntime(process.CommandResult{
+						Err:    errors.New("first catalog failure: " + marker + " " + db),
+						Stdout: []byte(marker), Stderr: []byte(marker),
+					})
+					a := &LanguageMutationArgs{Name: "plpgsql", MaintenanceDB: db,
+						User: postgresString("ignored-user"), Host: postgresString("ignored-host"),
+						Port: postgresString("1234"), Password: postgresString(marker), Runas: postgresString("ignored-runas")}
+					var value any
+					var err error
+					if registry {
+						rt.Exec = runtime.NewExecRegistry()
+						if err := Register(rt.Exec); err != nil {
+							t.Fatal(err)
+						}
+						value, err = rt.Exec.Call(context.Background(), rt, name, a)
+					} else if name == "postgres.language_create" {
+						value, err = (languageCreateFunc{}).Execute(context.Background(), rt, a)
+					} else {
+						value, err = (languageRemoveFunc{}).Execute(context.Background(), rt, a)
+					}
+					if value != nil || err == nil || strings.Contains(err.Error(), marker) || !strings.Contains(err.Error(), "first catalog failure") {
+						t.Fatal("first catalog error must survive without the synthetic marker")
+					}
+					if len(runner.calls) != 1 {
+						t.Fatalf("calls = %d, want one catalog and zero mutations", len(runner.calls))
+					}
+					cmd := runner.calls[0]
+					want := []string{"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password", "--dbname", db,
+						"-v", "datestyle=ISO,MDY", "-c", `COPY (SELECT lanname AS "Name" FROM pg_language) TO STDOUT WITH CSV HEADER`}
+					if !reflect.DeepEqual(append([]string{cmd.Name}, cmd.Args...), want) || cmd.Shell {
+						t.Fatal("pinned catalog argv changed")
+					}
+					if cmd.Env == nil || len(cmd.Env) != 0 {
+						t.Fatal("preflight must have a clean environment without authentication")
+					}
+					if !reflect.DeepEqual(cmd.Redact, []string{marker}) || strings.Contains(cmd.RedactedString(), marker) {
+						t.Fatal("preflight redaction missing")
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestPostgresCreateExtensionEmptyVersions(t *testing.T) {
+	for _, registry := range []bool{false, true} {
+		for _, field := range []string{"omitted", "ext_version", "from_version", "both"} {
+			for _, installed := range []bool{false, true} {
+				t.Run(fmt.Sprintf("registry=%t/%s/installed=%t", registry, field, installed), func(t *testing.T) {
+					a := &CreateExtensionArgs{Name: "foo", User: postgresString("u"), Host: postgresString("h"), Port: postgresString("5432"), MaintenanceDB: postgresString("d")}
+					if field == "ext_version" || field == "both" {
+						a.ExtVersion = postgresString("")
+					}
+					if field == "from_version" || field == "both" {
+						a.FromVersion = postgresString("")
+					}
+					first := extMutHeaderCSV
+					if installed {
+						first = extMutCurrentCSV
+					}
+					results := []process.CommandResult{{Stdout: []byte(first)}, {Stdout: []byte(extMutAvailableCSV)}}
+					queries := []string{
+						"COPY (select a.*, b.nspname as schema_name from pg_extension a,  pg_namespace b where a.extnamespace = b.oid) TO STDOUT WITH CSV HEADER",
+						"COPY (select * from pg_available_extensions()) TO STDOUT WITH CSV HEADER",
+					}
+					if !installed {
+						results = append(results, process.CommandResult{})
+						queries = append(queries, `CREATE EXTENSION IF NOT EXISTS "foo" ;`)
+					}
+					results = append(results, process.CommandResult{Stdout: []byte(extMutCurrentCSV)})
+					queries = append(queries, queries[0])
+					rt, runner := newPostgresRuntime(results...)
+					var value any
+					var err error
+					if registry {
+						rt.Exec = runtime.NewExecRegistry()
+						if err := Register(rt.Exec); err != nil {
+							t.Fatal(err)
+						}
+						value, err = rt.Exec.Call(context.Background(), rt, "postgres.create_extension", a)
+					} else {
+						value, err = (createExtensionFunc{}).Execute(context.Background(), rt, a)
+					}
+					if err != nil || value != true {
+						t.Fatalf("result = %v, err = %v", value, err)
+					}
+					if len(runner.calls) != len(queries) {
+						t.Fatalf("calls = %d, want %d", len(runner.calls), len(queries))
+					}
+					for i, query := range queries {
+						want := []string{"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password", "--username", "u", "--host", "h", "--port", "5432", "--dbname", "d"}
+						if strings.HasPrefix(query, "COPY") {
+							want = append(want, "-v", "datestyle=ISO,MDY")
+						}
+						want = append(want, "-c", query)
+						cmd := runner.calls[i]
+						if !reflect.DeepEqual(append([]string{cmd.Name}, cmd.Args...), want) || cmd.Shell {
+							t.Fatalf("call %d = %q, want %q", i, cmd.Args, want)
+						}
+					}
+					// Empty pointers remain present; omission stays nil. In particular,
+					// createMetadata receives ExtVersion unchanged, not a truthiness default.
+					if (a.ExtVersion != nil) != (field == "ext_version" || field == "both") || (a.FromVersion != nil) != (field == "from_version" || field == "both") {
+						t.Fatal("version presence changed")
+					}
+				})
+			}
+		}
+	}
+}
+
+// TestPostgresLanguageMutationGuards pins the raw-language-name boundary
+// and the shared transport guards for the language family.
+func TestPostgresLanguageMutationGuards(t *testing.T) {
+	for _, fn := range []string{"postgres.language_create", "postgres.language_remove"} {
+		rt, runner := newPostgresRuntime()
+		var err error
+		if fn == "postgres.language_create" {
+			_, err = (languageCreateFunc{}).Execute(context.Background(), rt, &LanguageMutationArgs{
+				Name:          "plpythonu; DROP SCHEMA public",
+				MaintenanceDB: "testdb",
+			})
+		} else {
+			_, err = (languageRemoveFunc{}).Execute(context.Background(), rt, &LanguageMutationArgs{
+				Name:          `pl"x`,
+				MaintenanceDB: "testdb",
+			})
+		}
+		if err == nil || err.Error() != "postgres: invalid argument: unsupported identifier in name" {
+			t.Fatalf("%s err = %v, want the value-free identifier rejection", fn, err)
+		}
+		if !errors.Is(err, errPostgresInvalidArgument) {
+			t.Fatalf("%s err = %v, want invalid argument", fn, err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s executed %d commands", fn, len(runner.calls))
+		}
+	}
+
+	rt, runner := newPostgresRuntime()
+	_, err := (languageCreateFunc{}).Execute(context.Background(), rt, &LanguageMutationArgs{
+		Name:          "plpythonu",
+		MaintenanceDB: "testdb",
+		Runas:         postgresString("postgres"),
+	})
+	if !errors.Is(err, errPostgresRunas) {
+		t.Fatalf("runas err = %v", err)
+	}
+	// The pinned connection-less preflight carries no runas, so exactly
+	// the catalog call runs before the rejection fires at the CREATE.
+	if len(runner.calls) != 1 {
+		t.Fatalf("runas executed %d commands, want 1 (connection-less preflight)", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := (languageRemoveFunc{}).Execute(ctx, rt, &LanguageMutationArgs{
+		Name:          "plpgsql",
+		MaintenanceDB: "testdb",
+	}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("pre-canceled ctx err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("canceled run executed %d commands", len(runner.calls))
+	}
+}
+
+// TestPostgresMutationValidationErrorsRedactedThroughRegistry loops every
+// rejected R9.2m field through the registry Call path with the rejected
+// value embedding a synthetic marker: the stable value-free error must
+// carry no marker and no Runner call may happen at all, because every
+// R9.2m validation precedes the first preflight.
+func TestPostgresMutationValidationErrorsRedactedThroughRegistry(t *testing.T) {
+	const marker = "pgmark-7f3c-secret"
+	for _, tc := range []struct {
+		fn   string
+		args any
+		want string
+	}{
+		{
+			fn:   "postgres.schema_create",
+			args: &SchemaCreateArgs{DBName: "d", Name: `x"` + marker},
+			want: "postgres: invalid argument: unsupported quote character in name",
+		},
+		{
+			fn:   "postgres.schema_create",
+			args: &SchemaCreateArgs{DBName: "d", Name: "s", Owner: postgresString(`o"` + marker)},
+			want: "postgres: invalid argument: unsupported quote character in owner",
+		},
+		{
+			fn:   "postgres.schema_remove",
+			args: &SchemaRemoveArgs{DBName: "d", Name: `x"` + marker},
+			want: "postgres: invalid argument: unsupported quote character in name",
+		},
+		{
+			fn:   "postgres.create_extension",
+			args: &CreateExtensionArgs{Name: `x"` + marker},
+			want: "postgres: invalid argument: unsupported quote character in name",
+		},
+		{
+			fn:   "postgres.create_extension",
+			args: &CreateExtensionArgs{Name: "foo", Schema: postgresString(`a"` + marker)},
+			want: "postgres: invalid argument: unsupported quote character in schema",
+		},
+		{
+			fn:   "postgres.create_extension",
+			args: &CreateExtensionArgs{Name: "foo", ExtVersion: postgresString("1.0 " + marker)},
+			want: "postgres: invalid argument: unsupported identifier in ext_version",
+		},
+		{
+			fn:   "postgres.create_extension",
+			args: &CreateExtensionArgs{Name: "foo", FromVersion: postgresString(marker + ";")},
+			want: "postgres: invalid argument: unsupported identifier in from_version",
+		},
+		{
+			fn:   "postgres.drop_extension",
+			args: &DropExtensionArgs{Name: marker + ";"},
+			want: "postgres: invalid argument: unsupported identifier in name",
+		},
+		{
+			fn:   "postgres.language_create",
+			args: &LanguageMutationArgs{Name: marker + ";", MaintenanceDB: "d"},
+			want: "postgres: invalid argument: unsupported identifier in name",
+		},
+		{
+			fn:   "postgres.language_remove",
+			args: &LanguageMutationArgs{Name: marker, MaintenanceDB: "d"},
+			want: "postgres: invalid argument: unsupported identifier in name",
+		},
+	} {
+		rt, runner := newPostgresRuntime()
+		rt.Exec = runtime.NewExecRegistry()
+		if err := Register(rt.Exec); err != nil {
+			t.Fatal(err)
+		}
+		_, err := rt.Exec.Call(context.Background(), rt, tc.fn, tc.args)
+		if err == nil || err.Error() != tc.want {
+			t.Fatalf("%s err = %v, want %q", tc.fn, err, tc.want)
+		}
+		if strings.Contains(err.Error(), marker) {
+			t.Fatalf("%s error leaks the rejected value: %v", tc.fn, err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s executed %d commands, want 0", tc.fn, len(runner.calls))
 		}
 	}
 }

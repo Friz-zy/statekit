@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -3127,4 +3128,647 @@ func TestPostgresCLIDefaultPrivilegesMutationFailures(t *testing.T) {
 	if strings.Contains(leak.calls[2].RedactedString(), "testpassword") {
 		t.Fatalf("rendered command leaks password: %q", leak.calls[2].RedactedString())
 	}
+}
+
+// cliSchemaAbsentCSV is the schema catalog without testschema: the
+// schema_create preflight miss and the schema_remove post-check miss.
+const cliSchemaAbsentCSV = "name,owner,acl\n" +
+	"public,postgres,\"{postgres=UC/postgres,=UC/postgres}\"\n"
+
+// cliSchemaMutationCSV is the same catalog with testschema present.
+const cliSchemaMutationCSV = "name,owner,acl\n" +
+	"public,postgres,\"{postgres=UC/postgres,=UC/postgres}\"\n" +
+	"testschema,postgres,\"\"\n"
+
+// TestPostgresCLISchemaCreate drives the R9.2m schema create path end to
+// end with the pinned test_schema_create flags (the pinned runas="user"
+// rejected by the single-user runtime): the pinned CREATE SCHEMA statement
+// on the full argv after the catalog preflight, the db_password redaction,
+// the AUTHORIZATION owner clause, and the existing-schema false shape.
+func TestPostgresCLISchemaCreate(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(cliSchemaAbsentCSV)},
+		{ExitCode: 0},
+	}}
+	app := postgresCLIApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "postgres.schema_create",
+		"--dbname", "maint_db", "--name", "testschema",
+		"--db-user", "testuser", "--db-host", "testhost",
+		"--db-port", "testport", "--db-password", "testpassword", "-o", "json")
+	var created bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &created) != nil || !created {
+		t.Fatalf("schema_create code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("runner calls = %d, want 2", len(runner.calls))
+	}
+	command := runner.calls[1]
+	argv := append([]string{command.Name}, command.Args...)
+	if len(argv) != 15 || argv[13] != "-c" || argv[14] != `CREATE SCHEMA "testschema"` {
+		t.Fatalf("argv = %q", argv)
+	}
+	if command.Shell || len(command.Redact) != 1 || command.Redact[0] != "testpassword" {
+		t.Fatalf("unsafe command: %#v", command)
+	}
+	if strings.Contains(command.RedactedString(), "testpassword") ||
+		strings.Contains(out+errS, "testpassword") {
+		t.Fatalf("password leaked: %q %q", command.RedactedString(), out+errS)
+	}
+
+	// The owner clause renders on the same pinned argv.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(cliSchemaAbsentCSV)},
+		{ExitCode: 0},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.schema_create",
+		"--dbname", "maint_db", "--name", "testschema",
+		"--owner", "owner_role", "-o", "json")
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &created) != nil || !created {
+		t.Fatalf("owner code=%d out=%q err=%q", code, out, errS)
+	}
+	ownerArgs := runner.calls[1].Args
+	if got := ownerArgs[len(ownerArgs)-1]; got != `CREATE SCHEMA "testschema" AUTHORIZATION "owner_role"` {
+		t.Fatalf("owner statement = %q", got)
+	}
+
+	// An existing schema answers false after exactly the preflight call.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(cliSchemaMutationCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.schema_create",
+		"--dbname", "test_db", "--name", "testschema", "-o", "json")
+	var exists bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &exists) != nil || exists {
+		t.Fatalf("existing code=%d out=%q err=%q, want false", code, out, errS)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("existing calls = %d, want 1", len(runner.calls))
+	}
+
+	// The required dbname and name fail validation before any run, an
+	// injected name fails closed the same value-free way, and runas (the
+	// pinned user argument) rejects before any run.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.schema_create", "-o", "json")
+	if code != ExitInvalidInput || !strings.Contains(errS, "dbname") || len(runner.calls) != 0 {
+		t.Fatalf("missing dbname code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.schema_create",
+		"--dbname", "d", "-o", "json")
+	if code != ExitInvalidInput || !strings.Contains(errS, "name") || len(runner.calls) != 0 {
+		t.Fatalf("missing name code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.schema_create",
+		"--dbname", "d", "--name", `x"-`+"pgmark", "-o", "json")
+	if code != ExitFailed ||
+		!strings.Contains(errS, "postgres: invalid argument: unsupported quote character in name") ||
+		len(runner.calls) != 0 {
+		t.Fatalf("injected name code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.schema_create",
+		"--dbname", "d", "--name", "s", "--user", "postgres", "-o", "json")
+	if code != ExitFailed || !strings.Contains(errS, "runas") || len(runner.calls) != 0 {
+		t.Fatalf("user code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+}
+
+// TestPostgresCLISchemaRemove drives the R9.2m schema remove path end to
+// end: the pinned DROP SCHEMA statement on the full argv between the
+// preflight and post-check catalog calls, the missing-schema false shape,
+// and the failed-drop false shape.
+func TestPostgresCLISchemaRemove(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(cliSchemaMutationCSV)},
+		{ExitCode: 0}, // DROP SCHEMA (retcode ignored by the pinned flow)
+		{ExitCode: 0, Stdout: []byte(cliSchemaAbsentCSV)},
+	}}
+	app := postgresCLIApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "postgres.schema_remove",
+		"--dbname", "maint_db", "--name", "testschema",
+		"--db-user", "testuser", "--db-host", "testhost",
+		"--db-port", "testport", "--db-password", "testpassword", "-o", "json")
+	var removed bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &removed) != nil || !removed {
+		t.Fatalf("schema_remove code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("runner calls = %d, want 3", len(runner.calls))
+	}
+	command := runner.calls[1]
+	argv := append([]string{command.Name}, command.Args...)
+	if len(argv) != 15 || argv[13] != "-c" || argv[14] != `DROP SCHEMA "testschema"` {
+		t.Fatalf("argv = %q", argv)
+	}
+	if command.Shell || len(command.Redact) != 1 || command.Redact[0] != "testpassword" {
+		t.Fatalf("unsafe command: %#v", command)
+	}
+
+	// A missing schema answers false after one catalog call.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(cliSchemaAbsentCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.schema_remove",
+		"--dbname", "test_db", "--name", "testschema", "-o", "json")
+	var missing bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &missing) != nil || missing {
+		t.Fatalf("missing code=%d out=%q err=%q, want false", code, out, errS)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("missing calls = %d, want 1", len(runner.calls))
+	}
+
+	// The failed DROP that leaves the schema present answers false after
+	// the full three-call flow.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(cliSchemaMutationCSV)},
+		{ExitCode: 1, Stderr: []byte("psql: error: ERROR: dependent objects")},
+		{ExitCode: 0, Stdout: []byte(cliSchemaMutationCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.schema_remove",
+		"--dbname", "maint_db", "--name", "testschema", "-o", "json")
+	var failed bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &failed) != nil || failed {
+		t.Fatalf("failed drop code=%d out=%q err=%q, want false", code, out, errS)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("failed drop calls = %d, want 3", len(runner.calls))
+	}
+
+	// An injected name fails closed before any run.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.schema_remove",
+		"--dbname", "d", "--name", `x"-`+"pgmark", "-o", "json")
+	if code != ExitFailed ||
+		!strings.Contains(errS, "postgres: invalid argument: unsupported quote character in name") ||
+		len(runner.calls) != 0 {
+		t.Fatalf("injected name code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+}
+
+// cliExtAvailableCSV names foo in the available catalog.
+const cliExtAvailableCSV = "name,default_version,comment\nfoo,1.4,foo extension\n"
+
+// cliExtHeaderCSV is an empty installed-extensions catalog.
+const cliExtHeaderCSV = "extname,extversion,extrelocatable,schema_name\n"
+
+// cliExtInstalledCSV carries the relocatable, older foo row.
+const cliExtInstalledCSV = "extname,extversion,extrelocatable,schema_name\n" +
+	"foo,0.8,t,foo\n"
+
+// cliExtCurrentCSV carries the settled foo row (target schema and version).
+const cliExtCurrentCSV = "extname,extversion,extrelocatable,schema_name\n" +
+	"foo,1.4,t,b\n"
+
+// TestPostgresCLICreateExtension drives the R9.2m create_extension path
+// end to end: the pinned CREATE EXTENSION statement (default IF NOT
+// EXISTS, the full WITH clause set, the explicit --if-not-exists=false),
+// the ALTER move+upgrade shape, and the unavailable false shape.
+func TestPostgresCLICreateExtension(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(cliExtHeaderCSV)}, // metadata
+		{ExitCode: 0, Stdout: []byte(cliExtAvailableCSV)},
+		{ExitCode: 0}, // CREATE EXTENSION
+		{ExitCode: 0, Stdout: []byte(cliExtCurrentCSV)},
+	}}
+	app := postgresCLIApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "postgres.create_extension",
+		"--name", "foo", "--user", "testuser", "--host", "testhost",
+		"--port", "testport", "--maintenance-db", "maint_db",
+		"--password", "testpassword", "-o", "json")
+	var created bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &created) != nil || !created {
+		t.Fatalf("create_extension code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 4 {
+		t.Fatalf("runner calls = %d, want 4", len(runner.calls))
+	}
+	command := runner.calls[2]
+	argv := append([]string{command.Name}, command.Args...)
+	if len(argv) != 15 || argv[13] != "-c" || argv[14] != `CREATE EXTENSION IF NOT EXISTS "foo" ;` {
+		t.Fatalf("argv = %q", argv)
+	}
+	if command.Shell || len(command.Redact) != 1 || command.Redact[0] != "testpassword" {
+		t.Fatalf("unsafe command: %#v", command)
+	}
+	if strings.Contains(command.RedactedString(), "testpassword") ||
+		strings.Contains(out+errS, "testpassword") {
+		t.Fatalf("password leaked: %q %q", command.RedactedString(), out+errS)
+	}
+
+	// The full WITH clause set on the same flow.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(cliExtHeaderCSV)},
+		{ExitCode: 0, Stdout: []byte(cliExtAvailableCSV)},
+		{ExitCode: 0},
+		{ExitCode: 0, Stdout: []byte(cliExtCurrentCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.create_extension",
+		"--name", "foo", "--schema", "b", "--ext-version", "1.4",
+		"--from-version", "unpackaged", "-o", "json")
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &created) != nil || !created {
+		t.Fatalf("full options code=%d out=%q err=%q", code, out, errS)
+	}
+	if got := lastCommandArg(runner, 2); got != `CREATE EXTENSION IF NOT EXISTS "foo" WITH SCHEMA "b" VERSION 1.4 FROM unpackaged ;` {
+		t.Fatalf("full options statement = %q", got)
+	}
+
+	// --if-not-exists=false drops the clause.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(cliExtHeaderCSV)},
+		{ExitCode: 0, Stdout: []byte(cliExtAvailableCSV)},
+		{ExitCode: 0},
+		{ExitCode: 0, Stdout: []byte(cliExtCurrentCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.create_extension",
+		"--name", "foo", "--if-not-exists=false", "-o", "json")
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &created) != nil || !created {
+		t.Fatalf("if-not-exists=false code=%d out=%q err=%q", code, out, errS)
+	}
+	if got := lastCommandArg(runner, 2); got != `CREATE EXTENSION "foo" ;` {
+		t.Fatalf("if-not-exists=false statement = %q", got)
+	}
+
+	// The installed branch renders the pinned ALTER pair.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(cliExtInstalledCSV)},
+		{ExitCode: 0, Stdout: []byte(cliExtAvailableCSV)},
+		{ExitCode: 0},
+		{ExitCode: 0, Stdout: []byte(cliExtCurrentCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.create_extension",
+		"--name", "foo", "--schema", "b", "--ext-version", "1.4", "-o", "json")
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &created) != nil || !created {
+		t.Fatalf("alter code=%d out=%q err=%q", code, out, errS)
+	}
+	if got := lastCommandArg(runner, 2); got != `ALTER EXTENSION "foo" SET SCHEMA "b"; ALTER EXTENSION "foo" UPDATE TO 1.4;` {
+		t.Fatalf("alter statement = %q", got)
+	}
+
+	// An unavailable extension issues no statement and answers false.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(cliExtHeaderCSV)},
+		{ExitCode: 0, Stdout: []byte("name,default_version\nbar,1.0\n")},
+		{ExitCode: 0, Stdout: []byte(cliExtHeaderCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.create_extension",
+		"--name", "foo", "-o", "json")
+	var unavailable bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &unavailable) != nil || unavailable {
+		t.Fatalf("unavailable code=%d out=%q err=%q, want false", code, out, errS)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("unavailable calls = %d, want 3 (no statement)", len(runner.calls))
+	}
+
+	// The required name fails validation before any run, an injected
+	// version token fails closed value-free, and runas rejects the same
+	// way.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.create_extension", "-o", "json")
+	if code != ExitInvalidInput || !strings.Contains(errS, "name") || len(runner.calls) != 0 {
+		t.Fatalf("missing name code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.create_extension",
+		"--name", "foo", "--ext-version", "1.0; "+strings.Repeat("pgmark", 1), "-o", "json")
+	if code != ExitFailed ||
+		!strings.Contains(errS, "postgres: invalid argument: unsupported identifier in ext_version") ||
+		len(runner.calls) != 0 {
+		t.Fatalf("injected version code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.create_extension",
+		"--name", "foo", "--runas", "postgres", "-o", "json")
+	if code != ExitFailed || !strings.Contains(errS, "runas") || len(runner.calls) != 0 {
+		t.Fatalf("runas code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+}
+
+// TestPostgresCLIDropExtension drives the R9.2m drop_extension path end
+// to end: the default CASCADE statement with the pinned space before the
+// semicolon, the IF EXISTS variant, the never-installed true shape with no
+// statement, and the still-installed false shape.
+func TestPostgresCLIDropExtension(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(cliExtCurrentCSV)},
+		{ExitCode: 0},
+		{ExitCode: 0, Stdout: []byte(cliExtHeaderCSV)},
+	}}
+	app := postgresCLIApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "postgres.drop_extension",
+		"--name", "foo", "--user", "testuser", "--host", "testhost",
+		"--port", "testport", "--maintenance-db", "maint_db",
+		"--password", "testpassword", "-o", "json")
+	var dropped bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &dropped) != nil || !dropped {
+		t.Fatalf("drop_extension code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("runner calls = %d, want 3", len(runner.calls))
+	}
+	command := runner.calls[1]
+	argv := append([]string{command.Name}, command.Args...)
+	if len(argv) != 15 || argv[13] != "-c" || argv[14] != `DROP EXTENSION foo CASCADE ;` {
+		t.Fatalf("argv = %q", argv)
+	}
+	if command.Shell || len(command.Redact) != 1 || command.Redact[0] != "testpassword" {
+		t.Fatalf("unsafe command: %#v", command)
+	}
+	if strings.Contains(command.RedactedString(), "testpassword") ||
+		strings.Contains(out+errS, "testpassword") {
+		t.Fatalf("password leaked: %q %q", command.RedactedString(), out+errS)
+	}
+
+	// IF EXISTS renders before the raw name.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(cliExtCurrentCSV)},
+		{ExitCode: 0},
+		{ExitCode: 0, Stdout: []byte(cliExtHeaderCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.drop_extension",
+		"--name", "foo", "--if-exists", "-o", "json")
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &dropped) != nil || !dropped {
+		t.Fatalf("if-exists code=%d out=%q err=%q", code, out, errS)
+	}
+	if got := lastCommandArg(runner, 1); got != `DROP EXTENSION IF EXISTS foo CASCADE ;` {
+		t.Fatalf("if-exists statement = %q", got)
+	}
+
+	// A never-installed extension answers true with no statement.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(cliExtHeaderCSV)},
+		{ExitCode: 0, Stdout: []byte(cliExtHeaderCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.drop_extension",
+		"--name", "foo", "-o", "json")
+	var absent bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &absent) != nil || !absent {
+		t.Fatalf("absent code=%d out=%q err=%q, want true", code, out, errS)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("absent calls = %d, want 2 (no statement)", len(runner.calls))
+	}
+
+	// A still-installed extension answers false after the full flow.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(cliExtCurrentCSV)},
+		{ExitCode: 1, Stderr: []byte("psql: error: ERROR: dependent objects")},
+		{ExitCode: 0, Stdout: []byte(cliExtCurrentCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.drop_extension",
+		"--name", "foo", "-o", "json")
+	var failed bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &failed) != nil || failed {
+		t.Fatalf("failed code=%d out=%q err=%q, want false", code, out, errS)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("failed calls = %d, want 3", len(runner.calls))
+	}
+
+	// An injected raw name fails closed before any run.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.drop_extension",
+		"--name", "foo; "+strings.Repeat("pgmark", 1), "-o", "json")
+	if code != ExitFailed ||
+		!strings.Contains(errS, "postgres: invalid argument: unsupported identifier in name") ||
+		len(runner.calls) != 0 {
+		t.Fatalf("injected name code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+}
+
+// TestPostgresCLILanguageMutations drives the R9.2m language create and
+// remove paths end to end with the pinned test arguments: the pinned
+// CREATE/DROP LANGUAGE statements on the full argv after the
+// connection-less preflight, the existing/missing no-op false shapes, and
+// the value-free identifier rejection.
+func TestPostgresCLILanguageMutations(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(pinnedCLILanguageCSV)},
+		{ExitCode: 0},
+	}}
+	app := postgresCLIApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "postgres.language_create",
+		"--name", "plpythonu", "--maintenance-db", "testdb",
+		"--user", "testuser", "--host", "testhost", "--port", "testport",
+		"--password", "testpassword", "-o", "json")
+	var created bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &created) != nil || !created {
+		t.Fatalf("language_create code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("runner calls = %d, want 2", len(runner.calls))
+	}
+	// The pinned preflight passes only (name, maintenance_db): the
+	// catalog call carries no connection flags.
+	preflight := append([]string{runner.calls[0].Name}, runner.calls[0].Args...)
+	joined := strings.Join(preflight, " ")
+	for _, flag := range []string{"--username", "--host", "--port"} {
+		if strings.Contains(joined, flag) {
+			t.Fatalf("preflight argv carries %s: %q", flag, preflight)
+		}
+	}
+	command := runner.calls[1]
+	argv := append([]string{command.Name}, command.Args...)
+	if len(argv) != 15 || argv[13] != "-c" || argv[14] != "CREATE LANGUAGE plpythonu" {
+		t.Fatalf("argv = %q", argv)
+	}
+	if command.Shell || len(command.Redact) != 1 || command.Redact[0] != "testpassword" {
+		t.Fatalf("unsafe command: %#v", command)
+	}
+
+	// The existing-language no-op answers false after one catalog call.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(pinnedCLILanguageCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.language_create",
+		"--name", "plpgsql", "--maintenance-db", "testdb", "-o", "json")
+	var exists bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &exists) != nil || exists {
+		t.Fatalf("existing code=%d out=%q err=%q, want false", code, out, errS)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("existing calls = %d, want 1", len(runner.calls))
+	}
+
+	// The remove flow mirrors create on the pinned DROP argv.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(pinnedCLILanguageCSV)},
+		{ExitCode: 0},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.language_remove",
+		"--name", "plpgsql", "--maintenance-db", "testdb", "-o", "json")
+	var removed bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &removed) != nil || !removed {
+		t.Fatalf("language_remove code=%d out=%q err=%q", code, out, errS)
+	}
+	if got := lastCommandArg(runner, 1); got != "DROP LANGUAGE plpgsql" {
+		t.Fatalf("statement = %q", got)
+	}
+
+	// The missing-language no-op answers false after one catalog call.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(pinnedCLILanguageCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.language_remove",
+		"--name", "plpythonu", "--maintenance-db", "testdb", "-o", "json")
+	var missing bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &missing) != nil || missing {
+		t.Fatalf("missing code=%d out=%q err=%q, want false", code, out, errS)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("missing calls = %d, want 1", len(runner.calls))
+	}
+
+	// The required name and maintenance_db fail validation before any
+	// run, an injected name fails closed value-free, and runas rejects
+	// after the connection-less preflight exactly like the module test.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.language_create", "-o", "json")
+	if code != ExitInvalidInput || !strings.Contains(errS, "name") || len(runner.calls) != 0 {
+		t.Fatalf("missing name code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.language_create",
+		"--name", "plpythonu", "-o", "json")
+	if code != ExitInvalidInput || !strings.Contains(errS, "maintenance_db") || len(runner.calls) != 0 {
+		t.Fatalf("missing maintenance_db code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.language_remove",
+		"--name", "plpgsql; "+strings.Repeat("pgmark", 1), "--maintenance-db", "d", "-o", "json")
+	if code != ExitFailed ||
+		!strings.Contains(errS, "postgres: invalid argument: unsupported identifier in name") ||
+		len(runner.calls) != 0 {
+		t.Fatalf("injected name code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(pinnedCLILanguageCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.language_create",
+		"--name", "plpythonu", "--maintenance-db", "testdb",
+		"--runas", "postgres", "-o", "json")
+	if code != ExitFailed || !strings.Contains(errS, "runas") || len(runner.calls) != 1 {
+		t.Fatalf("runas code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+}
+
+func TestPostgresCLILanguagePreflightRedaction(t *testing.T) {
+	const marker = "synthetic-language-preflight-marker"
+	for _, fn := range []string{"postgres.language_create", "postgres.language_remove"} {
+		for _, db := range []string{"maintenance", "db_" + marker + "_overlap"} {
+			runner := &cliRecordingRunner{results: []process.CommandResult{{
+				Err:    errors.New("first catalog failure: " + marker + " " + db),
+				Stdout: []byte(marker), Stderr: []byte(marker),
+			}}}
+			code, out, errS := captureCode(t, postgresCLIApp(t, runner), "exec", fn,
+				"--name", "plpgsql", "--maintenance-db", db, "--password", marker,
+				"--user", "ignored-user", "--host", "ignored-host", "--port", "1234", "--runas", "ignored-runas", "-o", "json")
+			if code != ExitFailed || strings.TrimSpace(out) != "" || strings.Contains(out+errS, marker) || !strings.Contains(errS, "first catalog failure") {
+				t.Fatal("CLI must return the redacted first catalog error without stdout")
+			}
+			if len(runner.calls) != 1 {
+				t.Fatalf("%s calls = %d, want one catalog and zero mutations", fn, len(runner.calls))
+			}
+			cmd := runner.calls[0]
+			want := []string{"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password", "--dbname", db,
+				"-v", "datestyle=ISO,MDY", "-c", `COPY (SELECT lanname AS "Name" FROM pg_language) TO STDOUT WITH CSV HEADER`}
+			if !reflect.DeepEqual(append([]string{cmd.Name}, cmd.Args...), want) || cmd.Shell {
+				t.Fatal("pinned catalog argv changed")
+			}
+			if cmd.Env == nil || len(cmd.Env) != 0 {
+				t.Fatal("preflight must not authenticate or inherit environment")
+			}
+			if !reflect.DeepEqual(cmd.Redact, []string{marker}) || strings.Contains(cmd.RedactedString(), marker) {
+				t.Fatal("catalog command leaks synthetic marker")
+			}
+		}
+	}
+}
+
+func TestPostgresCLICreateExtensionEmptyVersions(t *testing.T) {
+	for _, flags := range [][]string{nil, {"--ext-version="}, {"--from-version="}, {"--ext-version=", "--from-version="}} {
+		for _, installed := range []bool{false, true} {
+			first := cliExtHeaderCSV
+			if installed {
+				first = cliExtCurrentCSV
+			}
+			results := []process.CommandResult{{Stdout: []byte(first)}, {Stdout: []byte(cliExtAvailableCSV)}}
+			queries := []string{
+				"COPY (select a.*, b.nspname as schema_name from pg_extension a,  pg_namespace b where a.extnamespace = b.oid) TO STDOUT WITH CSV HEADER",
+				"COPY (select * from pg_available_extensions()) TO STDOUT WITH CSV HEADER",
+			}
+			if !installed {
+				results = append(results, process.CommandResult{})
+				queries = append(queries, `CREATE EXTENSION IF NOT EXISTS "foo" ;`)
+			}
+			results = append(results, process.CommandResult{Stdout: []byte(cliExtCurrentCSV)})
+			queries = append(queries, queries[0])
+			runner := &cliRecordingRunner{results: results}
+			args := []string{"exec", "postgres.create_extension", "--name", "foo", "--user", "u", "--host", "h", "--port", "5432", "--maintenance-db", "d", "-o", "json"}
+			args = append(args, flags...)
+			code, out, errS := captureCode(t, postgresCLIApp(t, runner), args...)
+			if code != ExitOK || strings.TrimSpace(out) != "true" || errS != "" {
+				t.Fatalf("flags=%q installed=%t code=%d out=%q err=%q", flags, installed, code, out, errS)
+			}
+			if len(runner.calls) != len(queries) {
+				t.Fatalf("calls = %d, want %d", len(runner.calls), len(queries))
+			}
+			for i, query := range queries {
+				want := []string{"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password", "--username", "u", "--host", "h", "--port", "5432", "--dbname", "d"}
+				if strings.HasPrefix(query, "COPY") {
+					want = append(want, "-v", "datestyle=ISO,MDY")
+				}
+				want = append(want, "-c", query)
+				cmd := runner.calls[i]
+				if !reflect.DeepEqual(append([]string{cmd.Name}, cmd.Args...), want) || cmd.Shell {
+					t.Fatalf("call %d = %q, want %q", i, cmd.Args, want)
+				}
+			}
+		}
+	}
+	// Nonempty unsafe tokens still fail value-free before any catalog call.
+	for _, field := range []string{"ext-version", "from-version"} {
+		runner := &cliRecordingRunner{}
+		code, out, errS := captureCode(t, postgresCLIApp(t, runner), "exec", "postgres.create_extension", "--name", "foo", "--"+field, "synthetic-version-marker;", "-o", "json")
+		if code != ExitFailed || strings.Contains(out+errS, "synthetic-version-marker") || !strings.Contains(errS, "unsupported identifier in "+strings.ReplaceAll(field, "-", "_")) || len(runner.calls) != 0 {
+			t.Fatal("unsafe nonempty version must fail value-free without execution")
+		}
+	}
+}
+
+// lastCommandArg returns the trailing argument (the SQL statement) of the
+// runner's call at the given index.
+func lastCommandArg(runner *cliRecordingRunner, call int) string {
+	args := runner.calls[call].Args
+	return args[len(args)-1]
 }

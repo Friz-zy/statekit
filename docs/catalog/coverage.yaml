@@ -6,9 +6,9 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    source_inventory_count: 1159
-    catalog_intersection_count: 1137
-    implemented: 1137
+    source_inventory_count: 1165
+    catalog_intersection_count: 1143
+    implemented: 1143
 state:
     salt_modules: 132
     salt_functions: 669
@@ -635,6 +635,7 @@ implemented:
         - pkgutil.is_installed
         - pkgutil.list
         - postgres.available_extensions
+        - postgres.create_extension
         - postgres.db_create
         - postgres.db_exists
         - postgres.db_list
@@ -642,6 +643,7 @@ implemented:
         - postgres.default_privileges_grant
         - postgres.default_privileges_list
         - postgres.default_privileges_revoke
+        - postgres.drop_extension
         - postgres.get_available_extension
         - postgres.get_installed_extension
         - postgres.group_create
@@ -651,15 +653,19 @@ implemented:
         - postgres.installed_extensions
         - postgres.is_available_extension
         - postgres.is_installed_extension
+        - postgres.language_create
         - postgres.language_exists
         - postgres.language_list
+        - postgres.language_remove
         - postgres.privileges_grant
         - postgres.privileges_list
         - postgres.privileges_revoke
         - postgres.role_get
+        - postgres.schema_create
         - postgres.schema_exists
         - postgres.schema_get
         - postgres.schema_list
+        - postgres.schema_remove
         - postgres.tablespace_exists
         - postgres.tablespace_list
         - postgres.user_create

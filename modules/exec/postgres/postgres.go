@@ -104,6 +104,24 @@
 // name, the group name, the schema prefix, and the on-part object
 // positions of the grant_option branch — are validated fail-closed with
 // value-free errors before any Runner invocation.
+// R9.2m adds the schema, extension, and language mutation families
+// schema_create and schema_remove (postgres.py:2316-2366, 2369-2441),
+// create_extension and drop_extension (postgres.py:1895-1962, 1965-2063
+// through the pinned create_metadata lifecycle flags), and
+// language_create and language_remove (postgres.py:2698-2750, 2753-2805):
+// the pinned CREATE/DROP SCHEMA, CREATE/ALTER/DROP EXTENSION, and
+// CREATE/DROP LANGUAGE statements with the pinned existence preflights,
+// post-checks, retcode booleans, and no-op semantics, including the
+// pinned schema_remove preflight that drops the system-user argument and
+// the pinned language preflights that drop every connection argument but
+// the maintenance database. The identifier positions the pinned format
+// strings interpolate raw or double-quote without escaping — the schema
+// name and owner, the extension name and schema, the raw extension name
+// of DROP EXTENSION, the raw ext_version/from_version tokens, and the raw
+// language name — are validated fail-closed with value-free errors
+// before any Runner invocation; create_metadata itself stays pending
+// exactly like a later name and exists only as the internal lifecycle
+// helper create_extension consumes.
 // Like Salt, every invocation is a shell-free psql argv executed through
 // the central Runner; this package links no database driver or protocol
 // client and never contacts a live server by itself. The catalog queries
@@ -1249,6 +1267,15 @@ func ddlValidationError(key string) error {
 // Nothing outside it can alter the fixed statement shape.
 var bareIdentifierRE = regexp.MustCompile(`^[A-Za-z0-9_$]+$`)
 
+// bareVersionRE is the version-token class the pinned CREATE/ALTER
+// EXTENSION statements interpolate raw (VERSION {ext_version},
+// FROM {from_version}): the bare identifier class plus the dot separators
+// real extension version strings carry (pg_available_extensions
+// default_version values such as "1.4"). Nothing outside it can alter the
+// fixed statement shape, so the pinned format string's injection is
+// refused value-free before any Runner invocation.
+var bareVersionRE = regexp.MustCompile(`^[A-Za-z0-9_.$]+$`)
+
 // DbCreateArgs are the canonical postgres.db_create arguments, mirroring
 // the pinned db_create(name, user, host, port, maintenance_db, password,
 // tablespace, encoding, lc_collate, lc_ctype, owner, template, runas)
@@ -1826,11 +1853,363 @@ func (isInstalledExtensionFunc) Execute(ctx context.Context, rt *runtime.Runtime
 	// lookup's truthiness: bool(None) is false and a stored row is never
 	// empty (the pinned filter guarantees both key columns), so len>0 is
 	// the bool(dict) port.
-	installed, err := installedExtensions(ctx, rt, a.connection())
+	return extensionInstalled(ctx, rt, a.connection(), a.Name)
+}
+
+// extensionInstalled is the shared bool(get_installed_extension(...))
+// preflight and post-check of the extension mutations: the exact-case
+// installed-catalog lookup's truthiness over one catalog call.
+func extensionInstalled(ctx context.Context, rt *runtime.Runtime, conn *pgConnection, name string) (bool, error) {
+	installed, err := installedExtensions(ctx, rt, conn)
+	if err != nil {
+		return false, err
+	}
+	return len(installed[name]) > 0, nil
+}
+
+// ---------------------------------------------------------------------------
+// create_extension / drop_extension / create_metadata —
+// salt/modules/postgres.py:1895-1962, 1965-2063, 1849-1892 @ pinned
+// revision.
+
+// The pinned extension lifecycle flags (postgres.py:76-84): the exact
+// strings create_metadata returns and create_extension tests against.
+const (
+	extFlagNotInstalled = "EXTENSION NOT INSTALLED"
+	extFlagInstalled    = "EXTENSION INSTALLED"
+	extFlagToUpgrade    = "EXTENSION TO UPGRADE"
+	extFlagToMove       = "EXTENSION TO MOVE"
+)
+
+// extFlagIn is the pinned `flag in mtdata` list membership.
+func extFlagIn(flags []string, flag string) bool {
+	for _, candidate := range flags {
+		if candidate == flag {
+			return true
+		}
+	}
+	return false
+}
+
+// isOlderExtVer ports the pinned _pg_is_older_ext_ver
+// (postgres.py:1809-1815): LooseVersion(a) < LooseVersion(b) on the
+// internal LooseVersion port, whose comparison is defined for every
+// string pair like Salt's.
+func isOlderExtVer(a, b string) bool {
+	order, _ := parseLooseVersion(a).compare(parseLooseVersion(b))
+	return order < 0
+}
+
+// createMetadata ports the pinned create_metadata (postgres.py:1849-1892):
+// the exact-case installed-catalog lookup whose miss is the single
+// NOT_INSTALLED flag, and whose hit starts from INSTALLED and appends
+// TO_UPGRADE when the caller's ext_version is a LooseVersion-newer one and
+// TO_MOVE when the installed row is relocatable and its schema differs.
+// The .get fallbacks keep the pinned defaults: a missing extversion column
+// falls back to the caller's ext_version and a missing schema_name column
+// to the caller's schema, and both comparisons only run when the caller
+// argument is not None (not when it is an empty string). Internal-only:
+// the public name stays pending exactly like a later registered name, and
+// create_extension and drop_extension are its only callers.
+func createMetadata(ctx context.Context, rt *runtime.Runtime, conn *pgConnection, name string, extVersion, schema *string) ([]string, error) {
+	installed, err := installedExtensions(ctx, rt, conn)
 	if err != nil {
 		return nil, err
 	}
-	return len(installed[a.Name]) > 0, nil
+	row, ok := installed[name]
+	if !ok {
+		return []string{extFlagNotInstalled}, nil
+	}
+	ret := []string{extFlagInstalled}
+	if extVersion != nil {
+		current := *extVersion
+		if value, has := row["extversion"]; has {
+			current = value
+		}
+		if isOlderExtVer(current, *extVersion) {
+			ret = append(ret, extFlagToUpgrade)
+		}
+	}
+	if schema != nil {
+		relocatable := "f"
+		if value, has := row["extrelocatable"]; has {
+			relocatable = value
+		}
+		currentSchema := *schema
+		if value, has := row["schema_name"]; has {
+			currentSchema = value
+		}
+		if relocatable == "t" && currentSchema != *schema {
+			ret = append(ret, extFlagToMove)
+		}
+	}
+	return ret, nil
+}
+
+// CreateExtensionArgs are the canonical postgres.create_extension
+// arguments, mirroring the pinned create_extension(name, if_not_exists,
+// schema, ext_version, from_version, user, host, port, maintenance_db,
+// password, runas) signature (postgres.py:1965-1977). Pointer fields keep
+// Salt's None defaults: nil if_not_exists applies the pinned True default,
+// and a nil schema/ext_version/from_version never triggers its metadata
+// branch while an explicit empty string keeps the pinned falsy-string
+// behavior (no clause, but the is-not-None metadata checks still run).
+type CreateExtensionArgs struct {
+	Name          string  `statekit:"name=name,required"`
+	IfNotExists   *bool   `statekit:"name=if_not_exists"`
+	Schema        *string `statekit:"name=schema"`
+	ExtVersion    *string `statekit:"name=ext_version"`
+	FromVersion   *string `statekit:"name=from_version"`
+	User          *string `statekit:"name=user"`
+	Host          *string `statekit:"name=host"`
+	Port          *string `statekit:"name=port"`
+	MaintenanceDB *string `statekit:"name=maintenance_db"`
+	Password      *string `statekit:"name=password"`
+	Runas         *string `statekit:"name=runas"`
+}
+
+func (a *CreateExtensionArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: a.MaintenanceDB,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+type createExtensionFunc struct{}
+
+func (createExtensionFunc) Name() string { return "postgres.create_extension" }
+func (createExtensionFunc) Args() any    { return CreateExtensionArgs{} }
+
+// Execute ports the pinned create_extension flow (postgres.py:1988-2063):
+// the pinned if_not_exists=True default, the create_metadata preflight,
+// the is_available_extension gate whose miss skips every statement, the
+// CREATE branch (IF NOT EXISTS, the quoted name, and the WITH SCHEMA/
+// VERSION/FROM clauses for every truthy option in the pinned order, all
+// joined with the pinned space before the semicolon) or the ALTER branch
+// (SET SCHEMA for TO_MOVE, UPDATE TO for TO_UPGRADE, each clause carrying
+// its own semicolon), the statement's retcode ignored exactly like the
+// pinned discarded return, and the final flag check answering False when
+// the recomputed metadata carries any flag other than INSTALLED. The
+// identifier boundary is the StateKit addition, checked before any Runner
+// invocation.
+func (createExtensionFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[CreateExtensionArgs](args, "postgres.create_extension")
+	if err != nil {
+		return nil, err
+	}
+	if strings.Contains(a.Name, `"`) {
+		return nil, ddlValidationError("name")
+	}
+	if a.Schema != nil && strings.Contains(*a.Schema, `"`) {
+		// The schema reaches both the CREATE WITH clause and the ALTER
+		// SET SCHEMA clause inside double quotes without escaping.
+		return nil, ddlValidationError("schema")
+	}
+	if truthyString(a.ExtVersion) && !bareVersionRE.MatchString(*a.ExtVersion) {
+		return nil, privIdentifierValidationError("ext_version")
+	}
+	if truthyString(a.FromVersion) && !bareVersionRE.MatchString(*a.FromVersion) {
+		return nil, privIdentifierValidationError("from_version")
+	}
+	conn := a.connection()
+	ifNotExists := pointerBool(a.IfNotExists) || a.IfNotExists == nil
+	mtdata, err := createMetadata(ctx, rt, conn, a.Name, a.ExtVersion, a.Schema)
+	if err != nil {
+		return nil, err
+	}
+	installed := !extFlagIn(mtdata, extFlagNotInstalled)
+	available, err := availableExtensions(ctx, rt, conn)
+	if err != nil {
+		return nil, err
+	}
+	// The pinned is_available_extension lowercases both sides.
+	want := strings.ToLower(a.Name)
+	installable := false
+	for key := range available {
+		if strings.ToLower(key) == want {
+			installable = true
+			break
+		}
+	}
+	if installable {
+		var cmd string
+		if !installed {
+			parts := []string{"CREATE EXTENSION"}
+			if ifNotExists {
+				parts = append(parts, "IF NOT EXISTS")
+			}
+			parts = append(parts, `"`+a.Name+`"`)
+			var withArgs []string
+			if truthyString(a.Schema) {
+				withArgs = append(withArgs, `SCHEMA "`+*a.Schema+`"`)
+			}
+			if truthyString(a.ExtVersion) {
+				withArgs = append(withArgs, "VERSION "+*a.ExtVersion)
+			}
+			if truthyString(a.FromVersion) {
+				withArgs = append(withArgs, "FROM "+*a.FromVersion)
+			}
+			if len(withArgs) > 0 {
+				parts = append(parts, "WITH")
+				parts = append(parts, withArgs...)
+			}
+			parts = append(parts, ";")
+			cmd = strings.Join(parts, " ")
+		} else {
+			var clauses []string
+			if truthyString(a.Schema) && extFlagIn(mtdata, extFlagToMove) {
+				clauses = append(clauses, `ALTER EXTENSION "`+a.Name+`" SET SCHEMA "`+*a.Schema+`";`)
+			}
+			if truthyString(a.ExtVersion) && extFlagIn(mtdata, extFlagToUpgrade) {
+				clauses = append(clauses, `ALTER EXTENSION "`+a.Name+`" UPDATE TO `+*a.ExtVersion+`;`)
+			}
+			cmd = strings.Join(clauses, " ")
+		}
+		cmd = strings.TrimSpace(cmd)
+		if cmd != "" {
+			argv := psqlArgv(
+				pointerString(a.User),
+				pointerString(a.Host),
+				pointerString(a.Port),
+				pointerString(a.MaintenanceDB),
+				"-c", cmd,
+			)
+			if _, err := runPsql(ctx, rt, argv, conn); err != nil {
+				return nil, err
+			}
+		}
+	}
+	mtdata, err = createMetadata(ctx, rt, conn, a.Name, a.ExtVersion, a.Schema)
+	if err != nil {
+		return nil, err
+	}
+	ret := true
+	for _, flag := range mtdata {
+		if flag != extFlagInstalled {
+			// The pinned loop answers False when any lifecycle flag
+			// other than INSTALLED survives in the recomputed metadata.
+			ret = false
+		}
+	}
+	return ret, nil
+}
+
+// DropExtensionArgs are the canonical postgres.drop_extension arguments,
+// mirroring the pinned drop_extension(name, if_exists, restrict, cascade,
+// user, host, port, maintenance_db, password, runas) signature
+// (postgres.py:1895-1906). Pointer fields keep Salt's None defaults: nil
+// cascade applies the pinned True default while nil if_exists and
+// restrict apply the pinned False defaults.
+type DropExtensionArgs struct {
+	Name          string  `statekit:"name=name,required"`
+	IfExists      *bool   `statekit:"name=if_exists"`
+	Restrict      *bool   `statekit:"name=restrict"`
+	Cascade       *bool   `statekit:"name=cascade"`
+	User          *string `statekit:"name=user"`
+	Host          *string `statekit:"name=host"`
+	Port          *string `statekit:"name=port"`
+	MaintenanceDB *string `statekit:"name=maintenance_db"`
+	Password      *string `statekit:"name=password"`
+	Runas         *string `statekit:"name=runas"`
+}
+
+func (a *DropExtensionArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: a.MaintenanceDB,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+type dropExtensionFunc struct{}
+
+func (dropExtensionFunc) Name() string { return "postgres.drop_extension" }
+func (dropExtensionFunc) Args() any    { return DropExtensionArgs{} }
+
+// Execute ports the pinned drop_extension flow (postgres.py:1917-1962):
+// the None defaults (cascade True, if_exists and restrict False), the
+// statement built first — DROP EXTENSION, the optional IF EXISTS, the raw
+// unquoted extension name, CASCADE, RESTRICT, and the pinned space before
+// the semicolon, so the nonsensical default carries CASCADE — the
+// is_installed_extension preflight guarding the DROP, the discarded DROP
+// result, and the pinned not is_installed_extension(...) post-check
+// deciding the boolean (a never-installed extension is therefore True).
+// The raw-name identifier boundary is the StateKit addition, checked
+// before any Runner invocation.
+func (dropExtensionFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[DropExtensionArgs](args, "postgres.drop_extension")
+	if err != nil {
+		return nil, err
+	}
+	if !bareIdentifierRE.MatchString(a.Name) {
+		// The pinned statement interpolates the extension name raw and
+		// unquoted; StateKit admits only bare PostgreSQL identifiers.
+		return nil, privIdentifierValidationError("name")
+	}
+	cascade := a.Cascade == nil || *a.Cascade
+	ifExists := pointerBool(a.IfExists)
+	restrict := pointerBool(a.Restrict)
+	parts := []string{"DROP EXTENSION"}
+	if ifExists {
+		parts = append(parts, "IF EXISTS")
+	}
+	parts = append(parts, a.Name)
+	if cascade {
+		parts = append(parts, "CASCADE")
+	}
+	if restrict {
+		parts = append(parts, "RESTRICT")
+	}
+	parts = append(parts, ";")
+	cmd := strings.Join(parts, " ")
+	conn := a.connection()
+	installed, err := extensionInstalled(ctx, rt, conn, a.Name)
+	if err != nil {
+		return nil, err
+	}
+	if installed {
+		argv := psqlArgv(
+			pointerString(a.User),
+			pointerString(a.Host),
+			pointerString(a.Port),
+			pointerString(a.MaintenanceDB),
+			"-c", cmd,
+		)
+		if _, err := runPsql(ctx, rt, argv, conn); err != nil {
+			return nil, err
+		}
+	}
+	installed, err = extensionInstalled(ctx, rt, conn, a.Name)
+	if err != nil {
+		return nil, err
+	}
+	if installed {
+		// The pinned "Failed to drop ext" log line has no module logging
+		// surface; the False answer is the observable contract.
+		return false, nil
+	}
+	return true, nil
+}
+
+// truthyString is the Python truthiness of Salt's optional string
+// arguments: None (nil) and the empty string are both falsy, so the
+// pinned `if schema:` and `if ext_version:` clause guards render no
+// clause for either.
+func truthyString(value *string) bool {
+	return value != nil && *value != ""
 }
 
 // ---------------------------------------------------------------------------
@@ -1945,6 +2324,140 @@ func (languageExistsFunc) Execute(ctx context.Context, rt *runtime.Runtime, args
 	}
 	_, exists := languages[a.Name]
 	return exists, nil
+}
+
+// ---------------------------------------------------------------------------
+// language_create / language_remove — salt/modules/postgres.py:2698-2750,
+// 2753-2805 @ pinned revision.
+
+// LanguageMutationArgs are the canonical postgres.language_create and
+// postgres.language_remove arguments: the pinned name and maintenance_db
+// positionals plus the shared (user, host, port, password, runas)
+// connection tuple (postgres.py:2698-2699, 2753-2754).
+type LanguageMutationArgs struct {
+	Name          string  `statekit:"name=name,required"`
+	MaintenanceDB string  `statekit:"name=maintenance_db,required"`
+	User          *string `statekit:"name=user"`
+	Host          *string `statekit:"name=host"`
+	Port          *string `statekit:"name=port"`
+	Password      *string `statekit:"name=password"`
+	Runas         *string `statekit:"name=runas"`
+}
+
+func (a *LanguageMutationArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	maintenanceDB := a.MaintenanceDB
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: &maintenanceDB,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+// languageMutationPreflight runs the pinned language_exists(name,
+// maintenance_db) preflight of both mutations: the pinned calls pass only
+// the two positionals, so every other connection argument — including the
+// mutation's own user and runas — is dropped and the catalog call runs on
+// the maintenance database alone.
+func languageMutationPreflight(ctx context.Context, rt *runtime.Runtime, a *LanguageMutationArgs) (map[string]string, error) {
+	maintenanceDB := a.MaintenanceDB
+	// Retain the caller secret for redaction only, not authentication: the
+	// pinned preflight drops the password along with the connection flags.
+	return languageList(ctx, rt, &pgConnection{
+		MaintenanceDB: &maintenanceDB,
+		Secrets:       secretList(pointerString(a.Password)),
+	})
+}
+
+type languageCreateFunc struct{}
+
+func (languageCreateFunc) Name() string { return "postgres.language_create" }
+func (languageCreateFunc) Args() any    { return LanguageMutationArgs{} }
+
+// Execute ports the pinned language_create flow (postgres.py:2734-2750):
+// the connection-less language_exists preflight whose hit is the
+// logged-and-False no-op, the pinned CREATE LANGUAGE statement with the
+// raw unquoted language name, and the ret["retcode"] == 0 boolean. The
+// raw-name identifier boundary is the StateKit addition, checked before
+// any Runner invocation.
+func (languageCreateFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[LanguageMutationArgs](args, "postgres.language_create")
+	if err != nil {
+		return nil, err
+	}
+	if !bareIdentifierRE.MatchString(a.Name) {
+		// The pinned statement interpolates the language name raw and
+		// unquoted; StateKit admits only bare PostgreSQL identifiers.
+		return nil, privIdentifierValidationError("name")
+	}
+	languages, err := languageMutationPreflight(ctx, rt, a)
+	if err != nil {
+		return nil, err
+	}
+	if _, exists := languages[a.Name]; exists {
+		// The pinned "Language %s already exists in %s" log-and-False.
+		return false, nil
+	}
+	query := "CREATE LANGUAGE " + a.Name
+	argv := psqlArgv(
+		pointerString(a.User),
+		pointerString(a.Host),
+		pointerString(a.Port),
+		a.MaintenanceDB,
+		"-c", query,
+	)
+	result, err := runPsql(ctx, rt, argv, a.connection())
+	if err != nil {
+		return nil, err
+	}
+	return result.ExitCode == 0, nil
+}
+
+type languageRemoveFunc struct{}
+
+func (languageRemoveFunc) Name() string { return "postgres.language_remove" }
+func (languageRemoveFunc) Args() any    { return LanguageMutationArgs{} }
+
+// Execute ports the pinned language_remove flow (postgres.py:2789-2805):
+// the connection-less language_exists preflight whose miss is the
+// logged-and-False no-op, the pinned DROP LANGUAGE statement with the raw
+// unquoted language name, and the ret["retcode"] == 0 boolean (no
+// post-check exists in the pinned flow). The raw-name identifier boundary
+// is the StateKit addition, checked before any Runner invocation.
+func (languageRemoveFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[LanguageMutationArgs](args, "postgres.language_remove")
+	if err != nil {
+		return nil, err
+	}
+	if !bareIdentifierRE.MatchString(a.Name) {
+		return nil, privIdentifierValidationError("name")
+	}
+	languages, err := languageMutationPreflight(ctx, rt, a)
+	if err != nil {
+		return nil, err
+	}
+	if _, exists := languages[a.Name]; !exists {
+		// The pinned "Language %s does not exist in %s" log-and-False.
+		return false, nil
+	}
+	query := "DROP LANGUAGE " + a.Name
+	argv := psqlArgv(
+		pointerString(a.User),
+		pointerString(a.Host),
+		pointerString(a.Port),
+		a.MaintenanceDB,
+		"-c", query,
+	)
+	result, err := runPsql(ctx, rt, argv, a.connection())
+	if err != nil {
+		return nil, err
+	}
+	return result.ExitCode == 0, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -2100,6 +2613,177 @@ func (schemaExistsFunc) Execute(ctx context.Context, rt *runtime.Runtime, args a
 		return nil, err
 	}
 	return len(schemas[a.Name]) > 0, nil
+}
+
+// ---------------------------------------------------------------------------
+// schema_create / schema_remove — salt/modules/postgres.py:2316-2366,
+// 2369-2441 @ pinned revision.
+
+// SchemaCreateArgs are the canonical postgres.schema_create arguments,
+// mirroring the pinned schema_create(dbname, name, owner, user, db_user,
+// db_password, db_host, db_port) signature (postgres.py:2316-2325): the
+// required dbname and name positionals, the optional owner of the pinned
+// AUTHORIZATION clause, and the schema-family connection tuple where user
+// is the pinned system-user argument (the psql runas).
+type SchemaCreateArgs struct {
+	DBName     string  `statekit:"name=dbname,required"`
+	Name       string  `statekit:"name=name,required"`
+	Owner      *string `statekit:"name=owner"`
+	User       *string `statekit:"name=user"`
+	DBUser     *string `statekit:"name=db_user"`
+	DBPassword *string `statekit:"name=db_password"`
+	DBHost     *string `statekit:"name=db_host"`
+	DBPort     *string `statekit:"name=db_port"`
+}
+
+func (a *SchemaCreateArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	dbname := a.DBName
+	return &pgConnection{
+		User:          a.DBUser,
+		Host:          a.DBHost,
+		Port:          a.DBPort,
+		MaintenanceDB: &dbname,
+		Password:      a.DBPassword,
+		Runas:         a.User,
+	}
+}
+
+type schemaCreateFunc struct{}
+
+func (schemaCreateFunc) Name() string { return "postgres.schema_create" }
+func (schemaCreateFunc) Args() any    { return SchemaCreateArgs{} }
+
+// Execute ports the pinned schema_create flow (postgres.py:2339-2366):
+// the schema_exists preflight with the full pinned connection signature —
+// the system user included, so a set user rejects like every runas
+// surface — whose hit is the logged-and-False no-op, the pinned
+// CREATE SCHEMA statement with the double-quoted name and the optional
+// double-quoted AUTHORIZATION owner, and the ret["retcode"] == 0 boolean.
+// The identifier boundary is the StateKit addition, checked before any
+// Runner invocation.
+func (schemaCreateFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[SchemaCreateArgs](args, "postgres.schema_create")
+	if err != nil {
+		return nil, err
+	}
+	if strings.Contains(a.Name, `"`) {
+		// The pinned format interpolates the schema name into double
+		// quotes unescaped; StateKit fails closed on the only character
+		// that can escape a double-quoted identifier.
+		return nil, ddlValidationError("name")
+	}
+	if a.Owner != nil && strings.Contains(*a.Owner, `"`) {
+		return nil, ddlValidationError("owner")
+	}
+	schemas, err := schemaCatalog(ctx, rt, a.connection())
+	if err != nil {
+		return nil, err
+	}
+	if len(schemas[a.Name]) > 0 {
+		// The pinned "'%s' already exists in '%s'" log-and-False.
+		return false, nil
+	}
+	subCmd := `CREATE SCHEMA "` + a.Name + `"`
+	if a.Owner != nil {
+		subCmd += ` AUTHORIZATION "` + *a.Owner + `"`
+	}
+	argv := psqlArgv(
+		pointerString(a.DBUser),
+		pointerString(a.DBHost),
+		pointerString(a.DBPort),
+		a.DBName,
+		"-c", subCmd,
+	)
+	result, err := runPsql(ctx, rt, argv, a.connection())
+	if err != nil {
+		return nil, err
+	}
+	return result.ExitCode == 0, nil
+}
+
+// SchemaRemoveArgs are the canonical postgres.schema_remove arguments,
+// mirroring the pinned schema_remove(dbname, name, user, db_user,
+// db_password, db_host, db_port) signature (postgres.py:2369-2370).
+type SchemaRemoveArgs struct {
+	DBName     string  `statekit:"name=dbname,required"`
+	Name       string  `statekit:"name=name,required"`
+	User       *string `statekit:"name=user"`
+	DBUser     *string `statekit:"name=db_user"`
+	DBPassword *string `statekit:"name=db_password"`
+	DBHost     *string `statekit:"name=db_host"`
+	DBPort     *string `statekit:"name=db_port"`
+}
+
+func (a *SchemaRemoveArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	dbname := a.DBName
+	return &pgConnection{
+		User:          a.DBUser,
+		Host:          a.DBHost,
+		Port:          a.DBPort,
+		MaintenanceDB: &dbname,
+		Password:      a.DBPassword,
+		Runas:         a.User,
+	}
+}
+
+type schemaRemoveFunc struct{}
+
+func (schemaRemoveFunc) Name() string { return "postgres.schema_remove" }
+func (schemaRemoveFunc) Args() any    { return SchemaRemoveArgs{} }
+
+// Execute ports the pinned schema_remove flow (postgres.py:2404-2441):
+// the first existence check drops the system user exactly like the pinned
+// user=None call while keeping the db_* tuple, the pinned DROP SCHEMA
+// statement with the double-quoted name and no CASCADE clause, the
+// discarded DROP result (no retcode check in the pinned flow), and the
+// second schema_exists post-check — this one carrying the user — deciding
+// the boolean. The identifier boundary is the StateKit addition, checked
+// before any Runner invocation.
+func (schemaRemoveFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[SchemaRemoveArgs](args, "postgres.schema_remove")
+	if err != nil {
+		return nil, err
+	}
+	if strings.Contains(a.Name, `"`) {
+		return nil, ddlValidationError("name")
+	}
+	preflight := a.connection()
+	preflight.Runas = nil
+	schemas, err := schemaCatalog(ctx, rt, preflight)
+	if err != nil {
+		return nil, err
+	}
+	if len(schemas[a.Name]) == 0 {
+		// The pinned "Schema '%s' does not exist in '%s'" log-and-False.
+		return false, nil
+	}
+	subCmd := `DROP SCHEMA "` + a.Name + `"`
+	conn := a.connection()
+	argv := psqlArgv(
+		pointerString(a.DBUser),
+		pointerString(a.DBHost),
+		pointerString(a.DBPort),
+		a.DBName,
+		"-c", subCmd,
+	)
+	if _, err := runPsql(ctx, rt, argv, conn); err != nil {
+		return nil, err
+	}
+	schemas, err = schemaCatalog(ctx, rt, conn)
+	if err != nil {
+		return nil, err
+	}
+	if len(schemas[a.Name]) > 0 {
+		// The pinned "Failed to delete schema '%s'." log-and-False.
+		return false, nil
+	}
+	return true, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -4723,22 +5407,26 @@ func redactedError(err error, secrets ...string) error {
 	return errors.New(message)
 }
 
-// Register installs the R9.2l postgres slice: the version probe, the five
+// Register installs the R9.2m postgres slice: the version probe, the five
 // R9.2c read-only catalog primitives, the R9.2h write paths db_create and
 // db_remove, the eight R9.2d extension and language catalog functions,
 // the three R9.2e schema catalog functions, the three R9.2f role and
 // privilege checks, the R9.2g ACL listing privileges_list, the R9.2i
 // role mutations user_create, user_update, and user_remove, the R9.2j
 // group mutations group_create, group_update, and group_remove, the
-// R9.2k privilege mutations privileges_grant and privileges_revoke, and
-// the R9.2l default-privilege family default_privileges_list,
-// default_privileges_grant, and default_privileges_revoke. The
-// remainder of the postgres family needs the generic psql query surface
-// (psql_query itself stays pending; no arbitrary-query registration
-// exists in this phase) and stays pending for later R9 rounds; the
-// internal parsed-version, psql-query, role-statement, and
-// has-default-privileges helpers are intentionally not registered,
-// exactly like the pinned private functions.
+// R9.2k privilege mutations privileges_grant and privileges_revoke, the
+// R9.2l default-privilege family default_privileges_list,
+// default_privileges_grant, and default_privileges_revoke, and the R9.2m
+// schema, extension, and language mutations schema_create,
+// schema_remove, create_extension, drop_extension, language_create, and
+// language_remove. The remainder of the postgres family needs the
+// generic psql query surface (psql_query itself stays pending; no
+// arbitrary-query registration exists in this phase) and stays pending
+// for later R9 rounds; the internal parsed-version, psql-query,
+// role-statement, has-default-privileges, and create-metadata helpers
+// are intentionally not registered, exactly like the pinned private
+// functions (create_metadata keeps its pending public name until a later
+// round registers it).
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		versionFunc{},
@@ -4755,11 +5443,17 @@ func Register(reg *runtime.ExecRegistry) error {
 		getInstalledExtensionFunc{},
 		isAvailableExtensionFunc{},
 		isInstalledExtensionFunc{},
+		createExtensionFunc{},
+		dropExtensionFunc{},
 		languageListFunc{},
 		languageExistsFunc{},
+		languageCreateFunc{},
+		languageRemoveFunc{},
 		schemaExistsFunc{},
 		schemaGetFunc{},
 		schemaListFunc{},
+		schemaCreateFunc{},
+		schemaRemoveFunc{},
 		roleGetFunc{},
 		userExistsFunc{},
 		hasPrivilegesFunc{},
