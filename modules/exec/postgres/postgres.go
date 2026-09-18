@@ -38,26 +38,59 @@
 // value carrying a caller secret cannot leak through the CLI exit path
 // where it is raised (before any Runner invocation, and therefore before
 // any Command.Redact or redactedError pass runs).
+// R9.2i adds the role mutation family user_create, user_update, and
+// user_remove (postgres.py:1368-1431, 1487-1610, 1613-1651, 2066-2092
+// through the pinned _role_create/_role_update/_role_remove flow and the
+// pinned _role_cmd_args/_add_role_flag clause machine): create and update
+// build the pinned CREATE/ALTER ROLE statements with the pinned INHERIT,
+// CREATEDB, CREATEROLE, SUPERUSER, REPLICATION, LOGIN, CONNECTION LIMIT,
+// ENCRYPTED, PASSWORD, VALID UNTIL clause order, the pinned user-typed
+// inherit/login defaults on create (and their pinned absence on update),
+// the pinned superuser skip when the stored role already carries the
+// requested boolean, and the pinned md5, plaintext, and SCRAM-SHA-256
+// password verifiers (the exact pinned SCRAM-SHA-256$iterations:salt$
+// stored:server rendering) with quote doubling; remove keeps the pinned
+// preflight, DROP ROLE, and post-check flow with the DROP retcode
+// ignored. The role name and every GRANT group entry are the identifier
+// positions the pinned source interpolates raw; they are validated
+// fail-closed with value-free errors, and the plaintext rolepassword,
+// its quote-doubled form, and the generated md5/SCRAM verifier actually
+// placed in the SQL (plus that verifier's quote-escaped literal) are all
+// Redact secrets that never appear in a rendered command, captured
+// output, or returned error.
 // Like Salt, every invocation is a shell-free psql argv executed through
 // the central Runner; this package links no database driver or protocol
 // client and never contacts a live server by itself. The catalog queries
 // are fixed SQL fragments — no caller-controlled SQL or identifier is
 // interpolated — and the R9.2h write paths construct only the pinned
 // CREATE DATABASE and REVOKE/terminate/DROP statements with validated
-// identifier and literal quoting, so the generic psql_query surface stays
+// identifier and literal quoting, and the R9.2i role paths construct
+// only the pinned CREATE/ALTER/DROP ROLE and GRANT statements with the
+// same validated identifiers, so the generic psql_query surface stays
 // pending for a later round. The pinned module's private helpers (_run_psql 179-235,
-// _parsed_version 334-361, _psql_cmd 386-432, psql_query's CSV parse)
+// _parsed_version 334-361, _psql_cmd 386-432, psql_query's CSV parse,
+// _role_cmd_args 1271-1365, _add_role_flag 1173-1184,
+// _maybe_encrypt_password 1187-1206, _md5_password 1242-1247,
+// _scram_sha_256 1250-1268)
 // are ported as internal functions without public registration.
 package postgres
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/md5"
+	"crypto/pbkdf2"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"math/big"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -81,6 +114,14 @@ const (
 	// defaultMaintenanceDB mirrors the pinned _psql_cmd fallback when no
 	// maintenance database is configured or supplied.
 	defaultMaintenanceDB = "postgres"
+	// defaultPasswordsEncryption ports the pinned
+	// _DEFAULT_PASSWORDS_ENCRYPTION (postgres.py:74): the md5 verifier Salt
+	// applies when the encrypted argument is omitted.
+	defaultPasswordsEncryption = "md5"
+	// scramIterations and scramSaltLen are the pinned _scram_sha_256
+	// verifier parameters (postgres.py:1250-1268).
+	scramIterations = 4096
+	scramSaltLen    = 16
 	// serverVersionQuery is the exact SQL of the pinned version().
 	serverVersionQuery = "SELECT setting FROM pg_catalog.pg_settings WHERE name = 'server_version'"
 	// dbListQuery is the exact SQL of the pinned db_list()
@@ -201,6 +242,13 @@ var (
 	errPostgresRunas             = errors.New("postgres: runas is not supported by statekit")
 	errPostgresInvalidArgument   = errors.New("postgres: invalid argument")
 	errPostgresInvalidACL        = errors.New("postgres: invalid acl entry")
+	errPostgresSaslprep          = errors.New("postgres: saslprep: unsupported non-ASCII password")
+	// errPostgresUnknownPasswordAlgorithm is the fixed, value-free form of
+	// the pinned _maybe_encrypt_password ValueError: the rejected algorithm
+	// value never enters the error because the encrypted argument is
+	// union-typed and may carry (or overlap) a credential, asserted by the
+	// synthetic secret-overlap tests.
+	errPostgresUnknownPasswordAlgorithm = fmt.Errorf("%w: unknown password algorithm", errPostgresInvalidArgument)
 )
 
 // privilegesMap ports the pinned _PRIVILEGES_MAP (postgres.py:86-101): the
@@ -284,16 +332,22 @@ func (versionFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (
 	if err != nil {
 		return nil, err
 	}
+	return serverVersion(ctx, rt, a.connection())
+}
+
+// serverVersion preserves the invocation's secret inventory through the
+// internal preflight path without adding public arguments.
+func serverVersion(ctx context.Context, rt *runtime.Runtime, conn *pgConnection) (any, error) {
 	// The pinned version() calls _psql_cmd("-c", query, "-t", ...) and then
 	// _run_psql with the same connection arguments.
 	argv := psqlArgv(
-		pointerString(a.User),
-		pointerString(a.Host),
-		pointerString(a.Port),
-		pointerString(a.MaintenanceDB),
+		pointerString(conn.User),
+		pointerString(conn.Host),
+		pointerString(conn.Port),
+		pointerString(conn.MaintenanceDB),
 		"-c", serverVersionQuery, "-t",
 	)
-	result, err := runPsql(ctx, rt, argv, a.connection())
+	result, err := runPsql(ctx, rt, argv, conn)
 	if err != nil {
 		return nil, err
 	}
@@ -362,7 +416,10 @@ type pgConnection struct {
 	Port          *string
 	MaintenanceDB *string
 	Password      *string
-	Runas         *string
+	// Raw caller secrets travel through every preflight without generating
+	// a verifier or changing the pinned statement-construction timing.
+	Secrets []string
+	Runas   *string
 }
 
 // runPsql ports the pinned _run_psql execution half: a shell-free,
@@ -376,6 +433,17 @@ type pgConnection struct {
 // output, or returned errors. A non-zero psql exit stays compatibility
 // data, like Salt's logged-but-returned retcode.
 func runPsql(ctx context.Context, rt *runtime.Runtime, argv []string, conn *pgConnection) (process.CommandResult, error) {
+	return runPsqlSecrets(ctx, rt, argv, conn, nil)
+}
+
+// runPsqlSecrets is runPsql plus the extra Redact secrets a statement
+// carries inside its argv: the R9.2i role paths embed the rolepassword in
+// the SQL argument — the plaintext, its quote-doubled form, and the
+// generated md5/SCRAM verifier actually placed there (plus that
+// verifier's quoted literal form) — so every form joins the connection
+// password in the Redact list and in the error-redaction pass, keeping
+// the rendered argv, captured output, and returned errors secret-free.
+func runPsqlSecrets(ctx context.Context, rt *runtime.Runtime, argv []string, conn *pgConnection, extraSecrets []string) (process.CommandResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -403,6 +471,25 @@ func runPsql(ctx context.Context, rt *runtime.Runtime, argv []string, conn *pgCo
 		return process.CommandResult{ExitCode: -1}, errPostgresPsqlUnavailable
 	}
 
+	secrets := append([]string(nil), extraSecrets...)
+	secrets = append(secrets, conn.Secrets...)
+	if conn.Password != nil {
+		secrets = append(secrets, *conn.Password)
+	}
+	// Include SQL-escaped forms only when present in the actual SQL.
+	for _, secret := range secretList(secrets...) {
+		doubled := strings.ReplaceAll(secret, "'", "''")
+		for i := 1; i < len(argv); i++ {
+			if argv[i-1] == "-c" {
+				for _, form := range []string{doubled, "'" + doubled + "'"} {
+					if strings.Contains(argv[i], form) {
+						secrets = append(secrets, form)
+					}
+				}
+			}
+		}
+	}
+	secrets = secretList(secrets...)
 	command := process.Command{
 		Name:           argv[0],
 		Args:           append([]string(nil), argv[1:]...),
@@ -411,18 +498,23 @@ func runPsql(ctx context.Context, rt *runtime.Runtime, argv []string, conn *pgCo
 		MaxStderrBytes: outputLimit,
 		Env:            psqlEnvironment(conn),
 	}
-	if conn.Password != nil {
-		command.Redact = secretList(*conn.Password)
+	if len(secrets) > 0 {
+		command.Redact = secretList(secrets...)
 	}
 	result := rt.Runner.Run(ctx, command)
+	outputExceeded := len(result.Stdout) > outputLimit || len(result.Stderr) > outputLimit
+	// Defend against custom Runners that do not sanitize their own results.
+	result.Stdout = process.RedactBytes(secrets, result.Stdout)
+	result.Stderr = process.RedactBytes(secrets, result.Stderr)
 	if result.Err != nil {
-		return result, redactedError(result.Err, conn.Password)
+		result.Err = redactedError(result.Err, secrets...)
+		return result, result.Err
 	}
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}
 	if result.StdoutTruncated || result.StderrTruncated ||
-		len(result.Stdout) > outputLimit || len(result.Stderr) > outputLimit {
+		outputExceeded {
 		return result, process.ErrOutputLimit
 	}
 	return result, nil
@@ -571,15 +663,7 @@ func (v parsedVersion) compare(other parsedVersion) (int, bool) {
 // warning in that case; StateKit modules do not log, so the nil result is
 // the signal. Internal-only, with no registry entry.
 func parsedServerVersion(ctx context.Context, rt *runtime.Runtime, conn *pgConnection) (*parsedVersion, error) {
-	args := &VersionArgs{
-		User:          conn.User,
-		Host:          conn.Host,
-		Port:          conn.Port,
-		MaintenanceDB: conn.MaintenanceDB,
-		Password:      conn.Password,
-		Runas:         conn.Runas,
-	}
-	value, err := versionFunc{}.Execute(ctx, rt, args)
+	value, err := serverVersion(ctx, rt, conn)
 	if err != nil {
 		return nil, err
 	}
@@ -1336,7 +1420,12 @@ func (userListFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) 
 	if err != nil {
 		return nil, err
 	}
-	conn := a.connection()
+	return userCatalog(ctx, rt, a.connection(), a.ReturnPassword)
+}
+
+// userCatalog keeps the same connection (including preflight secrets)
+// for both the version and catalog commands.
+func userCatalog(ctx context.Context, rt *runtime.Runtime, conn *pgConnection, returnPassword bool) (any, error) {
 	ver, err := parsedServerVersion(ctx, rt, conn)
 	if err != nil {
 		return nil, err
@@ -1357,13 +1446,13 @@ func (userListFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) 
 	}
 	query := strings.Replace(userListQueryPrefix, "{0}", rolcatupdateColumn, 1)
 	query = strings.Replace(query, "{1}", replicationColumn, 1)
-	if a.ReturnPassword {
+	if returnPassword {
 		// Salt's _x() appends the password select and its two LEFT JOINs
 		// only when return_password is set, before and after FROM.
 		query += userListPasswordSelect
 	}
 	query += userFromClause
-	if a.ReturnPassword {
+	if returnPassword {
 		query += userListAuthidJoin + userListShadowJoin
 	}
 	rows, err := psqlQueryRows(ctx, rt, conn, query)
@@ -1404,7 +1493,7 @@ func (userListFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) 
 			return nil, err
 		}
 		retrow["defaults variables"] = defaults
-		if a.ReturnPassword {
+		if returnPassword {
 			password, err := rowString(row, "password", "postgres.user_list")
 			if err != nil {
 				return nil, err
@@ -1934,15 +2023,7 @@ func (a *RoleGetArgs) connection() *pgConnection {
 // raises AttributeError, is logged, and returns None — mapped here to nil.
 // The exact-case lookup miss is None, never an error.
 func roleGet(ctx context.Context, rt *runtime.Runtime, conn *pgConnection, name string, returnPassword bool) (any, error) {
-	users, err := (userListFunc{}).Execute(ctx, rt, &UserListArgs{
-		User:           conn.User,
-		Host:           conn.Host,
-		Port:           conn.Port,
-		MaintenanceDB:  conn.MaintenanceDB,
-		Password:       conn.Password,
-		Runas:          conn.Runas,
-		ReturnPassword: returnPassword,
-	})
+	users, err := userCatalog(ctx, rt, conn, returnPassword)
 	if err != nil {
 		return nil, err
 	}
@@ -1993,6 +2074,776 @@ func (userExistsFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any
 		return false, nil
 	}
 	return len(entry) > 0, nil
+}
+
+// ---------------------------------------------------------------------------
+// user_create / user_update / user_remove — salt/modules/postgres.py
+// 1368-1431, 1487-1610, 1613-1651, 2066-2092 @ pinned revision, through the
+// pinned _role_create/_role_update/_role_remove flow,
+// _role_cmd_args (1271-1365), and _add_role_flag (1173-1184).
+
+// saltScalarKind names the Python value shapes the pinned union-typed
+// encrypted/rolepassword arguments take: None, bool, str, and (degenerately,
+// through structured input) any other truthiness-carrying scalar.
+type saltScalarKind uint8
+
+const (
+	saltNone saltScalarKind = iota
+	saltBool
+	saltString
+	saltOther
+)
+
+// saltScalar is one normalized pinned union value. For saltOther, b carries
+// the Python truthiness; numZero marks the numeric-zero shapes Python's
+// tuple membership compares equal to False.
+type saltScalar struct {
+	kind    saltScalarKind
+	b       bool
+	s       string
+	numZero bool
+}
+
+// normalizeSaltScalar maps a decoded argument onto the pinned value shapes
+// without any implicit retyping: a bool stays a bool, and a string stays
+// the exact string — boolean spellings included, so the string "true" keeps
+// the pinned string semantics (a literal password for rolepassword, an
+// unknown algorithm for encrypted) exactly like a programmatic caller of
+// the pinned module. Only the CLI decoder translates typed bool flags to
+// bools; numeric and other shapes keep their Python truthiness, with the
+// numeric zeros recorded because Python compares 0 == False in the pinned
+// algorithm tuple membership.
+func normalizeSaltScalar(value any) saltScalar {
+	switch t := value.(type) {
+	case nil:
+		return saltScalar{kind: saltNone}
+	case bool:
+		return saltScalar{kind: saltBool, b: t}
+	case string:
+		return saltScalar{kind: saltString, s: t}
+	case int:
+		return saltScalar{kind: saltOther, b: t != 0, numZero: t == 0}
+	case int64:
+		return saltScalar{kind: saltOther, b: t != 0, numZero: t == 0}
+	case float64:
+		return saltScalar{kind: saltOther, b: t != 0, numZero: t == 0}
+	default:
+		return saltScalar{kind: saltOther, b: true}
+	}
+}
+
+// truthy is the pinned bool() of the value.
+func (s saltScalar) truthy() bool {
+	switch s.kind {
+	case saltNone:
+		return false
+	case saltBool, saltOther:
+		return s.b
+	default: // str
+		return s.s != ""
+	}
+}
+
+// isStr and isBool are the pinned isinstance tests of _role_cmd_args.
+func (s saltScalar) isStr() bool { return s.kind == saltString }
+func (s saltScalar) isBool() bool {
+	return s.kind == saltBool
+}
+
+// md5Password ports the pinned _md5_password (postgres.py:1242-1247):
+// "md5" followed by the hex MD5 of the password and role name concatenated
+// in that order. Salt logs a deprecation warning for the algorithm; modules
+// do not log, so the verifier itself is the whole behavior.
+func md5Password(role, password string) string {
+	digest := md5.Sum([]byte(password + role)) // nosec: pinned verifier
+	return "md5" + hex.EncodeToString(digest[:])
+}
+
+// saslprepASCII is the bounded port of the pinned salt.ext.saslprep call in
+// _scram_sha_256: for a printable-ASCII password SASLprep is the identity
+// (no mapped-to-nothing or non-ASCII space characters, NFKC is a no-op, the
+// bidi and prohibited-output checks pass), so those passwords are returned
+// unchanged. Anything outside printable ASCII fails closed with a
+// value-free error instead of guessing at the RFC 3454 tables; the upgrade
+// path is a full stringprep implementation, not a silent approximation.
+func saslprepASCII(password string) (string, error) {
+	for i := 0; i < len(password); i++ {
+		if password[i] < 0x20 || password[i] > 0x7e {
+			return "", errPostgresSaslprep
+		}
+	}
+	return password, nil
+}
+
+// scramSHA256Password ports the pinned _scram_sha_256
+// (postgres.py:1250-1268): a random 16-byte salt, PBKDF2-HMAC-SHA256 with
+// the pinned 4096 iterations over the SASLprep'ed password, the SHA-256 of
+// the HMAC'd Client Key as the stored key, the HMAC'd Server Key, and the
+// pinned SCRAM-SHA-256$iterations:salt$stored:server rendering — the `$`
+// before the stored key, exactly like the pinned
+// "SCRAM-SHA-256${}:{}${}:{}" format the pinned _verify_password regex
+// also parses. The random salt makes each generated verifier unique,
+// exactly like the pinned helper; callers pass an already-prefixed
+// verifier through untouched.
+func scramSHA256Password(password string) (string, error) {
+	prepped, err := saslprepASCII(password)
+	if err != nil {
+		return "", err
+	}
+	salt := make([]byte, scramSaltLen)
+	if _, err := rand.Read(salt); err != nil {
+		return "", fmt.Errorf("postgres: scram salt: %w", err)
+	}
+	salted, err := pbkdf2.Key(sha256.New, prepped, salt, scramIterations, sha256.Size)
+	if err != nil {
+		return "", fmt.Errorf("postgres: scram kdf: %w", err)
+	}
+	clientHMAC := hmac.New(sha256.New, salted)
+	clientHMAC.Write([]byte("Client Key"))
+	storedKey := sha256.Sum256(clientHMAC.Sum(nil))
+	serverHMAC := hmac.New(sha256.New, salted)
+	serverHMAC.Write([]byte("Server Key"))
+	return fmt.Sprintf("SCRAM-SHA-256$%d:%s$%s:%s",
+		scramIterations,
+		base64.StdEncoding.EncodeToString(salt),
+		base64.StdEncoding.EncodeToString(storedKey[:]),
+		base64.StdEncoding.EncodeToString(serverHMAC.Sum(nil)),
+	), nil
+}
+
+// maybeEncryptPassword ports the pinned _maybe_encrypt_password
+// (postgres.py:1187-1206) for a non-None password: True normalizes to the
+// md5 algorithm first, an algorithm outside False/"md5"/"scram-sha-256"
+// (with the numeric zeros Python compares equal to False) is the
+// unknown-algorithm rejection, the scram algorithm generates — or passes
+// through an already-prefixed — SCRAM-SHA-256 verifier, the md5 algorithm
+// passes through an md5-prefixed value and otherwise hashes password+role,
+// and False returns the plaintext (Salt logs the removed-unencrypted
+// warning; modules do not log). Unlike the pinned ValueError, the returned
+// error is value-free: the union-typed algorithm argument may itself carry
+// or overlap a credential, so a fixed error key travels instead.
+func maybeEncryptPassword(role, password string, encrypted saltScalar) (string, error) {
+	if encrypted.kind == saltBool && encrypted.b {
+		encrypted = saltScalar{kind: saltString, s: "md5"}
+	}
+	valid := encrypted.kind == saltBool ||
+		(encrypted.kind == saltString &&
+			(encrypted.s == "md5" || encrypted.s == "scram-sha-256")) ||
+		(encrypted.kind == saltOther && encrypted.numZero)
+	if !valid {
+		return "", errPostgresUnknownPasswordAlgorithm
+	}
+	switch {
+	case encrypted.kind == saltString && encrypted.s == "scram-sha-256":
+		if !strings.HasPrefix(password, "SCRAM-SHA-256") {
+			return scramSHA256Password(password)
+		}
+	case encrypted.kind == saltString && encrypted.s == "md5":
+		if !strings.HasPrefix(password, "md5") {
+			return md5Password(role, password), nil
+		}
+	}
+	return password, nil
+}
+
+// roleFlagSpec is one pinned _add_role_flag tuple (postgres.py:1323-1355).
+// A nil test is Python's None: the flag clause is omitted entirely while an
+// addtxt still appends; a nil cond inherits the test; skip suppresses the
+// whole tuple.
+type roleFlagSpec struct {
+	flag   string
+	test   *bool
+	cond   *bool
+	prefix string
+	addtxt string
+	skip   bool
+}
+
+// addRoleFlag ports the pinned _add_role_flag (postgres.py:1173-1184)
+// including the pinned default NO prefix.
+func addRoleFlag(cmd string, f roleFlagSpec) string {
+	if f.skip {
+		return cmd
+	}
+	cond := f.cond
+	if cond == nil {
+		cond = f.test
+	}
+	if f.test != nil {
+		if *cond {
+			cmd += " " + f.flag
+		} else {
+			cmd += " " + f.prefix + f.flag
+		}
+	}
+	if f.addtxt != "" {
+		cmd += " " + f.addtxt
+	}
+	return cmd
+}
+
+// roleGroupsKind is the pinned groups argument shape: absent, one string,
+// or one list.
+type roleGroupsKind uint8
+
+const (
+	roleGroupsNone roleGroupsKind = iota
+	roleGroupsString
+	roleGroupsList
+)
+
+// roleGroups is the type-preserving pinned groups union. A string input
+// stays the exact string; a list input keeps its exact elements and order
+// (copied, so the caller's slice is never mutated or aliased).
+type roleGroups struct {
+	kind  roleGroupsKind
+	raw   string
+	items []string
+}
+
+// normalizeRoleGroups maps a decoded groups argument onto the pinned union
+// without retyping: nil is absent, a string stays the exact string, and a
+// list (typed or decoded) keeps its exact elements and order. Anything
+// else — a non-string list element included — fails closed with the
+// value-free invalid-argument error before any Runner invocation, the
+// StateKit boundary for the pinned join/split AttributeError and
+// TypeError shapes.
+func normalizeRoleGroups(value any) (roleGroups, error) {
+	switch t := value.(type) {
+	case nil:
+		return roleGroups{kind: roleGroupsNone}, nil
+	case string:
+		return roleGroups{kind: roleGroupsString, raw: t}, nil
+	case []string:
+		return roleGroups{kind: roleGroupsList, items: append([]string(nil), t...)}, nil
+	case []any:
+		items := make([]string, 0, len(t))
+		for _, item := range t {
+			s, ok := item.(string)
+			if !ok {
+				return roleGroups{}, errPostgresInvalidArgument
+			}
+			items = append(items, s)
+		}
+		return roleGroups{kind: roleGroupsList, items: items}, nil
+	default:
+		return roleGroups{}, errPostgresInvalidArgument
+	}
+}
+
+// grantEntries reproduces the pinned group suffix of _role_cmd_args
+// exactly: the truthiness gate (an empty string or empty list renders
+// nothing), the list joined with "," first, then the split on "," with no
+// trimming and no empty-element dropping — so a trailing space survives
+// inside its identifier and an empty comma slot renders its own empty
+// GRANT, byte-for-byte like the pinned source.
+func (g roleGroups) grantEntries() []string {
+	switch g.kind {
+	case roleGroupsString:
+		if g.raw == "" {
+			return nil
+		}
+		return strings.Split(g.raw, ",")
+	case roleGroupsList:
+		if len(g.items) == 0 {
+			return nil
+		}
+		return strings.Split(strings.Join(g.items, ","), ",")
+	default:
+		return nil
+	}
+}
+
+// roleOptions carries the pinned _role_cmd_args inputs for one statement.
+// typ keeps the pinned typ_: "user" for the create path (whose inherit and
+// login defaults apply), "role" for the update path (whose _role_cmd_args
+// call passes no typ_, so no defaults apply). dbRole is the update path's
+// stored role row for the pinned superuser skip; nil on create.
+type roleOptions struct {
+	name         string
+	typ          string
+	encrypted    saltScalar
+	login        *bool
+	connlimit    *int64
+	inherit      *bool
+	createdb     *bool
+	createroles  *bool
+	superuser    *bool
+	groups       roleGroups
+	replication  *bool
+	rolepassword saltScalar
+	validUntil   *string
+	dbRole       map[string]any
+}
+
+// roleCmdArgs ports the pinned _role_cmd_args (postgres.py:1271-1365)
+// exactly: the typ_-keyed inherit/login defaults, the md5 encryption
+// default, the skip_passwd rule over the rolepassword shapes, the
+// quote-doubled password and valid-until literals, the update-only
+// superuser skip against the stored role, the pinned ten-clause order,
+// and the join-then-split group GRANT suffix. The pinned WITH-strip tail
+// is dead code for these call paths (the inner sub_cmd is always ""), so
+// it is not ported. Errors are the value-free unknown-algorithm and
+// saslprep bounds. Alongside the clause string it returns every secret the
+// rendered statement carries — the plaintext rolepassword, its
+// quote-doubled form, the generated md5/SCRAM verifier actually placed in
+// the SQL, and that verifier's single-quoted escaped form — longest form
+// first, so runPsqlSecrets receives them all for the Redact list and the
+// error-redaction pass.
+func roleCmdArgs(o roleOptions) (string, []string, error) {
+	inherit := o.inherit
+	if inherit == nil && (o.typ == "user" || o.typ == "group") {
+		value := true
+		inherit = &value
+	}
+	login := o.login
+	if login == nil {
+		if o.typ == "user" {
+			value := true
+			login = &value
+		}
+		if o.typ == "group" {
+			value := false
+			login = &value
+		}
+	}
+	// defaults to encrypted passwords
+	encrypted := o.encrypted
+	if encrypted.kind == saltNone {
+		encrypted = saltScalar{kind: saltString, s: defaultPasswordsEncryption}
+	}
+	skipPasswd := !((o.rolepassword.kind != saltNone && o.rolepassword.isStr() &&
+		o.rolepassword.s != "") || o.rolepassword.isBool())
+	escapedPassword := ""
+	secrets := []string(nil)
+	if o.rolepassword.isStr() && o.rolepassword.s != "" {
+		doubled := strings.ReplaceAll(o.rolepassword.s, "'", "''")
+		verifier, err := maybeEncryptPassword(o.name, doubled, encrypted)
+		if err != nil {
+			return "", nil, err
+		}
+		escapedPassword = "'" + verifier + "'"
+		// Longest forms first so a partial overlap can never leave a
+		// fragment of a longer secret behind the placeholder.
+		secrets = append(secrets, escapedPassword, verifier)
+		if doubled != o.rolepassword.s && strings.Contains(verifier, doubled) {
+			secrets = append(secrets, doubled)
+		}
+		secrets = append(secrets, o.rolepassword.s)
+	}
+	escapedValidUntil := ""
+	if o.validUntil != nil && *o.validUntil != "" {
+		escapedValidUntil = "'" + strings.ReplaceAll(*o.validUntil, "'", "''") + "'"
+	}
+	skipSuperuser := false
+	if o.dbRole != nil && pointerBool(o.superuser) == rowLooseBool(o.dbRole["superuser"]) {
+		skipSuperuser = true
+	}
+
+	cmd := ""
+	cmd = addRoleFlag(cmd, roleFlagSpec{flag: "INHERIT", prefix: "NO", test: inherit})
+	cmd = addRoleFlag(cmd, roleFlagSpec{flag: "CREATEDB", prefix: "NO", test: o.createdb})
+	cmd = addRoleFlag(cmd, roleFlagSpec{flag: "CREATEROLE", prefix: "NO", test: o.createroles})
+	cmd = addRoleFlag(cmd, roleFlagSpec{flag: "SUPERUSER", prefix: "NO", test: o.superuser, skip: skipSuperuser})
+	cmd = addRoleFlag(cmd, roleFlagSpec{flag: "REPLICATION", prefix: "NO", test: o.replication})
+	cmd = addRoleFlag(cmd, roleFlagSpec{flag: "LOGIN", prefix: "NO", test: login})
+	connlimitSet := new(bool)
+	connlimitTxt := ""
+	if o.connlimit != nil {
+		*connlimitSet = *o.connlimit != 0
+		connlimitTxt = strconv.FormatInt(*o.connlimit, 10)
+	}
+	cmd = addRoleFlag(cmd, roleFlagSpec{flag: "CONNECTION LIMIT", prefix: "NO", test: connlimitSet,
+		addtxt: connlimitTxt, skip: o.connlimit == nil})
+	encryptedTest := encrypted.kind != saltNone && o.rolepassword.truthy()
+	encryptedCond := encrypted.truthy()
+	cmd = addRoleFlag(cmd, roleFlagSpec{flag: "ENCRYPTED", test: &encryptedTest,
+		cond: &encryptedCond, prefix: "UN",
+		skip: skipPasswd || o.rolepassword.isBool()})
+	passwordTest := o.rolepassword.truthy()
+	cmd = addRoleFlag(cmd, roleFlagSpec{flag: "PASSWORD", prefix: "NO", test: &passwordTest,
+		skip: skipPasswd, addtxt: escapedPassword})
+	validUntilTest := o.validUntil != nil && *o.validUntil != ""
+	cmd = addRoleFlag(cmd, roleFlagSpec{flag: "VALID UNTIL", prefix: "NO", test: &validUntilTest,
+		skip: o.validUntil == nil, addtxt: escapedValidUntil})
+
+	// The pinned list handling joins then splits, so every element of
+	// the joined rendering becomes its own GRANT — no trimming and no
+	// empty-element dropping, exactly like the pinned split.
+	for _, group := range o.groups.grantEntries() {
+		cmd += `; GRANT "` + group + `" TO "` + o.name + `"`
+	}
+	return cmd, secrets, nil
+}
+
+// rowLooseBool is the pinned bool() over a stored role's looseBool column
+// (true, false, or None): None is false.
+func rowLooseBool(value any) bool {
+	truthy, ok := value.(bool)
+	return ok && truthy
+}
+
+// roleStatement assembles the pinned statement head and the "{} {}"
+// joining of _role_create/_role_update: the head keeps its WITH and the
+// rendered clauses join after one space, so a clause-less update keeps the
+// pinned trailing space and any clause renders the pinned double space
+// after WITH. It also returns the full Redact secret list the statement
+// carries: the quote-escaped and bare generated md5/SCRAM verifiers, the
+// quote-doubled plaintext, and the plaintext rolepassword itself.
+func roleStatement(verb string, o roleOptions) (string, []string, error) {
+	built, secrets, err := roleCmdArgs(o)
+	if err != nil {
+		return "", nil, err
+	}
+	return verb + ` "` + o.name + `" WITH` + " " + built, secrets, nil
+}
+
+// validateRoleIdentifiers fails closed on the double quote at the
+// identifier positions the pinned source interpolates raw — the role name
+// of every CREATE/ALTER/DROP ROLE and GRANT statement and each GRANT group
+// entry the pinned split produces — with the shared value-free rejection,
+// before any Runner invocation.
+func validateRoleIdentifiers(name string, groups []string) error {
+	if strings.Contains(name, `"`) {
+		return ddlValidationError("username")
+	}
+	for _, group := range groups {
+		if strings.Contains(group, `"`) {
+			return ddlValidationError("groups")
+		}
+	}
+	return nil
+}
+
+// roleUserExists is the pinned user_exists preflight of _role_create and
+// _role_remove: bool(role_get(..., return_password=False)) over the shared
+// user_list catalog.
+func roleUserExists(ctx context.Context, rt *runtime.Runtime, conn *pgConnection, name string) (bool, error) {
+	row, err := roleGet(ctx, rt, conn, name, false)
+	if err != nil {
+		return false, err
+	}
+	return row != nil, nil
+}
+
+// UserCreateArgs are the canonical postgres.user_create arguments,
+// mirroring the pinned user_create(username, user, host, port,
+// maintenance_db, password, createdb, createroles, encrypted, superuser,
+// login, connlimit, inherit, replication, rolepassword, valid_until,
+// groups, runas) signature (postgres.py:1433-1452). Pointer and union
+// fields keep Salt's None defaults: nil or an absent value omits the
+// clause (or applies the pinned user-typed inherit/login default), while
+// an explicit empty string keeps the pinned falsy-string behavior.
+// Encrypted, Rolepassword, and Groups are type-preserving unions: bools
+// stay bools and strings stay the exact strings (a string groups value
+// splits on the comma without trimming, like the pinned source), with the
+// CLI decoder the only translator of typed bool flags.
+type UserCreateArgs struct {
+	Username      string  `statekit:"name=username,required"`
+	User          *string `statekit:"name=user"`
+	Host          *string `statekit:"name=host"`
+	Port          *string `statekit:"name=port"`
+	MaintenanceDB *string `statekit:"name=maintenance_db"`
+	Password      *string `statekit:"name=password"`
+	Createdb      *bool   `statekit:"name=createdb"`
+	Createroles   *bool   `statekit:"name=createroles"`
+	Encrypted     any     `statekit:"name=encrypted"`
+	Superuser     *bool   `statekit:"name=superuser"`
+	Login         *bool   `statekit:"name=login"`
+	Connlimit     *int64  `statekit:"name=connlimit"`
+	Inherit       *bool   `statekit:"name=inherit"`
+	Replication   *bool   `statekit:"name=replication"`
+	Rolepassword  any     `statekit:"name=rolepassword"`
+	ValidUntil    *string `statekit:"name=valid_until"`
+	Groups        any     `statekit:"name=groups"`
+	Runas         *string `statekit:"name=runas"`
+}
+
+func (a *UserCreateArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: a.MaintenanceDB,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+// roleOptionsFromCreate projects the create arguments onto the statement
+// builder with the pinned typ_="user". The groups union normalizes
+// separately so Execute can validate the exact GRANT entries the pinned
+// split produces before any Runner invocation.
+func (a *UserCreateArgs) roleOptions(groups roleGroups) roleOptions {
+	return roleOptions{
+		name:         a.Username,
+		typ:          "user",
+		encrypted:    normalizeSaltScalar(a.Encrypted),
+		login:        a.Login,
+		connlimit:    a.Connlimit,
+		inherit:      a.Inherit,
+		createdb:     a.Createdb,
+		createroles:  a.Createroles,
+		superuser:    a.Superuser,
+		groups:       groups,
+		replication:  a.Replication,
+		rolepassword: normalizeSaltScalar(a.Rolepassword),
+		validUntil:   a.ValidUntil,
+	}
+}
+
+type userCreateFunc struct{}
+
+func (userCreateFunc) Name() string { return "postgres.user_create" }
+func (userCreateFunc) Args() any    { return UserCreateArgs{} }
+
+// Execute ports the pinned _role_create flow for typ_="user"
+// (postgres.py:1368-1431): the user_exists preflight whose hit is the
+// logged-and-False no-op, the pinned CREATE ROLE statement (Salt spells the
+// verb CREATE ROLE for users too), and the pinned ret["retcode"] == 0
+// boolean. The identifier boundary is checked before any Runner
+// invocation; statement-construction errors (the pinned unknown-algorithm
+// ValueError and the saslprep bound) surface after the read-only
+// preflight exactly where the pinned format raises.
+func (userCreateFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[UserCreateArgs](args, "postgres.user_create")
+	if err != nil {
+		return nil, err
+	}
+	groups, err := normalizeRoleGroups(a.Groups)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateRoleIdentifiers(a.Username, groups.grantEntries()); err != nil {
+		return nil, err
+	}
+	conn := a.connection()
+	if password := normalizeSaltScalar(a.Rolepassword); password.isStr() {
+		conn.Secrets = secretList(password.s)
+	}
+	exists, err := roleUserExists(ctx, rt, conn, a.Username)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		// The pinned "User 'x' already exists" log-and-False.
+		return false, nil
+	}
+	statement, secrets, err := roleStatement("CREATE ROLE", a.roleOptions(groups))
+	if err != nil {
+		return nil, err
+	}
+	argv := psqlArgv(
+		pointerString(a.User),
+		pointerString(a.Host),
+		pointerString(a.Port),
+		pointerString(a.MaintenanceDB),
+		"-c", statement,
+	)
+	result, err := runPsqlSecrets(ctx, rt, argv, conn, secrets)
+	if err != nil {
+		return nil, err
+	}
+	return result.ExitCode == 0, nil
+}
+
+// UserUpdateArgs are the canonical postgres.user_update arguments,
+// mirroring the pinned user_update(username, user, host, port,
+// maintenance_db, password, createdb, createroles, encrypted, superuser,
+// inherit, login, connlimit, replication, rolepassword, valid_until,
+// groups, runas) signature (postgres.py:1559-1578). Encrypted,
+// Rolepassword, and Groups keep the same type-preserving union contract
+// as user_create.
+type UserUpdateArgs struct {
+	Username      string  `statekit:"name=username,required"`
+	User          *string `statekit:"name=user"`
+	Host          *string `statekit:"name=host"`
+	Port          *string `statekit:"name=port"`
+	MaintenanceDB *string `statekit:"name=maintenance_db"`
+	Password      *string `statekit:"name=password"`
+	Createdb      *bool   `statekit:"name=createdb"`
+	Createroles   *bool   `statekit:"name=createroles"`
+	Encrypted     any     `statekit:"name=encrypted"`
+	Superuser     *bool   `statekit:"name=superuser"`
+	Inherit       *bool   `statekit:"name=inherit"`
+	Login         *bool   `statekit:"name=login"`
+	Connlimit     *int64  `statekit:"name=connlimit"`
+	Replication   *bool   `statekit:"name=replication"`
+	Rolepassword  any     `statekit:"name=rolepassword"`
+	ValidUntil    *string `statekit:"name=valid_until"`
+	Groups        any     `statekit:"name=groups"`
+	Runas         *string `statekit:"name=runas"`
+}
+
+func (a *UserUpdateArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: a.MaintenanceDB,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+// roleOptionsFromUpdate projects the update arguments onto the statement
+// builder with the pinned update-path typ_: _role_update passes no typ_, so
+// _role_cmd_args defaults to "role" and applies no inherit/login defaults.
+func (a *UserUpdateArgs) roleOptions(dbRole map[string]any, groups roleGroups) roleOptions {
+	return roleOptions{
+		name:         a.Username,
+		typ:          "role",
+		encrypted:    normalizeSaltScalar(a.Encrypted),
+		login:        a.Login,
+		connlimit:    a.Connlimit,
+		inherit:      a.Inherit,
+		createdb:     a.Createdb,
+		createroles:  a.Createroles,
+		superuser:    a.Superuser,
+		groups:       groups,
+		replication:  a.Replication,
+		rolepassword: normalizeSaltScalar(a.Rolepassword),
+		validUntil:   a.ValidUntil,
+		dbRole:       dbRole,
+	}
+}
+
+type userUpdateFunc struct{}
+
+func (userUpdateFunc) Name() string { return "postgres.user_update" }
+func (userUpdateFunc) Args() any    { return UserUpdateArgs{} }
+
+// Execute ports the pinned _role_update flow for typ_="user"
+// (postgres.py:1487-1556): the role_get preflight whose miss is the
+// logged-and-False no-op, the pinned ALTER ROLE statement with the
+// db_role-keyed superuser skip, and the pinned ret["retcode"] == 0
+// boolean. The identifier boundary is checked before any Runner
+// invocation; statement-construction errors surface after the read-only
+// preflight exactly where the pinned format raises.
+func (userUpdateFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[UserUpdateArgs](args, "postgres.user_update")
+	if err != nil {
+		return nil, err
+	}
+	groups, err := normalizeRoleGroups(a.Groups)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateRoleIdentifiers(a.Username, groups.grantEntries()); err != nil {
+		return nil, err
+	}
+	conn := a.connection()
+	if password := normalizeSaltScalar(a.Rolepassword); password.isStr() {
+		conn.Secrets = secretList(password.s)
+	}
+	row, err := roleGet(ctx, rt, conn, a.Username, false)
+	if err != nil {
+		return nil, err
+	}
+	if row == nil {
+		// The pinned "User 'x' could not be found" log-and-False.
+		return false, nil
+	}
+	dbRole, _ := row.(map[string]any)
+	statement, secrets, err := roleStatement("ALTER ROLE", a.roleOptions(dbRole, groups))
+	if err != nil {
+		return nil, err
+	}
+	argv := psqlArgv(
+		pointerString(a.User),
+		pointerString(a.Host),
+		pointerString(a.Port),
+		pointerString(a.MaintenanceDB),
+		"-c", statement,
+	)
+	result, err := runPsqlSecrets(ctx, rt, argv, conn, secrets)
+	if err != nil {
+		return nil, err
+	}
+	return result.ExitCode == 0, nil
+}
+
+// UserRemoveArgs are the canonical postgres.user_remove arguments,
+// mirroring the pinned user_remove(username, user, host, port,
+// maintenance_db, password, runas) signature (postgres.py:2066-2074).
+type UserRemoveArgs struct {
+	Username      string  `statekit:"name=username,required"`
+	User          *string `statekit:"name=user"`
+	Host          *string `statekit:"name=host"`
+	Port          *string `statekit:"name=port"`
+	MaintenanceDB *string `statekit:"name=maintenance_db"`
+	Password      *string `statekit:"name=password"`
+	Runas         *string `statekit:"name=runas"`
+}
+
+func (a *UserRemoveArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: a.MaintenanceDB,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+type userRemoveFunc struct{}
+
+func (userRemoveFunc) Name() string { return "postgres.user_remove" }
+func (userRemoveFunc) Args() any    { return UserRemoveArgs{} }
+
+// Execute ports the pinned _role_remove flow (postgres.py:1613-1651): the
+// user_exists preflight whose miss is the logged-and-False no-op, the fixed
+// DROP ROLE statement whose retcode the pinned source ignores (only Runner
+// failures, cancellation, and output-limit violations are errors here, like
+// Salt's raised transport exceptions), and the final user_exists
+// re-check that decides the boolean — true only when the role is gone.
+// The identifier boundary is checked before any Runner invocation.
+func (userRemoveFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[UserRemoveArgs](args, "postgres.user_remove")
+	if err != nil {
+		return nil, err
+	}
+	if strings.Contains(a.Username, `"`) {
+		return nil, ddlValidationError("username")
+	}
+	conn := a.connection()
+	exists, err := roleUserExists(ctx, rt, conn, a.Username)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		// The pinned "User 'x' does not exist" log-and-False.
+		return false, nil
+	}
+	argv := psqlArgv(
+		pointerString(a.User),
+		pointerString(a.Host),
+		pointerString(a.Port),
+		pointerString(a.MaintenanceDB),
+		"-c", `DROP ROLE "`+a.Username+`"`,
+	)
+	if _, err := runPsql(ctx, rt, argv, conn); err != nil {
+		return nil, err
+	}
+	exists, err = roleUserExists(ctx, rt, conn, a.Username)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		// The pinned "Failed to delete user 'x'." log-and-False.
+		return false, nil
+	}
+	return true, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -2471,6 +3322,12 @@ func pointerString(value *string) string {
 	return *value
 }
 
+// pointerBool is the pinned bool() over an optional argument: nil (Python
+// None) is false.
+func pointerBool(value *bool) bool {
+	return value != nil && *value
+}
+
 func rejectRunas(runas *string) error {
 	if runas == nil || *runas == "" {
 		return nil
@@ -2511,33 +3368,40 @@ func secretList(values ...string) []string {
 		seen[value] = struct{}{}
 		out = append(out, value)
 	}
+	sort.SliceStable(out, func(i, j int) bool { return len(out[i]) > len(out[j]) })
 	return out
 }
 
-func redactedError(err error, password *string) error {
+// redactedError strips every given secret (the connection password plus
+// any statement-carried rolepassword forms) from a Runner error, so no
+// credential travels through returned errors. Empty secrets leave the
+// error untouched.
+func redactedError(err error, secrets ...string) error {
 	if err == nil {
 		return nil
 	}
-	if password == nil || *password == "" {
+	list := secretList(secrets...)
+	if len(list) == 0 {
 		return err
 	}
-	message := process.RedactString([]string{*password}, err.Error())
+	message := process.RedactString(list, err.Error())
 	if message == err.Error() {
 		return err
 	}
 	return errors.New(message)
 }
 
-// Register installs the R9.2h postgres slice: the version probe, the five
+// Register installs the R9.2i postgres slice: the version probe, the five
 // R9.2c read-only catalog primitives, the R9.2h write paths db_create and
 // db_remove, the eight R9.2d extension and language catalog functions,
 // the three R9.2e schema catalog functions, the three R9.2f role and
-// privilege checks, and the R9.2g ACL listing privileges_list. The
+// privilege checks, the R9.2g ACL listing privileges_list, and the R9.2i
+// role mutations user_create, user_update, and user_remove. The
 // remainder of the postgres family needs the generic psql query surface
 // (psql_query itself stays pending; no arbitrary-query registration
 // exists in this phase) and stays pending for later R9 rounds; the
-// internal parsed-version and psql-query helpers are intentionally not
-// registered, exactly like the pinned private functions.
+// internal parsed-version, psql-query, and role-statement helpers are
+// intentionally not registered, exactly like the pinned private functions.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		versionFunc{},
@@ -2563,6 +3427,9 @@ func Register(reg *runtime.ExecRegistry) error {
 		userExistsFunc{},
 		hasPrivilegesFunc{},
 		privilegesListFunc{},
+		userCreateFunc{},
+		userUpdateFunc{},
+		userRemoveFunc{},
 	} {
 		if err := reg.Register(fn); err != nil {
 			return err

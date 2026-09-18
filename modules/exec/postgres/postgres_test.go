@@ -2,10 +2,16 @@ package postgres
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/pbkdf2"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"reflect"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -61,6 +67,10 @@ func newPostgresRuntime(results ...process.CommandResult) (*runtime.Runtime, *po
 }
 
 func postgresString(value string) *string { return &value }
+
+func postgresBool(value bool) *bool { return &value }
+
+func postgresInt64(value int64) *int64 { return &value }
 
 // wantVersionArgv is the exact argv the pinned test_postgres.py test_version
 // asserts shape on: with every connection argument supplied, the SQL query
@@ -365,8 +375,11 @@ func TestPostgresRegistrySurface(t *testing.T) {
 		"postgres.schema_list",
 		"postgres.tablespace_exists",
 		"postgres.tablespace_list",
+		"postgres.user_create",
 		"postgres.user_exists",
 		"postgres.user_list",
+		"postgres.user_remove",
+		"postgres.user_update",
 		"postgres.version",
 	}
 	if reg.Len() != len(wantNames) {
@@ -385,6 +398,12 @@ func TestPostgresRegistrySurface(t *testing.T) {
 			want = DbCreateArgs{}
 		case "postgres.db_remove":
 			want = DbRemoveArgs{}
+		case "postgres.user_create":
+			want = UserCreateArgs{}
+		case "postgres.user_update":
+			want = UserUpdateArgs{}
+		case "postgres.user_remove":
+			want = UserRemoveArgs{}
 		case "postgres.user_list":
 			want = UserListArgs{}
 		case "postgres.role_get":
@@ -409,16 +428,25 @@ func TestPostgresRegistrySurface(t *testing.T) {
 		default:
 			want = ListArgs{}
 		}
-		if fn.Args() != want {
+		// DeepEqual, not ==: the R9.2i argument structs carry the pinned
+		// union-typed any fields and the groups slice, which == cannot
+		// compare; zero values still compare equal exactly.
+		if !reflect.DeepEqual(fn.Args(), want) {
 			t.Fatalf("%s prototype = %#v, want zero-value defaults %#v", name, fn.Args(), want)
 		}
 	}
-	// The generic query surface and the private helper stay unregistered.
-	if _, ok := reg.Get("postgres.psql_query"); ok {
-		t.Fatal("postgres.psql_query must not be publicly registered")
-	}
-	if _, ok := reg.Get("postgres._parsed_version"); ok {
-		t.Fatal("postgres._parsed_version must not be publicly registered")
+	// The generic query surface, the group family, and the private helpers
+	// stay unregistered.
+	for _, pending := range []string{
+		"postgres.psql_query",
+		"postgres.group_create",
+		"postgres.group_update",
+		"postgres.group_remove",
+		"postgres._parsed_version",
+	} {
+		if _, ok := reg.Get(pending); ok {
+			t.Fatalf("%s must not be publicly registered", pending)
+		}
 	}
 	connection := []string{"host", "maintenance_db", "password", "port", "runas", "user"}
 	schemaConnection := []string{"db_host", "db_password", "db_port", "db_user", "dbname", "user"}
@@ -449,6 +477,17 @@ func TestPostgresRegistrySurface(t *testing.T) {
 		{schemaExistsFunc{}, append([]string{"name"}, schemaConnection...)},
 		{roleGetFunc{}, append(append([]string{"name"}, connection...), "return_password")},
 		{userExistsFunc{}, append([]string{"name"}, connection...)},
+		{userCreateFunc{}, append([]string{
+			"username", "createdb", "createroles", "encrypted", "superuser",
+			"login", "connlimit", "inherit", "replication", "rolepassword",
+			"valid_until", "groups",
+		}, connection...)},
+		{userUpdateFunc{}, append([]string{
+			"username", "createdb", "createroles", "encrypted", "superuser",
+			"inherit", "login", "connlimit", "replication", "rolepassword",
+			"valid_until", "groups",
+		}, connection...)},
+		{userRemoveFunc{}, append([]string{"username"}, connection...)},
 		{hasPrivilegesFunc{}, append([]string{
 			"name", "object_name", "object_type", "privileges",
 			"grant_option", "prepend",
@@ -3575,6 +3614,1444 @@ func TestPostgresUserExists(t *testing.T) {
 	}
 }
 
+// mutationUsersCSV is the user_list catalog for the R9.2i mutation flows:
+// test_username is a non-superuser role, super_role a superuser, and the
+// create-flow names are absent.
+const mutationUsersCSV = `name,superuser,inherits privileges,can create roles,can create databases,can update system catalogs,can login,replication,connections,groups,expiry time,defaults variables
+test_username,f,f,f,f,f,f,,-1,,,
+super_role,t,t,f,f,f,t,,-1,,,
+`
+
+// newMutationRuntime seeds the version probe and role catalog answers the
+// user_create/user_update/user_remove preflights and post-checks consume.
+func newMutationRuntime(results ...process.CommandResult) (*runtime.Runtime, *postgresFakeRunner) {
+	catalog := process.CommandResult{ExitCode: 0, Stdout: []byte(mutationUsersCSV)}
+	seed := []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("9.1\n")}, // version probe
+		catalog,                                // user_list catalog
+	}
+	return newPostgresRuntime(append(seed, results...)...)
+}
+
+// userCreateStatement returns the SQL argument of the CREATE call.
+func userCreateStatement(runner *postgresFakeRunner) string {
+	if len(runner.calls) == 0 {
+		return ""
+	}
+	args := runner.calls[len(runner.calls)-1].Args
+	return args[len(args)-1]
+}
+
+// TestPostgresUserCreateArgvAndResult ports the pinned test_user_create
+// (postgres.py:695-736 of the pinned tests): the exact statement on the
+// full pinned argv with the pinned double space after WITH, the preflight
+// catalog calls before it, and the retcode boolean — with the rolepassword
+// redacted out of the rendered command.
+func TestPostgresUserCreateArgvAndResult(t *testing.T) {
+	rt, runner := newMutationRuntime(process.CommandResult{ExitCode: 0})
+	value, err := (userCreateFunc{}).Execute(context.Background(), rt, &UserCreateArgs{
+		Username:      "testuser",
+		User:          postgresString("testuser"),
+		Host:          postgresString("testhost"),
+		Port:          postgresString("testport"),
+		MaintenanceDB: postgresString("maint_test"),
+		Password:      postgresString("test_pass"),
+		Login:         postgresBool(true),
+		Createdb:      postgresBool(false),
+		Createroles:   postgresBool(false),
+		Encrypted:     false,
+		Superuser:     postgresBool(false),
+		Replication:   postgresBool(false),
+		Rolepassword:  "test_role_pass",
+		ValidUntil:    postgresString("2042-07-01"),
+		Groups:        []string{"test_groups"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true {
+		t.Fatalf("user_create = %#v, want true", value)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("runner calls = %d, want 3 (preflight pair plus CREATE)", len(runner.calls))
+	}
+	command := runner.calls[2]
+	want := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--username", "testuser",
+		"--host", "testhost",
+		"--port", "testport",
+		"--dbname", "maint_test",
+		"-c", `CREATE ROLE "testuser" WITH  INHERIT NOCREATEDB NOCREATEROLE ` +
+			`NOSUPERUSER NOREPLICATION LOGIN UNENCRYPTED PASSWORD ` +
+			`'test_role_pass' VALID UNTIL '2042-07-01'; GRANT "test_groups" TO "testuser"`,
+	}
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+	if got := append([]string{command.Name}, command.Args...); got[14] != want[14] {
+		t.Fatalf("argv[14] = %q, want the pinned CREATE ROLE statement", got[14])
+	}
+	wantEnv := []string{
+		"PGPASSWORD=test_pass",
+		"PGUSER=testuser",
+		"PGHOST=testhost",
+		"PGPORT=testport",
+	}
+	if !reflect.DeepEqual(command.Env, wantEnv) {
+		t.Fatalf("env = %q, want %q", command.Env, wantEnv)
+	}
+	if command.Shell {
+		t.Fatal("psql must run without a shell")
+	}
+	if command.Timeout != commandTimeout ||
+		command.MaxStdoutBytes != outputLimit || command.MaxStderrBytes != outputLimit {
+		t.Fatalf("unsafe command bounds: %#v", command)
+	}
+	// The full statement-carried secret set: the quote-escaped plaintext
+	// literal first, then the plaintext, then the connection password.
+	if !reflect.DeepEqual(command.Redact, []string{"'test_role_pass'", "test_role_pass", "test_pass"}) {
+		t.Fatalf("redact = %q", command.Redact)
+	}
+	rendered := command.RedactedString()
+	if strings.Contains(rendered, "test_role_pass") || strings.Contains(rendered, "test_pass") ||
+		strings.Contains(rendered, "'test_role_pass'") {
+		t.Fatalf("rendered command leaks a password: %q", rendered)
+	}
+}
+
+// TestPostgresUserCreateDefaults pins the no-argument shape: the pinned
+// user-typed INHERIT and LOGIN defaults are the only clauses (the pinned
+// double space after WITH kept), the maintenance fallback applies, the
+// environment is clean, and nothing is redacted.
+func TestPostgresUserCreateDefaults(t *testing.T) {
+	rt, runner := newMutationRuntime(process.CommandResult{ExitCode: 0})
+	value, err := (userCreateFunc{}).Execute(context.Background(), rt, &UserCreateArgs{
+		Username: "plainuser",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true {
+		t.Fatalf("user_create = %#v, want true", value)
+	}
+	command := runner.calls[2]
+	want := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--dbname", "postgres",
+		"-c", `CREATE ROLE "plainuser" WITH  INHERIT LOGIN`,
+	}
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+	if command.Env == nil || len(command.Env) != 0 {
+		t.Fatalf("default env = %q, want clean empty environment", command.Env)
+	}
+	if command.Redact != nil {
+		t.Fatalf("default redact = %q, want none", command.Redact)
+	}
+}
+
+// TestPostgresUserCreateExistsIsFalse pins the pinned preflight no-op: an
+// existing role is the logged-and-False answer after exactly the two
+// catalog calls, with no CREATE statement issued.
+func TestPostgresUserCreateExistsIsFalse(t *testing.T) {
+	rt, runner := newMutationRuntime()
+	value, err := (userCreateFunc{}).Execute(context.Background(), rt, &UserCreateArgs{
+		Username:     "test_username",
+		Rolepassword: "secret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != false {
+		t.Fatalf("user_create(existing) = %#v, want false", value)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("runner calls = %d, want 2 preflight calls only", len(runner.calls))
+	}
+}
+
+// absentRoleCSV is a catalog without test_username, so create flows for
+// that name reach their statement while the md5 digest stays the pinned
+// md5("foobar"+"test_username") vector.
+const absentRoleCSV = `name,superuser,inherits privileges,can create roles,can create databases,can update system catalogs,can login,replication,connections,groups,expiry time,defaults variables
+super_role,t,t,f,f,f,t,,-1,,,
+`
+
+// newAbsentRoleRuntime seeds the version probe and a catalog whose only
+// role is super_role.
+func newAbsentRoleRuntime(results ...process.CommandResult) (*runtime.Runtime, *postgresFakeRunner) {
+	return newPostgresRuntime(append([]process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("9.1\n")},
+		{ExitCode: 0, Stdout: []byte(absentRoleCSV)},
+	}, results...)...)
+}
+
+// TestPostgresUserCreateEncryptedMD5 pins the default and explicit md5
+// verifier paths: the derived digest is the pinned md5(password+role) of
+// the quote-doubled password, rendered behind the ENCRYPTED clause.
+func TestPostgresUserCreateEncryptedMD5(t *testing.T) {
+	// The pinned test_user_update_encrypted_passwd digest: md5 of
+	// "foobar" + "test_username".
+	const wantDigest = "md531c27e68d3771c392b52102c01be1da1"
+	if got := md5Password("test_username", "foobar"); got != wantDigest {
+		t.Fatalf("md5 verifier = %s, want the pinned %s", got, wantDigest)
+	}
+	for _, tc := range []struct {
+		name      string
+		encrypted any
+	}{
+		{"default md5", nil},
+		{"explicit md5", "md5"},
+		{"true is md5", true},
+	} {
+		rt, runner := newAbsentRoleRuntime(process.CommandResult{ExitCode: 0})
+		_, err := (userCreateFunc{}).Execute(context.Background(), rt, &UserCreateArgs{
+			Username:     "test_username",
+			Encrypted:    tc.encrypted,
+			Rolepassword: "foobar",
+		})
+		if err != nil {
+			t.Fatalf("%s err = %v", tc.name, err)
+		}
+		want := `CREATE ROLE "test_username" WITH  INHERIT LOGIN ENCRYPTED PASSWORD '` +
+			wantDigest + `'`
+		if got := userCreateStatement(runner); got != want {
+			t.Fatalf("%s statement = %q, want %q", tc.name, got, want)
+		}
+		// The generated verifier joins the Redact list in both its bare
+		// and quote-escaped forms, so neither the rendered command nor a
+		// redacted capture ever carries the digest.
+		if !reflect.DeepEqual(runner.calls[2].Redact,
+			[]string{"'" + wantDigest + "'", wantDigest, "foobar"}) {
+			t.Fatalf("%s redact = %q", tc.name, runner.calls[2].Redact)
+		}
+		if rendered := runner.calls[2].RedactedString(); strings.Contains(rendered, "foobar") ||
+			strings.Contains(rendered, wantDigest) {
+			t.Fatalf("%s rendered command leaks a secret: %q", tc.name, rendered)
+		}
+	}
+
+	// An already-md5 password passes through untouched: the full verifier
+	// value readback is the whole statement.
+	rt, runner := newMutationRuntime(process.CommandResult{ExitCode: 0})
+	_, err := (userCreateFunc{}).Execute(context.Background(), rt, &UserCreateArgs{
+		Username:     "newuser",
+		Rolepassword: "md5deadbeef",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `CREATE ROLE "newuser" WITH  INHERIT LOGIN ENCRYPTED PASSWORD 'md5deadbeef'`
+	if got := userCreateStatement(runner); got != want {
+		t.Fatalf("md5 passthrough statement = %q, want %q", got, want)
+	}
+	if !reflect.DeepEqual(runner.calls[2].Redact,
+		[]string{"'md5deadbeef'", "md5deadbeef"}) {
+		t.Fatalf("md5 passthrough redact = %q", runner.calls[2].Redact)
+	}
+}
+
+// TestPostgresUserCreateScram pins the scram-sha-256 paths: an
+// already-prefixed verifier passes through verbatim as the full statement
+// value, a plaintext password becomes a verifier matching the exact pinned
+// SCRAM-SHA-256$iterations:salt$stored:server rendering (the $ before the
+// stored key) whose keys recompute exactly from the parsed salt, the
+// generated verifier is a Redact secret in both forms, and a non-ASCII
+// password fails closed at the saslprep bound with a value-free error.
+func TestPostgresUserCreateScram(t *testing.T) {
+	rt, runner := newMutationRuntime(process.CommandResult{ExitCode: 0})
+	passthrough := "SCRAM-SHA-256$4096:c2FsdA==$c3RvcmVk:c2VydmVy"
+	_, err := (userCreateFunc{}).Execute(context.Background(), rt, &UserCreateArgs{
+		Username:     "newuser",
+		Encrypted:    "scram-sha-256",
+		Rolepassword: passthrough,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Verifier readback on create: the full value, byte-for-byte.
+	want := `CREATE ROLE "newuser" WITH  INHERIT LOGIN ENCRYPTED PASSWORD '` + passthrough + `'`
+	if got := userCreateStatement(runner); got != want {
+		t.Fatalf("scram passthrough statement = %q, want %q", got, want)
+	}
+	if !reflect.DeepEqual(runner.calls[2].Redact,
+		[]string{"'" + passthrough + "'", passthrough}) {
+		t.Fatalf("scram passthrough redact = %q", runner.calls[2].Redact)
+	}
+	if rendered := runner.calls[2].RedactedString(); strings.Contains(rendered, passthrough) {
+		t.Fatalf("scram passthrough rendered command leaks the verifier: %q", rendered)
+	}
+
+	rt, runner = newMutationRuntime(process.CommandResult{ExitCode: 0})
+	_, err = (userCreateFunc{}).Execute(context.Background(), rt, &UserCreateArgs{
+		Username:     "newuser",
+		Encrypted:    "scram-sha-256",
+		Rolepassword: "hunter2",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	statement := userCreateStatement(runner)
+	// The generated verifier occupies the whole literal and matches the
+	// pinned full-value rendering: $iterations:salt$stored:server with
+	// base64 shapes for a 16-byte salt and 32-byte keys.
+	match := regexp.MustCompile(
+		`^CREATE ROLE "newuser" WITH  INHERIT LOGIN ENCRYPTED PASSWORD ` +
+			`'SCRAM-SHA-256\$(\d+):([A-Za-z0-9+/=]+)\$([A-Za-z0-9+/=]+):([A-Za-z0-9+/=]+)'$`).
+		FindStringSubmatch(statement)
+	if match == nil {
+		t.Fatalf("scram statement lacks a pinned-format verifier: %q", statement)
+	}
+	iterations, err := strconv.Atoi(match[1])
+	if err != nil || iterations != scramIterations {
+		t.Fatalf("scram iterations = %q, want %d", match[1], scramIterations)
+	}
+	salt, err := base64.StdEncoding.DecodeString(match[2])
+	if err != nil || len(salt) != scramSaltLen {
+		t.Fatalf("scram salt = %q, want %d bytes", match[2], scramSaltLen)
+	}
+	salted, err := pbkdf2.Key(sha256.New, "hunter2", salt, iterations, sha256.Size)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientHMAC := hmac.New(sha256.New, salted)
+	clientHMAC.Write([]byte("Client Key"))
+	storedKey := sha256.Sum256(clientHMAC.Sum(nil))
+	if got := base64.StdEncoding.EncodeToString(storedKey[:]); got != match[3] {
+		t.Fatalf("scram stored key mismatch: %s != %s", got, match[3])
+	}
+	serverHMAC := hmac.New(sha256.New, salted)
+	serverHMAC.Write([]byte("Server Key"))
+	if got := base64.StdEncoding.EncodeToString(serverHMAC.Sum(nil)); got != match[4] {
+		t.Fatalf("scram server key mismatch: %s != %s", got, match[4])
+	}
+	// The whole generated verifier is a Redact secret in both its bare
+	// and quote-escaped forms.
+	verifier := fmt.Sprintf("SCRAM-SHA-256$%s:%s$%s:%s", match[1], match[2], match[3], match[4])
+	if !reflect.DeepEqual(runner.calls[2].Redact,
+		[]string{"'" + verifier + "'", verifier, "hunter2"}) {
+		t.Fatalf("scram redact = %q", runner.calls[2].Redact)
+	}
+	if rendered := runner.calls[2].RedactedString(); strings.Contains(rendered, verifier) ||
+		strings.Contains(rendered, "hunter2") {
+		t.Fatalf("scram rendered command leaks a secret: %q", rendered)
+	}
+	// A second generation differs: the salt is random like the pinned one.
+	first := statement
+	rt, runner = newMutationRuntime(process.CommandResult{ExitCode: 0})
+	_, err = (userCreateFunc{}).Execute(context.Background(), rt, &UserCreateArgs{
+		Username:     "newuser",
+		Encrypted:    "scram-sha-256",
+		Rolepassword: "hunter2",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second := userCreateStatement(runner); second == first {
+		t.Fatal("two scram generations produced the same verifier")
+	}
+
+	// The saslprep bound: non-ASCII fails closed after the read-only
+	// preflight with a value-free error and no CREATE.
+	rt, runner = newMutationRuntime()
+	_, err = (userCreateFunc{}).Execute(context.Background(), rt, &UserCreateArgs{
+		Username:     "newuser",
+		Encrypted:    "scram-sha-256",
+		Rolepassword: "påsswörd",
+	})
+	if err == nil || !errors.Is(err, errPostgresSaslprep) {
+		t.Fatalf("non-ascii err = %v, want the saslprep bound", err)
+	}
+	if strings.Contains(err.Error(), "påsswörd") {
+		t.Fatalf("saslprep error embeds the password: %v", err)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("saslprep-bound calls = %d, want the 2 preflight calls", len(runner.calls))
+	}
+}
+
+// TestPostgresUserCreateUnknownAlgorithm pins the pinned
+// _maybe_encrypt_password rejection: an algorithm outside
+// False/"md5"/"scram-sha-256" fails after the read-only preflight with the
+// fixed value-free unknown-algorithm error and no CREATE statement. The
+// synthetic overlap vectors pass the rolepassword (and the connection
+// password) as the algorithm so the error's value-freeness is asserted
+// against real credential overlap, not just theory.
+func TestPostgresUserCreateUnknownAlgorithm(t *testing.T) {
+	const rolePW = "s3cret-role-pw"
+	for _, tc := range []struct {
+		name      string
+		encrypted any
+	}{
+		{"unsupported algorithm", "bogus"},
+		{"boolean spelling true", "true"},
+		{"boolean spelling False", "False"},
+		{"rolepassword overlap", rolePW},
+		{"connection password overlap", "conn-pw"},
+		{"nonzero number", 7},
+		{"list value", []any{"x"}},
+	} {
+		rt, runner := newMutationRuntime()
+		_, err := (userCreateFunc{}).Execute(context.Background(), rt, &UserCreateArgs{
+			Username:     "newuser",
+			Password:     postgresString("conn-pw"),
+			Encrypted:    tc.encrypted,
+			Rolepassword: rolePW,
+			Groups:       "grp_a",
+		})
+		if err == nil || err.Error() != "postgres: invalid argument: unknown password algorithm" {
+			t.Fatalf("%s err = %v", tc.name, err)
+		}
+		if !errors.Is(err, errPostgresUnknownPasswordAlgorithm) ||
+			!errors.Is(err, errPostgresInvalidArgument) {
+			t.Fatalf("%s err = %v, want the fixed unknown-algorithm category", tc.name, err)
+		}
+		// Value-free: no algorithm string, rolepassword, or connection
+		// password anywhere in the returned error.
+		for _, marker := range []string{"bogus", "true", "False", rolePW, "conn-pw", "grp_a", "7"} {
+			if strings.Contains(err.Error(), marker) {
+				t.Fatalf("%s error leaks %q: %v", tc.name, marker, err)
+			}
+		}
+		if len(runner.calls) != 2 {
+			t.Fatalf("%s calls = %d, want the 2 preflight calls", tc.name, len(runner.calls))
+		}
+	}
+}
+
+// TestPostgresUserCreatePasswordShapes pins the remaining pinned
+// _role_cmd_args password and limit shapes: the bool NOPASSWORD and bare
+// PASSWORD clauses, the CONNECTION LIMIT zero and value renderings, the
+// quote-doubled plaintext literal with both secrets redacted, and the
+// falsy valid-until NOVALID UNTIL clause.
+func TestPostgresUserCreatePasswordShapes(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		args     UserCreateArgs
+		want     string
+		redact   []string
+		wantFail bool
+	}{
+		{
+			name: "bool false is NOPASSWORD",
+			args: UserCreateArgs{Username: "u", Rolepassword: false, Inherit: postgresBool(false)},
+			want: `CREATE ROLE "u" WITH  NOINHERIT LOGIN NOPASSWORD`,
+		},
+		{
+			name: "bool true is bare PASSWORD",
+			args: UserCreateArgs{Username: "u", Rolepassword: true},
+			want: `CREATE ROLE "u" WITH  INHERIT LOGIN PASSWORD`,
+		},
+		{
+			name: "empty string password is skipped",
+			args: UserCreateArgs{Username: "u", Rolepassword: "", Login: postgresBool(false)},
+			want: `CREATE ROLE "u" WITH  INHERIT NOLOGIN`,
+		},
+		{
+			name: "connlimit zero",
+			args: UserCreateArgs{Username: "u", Connlimit: postgresInt64(0), Login: postgresBool(false)},
+			want: `CREATE ROLE "u" WITH  INHERIT NOLOGIN NOCONNECTION LIMIT 0`,
+		},
+		{
+			name: "connlimit value",
+			args: UserCreateArgs{Username: "u", Connlimit: postgresInt64(10), Login: postgresBool(false)},
+			want: `CREATE ROLE "u" WITH  INHERIT NOLOGIN CONNECTION LIMIT 10`,
+		},
+		{
+			name: "quote-doubled plaintext",
+			args: UserCreateArgs{Username: "u", Encrypted: false, Rolepassword: "pa'ss", Login: postgresBool(false)},
+			want: `CREATE ROLE "u" WITH  INHERIT NOLOGIN UNENCRYPTED PASSWORD 'pa''ss'`,
+			// The quote-escaped literal, the doubled plaintext, and the
+			// plaintext itself.
+			redact: []string{"'pa''ss'", "pa''ss", "pa'ss"},
+		},
+		{
+			name: "falsy valid until",
+			args: UserCreateArgs{Username: "u", ValidUntil: postgresString(""), Login: postgresBool(false)},
+			want: `CREATE ROLE "u" WITH  INHERIT NOLOGIN NOVALID UNTIL`,
+		},
+		{
+			name: "quote-doubled valid until",
+			args: UserCreateArgs{Username: "u", ValidUntil: postgresString("2042-01-01'; DROP ROLE x"), Login: postgresBool(false)},
+			want: `CREATE ROLE "u" WITH  INHERIT NOLOGIN VALID UNTIL '2042-01-01''; DROP ROLE x'`,
+		},
+	} {
+		rt, runner := newMutationRuntime(process.CommandResult{ExitCode: 0})
+		_, err := (userCreateFunc{}).Execute(context.Background(), rt, &tc.args)
+		if err != nil {
+			t.Fatalf("%s err = %v", tc.name, err)
+		}
+		if got := userCreateStatement(runner); got != tc.want {
+			t.Fatalf("%s statement = %q, want %q", tc.name, got, tc.want)
+		}
+		command := runner.calls[2]
+		if tc.redact != nil {
+			if !reflect.DeepEqual(command.Redact, tc.redact) {
+				t.Fatalf("%s redact = %q, want %q", tc.name, command.Redact, tc.redact)
+			}
+			for _, secret := range tc.redact {
+				if strings.Contains(command.RedactedString(), secret) {
+					t.Fatalf("%s rendered command leaks %q: %q", tc.name, secret,
+						command.RedactedString())
+				}
+			}
+		} else if command.Redact != nil {
+			t.Fatalf("%s redact = %q, want none", tc.name, command.Redact)
+		}
+	}
+}
+
+// TestPostgresUserCreateGroupGrant pins the pinned type-preserving groups
+// semantics: a string splits on the comma without trimming and without
+// dropping empty elements (source exact), a []string keeps its exact
+// elements and order through the join-then-split, the falsy shapes (empty
+// string, empty list, absent) render nothing, and the caller's input is
+// never mutated.
+func TestPostgresUserCreateGroupGrant(t *testing.T) {
+	listInput := []string{"group_a", "group_b"}
+	for _, tc := range []struct {
+		name   string
+		groups any
+		want   string
+	}{
+		{
+			name:   "list keeps elements and order",
+			groups: listInput,
+			want: `CREATE ROLE "u" WITH  INHERIT NOLOGIN` +
+				`; GRANT "group_a" TO "u"; GRANT "group_b" TO "u"`,
+		},
+		{
+			name:   "string splits like the pinned source",
+			groups: "group_a,group_b",
+			want: `CREATE ROLE "u" WITH  INHERIT NOLOGIN` +
+				`; GRANT "group_a" TO "u"; GRANT "group_b" TO "u"`,
+		},
+		{
+			name:   "string trailing spaces survive",
+			groups: "dev ,ops ",
+			want: `CREATE ROLE "u" WITH  INHERIT NOLOGIN` +
+				`; GRANT "dev " TO "u"; GRANT "ops " TO "u"`,
+		},
+		{
+			name:   "string empty comma slots render their own empty GRANT",
+			groups: "a,,b",
+			want: `CREATE ROLE "u" WITH  INHERIT NOLOGIN` +
+				`; GRANT "a" TO "u"; GRANT "" TO "u"; GRANT "b" TO "u"`,
+		},
+		{
+			name:   "single-element list with spaces is exact",
+			groups: []string{" spaced "},
+			want: `CREATE ROLE "u" WITH  INHERIT NOLOGIN` +
+				`; GRANT " spaced " TO "u"`,
+		},
+		{
+			name:   "empty string is falsy",
+			groups: "",
+			want:   `CREATE ROLE "u" WITH  INHERIT NOLOGIN`,
+		},
+		{
+			name:   "empty list is falsy",
+			groups: []string{},
+			want:   `CREATE ROLE "u" WITH  INHERIT NOLOGIN`,
+		},
+		{
+			name:   "absent is falsy",
+			groups: nil,
+			want:   `CREATE ROLE "u" WITH  INHERIT NOLOGIN`,
+		},
+	} {
+		rt, runner := newMutationRuntime(process.CommandResult{ExitCode: 0})
+		_, err := (userCreateFunc{}).Execute(context.Background(), rt, &UserCreateArgs{
+			Username: "u",
+			Groups:   tc.groups,
+			Login:    postgresBool(false),
+		})
+		if err != nil {
+			t.Fatalf("%s err = %v", tc.name, err)
+		}
+		if got := userCreateStatement(runner); got != tc.want {
+			t.Fatalf("%s statement = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+	// The caller's slice is never mutated or aliased.
+	if !reflect.DeepEqual(listInput, []string{"group_a", "group_b"}) {
+		t.Fatalf("input groups mutated: %q", listInput)
+	}
+
+	// A malformed groups value fails closed before any Runner invocation
+	// with the value-free invalid-argument error.
+	for _, bad := range []any{map[string]any{"g": "x"}, true, 42, []any{"ok", 1}} {
+		rt, runner := newPostgresRuntime()
+		_, err := (userCreateFunc{}).Execute(context.Background(), rt, &UserCreateArgs{
+			Username: "u",
+			Groups:   bad,
+		})
+		if err == nil || !errors.Is(err, errPostgresInvalidArgument) {
+			t.Fatalf("groups %#v err = %v, want invalid argument", bad, err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("groups %#v executed %d commands", bad, len(runner.calls))
+		}
+	}
+}
+
+// TestPostgresUserCreateGroupsStructuredDecode pins the structured decode
+// contract through config.Decode: a structured string stays the raw string
+// (no list coercion, no trimming), a structured array keeps its exact
+// elements, and the typed bool flags remain the only bool translation.
+func TestPostgresUserCreateGroupsStructuredDecode(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		structured map[string]any
+		want       string
+	}{
+		{
+			name:       "structured string is retained raw",
+			structured: map[string]any{"groups": "x ,y,,z "},
+			want: `CREATE ROLE "u" WITH  INHERIT NOLOGIN` +
+				`; GRANT "x " TO "u"; GRANT "y" TO "u"; GRANT "" TO "u"; GRANT "z " TO "u"`,
+		},
+		{
+			name:       "structured array keeps exact elements",
+			structured: map[string]any{"groups": []any{"g1", " g2 "}},
+			want: `CREATE ROLE "u" WITH  INHERIT NOLOGIN` +
+				`; GRANT "g1" TO "u"; GRANT " g2 " TO "u"`,
+		},
+	} {
+		var args UserCreateArgs
+		if err := config.Decode(&args, tc.structured, map[string]string{"username": "u", "login": "false"}); err != nil {
+			t.Fatalf("%s decode err = %v", tc.name, err)
+		}
+		if args.Username != "u" || args.Login == nil || *args.Login {
+			t.Fatalf("%s decoded scalars = %#v", tc.name, args)
+		}
+		rt, runner := newMutationRuntime(process.CommandResult{ExitCode: 0})
+		if _, err := (userCreateFunc{}).Execute(context.Background(), rt, &args); err != nil {
+			t.Fatalf("%s err = %v", tc.name, err)
+		}
+		if got := userCreateStatement(runner); got != tc.want {
+			t.Fatalf("%s statement = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestPostgresRolePasswordTypeSemantics pins the type-preserving union
+// contract: bools stay bools and strings stay the exact strings, so the
+// string "true" is a literal password (hashed like any plaintext) and the
+// strings "true"/"False" as an algorithm are the value-free unknown-
+// algorithm rejection — never a silently retyped boolean. Only the CLI
+// decoder translates typed bool flags, which the structured-decode vectors
+// exercise through config.Decode.
+func TestPostgresRolePasswordTypeSemantics(t *testing.T) {
+	for _, tc := range []struct {
+		value any
+		want  saltScalar
+	}{
+		{nil, saltScalar{kind: saltNone}},
+		{true, saltScalar{kind: saltBool, b: true}},
+		{false, saltScalar{kind: saltBool, b: false}},
+		{"true", saltScalar{kind: saltString, s: "true"}},
+		{"False", saltScalar{kind: saltString, s: "False"}},
+		{"md5", saltScalar{kind: saltString, s: "md5"}},
+		{"", saltScalar{kind: saltString, s: ""}},
+		{0, saltScalar{kind: saltOther, b: false, numZero: true}},
+		{int64(0), saltScalar{kind: saltOther, b: false, numZero: true}},
+		{float64(0), saltScalar{kind: saltOther, b: false, numZero: true}},
+		{7, saltScalar{kind: saltOther, b: true}},
+	} {
+		if got := normalizeSaltScalar(tc.value); !reflect.DeepEqual(got, tc.want) {
+			t.Fatalf("normalizeSaltScalar(%#v) = %#v, want %#v", tc.value, got, tc.want)
+		}
+	}
+
+	// maybeEncryptPassword keeps the pinned source algorithm semantics:
+	// only real bools (and Python's 0 == False numeric zeros) take the
+	// bool branches; strings take the algorithm branches.
+	digest := md5Password("u", "pw")
+	for _, tc := range []struct {
+		name      string
+		encrypted saltScalar
+		want      string
+		wantErr   error
+	}{
+		{"bool false is plaintext", saltScalar{kind: saltBool}, "pw", nil},
+		{"bool true is md5", saltScalar{kind: saltBool, b: true}, digest, nil},
+		{"md5 string hashes", saltScalar{kind: saltString, s: "md5"}, digest, nil},
+		{"numeric zero equals False", saltScalar{kind: saltOther, numZero: true}, "pw", nil},
+		{"boolean spelling true is unknown", saltScalar{kind: saltString, s: "true"}, "",
+			errPostgresUnknownPasswordAlgorithm},
+		{"boolean spelling False is unknown", saltScalar{kind: saltString, s: "False"}, "",
+			errPostgresUnknownPasswordAlgorithm},
+		{"nonzero number is unknown", saltScalar{kind: saltOther, b: true}, "",
+			errPostgresUnknownPasswordAlgorithm},
+	} {
+		got, err := maybeEncryptPassword("u", "pw", tc.encrypted)
+		if tc.wantErr != nil {
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("%s err = %v, want %v", tc.name, err, tc.wantErr)
+			}
+			continue
+		}
+		if err != nil || got != tc.want {
+			t.Fatalf("%s = %q err = %v, want %q", tc.name, got, err, tc.want)
+		}
+	}
+
+	// Execute-level: the string "true" as rolepassword is a literal
+	// password hashed by the default md5 algorithm, never the bare
+	// PASSWORD the boolean true renders.
+	for _, tc := range []struct {
+		name         string
+		rolepassword any
+		want         string
+	}{
+		{"string true", "true", `CREATE ROLE "newuser" WITH  INHERIT LOGIN ENCRYPTED PASSWORD '` +
+			md5Password("newuser", "true") + `'`},
+		{"string False", "False", `CREATE ROLE "newuser" WITH  INHERIT LOGIN ENCRYPTED PASSWORD '` +
+			md5Password("newuser", "False") + `'`},
+		{"bool true stays the bare PASSWORD clause", true, `CREATE ROLE "newuser" WITH  INHERIT LOGIN PASSWORD`},
+		{"bool false stays NOPASSWORD", false, `CREATE ROLE "newuser" WITH  INHERIT LOGIN NOPASSWORD`},
+	} {
+		rt, runner := newMutationRuntime(process.CommandResult{ExitCode: 0})
+		_, err := (userCreateFunc{}).Execute(context.Background(), rt, &UserCreateArgs{
+			Username:     "newuser",
+			Rolepassword: tc.rolepassword,
+		})
+		if err != nil {
+			t.Fatalf("%s err = %v", tc.name, err)
+		}
+		if got := userCreateStatement(runner); got != tc.want {
+			t.Fatalf("%s statement = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+
+	// Structured decode: real bools arrive as bools (the only translation
+	// surface), strings keep their exact value.
+	for _, tc := range []struct {
+		name       string
+		structured map[string]any
+		want       string
+	}{
+		{
+			name:       "structured bool false",
+			structured: map[string]any{"encrypted": false, "rolepassword": "pw"},
+			want:       `CREATE ROLE "newuser" WITH  INHERIT LOGIN UNENCRYPTED PASSWORD 'pw'`,
+		},
+		{
+			name:       "structured bool true",
+			structured: map[string]any{"encrypted": true, "rolepassword": "pw"},
+			want: `CREATE ROLE "newuser" WITH  INHERIT LOGIN ENCRYPTED PASSWORD '` +
+				md5Password("newuser", "pw") + `'`,
+		},
+		{
+			name:       "structured string stays the exact string",
+			structured: map[string]any{"encrypted": "scram-sha-256", "rolepassword": "SCRAM-SHA-256$4096:c2FsdA==$c3RvcmVk:c2VydmVy"},
+			want: `CREATE ROLE "newuser" WITH  INHERIT LOGIN ENCRYPTED PASSWORD ` +
+				`'SCRAM-SHA-256$4096:c2FsdA==$c3RvcmVk:c2VydmVy'`,
+		},
+	} {
+		var args UserCreateArgs
+		if err := config.Decode(&args, tc.structured, map[string]string{"username": "newuser"}); err != nil {
+			t.Fatalf("%s decode err = %v", tc.name, err)
+		}
+		rt, runner := newMutationRuntime(process.CommandResult{ExitCode: 0})
+		if _, err := (userCreateFunc{}).Execute(context.Background(), rt, &args); err != nil {
+			t.Fatalf("%s err = %v", tc.name, err)
+		}
+		if got := userCreateStatement(runner); got != tc.want {
+			t.Fatalf("%s statement = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// statementLeakRunner replays the preset preflight results and then fails
+// every later command with an error embedding the raw command line, the
+// way a Runner that performs no redaction of its own would, so the
+// module's error-redaction pass is exercised against the real secret
+// forms carried in argv.
+type statementLeakRunner struct {
+	calls   []process.Command
+	results []process.CommandResult
+}
+
+func (r *statementLeakRunner) Run(_ context.Context, command process.Command) process.CommandResult {
+	r.calls = append(r.calls, command)
+	if len(r.results) > 0 {
+		result := r.results[0]
+		r.results = r.results[1:]
+		return result
+	}
+	raw := fmt.Sprintf("exec failed: %s %v %v", command.Name, command.Args, command.Env)
+	return process.CommandResult{
+		ExitCode: -1,
+		Err:      errors.New(raw),
+		Stdout:   []byte(raw),
+		Stderr:   []byte(raw),
+	}
+}
+
+// newLeakRuntime seeds the two preflight results over the given catalog
+// CSV and hands the leak runner to the runtime.
+func newLeakRuntime(catalog string) (*runtime.Runtime, *statementLeakRunner) {
+	runner := &statementLeakRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("9.1\n")},
+		{ExitCode: 0, Stdout: []byte(catalog)},
+	}}
+	return &runtime.Runtime{Runner: runner, FS: runtime.NewMemoryFS()}, runner
+}
+
+// TestPostgresRoleVerifierRedaction asserts the full secret inventory of
+// the statement transport for every password form: the rendered argv, the
+// captured output redacted through the configured Redact list, and
+// returned errors carry none of the plaintext, its escaped forms, or the
+// generated md5/SCRAM verifier — direct, through the registry, and for
+// both create and update statements.
+func TestPostgresRoleVerifierRedaction(t *testing.T) {
+	const md5Digest = "md531c27e68d3771c392b52102c01be1da1"
+	scramVerifier := ""
+	for _, tc := range []struct {
+		name        string
+		fn          string
+		args        UserCreateArgs
+		markersFrom func(command process.Command) []string
+	}{
+		{
+			name: "md5 create",
+			fn:   "postgres.user_create",
+			args: UserCreateArgs{Username: "test_username", Password: postgresString("conn_pw"),
+				Rolepassword: "foobar"},
+		},
+		{
+			name: "scram create",
+			fn:   "postgres.user_create",
+			args: UserCreateArgs{Username: "test_username", Password: postgresString("conn_pw"),
+				Encrypted: "scram-sha-256", Rolepassword: "hunter2"},
+			markersFrom: func(command process.Command) []string {
+				statement := command.Args[len(command.Args)-1]
+				match := regexp.MustCompile(`SCRAM-SHA-256\$\d+:[A-Za-z0-9+/=]+\$[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+`).
+					FindString(statement)
+				if match == "" {
+					t.Fatalf("scram statement lacks the verifier: %q", statement)
+				}
+				return []string{match}
+			},
+		},
+	} {
+		rt, runner := newLeakRuntime(absentRoleCSV)
+		reg := runtime.NewExecRegistry()
+		if err := Register(reg); err != nil {
+			t.Fatal(err)
+		}
+		rt.Exec = reg
+		_, err := rt.Exec.Call(context.Background(), rt, tc.fn, &tc.args)
+		if err == nil {
+			t.Fatalf("%s expected the leak runner error", tc.name)
+		}
+		command := runner.calls[2]
+		markers := []string{"foobar", "hunter2", "conn_pw", md5Digest, "'foobar'"}
+		if tc.markersFrom != nil {
+			markers = append(markers, tc.markersFrom(command)...)
+		}
+		// The escaped verifier literal and its bare form are Redact
+		// entries (plaintext/doubled join for the unencrypted shapes).
+		for _, marker := range markers {
+			if marker == "" || !strings.Contains(command.Args[len(command.Args)-1], marker) {
+				continue // markers absent from this statement form
+			}
+			if strings.Contains(command.RedactedString(), marker) {
+				t.Fatalf("%s rendered argv leaks %q: %q", tc.name, marker, command.RedactedString())
+			}
+			if strings.Contains(err.Error(), marker) {
+				t.Fatalf("%s returned error leaks %q: %v", tc.name, marker, err)
+			}
+			if got := string(process.RedactBytes(command.Redact, []byte("out "+marker))); strings.Contains(got, marker) {
+				t.Fatalf("%s captured output redaction leaks %q: %q", tc.name, marker, got)
+			}
+		}
+		if !strings.Contains(err.Error(), process.RedactedPlaceholder) {
+			t.Fatalf("%s error lacks the redaction placeholder: %v", tc.name, err)
+		}
+		if tc.markersFrom != nil {
+			scramVerifier = tc.markersFrom(command)[0]
+		}
+	}
+	if scramVerifier == "" {
+		t.Fatal("scram verifier marker never collected")
+	}
+
+	// The update statement carries the same inventory: an ALTER ROLE with
+	// the md5 verifier scrubs the digest and plaintext from a leak error.
+	rt, runner := newLeakRuntime(mutationUsersCSV)
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	rt.Exec = reg
+	_, err := rt.Exec.Call(context.Background(), rt, "postgres.user_update", &UserUpdateArgs{
+		Username:     "test_username",
+		Password:     postgresString("conn_pw"),
+		Rolepassword: "foobar",
+	})
+	if err == nil {
+		t.Fatal("expected the leak runner error")
+	}
+	for _, marker := range []string{"foobar", "'foobar'", md5Digest, "conn_pw"} {
+		if strings.Contains(err.Error(), marker) || strings.Contains(runner.calls[2].RedactedString(), marker) {
+			t.Fatalf("update leak of %q: %v", marker, err)
+		}
+	}
+
+	// A plaintext UNENCRYPTED statement redacts the doubled form too.
+	rt, runner = newLeakRuntime(absentRoleCSV)
+	_, err = (userCreateFunc{}).Execute(context.Background(), rt, &UserCreateArgs{
+		Username:     "test_username",
+		Encrypted:    false,
+		Rolepassword: "pa'ss",
+	})
+	if err == nil {
+		t.Fatal("expected the leak runner error")
+	}
+	for _, marker := range []string{"pa'ss", "pa''ss", "'pa''ss'"} {
+		if strings.Contains(err.Error(), marker) {
+			t.Fatalf("unencrypted error leaks %q: %v", marker, err)
+		}
+	}
+}
+
+// TestPostgresUserUpdateVerifierReadback pins the verifier readback on
+// update: md5- and SCRAM-prefixed rolepasswords pass through as the full
+// literal value of the ALTER ROLE PASSWORD clause.
+func TestPostgresUserUpdateVerifierReadback(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		encrypted any
+		password  string
+	}{
+		{"md5 readback", "md5", "md5deadbeef"},
+		{"scram readback", "scram-sha-256", "SCRAM-SHA-256$4096:c2FsdA==$c3RvcmVk:c2VydmVy"},
+	} {
+		rt, runner := newMutationRuntime(process.CommandResult{ExitCode: 0})
+		_, err := (userUpdateFunc{}).Execute(context.Background(), rt, &UserUpdateArgs{
+			Username:     "test_username",
+			Encrypted:    tc.encrypted,
+			Rolepassword: tc.password,
+		})
+		if err != nil {
+			t.Fatalf("%s err = %v", tc.name, err)
+		}
+		want := `ALTER ROLE "test_username" WITH  ENCRYPTED PASSWORD '` + tc.password + `'`
+		if got := userCreateStatement(runner); got != want {
+			t.Fatalf("%s statement = %q, want %q", tc.name, got, want)
+		}
+		if !reflect.DeepEqual(runner.calls[2].Redact,
+			[]string{"'" + tc.password + "'", tc.password}) {
+			t.Fatalf("%s redact = %q", tc.name, runner.calls[2].Redact)
+		}
+		if strings.Contains(runner.calls[2].RedactedString(), tc.password) {
+			t.Fatalf("%s rendered command leaks the verifier: %q", tc.name,
+				runner.calls[2].RedactedString())
+		}
+	}
+}
+
+// TestPostgresUserCreateInjection pins the fail-closed identifier boundary
+// at the role name and GRANT group positions the pinned source
+// interpolates raw: the value-free stable errors fire before any Runner
+// invocation.
+func TestPostgresUserCreateInjection(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		args  UserCreateArgs
+		want  string
+		calls int
+	}{
+		{
+			name:  "username quote",
+			args:  UserCreateArgs{Username: `u"; DROP ROLE postgres; --`},
+			want:  "postgres: invalid argument: unsupported quote character in username",
+			calls: 0,
+		},
+		{
+			name:  "groups quote",
+			args:  UserCreateArgs{Username: "u", Groups: []string{`g"; DROP ROLE x; --`}},
+			want:  "postgres: invalid argument: unsupported quote character in groups",
+			calls: 0,
+		},
+		{
+			name:  "string groups quote after the exact split",
+			args:  UserCreateArgs{Username: "u", Groups: `ok, g"; DROP ROLE x; --`},
+			want:  "postgres: invalid argument: unsupported quote character in groups",
+			calls: 0,
+		},
+	} {
+		rt, runner := newPostgresRuntime()
+		_, err := (userCreateFunc{}).Execute(context.Background(), rt, &tc.args)
+		if err == nil || err.Error() != tc.want {
+			t.Fatalf("%s err = %v, want %q", tc.name, err, tc.want)
+		}
+		if !errors.Is(err, errPostgresInvalidArgument) {
+			t.Fatalf("%s err = %v, want invalid argument", tc.name, err)
+		}
+		if len(runner.calls) != tc.calls {
+			t.Fatalf("%s executed %d commands", tc.name, len(runner.calls))
+		}
+	}
+}
+
+// TestPostgresUserCreateGuards pins the shared transport guards for the
+// create path: pre-cancellation, runas rejection, psql-unavailable
+// fail-closed, output limits, and the redacted Runner error covering the
+// rolepassword too.
+func TestPostgresUserCreateGuards(t *testing.T) {
+	rt, runner := newPostgresRuntime()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := (userCreateFunc{}).Execute(ctx, rt, &UserCreateArgs{Username: "u"}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("pre-canceled ctx err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("canceled run executed %d commands", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime()
+	_, err := (userCreateFunc{}).Execute(context.Background(), rt, &UserCreateArgs{
+		Username: "u",
+		Runas:    postgresString("postgres"),
+	})
+	if !errors.Is(err, errPostgresRunas) {
+		t.Fatalf("runas err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("runas run executed %d commands", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime()
+	runner.available = map[string]bool{"psql": false}
+	if _, err := (userCreateFunc{}).Execute(context.Background(), rt, &UserCreateArgs{Username: "u"}); !errors.Is(err, errPostgresPsqlUnavailable) {
+		t.Fatalf("psql unavailable err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("unavailable psql executed %d commands", len(runner.calls))
+	}
+
+	for _, truncated := range []process.CommandResult{
+		{ExitCode: 0, StdoutTruncated: true, Stdout: []byte(strings.Repeat("9", outputLimit+1))},
+		{ExitCode: 0, StderrTruncated: true, Stderr: []byte(strings.Repeat("e", outputLimit+1))},
+	} {
+		rt, _ := newMutationRuntime(truncated)
+		if _, err := (userCreateFunc{}).Execute(context.Background(), rt, &UserCreateArgs{Username: "u"}); !errors.Is(err, process.ErrOutputLimit) {
+			t.Fatalf("output limit err = %v", err)
+		}
+	}
+
+	rt, _ = newMutationRuntime(process.CommandResult{
+		ExitCode: -1,
+		Err:      fmt.Errorf("exec psql -c: secret role_pw rejected"),
+	})
+	_, err = (userCreateFunc{}).Execute(context.Background(), rt, &UserCreateArgs{
+		Username:     "u",
+		Password:     postgresString("conn_pw"),
+		Rolepassword: "role_pw",
+	})
+	if err == nil || strings.Contains(err.Error(), "role_pw") || strings.Contains(err.Error(), "conn_pw") {
+		t.Fatalf("runner error must be redacted: %v", err)
+	}
+	if !strings.Contains(err.Error(), process.RedactedPlaceholder) {
+		t.Fatalf("error lacks redaction placeholder: %v", err)
+	}
+}
+
+// TestPostgresUserUpdateArgvAndResult ports the pinned test_user_update:
+// the exact ALTER ROLE statement of the pinned regex byte-for-byte on the
+// full argv after the two preflight calls.
+func TestPostgresUserUpdateArgvAndResult(t *testing.T) {
+	rt, runner := newMutationRuntime(process.CommandResult{ExitCode: 0})
+	value, err := (userUpdateFunc{}).Execute(context.Background(), rt, &UserUpdateArgs{
+		Username:      "test_username",
+		User:          postgresString("test_user"),
+		Host:          postgresString("test_host"),
+		Port:          postgresString("test_port"),
+		MaintenanceDB: postgresString("test_maint"),
+		Password:      postgresString("test_pass"),
+		Createdb:      postgresBool(false),
+		Createroles:   postgresBool(false),
+		Encrypted:     false,
+		Inherit:       postgresBool(true),
+		Login:         postgresBool(true),
+		Replication:   postgresBool(false),
+		Rolepassword:  "test_role_pass",
+		ValidUntil:    postgresString("2017-07-01"),
+		Groups:        []string{"test_groups"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true {
+		t.Fatalf("user_update = %#v, want true", value)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("runner calls = %d, want 3 (preflight pair plus ALTER)", len(runner.calls))
+	}
+	command := runner.calls[2]
+	want := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--username", "test_user",
+		"--host", "test_host",
+		"--port", "test_port",
+		"--dbname", "test_maint",
+		"-c", `ALTER ROLE "test_username" WITH  INHERIT NOCREATEDB NOCREATEROLE ` +
+			`NOREPLICATION LOGIN UNENCRYPTED PASSWORD 'test_role_pass' ` +
+			`VALID UNTIL '2017-07-01'; GRANT "test_groups" TO "test_username"`,
+	}
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+	if !reflect.DeepEqual(command.Redact, []string{"'test_role_pass'", "test_role_pass", "test_pass"}) {
+		t.Fatalf("redact = %q", command.Redact)
+	}
+	if strings.Contains(command.RedactedString(), "test_role_pass") ||
+		strings.Contains(command.RedactedString(), "'test_role_pass'") {
+		t.Fatalf("rendered command leaks the rolepassword: %q", command.RedactedString())
+	}
+}
+
+// TestPostgresUserUpdatePinnedShapes ports the remaining pinned
+// test_user_update vectors: the no-password shape (test_user_update2), the
+// boolean NOPASSWORD shape (test_user_update3), and the md5 verifier shape
+// of test_user_update_encrypted_passwd.
+func TestPostgresUserUpdatePinnedShapes(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		args     UserUpdateArgs
+		want     string
+		redacted bool
+	}{
+		{
+			name: "pinned update2",
+			args: UserUpdateArgs{
+				Username:    "test_username",
+				Createdb:    postgresBool(false),
+				Createroles: postgresBool(true),
+				Encrypted:   false,
+				Inherit:     postgresBool(true),
+				Login:       postgresBool(true),
+				Replication: postgresBool(false),
+				Groups:      []string{"test_groups"},
+			},
+			want: `ALTER ROLE "test_username" WITH  INHERIT NOCREATEDB CREATEROLE ` +
+				`NOREPLICATION LOGIN; GRANT "test_groups" TO "test_username"`,
+		},
+		{
+			name: "pinned update3",
+			args: UserUpdateArgs{
+				Username:     "test_username",
+				Createdb:     postgresBool(false),
+				Createroles:  postgresBool(true),
+				Encrypted:    false,
+				Inherit:      postgresBool(true),
+				Login:        postgresBool(true),
+				Rolepassword: false,
+				Replication:  postgresBool(false),
+				Groups:       []string{"test_groups"},
+			},
+			want: `ALTER ROLE "test_username" WITH  INHERIT NOCREATEDB CREATEROLE ` +
+				`NOREPLICATION LOGIN NOPASSWORD; GRANT "test_groups" TO "test_username"`,
+		},
+		{
+			name: "pinned encrypted md5",
+			args: UserUpdateArgs{
+				Username:     "test_username",
+				Createdb:     postgresBool(false),
+				Createroles:  postgresBool(true),
+				Encrypted:    true,
+				Inherit:      postgresBool(true),
+				Login:        postgresBool(true),
+				Rolepassword: "foobar",
+				Replication:  postgresBool(false),
+				Groups:       []string{"test_groups"},
+			},
+			want: `ALTER ROLE "test_username" WITH  INHERIT NOCREATEDB CREATEROLE ` +
+				`NOREPLICATION LOGIN ENCRYPTED PASSWORD 'md531c27e68d3771c392b52102c01be1da1'` +
+				`; GRANT "test_groups" TO "test_username"`,
+			redacted: true,
+		},
+	} {
+		rt, runner := newMutationRuntime(process.CommandResult{ExitCode: 0})
+		value, err := (userUpdateFunc{}).Execute(context.Background(), rt, &tc.args)
+		if err != nil {
+			t.Fatalf("%s err = %v", tc.name, err)
+		}
+		if value != true {
+			t.Fatalf("%s = %#v, want true", tc.name, value)
+		}
+		if got := userCreateStatement(runner); got != tc.want {
+			t.Fatalf("%s statement = %q, want %q", tc.name, got, tc.want)
+		}
+		if tc.redacted && strings.Contains(runner.calls[2].RedactedString(), "foobar") {
+			t.Fatalf("%s rendered command leaks the plaintext: %q", tc.name,
+				runner.calls[2].RedactedString())
+		}
+	}
+}
+
+// TestPostgresUserUpdateSuperuserSkip pins the db_role-keyed superuser
+// skip: the clause is skipped when the stored boolean equals the requested
+// one, and the pinned None request never emits the clause.
+func TestPostgresUserUpdateSuperuserSkip(t *testing.T) {
+	superCSV := `name,superuser,inherits privileges,can create roles,can create databases,can update system catalogs,can login,replication,connections,groups,expiry time,defaults variables
+test_username,f,f,f,f,f,f,,-1,,,
+super_role,t,t,f,f,f,t,,-1,,,
+`
+	for _, tc := range []struct {
+		name      string
+		username  string
+		superuser *bool
+		want      string
+	}{
+		{"equal false skips", "test_username", postgresBool(false), ""},
+		{"equal nil-false skips", "test_username", nil, ""},
+		{"differs emits NOSUPERUSER", "super_role", postgresBool(false), " NOSUPERUSER"},
+		{"differs emits SUPERUSER", "test_username", postgresBool(true), " SUPERUSER"},
+		{"nil on superuser stays clauseless", "super_role", nil, ""},
+	} {
+		rt, runner := newPostgresRuntime(
+			process.CommandResult{ExitCode: 0, Stdout: []byte("9.1\n")},
+			process.CommandResult{ExitCode: 0, Stdout: []byte(superCSV)},
+			process.CommandResult{ExitCode: 0},
+		)
+		_, err := (userUpdateFunc{}).Execute(context.Background(), rt, &UserUpdateArgs{
+			Username:  tc.username,
+			Superuser: tc.superuser,
+		})
+		if err != nil {
+			t.Fatalf("%s err = %v", tc.name, err)
+		}
+		statement := userCreateStatement(runner)
+		// The head joins one space plus the clause text, so a clause-less
+		// statement keeps the pinned trailing space and any clause renders
+		// the pinned double space after WITH.
+		want := `ALTER ROLE "` + tc.username + `" WITH ` + tc.want
+		if statement != want {
+			t.Fatalf("%s statement = %q, want %q", tc.name, statement, want)
+		}
+	}
+}
+
+// TestPostgresUserUpdateMissingIsFalse pins the pinned role_get preflight
+// no-op: a missing role is the logged-and-False answer after exactly the
+// two catalog calls, with no ALTER issued — and a rejected ALTER keeps the
+// retcode boolean.
+func TestPostgresUserUpdateMissingIsFalse(t *testing.T) {
+	rt, runner := newMutationRuntime()
+	value, err := (userUpdateFunc{}).Execute(context.Background(), rt, &UserUpdateArgs{
+		Username:     "absent_user",
+		Rolepassword: "secret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != false {
+		t.Fatalf("user_update(missing) = %#v, want false", value)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("runner calls = %d, want 2 preflight calls only", len(runner.calls))
+	}
+
+	rt, _ = newMutationRuntime(process.CommandResult{
+		ExitCode: 1,
+		Stderr:   []byte(`psql: error: ERROR: role "test_username" cannot be altered`),
+	})
+	value, err = (userUpdateFunc{}).Execute(context.Background(), rt, &UserUpdateArgs{
+		Username: "test_username",
+	})
+	if err != nil || value != false {
+		t.Fatalf("nonzero ALTER = %#v err = %v, want false", value, err)
+	}
+}
+
+// TestPostgresUserRemoveArgvAndResult ports the pinned test_user_remove:
+// the preflight pair, the exact DROP ROLE argv of the pinned assertion,
+// and the post-check pair deciding true.
+func TestPostgresUserRemoveArgvAndResult(t *testing.T) {
+	rt, runner := newMutationRuntime(
+		process.CommandResult{ExitCode: 0}, // DROP ROLE (retcode ignored)
+		process.CommandResult{ExitCode: 0, Stdout: []byte("9.1\n")},
+		process.CommandResult{ExitCode: 0, Stdout: []byte("name,superuser,inherits privileges,can create roles,can create databases,can update system catalogs,can login,replication,connections,groups,expiry time,defaults variables\nsuper_role,t,t,f,f,f,t,,-1,,,\n")},
+	)
+	value, err := (userRemoveFunc{}).Execute(context.Background(), rt, &UserRemoveArgs{
+		Username:      "test_username",
+		User:          postgresString("testuser"),
+		Host:          postgresString("testhost"),
+		Port:          postgresString("testport"),
+		MaintenanceDB: postgresString("maint_db"),
+		Password:      postgresString("testpassword"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true {
+		t.Fatalf("user_remove = %#v, want true", value)
+	}
+	if len(runner.calls) != 5 {
+		t.Fatalf("runner calls = %d, want 5 (preflight, DROP, post-check)", len(runner.calls))
+	}
+	command := runner.calls[2]
+	want := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--username", "testuser",
+		"--host", "testhost",
+		"--port", "testport",
+		"--dbname", "maint_db",
+		"-c", `DROP ROLE "test_username"`,
+	}
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+	if !reflect.DeepEqual(command.Redact, []string{"testpassword"}) {
+		t.Fatalf("redact = %q", command.Redact)
+	}
+	if strings.Contains(command.RedactedString(), "testpassword") {
+		t.Fatalf("rendered command leaks the password: %q", command.RedactedString())
+	}
+	// No statement runs after the post-check pair.
+	if last := runner.calls[4]; strings.HasPrefix(last.Args[len(last.Args)-1], "DROP") {
+		t.Fatalf("unexpected second DROP: %q", last.Args)
+	}
+}
+
+// TestPostgresUserRemoveShapes pins the remaining pinned flows: a missing
+// role is the logged-and-False no-op with no DROP, and a failed DROP that
+// leaves the role present is the logged-and-False answer after the full
+// five-call flow.
+func TestPostgresUserRemoveShapes(t *testing.T) {
+	rt, runner := newMutationRuntime()
+	value, err := (userRemoveFunc{}).Execute(context.Background(), rt, &UserRemoveArgs{
+		Username: "absent_user",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != false {
+		t.Fatalf("user_remove(missing) = %#v, want false", value)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("missing-role calls = %d, want 2", len(runner.calls))
+	}
+
+	// The DROP retcode is ignored; the role still exists afterwards, so
+	// the pinned answer is false after all five calls.
+	rt, runner = newMutationRuntime(
+		process.CommandResult{ExitCode: 1, Stderr: []byte("psql: error: ERROR: role cannot be dropped")},
+		process.CommandResult{ExitCode: 0, Stdout: []byte("9.1\n")},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(mutationUsersCSV)},
+	)
+	value, err = (userRemoveFunc{}).Execute(context.Background(), rt, &UserRemoveArgs{
+		Username: "test_username",
+	})
+	if err != nil || value != false {
+		t.Fatalf("user_remove(failed drop) = %#v err = %v, want false", value, err)
+	}
+	if len(runner.calls) != 5 {
+		t.Fatalf("failed-drop calls = %d, want 5", len(runner.calls))
+	}
+}
+
+// TestPostgresUserRemoveGuards pins the fail-closed name boundary and the
+// shared transport guards for the remove path: the value-free identifier
+// rejection before any Runner invocation, runas rejection, and
+// pre-cancellation.
+func TestPostgresUserRemoveGuards(t *testing.T) {
+	rt, runner := newPostgresRuntime()
+	_, err := (userRemoveFunc{}).Execute(context.Background(), rt, &UserRemoveArgs{
+		Username: `x"; DROP ROLE postgres; --`,
+	})
+	if err == nil || err.Error() != "postgres: invalid argument: unsupported quote character in username" {
+		t.Fatalf("injected name err = %v", err)
+	}
+	if !errors.Is(err, errPostgresInvalidArgument) {
+		t.Fatalf("injected name err = %v, want invalid argument", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("injected name executed %d commands", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime()
+	_, err = (userRemoveFunc{}).Execute(context.Background(), rt, &UserRemoveArgs{
+		Username: "u",
+		Runas:    postgresString("postgres"),
+	})
+	if !errors.Is(err, errPostgresRunas) {
+		t.Fatalf("runas err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("runas run executed %d commands", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := (userRemoveFunc{}).Execute(ctx, rt, &UserRemoveArgs{Username: "u"}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("pre-canceled ctx err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("canceled run executed %d commands", len(runner.calls))
+	}
+}
+
+// TestPostgresUserValidationErrorsRedactedThroughRegistry loops every
+// rejected user_create/user_update/user_remove field through the registry
+// Call path with the rejected value embedding a synthetic marker: the
+// stable value-free error must carry no marker and no Runner call may
+// happen beyond the read-only preflight pair the pinned flow runs first.
+func TestPostgresUserValidationErrorsRedactedThroughRegistry(t *testing.T) {
+	const marker = "pgmark-7f3c-secret"
+	for _, tc := range []struct {
+		fn    string
+		args  any
+		want  string
+		calls int
+	}{
+		{"postgres.user_create", &UserCreateArgs{Username: `u-` + marker + `"`},
+			"postgres: invalid argument: unsupported quote character in username", 0},
+		{"postgres.user_create", &UserCreateArgs{Username: "u", Groups: []string{`g-` + marker + `"`}},
+			"postgres: invalid argument: unsupported quote character in groups", 0},
+		{"postgres.user_create", &UserCreateArgs{Username: "u", Groups: `ok,g-` + marker + `"`},
+			"postgres: invalid argument: unsupported quote character in groups", 0},
+		{"postgres.user_create", &UserCreateArgs{Username: "u", Groups: map[string]any{marker: "x"}},
+			"postgres: invalid argument", 0},
+		{"postgres.user_create", &UserCreateArgs{Username: "u", Encrypted: marker, Rolepassword: marker},
+			"postgres: invalid argument: unknown password algorithm", 2},
+		{"postgres.user_update", &UserUpdateArgs{Username: `u-` + marker + `"`},
+			"postgres: invalid argument: unsupported quote character in username", 0},
+		{"postgres.user_update", &UserUpdateArgs{Username: "u", Groups: []string{`g-` + marker + `"`}},
+			"postgres: invalid argument: unsupported quote character in groups", 0},
+		{"postgres.user_update", &UserUpdateArgs{Username: "u", Groups: `g,` + marker + `"`},
+			"postgres: invalid argument: unsupported quote character in groups", 0},
+		{"postgres.user_update", &UserUpdateArgs{Username: "test_username", Encrypted: marker, Rolepassword: marker},
+			"postgres: invalid argument: unknown password algorithm", 2},
+		{"postgres.user_remove", &UserRemoveArgs{Username: `u"-` + marker},
+			"postgres: invalid argument: unsupported quote character in username", 0},
+	} {
+		rt, runner := newMutationRuntime()
+		rt.Exec = runtime.NewExecRegistry()
+		if err := Register(rt.Exec); err != nil {
+			t.Fatal(err)
+		}
+		_, err := rt.Exec.Call(context.Background(), rt, tc.fn, tc.args)
+		if err == nil || err.Error() != tc.want {
+			t.Fatalf("%s err = %v, want %q", tc.fn, err, tc.want)
+		}
+		if strings.Contains(err.Error(), marker) {
+			t.Fatalf("%s error leaks the rejected value: %v", tc.fn, err)
+		}
+		if len(runner.calls) != tc.calls {
+			t.Fatalf("%s executed %d commands, want %d", tc.fn, len(runner.calls), tc.calls)
+		}
+	}
+}
+
 // ownerTableCSV renders the fixed owner catalog for tables: schemaname and
 // tablename key columns plus the pinned tableowner AS name value. awl is
 // owned by postgres so the table flows continue to the privilege query.
@@ -4564,5 +6041,114 @@ func TestPostgresPrivilegesListGuards(t *testing.T) {
 	if _, err := (privilegesListFunc{}).Execute(context.Background(), rtEmpty,
 		fullPrivilegesListArgs("awl", "table")); !errors.Is(err, errPostgresRunnerUnavailable) {
 		t.Fatalf("nil runner err = %v, want errPostgresRunnerUnavailable", err)
+	}
+}
+
+// The error originates at either preflight command, before any verifier
+// generation or mutation. Every marker is synthetic test data.
+func TestPostgresRolePreflightRedaction(t *testing.T) {
+	for _, entry := range []string{"direct", "registry"} {
+		for _, function := range []string{"postgres.user_create", "postgres.user_update"} {
+			for _, overlap := range []string{"password", "host", "user", "maintenance_db", "sql", "md5", "scram", "apostrophe"} {
+				for _, failAt := range []int{1, 2} {
+					t.Run(fmt.Sprintf("%s/%s/%s/%d", entry, function, overlap, failAt), func(t *testing.T) {
+						marker := "synthetic_preflight_marker"
+						switch overlap {
+						case "sql":
+							marker = "pg_catalog"
+						case "md5":
+							marker = "md5deadbeef"
+						case "scram":
+							marker = "SCRAM-SHA-256$4096:c2FsdA==$c3RvcmVk:c2VydmVy"
+						case "apostrophe":
+							marker = "pre'flight"
+						}
+						a := UserCreateArgs{Username: "test_username", Rolepassword: marker, Encrypted: "scram-sha-256"}
+						switch overlap {
+						case "host":
+							a.Host = &marker
+						case "user":
+							a.User = &marker
+						case "maintenance_db":
+							a.MaintenanceDB = &marker
+						case "sql": // Both fixed preflight queries contain this marker.
+						default:
+							a.Password = &marker
+						}
+						runner := &statementLeakRunner{}
+						if failAt == 2 {
+							runner.results = []process.CommandResult{{ExitCode: 0, Stdout: []byte("9.1\n")}}
+						}
+						rt := &runtime.Runtime{Runner: runner, FS: runtime.NewMemoryFS()}
+						var fn runtime.ExecFunction = userCreateFunc{}
+						var args any = &a
+						if function == "postgres.user_update" {
+							fn = userUpdateFunc{}
+							args = &UserUpdateArgs{Username: a.Username, Rolepassword: a.Rolepassword, Encrypted: a.Encrypted,
+								Host: a.Host, User: a.User, MaintenanceDB: a.MaintenanceDB, Password: a.Password}
+						}
+						var value any
+						var err error
+						if entry == "registry" {
+							rt.Exec = runtime.NewExecRegistry()
+							if err := Register(rt.Exec); err != nil {
+								t.Fatal(err)
+							}
+							value, err = rt.Exec.Call(context.Background(), rt, function, args)
+						} else {
+							value, err = fn.Execute(context.Background(), rt, args)
+						}
+						if err == nil || value != nil || len(runner.calls) != failAt {
+							t.Fatal("preflight did not stop at injected error")
+						}
+						if strings.Contains(err.Error(), marker) || !strings.Contains(err.Error(), process.RedactedPlaceholder) {
+							t.Fatal("preflight error was not redacted")
+						}
+						for _, command := range runner.calls {
+							if strings.Contains(command.RedactedString(), marker) {
+								t.Fatal("rendered preflight leaks marker")
+							}
+							if !reflect.DeepEqual(command.Redact, []string{marker}) {
+								t.Fatal("preflight secret inventory changed or verifier generated early")
+							}
+							for _, verb := range []string{"CREATE ROLE", "ALTER ROLE", "GRANT "} {
+								if strings.Contains(strings.Join(command.Args, " "), verb) {
+									t.Fatal("mutation after failed preflight")
+								}
+							}
+							for _, stream := range []string{"stdout ", "stderr "} {
+								if strings.Contains(string(process.RedactBytes(command.Redact, []byte(stream+marker))), marker) {
+									t.Fatal("preflight output redaction leaks marker")
+								}
+							}
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
+func TestPostgresTransportSecretNormalization(t *testing.T) {
+	const marker = "synthetic'overlap"
+	const doubled = "synthetic''overlap"
+	const literal = "'synthetic''overlap'"
+	want := []string{literal, doubled, marker, "thetic"}
+	if got := secretList("thetic", marker, literal, "", doubled, marker); !reflect.DeepEqual(got, want) {
+		t.Fatal("secrets must be unique and longest-first")
+	}
+	runner := &statementLeakRunner{}
+	rt := &runtime.Runtime{Runner: runner}
+	conn := &pgConnection{Password: postgresString(marker), Secrets: []string{marker, "thetic"}}
+	result, err := runPsqlSecrets(context.Background(), rt, psqlArgv("", "", "", "", "-c", "SELECT "+literal), conn, nil)
+	if err == nil || !reflect.DeepEqual(runner.calls[0].Redact, want) {
+		t.Fatal("SQL secret forms not normalized")
+	}
+	for _, secret := range want {
+		for _, output := range []string{err.Error(), result.Err.Error(), string(result.Stdout), string(result.Stderr), runner.calls[0].RedactedString()} {
+			if strings.Contains(output, secret) {
+				t.Fatal("transport leaked a secret form")
+			}
+		}
 	}
 }
