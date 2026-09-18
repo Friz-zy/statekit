@@ -1740,6 +1740,41 @@ differential report hashes for R3-R8 are unchanged (the report's
 `prior_report_sha256` block matches the committed R3-R8 reports), and the
 commit touched no `go.mod`/`go.sum` (no new dependency).
 
+##### 2026-09-18 current status (R9.2l PostgreSQL default-privilege family)
+
+Actual HEAD is `35cd6a4` (R9.2l default-privilege redaction/report parity
+fix; the phase's initial commit is `7011776`). R9.2l implementation and
+independent-gate ledger:
+
+| Commit | Scope | Implementation executor role(s) | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `7011776` | R9.2l `default_privileges_list`/`default_privileges_grant`/`default_privileges_revoke` registered (3 public; the default-privilege family as fixed pinned statements) | `backend-engineer-senior` | `backend-engineer-lead` + `security-architect-lead` | passed after the follow-up `35cd6a4` redaction/report parity fix (next row); mock-only fake-Runner contract — no DB driver, no live PostgreSQL, live DB/broker integration excluded behind E5; no `go.mod`/`go.sum` change (no new dependency); R3-R8 report hashes unchanged |
+| `35cd6a4` | R9.2l default-privilege redaction/report parity fix (closes the default-privilege redaction gap and regenerates the report) | `backend-engineer-senior` | `backend-engineer-lead` + `security-architect-lead` | passed after fixes; mock-only fake-Runner contract — no DB driver, no live PostgreSQL, live DB/broker integration excluded behind E5; no `go.mod`/`go.sum` change (no new dependency); R3-R8 report hashes unchanged |
+
+Note: the generated report at HEAD is labelled `round: R9.2m` because the
+`35cd6a4` registration set also carries the six schema/extension/language
+mutation names (`schema_create`, `schema_remove`, `create_extension`,
+`drop_extension`, `language_create`, `language_remove`) that the report
+credits to R9.2m; no separate R9.2m dispatch row is recorded by this
+section, which documents that overlap only so the counts below reconcile
+with the generator.
+
+Current R9 report (`docs/differential/R9/report.yaml` at `35cd6a4`, `round:
+R9.2m`, `repeat_stable: true`): rabbitmq 37/37 registered, mysql 2/38 (36
+pending), postgres 40/50 registered_public (10 pending); totals
+registered_public 79 of 125 public functions (46 pending) across 172 catalog
+functions. The remaining postgres names from the report, in exact report
+order, stay pending: `create_metadata`, `datadir_exists`, `datadir_init`,
+`db_alter`, `has_default_privileges`, `owner_to`, `psql_query`,
+`tablespace_alter`, `tablespace_create`, `tablespace_remove`. R9 remains
+open — no closure claim is made. The report pins the mock-only boundary —
+RabbitMQ is never started, MySQL is never connected, PostgreSQL is never
+contacted; no database driver is linked — and live database/broker
+integration stays excluded behind E5. The prior differential report hashes
+for R3-R8 are unchanged (the report's `prior_report_sha256` block matches
+the committed R3-R8 reports), and neither R9.2l commit touched
+`go.mod`/`go.sum` (no new dependency).
+
 ##### 2026-09-17 current status (R9.2b PostgreSQL version probe)
 
 Actual HEAD is `23fba61` (R9.2b PostgreSQL version probe). R9.2b
