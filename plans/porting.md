@@ -1679,8 +1679,9 @@ remains `a655e17` (R9.2j), as recorded in the section below.
 
 ##### 2026-09-18 current status (R9.2g-R9.2j PostgreSQL privileges, database, user, and group mutations)
 
-Actual HEAD is `a655e17` (R9.2j PostgreSQL group mutations). R9.2g-R9.2j
-implementation and independent-gate ledger:
+Actual HEAD is `a655e17` (R9.2j PostgreSQL group mutations; superseded by
+R9.2k in the section below, where actual repository HEAD advances to
+`26a0cff`). R9.2g-R9.2j implementation and independent-gate ledger:
 
 | Commit | Scope | Implementation executor role(s) | Independent gate(s) | Result / boundary |
 |---|---|---|---|---|
@@ -1711,6 +1712,33 @@ integration stays excluded behind E5. The prior differential report hashes
 for R3-R8 are unchanged (the report's `prior_report_sha256` block matches
 the committed R3-R8 reports), and none of the four commits touched
 `go.mod`/`go.sum` (no new dependency).
+
+##### 2026-09-18 current status (R9.2k PostgreSQL privilege grant/revoke mutations)
+
+Actual HEAD is `26a0cff` (R9.2k PostgreSQL privilege grant/revoke mutations).
+R9.2k implementation and independent-gate ledger:
+
+| Commit | Scope | Implementation executor role(s) | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `26a0cff` | R9.2k `privileges_grant`/`privileges_revoke` registered (2 public; privilege mutations as fixed pinned statements) | `backend-engineer-senior` | `backend-engineer-lead` + independent security gate | passed after value-free validation/redaction fix; independent security gate passed; postgres 31 registered / 19 pending, totals 70 of 125; mock-only fake-Runner contract — no DB driver, no live PostgreSQL, live DB/broker integration excluded behind E5; no `go.mod`/`go.sum` change (no new dependency); R3-R8 report hashes unchanged |
+
+Current R9 report (`docs/differential/R9/report.yaml` at `26a0cff`, `round:
+R9.2k`, `repeat_stable: true`): rabbitmq 37/37 registered, mysql 2/38 (36
+pending), postgres 31/50 (19 pending); totals registered_public 70 of 125
+public functions (55 pending) across 172 catalog functions. The remaining
+postgres names from the report, in exact report order, stay pending:
+`create_extension`, `create_metadata`, `datadir_exists`, `datadir_init`,
+`db_alter`, `default_privileges_grant`, `default_privileges_list`,
+`default_privileges_revoke`, `drop_extension`, `has_default_privileges`,
+`language_create`, `language_remove`, `owner_to`, `psql_query`,
+`schema_create`, `schema_remove`, `tablespace_alter`, `tablespace_create`,
+`tablespace_remove`. R9 remains open — no closure claim is made. The report
+pins the mock-only boundary — RabbitMQ is never started, MySQL is never
+connected, PostgreSQL is never contacted; no database driver is linked — and
+live database/broker integration stays excluded behind E5. The prior
+differential report hashes for R3-R8 are unchanged (the report's
+`prior_report_sha256` block matches the committed R3-R8 reports), and the
+commit touched no `go.mod`/`go.sum` (no new dependency).
 
 ##### 2026-09-17 current status (R9.2b PostgreSQL version probe)
 
