@@ -346,7 +346,7 @@ func TestPostgresVersionInvalidInputs(t *testing.T) {
 	}
 }
 
-// TestPostgresRegistrySurface pins the twenty canonical registrations,
+// TestPostgresRegistrySurface pins the thirty-one canonical registrations,
 // their argument prototypes, and the absence of public psql_query and
 // _parsed_version entries.
 func TestPostgresRegistrySurface(t *testing.T) {
@@ -371,7 +371,9 @@ func TestPostgresRegistrySurface(t *testing.T) {
 		"postgres.is_installed_extension",
 		"postgres.language_exists",
 		"postgres.language_list",
+		"postgres.privileges_grant",
 		"postgres.privileges_list",
+		"postgres.privileges_revoke",
 		"postgres.role_get",
 		"postgres.schema_exists",
 		"postgres.schema_get",
@@ -421,6 +423,10 @@ func TestPostgresRegistrySurface(t *testing.T) {
 			want = HasPrivilegesArgs{}
 		case "postgres.privileges_list":
 			want = PrivilegesListArgs{}
+		case "postgres.privileges_grant":
+			want = PrivilegesGrantArgs{}
+		case "postgres.privileges_revoke":
+			want = PrivilegesRevokeArgs{}
 		case "postgres.db_exists", "postgres.tablespace_exists",
 			"postgres.user_exists",
 			"postgres.get_available_extension", "postgres.get_installed_extension",
@@ -507,6 +513,13 @@ func TestPostgresRegistrySurface(t *testing.T) {
 			"grant_option", "prepend",
 		}, connection...)},
 		{privilegesListFunc{}, append([]string{"name", "object_type", "prepend"}, connection...)},
+		{privilegesGrantFunc{}, append([]string{
+			"name", "object_name", "object_type", "privileges",
+			"grant_option", "prepend",
+		}, connection...)},
+		{privilegesRevokeFunc{}, append([]string{
+			"name", "object_name", "object_type", "privileges", "prepend",
+		}, connection...)},
 	}
 	for _, tc := range cases {
 		names, err := config.ArgumentNames(tc.fn.Args())
@@ -6194,9 +6207,15 @@ func TestPostgresRoleRegistryKeys(t *testing.T) {
 	}
 
 	// The slice additions are the only new surface: the generic query
-	// transport and the write paths stay unregistered.
-	if _, err := reg.Call(context.Background(), rt, "postgres.privileges_grant", &ExistsArgs{Name: "awl"}); err == nil {
-		t.Fatal("postgres.privileges_grant must stay unregistered")
+	// transport and the remaining write paths stay unregistered.
+	for _, pending := range []string{
+		"postgres.psql_query",
+		"postgres.default_privileges_grant",
+		"postgres.default_privileges_revoke",
+	} {
+		if _, err := reg.Call(context.Background(), rt, pending, &ExistsArgs{Name: "awl"}); err == nil {
+			t.Fatalf("%s must stay unregistered", pending)
+		}
 	}
 }
 
@@ -6613,6 +6632,987 @@ func TestPostgresPrivilegesListGuards(t *testing.T) {
 	rtEmpty := &runtime.Runtime{Runner: nil, FS: runtime.NewMemoryFS()}
 	if _, err := (privilegesListFunc{}).Execute(context.Background(), rtEmpty,
 		fullPrivilegesListArgs("awl", "table")); !errors.Is(err, errPostgresRunnerUnavailable) {
+		t.Fatalf("nil runner err = %v, want errPostgresRunnerUnavailable", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// privileges_grant / privileges_revoke — salt/modules/postgres.py:4009-4297
+// @ pinned revision.
+
+// ownerFunctionCSV renders the fixed function owner catalog: fawl and
+// f-awl are owned by postgres, so the preflight flows continue to the
+// privilege query instead of taking the owner shortcut.
+const ownerFunctionCSV = `nspname,regprocedure,name
+public,fawl,postgres
+public,f-awl,postgres
+`
+
+// privGrantTableCSV renders the table privilege catalog where baruwa
+// holds nothing on awl (only bayestest does), so the grant preflight
+// answers false and the mutation statement runs.
+const privGrantTableCSV = `nspname,relname,relkind,name
+public,awl,r,"{bayestest=arwd/baruwatest}"
+`
+
+// privGrantFunctionCSV renders the function privilege catalog where
+// baruwa lacks EXECUTE on fawl and f-awl.
+const privGrantFunctionCSV = `nspname,regprocedure,name
+public,fawl,"{bayestest=X/baruwatest}"
+public,f-awl,"{bayestest=X/baruwatest}"
+`
+
+// privGrantGroupCSV renders the group membership catalog where baruwa is
+// not a member of admins, so the grant preflight answers false.
+const privGrantGroupCSV = `member_of,rolname,admin_option
+admins,baruwatest,f
+other_group,baruwa,t
+`
+
+func fullPrivilegesGrantArgs(name, objectName, objectType, privileges string) *PrivilegesGrantArgs {
+	return &PrivilegesGrantArgs{
+		Name:          name,
+		ObjectName:    objectName,
+		ObjectType:    objectType,
+		Privileges:    privileges,
+		MaintenanceDB: postgresString("db_name"),
+		User:          postgresString("testuser"),
+		Host:          postgresString("testhost"),
+		Port:          postgresString("testport"),
+		Password:      postgresString("testpassword"),
+	}
+}
+
+func fullPrivilegesRevokeArgs(name, objectName, objectType, privileges string) *PrivilegesRevokeArgs {
+	return &PrivilegesRevokeArgs{
+		Name:          name,
+		ObjectName:    objectName,
+		ObjectType:    objectType,
+		Privileges:    privileges,
+		MaintenanceDB: postgresString("db_name"),
+		User:          postgresString("testuser"),
+		Host:          postgresString("testhost"),
+		Port:          postgresString("testport"),
+		Password:      postgresString("testpassword"),
+	}
+}
+
+// TestPostgresPrivilegesGrantArgv ports the pinned
+// test_privileges_grant_table, test_privileges_grant_function, and
+// test_privileges_grant_group statements byte-for-byte: the preflight
+// owner and privilege queries answer "not granted", then exactly one
+// mutation call carries the pinned GRANT statement on the full pinned
+// argv (SQL at index 14) with the pinned clean environment and the
+// password as the only Redact secret. The pinned tests mock
+// has_privileges to False and pass runas="user"; StateKit reaches the
+// same preflight answer through the fixed catalogs and rejects runas
+// before execution, so the vectors here drop runas.
+func TestPostgresPrivilegesGrantArgv(t *testing.T) {
+	cases := []struct {
+		label       string
+		name        string
+		objectName  string
+		objectType  string
+		privileges  string
+		grantOption bool
+		ownerCSV    string
+		privCSV     string
+		query       string
+	}{
+		{
+			"table all with grant option", "baruwa", "awl", "table", "ALL", true,
+			ownerTableCSV, privGrantTableCSV,
+			`GRANT ALL ON TABLE public."awl" TO "baruwa" WITH GRANT OPTION`,
+		},
+		{
+			"table all", "baruwa", "awl", "table", "ALL", false,
+			ownerTableCSV, privGrantTableCSV,
+			`GRANT ALL ON TABLE public."awl" TO "baruwa"`,
+		},
+		{
+			"all tables in schema", "baruwa", "ALL", "table", "SELECT", false,
+			ownerTableCSV, privGrantTableCSV,
+			`GRANT SELECT ON ALL TABLES IN SCHEMA public TO "baruwa"`,
+		},
+		{
+			"function all with grant option", "baruwa", "fawl", "function", "ALL", true,
+			ownerFunctionCSV, privGrantFunctionCSV,
+			`GRANT ALL ON FUNCTION public."fawl" TO "baruwa" WITH GRANT OPTION`,
+		},
+		{
+			"function all", "baruwa", "fawl", "function", "ALL", false,
+			ownerFunctionCSV, privGrantFunctionCSV,
+			`GRANT ALL ON FUNCTION public."fawl" TO "baruwa"`,
+		},
+		{
+			"all functions in schema", "baruwa", "ALL", "function", "EXECUTE", false,
+			ownerFunctionCSV, privGrantFunctionCSV,
+			`GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO "baruwa"`,
+		},
+	}
+	for _, tc := range cases {
+		results := []process.CommandResult{
+			{ExitCode: 0, Stdout: []byte(tc.ownerCSV)},
+			{ExitCode: 0, Stdout: []byte(tc.privCSV)},
+			{ExitCode: 0},
+		}
+		rt, runner := newPostgresRuntime(results...)
+		args := fullPrivilegesGrantArgs(tc.name, tc.objectName, tc.objectType, tc.privileges)
+		args.GrantOption = tc.grantOption
+		value, err := (privilegesGrantFunc{}).Execute(context.Background(), rt, args)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.label, err)
+		}
+		if value != true {
+			t.Fatalf("%s = %#v, want true", tc.label, value)
+		}
+		if len(runner.calls) != 3 {
+			t.Fatalf("%s calls = %d, want 3 (owner + privileges + grant)", tc.label, len(runner.calls))
+		}
+		command := runner.calls[2]
+		want := []string{
+			"psql",
+			"--no-align",
+			"--no-readline",
+			"--no-psqlrc",
+			"--no-password",
+			"--username", "testuser",
+			"--host", "testhost",
+			"--port", "testport",
+			"--dbname", "db_name",
+			"-c", tc.query,
+		}
+		if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s argv = %q, want %q", tc.label, got, want)
+		}
+		wantEnv := []string{
+			"PGPASSWORD=testpassword",
+			"PGUSER=testuser",
+			"PGHOST=testhost",
+			"PGPORT=testport",
+		}
+		if !reflect.DeepEqual(command.Env, wantEnv) {
+			t.Fatalf("%s env = %q, want %q", tc.label, command.Env, wantEnv)
+		}
+		if command.Shell {
+			t.Fatalf("%s psql must run without a shell", tc.label)
+		}
+		if command.Timeout != commandTimeout ||
+			command.MaxStdoutBytes != outputLimit || command.MaxStderrBytes != outputLimit {
+			t.Fatalf("%s unsafe command bounds: %#v", tc.label, command)
+		}
+		if !reflect.DeepEqual(command.Redact, []string{"testpassword"}) {
+			t.Fatalf("%s redact = %q", tc.label, command.Redact)
+		}
+		if rendered := command.RedactedString(); strings.Contains(rendered, "testpassword") {
+			t.Fatalf("%s rendered command leaks password: %q", tc.label, rendered)
+		}
+	}
+
+	// The pinned group statements: one preflight membership query, then
+	// the raw group membership GRANT with and without ADMIN OPTION.
+	for _, tc := range []struct {
+		label       string
+		grantOption bool
+		query       string
+	}{
+		{"group admin option", true, `GRANT admins TO "baruwa" WITH ADMIN OPTION`},
+		{"group membership", false, `GRANT admins TO "baruwa"`},
+	} {
+		rt, runner := newPostgresRuntime(
+			process.CommandResult{ExitCode: 0, Stdout: []byte(privGrantGroupCSV)},
+			process.CommandResult{ExitCode: 0},
+		)
+		args := fullPrivilegesGrantArgs("baruwa", "admins", "group", "")
+		args.GrantOption = tc.grantOption
+		value, err := (privilegesGrantFunc{}).Execute(context.Background(), rt, args)
+		if err != nil || value != true {
+			t.Fatalf("%s = %#v err = %v, want true", tc.label, value, err)
+		}
+		if len(runner.calls) != 2 {
+			t.Fatalf("%s calls = %d, want 2 (membership + grant)", tc.label, len(runner.calls))
+		}
+		if got := runner.calls[1].Args[len(runner.calls[1].Args)-1]; got != tc.query {
+			t.Fatalf("%s statement = %q, want %q", tc.label, got, tc.query)
+		}
+	}
+}
+
+// TestPostgresPrivilegesRevokeArgv ports the pinned
+// test_privileges_revoke_table, test_privileges_revoke_function, and
+// test_privileges_revoke_group statements byte-for-byte: the preflight
+// answers "held" through the fixed catalogs, then exactly one mutation
+// call carries the pinned REVOKE statement — including the pinned raw
+// (unquoted) role name of the REVOKE tail. The pinned tests mock
+// has_privileges to True; the fixtures here answer true through the real
+// preflight.
+func TestPostgresPrivilegesRevokeArgv(t *testing.T) {
+	cases := []struct {
+		label      string
+		name       string
+		objectName string
+		objectType string
+		privileges string
+		ownerCSV   string
+		privCSV    string
+		query      string
+	}{
+		{
+			"table all", "baruwa", "awl", "table", "ALL",
+			ownerTableCSV, privTableCSV,
+			`REVOKE ALL ON TABLE public."awl" FROM baruwa`,
+		},
+		{
+			"function execute", "baruwa", "f-awl", "function", "EXECUTE",
+			ownerFunctionCSV, `nspname,regprocedure,name` + "\n" +
+				`public,f-awl,"{baruwa=X*/baruwatest}"` + "\n",
+			`REVOKE EXECUTE ON FUNCTION public."f-awl" FROM baruwa`,
+		},
+	}
+	for _, tc := range cases {
+		results := []process.CommandResult{
+			{ExitCode: 0, Stdout: []byte(tc.ownerCSV)},
+			{ExitCode: 0, Stdout: []byte(tc.privCSV)},
+			{ExitCode: 0},
+		}
+		rt, runner := newPostgresRuntime(results...)
+		value, err := (privilegesRevokeFunc{}).Execute(context.Background(), rt,
+			fullPrivilegesRevokeArgs(tc.name, tc.objectName, tc.objectType, tc.privileges))
+		if err != nil {
+			t.Fatalf("%s: %v", tc.label, err)
+		}
+		if value != true {
+			t.Fatalf("%s = %#v, want true", tc.label, value)
+		}
+		if len(runner.calls) != 3 {
+			t.Fatalf("%s calls = %d, want 3 (owner + privileges + revoke)", tc.label, len(runner.calls))
+		}
+		command := runner.calls[2]
+		want := []string{
+			"psql",
+			"--no-align",
+			"--no-readline",
+			"--no-psqlrc",
+			"--no-password",
+			"--username", "testuser",
+			"--host", "testhost",
+			"--port", "testport",
+			"--dbname", "db_name",
+			"-c", tc.query,
+		}
+		if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s argv = %q, want %q", tc.label, got, want)
+		}
+		if !reflect.DeepEqual(command.Redact, []string{"testpassword"}) {
+			t.Fatalf("%s redact = %q", tc.label, command.Redact)
+		}
+	}
+
+	// The pinned group statement with both names raw: one membership
+	// preflight where baruwa is a member, then the REVOKE.
+	privHeldGroupCSV := `member_of,rolname,admin_option
+admins,baruwa,f
+`
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(privHeldGroupCSV)},
+		process.CommandResult{ExitCode: 0},
+	)
+	value, err := (privilegesRevokeFunc{}).Execute(context.Background(), rt,
+		fullPrivilegesRevokeArgs("baruwa", "admins", "group", ""))
+	if err != nil || value != true {
+		t.Fatalf("group revoke = %#v err = %v, want true", value, err)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("group revoke calls = %d, want 2", len(runner.calls))
+	}
+	if got := runner.calls[1].Args[len(runner.calls[1].Args)-1]; got != "REVOKE admins FROM baruwa" {
+		t.Fatalf("group revoke statement = %q", got)
+	}
+}
+
+// TestPostgresPrivilegesMutationNoop pins the pinned preflight short
+// circuits: an already-granted grant and a not-yet-held revoke return
+// False with no mutation statement — exactly the pinned calls the two
+// runner results cover and no third call — including the owner shortcut
+// that satisfies the preflight after the owner query alone and the
+// grant-option-independent preflight the pinned source issues.
+func TestPostgresPrivilegesMutationNoop(t *testing.T) {
+	// Grant to the role that already holds every table privilege (the
+	// pinned privTableCSV baruwa row), with grant_option set: the pinned
+	// preflight never receives grant_option, so the membership/ALL check
+	// alone answers true and no GRANT runs.
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(ownerTableCSV)},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(privTableCSV)},
+	)
+	args := fullPrivilegesGrantArgs("baruwa", "awl", "table", "ALL")
+	args.GrantOption = true
+	value, err := (privilegesGrantFunc{}).Execute(context.Background(), rt, args)
+	if err != nil || value != false {
+		t.Fatalf("already-granted = %#v err = %v, want false", value, err)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("already-granted calls = %d, want 2", len(runner.calls))
+	}
+
+	// The owner shortcut: postgres owns awl, so the preflight answers
+	// true after the owner query alone.
+	rt, runner = newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(ownerTableCSV)},
+	)
+	value, err = (privilegesGrantFunc{}).Execute(context.Background(), rt,
+		fullPrivilegesGrantArgs("postgres", "awl", "table", "SELECT"))
+	if err != nil || value != false {
+		t.Fatalf("owner grant = %#v err = %v, want false", value, err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("owner grant calls = %d, want 1", len(runner.calls))
+	}
+
+	// Grant to a group member: membership alone satisfies the preflight
+	// even though the admin_option is false.
+	rt, runner = newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(privGroupCSV)},
+	)
+	args = fullPrivilegesGrantArgs("baruwa", "admin", "group", "")
+	args.GrantOption = true
+	value, err = (privilegesGrantFunc{}).Execute(context.Background(), rt, args)
+	if err != nil || value != false {
+		t.Fatalf("member grant = %#v err = %v, want false", value, err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("member grant calls = %d, want 1", len(runner.calls))
+	}
+
+	// Revoke from a role that holds nothing: false after the two
+	// preflight queries, no REVOKE.
+	rt, runner = newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(ownerTableCSV)},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(privGrantTableCSV)},
+	)
+	value, err = (privilegesRevokeFunc{}).Execute(context.Background(), rt,
+		fullPrivilegesRevokeArgs("baruwa", "awl", "table", "ALL"))
+	if err != nil || value != false {
+		t.Fatalf("nothing-held revoke = %#v err = %v, want false", value, err)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("nothing-held revoke calls = %d, want 2", len(runner.calls))
+	}
+
+	// Revoke from a non-member: false after the one membership query.
+	rt, runner = newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(privGrantGroupCSV)},
+	)
+	value, err = (privilegesRevokeFunc{}).Execute(context.Background(), rt,
+		fullPrivilegesRevokeArgs("baruwa", "admins", "group", ""))
+	if err != nil || value != false {
+		t.Fatalf("non-member revoke = %#v err = %v, want false", value, err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("non-member revoke calls = %d, want 1", len(runner.calls))
+	}
+
+	// Every short-circuit path keeps its executed commands free of any
+	// mutation verb: only fixed COPY catalogs ran.
+	for i, call := range runner.calls {
+		joined := strings.Join(call.Args, " ")
+		for _, verb := range []string{"GRANT ", "REVOKE "} {
+			if strings.Contains(joined, verb) {
+				t.Fatalf("no-op path executed a mutation: call %d = %q", i, joined)
+			}
+		}
+	}
+}
+
+// TestPostgresPrivilegesMutationShapes pins the remaining statement
+// surface: the multi-privilege comma join with the pinned split
+// semantics, the quoted on-part of the schema/tablespace/language/
+// database types, the lowercase "all" object name selecting the
+// ALL-variant, the pinned prepend default, and the retcode-false
+// compatibility shape of both mutations.
+func TestPostgresPrivilegesMutationShapes(t *testing.T) {
+	cases := []struct {
+		label      string
+		revoke     bool
+		name       string
+		objectName string
+		objectType string
+		privileges string
+		prepend    *string
+		ownerCSV   string
+		privCSV    string
+		query      string
+	}{
+		{
+			"multi privileges split", false, "baruwa", "awl", "table", "SELECT , UPDATE", nil,
+			ownerTableCSV, privGrantTableCSV,
+			`GRANT SELECT,UPDATE ON TABLE public."awl" TO "baruwa"`,
+		},
+		{
+			"schema quoted", false, "baruwa", "myschema", "schema", "USAGE,CREATE", nil,
+			"nspname,name\npublic,postgres\n", "nspname,name\npublic,\"{postgres=UC/postgres}\"\n",
+			`GRANT USAGE,CREATE ON SCHEMA "myschema" TO "baruwa"`,
+		},
+		{
+			"tablespace quoted", false, "baruwa", "pg_default", "tablespace", "CREATE", nil,
+			"spcname,name\npg_default,postgres\n", "spcname,name\npg_default,\"{postgres=C/postgres}\"\n",
+			`GRANT CREATE ON TABLESPACE "pg_default" TO "baruwa" WITH GRANT OPTION`,
+		},
+		{
+			"database quoted", true, "baruwa", "test_db", "database", "CONNECT,TEMPORARY", nil,
+			"datname,name\ntest_db,postgres\n",
+			"datname,name\ntest_db,\"{postgres=CTc/postgres,baruwa=cT*/postgres}\"\n",
+			`REVOKE CONNECT,TEMPORARY ON DATABASE "test_db" FROM baruwa`,
+		},
+		{
+			"language quoted", true, "baruwa", "plpgsql", "language", "USAGE", nil,
+			"lanname,name\nplpgsql,postgres\n", "lanname,name\nplpgsql,\"{baruwa=U*/postgres}\"\n",
+			`REVOKE USAGE ON LANGUAGE "plpgsql" FROM baruwa`,
+		},
+		{
+			"sequence prepend", false, "baruwa", "awl_seq", "sequence", "SELECT", postgresString("private"),
+			"nspname,relname,name\nprivate,awl_seq,postgres\n",
+			"nspname,relname,relkind,name\nprivate,awl_seq,S,\"{other=r/postgres}\"\n",
+			`GRANT SELECT ON SEQUENCE private."awl_seq" TO "baruwa"`,
+		},
+	}
+	for _, tc := range cases {
+		results := []process.CommandResult{
+			{ExitCode: 0, Stdout: []byte(tc.ownerCSV)},
+			{ExitCode: 0, Stdout: []byte(tc.privCSV)},
+			{ExitCode: 0},
+		}
+		rt, runner := newPostgresRuntime(results...)
+		var value any
+		var err error
+		if tc.revoke {
+			args := fullPrivilegesRevokeArgs(tc.name, tc.objectName, tc.objectType, tc.privileges)
+			args.Prepend = tc.prepend
+			value, err = (privilegesRevokeFunc{}).Execute(context.Background(), rt, args)
+		} else {
+			args := fullPrivilegesGrantArgs(tc.name, tc.objectName, tc.objectType, tc.privileges)
+			args.GrantOption = strings.Contains(tc.query, "WITH GRANT OPTION")
+			args.Prepend = tc.prepend
+			value, err = (privilegesGrantFunc{}).Execute(context.Background(), rt, args)
+		}
+		if err != nil {
+			t.Fatalf("%s: %v", tc.label, err)
+		}
+		if value != true {
+			t.Fatalf("%s = %#v, want true", tc.label, value)
+		}
+		if got := runner.calls[len(runner.calls)-1].Args[len(runner.calls[len(runner.calls)-1].Args)-1]; got != tc.query {
+			t.Fatalf("%s statement = %q, want %q", tc.label, got, tc.query)
+		}
+	}
+
+	// A lowercase "all" object name selects the ALL-variant exactly like
+	// the pinned object_name.upper() == "ALL" comparison.
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(ownerTableCSV)},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(privGrantTableCSV)},
+		process.CommandResult{ExitCode: 0},
+	)
+	value, err := (privilegesGrantFunc{}).Execute(context.Background(), rt,
+		fullPrivilegesGrantArgs("baruwa", "all", "table", "SELECT"))
+	if err != nil || value != true {
+		t.Fatalf("lowercase all = %#v err = %v, want true", value, err)
+	}
+	if got := runner.calls[2].Args[len(runner.calls[2].Args)-1]; got != `GRANT SELECT ON ALL TABLES IN SCHEMA public TO "baruwa"` {
+		t.Fatalf("lowercase all statement = %q", got)
+	}
+
+	// The preflight queries embed no caller string; only the mutation
+	// statement does, in its validated identifier positions.
+	for i, call := range runner.calls[:2] {
+		joined := strings.Join(call.Args, "\x00")
+		if strings.Contains(joined, "baruwa") || strings.Contains(joined, "public") {
+			t.Fatalf("preflight call %d leaked a lookup string: %q", i, joined)
+		}
+	}
+
+	// A rejected statement keeps the pinned retcode boolean: false,
+	// never an error.
+	for _, revoke := range []bool{false, true} {
+		rt, _ := newPostgresRuntime(
+			process.CommandResult{ExitCode: 0, Stdout: []byte(ownerTableCSV)},
+			process.CommandResult{ExitCode: 0, Stdout: []byte(privGrantTableCSV)},
+			process.CommandResult{ExitCode: 1, Stderr: []byte(`psql: error: ERROR: relation "awl" does not exist`)},
+		)
+		var value any
+		var err error
+		if revoke {
+			value, err = (privilegesRevokeFunc{}).Execute(context.Background(), rt,
+				fullPrivilegesRevokeArgs("bayestest", "awl", "table", "SELECT,INSERT"))
+		} else {
+			value, err = (privilegesGrantFunc{}).Execute(context.Background(), rt,
+				fullPrivilegesGrantArgs("baruwa", "awl", "table", "ALL"))
+		}
+		if err != nil || value != false {
+			t.Fatalf("nonzero exit revoke=%v = %#v err = %v, want false", revoke, value, err)
+		}
+	}
+}
+
+// TestPostgresPrivilegesMutationValidation pins the pinned validation
+// head for both mutations: every rejected input fails before any Runner
+// invocation, the object type is lowercased, and the split tolerates the
+// pinned single spaces.
+func TestPostgresPrivilegesValidationRedaction(t *testing.T) {
+	const marker = "synthetic_privilege_marker"
+	for _, entry := range []string{"direct", "registry"} {
+		for _, function := range []string{"postgres.privileges_grant", "postgres.privileges_revoke", "postgres.has_privileges"} {
+			for _, field := range []string{"privileges", "object_type"} {
+				t.Run(entry+"/"+function+"/"+field, func(t *testing.T) {
+					objectType, privileges := "table", "SELECT,"+marker
+					if field == "object_type" {
+						objectType, privileges = marker, "SELECT"
+					}
+					rt, runner := newPostgresRuntime()
+					var fn runtime.ExecFunction
+					var args any
+					switch function {
+					case "postgres.privileges_grant":
+						a := fullPrivilegesGrantArgs("baruwa", "awl", objectType, privileges)
+						a.Password = postgresString(marker)
+						fn, args = privilegesGrantFunc{}, a
+					case "postgres.privileges_revoke":
+						a := fullPrivilegesRevokeArgs("baruwa", "awl", objectType, privileges)
+						a.Password = postgresString(marker)
+						fn, args = privilegesRevokeFunc{}, a
+					default:
+						fn, args = hasPrivilegesFunc{}, &HasPrivilegesArgs{Name: "baruwa", ObjectName: "awl", ObjectType: objectType, Privileges: privileges, Password: postgresString(marker)}
+					}
+					var value any
+					var err error
+					if entry == "registry" {
+						rt.Exec = runtime.NewExecRegistry()
+						if err := Register(rt.Exec); err != nil {
+							t.Fatal(err)
+						}
+						value, err = rt.Exec.Call(context.Background(), rt, function, args)
+					} else {
+						value, err = fn.Execute(context.Background(), rt, args)
+					}
+					if !errors.Is(err, errPostgresInvalidArgument) || err.Error() != "postgres: invalid argument: invalid "+field {
+						t.Fatal("expected stable invalid-argument error with fixed key only")
+					}
+					if value != nil || strings.Contains(err.Error(), marker) || len(runner.calls) != 0 {
+						t.Fatal("validation leaked input or invoked Runner")
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestPostgresPrivilegesMutationValidation(t *testing.T) {
+	for _, tc := range []struct {
+		label      string
+		objectType string
+		privileges string
+	}{
+		{"unknown object type", "bogus", "SELECT"},
+		{"empty object type", "", "SELECT"},
+		{"invalid privilege", "table", "SELECT,BOGUS"},
+		{"missing privileges", "table", ""},
+		{"privileges for group", "group", "SELECT"},
+	} {
+		for _, revoke := range []bool{false, true} {
+			rt, runner := newPostgresRuntime()
+			var err error
+			if revoke {
+				_, err = (privilegesRevokeFunc{}).Execute(context.Background(), rt,
+					fullPrivilegesRevokeArgs("baruwa", "awl", tc.objectType, tc.privileges))
+			} else {
+				_, err = (privilegesGrantFunc{}).Execute(context.Background(), rt,
+					fullPrivilegesGrantArgs("baruwa", "awl", tc.objectType, tc.privileges))
+			}
+			if !errors.Is(err, errPostgresInvalidArgument) {
+				t.Fatalf("%s revoke=%v err = %v, want errPostgresInvalidArgument", tc.label, revoke, err)
+			}
+			if len(runner.calls) != 0 {
+				t.Fatalf("%s revoke=%v executed %d commands before validation", tc.label, revoke, len(runner.calls))
+			}
+		}
+	}
+
+	// Mixed-case object types and spaced privilege lists behave exactly
+	// like the pinned _mod_priv_opts for both functions.
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(ownerTableCSV)},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(privGrantTableCSV)},
+		process.CommandResult{ExitCode: 0},
+	)
+	value, err := (privilegesGrantFunc{}).Execute(context.Background(), rt,
+		fullPrivilegesGrantArgs("baruwa", "awl", "TABLE", "select , insert"))
+	if err != nil || value != true {
+		t.Fatalf("TABLE case/spaces = %#v err = %v, want true", value, err)
+	}
+	if got := runner.calls[2].Args[len(runner.calls[2].Args)-1]; got != `GRANT SELECT,INSERT ON TABLE public."awl" TO "baruwa"` {
+		t.Fatalf("TABLE case/spaces statement = %q", got)
+	}
+
+	rt, runner = newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte("nspname,name\npublic,postgres\n")},
+		process.CommandResult{ExitCode: 0, Stdout: []byte("nspname,name\npublic,\"{postgres=UC/postgres,baruwa=UC/postgres}\"\n")},
+		process.CommandResult{ExitCode: 0},
+	)
+	value, err = (privilegesRevokeFunc{}).Execute(context.Background(), rt,
+		fullPrivilegesRevokeArgs("baruwa", "public", "SCHEMA", "usage , create"))
+	if err != nil || value != true {
+		t.Fatalf("SCHEMA case/spaces = %#v err = %v, want true", value, err)
+	}
+	if got := runner.calls[2].Args[len(runner.calls[2].Args)-1]; got != `REVOKE USAGE,CREATE ON SCHEMA "public" FROM baruwa` {
+		t.Fatalf("SCHEMA case/spaces statement = %q", got)
+	}
+}
+
+// TestPostgresPrivilegesMutationInjection pins the fail-closed boundary
+// at every identifier position the pinned format strings interpolate raw
+// or quote without escaping, each with its exact value-free stable error
+// and zero Runner executions, including the synthetic marker overlap that
+// proves a rejected value cannot leak through the error.
+func TestPostgresPrivilegesMutationInjection(t *testing.T) {
+	const marker = "pgmark-7f3c-secret"
+	for _, tc := range []struct {
+		fn     string
+		revoke bool
+		args   func(marker string) any
+		want   string
+	}{
+		{
+			"postgres.privileges_grant", false,
+			func(marker string) any {
+				return fullPrivilegesGrantArgs(`baruwa-`+marker+`"`, "awl", "table", "SELECT")
+			},
+			"postgres: invalid argument: unsupported quote character in name",
+		},
+		{
+			"postgres.privileges_grant", false,
+			func(marker string) any {
+				return fullPrivilegesGrantArgs("baruwa", `aw`+marker+`"`, "table", "SELECT")
+			},
+			"postgres: invalid argument: unsupported quote character in object_name",
+		},
+		{
+			"postgres.privileges_grant", false,
+			func(marker string) any {
+				return fullPrivilegesGrantArgs("baruwa", `admins; DROP ROLE x; --`+marker, "group", "")
+			},
+			"postgres: invalid argument: unsupported identifier in object_name",
+		},
+		{
+			"postgres.privileges_grant", false,
+			func(marker string) any {
+				args := fullPrivilegesGrantArgs("baruwa", "awl", "table", "SELECT")
+				args.Prepend = postgresString(`public; DROP SCHEMA x; --` + marker)
+				return args
+			},
+			"postgres: invalid argument: unsupported identifier in prepend",
+		},
+		{
+			"postgres.privileges_grant", false,
+			func(marker string) any {
+				args := fullPrivilegesGrantArgs("baruwa", "ALL", "table", "SELECT")
+				args.Prepend = postgresString("public '" + marker)
+				return args
+			},
+			"postgres: invalid argument: unsupported identifier in prepend",
+		},
+		{
+			"postgres.privileges_revoke", true,
+			func(marker string) any {
+				return fullPrivilegesRevokeArgs(`baruwa; DROP ROLE x; --`+marker, "awl", "table", "SELECT")
+			},
+			"postgres: invalid argument: unsupported identifier in name",
+		},
+		{
+			"postgres.privileges_revoke", true,
+			func(marker string) any {
+				return fullPrivilegesRevokeArgs(`bar uwa`+marker, "awl", "table", "SELECT")
+			},
+			"postgres: invalid argument: unsupported identifier in name",
+		},
+		{
+			"postgres.privileges_revoke", true,
+			func(marker string) any {
+				return fullPrivilegesRevokeArgs("baruwa", `admi`+marker+`"`, "group", "")
+			},
+			"postgres: invalid argument: unsupported identifier in object_name",
+		},
+		{
+			"postgres.privileges_revoke", true,
+			func(marker string) any {
+				args := fullPrivilegesRevokeArgs("baruwa", "awl", "function", "EXECUTE")
+				args.Prepend = postgresString(`pub` + marker + `"lic`)
+				return args
+			},
+			"postgres: invalid argument: unsupported identifier in prepend",
+		},
+	} {
+		rt, runner := newPostgresRuntime()
+		rt.Exec = runtime.NewExecRegistry()
+		if err := Register(rt.Exec); err != nil {
+			t.Fatal(err)
+		}
+		var err error
+		if tc.revoke {
+			args := tc.args(marker).(*PrivilegesRevokeArgs)
+			args.Password = postgresString(marker)
+			_, err = rt.Exec.Call(context.Background(), rt, tc.fn, args)
+		} else {
+			args := tc.args(marker).(*PrivilegesGrantArgs)
+			args.Password = postgresString(marker)
+			_, err = rt.Exec.Call(context.Background(), rt, tc.fn, args)
+		}
+		if err == nil || err.Error() != tc.want {
+			t.Fatalf("%s err = %v, want %q", tc.fn, err, tc.want)
+		}
+		if strings.Contains(err.Error(), marker) {
+			t.Fatalf("%s error leaks the rejected value: %v", tc.fn, err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s executed %d commands, want 0", tc.fn, len(runner.calls))
+		}
+	}
+}
+
+// TestPostgresPrivilegesMutationRedaction drives both mutations with a
+// synthetic marker secret — always the connection password, additionally
+// overlapping one other connection argument per case, exactly like the
+// role-family battery: a preflight failure at either catalog query and a
+// mutation-time Runner failure (the leak Runner's raw command-line error
+// embedding argv and environment) all surface redacted errors, every
+// executed command keeps the exact marker secret inventory, no mutation
+// runs after a failed preflight, and the rendered command never carries
+// the marker.
+func TestPostgresPrivilegesMutationRedaction(t *testing.T) {
+	const marker = "synthetic'preflight"
+	for _, fn := range []string{"postgres.privileges_grant", "postgres.privileges_revoke"} {
+		// The grant preflight must answer false (baruwa holds nothing)
+		// and the revoke preflight true (baruwa holds everything), so
+		// both functions reach their mutation at call 3.
+		privCSV := privGrantTableCSV
+		if fn == "postgres.privileges_revoke" {
+			privCSV = privTableCSV
+		}
+		for _, overlap := range []string{"password", "host", "user", "maintenance_db"} {
+			for _, failAt := range []int{1, 2, 3} {
+				t.Run(fn+"/"+overlap+"/"+strconv.Itoa(failAt), func(t *testing.T) {
+					grantArgs := fullPrivilegesGrantArgs("baruwa", "awl", "table", "SELECT")
+					revokeArgs := fullPrivilegesRevokeArgs("baruwa", "awl", "table", "SELECT")
+					grantArgs.Password = postgresString(marker)
+					revokeArgs.Password = postgresString(marker)
+					switch overlap {
+					case "host":
+						grantArgs.Host = postgresString(marker)
+						revokeArgs.Host = postgresString(marker)
+					case "user":
+						grantArgs.User = postgresString(marker)
+						revokeArgs.User = postgresString(marker)
+					case "maintenance_db":
+						grantArgs.MaintenanceDB = postgresString(marker)
+						revokeArgs.MaintenanceDB = postgresString(marker)
+					}
+					runner := &statementLeakRunner{}
+					runner.results = []process.CommandResult{
+						{ExitCode: 0, Stdout: []byte(ownerTableCSV)},
+						{ExitCode: 0, Stdout: []byte(privCSV)},
+					}
+					runner.results = runner.results[:failAt-1]
+					rt := &runtime.Runtime{Runner: runner, FS: runtime.NewMemoryFS()}
+					var value any
+					var err error
+					if fn == "postgres.privileges_grant" {
+						value, err = (privilegesGrantFunc{}).Execute(context.Background(), rt, grantArgs)
+					} else {
+						value, err = (privilegesRevokeFunc{}).Execute(context.Background(), rt, revokeArgs)
+					}
+					if err == nil || value != nil {
+						t.Fatal("run did not stop at injected error")
+					}
+					if strings.Contains(err.Error(), marker) || !strings.Contains(err.Error(), process.RedactedPlaceholder) {
+						t.Fatalf("error was not redacted: %v", err)
+					}
+					if len(runner.calls) != failAt {
+						t.Fatalf("calls = %d, want %d", len(runner.calls), failAt)
+					}
+					for _, command := range runner.calls {
+						if strings.Contains(command.RedactedString(), marker) {
+							t.Fatal("rendered command leaks marker")
+						}
+						if !reflect.DeepEqual(command.Redact, []string{marker}) {
+							t.Fatalf("secret inventory changed: %q", command.Redact)
+						}
+					}
+					if failAt < 3 {
+						for _, command := range runner.calls {
+							joined := strings.Join(command.Args, " ")
+							for _, verb := range []string{"GRANT ", "REVOKE "} {
+								if strings.Contains(joined, verb) {
+									t.Fatalf("mutation after failed preflight: %q", joined)
+								}
+							}
+						}
+					}
+				})
+			}
+		}
+	}
+}
+
+// TestPostgresPrivilegesMutationRegistryKeys drives both mutations
+// through the registry Call path and proves the mutation statement is
+// reachable end to end with the shared transport after the preflight.
+func TestPostgresPrivilegesMutationRegistryKeys(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(ownerTableCSV)},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(privGrantTableCSV)},
+		process.CommandResult{ExitCode: 0},
+	)
+	value, err := reg.Call(context.Background(), rt, "postgres.privileges_grant",
+		&PrivilegesGrantArgs{Name: "baruwa", ObjectName: "awl", ObjectType: "table", Privileges: "ALL"})
+	if err != nil || value != true {
+		t.Fatalf("registry grant = %#v err = %v, want true", value, err)
+	}
+	if got := runner.calls[2].Args[len(runner.calls[2].Args)-1]; got != `GRANT ALL ON TABLE public."awl" TO "baruwa"` {
+		t.Fatalf("registry grant statement = %q", got)
+	}
+
+	rt, runner = newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(ownerTableCSV)},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(privTableCSV)},
+		process.CommandResult{ExitCode: 0},
+	)
+	value, err = reg.Call(context.Background(), rt, "postgres.privileges_revoke",
+		&PrivilegesRevokeArgs{Name: "baruwa", ObjectName: "awl", ObjectType: "table", Privileges: "ALL"})
+	if err != nil || value != true {
+		t.Fatalf("registry revoke = %#v err = %v, want true", value, err)
+	}
+	if got := runner.calls[2].Args[len(runner.calls[2].Args)-1]; got != `REVOKE ALL ON TABLE public."awl" FROM baruwa` {
+		t.Fatalf("registry revoke statement = %q", got)
+	}
+}
+
+// TestPostgresPrivilegesMutationGuards pins the shared failure modes for
+// both mutations: canceled context, runas rejection, redacted Runner
+// errors, output limits, psql-unavailable fail-closed, the argument
+// guards, and the nil Runner — each with zero Runner executions where the
+// guard precedes the call.
+func TestPostgresPrivilegesMutationGuards(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	rt, runner := newPostgresRuntime()
+	if _, err := (privilegesGrantFunc{}).Execute(ctx, rt, fullPrivilegesGrantArgs("baruwa", "awl", "table", "SELECT")); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled grant err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("canceled grant executed %d commands", len(runner.calls))
+	}
+	rt, runner = newPostgresRuntime()
+	if _, err := (privilegesRevokeFunc{}).Execute(ctx, rt, fullPrivilegesRevokeArgs("baruwa", "awl", "table", "SELECT")); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled revoke err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("canceled revoke executed %d commands", len(runner.calls))
+	}
+
+	for _, revoke := range []bool{false, true} {
+		label := "grant"
+		if revoke {
+			label = "revoke"
+		}
+		rt, runner = newPostgresRuntime()
+		var err error
+		if revoke {
+			args := fullPrivilegesRevokeArgs("baruwa", "awl", "table", "SELECT")
+			args.Runas = postgresString("postgres")
+			_, err = (privilegesRevokeFunc{}).Execute(context.Background(), rt, args)
+		} else {
+			args := fullPrivilegesGrantArgs("baruwa", "awl", "table", "SELECT")
+			args.Runas = postgresString("postgres")
+			_, err = (privilegesGrantFunc{}).Execute(context.Background(), rt, args)
+		}
+		if !errors.Is(err, errPostgresRunas) {
+			t.Fatalf("%s runas err = %v, want errPostgresRunas", label, err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s runas run executed %d commands", label, len(runner.calls))
+		}
+
+		rt, _ = newPostgresRuntime(process.CommandResult{
+			ExitCode: -1,
+			Err:      fmt.Errorf("exec psql --dbname db_name: secret testpassword rejected"),
+		})
+		if revoke {
+			_, err = (privilegesRevokeFunc{}).Execute(context.Background(), rt,
+				fullPrivilegesRevokeArgs("baruwa", "awl", "table", "SELECT"))
+		} else {
+			_, err = (privilegesGrantFunc{}).Execute(context.Background(), rt,
+				fullPrivilegesGrantArgs("baruwa", "awl", "table", "SELECT"))
+		}
+		if err == nil || strings.Contains(err.Error(), "testpassword") {
+			t.Fatalf("%s runner error = %v, want redacted", label, err)
+		}
+		if !strings.Contains(err.Error(), process.RedactedPlaceholder) {
+			t.Fatalf("%s error lacks redaction placeholder: %v", label, err)
+		}
+
+		for _, truncated := range []process.CommandResult{
+			{ExitCode: 0, StdoutTruncated: true, Stdout: []byte(strings.Repeat("9", outputLimit+1))},
+			{ExitCode: 0, StderrTruncated: true, Stderr: []byte(strings.Repeat("e", outputLimit+1))},
+		} {
+			rt, _ = newPostgresRuntime(truncated)
+			if revoke {
+				_, err = (privilegesRevokeFunc{}).Execute(context.Background(), rt,
+					fullPrivilegesRevokeArgs("baruwa", "awl", "table", "SELECT"))
+			} else {
+				_, err = (privilegesGrantFunc{}).Execute(context.Background(), rt,
+					fullPrivilegesGrantArgs("baruwa", "awl", "table", "SELECT"))
+			}
+			if !errors.Is(err, process.ErrOutputLimit) {
+				t.Fatalf("%s truncated err = %v, want ErrOutputLimit", label, err)
+			}
+		}
+
+		rt, runner = newPostgresRuntime()
+		runner.available = map[string]bool{"psql": false}
+		if revoke {
+			_, err = (privilegesRevokeFunc{}).Execute(context.Background(), rt,
+				fullPrivilegesRevokeArgs("baruwa", "awl", "table", "SELECT"))
+		} else {
+			_, err = (privilegesGrantFunc{}).Execute(context.Background(), rt,
+				fullPrivilegesGrantArgs("baruwa", "awl", "table", "SELECT"))
+		}
+		if !errors.Is(err, errPostgresPsqlUnavailable) {
+			t.Fatalf("%s psql-unavailable err = %v, want errPostgresPsqlUnavailable", label, err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s unavailable psql executed %d commands", label, len(runner.calls))
+		}
+	}
+
+	if _, err := (privilegesGrantFunc{}).Execute(context.Background(), nil, "bogus"); err == nil {
+		t.Fatal("privileges_grant must reject non-struct args")
+	}
+	if _, err := (privilegesGrantFunc{}).Execute(context.Background(), nil, &HasPrivilegesArgs{}); err == nil {
+		t.Fatal("privileges_grant must reject foreign argument structs")
+	}
+	if _, err := (privilegesRevokeFunc{}).Execute(context.Background(), nil, &PrivilegesGrantArgs{}); err == nil {
+		t.Fatal("privileges_revoke must reject foreign argument structs")
+	}
+	rtEmpty := &runtime.Runtime{Runner: nil, FS: runtime.NewMemoryFS()}
+	if _, err := (privilegesGrantFunc{}).Execute(context.Background(), rtEmpty,
+		fullPrivilegesGrantArgs("baruwa", "awl", "table", "SELECT")); !errors.Is(err, errPostgresRunnerUnavailable) {
+		t.Fatalf("nil runner err = %v, want errPostgresRunnerUnavailable", err)
+	}
+	if _, err := (privilegesRevokeFunc{}).Execute(context.Background(), rtEmpty,
+		fullPrivilegesRevokeArgs("baruwa", "awl", "table", "SELECT")); !errors.Is(err, errPostgresRunnerUnavailable) {
 		t.Fatalf("nil runner err = %v, want errPostgresRunnerUnavailable", err)
 	}
 }

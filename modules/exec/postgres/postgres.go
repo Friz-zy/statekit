@@ -65,6 +65,23 @@
 // applies the pinned group-typed INHERIT NOLOGIN defaults (update applies
 // none, exactly like the user family), and the identifier rejection names
 // the groupname argument key for the group family.
+// R9.2k adds the privilege mutations privileges_grant and
+// privileges_revoke (postgres.py:4009-4297 through the shared
+// _mod_priv_opts/_validate_privileges head and the has_privileges
+// preflight): the pinned preflight runs without grant_option so the
+// membership/subset check decides the no-op — an already-granted grant and
+// a not-yet-held revoke return False without any mutation statement — and
+// the statements keep the pinned quoting exactly (the schema-qualified
+// double-quoted on-part for table/sequence/function, the ALL
+// TABLES/SEQUENCES/FUNCTIONS IN SCHEMA variants, the raw group
+// membership forms with WITH ADMIN OPTION on the grant side, WITH GRANT
+// OPTION on the object side, and the pinned raw role name of the REVOKE
+// tail). The identifier positions the pinned format strings interpolate
+// raw or quote without escaping — the role name, the object name, and
+// the schema prefix — are validated fail-closed with value-free errors
+// before any Runner invocation: quoted positions may not carry the
+// double quote, and raw positions (the revoke role name, the group name,
+// and every schema prefix) must be bare PostgreSQL identifiers.
 // Like Salt, every invocation is a shell-free psql argv executed through
 // the central Runner; this package links no database driver or protocol
 // client and never contacts a live server by itself. The catalog queries
@@ -3249,7 +3266,7 @@ func validatePrivileges(objectType string, privs []string, privileges string) er
 	}
 	typePerms, ok := privilegeTypeMap[objectType]
 	if !ok {
-		return fmt.Errorf("%w: invalid object_type %q provided", errPostgresInvalidArgument, objectType)
+		return fmt.Errorf("%w: invalid object_type", errPostgresInvalidArgument)
 	}
 	allowed := map[string]bool{"ALL": true}
 	for _, c := range typePerms {
@@ -3257,8 +3274,7 @@ func validatePrivileges(objectType string, privs []string, privileges string) er
 	}
 	for _, priv := range privs {
 		if !allowed[priv] {
-			return fmt.Errorf("%w: invalid privilege(s) %q provided for object %q",
-				errPostgresInvalidArgument, privileges, objectType)
+			return fmt.Errorf("%w: invalid privileges", errPostgresInvalidArgument)
 		}
 	}
 	return nil
@@ -3338,8 +3354,9 @@ var privilegesQueries = map[string]privCatalogQuery{
 // getObjectOwner ports the pinned _get_object_owner tail
 // (postgres.py:3109-3123): the first matching catalog row's owner column,
 // and Salt's IndexError None when no row matches. The pinned rows[0]
-// KeyError on a short row maps to an execution error.
-func getObjectOwner(ctx context.Context, rt *runtime.Runtime, conn *pgConnection, objectName, objectType, prepend string) (*string, error) {
+// KeyError on a short row maps to an execution error. caller names the
+// public function whose row-shape errors are attributed.
+func getObjectOwner(ctx context.Context, rt *runtime.Runtime, conn *pgConnection, caller, objectName, objectType, prepend string) (*string, error) {
 	spec, ok := ownerQueries[objectType]
 	if !ok {
 		// Unreachable behind validatePrivileges; kept fail-closed.
@@ -3353,7 +3370,7 @@ func getObjectOwner(ctx context.Context, rt *runtime.Runtime, conn *pgConnection
 		if !spec.match(row, objectName, prepend) {
 			continue
 		}
-		owner, err := rowString(row, "name", "postgres.has_privileges")
+		owner, err := rowString(row, "name", caller)
 		if err != nil {
 			return nil, err
 		}
@@ -3481,39 +3498,50 @@ func (hasPrivilegesFunc) Execute(ctx context.Context, rt *runtime.Runtime, args 
 	if err := validatePrivileges(objectType, privs, a.Privileges); err != nil {
 		return nil, err
 	}
-	conn := a.connection()
 	prepend := defaultPrependSchema
 	if a.Prepend != nil {
 		prepend = *a.Prepend
 	}
+	return hasPrivileges(ctx, rt, a.connection(), "postgres.has_privileges",
+		a.Name, a.ObjectName, objectType, privs, a.GrantOption, prepend)
+}
+
+// hasPrivileges is the shared decision core of the public
+// postgres.has_privileges and the privileges_grant/privileges_revoke
+// preflight (postgres.py:3664-3711): the owner shortcut, the ACL catalog
+// decode, and the pinned membership, grant-option, ALL, and subset
+// comparisons. The object type arrives lowercased and the privileges split
+// from a completed modPrivOpts/validatePrivileges pass, exactly the state
+// the pinned function is in after its own head.
+func hasPrivileges(ctx context.Context, rt *runtime.Runtime, conn *pgConnection, caller, name, objectName, objectType string, privs []string, grantOption bool, prepend string) (bool, error) {
 	if objectType != "group" {
-		owner, err := getObjectOwner(ctx, rt, conn, a.ObjectName, objectType, prepend)
+		owner, err := getObjectOwner(ctx, rt, conn, caller, objectName, objectType, prepend)
 		if err != nil {
-			return nil, err
+			return false, err
 		}
-		if owner != nil && a.Name == *owner {
+		if owner != nil && name == *owner {
 			return true, nil
 		}
 	}
-	grants, err := privilegesList(ctx, rt, conn, "postgres.has_privileges", a.ObjectName, objectType, prepend)
+	grants, err := privilegesList(ctx, rt, conn, caller, objectName, objectType, prepend)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
-	entry, ok := grants[a.Name]
+	entry, ok := grants[name]
 	if !ok {
 		return false, nil
 	}
 	if objectType == "group" {
 		// The pinned group tail: membership is True, and the grant-option
 		// check is the member's admin_option boolean itself.
-		if a.GrantOption {
+		if grantOption {
 			return entry.(bool), nil
 		}
 		return true, nil
 	}
 	rolePerms := entry.(map[string]bool)
 	typePerms := privilegeTypeMap[objectType]
-	if a.GrantOption {
+	if grantOption {
 		// perms == _privileges[name]: every type privilege present with
 		// the grant option and nothing else.
 		perms := make(map[string]bool, len(typePerms))
@@ -3537,8 +3565,8 @@ func (hasPrivilegesFunc) Execute(ctx context.Context, rt *runtime.Runtime, args 
 			want = append(want, privilegesMap[string(c)])
 		}
 		have := make([]string, 0, len(rolePerms))
-		for name := range rolePerms {
-			have = append(have, name)
+		for permName := range rolePerms {
+			have = append(have, permName)
 		}
 		sort.Strings(want)
 		sort.Strings(have)
@@ -3640,6 +3668,311 @@ func (privilegesListFunc) Execute(ctx context.Context, rt *runtime.Runtime, args
 }
 
 // ---------------------------------------------------------------------------
+// privileges_grant / privileges_revoke — salt/modules/postgres.py:4009-4297
+// @ pinned revision, with the shared _mod_priv_opts/_validate_privileges
+// head (postgres.py:3184-3216) and the has_privileges preflight.
+
+// PrivilegesGrantArgs are the canonical postgres.privileges_grant
+// arguments, mirroring the pinned privileges_grant(name, object_name,
+// object_type, privileges=None, grant_option=None, prepend="public",
+// maintenance_db=None, user, host, port, password, runas) signature
+// (postgres.py:4009-4022). Privileges keeps Salt's None default as the
+// empty string because the pinned _mod_priv_opts collapses None to ""
+// before any use; grant_option is only ever truthiness-tested, so a plain
+// bool is exact; prepend nil means the pinned "public" default while an
+// explicit empty string keeps Salt's empty-schema handling.
+type PrivilegesGrantArgs struct {
+	Name          string  `statekit:"name=name,required"`
+	ObjectName    string  `statekit:"name=object_name,required"`
+	ObjectType    string  `statekit:"name=object_type,required"`
+	Privileges    string  `statekit:"name=privileges"`
+	GrantOption   bool    `statekit:"name=grant_option"`
+	Prepend       *string `statekit:"name=prepend"`
+	MaintenanceDB *string `statekit:"name=maintenance_db"`
+	User          *string `statekit:"name=user"`
+	Host          *string `statekit:"name=host"`
+	Port          *string `statekit:"name=port"`
+	Password      *string `statekit:"name=password"`
+	Runas         *string `statekit:"name=runas"`
+}
+
+func (a *PrivilegesGrantArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: a.MaintenanceDB,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+// PrivilegesRevokeArgs are the canonical postgres.privileges_revoke
+// arguments, mirroring the pinned privileges_revoke(name, object_name,
+// object_type, privileges=None, prepend="public", maintenance_db=None,
+// user, host, port, password, runas) signature (postgres.py:4170-4182):
+// the pinned revoke signature carries no grant_option, so none exists
+// here either.
+type PrivilegesRevokeArgs struct {
+	Name          string  `statekit:"name=name,required"`
+	ObjectName    string  `statekit:"name=object_name,required"`
+	ObjectType    string  `statekit:"name=object_type,required"`
+	Privileges    string  `statekit:"name=privileges"`
+	Prepend       *string `statekit:"name=prepend"`
+	MaintenanceDB *string `statekit:"name=maintenance_db"`
+	User          *string `statekit:"name=user"`
+	Host          *string `statekit:"name=host"`
+	Port          *string `statekit:"name=port"`
+	Password      *string `statekit:"name=password"`
+	Runas         *string `statekit:"name=runas"`
+}
+
+func (a *PrivilegesRevokeArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: a.MaintenanceDB,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+// privSchemaQualified marks the object types whose on-part the pinned
+// format strings qualify with the raw schema prefix
+// (postgres.py:4123-4126, 4275-4278).
+func privSchemaQualified(objectType string) bool {
+	return objectType == "table" || objectType == "sequence" || objectType == "function"
+}
+
+// privIdentifierValidationError is the stable, value-free rejection for
+// the raw identifier positions of the pinned GRANT/REVOKE statements: the
+// fixed argument key under the shared invalid-argument category, with no
+// rejected value, so a value carrying (or overlapping) a caller secret
+// cannot leak through the error raised before any Runner invocation.
+func privIdentifierValidationError(key string) error {
+	return fmt.Errorf("%w: unsupported identifier in %s", errPostgresInvalidArgument, key)
+}
+
+// validatePrivMutationIdentifiers fails closed on every position the
+// pinned GRANT/REVOKE format strings interpolate raw, before any Runner
+// invocation (postgres.py:4121-4155, 4273-4285). The quoted positions —
+// the grant role name and the non-group object name — may not carry the
+// double quote that escapes their identifier context, like the role
+// family's shared rejection. The raw positions — the revoke role name in
+// both statements, the group object name in both statements, and the
+// schema prefix of every table/sequence/function statement including the
+// ALL-variants' IN SCHEMA — must be bare PostgreSQL identifiers
+// ([A-Za-z0-9_$]+), the same class db_create applies to its unquoted
+// TEMPLATE option. The pinned source interpolates every one of these
+// positions unescaped, which StateKit refuses; the grant ALL-variant
+// carries no object name at all, so only its raw schema prefix is
+// checked. Every rejection is value-free.
+func validatePrivMutationIdentifiers(name, objectName, objectType string, revoke bool, prepend string) error {
+	if revoke {
+		// The pinned REVOKE statements leave the role name raw in both
+		// variants: REVOKE {object_name} FROM {name} and
+		// REVOKE {} ON {} {} FROM {name}.
+		if !bareIdentifierRE.MatchString(name) {
+			return privIdentifierValidationError("name")
+		}
+	} else if strings.Contains(name, `"`) {
+		return ddlValidationError("name")
+	}
+	if objectType == "group" {
+		// The pinned group statements interpolate the group name raw in
+		// both directions.
+		if !bareIdentifierRE.MatchString(objectName) {
+			return privIdentifierValidationError("object_name")
+		}
+		return nil
+	}
+	if privSchemaQualified(objectType) {
+		// The schema prefix lands raw in the on-part and in the
+		// ALL-variant's IN SCHEMA clause.
+		if !bareIdentifierRE.MatchString(prepend) {
+			return privIdentifierValidationError("prepend")
+		}
+		if !revoke && strings.ToUpper(objectName) == "ALL" {
+			// The grant ALL-variant statement carries no object name.
+			return nil
+		}
+	}
+	if strings.Contains(objectName, `"`) {
+		return ddlValidationError("object_name")
+	}
+	return nil
+}
+
+// privilegesGrantQuery ports the pinned statement construction
+// (postgres.py:4121-4155): the comma-joined uppercased privileges, the
+// schema-qualified double-quoted on-part for table/sequence/function and
+// the plain double-quoted on-part otherwise, and the four pinned
+// variants per grant-option branch — group membership (WITH ADMIN
+// OPTION), the ALL TABLES/SEQUENCES/FUNCTIONS IN SCHEMA form (WITH GRANT
+// OPTION), and the plain object form — with the role name double-quoted
+// in every variant. Callers must have passed
+// validatePrivMutationIdentifiers first; the builder itself never
+// validates so it can stay an exact port of the pinned format strings.
+func privilegesGrantQuery(name, objectName, objectType string, privs []string, grantOption bool, prepend string) string {
+	grants := strings.Join(privs, ",")
+	allObjects := privSchemaQualified(objectType) && strings.ToUpper(objectName) == "ALL"
+	typeKeyword := strings.ToUpper(objectType)
+	var onPart string
+	if privSchemaQualified(objectType) {
+		onPart = prepend + `."` + objectName + `"`
+	} else {
+		onPart = `"` + objectName + `"`
+	}
+	switch {
+	case objectType == "group" && grantOption:
+		return `GRANT ` + objectName + ` TO "` + name + `" WITH ADMIN OPTION`
+	case objectType == "group":
+		return `GRANT ` + objectName + ` TO "` + name + `"`
+	case allObjects && grantOption:
+		return `GRANT ` + grants + ` ON ALL ` + typeKeyword + `S IN SCHEMA ` + prepend + ` TO "` + name + `" WITH GRANT OPTION`
+	case allObjects:
+		return `GRANT ` + grants + ` ON ALL ` + typeKeyword + `S IN SCHEMA ` + prepend + ` TO "` + name + `"`
+	case grantOption:
+		return `GRANT ` + grants + ` ON ` + typeKeyword + ` ` + onPart + ` TO "` + name + `" WITH GRANT OPTION`
+	default:
+		return `GRANT ` + grants + ` ON ` + typeKeyword + ` ` + onPart + ` TO "` + name + `"`
+	}
+}
+
+// privilegesRevokeQuery ports the pinned statement construction
+// (postgres.py:4273-4285): the same on-part rule as the grant path, the
+// group membership form with both names raw, and the object form with
+// the raw role name the pinned REVOKE interpolates — there is no
+// ALL-variant and no grant_option in the pinned revoke flow. Callers
+// must have passed validatePrivMutationIdentifiers first.
+func privilegesRevokeQuery(name, objectName, objectType string, privs []string, prepend string) string {
+	grants := strings.Join(privs, ",")
+	var onPart string
+	if privSchemaQualified(objectType) {
+		onPart = prepend + `."` + objectName + `"`
+	} else {
+		onPart = `"` + objectName + `"`
+	}
+	if objectType == "group" {
+		return `REVOKE ` + objectName + ` FROM ` + name
+	}
+	return `REVOKE ` + grants + ` ON ` + strings.ToUpper(objectType) + ` ` + onPart + ` FROM ` + name
+}
+
+type privilegesGrantFunc struct{}
+
+func (privilegesGrantFunc) Name() string { return "postgres.privileges_grant" }
+func (privilegesGrantFunc) Args() any    { return PrivilegesGrantArgs{} }
+
+// Execute ports the pinned privileges_grant flow (postgres.py:4096-4167):
+// the shared _mod_priv_opts/_validate_privileges head, the has_privileges
+// preflight the pinned source issues without its own grant_option
+// argument (so the membership/subset check — never the admin/grant-option
+// variant — decides the no-op), the logged-and-False already-granted
+// short circuit with no mutation statement, the pinned GRANT statement,
+// and the pinned ret["retcode"] == 0 boolean. The identifier boundary is
+// the StateKit addition, checked before any Runner invocation.
+func (privilegesGrantFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[PrivilegesGrantArgs](args, "postgres.privileges_grant")
+	if err != nil {
+		return nil, err
+	}
+	objectType, privs := modPrivOpts(a.ObjectType, a.Privileges)
+	if err := validatePrivileges(objectType, privs, a.Privileges); err != nil {
+		return nil, err
+	}
+	prepend := defaultPrependSchema
+	if a.Prepend != nil {
+		prepend = *a.Prepend
+	}
+	if err := validatePrivMutationIdentifiers(a.Name, a.ObjectName, objectType, false, prepend); err != nil {
+		return nil, err
+	}
+	has, err := hasPrivileges(ctx, rt, a.connection(), "postgres.privileges_grant",
+		a.Name, a.ObjectName, objectType, privs, false, prepend)
+	if err != nil {
+		return nil, err
+	}
+	if has {
+		// The pinned "The object: %s of type: %s already has
+		// privileges: %s set" log-and-False no-op.
+		return false, nil
+	}
+	query := privilegesGrantQuery(a.Name, a.ObjectName, objectType, privs, a.GrantOption, prepend)
+	argv := psqlArgv(
+		pointerString(a.User),
+		pointerString(a.Host),
+		pointerString(a.Port),
+		pointerString(a.MaintenanceDB),
+		"-c", query,
+	)
+	result, err := runPsql(ctx, rt, argv, a.connection())
+	if err != nil {
+		return nil, err
+	}
+	return result.ExitCode == 0, nil
+}
+
+type privilegesRevokeFunc struct{}
+
+func (privilegesRevokeFunc) Name() string { return "postgres.privileges_revoke" }
+func (privilegesRevokeFunc) Args() any    { return PrivilegesRevokeArgs{} }
+
+// Execute ports the pinned privileges_revoke flow (postgres.py:4248-4297):
+// the shared head, the has_privileges preflight (again without any
+// grant_option) whose miss is the logged-and-False no-op with no mutation
+// statement, the pinned REVOKE statement, and the pinned
+// ret["retcode"] == 0 boolean. The identifier boundary is the StateKit
+// addition, checked before any Runner invocation.
+func (privilegesRevokeFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[PrivilegesRevokeArgs](args, "postgres.privileges_revoke")
+	if err != nil {
+		return nil, err
+	}
+	objectType, privs := modPrivOpts(a.ObjectType, a.Privileges)
+	if err := validatePrivileges(objectType, privs, a.Privileges); err != nil {
+		return nil, err
+	}
+	prepend := defaultPrependSchema
+	if a.Prepend != nil {
+		prepend = *a.Prepend
+	}
+	if err := validatePrivMutationIdentifiers(a.Name, a.ObjectName, objectType, true, prepend); err != nil {
+		return nil, err
+	}
+	has, err := hasPrivileges(ctx, rt, a.connection(), "postgres.privileges_revoke",
+		a.Name, a.ObjectName, objectType, privs, false, prepend)
+	if err != nil {
+		return nil, err
+	}
+	if !has {
+		// The pinned "The object: %s of type: %s does not have
+		// privileges: %s set" log-and-False no-op.
+		return false, nil
+	}
+	query := privilegesRevokeQuery(a.Name, a.ObjectName, objectType, privs, prepend)
+	argv := psqlArgv(
+		pointerString(a.User),
+		pointerString(a.Host),
+		pointerString(a.Port),
+		pointerString(a.MaintenanceDB),
+		"-c", query,
+	)
+	result, err := runPsql(ctx, rt, argv, a.connection())
+	if err != nil {
+		return nil, err
+	}
+	return result.ExitCode == 0, nil
+}
+
+// ---------------------------------------------------------------------------
 // shared helpers (rabbitmq-module conventions).
 
 func typedArgs[T any](args any, name string) (*T, error) {
@@ -3726,13 +4059,14 @@ func redactedError(err error, secrets ...string) error {
 	return errors.New(message)
 }
 
-// Register installs the R9.2j postgres slice: the version probe, the five
+// Register installs the R9.2k postgres slice: the version probe, the five
 // R9.2c read-only catalog primitives, the R9.2h write paths db_create and
 // db_remove, the eight R9.2d extension and language catalog functions,
 // the three R9.2e schema catalog functions, the three R9.2f role and
 // privilege checks, the R9.2g ACL listing privileges_list, the R9.2i
-// role mutations user_create, user_update, and user_remove, and the R9.2j
-// group mutations group_create, group_update, and group_remove. The
+// role mutations user_create, user_update, and user_remove, the R9.2j
+// group mutations group_create, group_update, and group_remove, and the
+// R9.2k privilege mutations privileges_grant and privileges_revoke. The
 // remainder of the postgres family needs the generic psql query surface
 // (psql_query itself stays pending; no arbitrary-query registration
 // exists in this phase) and stays pending for later R9 rounds; the
@@ -3763,6 +4097,8 @@ func Register(reg *runtime.ExecRegistry) error {
 		userExistsFunc{},
 		hasPrivilegesFunc{},
 		privilegesListFunc{},
+		privilegesGrantFunc{},
+		privilegesRevokeFunc{},
 		userCreateFunc{},
 		userUpdateFunc{},
 		userRemoveFunc{},
