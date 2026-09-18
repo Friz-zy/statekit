@@ -1775,6 +1775,36 @@ for R3-R8 are unchanged (the report's `prior_report_sha256` block matches
 the committed R3-R8 reports), and neither R9.2l commit touched
 `go.mod`/`go.sum` (no new dependency).
 
+##### 2026-09-18 current status (R9.2m-R9.2n PostgreSQL schema/extension/language mutations and database alter)
+
+Actual HEAD is `ee3023c` (R9.2n PostgreSQL database alter). R9.2m-R9.2n
+implementation and independent-gate ledger. The R9.2m registration set rode
+in the same `7011776` + `35cd6a4` commits already recorded under the R9.2l
+section above; that section's closing note documents the overlap and states
+no separate R9.2m dispatch row was recorded by it — this section completes
+that dispatch record without rewriting it:
+
+| Commit | Scope | Implementation executor role(s) | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `7011776` + `35cd6a4` | R9.2m `schema_create`/`schema_remove`, `create_extension`/`drop_extension`, `language_create`/`language_remove` registered (6 public; schema, extension, and language mutations as fixed pinned statements; the generator credits the six names to R9.2m within the R9.2l commits) | `backend-engineer-senior` | `backend-engineer-lead` + `security-architect-lead` | passed after language preflight redaction/empty-extension fixes; security-architect-lead gate passed; generator-authoritative postgres 40 registered / 10 pending, R9 totals registered_public 79 of 125; mock-only fake-Runner contract — no DB driver, no live PostgreSQL, live DB/broker integration excluded behind E5; no `go.mod`/`go.sum` change (no new dependency); R3-R8 report hashes unchanged |
+| `ee3023c` | R9.2n `db_alter` registered (1 public; the pinned OWNER/TABLESPACE statements with the pinned owner+owner_recurse delegation shape) | `backend-engineer-senior` | `backend-engineer-lead` | passed after filtered writable payload; postgres 41 registered / 9 pending, totals 80 of 125; mock-only fake-Runner contract — no DB driver, no live PostgreSQL, live DB/broker integration excluded behind E5; no `go.mod`/`go.sum` change (no new dependency); R3-R8 report hashes unchanged; nonblocking `owner_to` unsupported boundary documented — the owner+owner_recurse branch answers the deterministic value-free unsupported function "postgres.owner_to" error (CLI exit 3) before any Runner invocation instead of silently degrading to the shallow ALTER OWNER |
+
+Current R9 report (`docs/differential/R9/report.yaml` at `ee3023c`, `round:
+R9.2n`, `repeat_stable: true`): rabbitmq 37/37 registered, mysql 2/38 (36
+pending), postgres 41/50 registered_public (9 pending); totals
+registered_public 80 of 125 public functions (45 pending) across 172 catalog
+functions. The remaining postgres names from the report, in exact report
+order, stay pending: `create_metadata`, `datadir_exists`, `datadir_init`,
+`has_default_privileges`, `owner_to`, `psql_query`, `tablespace_alter`,
+`tablespace_create`, `tablespace_remove`. R9 remains open — no closure claim
+is made. The report pins the mock-only boundary — RabbitMQ is never started,
+MySQL is never connected, PostgreSQL is never contacted; no database driver
+is linked — and live database/broker integration stays excluded behind E5.
+The prior differential report hashes for R3-R8 are unchanged (the report's
+`prior_report_sha256` block matches the committed R3-R8 reports), and
+neither the R9.2m nor the R9.2n commit touched `go.mod`/`go.sum` (no new
+dependency).
+
 ##### 2026-09-17 current status (R9.2b PostgreSQL version probe)
 
 Actual HEAD is `23fba61` (R9.2b PostgreSQL version probe). R9.2b
