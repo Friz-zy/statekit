@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -441,5 +442,213 @@ func TestMySQLCLIDBCatalogDecoding(t *testing.T) {
 		if code != ExitOK || errS != "" || strings.TrimSpace(out) != tc.want {
 			t.Fatalf("%s: db_exists(%q) code=%d out=%q err=%q", tc.name, tc.db, code, out, errS)
 		}
+	}
+}
+
+// TestMySQLCLIVersion drives mysql.version end to end through the CLI:
+// the exact pinned SELECT VERSION() argv with the full connection surface,
+// the JSON string answer, the pinned "" compatibility data on a nonzero
+// exit, and no password anywhere.
+func TestMySQLCLIVersion(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("VERSION()\n8.0.36\n")},
+	}}
+	app := mysqlCLIRunnerApp(t, runner)
+
+	code, out, errS := captureCode(t, app, "exec", "mysql.version",
+		"--connection-user", "test_user", "--connection-host", "test_host",
+		"--connection-port", "test_port", "--connection-db", "test_maint",
+		"--connection-pass", "test_pass", "-o", "json")
+	var version string
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &version) != nil || version != "8.0.36" {
+		t.Fatalf("version code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d, want 1", len(runner.calls))
+	}
+	command := runner.calls[0]
+	if argv := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(argv, []string{
+		"mysql", "--batch",
+		"--user=test_user", "--host=test_host", "--port=test_port", "--database=test_maint",
+		"--execute=SELECT VERSION()",
+	}) {
+		t.Fatalf("argv = %q", argv)
+	}
+	if len(command.Env) != 1 || command.Env[0] != "MYSQL_PWD=test_pass" {
+		t.Fatalf("env = %q", command.Env)
+	}
+	if command.Shell || len(command.Redact) != 1 || command.Redact[0] != "test_pass" {
+		t.Fatalf("unsafe command: %#v", command)
+	}
+	if strings.Contains(out+errS, "test_pass") {
+		t.Fatalf("CLI output leaks password: out=%q err=%q", out, errS)
+	}
+
+	// The pinned empty-string compatibility data on a nonzero exit.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 1, Stderr: []byte("ERROR 1045 (28000): Access denied\n")},
+	}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.version", "-o", "json")
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &version) != nil || version != "" {
+		t.Fatalf("nonzero-exit version code=%d out=%q err=%q", code, out, errS)
+	}
+
+	// A header-only success is the pinned fetchone IndexError shape.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("VERSION()\n")},
+	}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.version", "-o", "json")
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &version) != nil || version != "" {
+		t.Fatalf("header-only version code=%d out=%q err=%q", code, out, errS)
+	}
+}
+
+// TestMySQLCLIStatus drives mysql.status through the CLI: the exact pinned
+// SHOW STATUS argv, the JSON object with batch-decoded values on CRLF
+// framing, and the pinned {} compatibility data on a nonzero exit.
+func TestMySQLCLIStatus(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("Variable_name\tValue\r\nUptime\t347\r\nSsl_cipher\t\r\n")},
+	}}
+	app := mysqlCLIRunnerApp(t, runner)
+
+	code, out, errS := captureCode(t, app, "exec", "mysql.status", "-o", "json")
+	var status map[string]string
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &status) != nil ||
+		!reflect.DeepEqual(status, map[string]string{"Uptime": "347", "Ssl_cipher": ""}) {
+		t.Fatalf("status code=%d out=%q err=%q", code, out, errS)
+	}
+	if argv := append([]string{runner.calls[0].Name}, runner.calls[0].Args...); !reflect.DeepEqual(argv,
+		[]string{"mysql", "--batch", "--execute=SHOW STATUS"}) {
+		t.Fatalf("argv = %q", argv)
+	}
+
+	// Batch-escaped and raw-CR values decode through the CLI.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("Variable_name\tValue\nwin\\\\path\tC:\\\\data\ncarriage\tva\rl\n")},
+	}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.status", "-o", "json")
+	var decodedStatus map[string]string
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &decodedStatus) != nil ||
+		!reflect.DeepEqual(decodedStatus, map[string]string{`win\path`: `C:\data`, "carriage": "va\rl"}) {
+		t.Fatalf("decoded status code=%d out=%q err=%q", code, out, errS)
+	}
+
+	// The pinned {} compatibility data on a nonzero exit.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 1, Stderr: []byte("ERROR 2002 (HY000): Can't connect\n")},
+	}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.status", "-o", "json")
+	var emptyStatus map[string]string
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &emptyStatus) != nil || len(emptyStatus) != 0 {
+		t.Fatalf("nonzero-exit status code=%d out=%q err=%q", code, out, errS)
+	}
+}
+
+// TestMySQLCLIShowVariables drives mysql.showvariables through the CLI:
+// the exact pinned SHOW VARIABLES argv, the JSON array of row dicts with
+// decoded values, the pinned [[ ]] empty-result quirk, and the bare []
+// _connect-failure shape on a nonzero exit.
+func TestMySQLCLIShowVariables(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("Variable_name\tValue\nmax_connections\t151\n")},
+	}}
+	app := mysqlCLIRunnerApp(t, runner)
+
+	code, out, errS := captureCode(t, app, "exec", "mysql.showvariables", "-o", "json")
+	var variables []map[string]string
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &variables) != nil ||
+		!reflect.DeepEqual(variables, []map[string]string{
+			{"Variable_name": "max_connections", "Value": "151"},
+		}) {
+		t.Fatalf("showvariables code=%d out=%q err=%q", code, out, errS)
+	}
+	if argv := append([]string{runner.calls[0].Name}, runner.calls[0].Args...); !reflect.DeepEqual(argv,
+		[]string{"mysql", "--batch", "--execute=SHOW VARIABLES"}) {
+		t.Fatalf("argv = %q", argv)
+	}
+
+	// The pinned empty-result quirk renders [[ ]] exactly like Salt's —
+	// the CLI JSON is pretty-printed, so the shape is asserted parsed.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("Variable_name\tValue\n")},
+	}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.showvariables", "-o", "json")
+	var quirk []any
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &quirk) != nil || len(quirk) != 1 || len(quirk[0].([]any)) != 0 {
+		t.Fatalf("empty showvariables code=%d out=%q err=%q, want [[]]", code, out, errS)
+	}
+
+	// The pinned _connect-failure shape renders the bare [].
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 1, Stderr: []byte("ERROR 1045 (28000): Access denied\n")},
+	}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.showvariables", "-o", "json")
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &quirk) != nil || len(quirk) != 0 {
+		t.Fatalf("nonzero-exit showvariables code=%d out=%q err=%q, want []", code, out, errS)
+	}
+}
+
+// TestMySQLCLIRunnerErrorRedaction exercises actual secret-bearing Runner
+// errors, rather than inferring error redaction from successful calls.
+func TestMySQLCLIRunnerErrorRedaction(t *testing.T) {
+	marker := "synthetic-cli-runner-password"
+	for _, name := range []string{"mysql.version", "mysql.status", "mysql.showvariables", "mysql.showglobal", "mysql.user_list", "mysql.db_list"} {
+		t.Run(name, func(t *testing.T) {
+			runner := &cliRecordingRunner{results: []process.CommandResult{{Err: errors.New("runner failed: " + marker)}}}
+			code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", name, "--connection-pass", marker, "-o", "json")
+			if code != ExitFailed || strings.Contains(out+errS, marker) || !strings.Contains(errS, "runner failed:") || len(runner.calls) != 1 {
+				t.Fatal("CLI must expose a redacted Runner failure after one call")
+			}
+			if !reflect.DeepEqual(runner.calls[0].Redact, []string{marker}) || strings.Contains(runner.calls[0].RedactedString(), marker) {
+				t.Fatal("CLI command failed synthetic secret guard")
+			}
+		})
+	}
+}
+
+// TestMySQLCLIShowGlobal asserts the query and ordinary/empty/failure shapes.
+func TestMySQLCLIShowGlobal(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("Variable_name\tValue\r\ndatadir\t/var/lib/mysql/\r\n")},
+	}}
+	app := mysqlCLIRunnerApp(t, runner)
+
+	code, out, errS := captureCode(t, app, "exec", "mysql.showglobal", "-o", "json")
+	var variables []map[string]string
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &variables) != nil ||
+		!reflect.DeepEqual(variables, []map[string]string{
+			{"Variable_name": "datadir", "Value": "/var/lib/mysql/"},
+		}) {
+		t.Fatalf("showglobal code=%d out=%q err=%q", code, out, errS)
+	}
+	if argv := append([]string{runner.calls[0].Name}, runner.calls[0].Args...); !reflect.DeepEqual(argv,
+		[]string{"mysql", "--batch", "--execute=SHOW GLOBAL VARIABLES"}) {
+		t.Fatalf("argv = %q", argv)
+	}
+
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("Variable_name\tValue\n")},
+	}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.showglobal", "-o", "json")
+	var quirk []any
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &quirk) != nil || len(quirk) != 1 || len(quirk[0].([]any)) != 0 {
+		t.Fatalf("empty showglobal code=%d out=%q err=%q, want [[]]", code, out, errS)
+	}
+
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 1},
+	}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.showglobal", "-o", "json")
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &quirk) != nil || len(quirk) != 0 {
+		t.Fatalf("nonzero-exit showglobal code=%d out=%q err=%q, want []", code, out, errS)
 	}
 }

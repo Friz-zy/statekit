@@ -284,9 +284,13 @@ func TestMysqlRegistryNames(t *testing.T) {
 		"mysql.db_exists",
 		"mysql.db_list",
 		"mysql.quote_identifier",
+		"mysql.showglobal",
+		"mysql.showvariables",
+		"mysql.status",
 		"mysql.tokenize_grant",
 		"mysql.user_exists",
 		"mysql.user_list",
+		"mysql.version",
 	}
 	if reg.Len() != len(wantNames) {
 		t.Fatalf("registry length = %d, want %d", reg.Len(), len(wantNames))
@@ -649,7 +653,7 @@ func TestMysqlUserList(t *testing.T) {
 		}
 	}
 
-	// A short row keeps its zipped prefix exactly like dict(zip(...)).
+	// StateKit defensively retains only the available prefix of a short row.
 	rt, _ = newMysqlRuntime(process.CommandResult{
 		ExitCode: 0,
 		Stdout:   []byte("User\tHost\nonlyuser\n"),
@@ -1248,5 +1252,863 @@ func TestMysqlCatalogRowFraming(t *testing.T) {
 	}
 	if len(rows) != 1 || rows[0][0] != (batchField{value: "root"}) || rows[0][1] != (batchField{value: "localhost"}) {
 		t.Fatalf("CRLF-framed rows = %#v", rows)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// R9.3b read-only server facts family (version, status, showvariables,
+// showglobal) over the same central mysql CLI transport. Every test runs
+// on a fake Runner: no mysql binary is executed and no server is
+// contacted, exactly like the R9.3a family.
+
+// fullVersionArgs carries every connection argument at once.
+func fullVersionArgs() *VersionArgs {
+	return &VersionArgs{
+		User:     mysqlString("test_user"),
+		Host:     mysqlString("test_host"),
+		Port:     mysqlString("test_port"),
+		Password: mysqlString("test_pass"),
+		DB:       mysqlString("test_maint"),
+	}
+}
+
+// wantVersionFullArgv is the exact version argv with every connection
+// argument supplied: the fixed query rides the final --execute at argv
+// index 6.
+var wantVersionFullArgv = []string{
+	"mysql",
+	"--batch",
+	"--user=test_user",
+	"--host=test_host",
+	"--port=test_port",
+	"--database=test_maint",
+	"--execute=SELECT VERSION()",
+}
+
+// TestMysqlVersionArgvEnvAndResult pins the version transport contract:
+// the exact pinned qry SELECT VERSION() as the fixed --execute payload
+// (the pinned module reads the server version; it has no `mysql
+// --version` client-binary path), the MYSQL_PWD-only clean environment,
+// the password as the single Redact secret, the shared bounds, and the
+// decoded first-field string answer.
+func TestMysqlVersionArgvEnvAndResult(t *testing.T) {
+	rt, runner := newMysqlRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte("VERSION()\n8.0.36\n"),
+	})
+	value, err := (versionFunc{}).Execute(context.Background(), rt, fullVersionArgs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := value.(string); !ok || got != "8.0.36" {
+		t.Fatalf("version = %#v", value)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d, want 1", len(runner.calls))
+	}
+	command := runner.calls[0]
+	if argv := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(argv, wantVersionFullArgv) {
+		t.Fatalf("argv = %q", argv)
+	}
+	if argv := append([]string{command.Name}, command.Args...); argv[6] != "--execute="+selectVersionQuery {
+		t.Fatalf("argv[6] = %q, want the pinned version query", argv[6])
+	}
+	if want := []string{"MYSQL_PWD=test_pass"}; !reflect.DeepEqual(command.Env, want) {
+		t.Fatalf("env = %q, want %q", command.Env, want)
+	}
+	if command.Shell {
+		t.Fatal("version must never run through a shell")
+	}
+	if !reflect.DeepEqual(command.Redact, []string{"test_pass"}) {
+		t.Fatalf("redact = %q", command.Redact)
+	}
+	if command.Timeout != 30*time.Second || command.MaxStdoutBytes != outputLimit || command.MaxStderrBytes != outputLimit {
+		t.Fatalf("bounds: timeout=%v stdout=%d stderr=%d", command.Timeout, command.MaxStdoutBytes, command.MaxStderrBytes)
+	}
+	if rendered := command.RedactedString(); strings.Contains(rendered, "test_pass") {
+		t.Fatalf("rendered command leaks password: %q", rendered)
+	}
+}
+
+// TestMysqlVersionShapes pins the bare argv, the MariaDB answer, the
+// batch-decoded and CRLF-framed answers, and the pinned empty-string
+// compatibility data: the _connect-None path, the OperationalError path,
+// and the fetchone IndexError all answer "" with a zero error.
+func TestMysqlVersionShapes(t *testing.T) {
+	rt, runner := newMysqlRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte("VERSION()\n10.11.6-MariaDB\n"),
+	})
+	value, err := (versionFunc{}).Execute(context.Background(), rt, &VersionArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := value.(string); !ok || got != "10.11.6-MariaDB" {
+		t.Fatalf("bare version = %#v", value)
+	}
+	command := runner.calls[0]
+	if argv := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(argv,
+		[]string{"mysql", "--batch", "--execute=" + selectVersionQuery}) {
+		t.Fatalf("bare argv = %q", argv)
+	}
+	if command.Env == nil || len(command.Env) != 0 {
+		t.Fatalf("bare env = %#v, want the clean empty environment", command.Env)
+	}
+	if command.Redact != nil {
+		t.Fatalf("bare redact = %q, want none", command.Redact)
+	}
+
+	// CRLF framing decodes identically, header included.
+	rt, _ = newMysqlRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte("VERSION()\r\n8.0.36\r\n"),
+	})
+	if value, err = (versionFunc{}).Execute(context.Background(), rt, &VersionArgs{}); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := value.(string); !ok || got != "8.0.36" {
+		t.Fatalf("CRLF version = %#v", value)
+	}
+
+	// A batch-escaped answer decodes: the doubled backslash collapses.
+	rt, _ = newMysqlRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte("VERSION()\n8.0.36-0ubuntu0.22.04.1\\\\log\n"),
+	})
+	if value, err = (versionFunc{}).Execute(context.Background(), rt, &VersionArgs{}); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := value.(string); !ok || got != `8.0.36-0ubuntu0.22.04.1\log` {
+		t.Fatalf("escaped version = %#v", value)
+	}
+
+	for _, tc := range []struct {
+		name   string
+		stdout string
+	}{
+		{"empty-stdout", ""},
+		{"header-only", "VERSION()\n"},
+		{"empty-crlf", "VERSION()\r\n"},
+	} {
+		rt, _ = newMysqlRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(tc.stdout)})
+		value, err = (versionFunc{}).Execute(context.Background(), rt, &VersionArgs{})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if got, ok := value.(string); !ok || got != "" {
+			t.Fatalf("%s version = %#v, want the pinned empty string", tc.name, value)
+		}
+	}
+
+	// The pinned _connect-None and OperationalError paths answer "".
+	rt, _ = newMysqlRuntime(process.CommandResult{
+		ExitCode: 1,
+		Stderr:   []byte("ERROR 1045 (28000): Access denied\n"),
+	})
+	if value, err = (versionFunc{}).Execute(context.Background(), rt, &VersionArgs{}); err != nil {
+		t.Fatalf("nonzero exit must be compatibility data: %v", err)
+	}
+	if got, ok := value.(string); !ok || got != "" {
+		t.Fatalf("nonzero-exit version = %#v", value)
+	}
+}
+
+// TestMysqlVersionFailClosed pins the shared error boundaries on the
+// version probe: no Runner, an unavailable mysql client, an explicit
+// runas, and a cancelled context all fail before any Runner invocation,
+// Runner failures and output-limit violations are errors, and a Runner
+// error carrying the connection password is returned redacted.
+func TestMysqlVersionFailClosed(t *testing.T) {
+	_, err := (versionFunc{}).Execute(context.Background(), &runtime.Runtime{}, &VersionArgs{})
+	if !errors.Is(err, errMysqlRunnerUnavailable) {
+		t.Fatalf("nil runner error = %v", err)
+	}
+
+	runner := &mysqlFakeRunner{available: map[string]bool{"mysql": false}}
+	rt := &runtime.Runtime{Runner: runner}
+	if _, err = (versionFunc{}).Execute(context.Background(), rt, &VersionArgs{}); !errors.Is(err, errMysqlClientUnavailable) {
+		t.Fatalf("unavailable client error = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("unavailable client made %d calls", len(runner.calls))
+	}
+
+	for _, tc := range []struct {
+		name string
+		args *VersionArgs
+		want error
+	}{
+		{"runas", &VersionArgs{Runas: mysqlString("mysql")}, errMysqlRunas},
+		{"runas-invalid", &VersionArgs{Runas: mysqlString("root\n")}, errMysqlInvalidArgument},
+	} {
+		runner := &mysqlFakeRunner{}
+		rt := &runtime.Runtime{Runner: runner}
+		_, err := (versionFunc{}).Execute(context.Background(), rt, tc.args)
+		if !errors.Is(err, tc.want) {
+			t.Fatalf("%s error = %v, want %v", tc.name, err, tc.want)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s made %d calls, want 0", tc.name, len(runner.calls))
+		}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runner = &mysqlFakeRunner{}
+	rt = &runtime.Runtime{Runner: runner}
+	if _, err = (versionFunc{}).Execute(ctx, rt, &VersionArgs{}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled error = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("cancelled call made %d calls", len(runner.calls))
+	}
+
+	rt, _ = newMysqlRuntime(process.CommandResult{Err: errors.New("boom")})
+	if _, err = (versionFunc{}).Execute(context.Background(), rt, &VersionArgs{}); err == nil || err.Error() != "boom" {
+		t.Fatalf("runner error = %v", err)
+	}
+
+	rt, _ = newMysqlRuntime(process.CommandResult{ExitCode: 0, StdoutTruncated: true})
+	if _, err = (versionFunc{}).Execute(context.Background(), rt, &VersionArgs{}); !errors.Is(err, process.ErrOutputLimit) {
+		t.Fatalf("output limit error = %v", err)
+	}
+
+	marker := "S3CRET-mysql-pass"
+	rt, _ = newMysqlRuntime(process.CommandResult{
+		Err: errors.New("mysql failed with " + marker),
+	})
+	_, err = (versionFunc{}).Execute(context.Background(), rt, &VersionArgs{Password: mysqlString(marker)})
+	if err == nil || strings.Contains(err.Error(), marker) {
+		t.Fatalf("runner error leaks password: %v", err)
+	}
+}
+
+// TestMysqlStatus pins the status contract: the exact pinned qry
+// SHOW STATUS, the name→value dict shape with the pinned
+// later-row-overwrites loop, batch-escaped and CRLF-framed values, the
+// literal NULL string staying a value, and the pinned {} compatibility
+// data on every empty or failing shape.
+func TestMysqlStatus(t *testing.T) {
+	rt, runner := newMysqlRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout: []byte("Variable_name\tValue\n" +
+			"Uptime\t347\n" +
+			"Threads_connected\t1\n" +
+			"Ssl_cipher\t\n"),
+	})
+	value, err := (statusFunc{}).Execute(context.Background(), rt, fullStatusArgs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"Uptime": "347", "Threads_connected": "1", "Ssl_cipher": ""}
+	if got, ok := value.(map[string]string); !ok || !reflect.DeepEqual(got, want) {
+		t.Fatalf("status = %#v, want %#v", value, want)
+	}
+	if argv := append([]string{runner.calls[0].Name}, runner.calls[0].Args...); !reflect.DeepEqual(argv, []string{
+		"mysql", "--batch",
+		"--user=test_user", "--host=test_host", "--port=test_port", "--database=test_maint",
+		"--execute=" + showStatusQuery,
+	}) {
+		t.Fatalf("argv = %q", argv)
+	}
+
+	// A later duplicate row overwrites the earlier value exactly like the
+	// pinned ret[row[0]] = row[1] loop.
+	rt, _ = newMysqlRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte("Variable_name\tValue\nUptime\t347\nUptime\t999\n"),
+	})
+	value, err = (statusFunc{}).Execute(context.Background(), rt, &StatusArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := value.(map[string]string); !ok || got["Uptime"] != "999" || len(got) != 1 {
+		t.Fatalf("duplicate status = %#v", value)
+	}
+
+	// Batch escaping, both framings, a raw non-delimiter CR, the literal
+	// string NULL, and a one-field row (impossible from the real client)
+	// staying skipped.
+	rt, _ = newMysqlRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout: []byte("Variable_name\tValue\r\n" +
+			"win\\\\path\tC:\\\\data\r\n" +
+			"we\\tird\tval\\nue\r\n" +
+			"carriage\tva\rl\r\n" +
+			"NULL\tNULL\r\n" +
+			"onlyname\r\n"),
+	})
+	value, err = (statusFunc{}).Execute(context.Background(), rt, &StatusArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = map[string]string{
+		`win\path`: `C:\data`,
+		"we\tird":  "val\nue",
+		"carriage": "va\rl",
+		"NULL":     "NULL",
+	}
+	if got, ok := value.(map[string]string); !ok || !reflect.DeepEqual(got, want) {
+		t.Fatalf("decoded status = %#v, want %#v", value, want)
+	}
+
+	for _, tc := range []struct {
+		name   string
+		stdout string
+	}{
+		{"empty-stdout", ""},
+		{"header-only", "Variable_name\tValue\n"},
+	} {
+		rt, _ = newMysqlRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(tc.stdout)})
+		value, err = (statusFunc{}).Execute(context.Background(), rt, &StatusArgs{})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if got, ok := value.(map[string]string); !ok || len(got) != 0 {
+			t.Fatalf("%s status = %#v, want the pinned empty dict", tc.name, value)
+		}
+	}
+
+	// The pinned _connect-None and OperationalError paths answer {}.
+	rt, _ = newMysqlRuntime(process.CommandResult{
+		ExitCode: 1,
+		Stderr:   []byte("ERROR 2002 (HY000): Can't connect\n"),
+	})
+	if value, err = (statusFunc{}).Execute(context.Background(), rt, &StatusArgs{}); err != nil {
+		t.Fatalf("nonzero exit must be compatibility data: %v", err)
+	}
+	if got, ok := value.(map[string]string); !ok || len(got) != 0 {
+		t.Fatalf("nonzero-exit status = %#v", value)
+	}
+
+	// The shared fail-closed boundaries.
+	_, err = (statusFunc{}).Execute(context.Background(), &runtime.Runtime{}, &StatusArgs{})
+	if !errors.Is(err, errMysqlRunnerUnavailable) {
+		t.Fatalf("nil runner error = %v", err)
+	}
+	unavailable := &mysqlFakeRunner{available: map[string]bool{"mysql": false}}
+	if _, err = (statusFunc{}).Execute(context.Background(), &runtime.Runtime{Runner: unavailable}, &StatusArgs{}); !errors.Is(err, errMysqlClientUnavailable) {
+		t.Fatalf("unavailable client error = %v", err)
+	}
+	preflight := &mysqlFakeRunner{}
+	if _, err = (statusFunc{}).Execute(context.Background(), &runtime.Runtime{Runner: preflight}, &StatusArgs{Runas: mysqlString("mysql")}); !errors.Is(err, errMysqlRunas) {
+		t.Fatalf("runas error = %v", err)
+	}
+	if len(preflight.calls) != 0 {
+		t.Fatalf("runas made %d calls, want 0", len(preflight.calls))
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cancelled := &mysqlFakeRunner{}
+	if _, err = (statusFunc{}).Execute(ctx, &runtime.Runtime{Runner: cancelled}, &StatusArgs{}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled error = %v", err)
+	}
+	rt, _ = newMysqlRuntime(process.CommandResult{Err: errors.New("boom")})
+	if _, err = (statusFunc{}).Execute(context.Background(), rt, &StatusArgs{}); err == nil || err.Error() != "boom" {
+		t.Fatalf("runner error = %v", err)
+	}
+	rt, _ = newMysqlRuntime(process.CommandResult{ExitCode: 0, StdoutTruncated: true})
+	if _, err = (statusFunc{}).Execute(context.Background(), rt, &StatusArgs{}); !errors.Is(err, process.ErrOutputLimit) {
+		t.Fatalf("output limit error = %v", err)
+	}
+	marker := "S3CRET-mysql-pass"
+	rt, _ = newMysqlRuntime(process.CommandResult{Err: errors.New("mysql failed with " + marker)})
+	_, err = (statusFunc{}).Execute(context.Background(), rt, &StatusArgs{Password: mysqlString(marker)})
+	if err == nil || strings.Contains(err.Error(), marker) {
+		t.Fatalf("runner error leaks password: %v", err)
+	}
+}
+
+// fullStatusArgs carries every connection argument at once.
+func fullStatusArgs() *StatusArgs {
+	return &StatusArgs{
+		User:     mysqlString("test_user"),
+		Host:     mysqlString("test_host"),
+		Port:     mysqlString("test_port"),
+		Password: mysqlString("test_pass"),
+		DB:       mysqlString("test_maint"),
+	}
+}
+
+// TestMysqlShowVariables pins the showvariables contract: the exact pinned
+// qry SHOW VARIABLES, the row-dict list keyed by the batch header, the
+// pinned [[ ]] empty-result quirk, the bare [] _connect-failure shape on
+// a nonzero exit, and the prefix-zip of short rows.
+func TestMysqlShowVariables(t *testing.T) {
+	rt, runner := newMysqlRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout: []byte("Variable_name\tValue\n" +
+			"max_connections\t151\n" +
+			"sql_mode\tNO_ENGINE_SUBSTITUTION\n"),
+	})
+	value, err := (showVariablesFunc{}).Execute(context.Background(), rt, fullShowVariablesArgs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []any{
+		map[string]string{"Variable_name": "max_connections", "Value": "151"},
+		map[string]string{"Variable_name": "sql_mode", "Value": "NO_ENGINE_SUBSTITUTION"},
+	}
+	if got, ok := value.([]any); !ok || !reflect.DeepEqual(got, want) {
+		t.Fatalf("showvariables = %#v, want %#v", value, want)
+	}
+	if argv := append([]string{runner.calls[0].Name}, runner.calls[0].Args...); !reflect.DeepEqual(argv, []string{
+		"mysql", "--batch",
+		"--user=test_user", "--host=test_host", "--port=test_port", "--database=test_maint",
+		"--execute=" + showVariablesQuery,
+	}) {
+		t.Fatalf("argv = %q", argv)
+	}
+	if argv := append([]string{runner.calls[0].Name}, runner.calls[0].Args...); argv[6] != "--execute="+showVariablesQuery {
+		t.Fatalf("argv[6] = %q, want the pinned variables query", argv[6])
+	}
+
+	// Intentional divergence from the pinned helper's Python IndexError:
+	// malformed short rows retain their available prefix without a panic.
+	rt, _ = newMysqlRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte("Variable_name\tValue\nonlyname\n"),
+	})
+	value, err = (showVariablesFunc{}).Execute(context.Background(), rt, &ShowVariablesArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := value.([]any); !ok || !reflect.DeepEqual(got, []any{
+		map[string]string{"Variable_name": "onlyname"},
+	}) {
+		t.Fatalf("short-row showvariables = %#v", value)
+	}
+
+	// A successful query answering no rows hits the pinned
+	// `if not rtnv: rtnv.append([])` quirk: [[ ]] renders with the empty
+	// inner list.
+	rt, _ = newMysqlRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte("Variable_name\tValue\n"),
+	})
+	value, err = (showVariablesFunc{}).Execute(context.Background(), rt, &ShowVariablesArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := value.([]any); !ok || len(got) != 1 {
+		t.Fatalf("empty showvariables = %#v, want the pinned one-element quirk", value)
+	} else if encoded, marshalErr := json.Marshal(got); marshalErr != nil || string(encoded) != "[[]]" {
+		t.Fatalf("empty showvariables renders %s (%v), want [[]]", encoded, marshalErr)
+	}
+
+	// The pinned _connect-None path answers the bare empty list; the
+	// renderings of [] and [[]] differ exactly like Salt's.
+	rt, _ = newMysqlRuntime(process.CommandResult{
+		ExitCode: 1,
+		Stderr:   []byte("ERROR 1045 (28000): Access denied\n"),
+	})
+	value, err = (showVariablesFunc{}).Execute(context.Background(), rt, &ShowVariablesArgs{})
+	if err != nil {
+		t.Fatalf("nonzero exit must be compatibility data: %v", err)
+	}
+	if got, ok := value.([]any); !ok || len(got) != 0 {
+		t.Fatalf("nonzero-exit showvariables = %#v, want the bare empty list", value)
+	} else if encoded, marshalErr := json.Marshal(got); marshalErr != nil || string(encoded) != "[]" {
+		t.Fatalf("nonzero-exit showvariables renders %s, want []", encoded)
+	}
+}
+
+// fullShowVariablesArgs carries every connection argument at once.
+func fullShowVariablesArgs() *ShowVariablesArgs {
+	return &ShowVariablesArgs{
+		User:     mysqlString("test_user"),
+		Host:     mysqlString("test_host"),
+		Port:     mysqlString("test_port"),
+		Password: mysqlString("test_pass"),
+		DB:       mysqlString("test_maint"),
+	}
+}
+
+// TestMysqlShowGlobal pins the showglobal contract: the exact pinned qry
+// SHOW GLOBAL VARIABLES — variables, not status — with the same shapes,
+// decoding, and quirks as showvariables.
+func TestMysqlShowGlobal(t *testing.T) {
+	rt, runner := newMysqlRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout: []byte("Variable_name\tValue\r\n" +
+			"max_connections\t151\r\n" +
+			"datadir\tC:\\\\ProgramData\\\\MySQL\\\\\r\n" +
+			"we\\\\ird\t\\\\n\r\n"),
+	})
+	value, err := (showGlobalFunc{}).Execute(context.Background(), rt, &ShowGlobalArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []any{
+		map[string]string{"Variable_name": "max_connections", "Value": "151"},
+		map[string]string{"Variable_name": "datadir", "Value": `C:\ProgramData\MySQL\`},
+		map[string]string{"Variable_name": `we\ird`, "Value": `\n`},
+	}
+	if got, ok := value.([]any); !ok || !reflect.DeepEqual(got, want) {
+		t.Fatalf("showglobal = %#v, want %#v", value, want)
+	}
+	if argv := append([]string{runner.calls[0].Name}, runner.calls[0].Args...); !reflect.DeepEqual(argv,
+		[]string{"mysql", "--batch", "--execute=" + showGlobalVariablesQuery}) {
+		t.Fatalf("argv = %q", argv)
+	}
+
+	// The pinned empty shapes: [[]] on a rowless success, [] on a
+	// nonzero exit.
+	rt, _ = newMysqlRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Variable_name\tValue\n")})
+	value, err = (showGlobalFunc{}).Execute(context.Background(), rt, &ShowGlobalArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := value.([]any); !ok || len(got) != 1 {
+		t.Fatalf("empty showglobal = %#v, want the pinned one-element quirk", value)
+	}
+	rt, _ = newMysqlRuntime(process.CommandResult{ExitCode: 1})
+	if value, err = (showGlobalFunc{}).Execute(context.Background(), rt, &ShowGlobalArgs{}); err != nil {
+		t.Fatalf("nonzero exit must be compatibility data: %v", err)
+	}
+	if got, ok := value.([]any); !ok || len(got) != 0 {
+		t.Fatalf("nonzero-exit showglobal = %#v", value)
+	}
+}
+
+// TestMysqlServerFactsFailClosed pins the remaining shared boundaries of
+// the show pair: no Runner, unavailable client, cancellation, Runner
+// failures, and output limits.
+func TestMysqlServerFactsFailClosed(t *testing.T) {
+	for _, call := range []struct {
+		name string
+		run  func(ctx context.Context, rt *runtime.Runtime) (any, error)
+	}{
+		{"showvariables", func(ctx context.Context, rt *runtime.Runtime) (any, error) {
+			return (showVariablesFunc{}).Execute(ctx, rt, &ShowVariablesArgs{})
+		}},
+		{"showglobal", func(ctx context.Context, rt *runtime.Runtime) (any, error) {
+			return (showGlobalFunc{}).Execute(ctx, rt, &ShowGlobalArgs{})
+		}},
+	} {
+		if _, err := call.run(context.Background(), &runtime.Runtime{}); !errors.Is(err, errMysqlRunnerUnavailable) {
+			t.Fatalf("%s nil runner error = %v", call.name, err)
+		}
+		unavailable := &mysqlFakeRunner{available: map[string]bool{"mysql": false}}
+		if _, err := call.run(context.Background(), &runtime.Runtime{Runner: unavailable}); !errors.Is(err, errMysqlClientUnavailable) {
+			t.Fatalf("%s unavailable client error = %v", call.name, err)
+		}
+		if len(unavailable.calls) != 0 {
+			t.Fatalf("%s unavailable client made %d calls", call.name, len(unavailable.calls))
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		cancelled := &mysqlFakeRunner{}
+		if _, err := call.run(ctx, &runtime.Runtime{Runner: cancelled}); !errors.Is(err, context.Canceled) {
+			t.Fatalf("%s cancelled error = %v", call.name, err)
+		}
+		if len(cancelled.calls) != 0 {
+			t.Fatalf("%s cancelled made %d calls, want 0", call.name, len(cancelled.calls))
+		}
+		rt, _ := newMysqlRuntime(process.CommandResult{Err: errors.New("boom")})
+		if _, err := call.run(context.Background(), rt); err == nil || err.Error() != "boom" {
+			t.Fatalf("%s runner error = %v", call.name, err)
+		}
+		rt, _ = newMysqlRuntime(process.CommandResult{ExitCode: 0, StderrTruncated: true})
+		if _, err := call.run(context.Background(), rt); !errors.Is(err, process.ErrOutputLimit) {
+			t.Fatalf("%s output limit error = %v", call.name, err)
+		}
+	}
+}
+
+// TestMysqlServerFactsRunasRejected pins the runas rejection before any
+// Runner invocation for the whole R9.3b family.
+func TestMysqlServerFactsRunasRejected(t *testing.T) {
+	calls := []struct {
+		name string
+		run  func(rt *runtime.Runtime) (any, error)
+	}{
+		{"version", func(rt *runtime.Runtime) (any, error) {
+			return (versionFunc{}).Execute(context.Background(), rt, &VersionArgs{Runas: mysqlString("mysql")})
+		}},
+		{"status", func(rt *runtime.Runtime) (any, error) {
+			return (statusFunc{}).Execute(context.Background(), rt, &StatusArgs{Runas: mysqlString("mysql")})
+		}},
+		{"showvariables", func(rt *runtime.Runtime) (any, error) {
+			return (showVariablesFunc{}).Execute(context.Background(), rt, &ShowVariablesArgs{Runas: mysqlString("mysql")})
+		}},
+		{"showglobal", func(rt *runtime.Runtime) (any, error) {
+			return (showGlobalFunc{}).Execute(context.Background(), rt, &ShowGlobalArgs{Runas: mysqlString("mysql")})
+		}},
+	}
+	for _, call := range calls {
+		runner := &mysqlFakeRunner{}
+		if _, err := call.run(&runtime.Runtime{Runner: runner}); !errors.Is(err, errMysqlRunas) {
+			t.Fatalf("%s runas error = %v", call.name, err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s runas made %d calls, want 0", call.name, len(runner.calls))
+		}
+	}
+}
+
+// TestMysqlServerFactsThroughRegistry drives the four functions through
+// the execution registry on the same fake Runner: the registry path
+// answers the same results with the same single call each.
+func TestMysqlServerFactsThroughRegistry(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	runner := &mysqlFakeRunner{}
+	rt := &runtime.Runtime{Runner: runner, Exec: reg, FS: runtime.NewMemoryFS()}
+
+	runner.results = []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("VERSION()\n8.0.36\n")},
+	}
+	value, err := rt.Exec.Call(context.Background(), rt, "mysql.version", &VersionArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := value.(string); !ok || got != "8.0.36" {
+		t.Fatalf("registry version = %#v", value)
+	}
+
+	runner.results = []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("Variable_name\tValue\nUptime\t347\n")},
+	}
+	value, err = rt.Exec.Call(context.Background(), rt, "mysql.status", &StatusArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := value.(map[string]string); !ok || !reflect.DeepEqual(got, map[string]string{"Uptime": "347"}) {
+		t.Fatalf("registry status = %#v", value)
+	}
+
+	runner.results = []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("Variable_name\tValue\nmax_connections\t151\n")},
+	}
+	value, err = rt.Exec.Call(context.Background(), rt, "mysql.showvariables", &ShowVariablesArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := value.([]any); !ok || !reflect.DeepEqual(got, []any{
+		map[string]string{"Variable_name": "max_connections", "Value": "151"},
+	}) {
+		t.Fatalf("registry showvariables = %#v", value)
+	}
+
+	// This vector checks the rowless showglobal result; exact JSON and
+	// nonzero-exit shapes are covered by TestMysqlRegistryEmptyShapes.
+	runner.results = []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("Variable_name\tValue\n")},
+	}
+	value, err = rt.Exec.Call(context.Background(), rt, "mysql.showglobal", &ShowGlobalArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := value.([]any); !ok || len(got) != 1 {
+		t.Fatalf("registry empty showglobal = %#v, want the pinned quirk", value)
+	}
+	runner.results = []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("Variable_name\tValue\n")},
+	}
+	value, err = rt.Exec.Call(context.Background(), rt, "mysql.showvariables", &ShowVariablesArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := value.([]any); !ok {
+		t.Fatalf("registry showvariables = %#v", value)
+	}
+
+	if len(runner.calls) != 5 {
+		t.Fatalf("registry path made %d calls, want 5", len(runner.calls))
+	}
+}
+
+func TestMysqlRegistryEmptyShapes(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		args    any
+		header  string
+		rowless string
+	}{
+		{"mysql.showvariables", &ShowVariablesArgs{}, "Variable_name\tValue\n", "[[]]"},
+		{"mysql.showglobal", &ShowGlobalArgs{}, "Variable_name\tValue\n", "[[]]"},
+		{"mysql.user_list", &UserListArgs{}, "User\tHost\n", "[]"},
+		{"mysql.db_list", &DbListArgs{}, "Database\n", "[]"},
+	} {
+		for _, shape := range []struct {
+			name   string
+			result process.CommandResult
+			want   string
+		}{
+			{"nonzero", process.CommandResult{ExitCode: 1, Stdout: []byte(tc.header + "ignored\tvalue\n")}, "[]"},
+			{"header-only", process.CommandResult{Stdout: []byte(tc.header)}, tc.rowless},
+			{"empty-stdout", process.CommandResult{}, tc.rowless},
+		} {
+			t.Run(tc.name+"/"+shape.name, func(t *testing.T) {
+				rt, runner := newMysqlRuntime(shape.result)
+				rt.Exec = runtime.NewExecRegistry()
+				if err := Register(rt.Exec); err != nil {
+					t.Fatal(err)
+				}
+				value, err := rt.Exec.Call(context.Background(), rt, tc.name, tc.args)
+				if err != nil {
+					t.Fatal(err)
+				}
+				encoded, err := json.Marshal(value)
+				if err != nil || string(encoded) != shape.want || len(runner.calls) != 1 {
+					t.Fatalf("shape=%s error=%v calls=%d; want %s and one call", encoded, err, len(runner.calls), shape.want)
+				}
+			})
+		}
+	}
+}
+
+// The pinned __do_query_into_hash indexes row[i] for each described column:
+// a one-field row under a two-column description raises Python IndexError.
+// These source-derived vectors deliberately assert a different Go outcome,
+// not Python execution or pinned malformed-row parity.
+func TestMysqlShowShortRowDefensiveDivergence(t *testing.T) {
+	marker := "synthetic-short-row-password"
+	for _, query := range []string{showVariablesQuery, showGlobalVariablesQuery} {
+		t.Run(query, func(t *testing.T) {
+			rt, runner := newMysqlRuntime(process.CommandResult{Stdout: []byte("Variable_name\tValue\nonlyname\n")})
+			got, err := showCatalog(context.Background(), rt, (&ShowVariablesArgs{Password: &marker}).connection(), query)
+			if err != nil || !reflect.DeepEqual(got, []any{map[string]string{"Variable_name": "onlyname"}}) {
+				t.Fatal("short row must return only its prefix, not IndexError or a fabricated Value")
+			}
+			encoded, err := json.Marshal(got)
+			if err != nil || strings.Contains(string(encoded), marker) || len(runner.calls) != 1 || strings.Contains(runner.calls[0].RedactedString(), marker) {
+				t.Fatal("short-row result or rendered command failed synthetic secret guard")
+			}
+		})
+	}
+}
+
+func TestMysqlRegistryRunnerErrorRedaction(t *testing.T) {
+	marker := "synthetic-registry-runner-password"
+	for _, tc := range []struct {
+		name string
+		args any
+	}{
+		{"mysql.version", &VersionArgs{Password: &marker}},
+		{"mysql.status", &StatusArgs{Password: &marker}},
+		{"mysql.showvariables", &ShowVariablesArgs{Password: &marker}},
+		{"mysql.showglobal", &ShowGlobalArgs{Password: &marker}},
+		{"mysql.user_list", &UserListArgs{Password: &marker}},
+		{"mysql.db_list", &DbListArgs{Password: &marker}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, runner := newMysqlRuntime(process.CommandResult{Err: errors.New("runner failed: " + marker)})
+			rt.Exec = runtime.NewExecRegistry()
+			if err := Register(rt.Exec); err != nil {
+				t.Fatal(err)
+			}
+			_, err := rt.Exec.Call(context.Background(), rt, tc.name, tc.args)
+			if err == nil || strings.Contains(err.Error(), marker) || !strings.Contains(err.Error(), "runner failed:") || len(runner.calls) != 1 {
+				t.Fatal("registry must return a redacted Runner error after one call")
+			}
+			if !reflect.DeepEqual(runner.calls[0].Redact, []string{marker}) || strings.Contains(runner.calls[0].RedactedString(), marker) {
+				t.Fatal("registry command failed synthetic secret guard")
+			}
+		})
+	}
+}
+
+// TestMysqlProviderRunnerErrorRedaction closes the direct-coverage gap the
+// registry-level TestMysqlRegistryRunnerErrorRedaction leaves for the
+// three functions whose direct tests carried no marker-bearing synthetic
+// Runner error: user_list, showvariables, and showglobal (db_list,
+// status, and version pin theirs inside their fail-closed tests). The
+// synthetic Runner result carries the same connection password marker in
+// the error, stdout, and stderr at once. The provider surface is asserted
+// first: a value-free redacted error that keeps the synthetic error's
+// non-secret class, exactly one Runner call over the fixed query-only
+// argv, the marker as the single Redact secret with a marker-free
+// rendered command, the password riding only the out-of-band MYSQL_PWD
+// environment, and the caller's args left unmutated. The providers
+// discard the sanitized CommandResult on the error path, so the captured
+// stdout/stderr redaction of the same synthetic vector is pinned through
+// the shared transport on each function's exact argv. The rowless and
+// nonzero-exit compatibility shapes stay pinned by the dedicated shape
+// tests and are deliberately not re-asserted here.
+func TestMysqlProviderRunnerErrorRedaction(t *testing.T) {
+	marker := "S3CRET-mysql-pass"
+	userList := &UserListArgs{Password: mysqlString(marker)}
+	showVariables := &ShowVariablesArgs{Password: mysqlString(marker)}
+	showGlobal := &ShowGlobalArgs{Password: mysqlString(marker)}
+	for _, tc := range []struct {
+		name       string
+		query      string
+		args       any
+		connection func() *myConnection
+		run        func(rt *runtime.Runtime) (any, error)
+	}{
+		{"user_list", userListQuery, userList, userList.connection, func(rt *runtime.Runtime) (any, error) {
+			return (userListFunc{}).Execute(context.Background(), rt, userList)
+		}},
+		{"showvariables", showVariablesQuery, showVariables, showVariables.connection, func(rt *runtime.Runtime) (any, error) {
+			return (showVariablesFunc{}).Execute(context.Background(), rt, showVariables)
+		}},
+		{"showglobal", showGlobalVariablesQuery, showGlobal, showGlobal.connection, func(rt *runtime.Runtime) (any, error) {
+			return (showGlobalFunc{}).Execute(context.Background(), rt, showGlobal)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result := process.CommandResult{
+				Err:    errors.New("mysql failed with " + marker),
+				Stdout: []byte("stdout leak " + marker + "\n"),
+				Stderr: []byte("stderr leak " + marker + "\n"),
+			}
+			before := reflect.ValueOf(tc.args).Elem().Interface()
+			rt, runner := newMysqlRuntime(result)
+			value, err := tc.run(rt)
+			if err == nil {
+				t.Fatalf("%s = (%#v, nil), want the Runner error", tc.name, value)
+			}
+			// The providers answer the typed nil of their pinned result
+			// shape alongside the error; any non-nil data would be a leak.
+			if value != nil && !reflect.ValueOf(value).IsNil() {
+				t.Fatalf("%s returned data alongside the error: %#v", tc.name, value)
+			}
+			if strings.Contains(err.Error(), marker) || !strings.Contains(err.Error(), "mysql failed with") {
+				t.Fatalf("%s error = %v, want the redacted class-preserving Runner error", tc.name, err)
+			}
+			if len(runner.calls) != 1 {
+				t.Fatalf("%s made %d Runner calls, want exactly 1", tc.name, len(runner.calls))
+			}
+			command := runner.calls[0]
+			if argv := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(argv,
+				[]string{"mysql", "--batch", "--execute=" + tc.query}) {
+				t.Fatalf("%s argv = %q, want the fixed query-only argv", tc.name, argv)
+			}
+			if !reflect.DeepEqual(command.Redact, []string{marker}) {
+				t.Fatalf("%s redact inventory = %q, want exactly the marker", tc.name, command.Redact)
+			}
+			if rendered := command.RedactedString(); strings.Contains(rendered, marker) {
+				t.Fatalf("%s rendered command leaks the marker: %q", tc.name, rendered)
+			}
+			if want := []string{"MYSQL_PWD=" + marker}; !reflect.DeepEqual(command.Env, want) {
+				t.Fatalf("%s env = %q, want the out-of-band password channel %q", tc.name, command.Env, want)
+			}
+			if after := reflect.ValueOf(tc.args).Elem().Interface(); !reflect.DeepEqual(after, before) {
+				t.Fatalf("%s mutated caller args: before=%#v after=%#v", tc.name, before, after)
+			}
+
+			// The captured stdout/stderr the transport sanitizes on the
+			// Runner-error path — and would hand to any non-error
+			// consumer — pinned through runMysql on this function's
+			// exact argv and connection.
+			conn := tc.connection()
+			rt, runner = newMysqlRuntime(result)
+			transportResult, transportErr := runMysql(context.Background(), rt, mysqlQueryArgv(conn, tc.query), conn)
+			if transportErr == nil || strings.Contains(transportErr.Error(), marker) {
+				t.Fatalf("%s transport error = %v, want the redacted Runner error", tc.name, transportErr)
+			}
+			if strings.Contains(string(transportResult.Stdout), marker) || strings.Contains(string(transportResult.Stderr), marker) {
+				t.Fatalf("%s captured output leaks the marker: stdout=%q stderr=%q",
+					tc.name, transportResult.Stdout, transportResult.Stderr)
+			}
+			if len(runner.calls) != 1 {
+				t.Fatalf("%s transport made %d Runner calls, want exactly 1", tc.name, len(runner.calls))
+			}
+		})
 	}
 }

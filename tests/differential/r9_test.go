@@ -161,8 +161,21 @@ import (
 // one bounded pass (a single-backslash account name matches exactly,
 // the sentinel maps back to null while a value spelled NULL stays the
 // ordinary string), and the pinned user_exists password-verification
-// ladder is refused value-free before any Runner invocation. The
-// generic psql_query surface and the remaining mysql and postgres
+// ladder is refused value-free before any Runner invocation. R9.3b
+// registers the mysql read-only server facts family version, status,
+// showvariables, and showglobal (mysql.py:1009-1040, 978-1006, 2962-2987,
+// 2990-3015): the exact pinned fixed queries — SELECT VERSION(), SHOW
+// STATUS, SHOW VARIABLES, and SHOW GLOBAL VARIABLES (variables, not
+// status, exactly like the pinned source) — run through the same central
+// mysql CLI transport with the same connection surface, redaction, and
+// bounds; version answers the decoded first field (the pinned empty
+// string on the _connect-None, OperationalError, and fetchone IndexError
+// paths), status answers the pinned name→value dict with the pinned
+// later-row-overwrites loop, and the show pair answers the pinned
+// __do_query_into_hash row-dict list including the pinned empty-result
+// quirk — a rowless success renders [[ ]] — while a mysql run completing
+// nonzero answers the pinned _connect-None shape (the bare empty list).
+// The generic psql_query surface and the remaining mysql and postgres
 // surfaces need their client protocol boundaries and stay pending.
 type r9FamilySpec struct {
 	Source             string
@@ -217,26 +230,34 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"mysql.identifier-quoting",
 			"mysql.grant-lexer-shapes",
 			"mysql.read-only-catalog-lists",
+			"mysql.server-status-version-variables",
 		},
 		Evidence: []string{
 			"source-derived quoting and lexer vectors from the pinned mysql.py, including the three _grant_to_tokens docstring split examples run verbatim",
 			"direct, registry, and CLI mock tests execute with a nil Runner and no filesystem access; no MySQL driver or protocol client is linked",
 			"the pinned pytests map the module but do not cover the tokenizer; coverage here is algorithm-derived, not test-file-derived",
-			"direct, registry, and CLI fake-Runner tests pin the exact mysql client argv (--batch with one joined --user/--host/--port/--database flag per supplied connection argument and the fixed query as the final --execute argument, index 6 with every connection argument supplied), the clean MYSQL_PWD-only environment, the 30s timeout and 4 MiB output caps, and the connection password as the single Redact secret never appearing in argv, rendered commands, captured output, or returned errors",
+			"direct transport tests assert exact argv, clean MYSQL_PWD-only environment, 30s timeout, 4 MiB caps, and Redact inventory; CLI db_list and version tests assert full connection argv and environment. TestMysqlRegistryRunnerErrorRedaction and TestMySQLCLIRunnerErrorRedaction inject a synthetic password into Runner errors for db_list, user_list, version, status, showvariables, and showglobal and assert redacted errors and rendered commands; CLI also asserts failure exit and stdout/stderr",
 			"db_list and db_exists run the sentinel-mapped database catalog (the fixed COALESCE(SCHEMA_NAME, UNHEX('00')) query over information_schema.SCHEMATA, the table SHOW DATABASES itself reads) with the pinned first-column list shape, user_list and user_exists run the sentinel-mapped user catalog (the fixed COALESCE(User/Host, UNHEX('00')) AS User/Host query over mysql.user) with the DictRow header-keyed map shape and prefix-zipped short rows, and user_exists matches the (user, host) pair client-side with the pinned localhost default",
-			"the mysql --batch row framing and field decoder are pinned direct, through the registry, and through the CLI against the client's own escaper (safe_put_field over tee_write in client/mysql.cc of MySQL 5.7/8.0 and MariaDB, which escapes exactly NUL, tab, newline, and backslash as \\0 \\t \\n \\\\ and writes every other byte — carriage returns included — raw): every TSV-split data field decodes in one bounded left-to-right pass, so the single-backslash account win\\admin — batch-encoded with the backslash doubled — matches user_exists client-side exactly while the still-encoded and collapsed spellings stay misses, an encoded \\\\n keeps the literal backslash before n and never a newline, the documented \\b/\\r/\\Z escape family decodes, unknown escapes and a trailing lone backslash are preserved verbatim, empty fields stay empty, the raw client header is kept byte-verbatim, and short and long rows keep their prefix-zip bounds, while rows are framed by the bounded splitter that treats \\n and \\r\\n as delimiters (the delimiter CR removed from the last field and the header alike) and keeps a raw CR that is not a delimiter half inside its field — CRLF, LF, mixed, empty-interleaved, and missing-trailing-newline framings all decode identically on the user and db catalogs and the exact user_exists match — all with no password or catalog log leakage",
-			"the SQL NULL sentinel is pinned on both sides of the bare-marker ambiguity: the fixed catalog queries substitute COALESCE(column, UNHEX('00')) — one NUL byte no MySQL or MariaDB identifier can carry, sql_mode-independent, never built from caller input — so the sentinel batch-prints as \\0 and only it maps back to null (the DictRow None, nil, JSON null, never matching a caller string, and a NULL database row skipped because the []string catalog has no null shape), while a database, user, or host literally spelled NULL stays the ordinary string NULL across db_list, db_exists, user_list, and user_exists with no false negatives (asserted direct, through the registry, and through the CLI)",
+			"direct TestMysqlBatchRowSplitter, TestMysqlBatchFieldDecoder, and TestMysqlCatalogRowFraming cover LF/CRLF/mixed/empty-interleaved/missing-newline framing, raw CR, escapes, unknown escapes, trailing backslash, and raw headers; direct catalog tests cover bounded short/long rows. Registry TestMysqlBatchDecodeThroughRegistry covers decoded backslash accounts and NULL catalog shapes; CLI batch/catalog decoding tests cover selected backslash, NULL, and CRLF vectors, not every direct decoder case",
+			"direct and CLI catalog vectors distinguish the SQL NULL sentinel from literal NULL database/user/host values; registry vectors assert user_list sentinel/null and literal NULL values, db_list sentinel skipping and literal NULL listing, db_exists literal NULL and decoded-name hits, and a decoded user_exists backslash-account hit",
 			"the pinned failure compatibility shapes are pinned: a mysql run completing nonzero answers db_list [] and db_exists/user_exists false exactly like the pinned _connect failure and OperationalError paths that log and answer the empty result or False, while Runner failures, cancellation, output-limit violations, an unavailable mysql client, and an explicit runas all fail closed — the last three with zero Runner invocations",
-			"the pinned user_exists password ladder (password, password_hash, passwordless, unix_socket) answers the deterministic value-free unsupported error (CLI exit 3) before any Runner invocation on direct, registry, and CLI vectors, the pinned None/empty-string falsiness keeps the bare existence path intact, and password_column stays inert exactly like the pinned source never reads it without a password argument",
+			"direct TestMysqlUserExistsPasswordBoundary covers password, password_hash, passwordless, unix_socket rejection before Runner invocation, falsy arguments, and inert password_column; CLI TestMySQLCLIUserExists covers password rejection with exit 3 and no Runner call, plus empty-password success; no registry password-ladder coverage is claimed",
+			"R9.3b direct and CLI tests assert SELECT VERSION(), SHOW STATUS, SHOW VARIABLES, and SHOW GLOBAL VARIABLES argv and ordinary results; registry tests assert version, status, and showvariables ordinary results. Direct status vectors assert later duplicate rows overwrite earlier. TestMysqlShowShortRowDefensiveDivergence asserts StateKit defensive prefix-zip divergence for both show queries: ordinary complete rows exact; malformed short rows do not panic, invent a missing Value, or expose a supplied synthetic password; Python IndexError is the source-derived contrast, not an executed Python oracle",
+			"direct and CLI version tests cover nonzero and rowless empty-string results; direct and CLI status tests cover nonzero empty-object results. Direct and CLI show-pair tests cover nonzero [] versus header-only [[]]. TestMysqlRegistryEmptyShapes asserts exact JSON and one Runner call for showvariables/showglobal (nonzero [], header-only and empty stdout [[]]) and user_list/db_list (all three shapes []); these are CLI transport mappings, not independent observations of Python exception branches",
+			"R9.3b direct version/status/showglobal vectors exercise selected shared decoder cases; CLI status tests assert escaped backslashes and raw CR, and showglobal asserts a CRLF ordinary row. Direct fail-closed tests cover no Runner, unavailable client, cancellation, output limits, and runas for the server-facts family; registry/CLI synthetic Runner-error redaction is covered separately, not every boundary at every surface",
 		},
 		CompatibilityNotes: []string{
-			"R9.2a registers the driver-free pure functions quote_identifier and tokenize_grant; R9.3a adds the read-only catalog family db_list, db_exists, user_list, and user_exists over the mysql CLI transport; the remaining public surface requires the MySQL client protocol or mutation boundary (E5) and stays pending",
+			"R9.2a registers the driver-free pure functions quote_identifier and tokenize_grant; R9.3a adds the read-only catalog family db_list, db_exists, user_list, and user_exists over the mysql CLI transport; R9.3b adds the read-only server facts family version, status, showvariables, and showglobal on the same transport; the remaining public surface requires the MySQL client protocol or mutation boundary (E5) and stays pending",
+			"StateKit defensive prefix-zip divergence: ordinary complete rows exact; malformed short rows do not panic. The pinned __do_query_into_hash indexes every described column and raises Python IndexError on a short row; StateKit retains only available columns, intentionally not pinned malformed-row parity. The existing user catalog defensive prefix behavior is unchanged",
 			"the pinned module speaks MySQLdb; StateKit links no database driver — the fixed source queries travel through the mysql CLI client (batch mode, joined connection flags, clean environment) on the central shell-free Runner with a finite 30s timeout and 4 MiB output caps the pinned module does not carry",
 			"the connection surface keeps the pinned connection_user/connection_host/connection_port/connection_pass/connection_db kwargs with nil keeping Salt's None meaning (the pinned config.option defaults have no StateKit surface, and _connect's falsy-connarg drop maps to flag omission); the password travels through mysql's native MYSQL_PWD in an otherwise clean environment as a Redact secret, never argv, and runas is rejected before any Runner invocation by the single-user runtime",
 			"the pinned db_exists interpolates the caller's name into SHOW DATABASES LIKE %(dbname)s; StateKit runs the same fixed database catalog of db_list — the COALESCE(SCHEMA_NAME, UNHEX('00')) query over information_schema.SCHEMATA, the table SHOW DATABASES itself reads with the same privilege filtering — and matches the name client-side (exact match — the catalog lists each database once, so membership is the pinned cur.rowcount == 1), deliberately refusing the LIKE wildcard semantics so no caller string reaches SQL",
 			"the pinned user_list runs a DictCursor over SELECT User,Host; the sentinel-mapped catalog keeps the pinned column pair behind the User and Host aliases, so the batch rows are keyed by the header exactly like the DictRow, the catalog never selects or returns a password column, and StateKit modules have no logging surface so nothing is ever logged, unlike the pinned log.debug(results)",
 			"the pinned module reads rows through MySQLdb, where SQL NULL arrives as Python None and no escaping exists; mysql --batch instead prints SQL NULL as a bare NULL marker byte-identical to a value spelled NULL, so the fixed catalog queries substitute COALESCE(column, UNHEX('00')) — a fixed sql_mode-independent one-NUL-byte sentinel no MySQL or MariaDB identifier can carry — and only that sentinel maps back to null: the sentinel batch-prints as \\0, decodes to the single NUL byte, renders as the DictRow None (nil) that never matches a caller string, and a sentinel database row is skipped because the []string catalog has no null shape, while a database, user, or host literally spelled NULL stays the ordinary string NULL with no false negatives; the remaining batch decoding keeps the client's documented escaping in one bounded left-to-right pass — the encoder emits only \\0 \\t \\n \\\\ so a carriage return stays raw exactly like the client prints it while the shared \\b/\\r/\\Z LOAD DATA escape family decodes, unknown escapes and a trailing lone backslash are preserved verbatim rather than dropped, an encoded \\\\n is the literal backslash before n and never a newline, and the header stays byte-raw like the client prints it; row framing recognizes \\n and \\r\\n as delimiters (the delimiter CR removed) and keeps a raw non-delimiter CR inside its field, a lone trailing CR included",
 			"a nonzero mysql exit stays compatibility data (the empty list or false, like the pinned logged error paths); only Runner failures, cancellation, and output-limit violations are errors",
+			"the R9.3b server facts family keeps the exact pinned query strings — SELECT VERSION(), SHOW STATUS, SHOW VARIABLES, SHOW GLOBAL VARIABLES — with no caller input ever reaching SQL (the functions carry only the connection surface); the pinned version reads the server through SELECT VERSION(), never a `mysql --version` client-binary probe, and the pinned __context__ per-run version cache has no StateKit surface, so every call re-queries (documented divergence observable only as the extra query)",
+			"a SHOW statement cannot carry the COALESCE NULL sentinel of the R9.3a catalogs, and MySQL and MariaDB status and system variable values are never SQL NULL (the tables behind SHOW STATUS declare VARIABLE_VALUE NOT NULL and unset system variables print as the empty string), so on the R9.3b surfaces a field spelled NULL stays the ordinary string NULL — the one boundary the bare NULL marker cannot disambiguate, which the servers themselves never emit on these surfaces",
+			"the CLI transport cannot distinguish a failed connection from a failed query; the show pair's nonzero-exit compatibility mapping answers the pinned _connect-None shape (the bare empty list) because the dominant real-world nonzero exits are unreachable or denying servers, while the pinned MySQLError-during-execute shape of a rowless success renders the pinned [[ ]] quirk — both renderings asserted distinct",
 			"the pinned user_exists password-verification variants (password, password_hash, passwordless, unix_socket) interpolate credential material into password-column comparisons behind version/password-column/auth-plugin probes; StateKit refuses them value-free before any Runner invocation, keeping the exact pinned boolean on the bare (user, host) existence path",
 			"the tokenizer keeps the pinned shlex configuration (quotes apostrophe/backtick, double-quote folded into wordchars, non-posix inert escape) so backslash separates tokens instead of escaping",
 			"read-ahead edge behavior is preserved: shlex ValueError(No closing quotation) and the grants/user IndexError map to execution errors, the db-phrase IndexError ends parsing, and a missing host after @ degrades to an empty host",
@@ -250,9 +271,13 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"mysql.db_exists",
 			"mysql.db_list",
 			"mysql.quote_identifier",
+			"mysql.showglobal",
+			"mysql.showvariables",
+			"mysql.status",
 			"mysql.tokenize_grant",
 			"mysql.user_exists",
 			"mysql.user_list",
+			"mysql.version",
 		},
 	},
 	"postgres": {
@@ -508,7 +533,7 @@ func TestR9DifferentialScopeReport(t *testing.T) {
 	registered := registeredNames(first)
 
 	report := r9Report{
-		Round:    "R9.3a",
+		Round:    "R9.3b",
 		Platform: "cross-platform",
 		RuntimeStatus: "mock-only: RabbitMQ is never started, MySQL is never connected, and PostgreSQL is never contacted; " +
 			"shell-free fake Runner tests and pure-function vectors provide the executable contract",

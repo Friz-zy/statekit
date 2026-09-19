@@ -1,7 +1,8 @@
-// Package mysql implements two slices of the pinned Salt mysql execution
+// Package mysql implements slices of the pinned Salt mysql execution
 // surface: the driver-free pure functions quote_identifier and
-// tokenize_grant (R9.2a), and the read-only catalog family db_list,
-// db_exists, user_list, and user_exists (R9.3a).
+// tokenize_grant (R9.2a), the read-only catalog family db_list, db_exists,
+// user_list, and user_exists (R9.3a), and the read-only server facts
+// family version, status, showvariables, and showglobal (R9.3b).
 //
 // Boundaries (R9.2a): no MySQL client driver or protocol, no new
 // dependencies, no Runner spawns, no filesystem access, and no live MySQL
@@ -437,6 +438,20 @@ const (
 	userListQuery = "SELECT COALESCE(User, " + nullSentinelSQL + ") AS User, COALESCE(Host, " + nullSentinelSQL + ") AS Host FROM mysql.user"
 	// defaultUserHost is the pinned user_exists host default.
 	defaultUserHost = "localhost"
+	// selectVersionQuery is the reader of version: the exact pinned
+	// SELECT VERSION() (mysql.py:1027). The pinned module has no
+	// `mysql --version` client-binary probe — the version is server-side.
+	selectVersionQuery = "SELECT VERSION()"
+	// showStatusQuery is the reader of status: the exact pinned
+	// SHOW STATUS (mysql.py:993).
+	showStatusQuery = "SHOW STATUS"
+	// showVariablesQuery is the reader of showvariables: the exact pinned
+	// SHOW VARIABLES (mysql.py:2981).
+	showVariablesQuery = "SHOW VARIABLES"
+	// showGlobalVariablesQuery is the reader of showglobal: the exact
+	// pinned SHOW GLOBAL VARIABLES (mysql.py:3009) — global variables,
+	// not global status, exactly like the pinned source.
+	showGlobalVariablesQuery = "SHOW GLOBAL VARIABLES"
 )
 
 var (
@@ -1052,6 +1067,268 @@ func (a *UserExistsArgs) verifyUnsupported() error {
 }
 
 // ---------------------------------------------------------------------------
+// version — salt/modules/mysql.py:1009-1040 @ pinned revision.
+
+// VersionArgs are the canonical mysql.version arguments: the pinned
+// **connection_args surface plus the StateKit runas rejection.
+type VersionArgs struct {
+	User     *string `statekit:"name=connection_user"`
+	Host     *string `statekit:"name=connection_host"`
+	Port     *string `statekit:"name=connection_port"`
+	Password *string `statekit:"name=connection_pass"`
+	DB       *string `statekit:"name=connection_db"`
+	Runas    *string `statekit:"name=runas"`
+}
+
+func (a *VersionArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return &myConnection{
+		User:     a.User,
+		Host:     a.Host,
+		Port:     a.Port,
+		Password: a.Password,
+		DB:       a.DB,
+		Runas:    a.Runas,
+	}
+}
+
+type versionFunc struct{}
+
+func (versionFunc) Name() string { return "mysql.version" }
+func (versionFunc) Args() any    { return VersionArgs{} }
+
+func (versionFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[VersionArgs](args, "mysql.version")
+	if err != nil {
+		return nil, err
+	}
+	return mysqlVersion(ctx, rt, a.connection())
+}
+
+// mysqlVersion runs the exact pinned qry SELECT VERSION() — the pinned
+// module reads the server version, it never shells out to `mysql
+// --version` — and answers the decoded first field of the first row. The
+// pinned _connect-None and OperationalError paths log and answer "" and
+// the pinned fetchone() IndexError answers "" for a rowless result: the
+// transport maps all three to the empty string, never an error. The pinned
+// module caches the answer in its per-run __context__; StateKit has no
+// such context, so every call re-queries (documented divergence,
+// observable only as the extra query).
+func mysqlVersion(ctx context.Context, rt *runtime.Runtime, conn *myConnection) (string, error) {
+	_, rows, err := mysqlQueryRows(ctx, rt, conn, selectVersionQuery)
+	if err != nil {
+		return "", err
+	}
+	if len(rows) == 0 || len(rows[0]) == 0 {
+		// The pinned fetchone() IndexError: no row, no first field.
+		return "", nil
+	}
+	return rows[0][0].value, nil
+}
+
+// ---------------------------------------------------------------------------
+// status — salt/modules/mysql.py:978-1006 @ pinned revision.
+
+// StatusArgs are the canonical mysql.status arguments: the pinned
+// **connection_args surface plus the StateKit runas rejection.
+type StatusArgs struct {
+	User     *string `statekit:"name=connection_user"`
+	Host     *string `statekit:"name=connection_host"`
+	Port     *string `statekit:"name=connection_port"`
+	Password *string `statekit:"name=connection_pass"`
+	DB       *string `statekit:"name=connection_db"`
+	Runas    *string `statekit:"name=runas"`
+}
+
+func (a *StatusArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return &myConnection{
+		User:     a.User,
+		Host:     a.Host,
+		Port:     a.Port,
+		Password: a.Password,
+		DB:       a.DB,
+		Runas:    a.Runas,
+	}
+}
+
+type statusFunc struct{}
+
+func (statusFunc) Name() string { return "mysql.status" }
+func (statusFunc) Args() any    { return StatusArgs{} }
+
+func (statusFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[StatusArgs](args, "mysql.status")
+	if err != nil {
+		return nil, err
+	}
+	return mysqlStatus(ctx, rt, a.connection())
+}
+
+// mysqlStatus runs the exact pinned qry SHOW STATUS and renders the pinned
+// dict shape: one name→value entry per row — ret[row[0]] = row[1] — with
+// later duplicates overwriting earlier exactly like the pinned assignment
+// loop. The pinned _connect-None and OperationalError paths log and answer
+// {}, which the transport's nonzero-exit compatibility mapping reproduces.
+// Every field runs through the batch decoder, so escaped values
+// (backslash, tab, newline, carriage return) and both row framings decode.
+// A SHOW statement cannot carry the COALESCE sentinel of the R9.3a
+// catalogs, and MySQL and MariaDB status variable values are never SQL
+// NULL (the tables SHOW STATUS reads declare VARIABLE_VALUE NOT NULL and
+// print unset values as the empty string), so a field spelled NULL stays
+// the ordinary string — the one boundary a bare NULL marker cannot
+// disambiguate on this surface, which the servers themselves never emit.
+// Rows shorter than the fixed two columns — impossible from the real
+// client — are skipped.
+func mysqlStatus(ctx context.Context, rt *runtime.Runtime, conn *myConnection) (map[string]string, error) {
+	_, rows, err := mysqlQueryRows(ctx, rt, conn, showStatusQuery)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(rows))
+	for _, row := range rows {
+		if len(row) < 2 {
+			continue
+		}
+		out[row[0].value] = row[1].value
+	}
+	return out, nil
+}
+
+// ---------------------------------------------------------------------------
+// showvariables / showglobal — salt/modules/mysql.py:2962-2987 and
+// 2990-3015 @ pinned revision.
+
+// ShowVariablesArgs are the canonical mysql.showvariables arguments: the
+// pinned **connection_args surface plus the StateKit runas rejection. The
+// pinned function takes no filter or name argument — it returns the full
+// variables dict list.
+type ShowVariablesArgs struct {
+	User     *string `statekit:"name=connection_user"`
+	Host     *string `statekit:"name=connection_host"`
+	Port     *string `statekit:"name=connection_port"`
+	Password *string `statekit:"name=connection_pass"`
+	DB       *string `statekit:"name=connection_db"`
+	Runas    *string `statekit:"name=runas"`
+}
+
+func (a *ShowVariablesArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return &myConnection{
+		User:     a.User,
+		Host:     a.Host,
+		Port:     a.Port,
+		Password: a.Password,
+		DB:       a.DB,
+		Runas:    a.Runas,
+	}
+}
+
+type showVariablesFunc struct{}
+
+func (showVariablesFunc) Name() string { return "mysql.showvariables" }
+func (showVariablesFunc) Args() any    { return ShowVariablesArgs{} }
+
+func (showVariablesFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[ShowVariablesArgs](args, "mysql.showvariables")
+	if err != nil {
+		return nil, err
+	}
+	return showCatalog(ctx, rt, a.connection(), showVariablesQuery)
+}
+
+// ShowGlobalArgs are the canonical mysql.showglobal arguments: the pinned
+// **connection_args surface plus the StateKit runas rejection, identical
+// to showvariables — the pinned pair differs only in its fixed query.
+type ShowGlobalArgs struct {
+	User     *string `statekit:"name=connection_user"`
+	Host     *string `statekit:"name=connection_host"`
+	Port     *string `statekit:"name=connection_port"`
+	Password *string `statekit:"name=connection_pass"`
+	DB       *string `statekit:"name=connection_db"`
+	Runas    *string `statekit:"name=runas"`
+}
+
+func (a *ShowGlobalArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return &myConnection{
+		User:     a.User,
+		Host:     a.Host,
+		Port:     a.Port,
+		Password: a.Password,
+		DB:       a.DB,
+		Runas:    a.Runas,
+	}
+}
+
+type showGlobalFunc struct{}
+
+func (showGlobalFunc) Name() string { return "mysql.showglobal" }
+func (showGlobalFunc) Args() any    { return ShowGlobalArgs{} }
+
+func (showGlobalFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[ShowGlobalArgs](args, "mysql.showglobal")
+	if err != nil {
+		return nil, err
+	}
+	return showCatalog(ctx, rt, a.connection(), showGlobalVariablesQuery)
+}
+
+// showCatalog runs one pinned SHOW VARIABLES-family query through the
+// shape of the pinned __do_query_into_hash: the list of row dicts keyed by
+// the result column names (Variable_name and Value on both pinned
+// queries), rendered here as one map per row over the batch header with
+// StateKit defensive prefix-zip divergence: ordinary complete rows are exact,
+// but malformed short rows do not panic. The pinned Python helper indexes
+// every described column and raises IndexError instead of truncating the row.
+// The pinned empty-result quirk is preserved exactly: a successful query
+// that answers no rows makes `if not rtnv: rtnv.append([])` return [[]] —
+// a list whose single element is the empty list — while a connection the
+// pinned _connect would answer None for returns the bare empty list. The
+// CLI transport cannot distinguish a failed connection from a failed
+// query, so the nonzero-exit compatibility mapping answers the pinned
+// _connect-None shape — the bare empty list, the dominant real-world
+// nonzero exit being an unreachable or denying server. The SHOW sentinel
+// boundary of mysqlStatus applies to every value: system variable values
+// are never SQL NULL, so a field spelled NULL stays the ordinary string.
+func showCatalog(ctx context.Context, rt *runtime.Runtime, conn *myConnection, query string) ([]any, error) {
+	result, err := runMysql(ctx, rt, mysqlQueryArgv(conn, query), conn)
+	if err != nil {
+		return nil, err
+	}
+	if result.ExitCode > 0 {
+		// The pinned _connect-None path: the bare empty list.
+		return []any{}, nil
+	}
+	header, rows := parseBatchRows(string(result.Stdout))
+	if len(rows) == 0 {
+		// The pinned `if not rtnv: rtnv.append([])` quirk: [[]].
+		return []any{[]any{}}, nil
+	}
+	out := make([]any, 0, len(rows))
+	for _, row := range rows {
+		shared := len(header)
+		if len(row) < shared {
+			shared = len(row)
+		}
+		entry := make(map[string]string, shared)
+		for i := 0; i < shared; i++ {
+			entry[header[i]] = row[i].value
+		}
+		out = append(out, entry)
+	}
+	return out, nil
+}
+
+// ---------------------------------------------------------------------------
 // shared helpers (postgres-module conventions).
 
 func typedArgs[T any](args any, name string) (*T, error) {
@@ -1145,10 +1422,11 @@ func redactedError(err error, secrets ...string) error {
 }
 
 // Register installs the mysql catalog slice: the R9.2a pure functions
-// quote_identifier and tokenize_grant, plus the R9.3a read-only catalog
-// family db_list, db_exists, user_list, and user_exists over the central
-// mysql CLI transport. The remainder of the mysql family needs the client
-// protocol or mutation boundary and stays pending.
+// quote_identifier and tokenize_grant, the R9.3a read-only catalog family
+// db_list, db_exists, user_list, and user_exists, and the R9.3b read-only
+// server facts family version, status, showvariables, and showglobal over
+// the central mysql CLI transport. The remainder of the mysql family needs
+// the client protocol or mutation boundary and stays pending.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		quoteIdentifierFunc{},
@@ -1157,6 +1435,10 @@ func Register(reg *runtime.ExecRegistry) error {
 		dbExistsFunc{},
 		userListFunc{},
 		userExistsFunc{},
+		versionFunc{},
+		statusFunc{},
+		showVariablesFunc{},
+		showGlobalFunc{},
 	} {
 		if err := reg.Register(fn); err != nil {
 			return err

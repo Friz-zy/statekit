@@ -6,9 +6,9 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    source_inventory_count: 1178
-    catalog_intersection_count: 1156
-    implemented: 1156
+    source_inventory_count: 1182
+    catalog_intersection_count: 1160
+    implemented: 1160
 state:
     salt_modules: 132
     salt_functions: 669
@@ -441,9 +441,13 @@ implemented:
         - mysql.db_exists
         - mysql.db_list
         - mysql.quote_identifier
+        - mysql.showglobal
+        - mysql.showvariables
+        - mysql.status
         - mysql.tokenize_grant
         - mysql.user_exists
         - mysql.user_list
+        - mysql.version
         - nacl.dec
         - nacl.dec_file
         - nacl.enc
