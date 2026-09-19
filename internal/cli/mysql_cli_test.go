@@ -652,3 +652,187 @@ func TestMySQLCLIShowGlobal(t *testing.T) {
 		t.Fatalf("nonzero-exit showglobal code=%d out=%q err=%q, want []", code, out, errS)
 	}
 }
+
+// TestMySQLCLIDBCheck drives mysql.db_check end to end over the whole
+// table=None flow: the two fixed catalog queries with the client-side
+// database match, then one CHECK TABLE statement per table in source
+// order (the catalog's result order — deliberately unsorted here), with
+// the pinned list-of-lists JSON shape and no password anywhere in the
+// rendered command or CLI output.
+func TestMySQLCLIDBCheck(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\ninformation_schema\ntest_db\n")},
+		{ExitCode: 0, Stdout: []byte("TABLE_SCHEMA\tTABLE_NAME\nother_db\tforeign\ntest_db\tbeta\ntest_db\talpha\n")},
+		{ExitCode: 0, Stdout: []byte("Table\tOp\tMsg_type\tMsg_text\n`test_db`.`beta`\tcheck\tstatus\tOK\n")},
+		{ExitCode: 0, Stdout: []byte("Table\tOp\tMsg_type\tMsg_text\n`test_db`.`alpha`\tcheck\twarning\tTable is marked as crashed\n")},
+	}}
+	app := mysqlCLIRunnerApp(t, runner)
+
+	code, out, errS := captureCode(t, app, "exec", "mysql.db_check", "--name", "test_db",
+		"--connection-user", "test_user", "--connection-pass", "test_pass", "-o", "json")
+	var results []any
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &results) != nil || len(results) != 2 {
+		t.Fatalf("db_check code=%d out=%q err=%q", code, out, errS)
+	}
+	first, ok := results[0].([]any)
+	if !ok || len(first) != 1 {
+		t.Fatalf("db_check first table result = %#v", results[0])
+	}
+	firstRow, ok := first[0].(map[string]any)
+	if !ok || firstRow["Msg_text"] != "OK" || firstRow["Table"] != "`test_db`.`beta`" {
+		t.Fatalf("db_check first row = %#v", firstRow)
+	}
+	second, ok := results[1].([]any)
+	if !ok || len(second) != 1 {
+		t.Fatalf("db_check second table result = %#v", results[1])
+	}
+	secondRow, ok := second[0].(map[string]any)
+	if !ok || secondRow["Msg_type"] != "warning" || secondRow["Table"] != "`test_db`.`alpha`" {
+		t.Fatalf("db_check second row = %#v", secondRow)
+	}
+	if len(runner.calls) != 4 {
+		t.Fatalf("runner calls = %d, want 4", len(runner.calls))
+	}
+	wantArgv := [][]string{
+		{"mysql", "--batch", "--user=test_user", "--execute=SELECT COALESCE(SCHEMA_NAME, UNHEX('00')) FROM information_schema.SCHEMATA"},
+		{"mysql", "--batch", "--user=test_user", "--execute=SELECT COALESCE(TABLE_SCHEMA, UNHEX('00')) AS TABLE_SCHEMA, COALESCE(TABLE_NAME, UNHEX('00')) AS TABLE_NAME FROM information_schema.TABLES ORDER BY information_schema.TABLES.TABLE_NAME"},
+		{"mysql", "--batch", "--user=test_user", "--execute=CHECK TABLE `test_db`.`beta`"},
+		{"mysql", "--batch", "--user=test_user", "--execute=CHECK TABLE `test_db`.`alpha`"},
+	}
+	for i, want := range wantArgv {
+		argv := append([]string{runner.calls[i].Name}, runner.calls[i].Args...)
+		if !reflect.DeepEqual(argv, want) {
+			t.Fatalf("call %d argv = %q, want %q", i, argv, want)
+		}
+	}
+	for i, command := range runner.calls {
+		if !reflect.DeepEqual(command.Env, []string{"MYSQL_PWD=test_pass"}) {
+			t.Fatalf("env = %q", command.Env)
+		}
+		var wantRedact []string
+		if i >= 2 {
+			wantRedact = []string{"test_pass"}
+		}
+		if !reflect.DeepEqual(command.Redact, wantRedact) || command.Shell {
+			t.Fatalf("unsafe command: %#v", command)
+		}
+	}
+	if strings.Contains(out+errS, "test_pass") {
+		t.Fatalf("CLI output leaks password: out=%q err=%q", out, errS)
+	}
+
+	// The database exists but carries no tables: the pinned empty list.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\ntest_db\n")},
+		{ExitCode: 0, Stdout: []byte("TABLE_SCHEMA\tTABLE_NAME\nother_db\tforeign\n")},
+	}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.db_check", "--name", "test_db", "-o", "json")
+	if code != ExitOK || errS != "" || strings.TrimSpace(out) != "[]" {
+		t.Fatalf("empty db_check code=%d out=%q err=%q, want []", code, out, errS)
+	}
+}
+
+// TestMySQLCLIDBRepairOptimize drives the single-table REPAIR and
+// OPTIMIZE statements through the CLI, including the underscore flag
+// spelling: one statement, the pinned unwrapped row-list shape.
+func TestMySQLCLIDBRepairOptimize(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		statement string
+		op        string
+	}{
+		{"mysql.db_repair", "REPAIR TABLE `test_db`.`test_tbl`", "repair"},
+		{"mysql.db_optimize", "OPTIMIZE TABLE `test_db`.`test_tbl`", "optimize"},
+	} {
+		runner := &cliRecordingRunner{results: []process.CommandResult{
+			{ExitCode: 0, Stdout: []byte("Table\tOp\tMsg_type\tMsg_text\n`test_db`.`test_tbl`\t" + tc.op + "\tstatus\tOK\n")},
+		}}
+		app := mysqlCLIRunnerApp(t, runner)
+		code, out, errS := captureCode(t, app, "exec", tc.name, "--name", "test_db", "--table", "test_tbl", "-o", "json")
+		var rows []map[string]any
+		if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &rows) != nil ||
+			len(rows) != 1 || rows[0]["Op"] != tc.op || rows[0]["Msg_text"] != "OK" {
+			t.Fatalf("%s code=%d out=%q err=%q", tc.name, code, out, errS)
+		}
+		if len(runner.calls) != 1 {
+			t.Fatalf("%s runner calls = %d, want 1", tc.name, len(runner.calls))
+		}
+		if argv := append([]string{runner.calls[0].Name}, runner.calls[0].Args...); !reflect.DeepEqual(argv,
+			[]string{"mysql", "--batch", "--execute=" + tc.statement}) {
+			t.Fatalf("%s argv = %q", tc.name, argv)
+		}
+	}
+
+	// The underscore flag spelling must also be accepted verbatim.
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("Table\tOp\tMsg_type\tMsg_text\n`test_db`.`test_tbl`\trepair\tstatus\tOK\n")},
+	}}
+	app := mysqlCLIRunnerApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "mysql.db_repair", "--name", "test_db", "--table", "test_tbl", "-o", "json")
+	var rows []map[string]any
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &rows) != nil || len(rows) != 1 {
+		t.Fatalf("underscore db_repair code=%d out=%q err=%q", code, out, errS)
+	}
+}
+
+// TestMySQLCLIDBCheckErrors pins the CLI failure surfaces: the strict
+// maintenance errors exit failed with the fixed value-free messages, a
+// missing required name is invalid input, and a rejected identifier
+// never reaches the Runner.
+func TestMySQLCLIDBCheckErrors(t *testing.T) {
+	// Missing required name is invalid input, not a runner failure.
+	app := mysqlCLIRunnerApp(t, &cliRecordingRunner{})
+	if code, _, errS := captureCode(t, app, "exec", "mysql.db_check", "-o", "json"); code != ExitInvalidInput {
+		t.Fatalf("missing name code=%d err=%q, want ExitInvalidInput", code, errS)
+	}
+
+	// The missing database answers the pinned module-error surface.
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\ninformation_schema\n")},
+	}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "mysql.db_check", "--name", "ghost", "-o", "json")
+	if code != ExitFailed || errS == "" || !strings.Contains(errS, "mysql: database does not exist") ||
+		strings.Contains(errS, "ghost") || out != "" || len(runner.calls) != 1 {
+		t.Fatalf("missing database code=%d out=%q err=%q", code, out, errS)
+	}
+
+	// A nonzero mysql exit anywhere in the flow is the strict abort.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\ntest_db\n")},
+		{ExitCode: 1, Stderr: []byte("ERROR 2002 (HY000): Can't connect\n")},
+	}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.db_optimize", "--name", "test_db", "-o", "json")
+	if code != ExitFailed || errS == "" || !strings.Contains(errS, "maintenance run completed nonzero") || out != "" {
+		t.Fatalf("nonzero db_optimize code=%d out=%q err=%q", code, out, errS)
+	}
+
+	// A control-carrying identifier is rejected before any Runner call.
+	empty := &cliRecordingRunner{}
+	app = mysqlCLIRunnerApp(t, empty)
+	code, out, errS = captureCode(t, app, "exec", "mysql.db_repair", "--name", "test_db", "--table", "bad\ntable", "-o", "json")
+	if code != ExitFailed || errS == "" || !strings.Contains(errS, "unsupported identifier in table") ||
+		strings.Contains(errS, "bad") || out != "" || len(empty.calls) != 0 {
+		t.Fatalf("identifier rejection code=%d out=%q err=%q calls=%d", code, out, errS, len(empty.calls))
+	}
+
+	// A secret-bearing Runner error is redacted on the maintenance path:
+	// fixed catalog reads defer redaction to the transport, never CLI output.
+	marker := "synthetic-cli-maintenance-password"
+	leaking := &cliRecordingRunner{results: []process.CommandResult{
+		{Err: errors.New("runner failed: " + marker)},
+	}}
+	app = mysqlCLIRunnerApp(t, leaking)
+	code, out, errS = captureCode(t, app, "exec", "mysql.db_check", "--name", "test_db",
+		"--connection-pass", marker, "-o", "json")
+	if code != ExitFailed || strings.Contains(out+errS, marker) || !strings.Contains(errS, "runner failed:") || len(leaking.calls) != 1 {
+		t.Fatalf("runner error redaction code=%d out=%q err=%q calls=%d", code, out, errS, len(leaking.calls))
+	}
+	if len(leaking.calls[0].Redact) != 0 ||
+		strings.Contains(leaking.calls[0].RedactedString(), marker) ||
+		!reflect.DeepEqual(leaking.calls[0].Env, []string{"MYSQL_PWD=" + marker}) {
+		t.Fatalf("maintenance redaction command = %#v", leaking.calls[0])
+	}
+}

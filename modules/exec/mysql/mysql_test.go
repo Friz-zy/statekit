@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -281,8 +282,11 @@ func TestMysqlRegistryNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantNames := []string{
+		"mysql.db_check",
 		"mysql.db_exists",
 		"mysql.db_list",
+		"mysql.db_optimize",
+		"mysql.db_repair",
 		"mysql.quote_identifier",
 		"mysql.showglobal",
 		"mysql.showvariables",
@@ -2110,5 +2114,644 @@ func TestMysqlProviderRunnerErrorRedaction(t *testing.T) {
 				t.Fatalf("%s transport made %d Runner calls, want exactly 1", tc.name, len(runner.calls))
 			}
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// R9.3c maintenance family (db_check, db_repair, db_optimize) over the
+// central mysql CLI transport. Every test runs on a fake Runner: no mysql
+// binary is executed and no server is contacted — REPAIR and OPTIMIZE are
+// mutations, so no partial fake success may ever be answered.
+
+// maintenanceCheckStdout is the canonical CHECK TABLE batch output: the
+// four result columns (Table, Op, Msg_type, Msg_text) the pinned
+// DictCursor would return as one dict row.
+const maintenanceCheckStdout = "Table\tOp\tMsg_type\tMsg_text\n" +
+	"`test_db`.`test_tbl`\tcheck\tstatus\tOK\n"
+
+// fullMaintenanceArgs carries every connection argument at once.
+func fullMaintenanceArgs() *DbMaintenanceArgs {
+	return &DbMaintenanceArgs{
+		Name:     "test_db",
+		Table:    mysqlString("test_tbl"),
+		User:     mysqlString("test_user"),
+		Host:     mysqlString("test_host"),
+		Port:     mysqlString("test_port"),
+		Password: mysqlString("test_pass"),
+		DB:       mysqlString("test_maint"),
+	}
+}
+
+// TestMysqlMaintenanceSingleTable pins the transport contract of the
+// whole family through db_check: exact batch-mode argv with the joined
+// connection flags and the quoted statement at argv index 6, the
+// MYSQL_PWD-only clean environment, the password as the single Redact
+// secret, the 30s timeout and 4 MiB output caps, and the pinned
+// DictCursor fetchall shape — one map per row keyed by the result column
+// names. The REPAIR and OPTIMIZE verbs ride the identical shape.
+func TestMysqlMaintenanceSingleTable(t *testing.T) {
+	rt, runner := newMysqlRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte(maintenanceCheckStdout),
+	})
+	value, err := (dbCheckFunc{}).Execute(context.Background(), rt, fullMaintenanceArgs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []map[string]any{{
+		"Table":    "`test_db`.`test_tbl`",
+		"Op":       "check",
+		"Msg_type": "status",
+		"Msg_text": "OK",
+	}}
+	if got, ok := value.([]map[string]any); !ok || !reflect.DeepEqual(got, want) {
+		t.Fatalf("db_check = %#v, want %#v", value, want)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d, want 1", len(runner.calls))
+	}
+	command := runner.calls[0]
+	if argv := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(argv, []string{
+		"mysql", "--batch",
+		"--user=test_user", "--host=test_host", "--port=test_port", "--database=test_maint",
+		"--execute=CHECK TABLE `test_db`.`test_tbl`",
+	}) {
+		t.Fatalf("argv = %q", argv)
+	}
+	// The index-6 statement assertion, checked directly.
+	if argv := append([]string{command.Name}, command.Args...); argv[6] != "--execute=CHECK TABLE `test_db`.`test_tbl`" {
+		t.Fatalf("argv[6] = %q, want the maintenance statement", argv[6])
+	}
+	if want := []string{"MYSQL_PWD=test_pass"}; !reflect.DeepEqual(command.Env, want) {
+		t.Fatalf("env = %q, want %q", command.Env, want)
+	}
+	if command.Shell {
+		t.Fatal("db_check must never run through a shell")
+	}
+	if !reflect.DeepEqual(command.Redact, []string{"test_pass"}) {
+		t.Fatalf("redact = %q", command.Redact)
+	}
+	if command.Timeout != commandTimeout || command.MaxStdoutBytes != outputLimit || command.MaxStderrBytes != outputLimit {
+		t.Fatalf("bounds: timeout=%v stdout=%d stderr=%d", command.Timeout, command.MaxStdoutBytes, command.MaxStderrBytes)
+	}
+	if rendered := command.RedactedString(); strings.Contains(rendered, "test_pass") {
+		t.Fatalf("rendered command leaks password: %q", rendered)
+	}
+
+	// The bare argv without connection arguments.
+	rt, runner = newMysqlRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte(maintenanceCheckStdout),
+	})
+	if _, err = (dbCheckFunc{}).Execute(context.Background(), rt, &DbMaintenanceArgs{Name: "test_db", Table: mysqlString("test_tbl")}); err != nil {
+		t.Fatal(err)
+	}
+	if argv := append([]string{runner.calls[0].Name}, runner.calls[0].Args...); !reflect.DeepEqual(argv, []string{
+		"mysql", "--batch", "--execute=CHECK TABLE `test_db`.`test_tbl`",
+	}) {
+		t.Fatalf("bare argv = %q", argv)
+	}
+
+	// The REPAIR and OPTIMIZE verbs ride the identical contract.
+	for _, tc := range []struct {
+		verb string
+		op   string
+	}{
+		{"REPAIR", "repair"},
+		{"OPTIMIZE", "optimize"},
+	} {
+		rt, runner := newMysqlRuntime(process.CommandResult{
+			ExitCode: 0,
+			Stdout: []byte("Table\tOp\tMsg_type\tMsg_text\n`test_db`.`test_tbl`\t" +
+				tc.op + "\tstatus\tOK\n"),
+		})
+		var value any
+		var err error
+		switch tc.verb {
+		case "REPAIR":
+			value, err = (dbRepairFunc{}).Execute(context.Background(), rt, fullMaintenanceArgs())
+		default:
+			value, err = (dbOptimizeFunc{}).Execute(context.Background(), rt, fullMaintenanceArgs())
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, ok := value.([]map[string]any)
+		if !ok || len(got) != 1 || got[0]["Op"] != tc.op {
+			t.Fatalf("%s = %#v", tc.verb, value)
+		}
+		if argv := append([]string{runner.calls[0].Name}, runner.calls[0].Args...); argv[6] != "--execute="+tc.verb+" TABLE `test_db`.`test_tbl`" {
+			t.Fatalf("%s argv[6] = %q", tc.verb, argv[6])
+		}
+	}
+}
+
+// TestMysqlMaintenanceQuoting pins the statement construction: the
+// committed quoteIdentifier's backtick doubling and MySQLdb's doubled
+// percent, with the pinned _execute no-args unescape restoring single
+// percent signs, so the --execute string is byte-identical to the SQL
+// the pinned module sends through MySQLdb. The underscore stays raw
+// (for_grants is false — these are not grant positions).
+func TestMysqlMaintenanceQuoting(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		table     string
+		statement string
+	}{
+		{"my_%db", "t1", "CHECK TABLE `my_%db`.`t1`"},
+		{"foo`bar", "ba`z", "CHECK TABLE `foo``bar`.`ba``z`"},
+		{"a_b", "c_d", "CHECK TABLE `a_b`.`c_d`"},
+		{"p_%`q", "x`_y%", "CHECK TABLE `p_%``q`.`x``_y%`"},
+	} {
+		rt, runner := newMysqlRuntime(process.CommandResult{
+			ExitCode: 0,
+			Stdout:   []byte("Table\tOp\tMsg_type\tMsg_text\nx\tcheck\tstatus\tOK\n"),
+		})
+		_, err := (dbCheckFunc{}).Execute(context.Background(), rt, &DbMaintenanceArgs{Name: tc.name, Table: mysqlString(tc.table)})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if argv := append([]string{runner.calls[0].Name}, runner.calls[0].Args...); argv[len(argv)-1] != "--execute="+tc.statement {
+			t.Fatalf("%s statement = %q, want %q", tc.name, argv[len(argv)-1], "--execute="+tc.statement)
+		}
+	}
+}
+
+// TestMysqlMaintenanceAllTables pins the table=None flow: the fixed
+// SCHEMATA catalog with the client-side database match, the fixed
+// information_schema.TABLES catalog filtered to the schema in result
+// order (the order the pinned SHOW TABLES returns — deliberately not
+// sorted here to prove order preservation), and then one CHECK TABLE
+// statement per table in that order, with the pinned
+// ret.append(fetchall) list-of-lists shape.
+func TestMysqlMaintenanceAllTables(t *testing.T) {
+	const orderedQuery = "SELECT COALESCE(TABLE_SCHEMA, UNHEX('00')) AS TABLE_SCHEMA, COALESCE(TABLE_NAME, UNHEX('00')) AS TABLE_NAME FROM information_schema.TABLES ORDER BY information_schema.TABLES.TABLE_NAME"
+	if tableCatalogQuery != orderedQuery {
+		t.Fatal("table catalog must order the original server column, not its binary COALESCE alias")
+	}
+	rt, runner := newMysqlRuntime(
+		process.CommandResult{
+			ExitCode: 0,
+			Stdout:   []byte("SCHEMA_NAME\ninformation_schema\nmysql\ntest_db\n"),
+		},
+		process.CommandResult{
+			ExitCode: 0,
+			Stdout: []byte("TABLE_SCHEMA\tTABLE_NAME\n" +
+				"mysql\tglobal_priv\n" +
+				"test_db\tsecond\n" +
+				"other_db\tforeign\n" +
+				"test_db\tfirst\n"),
+		},
+		process.CommandResult{
+			ExitCode: 0,
+			Stdout:   []byte("Table\tOp\tMsg_type\tMsg_text\n`test_db`.`second`\tcheck\tstatus\tOK\n"),
+		},
+		process.CommandResult{
+			ExitCode: 0,
+			Stdout:   []byte("Table\tOp\tMsg_type\tMsg_text\n`test_db`.`first`\tcheck\terror\tCorrupt\n"),
+		},
+	)
+	value, err := (dbCheckFunc{}).Execute(context.Background(), rt, &DbMaintenanceArgs{Name: "test_db"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := value.([]any)
+	if !ok || len(got) != 2 {
+		t.Fatalf("db_check all-tables = %#v, want two per-table results", value)
+	}
+	first, ok := got[0].([]map[string]any)
+	if !ok || !reflect.DeepEqual(first, []map[string]any{{
+		"Table": "`test_db`.`second`", "Op": "check", "Msg_type": "status", "Msg_text": "OK",
+	}}) {
+		t.Fatalf("first table result = %#v", got[0])
+	}
+	second, ok := got[1].([]map[string]any)
+	if !ok || !reflect.DeepEqual(second, []map[string]any{{
+		"Table": "`test_db`.`first`", "Op": "check", "Msg_type": "error", "Msg_text": "Corrupt",
+	}}) {
+		t.Fatalf("second table result = %#v", got[1])
+	}
+	if len(runner.calls) != 4 {
+		t.Fatalf("runner calls = %d, want 4", len(runner.calls))
+	}
+	wantArgv := [][]string{
+		{"mysql", "--batch", "--execute=" + showDatabasesQuery},
+		{"mysql", "--batch", "--execute=" + tableCatalogQuery},
+		{"mysql", "--batch", "--execute=CHECK TABLE `test_db`.`second`"},
+		{"mysql", "--batch", "--execute=CHECK TABLE `test_db`.`first`"},
+	}
+	for i, want := range wantArgv {
+		argv := append([]string{runner.calls[i].Name}, runner.calls[i].Args...)
+		if !reflect.DeepEqual(argv, want) {
+			t.Fatalf("call %d argv = %q, want %q", i, argv, want)
+		}
+	}
+}
+
+// Synthetic markers below are test data, not credentials. Both raw schema
+// matching and raw table quoting must survive a substring redaction collision.
+func TestMysqlMaintenanceRawCatalog(t *testing.T) {
+	marker := "catalog-marker"
+	name := "db_" + marker
+	table := "t_" + marker + "`%\\tail"
+	wireTable := strings.ReplaceAll(table, "\\", "\\\\")
+	for _, verb := range []string{"CHECK", "REPAIR", "OPTIMIZE"} {
+		t.Run(verb, func(t *testing.T) {
+			for _, failAt := range []int{-1, 0, 1, 2} {
+				results := []process.CommandResult{
+					{Stdout: []byte("SCHEMA_NAME\n" + name + "\n")},
+					{Stdout: []byte("TABLE_SCHEMA\tTABLE_NAME\nother\tignored\n" + name + "\t" + wireTable + "\n")},
+					{Stdout: []byte("Table\tMsg_text\n" + name + "." + wireTable + "\t" + marker + "\n")},
+				}
+				if failAt >= 0 {
+					results[failAt].Err = errors.New("runner: " + marker)
+				}
+				rt, runner := newMysqlRuntime(results...)
+				value, err := dbMaintenance(context.Background(), rt, &myConnection{Password: &marker}, verb, name, nil)
+				if failAt >= 0 {
+					if err == nil || err.Error() != "runner: "+process.RedactedPlaceholder || value != nil || len(runner.calls) != failAt+1 {
+						t.Fatalf("phase %d did not fail safely", failAt)
+					}
+				} else if err != nil || strings.Contains(fmt.Sprint(value), marker) || len(runner.calls) != 3 {
+					t.Fatal("raw catalog did not produce safe maintenance output")
+				}
+				for i, command := range runner.calls {
+					if i < 2 {
+						if len(command.Redact) != 0 || strings.Contains(command.Args[len(command.Args)-1], marker) {
+							t.Fatal("fixed catalogs must defer output redaction and contain no caller value")
+						}
+					} else {
+						want := "--execute=" + verb + " TABLE `" + name + "`.`t_" + marker + "``%\\tail`"
+						if command.Args[len(command.Args)-1] != want || strings.Contains(command.RedactedString(), marker) {
+							t.Fatal("maintenance must execute the original identifier but render a safe command")
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestMysqlMaintenanceCatalogSourceOrder(t *testing.T) {
+	// Deliberately not Go-sorted: the fake result is authoritative, just as
+	// ORDER BY on the server's column collation is authoritative in production.
+	for _, verb := range []string{"CHECK", "REPAIR", "OPTIMIZE"} {
+		rt, runner := newMysqlRuntime(
+			process.CommandResult{Stdout: []byte("SCHEMA_NAME\ndb\n")},
+			process.CommandResult{Stdout: []byte("TABLE_SCHEMA\tTABLE_NAME\ndb\tzeta\nother\tignored\ndb\tAlpha\ndb\talpha\n")},
+			process.CommandResult{}, process.CommandResult{}, process.CommandResult{},
+		)
+		if _, err := dbMaintenance(context.Background(), rt, &myConnection{}, verb, "db", nil); err != nil {
+			t.Fatal(err)
+		}
+		if len(runner.calls) != 5 {
+			t.Fatalf("%s: expected two catalogs and three statements", verb)
+		}
+		for i, table := range []string{"zeta", "Alpha", "alpha"} {
+			args := runner.calls[i+2].Args
+			if args[len(args)-1] != "--execute="+verb+" TABLE `db`.`"+table+"`" {
+				t.Fatalf("%s: catalog source order changed at %d", verb, i)
+			}
+		}
+	}
+}
+
+func TestMysqlRawCatalogSafeResult(t *testing.T) {
+	marker := "catalog-marker"
+	for _, tc := range []struct {
+		name   string
+		result process.CommandResult
+		want   error
+	}{
+		{"success", process.CommandResult{Stdout: []byte(marker), Stderr: []byte(marker)}, nil},
+		{"runner", process.CommandResult{Stdout: []byte(marker), Err: errors.New(marker)}, errors.New(process.RedactedPlaceholder)},
+		{"truncated", process.CommandResult{Stdout: []byte(marker), StdoutTruncated: true}, process.ErrOutputLimit},
+		{"oversized", process.CommandResult{Stdout: []byte(strings.Repeat("x", outputLimit+1))}, process.ErrOutputLimit},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, _ := newMysqlRuntime(tc.result)
+			conn := &myConnection{Password: &marker}
+			var raw []byte
+			safe, err := runMysqlResult(context.Background(), rt, mysqlQueryArgv(conn, tableCatalogQuery), conn, &raw)
+			if strings.Contains(string(safe.Stdout)+string(safe.Stderr), marker) {
+				t.Fatal("safe result contains raw marker")
+			}
+			if tc.want == nil {
+				if err != nil || string(raw) != marker {
+					t.Fatal("raw identifier unavailable after success")
+				}
+			} else if err == nil || err.Error() != tc.want.Error() || raw != nil {
+				t.Fatal("failed catalog exposed raw data or wrong error")
+			}
+		})
+	}
+	rt, runner := newMysqlRuntime()
+	var raw []byte
+	if _, err := runMysqlResult(context.Background(), rt, []string{"mysql", "--execute=SHOW STATUS"}, nil, &raw); !errors.Is(err, errMysqlInvalidArgument) || len(runner.calls) != 0 {
+		t.Fatal("raw path accepted a non-catalog query")
+	}
+}
+
+// TestMysqlMaintenanceShapes pins the remaining result shapes: the empty
+// table list (the pinned [] over zero tables), the rowless statement
+// success, batch decoding of the result fields with both framings, the
+// literal NULL string staying a value, the sentinel mapping to nil, and
+// the defensive short-row prefix-zip divergence.
+func TestMysqlMaintenanceShapes(t *testing.T) {
+	// The database exists but carries no tables: exactly the two catalog
+	// calls, zero statements, and the pinned empty list.
+	rt, runner := newMysqlRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\ntest_db\n")},
+		process.CommandResult{ExitCode: 0, Stdout: []byte("TABLE_SCHEMA\tTABLE_NAME\nother_db\tx\n")},
+	)
+	value, err := (dbCheckFunc{}).Execute(context.Background(), rt, &DbMaintenanceArgs{Name: "test_db"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := value.([]any); !ok || len(got) != 0 {
+		t.Fatalf("empty table list = %#v, want the pinned []", value)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("empty table list made %d calls, want 2", len(runner.calls))
+	}
+
+	// A rowless statement success answers the pinned fetchall [] shape.
+	rt, _ = newMysqlRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Table\tOp\tMsg_type\tMsg_text\n")})
+	value, err = (dbCheckFunc{}).Execute(context.Background(), rt, &DbMaintenanceArgs{Name: "db", Table: mysqlString("t")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := value.([]map[string]any); !ok || len(got) != 0 {
+		t.Fatalf("rowless statement = %#v, want []", value)
+	}
+
+	// Batch escaping, CRLF framing, a literal NULL value, a sentinel
+	// field rendering nil, and a short row keeping its prefix.
+	rt, _ = newMysqlRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout: []byte("Table\tOp\tMsg_type\tMsg_text\r\n" +
+			"db.t\tcheck\tstatus\tOK\r\n" +
+			"db.u\tcheck\tnote\tTable\\\\does\\\\not\\\\support\\\\quick\\\\check\r\n" +
+			"db.v\tcheck\tNULL\t\\0\r\n" +
+			"db.w\tcheck\tstatus\r\n"),
+	})
+	value, err = (dbCheckFunc{}).Execute(context.Background(), rt, &DbMaintenanceArgs{Name: "db", Table: mysqlString("t")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := value.([]map[string]any)
+	if !ok || len(got) != 4 {
+		t.Fatalf("decoded maintenance rows = %#v", value)
+	}
+	if got[1]["Msg_text"] != `Table\does\not\support\quick\check` {
+		t.Fatalf("escaped Msg_text = %#v", got[1]["Msg_text"])
+	}
+	if got[2]["Msg_type"] != "NULL" || got[2]["Msg_text"] != nil {
+		t.Fatalf("literal NULL / sentinel row = %#v", got[2])
+	}
+	if _, present := got[3]["Msg_text"]; present {
+		t.Fatalf("short row fabricated a field: %#v", got[3])
+	}
+	if got[3]["Msg_type"] != "status" {
+		t.Fatalf("short row prefix = %#v", got[3])
+	}
+}
+
+// TestMysqlMaintenanceMissingDatabase pins the pinned db_tables miss:
+// the pinned db_check/db_repair/db_optimize fail on `for table in
+// False:` with a TypeError Salt surfaces as a module error; the port
+// answers the same failed call with the value-free missing-database
+// error after exactly one catalog call and no statement.
+func TestMysqlMaintenanceMissingDatabase(t *testing.T) {
+	rt, runner := newMysqlRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte("SCHEMA_NAME\ninformation_schema\nmysql\n"),
+	})
+	_, err := (dbRepairFunc{}).Execute(context.Background(), rt, &DbMaintenanceArgs{Name: "ghost"})
+	if !errors.Is(err, errMysqlDatabaseMissing) {
+		t.Fatalf("missing database error = %v", err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("missing database made %d calls, want 1", len(runner.calls))
+	}
+	if argv := append([]string{runner.calls[0].Name}, runner.calls[0].Args...); argv[len(argv)-1] != "--execute="+showDatabasesQuery {
+		t.Fatalf("missing database argv = %q", argv)
+	}
+	if err.Error() != "mysql: database does not exist" || strings.Contains(err.Error(), "ghost") {
+		t.Fatalf("missing database error leaks or misnames: %v", err)
+	}
+}
+
+// TestMysqlMaintenanceNonzeroExit pins the strict nonzero-aborts policy
+// at every phase of both flows: the read-side compatibility mapping of
+// the read-only families is refused — a failed catalog or statement is
+// an error with no partial success value, exactly the divergence the
+// mutation surface requires (the pinned module either raises the
+// OperationalError or returns {} on a connect failure the CLI transport
+// cannot distinguish).
+func TestMysqlMaintenanceNonzeroExit(t *testing.T) {
+	nonzero := process.CommandResult{ExitCode: 1, Stderr: []byte("ERROR 2002 (HY000): Can't connect\n")}
+	for _, tc := range []struct {
+		name    string
+		args    *DbMaintenanceArgs
+		results []process.CommandResult
+		calls   int
+	}{
+		{"schema-catalog", &DbMaintenanceArgs{Name: "db"}, []process.CommandResult{nonzero}, 1},
+		{"table-catalog", &DbMaintenanceArgs{Name: "db"}, []process.CommandResult{
+			{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\ndb\n")}, nonzero,
+		}, 2},
+		{"single-statement", &DbMaintenanceArgs{Name: "db", Table: mysqlString("t")}, []process.CommandResult{nonzero}, 1},
+		{"second-statement", &DbMaintenanceArgs{Name: "db"}, []process.CommandResult{
+			{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\ndb\n")},
+			{ExitCode: 0, Stdout: []byte("TABLE_SCHEMA\tTABLE_NAME\ndb\tone\ndb\ttwo\n")},
+			{ExitCode: 0, Stdout: []byte("Table\tOp\tMsg_type\tMsg_text\ndb.one\tcheck\tstatus\tOK\n")},
+			nonzero,
+		}, 4},
+	} {
+		rt, runner := newMysqlRuntime(tc.results...)
+		value, err := (dbCheckFunc{}).Execute(context.Background(), rt, tc.args)
+		if !errors.Is(err, errMysqlMaintenanceExit) {
+			t.Fatalf("%s error = %v, want the strict nonzero abort", tc.name, err)
+		}
+		// The typed nil of the pinned result shape may ride alongside the
+		// error; any non-nil data would be a partial success leak.
+		if value != nil && !reflect.ValueOf(value).IsNil() {
+			t.Fatalf("%s returned data alongside the error: %#v", tc.name, value)
+		}
+		if len(runner.calls) != tc.calls {
+			t.Fatalf("%s made %d calls, want %d", tc.name, len(runner.calls), tc.calls)
+		}
+	}
+	if err := errMysqlMaintenanceExit.Error(); err != "mysql: maintenance run completed nonzero" {
+		t.Fatalf("nonzero error text = %q", err)
+	}
+}
+
+// TestMysqlMaintenanceFailClosed pins the shared fail-closed boundaries
+// of the family: nil Runner, unavailable mysql client, runas rejection,
+// cancellation, Runner errors, and output-limit violations — the last
+// four with zero or exactly one Runner invocation.
+func TestMysqlMaintenanceFailClosed(t *testing.T) {
+	_, err := (dbCheckFunc{}).Execute(context.Background(), &runtime.Runtime{}, &DbMaintenanceArgs{Name: "db"})
+	if !errors.Is(err, errMysqlRunnerUnavailable) {
+		t.Fatalf("nil runner error = %v", err)
+	}
+
+	runner := &mysqlFakeRunner{available: map[string]bool{"mysql": false}}
+	rt := &runtime.Runtime{Runner: runner}
+	if _, err = (dbCheckFunc{}).Execute(context.Background(), rt, &DbMaintenanceArgs{Name: "db"}); !errors.Is(err, errMysqlClientUnavailable) {
+		t.Fatalf("unavailable client error = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("unavailable client made %d calls", len(runner.calls))
+	}
+
+	for _, tc := range []struct {
+		name string
+		args *DbMaintenanceArgs
+		want error
+	}{
+		{"runas", &DbMaintenanceArgs{Name: "db", Runas: mysqlString("mysql")}, errMysqlRunas},
+		{"runas-invalid", &DbMaintenanceArgs{Name: "db", Runas: mysqlString("root\n")}, errMysqlInvalidArgument},
+	} {
+		runner := &mysqlFakeRunner{}
+		rt := &runtime.Runtime{Runner: runner}
+		_, err := (dbOptimizeFunc{}).Execute(context.Background(), rt, tc.args)
+		if !errors.Is(err, tc.want) {
+			t.Fatalf("%s error = %v, want %v", tc.name, err, tc.want)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s made %d calls, want 0", tc.name, len(runner.calls))
+		}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runner = &mysqlFakeRunner{}
+	rt = &runtime.Runtime{Runner: runner}
+	if _, err = (dbRepairFunc{}).Execute(ctx, rt, &DbMaintenanceArgs{Name: "db"}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled error = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("cancelled call made %d calls", len(runner.calls))
+	}
+
+	rt, _ = newMysqlRuntime(process.CommandResult{Err: errors.New("boom")})
+	if _, err = (dbCheckFunc{}).Execute(context.Background(), rt, &DbMaintenanceArgs{Name: "db", Table: mysqlString("t")}); err == nil || err.Error() != "boom" {
+		t.Fatalf("runner error = %v", err)
+	}
+
+	rt, _ = newMysqlRuntime(process.CommandResult{ExitCode: 0, StdoutTruncated: true})
+	if _, err = (dbCheckFunc{}).Execute(context.Background(), rt, &DbMaintenanceArgs{Name: "db", Table: mysqlString("t")}); !errors.Is(err, process.ErrOutputLimit) {
+		t.Fatalf("output limit error = %v", err)
+	}
+
+	marker := "S3CRET-mysql-pass"
+	rt, _ = newMysqlRuntime(process.CommandResult{Err: errors.New("mysql failed with " + marker)})
+	_, err = (dbCheckFunc{}).Execute(context.Background(), rt, &DbMaintenanceArgs{Name: "db", Table: mysqlString("t"), Password: mysqlString(marker)})
+	if err == nil || strings.Contains(err.Error(), marker) {
+		t.Fatalf("runner error leaks password: %v", err)
+	}
+}
+
+// TestMysqlMaintenanceIdentifierBoundary pins the value-free identifier
+// rejection: empty, NUL, CR, LF, other C0 controls, and DEL in either
+// position are refused before any Runner invocation with the fixed
+// invalid-argument error naming only the argument key — a rejected value
+// carrying a synthetic secret cannot leak through the error.
+func TestMysqlMaintenanceIdentifierBoundary(t *testing.T) {
+	invalid := []string{"", "\x00", "a\nb", "a\rb", "a\x01b", "a\x1fb", "a\x7fb", "S3CRET-x\n"}
+	for _, key := range []string{"name", "table"} {
+		for _, value := range invalid {
+			args := &DbMaintenanceArgs{Name: "db", Table: mysqlString("t")}
+			if key == "name" {
+				args.Name = value
+			} else {
+				args.Table = mysqlString(value)
+			}
+			runner := &mysqlFakeRunner{}
+			rt := &runtime.Runtime{Runner: runner}
+			_, err := (dbCheckFunc{}).Execute(context.Background(), rt, args)
+			if !errors.Is(err, errMysqlInvalidArgument) {
+				t.Fatalf("%s %q error = %v, want the invalid-argument rejection", key, value, err)
+			}
+			if err.Error() != "mysql: invalid argument: unsupported identifier in "+key {
+				t.Fatalf("%s error text = %q", key, err.Error())
+			}
+			if strings.Contains(err.Error(), "S3CRET") {
+				t.Fatalf("%s error leaks the rejected value: %v", key, err)
+			}
+			if len(runner.calls) != 0 {
+				t.Fatalf("%s %q made %d calls, want 0", key, value, len(runner.calls))
+			}
+		}
+	}
+
+	// The accepted class: backticks, percent, underscore, and non-ASCII
+	// stay inside the doubled backticks and never reject.
+	for _, value := range []string{"foo`bar", "my_%db", "a_b", "täble", "表"} {
+		rt, runner := newMysqlRuntime(process.CommandResult{
+			ExitCode: 0,
+			Stdout:   []byte("Table\tOp\tMsg_type\tMsg_text\nx\tcheck\tstatus\tOK\n"),
+		})
+		if _, err := (dbCheckFunc{}).Execute(context.Background(), rt, &DbMaintenanceArgs{Name: "db", Table: mysqlString(value)}); err != nil {
+			t.Fatalf("accepted identifier %q rejected: %v", value, err)
+		}
+		if len(runner.calls) != 1 {
+			t.Fatalf("accepted identifier %q made %d calls", value, len(runner.calls))
+		}
+	}
+}
+
+// TestMysqlMaintenanceThroughRegistry drives all three functions through
+// the exec registry: the registry path runs the same statements and
+// renders the same JSON shapes as the direct path.
+func TestMysqlMaintenanceThroughRegistry(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	runner := &mysqlFakeRunner{}
+	rt := &runtime.Runtime{Runner: runner, Exec: reg, FS: runtime.NewMemoryFS()}
+
+	runner.results = []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("Table\tOp\tMsg_type\tMsg_text\n`db`.`t`\trepair\tstatus\tOK\n")},
+	}
+	value, err := rt.Exec.Call(context.Background(), rt, "mysql.db_repair", &DbMaintenanceArgs{Name: "db", Table: mysqlString("t")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil || string(encoded) != `[{"Msg_text":"OK","Msg_type":"status","Op":"repair","Table":"`+"`db`.`t`"+`"}]` {
+		t.Fatalf("registry db_repair JSON = %s (%v)", encoded, err)
+	}
+
+	runner.results = []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\ndb\n")},
+		{ExitCode: 0, Stdout: []byte("TABLE_SCHEMA\tTABLE_NAME\ndb\tt\n")},
+		{ExitCode: 0, Stdout: []byte("Table\tOp\tMsg_type\tMsg_text\n`db`.`t`\toptimize\tstatus\tOK\n")},
+	}
+	value, err = rt.Exec.Call(context.Background(), rt, "mysql.db_optimize", &DbMaintenanceArgs{Name: "db"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err = json.Marshal(value)
+	if err != nil || string(encoded) != `[[{"Msg_text":"OK","Msg_type":"status","Op":"optimize","Table":"`+"`db`.`t`"+`"}]]` {
+		t.Fatalf("registry db_optimize JSON = %s (%v)", encoded, err)
+	}
+
+	runner.results = []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("Table\tOp\tMsg_type\tMsg_text\n`db`.`t`\tcheck\tstatus\tOK\n")},
+	}
+	value, err = rt.Exec.Call(context.Background(), rt, "mysql.db_check", &DbMaintenanceArgs{Name: "db", Table: mysqlString("t")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := value.([]map[string]any); !ok || got[0]["Op"] != "check" {
+		t.Fatalf("registry db_check = %#v", value)
+	}
+	if len(runner.calls) != 5 {
+		t.Fatalf("registry path made %d calls, want 5", len(runner.calls))
 	}
 }

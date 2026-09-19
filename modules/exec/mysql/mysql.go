@@ -1,8 +1,9 @@
 // Package mysql implements slices of the pinned Salt mysql execution
 // surface: the driver-free pure functions quote_identifier and
 // tokenize_grant (R9.2a), the read-only catalog family db_list, db_exists,
-// user_list, and user_exists (R9.3a), and the read-only server facts
-// family version, status, showvariables, and showglobal (R9.3b).
+// user_list, and user_exists (R9.3a), the read-only server facts
+// family version, status, showvariables, and showglobal (R9.3b), and
+// the maintenance family db_check, db_repair, and db_optimize (R9.3c).
 //
 // Boundaries (R9.2a): no MySQL client driver or protocol, no new
 // dependencies, no Runner spawns, no filesystem access, and no live MySQL
@@ -26,6 +27,22 @@
 // COALESCE sentinel the catalog queries select, so account names carrying
 // backslashes, control bytes, or the literal spelling NULL match
 // client-side exactly.
+//
+// Boundaries (R9.3c): the maintenance family db_check, db_repair, and
+// db_optimize runs the pinned CHECK/REPAIR/OPTIMIZE TABLE statements per
+// table through the same mysql CLI transport — REPAIR and OPTIMIZE are
+// mutations, executed only through the (fake, in tests) Runner, never a
+// live server. The database and table names are quoted with the committed
+// quoteIdentifier and validated fail-closed value-free (no empty strings,
+// NUL, or ASCII control bytes) before any Runner invocation; the pinned
+// %%-escaping is unescaped exactly like the pinned _execute no-args path,
+// so the --execute string is byte-identical to the SQL the pinned module
+// sends through MySQLdb. The table=None flow reads the database's tables
+// through a fixed information_schema.TABLES catalog query with the schema
+// matched client-side, so no caller string reaches SQL; a nonzero mysql
+// exit anywhere in the flow is an error, never compatibility data,
+// because an unknown failure on a mutation surface must not answer a
+// partial fake success.
 package mysql
 
 import (
@@ -452,6 +469,24 @@ const (
 	// pinned SHOW GLOBAL VARIABLES (mysql.py:3009) — global variables,
 	// not global status, exactly like the pinned source.
 	showGlobalVariablesQuery = "SHOW GLOBAL VARIABLES"
+	// tableCatalogQuery is the table reader of the R9.3c maintenance
+	// family's table=None path. The pinned db_tables runs SHOW TABLES IN
+	// `name` (mysql.py:1253) — a SHOW statement that cannot wrap its
+	// single column in the COALESCE NULL sentinel — so the sentinel
+	// mapping rides the same information_schema catalog the SHOW itself
+	// reads, exactly the db_list precedent over information_schema.
+	// Every (schema, table) pair is selected with both columns
+	// sentinel-mapped and the caller's schema is matched client-side, so
+	// no caller string reaches SQL. TABLE_SCHEMA and TABLE_NAME are NOT
+	// NULL in information_schema.TABLES, and the catalog lists exactly
+	// the base tables and views SHOW TABLES lists for a schema, with the
+	// same privilege filtering; rows arrive and are operated on in
+	// result order. MySQL 8.0.44 sql/dd/info_schema/show.cc
+	// build_show_tables_query orders the original TABLE_NAME column.
+	// Qualify it here to retain that server column's collation rather than
+	// ordering the COALESCE alias (UNHEX can give it binary collation).
+	// Do not re-sort in Go: byte order need not match the server collation.
+	tableCatalogQuery = "SELECT COALESCE(TABLE_SCHEMA, " + nullSentinelSQL + ") AS TABLE_SCHEMA, COALESCE(TABLE_NAME, " + nullSentinelSQL + ") AS TABLE_NAME FROM information_schema.TABLES ORDER BY information_schema.TABLES.TABLE_NAME"
 )
 
 var (
@@ -459,6 +494,22 @@ var (
 	errMysqlClientUnavailable = errors.New("mysql: mysql client is unavailable")
 	errMysqlRunas             = errors.New("mysql: runas is not supported by statekit")
 	errMysqlInvalidArgument   = errors.New("mysql: invalid argument")
+	// errMysqlDatabaseMissing is the pinned db_tables miss: db_tables
+	// answers False when the database does not exist (mysql.py:1243-1245)
+	// and the pinned db_check/db_repair/db_optimize then fail on
+	// `for table in False:` with a TypeError Salt surfaces as a module
+	// error. The port answers the same failed call with this value-free
+	// error instead.
+	errMysqlDatabaseMissing = errors.New("mysql: database does not exist")
+	// errMysqlMaintenanceExit is the strict nonzero-exit abort of the
+	// maintenance family: REPAIR and OPTIMIZE mutate server state, so a
+	// mysql run completing nonzero is an error, never compatibility
+	// data. The CLI transport cannot distinguish the pinned module's
+	// _connect-None {} shape from its propagating OperationalError, and
+	// an unknown failure answered as data would be partial fake success
+	// — the same strict catalog divergence the R9.2s owner_to flow
+	// made before its mutation.
+	errMysqlMaintenanceExit = errors.New("mysql: maintenance run completed nonzero")
 )
 
 // myConnection is the transport half of the pinned **connection_args
@@ -492,6 +543,20 @@ type myConnection struct {
 // data for the callers, exactly like the pinned module's logged error
 // paths.
 func runMysql(ctx context.Context, rt *runtime.Runtime, argv []string, conn *myConnection) (process.CommandResult, error) {
+	return runMysqlResult(ctx, rt, argv, conn, nil)
+}
+
+// runMysqlResult optionally retains raw stdout for the two fixed maintenance
+// catalogs only. Runner redaction must be deferred for those reads: identifiers
+// can contain the redaction substring. The raw bytes never enter the safe result
+// or errors, and are handed to the parser only after all transport checks pass.
+func runMysqlResult(ctx context.Context, rt *runtime.Runtime, argv []string, conn *myConnection, catalogStdout *[]byte) (process.CommandResult, error) {
+	if catalogStdout != nil {
+		*catalogStdout = nil
+		if len(argv) == 0 || (argv[len(argv)-1] != "--execute="+showDatabasesQuery && argv[len(argv)-1] != "--execute="+tableCatalogQuery) {
+			return process.CommandResult{ExitCode: -1}, errMysqlInvalidArgument
+		}
+	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -528,10 +593,11 @@ func runMysql(ctx context.Context, rt *runtime.Runtime, argv []string, conn *myC
 		MaxStderrBytes: outputLimit,
 		Env:            mysqlEnvironment(conn),
 	}
-	if len(secrets) > 0 {
+	if len(secrets) > 0 && catalogStdout == nil {
 		command.Redact = secrets
 	}
 	result := rt.Runner.Run(ctx, command)
+	rawStdout := result.Stdout
 	outputExceeded := len(result.Stdout) > outputLimit || len(result.Stderr) > outputLimit
 	// Defend against custom Runners that do not sanitize their own results.
 	result.Stdout = process.RedactBytes(secrets, result.Stdout)
@@ -545,6 +611,9 @@ func runMysql(ctx context.Context, rt *runtime.Runtime, argv []string, conn *myC
 	}
 	if result.StdoutTruncated || result.StderrTruncated || outputExceeded {
 		return result, process.ErrOutputLimit
+	}
+	if catalogStdout != nil && result.ExitCode == 0 {
+		*catalogStdout = rawStdout
 	}
 	return result, nil
 }
@@ -1329,6 +1398,268 @@ func showCatalog(ctx context.Context, rt *runtime.Runtime, conn *myConnection, q
 }
 
 // ---------------------------------------------------------------------------
+// db_check / db_repair / db_optimize — salt/modules/mysql.py:271-313
+// (__check_table/__repair_table/__optimize_table), 1233-1267 (db_tables),
+// and 2251-2319 (db_check/db_repair/db_optimize) @ pinned revision.
+
+// validMaintenanceIdentifier reports whether identifier is safe for the
+// fixed maintenance statements: non-empty and free of NUL and ASCII
+// control bytes (the C0 controls 0x00-0x1F and DEL) — the bytes no MySQL
+// or MariaDB identifier may carry and that cannot travel through a fixed
+// argv unchanged. Every other byte stays inside quoteIdentifier's doubled
+// backticks: backticks, percent signs, and non-ASCII names (legal in
+// MySQL's BMP identifier range; the server enforces its own charset
+// rules) render as quoted identifiers exactly like the pinned module.
+// The rejection is value-free and raised before any Runner invocation,
+// where no redaction pass could strip a caller secret the value embeds.
+func validMaintenanceIdentifier(identifier string) bool {
+	if identifier == "" {
+		return false
+	}
+	for i := 0; i < len(identifier); i++ {
+		if identifier[i] < 0x20 || identifier[i] == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
+// maintenanceIdentifierError is the fixed, value-free rejection for a
+// name or table the fixed maintenance statements cannot carry: the
+// argument key under the shared invalid-argument category, never the
+// rejected value, so the message is a constant for a given key.
+func maintenanceIdentifierError(key string) error {
+	return fmt.Errorf("%w: unsupported identifier in %s", errMysqlInvalidArgument, key)
+}
+
+// maintenanceStatement builds the pinned maintenance statement: the
+// committed quoteIdentifier quotes both identifiers — backtick doubling
+// plus MySQLdb's doubled '%' — exactly like the pinned
+// f"CHECK TABLE {s_name}.{s_table}", and the pinned _execute no-args
+// unescape (mysql.py:734-737, qry.replace("%%", "%")) restores single
+// percent signs, so the --execute string is byte-identical to the SQL
+// the pinned module sends through MySQLdb.
+func maintenanceStatement(verb, name, table string) string {
+	statement := verb + " TABLE " + quoteIdentifier(name, false) + "." + quoteIdentifier(table, false)
+	return strings.ReplaceAll(statement, "%%", "%")
+}
+
+// maintenanceRows runs one fixed read-side query of the maintenance flow
+// under the strict nonzero-aborts policy the mutation family requires:
+// Runner failures, cancellation, and output-limit violations propagate,
+// and a mysql run completing nonzero answers errMysqlMaintenanceExit
+// instead of the read-only family's empty-result compatibility data — a
+// failed catalog read must never be mistaken for an empty catalog, which
+// would answer a fake success.
+func maintenanceRows(ctx context.Context, rt *runtime.Runtime, conn *myConnection, query string) ([]string, [][]batchField, error) {
+	var rawStdout []byte
+	result, err := runMysqlResult(ctx, rt, mysqlQueryArgv(conn, query), conn, &rawStdout)
+	if err != nil {
+		return nil, nil, err
+	}
+	if result.ExitCode != 0 {
+		return nil, nil, errMysqlMaintenanceExit
+	}
+	header, rows := parseBatchRows(string(rawStdout))
+	return header, rows, nil
+}
+
+// maintenanceTables ports the pinned db_tables contract for the
+// maintenance family's table=None path: the pinned function first
+// answers db_exists and returns False on a miss (the pinned wrappers
+// then fail on `for table in False:`), and only then reads SHOW TABLES
+// IN `name`. The port matches the database client-side over the same
+// fixed SCHEMATA catalog of db_list/db_exists, then reads the fixed
+// information_schema.TABLES catalog and collects the matched schema's
+// table names in result order — the order the pinned SHOW TABLES
+// returns and the pinned loop operates on. Rows whose schema or table
+// column carries the SQL NULL sentinel (impossible from
+// information_schema.TABLES, whose columns are NOT NULL) and short rows
+// (impossible from the real client) are skipped rather than fabricating
+// a table name, so the statement list can only ever shrink, never
+// invent. Both catalog reads run under the strict nonzero-aborts policy.
+func maintenanceTables(ctx context.Context, rt *runtime.Runtime, conn *myConnection, name string) ([]string, error) {
+	_, rows, err := maintenanceRows(ctx, rt, conn, showDatabasesQuery)
+	if err != nil {
+		return nil, err
+	}
+	found := false
+	for _, row := range rows {
+		if len(row) > 0 && !row[0].null && row[0].value == name {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, errMysqlDatabaseMissing
+	}
+	_, rows, err = maintenanceRows(ctx, rt, conn, tableCatalogQuery)
+	if err != nil {
+		return nil, err
+	}
+	tables := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if len(row) < 2 || row[0].null || row[1].null {
+			continue
+		}
+		if row[0].value != name {
+			continue
+		}
+		tables = append(tables, row[1].value)
+	}
+	return tables, nil
+}
+
+// maintenanceOne runs one pinned maintenance statement and renders the
+// pinned DictCursor fetchall shape: one map per row keyed by the result
+// column names — Table, Op, Msg_type, and Msg_text from CHECK, REPAIR,
+// and OPTIMIZE TABLE — exactly like the DictRow of the pinned
+// __check_table/__repair_table/__optimize_table; the batch CLI mapping
+// is therefore not distinct from the pinned dict-row shape, only its
+// transport is. Batch rows decode field by field with the client's own
+// escaping; a decoded sentinel renders as nil (the DictRow None) and a
+// field spelled NULL stays the ordinary string — the servers never emit
+// SQL NULL on these statements, so the sentinel mapping is inert but
+// uniform with the catalog families. Short rows keep their zipped
+// prefix like dict(zip(header, row)) and never panic (the defensive
+// prefix-zip divergence). A rowless success answers the empty list,
+// exactly like fetchall on an empty result, and a nonzero exit is the
+// strict maintenance error, never data.
+func maintenanceOne(ctx context.Context, rt *runtime.Runtime, conn *myConnection, verb, name, table string) ([]map[string]any, error) {
+	statement := maintenanceStatement(verb, name, table)
+	result, err := runMysql(ctx, rt, mysqlQueryArgv(conn, statement), conn)
+	if err != nil {
+		return nil, err
+	}
+	if result.ExitCode != 0 {
+		return nil, errMysqlMaintenanceExit
+	}
+	header, rows := parseBatchRows(string(result.Stdout))
+	out := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		shared := len(header)
+		if len(row) < shared {
+			shared = len(row)
+		}
+		entry := make(map[string]any, shared)
+		for i := 0; i < shared; i++ {
+			if row[i].null {
+				entry[header[i]] = nil
+				continue
+			}
+			entry[header[i]] = row[i].value
+		}
+		out = append(out, entry)
+	}
+	return out, nil
+}
+
+// dbMaintenance is the shared body of the pinned db_check, db_repair,
+// and db_optimize wrappers (mysql.py:2252-2319): with table=None it
+// lists the database's tables and appends one per-table result list in
+// source order — the pinned ret.append(__check_table(...)) loop — and
+// with a table it answers that single statement's result list directly,
+// never wrapped. Both identifiers are validated value-free before any
+// Runner invocation; a failed catalog or statement aborts with an error
+// and no partial success value, exactly like the pinned module's
+// propagating OperationalError (statements already executed stay
+// executed, the pinned behavior). Cancellation between statements is
+// caught by the transport's per-run context check.
+func dbMaintenance(ctx context.Context, rt *runtime.Runtime, conn *myConnection, verb, name string, table *string) (any, error) {
+	if !validMaintenanceIdentifier(name) {
+		return nil, maintenanceIdentifierError("name")
+	}
+	if table != nil && !validMaintenanceIdentifier(*table) {
+		return nil, maintenanceIdentifierError("table")
+	}
+	if table != nil {
+		return maintenanceOne(ctx, rt, conn, verb, name, *table)
+	}
+	tables, err := maintenanceTables(ctx, rt, conn, name)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]any, 0, len(tables))
+	for _, one := range tables {
+		rows, err := maintenanceOne(ctx, rt, conn, verb, name, one)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rows)
+	}
+	return out, nil
+}
+
+// DbMaintenanceArgs are the canonical mysql.db_check, mysql.db_repair,
+// and mysql.db_optimize arguments: the pinned (name, table=None)
+// signature plus the shared connection surface and the StateKit runas
+// rejection. A nil table keeps the pinned None default — the
+// whole-database flow over every table db_tables lists.
+type DbMaintenanceArgs struct {
+	Name     string  `statekit:"name=name,required"`
+	Table    *string `statekit:"name=table"`
+	User     *string `statekit:"name=connection_user"`
+	Host     *string `statekit:"name=connection_host"`
+	Port     *string `statekit:"name=connection_port"`
+	Password *string `statekit:"name=connection_pass"`
+	DB       *string `statekit:"name=connection_db"`
+	Runas    *string `statekit:"name=runas"`
+}
+
+func (a *DbMaintenanceArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return &myConnection{
+		User:     a.User,
+		Host:     a.Host,
+		Port:     a.Port,
+		Password: a.Password,
+		DB:       a.DB,
+		Runas:    a.Runas,
+	}
+}
+
+type dbCheckFunc struct{}
+
+func (dbCheckFunc) Name() string { return "mysql.db_check" }
+func (dbCheckFunc) Args() any    { return DbMaintenanceArgs{} }
+
+func (dbCheckFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[DbMaintenanceArgs](args, "mysql.db_check")
+	if err != nil {
+		return nil, err
+	}
+	return dbMaintenance(ctx, rt, a.connection(), "CHECK", a.Name, a.Table)
+}
+
+type dbRepairFunc struct{}
+
+func (dbRepairFunc) Name() string { return "mysql.db_repair" }
+func (dbRepairFunc) Args() any    { return DbMaintenanceArgs{} }
+
+func (dbRepairFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[DbMaintenanceArgs](args, "mysql.db_repair")
+	if err != nil {
+		return nil, err
+	}
+	return dbMaintenance(ctx, rt, a.connection(), "REPAIR", a.Name, a.Table)
+}
+
+type dbOptimizeFunc struct{}
+
+func (dbOptimizeFunc) Name() string { return "mysql.db_optimize" }
+func (dbOptimizeFunc) Args() any    { return DbMaintenanceArgs{} }
+
+func (dbOptimizeFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[DbMaintenanceArgs](args, "mysql.db_optimize")
+	if err != nil {
+		return nil, err
+	}
+	return dbMaintenance(ctx, rt, a.connection(), "OPTIMIZE", a.Name, a.Table)
+}
+
+// ---------------------------------------------------------------------------
 // shared helpers (postgres-module conventions).
 
 func typedArgs[T any](args any, name string) (*T, error) {
@@ -1423,8 +1754,9 @@ func redactedError(err error, secrets ...string) error {
 
 // Register installs the mysql catalog slice: the R9.2a pure functions
 // quote_identifier and tokenize_grant, the R9.3a read-only catalog family
-// db_list, db_exists, user_list, and user_exists, and the R9.3b read-only
-// server facts family version, status, showvariables, and showglobal over
+// db_list, db_exists, user_list, and user_exists, the R9.3b read-only
+// server facts family version, status, showvariables, and showglobal, and
+// the R9.3c maintenance family db_check, db_repair, and db_optimize over
 // the central mysql CLI transport. The remainder of the mysql family needs
 // the client protocol or mutation boundary and stays pending.
 func Register(reg *runtime.ExecRegistry) error {
@@ -1439,6 +1771,9 @@ func Register(reg *runtime.ExecRegistry) error {
 		statusFunc{},
 		showVariablesFunc{},
 		showGlobalFunc{},
+		dbCheckFunc{},
+		dbRepairFunc{},
+		dbOptimizeFunc{},
 	} {
 		if err := reg.Register(fn); err != nil {
 			return err

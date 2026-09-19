@@ -175,6 +175,22 @@ import (
 // __do_query_into_hash row-dict list including the pinned empty-result
 // quirk — a rowless success renders [[ ]] — while a mysql run completing
 // nonzero answers the pinned _connect-None shape (the bare empty list).
+// R9.3c registers the mysql maintenance family db_check, db_repair, and
+// db_optimize (mysql.py:271-313 helpers, 1233-1267 db_tables, 2251-2319
+// wrappers): the pinned CHECK/REPAIR/OPTIMIZE TABLE statements built
+// from the committed quote_identifier with the pinned _execute no-args
+// %% unescape (so the --execute SQL is byte-identical to what the pinned
+// module sends through MySQLdb), one statement per table in source
+// order for table=None and exactly one for a given table; the whole-
+// database flow reads its table list through a fixed sentinel-mapped
+// information_schema.TABLES catalog with the schema matched client-side
+// (the pinned db_tables db_exists preflight and SHOW TABLES IN flow),
+// the pinned db_tables False miss mapping to the pinned wrappers'
+// `for table in False:` TypeError surface as a value-free error, both
+// identifiers validated fail-closed value-free before any Runner
+// invocation, and every nonzero mysql exit in the flow a strict error —
+// never the read-only compatibility data — because REPAIR and OPTIMIZE
+// mutate and an unknown failure must not answer partial fake success.
 // The generic psql_query surface and the remaining mysql and postgres
 // surfaces need their client protocol boundaries and stay pending.
 type r9FamilySpec struct {
@@ -227,6 +243,7 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 		Platform:    "cross-platform pure functions and CLI wrapper",
 		Scenarios: []string{
 			"mysql.batch-field-decoding",
+			"mysql.db-maintenance",
 			"mysql.identifier-quoting",
 			"mysql.grant-lexer-shapes",
 			"mysql.read-only-catalog-lists",
@@ -245,9 +262,23 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"R9.3b direct and CLI tests assert SELECT VERSION(), SHOW STATUS, SHOW VARIABLES, and SHOW GLOBAL VARIABLES argv and ordinary results; registry tests assert version, status, and showvariables ordinary results. Direct status vectors assert later duplicate rows overwrite earlier. TestMysqlShowShortRowDefensiveDivergence asserts StateKit defensive prefix-zip divergence for both show queries: ordinary complete rows exact; malformed short rows do not panic, invent a missing Value, or expose a supplied synthetic password; Python IndexError is the source-derived contrast, not an executed Python oracle",
 			"direct and CLI version tests cover nonzero and rowless empty-string results; direct and CLI status tests cover nonzero empty-object results. Direct and CLI show-pair tests cover nonzero [] versus header-only [[]]. TestMysqlRegistryEmptyShapes asserts exact JSON and one Runner call for showvariables/showglobal (nonzero [], header-only and empty stdout [[]]) and user_list/db_list (all three shapes []); these are CLI transport mappings, not independent observations of Python exception branches",
 			"R9.3b direct version/status/showglobal vectors exercise selected shared decoder cases; CLI status tests assert escaped backslashes and raw CR, and showglobal asserts a CRLF ordinary row. Direct fail-closed tests cover no Runner, unavailable client, cancellation, output limits, and runas for the server-facts family; registry/CLI synthetic Runner-error redaction is covered separately, not every boundary at every surface",
+			"R9.3c direct tests assert the exact single-table argv at index 6 for all three verbs (CHECK/REPAIR/OPTIMIZE TABLE `db`.`tbl`), the quoting vectors (backtick doubling, MySQLdb's doubled percent, and the pinned _execute no-args unescape restoring single percent; underscore stays raw because these are not grant positions), the whole-database call sequence — SCHEMATA catalog, information_schema.TABLES catalog, then one statement per table in result order — and the pinned ret.append(fetchall) list-of-lists shape with the single-table call answering the bare row list",
+			"R9.3c shape vectors pin the empty table list (the pinned [] over zero tables after exactly two catalog calls), the rowless statement success, batch-escaped/CRLF-framed result fields, the literal NULL string staying a value, the sentinel rendering nil, and the defensive short-row prefix; the missing database answers the value-free errMysqlDatabaseMissing after exactly one catalog call, mapping the pinned db_tables False miss that makes the wrappers fail on `for table in False:`",
+			"R9.3c blocker regressions: TestMysqlMaintenanceRawCatalog checks raw schema/table identifier collisions with a synthetic redaction marker for CHECK/REPAIR/OPTIMIZE, exact original SQL, safe rendered maintenance commands and output, and redacted Runner errors at all three phases; TestMysqlRawCatalogSafeResult checks separate raw/safe stdout, failed-read raw suppression, truncation/size bounds, and the fixed-query allowlist. TestMysqlMaintenanceAllTables pins qualified ORDER BY information_schema.TABLES.TABLE_NAME and preserves an intentionally out-of-order fake catalog response without Go re-sorting",
+			"R9.3c nonzero vectors abort strictly at every phase (schema catalog, table catalog, single statement, second statement) with exact call counts and no partial success value, and the fail-closed vectors cover nil Runner, unavailable client, runas (zero calls), cancellation, Runner errors, output limits, and password-marker redaction; TestMysqlMaintenanceIdentifierBoundary rejects empty, NUL, and C0/DEL controls in both positions value-free with zero Runner calls while backtick/percent/underscore/non-ASCII identifiers stay accepted inside the doubled backticks",
+			"R9.3c registry tests drive all three names through the exec registry with exact JSON shapes (the wrapped [[...]] all-tables list and the bare [...] single-table list), and CLI tests drive the full table=None flow end to end (four-call argv sequence, MYSQL_PWD-only environment, Redact inventory, no password in CLI output), the single-table REPAIR/OPTIMIZE statements with the underscore flag spelling, the [] empty-table JSON, the ExitInvalidInput missing-name, the ExitFailed missing-database and strict-nonzero surfaces with value-free messages, the pre-Runner identifier rejection, and a synthetic secret-bearing Runner error redacted after one call",
 		},
 		CompatibilityNotes: []string{
-			"R9.2a registers the driver-free pure functions quote_identifier and tokenize_grant; R9.3a adds the read-only catalog family db_list, db_exists, user_list, and user_exists over the mysql CLI transport; R9.3b adds the read-only server facts family version, status, showvariables, and showglobal on the same transport; the remaining public surface requires the MySQL client protocol or mutation boundary (E5) and stays pending",
+			"R9.2a registers the driver-free pure functions quote_identifier and tokenize_grant; R9.3a adds the read-only catalog family db_list, db_exists, user_list, and user_exists over the mysql CLI transport; R9.3b adds the read-only server facts family version, status, showvariables, and showglobal on the same transport; R9.3c adds the maintenance family db_check, db_repair, and db_optimize — REPAIR and OPTIMIZE are mutations, executed only through the (fake) Runner, never a live server; the remaining public surface requires the MySQL client protocol or mutation boundary (E5) and stays pending",
+			"R9.3c keeps the pinned statement construction exactly: the committed quote_identifier quotes both identifiers (backtick doubling plus MySQLdb's doubled percent), and the pinned _execute no-args unescape (qry.replace(\"%%\", \"%\")) restores single percent signs, so the --execute SQL is byte-identical to what the pinned __check_table/__repair_table/__optimize_table send through MySQLdb; for_grants stays false because these are not grant positions, and the underscore stays raw exactly like the pinned source",
+			"R9.3c keeps the pinned (name, table=None) wrapper shapes exactly: table=None lists the database's tables and answers the list of per-table fetchall lists in source order (the pinned ret.append loop), a given table answers that single statement's bare row list, and an empty table list answers the pinned [] after exactly two catalog calls",
+			"the pinned db_tables interpolates the caller's database name into SHOW TABLES IN; StateKit instead runs the same fixed sentinel-mapped information_schema.TABLES catalog for every call and matches the schema client-side (the db_exists precedent), which is result-equivalent for every non-malicious input — the catalog lists the same base tables and views SHOW TABLES lists with the same privilege filtering, in result order — and refuses the identifier interpolation the pinned format permits; both catalog columns are NOT NULL in information_schema.TABLES, so the COALESCE sentinel is defense-in-depth, and a table literally spelled NULL stays the ordinary string",
+			"Ordering is server-side, not Go byte sorting: MySQL 8.0.44 sql/dd/info_schema/show.cc build_show_tables_query selects information_schema.TABLES.TABLE_NAME and orders its alias. The fixed query qualifies ORDER BY information_schema.TABLES.TABLE_NAME to retain the original column collation, avoiding the potentially binary COALESCE/UNHEX output alias. Fake catalog order is preserved after schema filtering; no live server collation parity is claimed",
+			"Only the two fixed maintenance catalog reads defer Runner output redaction so raw identifiers can be parsed without corruption; neither query selects a password or interpolates caller input. The transport returns a separately redacted result and sanitizes Runner errors before handing raw stdout to the internal parser on success only. Maintenance statements and all pre-existing user/status/catalog surfaces retain Runner Redact; raw catalog bytes are not returned as output or attached to errors",
+			"the pinned db_tables miss returns False and the pinned wrappers then fail on `for table in False:` with a TypeError Salt surfaces as a module error; the port answers the same failed call with the value-free errMysqlDatabaseMissing after exactly one catalog call and no statement — the same failed-call outcome without the Python exception machinery",
+			"the identifier boundary is fail-closed and value-free: empty strings, NUL, and the ASCII C0 controls and DEL are rejected in the name and table positions before any Runner invocation with the fixed invalid-argument error naming only the argument key (no caller value travels through the error, so a rejected identifier carrying or overlapping a credential cannot leak); backticks, percent, underscore, and non-ASCII stay inside the doubled backticks exactly like the pinned module, and server-origin table names from the catalog still pass the shared argv boundary before any statement",
+			"a nonzero mysql exit is a strict error everywhere in the maintenance flow — the deliberate divergence from the read-only families' compatibility mapping: the CLI transport cannot distinguish the pinned module's _connect-None {} shape from its propagating OperationalError, and an unknown failure answered as {} or [] on a mutation surface would be partial fake success (the same strict catalog divergence the R9.2s owner_to flow made before its mutation); statements already executed before the failure stay executed exactly like the pinned mid-loop exception, but no success value is ever fabricated",
+			"the DictCursor fetchall shape maps one-to-one onto the batch CLI transport: one map per row keyed by the result column names (Table, Op, Msg_type, Msg_text from CHECK/REPAIR/OPTIMIZE TABLE), so the CLI mapping is not distinct from the pinned dict-row shape — only its transport is; the shared defensive prefix-zip divergence (short rows keep their zipped prefix, never panic, never fabricate a missing column) and the sentinel-to-nil mapping apply, both inert for real client output",
 			"StateKit defensive prefix-zip divergence: ordinary complete rows exact; malformed short rows do not panic. The pinned __do_query_into_hash indexes every described column and raises Python IndexError on a short row; StateKit retains only available columns, intentionally not pinned malformed-row parity. The existing user catalog defensive prefix behavior is unchanged",
 			"the pinned module speaks MySQLdb; StateKit links no database driver — the fixed source queries travel through the mysql CLI client (batch mode, joined connection flags, clean environment) on the central shell-free Runner with a finite 30s timeout and 4 MiB output caps the pinned module does not carry",
 			"the connection surface keeps the pinned connection_user/connection_host/connection_port/connection_pass/connection_db kwargs with nil keeping Salt's None meaning (the pinned config.option defaults have no StateKit surface, and _connect's falsy-connarg drop maps to flag omission); the password travels through mysql's native MYSQL_PWD in an otherwise clean environment as a Redact secret, never argv, and runas is rejected before any Runner invocation by the single-user runtime",
@@ -268,8 +299,11 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"no MySQL driver, live server, network egress, or new dependency is claimed or added",
 		},
 		RegisteredSubset: []string{
+			"mysql.db_check",
 			"mysql.db_exists",
 			"mysql.db_list",
+			"mysql.db_optimize",
+			"mysql.db_repair",
 			"mysql.quote_identifier",
 			"mysql.showglobal",
 			"mysql.showvariables",
@@ -533,7 +567,7 @@ func TestR9DifferentialScopeReport(t *testing.T) {
 	registered := registeredNames(first)
 
 	report := r9Report{
-		Round:    "R9.3b",
+		Round:    "R9.3c",
 		Platform: "cross-platform",
 		RuntimeStatus: "mock-only: RabbitMQ is never started, MySQL is never connected, and PostgreSQL is never contacted; " +
 			"shell-free fake Runner tests and pure-function vectors provide the executable contract",
