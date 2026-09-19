@@ -1,9 +1,9 @@
 // Package mysql implements slices of the pinned Salt mysql execution
 // surface: the driver-free pure functions quote_identifier and
 // tokenize_grant (R9.2a), the read-only catalog family db_list, db_exists,
-// user_list, and user_exists (R9.3a), the read-only server facts
-// family version, status, showvariables, and showglobal (R9.3b), and
-// the maintenance family db_check, db_repair, and db_optimize (R9.3c).
+// user_list, user_exists, db_get, and db_tables (R9.3a/R9.3d), the read-only
+// server facts family version, status, showvariables, and showglobal (R9.3b),
+// and the maintenance family db_check, db_repair, and db_optimize (R9.3c).
 //
 // Boundaries (R9.2a): no MySQL client driver or protocol, no new
 // dependencies, no Runner spawns, no filesystem access, and no live MySQL
@@ -43,6 +43,12 @@
 // exit anywhere in the flow is an error, never compatibility data,
 // because an unknown failure on a mutation surface must not answer a
 // partial fake success.
+//
+// Boundaries (R9.3d): db_get and db_tables keep the pinned read-only
+// compatibility shapes over fixed information_schema catalogs. Database and
+// table names are matched or filtered client-side, so caller input never
+// reaches SQL; SQL NULL is carried by the shared NUL sentinel and the batch
+// decoder preserves LF/CRLF framing and escaped field bytes.
 package mysql
 
 import (
@@ -409,9 +415,10 @@ func (tokenizeGrantFunc) Execute(_ context.Context, _ *runtime.Runtime, args any
 }
 
 // ---------------------------------------------------------------------------
-// mysql CLI transport — the R9.3a read-only catalog family
+// mysql CLI transport — the R9.3a/R9.3d read-only catalog families
 // (salt/modules/mysql.py:1131-1161 db_list, 1270-1297 db_exists,
-// 1397-1421 user_list, 1502-1605 user_exists @ pinned revision).
+// 1397-1421 user_list, 1502-1605 user_exists, 1198-1267 db_get/db_tables
+// @ pinned revision).
 
 const (
 	// mysqlCommand is the canonical client binary the R9.3a family runs.
@@ -447,6 +454,14 @@ const (
 	// mapping rides the privilege-equivalent information_schema.SCHEMATA
 	// catalog the SHOW itself reads.
 	showDatabasesQuery = "SELECT COALESCE(SCHEMA_NAME, " + nullSentinelSQL + ") FROM information_schema.SCHEMATA"
+	// dbGetQuery is the fixed information_schema.SCHEMATA reader for db_get.
+	// The pinned query filters on SCHEMA_NAME and binds the caller as a value;
+	// StateKit selects the schema key as well and performs that equality check
+	// client-side so the mysql CLI receives no caller-controlled SQL. Every
+	// selected column is sentinel-mapped: the schema key cannot be a real NUL,
+	// while the character-set and collation fields must retain MySQLdb's None
+	// shape when the server supplies SQL NULL.
+	dbGetQuery = "SELECT COALESCE(SCHEMA_NAME, " + nullSentinelSQL + ") AS SCHEMA_NAME, COALESCE(DEFAULT_CHARACTER_SET_NAME, " + nullSentinelSQL + ") AS DEFAULT_CHARACTER_SET_NAME, COALESCE(DEFAULT_COLLATION_NAME, " + nullSentinelSQL + ") AS DEFAULT_COLLATION_NAME FROM information_schema.SCHEMATA"
 	// userListQuery is the catalog reader of user_list and user_exists:
 	// the pinned SELECT User,Host FROM mysql.user (mysql.py:1412) with the
 	// SQL NULL sentinel substituted column-wise — the User and Host
@@ -831,6 +846,173 @@ func decodeBatchField(field string) batchField {
 		}
 	}
 	return batchField{value: b.String()}
+}
+
+// ---------------------------------------------------------------------------
+// db_get — salt/modules/mysql.py:1198-1230 @ pinned revision.
+
+// DbGetArgs are the canonical mysql.db_get arguments: the pinned name
+// positional plus the shared connection surface and StateKit runas rejection.
+type DbGetArgs struct {
+	Name     string  `statekit:"name=name,required"`
+	User     *string `statekit:"name=connection_user"`
+	Host     *string `statekit:"name=connection_host"`
+	Port     *string `statekit:"name=connection_port"`
+	Password *string `statekit:"name=connection_pass"`
+	DB       *string `statekit:"name=connection_db"`
+	Runas    *string `statekit:"name=runas"`
+}
+
+func (a *DbGetArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return &myConnection{
+		User:     a.User,
+		Host:     a.Host,
+		Port:     a.Port,
+		Password: a.Password,
+		DB:       a.DB,
+		Runas:    a.Runas,
+	}
+}
+
+type dbGetFunc struct{}
+
+func (dbGetFunc) Name() string { return "mysql.db_get" }
+func (dbGetFunc) Args() any    { return DbGetArgs{} }
+
+func (dbGetFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[DbGetArgs](args, "mysql.db_get")
+	if err != nil {
+		return nil, err
+	}
+	return dbGetCatalog(ctx, rt, a.connection(), a.Name)
+}
+
+// dbGetCatalog ports the pinned db_get result shapes. A successful query with
+// no matching SCHEMATA row answers {}, a matching row answers exactly the
+// character_set/collate dict (with SQL NULL rendered as nil), and a nonzero
+// mysql exit answers the pinned [] connection/query-failure shape. The fixed
+// catalog makes the caller's name a client-side equality check rather than SQL
+// interpolation. Short matching rows fail closed instead of panicking or
+// fabricating a missing value.
+func dbGetCatalog(ctx context.Context, rt *runtime.Runtime, conn *myConnection, name string) (any, error) {
+	result, err := runMysql(ctx, rt, mysqlQueryArgv(conn, dbGetQuery), conn)
+	if err != nil {
+		return nil, err
+	}
+	if result.ExitCode > 0 {
+		return []any{}, nil
+	}
+	_, rows := parseBatchRows(string(result.Stdout))
+	for _, row := range rows {
+		if len(row) == 0 || row[0].null || row[0].value != name {
+			continue
+		}
+		if len(row) < 3 {
+			return nil, errors.New("mysql.db_get: missing catalog column")
+		}
+		return map[string]any{
+			"character_set": catalogValue(row[1]),
+			"collate":       catalogValue(row[2]),
+		}, nil
+	}
+	return map[string]any{}, nil
+}
+
+// catalogValue converts the fixed SQL NULL sentinel back to the None/nil
+// value carried by MySQLdb rows while leaving literal strings untouched.
+func catalogValue(field batchField) any {
+	if field.null {
+		return nil
+	}
+	return field.value
+}
+
+// ---------------------------------------------------------------------------
+// db_tables — salt/modules/mysql.py:1233-1267 @ pinned revision.
+
+// DbTablesArgs are the canonical mysql.db_tables arguments. Salt's pinned
+// function exposes only name and connection_args; the optional table field is
+// a StateKit client-side filter used by callers that share the (name,
+// table=None) catalog shape with the maintenance family. It never changes the
+// fixed SQL or reaches the Runner as SQL text.
+type DbTablesArgs struct {
+	Name     string  `statekit:"name=name,required"`
+	Table    *string `statekit:"name=table"`
+	User     *string `statekit:"name=connection_user"`
+	Host     *string `statekit:"name=connection_host"`
+	Port     *string `statekit:"name=connection_port"`
+	Password *string `statekit:"name=connection_pass"`
+	DB       *string `statekit:"name=connection_db"`
+	Runas    *string `statekit:"name=runas"`
+}
+
+func (a *DbTablesArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return &myConnection{
+		User:     a.User,
+		Host:     a.Host,
+		Port:     a.Port,
+		Password: a.Password,
+		DB:       a.DB,
+		Runas:    a.Runas,
+	}
+}
+
+type dbTablesFunc struct{}
+
+func (dbTablesFunc) Name() string { return "mysql.db_tables" }
+func (dbTablesFunc) Args() any    { return DbTablesArgs{} }
+
+func (dbTablesFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[DbTablesArgs](args, "mysql.db_tables")
+	if err != nil {
+		return nil, err
+	}
+	return dbTablesCatalog(ctx, rt, a.connection(), a.Name, a.Table)
+}
+
+// dbTablesCatalog ports db_tables' db_exists preflight and SHOW TABLES result
+// order over the fixed information_schema.TABLES catalog already shared by
+// the maintenance family. A missing database answers False, a present
+// database answers a []string in source order, and a supplied table filters
+// that list by exact client-side equality. SQL NULL sentinels and malformed
+// short rows are skipped; a literal string NULL remains a table name.
+func dbTablesCatalog(ctx context.Context, rt *runtime.Runtime, conn *myConnection, name string, table *string) (any, error) {
+	databases, err := dbCatalog(ctx, rt, conn)
+	if err != nil {
+		return nil, err
+	}
+	found := false
+	for _, database := range databases {
+		if database == name {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return false, nil
+	}
+
+	_, rows, err := mysqlQueryRows(ctx, rt, conn, tableCatalogQuery)
+	if err != nil {
+		return nil, err
+	}
+	tables := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if len(row) < 2 || row[0].null || row[1].null || row[0].value != name {
+			continue
+		}
+		if table != nil && row[1].value != *table {
+			continue
+		}
+		tables = append(tables, row[1].value)
+	}
+	return tables, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -1753,18 +1935,21 @@ func redactedError(err error, secrets ...string) error {
 }
 
 // Register installs the mysql catalog slice: the R9.2a pure functions
-// quote_identifier and tokenize_grant, the R9.3a read-only catalog family
-// db_list, db_exists, user_list, and user_exists, the R9.3b read-only
-// server facts family version, status, showvariables, and showglobal, and
-// the R9.3c maintenance family db_check, db_repair, and db_optimize over
-// the central mysql CLI transport. The remainder of the mysql family needs
-// the client protocol or mutation boundary and stays pending.
+// quote_identifier and tokenize_grant, the R9.3a/R9.3d read-only catalog
+// family db_list, db_exists, user_list, user_exists, db_get, and db_tables,
+// the R9.3b read-only server facts family version, status, showvariables, and
+// showglobal, and the R9.3c maintenance family db_check, db_repair, and
+// db_optimize over the central mysql CLI transport. The remainder of the
+// mysql family needs the client protocol or mutation boundary and stays
+// pending.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		quoteIdentifierFunc{},
 		tokenizeGrantFunc{},
 		dbListFunc{},
 		dbExistsFunc{},
+		dbGetFunc{},
+		dbTablesFunc{},
 		userListFunc{},
 		userExistsFunc{},
 		versionFunc{},

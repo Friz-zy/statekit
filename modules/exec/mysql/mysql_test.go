@@ -284,9 +284,11 @@ func TestMysqlRegistryNames(t *testing.T) {
 	wantNames := []string{
 		"mysql.db_check",
 		"mysql.db_exists",
+		"mysql.db_get",
 		"mysql.db_list",
 		"mysql.db_optimize",
 		"mysql.db_repair",
+		"mysql.db_tables",
 		"mysql.quote_identifier",
 		"mysql.showglobal",
 		"mysql.showvariables",
@@ -621,6 +623,259 @@ func TestMysqlDBExists(t *testing.T) {
 }
 
 func command0Name(runner *mysqlFakeRunner) string { return runner.calls[0].Name }
+
+// fullDbGetArgs carries every connection argument at once.
+func fullDbGetArgs(name string) *DbGetArgs {
+	return &DbGetArgs{
+		Name:     name,
+		User:     mysqlString("test_user"),
+		Host:     mysqlString("test_host"),
+		Port:     mysqlString("test_port"),
+		Password: mysqlString("test_pass"),
+		DB:       mysqlString("test_maint"),
+	}
+}
+
+// fullDbTablesArgs carries every connection argument at once.
+func fullDbTablesArgs(name string) *DbTablesArgs {
+	return &DbTablesArgs{
+		Name:     name,
+		User:     mysqlString("test_user"),
+		Host:     mysqlString("test_host"),
+		Port:     mysqlString("test_port"),
+		Password: mysqlString("test_pass"),
+		DB:       mysqlString("test_maint"),
+	}
+}
+
+const dbGetQueryForTest = "SELECT COALESCE(SCHEMA_NAME, UNHEX('00')) AS SCHEMA_NAME, COALESCE(DEFAULT_CHARACTER_SET_NAME, UNHEX('00')) AS DEFAULT_CHARACTER_SET_NAME, COALESCE(DEFAULT_COLLATION_NAME, UNHEX('00')) AS DEFAULT_COLLATION_NAME FROM information_schema.SCHEMATA"
+
+// TestMysqlDBGet pins db_get's fixed SCHEMATA catalog, the source dict keys,
+// client-side matching, and the full connection/redaction/bounds contract.
+func TestMysqlDBGet(t *testing.T) {
+	if dbGetQuery != dbGetQueryForTest {
+		t.Fatalf("db_get query = %q, want %q", dbGetQuery, dbGetQueryForTest)
+	}
+	rt, runner := newMysqlRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout: []byte("SCHEMA_NAME\tDEFAULT_CHARACTER_SET_NAME\tDEFAULT_COLLATION_NAME\r\n" +
+			"other\tlatin1\tlatin1_swedish_ci\r\n" +
+			"test_db\tutf8mb4\tutf8mb4_0900_ai_ci\r\n"),
+	})
+	value, err := (dbGetFunc{}).Execute(context.Background(), rt, fullDbGetArgs("test_db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{"character_set": "utf8mb4", "collate": "utf8mb4_0900_ai_ci"}
+	if got, ok := value.(map[string]any); !ok || !reflect.DeepEqual(got, want) {
+		t.Fatalf("db_get = %#v, want %#v", value, want)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d, want 1", len(runner.calls))
+	}
+	command := runner.calls[0]
+	if argv := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(argv, []string{
+		"mysql", "--batch", "--user=test_user", "--host=test_host", "--port=test_port", "--database=test_maint",
+		"--execute=" + dbGetQuery,
+	}) {
+		t.Fatalf("argv = %q", argv)
+	}
+	if want := []string{"MYSQL_PWD=test_pass"}; !reflect.DeepEqual(command.Env, want) {
+		t.Fatalf("env = %q, want %q", command.Env, want)
+	}
+	if !reflect.DeepEqual(command.Redact, []string{"test_pass"}) || strings.Contains(command.RedactedString(), "test_pass") {
+		t.Fatalf("password redaction failed: %#v", command)
+	}
+	if command.Shell || command.Timeout != commandTimeout || command.MaxStdoutBytes != outputLimit || command.MaxStderrBytes != outputLimit {
+		t.Fatalf("transport bounds/shell = %#v", command)
+	}
+
+	// The sentinel maps SQL NULL to nil, while literal NULL stays a value;
+	// CRLF framing is removed before either comparison.
+	rt, _ = newMysqlRuntime(process.CommandResult{Stdout: []byte(
+		"SCHEMA_NAME\tDEFAULT_CHARACTER_SET_NAME\tDEFAULT_COLLATION_NAME\r\n" +
+			"test_db\t\\0\tNULL\r\n")})
+	value, err = (dbGetFunc{}).Execute(context.Background(), rt, &DbGetArgs{Name: "test_db"})
+	if err != nil || !reflect.DeepEqual(value, map[string]any{"character_set": nil, "collate": "NULL"}) {
+		t.Fatalf("db_get NULL shape = %#v, %v", value, err)
+	}
+
+	// A missing database is the successful empty dict, not false or an error.
+	rt, _ = newMysqlRuntime(process.CommandResult{Stdout: []byte(
+		"SCHEMA_NAME\tDEFAULT_CHARACTER_SET_NAME\tDEFAULT_COLLATION_NAME\n" +
+			"other\tutf8\tutf8_general_ci\n")})
+	value, err = (dbGetFunc{}).Execute(context.Background(), rt, &DbGetArgs{Name: "missing"})
+	if err != nil || !reflect.DeepEqual(value, map[string]any{}) {
+		t.Fatalf("db_get missing = %#v, %v", value, err)
+	}
+
+	// A nonzero mysql exit is the pinned [] compatibility shape, distinct
+	// from a successful rowless query's {}.
+	rt, _ = newMysqlRuntime(process.CommandResult{ExitCode: 1})
+	value, err = (dbGetFunc{}).Execute(context.Background(), rt, &DbGetArgs{Name: "test_db"})
+	if err != nil || !reflect.DeepEqual(value, []any{}) {
+		t.Fatalf("db_get nonzero = %#v, %v", value, err)
+	}
+}
+
+// TestMysqlDBGetFailClosed pins the shared preflight and failure boundaries
+// on the new catalog surface without contacting a database.
+func TestMysqlDBGetFailClosed(t *testing.T) {
+	if _, err := (dbGetFunc{}).Execute(context.Background(), &runtime.Runtime{}, &DbGetArgs{Name: "db"}); !errors.Is(err, errMysqlRunnerUnavailable) {
+		t.Fatalf("nil runner error = %v", err)
+	}
+	unavailable := &mysqlFakeRunner{available: map[string]bool{"mysql": false}}
+	if _, err := (dbGetFunc{}).Execute(context.Background(), &runtime.Runtime{Runner: unavailable}, &DbGetArgs{Name: "db"}); !errors.Is(err, errMysqlClientUnavailable) || len(unavailable.calls) != 0 {
+		t.Fatalf("unavailable client error=%v calls=%d", err, len(unavailable.calls))
+	}
+	for _, tc := range []struct {
+		name string
+		args *DbGetArgs
+		want error
+	}{
+		{"runas", &DbGetArgs{Name: "db", Runas: mysqlString("mysql")}, errMysqlRunas},
+		{"runas-invalid", &DbGetArgs{Name: "db", Runas: mysqlString("root\n")}, errMysqlInvalidArgument},
+	} {
+		runner := &mysqlFakeRunner{}
+		_, err := (dbGetFunc{}).Execute(context.Background(), &runtime.Runtime{Runner: runner}, tc.args)
+		if !errors.Is(err, tc.want) || len(runner.calls) != 0 {
+			t.Fatalf("%s error=%v calls=%d", tc.name, err, len(runner.calls))
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runner := &mysqlFakeRunner{}
+	if _, err := (dbGetFunc{}).Execute(ctx, &runtime.Runtime{Runner: runner}, &DbGetArgs{Name: "db"}); !errors.Is(err, context.Canceled) || len(runner.calls) != 0 {
+		t.Fatalf("cancelled error=%v calls=%d", err, len(runner.calls))
+	}
+	rt, _ := newMysqlRuntime(process.CommandResult{Err: errors.New("boom")})
+	if _, err := (dbGetFunc{}).Execute(context.Background(), rt, &DbGetArgs{Name: "db"}); err == nil || err.Error() != "boom" {
+		t.Fatalf("runner error = %v", err)
+	}
+	rt, _ = newMysqlRuntime(process.CommandResult{StdoutTruncated: true})
+	if _, err := (dbGetFunc{}).Execute(context.Background(), rt, &DbGetArgs{Name: "db"}); !errors.Is(err, process.ErrOutputLimit) {
+		t.Fatalf("output limit error = %v", err)
+	}
+	marker := "S3CRET-db-get-pass"
+	rt, _ = newMysqlRuntime(process.CommandResult{Err: errors.New("mysql failed with " + marker)})
+	_, err := (dbGetFunc{}).Execute(context.Background(), rt, &DbGetArgs{Name: "db", Password: mysqlString(marker)})
+	if err == nil || strings.Contains(err.Error(), marker) {
+		t.Fatalf("runner error leaks password: %v", err)
+	}
+}
+
+// TestMysqlDBTables pins the db_exists preflight, fixed TABLES catalog, source
+// order, literal/sentinel NULL distinction, and optional client-side filter.
+func TestMysqlDBTables(t *testing.T) {
+	catalog := []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("Database\r\nother\r\ntest_db\r\n")},
+		{ExitCode: 0, Stdout: []byte("TABLE_SCHEMA\tTABLE_NAME\r\n" +
+			"other\tignored\r\n" +
+			"test_db\tzeta\r\n" +
+			"test_db\t\\0\r\n" +
+			"test_db\tNULL\r\n" +
+			"test_db\talpha\r\n" +
+			"\\0\tghost\r\n")},
+	}
+	rt, runner := newMysqlRuntime(catalog...)
+	value, err := (dbTablesFunc{}).Execute(context.Background(), rt, fullDbTablesArgs("test_db"))
+	if err != nil || !reflect.DeepEqual(value, []string{"zeta", "NULL", "alpha"}) {
+		t.Fatalf("db_tables = %#v, %v", value, err)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("runner calls = %d, want 2", len(runner.calls))
+	}
+	for i, query := range []string{showDatabasesQuery, tableCatalogQuery} {
+		argv := append([]string{runner.calls[i].Name}, runner.calls[i].Args...)
+		want := []string{"mysql", "--batch", "--user=test_user", "--host=test_host", "--port=test_port", "--database=test_maint", "--execute=" + query}
+		if !reflect.DeepEqual(argv, want) {
+			t.Fatalf("call %d argv=%q want=%q", i, argv, want)
+		}
+		if !reflect.DeepEqual(runner.calls[i].Env, []string{"MYSQL_PWD=test_pass"}) || !reflect.DeepEqual(runner.calls[i].Redact, []string{"test_pass"}) {
+			t.Fatalf("call %d password transport = %#v", i, runner.calls[i])
+		}
+	}
+	if strings.Contains(strings.Join(runner.calls[1].Args, "\x00"), "test_db") {
+		t.Fatal("db_tables interpolated the database name into SQL")
+	}
+
+	filtered := "alpha"
+	rt, runner = newMysqlRuntime(catalog...)
+	value, err = (dbTablesFunc{}).Execute(context.Background(), rt, &DbTablesArgs{Name: "test_db", Table: &filtered})
+	if err != nil || !reflect.DeepEqual(value, []string{"alpha"}) || len(runner.calls) != 2 {
+		t.Fatalf("filtered db_tables = %#v, %v calls=%d", value, err, len(runner.calls))
+	}
+
+	// A missing database is False after only the db_exists catalog call.
+	rt, runner = newMysqlRuntime(process.CommandResult{Stdout: []byte("Database\nother\n")})
+	value, err = (dbTablesFunc{}).Execute(context.Background(), rt, &DbTablesArgs{Name: "missing"})
+	if err != nil || value != false || len(runner.calls) != 1 {
+		t.Fatalf("missing db_tables = %#v, %v calls=%d", value, err, len(runner.calls))
+	}
+
+	// The second catalog's nonzero compatibility result is an empty list.
+	rt, _ = newMysqlRuntime(
+		process.CommandResult{Stdout: []byte("Database\ntest_db\n")},
+		process.CommandResult{ExitCode: 1},
+	)
+	value, err = (dbTablesFunc{}).Execute(context.Background(), rt, &DbTablesArgs{Name: "test_db"})
+	if err != nil || !reflect.DeepEqual(value, []string{}) {
+		t.Fatalf("failed table catalog = %#v, %v", value, err)
+	}
+}
+
+// TestMysqlDBTablesFailClosed pins the shared transport guards on both fixed
+// catalog calls and keeps all caller filters out of argv.
+func TestMysqlDBTablesFailClosed(t *testing.T) {
+	if _, err := (dbTablesFunc{}).Execute(context.Background(), &runtime.Runtime{}, &DbTablesArgs{Name: "db"}); !errors.Is(err, errMysqlRunnerUnavailable) {
+		t.Fatalf("nil runner error = %v", err)
+	}
+	unavailable := &mysqlFakeRunner{available: map[string]bool{"mysql": false}}
+	if _, err := (dbTablesFunc{}).Execute(context.Background(), &runtime.Runtime{Runner: unavailable}, &DbTablesArgs{Name: "db"}); !errors.Is(err, errMysqlClientUnavailable) || len(unavailable.calls) != 0 {
+		t.Fatalf("unavailable client error=%v calls=%d", err, len(unavailable.calls))
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runner := &mysqlFakeRunner{}
+	if _, err := (dbTablesFunc{}).Execute(ctx, &runtime.Runtime{Runner: runner}, &DbTablesArgs{Name: "db"}); !errors.Is(err, context.Canceled) || len(runner.calls) != 0 {
+		t.Fatalf("cancelled error=%v calls=%d", err, len(runner.calls))
+	}
+	marker := "S3CRET-db-tables-pass"
+	rt, _ := newMysqlRuntime(process.CommandResult{Err: errors.New("mysql failed with " + marker)})
+	_, err := (dbTablesFunc{}).Execute(context.Background(), rt, &DbTablesArgs{Name: "db", Password: mysqlString(marker), Table: mysqlString(marker)})
+	if err == nil || strings.Contains(err.Error(), marker) {
+		t.Fatalf("runner error leaks password: %v", err)
+	}
+}
+
+// TestMysqlDBCatalogThroughRegistry drives the R9.3d names through the actual
+// exec registry, including their mixed list/dict/false compatibility shapes.
+func TestMysqlDBCatalogThroughRegistry(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	runner := &mysqlFakeRunner{}
+	rt := &runtime.Runtime{Runner: runner, Exec: reg, FS: runtime.NewMemoryFS()}
+
+	runner.results = []process.CommandResult{{Stdout: []byte("SCHEMA_NAME\tDEFAULT_CHARACTER_SET_NAME\tDEFAULT_COLLATION_NAME\ndb\tutf8\tutf8_general_ci\n")}}
+	value, err := rt.Exec.Call(context.Background(), rt, "mysql.db_get", &DbGetArgs{Name: "db"})
+	if err != nil || !reflect.DeepEqual(value, map[string]any{"character_set": "utf8", "collate": "utf8_general_ci"}) {
+		t.Fatalf("registry db_get = %#v, %v", value, err)
+	}
+
+	runner.results = []process.CommandResult{
+		{Stdout: []byte("Database\ndb\n")},
+		{Stdout: []byte("TABLE_SCHEMA\tTABLE_NAME\ndb\ntable\n")},
+	}
+	value, err = rt.Exec.Call(context.Background(), rt, "mysql.db_tables", &DbTablesArgs{Name: "db"})
+	if err != nil || !reflect.DeepEqual(value, []string{}) {
+		t.Fatalf("registry db_tables short row = %#v, %v", value, err)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("registry R9.3d calls = %d, want 3", len(runner.calls))
+	}
+}
 
 // TestMysqlUserList pins the exact query, the DictRow map shape keyed by
 // the batch header, the prefix-zip of a short row, and that no password

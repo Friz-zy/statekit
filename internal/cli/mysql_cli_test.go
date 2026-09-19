@@ -445,6 +445,169 @@ func TestMySQLCLIDBCatalogDecoding(t *testing.T) {
 	}
 }
 
+// TestMySQLCLIDBGet drives mysql.db_get through the actual CLI with the
+// fixed SCHEMATA query, the source dict shape, SQL NULL sentinel mapping,
+// client-side name matching, and the complete connection/redaction surface.
+func TestMySQLCLIDBGet(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\tDEFAULT_CHARACTER_SET_NAME\tDEFAULT_COLLATION_NAME\r\n" +
+			"other\tlatin1\tlatin1_swedish_ci\r\n" +
+			"test_db\tutf8mb4\tutf8mb4_0900_ai_ci\r\n")},
+	}}
+	app := mysqlCLIRunnerApp(t, runner)
+
+	code, out, errS := captureCode(t, app, "exec", "mysql.db_get", "--name", "test_db",
+		"--connection-user", "test_user", "--connection-host", "test_host",
+		"--connection-port", "test_port", "--connection-db", "test_maint",
+		"--connection-pass", "test_pass", "-o", "json")
+	var got map[string]any
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &got) != nil ||
+		!reflect.DeepEqual(got, map[string]any{"character_set": "utf8mb4", "collate": "utf8mb4_0900_ai_ci"}) {
+		t.Fatalf("db_get code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d, want 1", len(runner.calls))
+	}
+	command := runner.calls[0]
+	if argv := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(argv, []string{
+		"mysql", "--batch", "--user=test_user", "--host=test_host", "--port=test_port", "--database=test_maint",
+		"--execute=SELECT COALESCE(SCHEMA_NAME, UNHEX('00')) AS SCHEMA_NAME, COALESCE(DEFAULT_CHARACTER_SET_NAME, UNHEX('00')) AS DEFAULT_CHARACTER_SET_NAME, COALESCE(DEFAULT_COLLATION_NAME, UNHEX('00')) AS DEFAULT_COLLATION_NAME FROM information_schema.SCHEMATA",
+	}) {
+		t.Fatalf("argv = %q", argv)
+	}
+	if !reflect.DeepEqual(command.Env, []string{"MYSQL_PWD=test_pass"}) || !reflect.DeepEqual(command.Redact, []string{"test_pass"}) || command.Shell {
+		t.Fatalf("unsafe db_get command = %#v", command)
+	}
+	if strings.Contains(command.RedactedString()+out+errS, "test_pass") {
+		t.Fatalf("db_get output leaks password: command=%q out=%q err=%q", command.RedactedString(), out, errS)
+	}
+
+	// SQL NULL becomes JSON null; a literal NULL remains a string.
+	runner = &cliRecordingRunner{results: []process.CommandResult{{Stdout: []byte(
+		"SCHEMA_NAME\tDEFAULT_CHARACTER_SET_NAME\tDEFAULT_COLLATION_NAME\n" +
+			"test_db\t\\0\tNULL\n")}}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.db_get", "--name", "test_db", "-o", "json")
+	got = nil
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &got) != nil ||
+		!reflect.DeepEqual(got, map[string]any{"character_set": nil, "collate": "NULL"}) {
+		t.Fatalf("db_get NULL code=%d out=%q err=%q", code, out, errS)
+	}
+
+	// Successful absence is {}, while a nonzero mysql exit is [].
+	runner = &cliRecordingRunner{results: []process.CommandResult{{Stdout: []byte(
+		"SCHEMA_NAME\tDEFAULT_CHARACTER_SET_NAME\tDEFAULT_COLLATION_NAME\nother\tutf8\tutf8_general_ci\n")}}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.db_get", "--name", "missing", "-o", "json")
+	var empty map[string]any
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &empty) != nil || len(empty) != 0 {
+		t.Fatalf("db_get missing code=%d out=%q err=%q", code, out, errS)
+	}
+
+	runner = &cliRecordingRunner{results: []process.CommandResult{{ExitCode: 1, Stderr: []byte("ERROR 1045: denied\n")}}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.db_get", "--name", "missing", "-o", "json")
+	var emptyList []any
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &emptyList) != nil || len(emptyList) != 0 {
+		t.Fatalf("db_get nonzero code=%d out=%q err=%q", code, out, errS)
+	}
+
+	if code, _, errS = captureCode(t, mysqlCLIRunnerApp(t, &cliRecordingRunner{}), "exec", "mysql.db_get", "-o", "json"); code != ExitInvalidInput {
+		t.Fatalf("db_get missing name code=%d err=%q", code, errS)
+	}
+}
+
+// TestMySQLCLIDBTables drives mysql.db_tables with both the source default and
+// the optional exact client-side table filter; no caller name reaches SQL and
+// result order is the fixed catalog's order.
+func TestMySQLCLIDBTables(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{Stdout: []byte("Database\r\ntest_db\r\nother\r\n")},
+		{Stdout: []byte("TABLE_SCHEMA\tTABLE_NAME\r\ntest_db\tzeta\r\ntest_db\twanted\r\nother\tignored\r\n")},
+	}}
+	app := mysqlCLIRunnerApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "mysql.db_tables", "--name", "test_db", "--table", "wanted",
+		"--connection-user", "test_user", "--connection-host", "test_host", "--connection-port", "test_port",
+		"--connection-db", "test_maint", "--connection-pass", "test_pass", "-o", "json")
+	var tables []string
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &tables) != nil || !reflect.DeepEqual(tables, []string{"wanted"}) {
+		t.Fatalf("db_tables filtered code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("runner calls = %d, want 2", len(runner.calls))
+	}
+	for i, query := range []string{
+		"SELECT COALESCE(SCHEMA_NAME, UNHEX('00')) FROM information_schema.SCHEMATA",
+		"SELECT COALESCE(TABLE_SCHEMA, UNHEX('00')) AS TABLE_SCHEMA, COALESCE(TABLE_NAME, UNHEX('00')) AS TABLE_NAME FROM information_schema.TABLES ORDER BY information_schema.TABLES.TABLE_NAME",
+	} {
+		command := runner.calls[i]
+		if argv := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(argv, []string{
+			"mysql", "--batch", "--user=test_user", "--host=test_host", "--port=test_port", "--database=test_maint", "--execute=" + query,
+		}) {
+			t.Fatalf("call %d argv=%q", i, argv)
+		}
+		if !reflect.DeepEqual(command.Env, []string{"MYSQL_PWD=test_pass"}) || !reflect.DeepEqual(command.Redact, []string{"test_pass"}) {
+			t.Fatalf("call %d env/redact=%#v", i, command)
+		}
+		if strings.Contains(strings.Join(command.Args, "\x00"), "test_db") || strings.Contains(command.RedactedString()+out+errS, "test_pass") {
+			t.Fatalf("call %d leaked input: command=%q out=%q err=%q", i, command.RedactedString(), out, errS)
+		}
+	}
+
+	// Default table=None returns all matching tables in catalog order.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{Stdout: []byte("Database\ntest_db\n")},
+		{Stdout: []byte("TABLE_SCHEMA\tTABLE_NAME\ntest_db\tzeta\ntest_db\twanted\n")},
+	}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.db_tables", "--name", "test_db", "-o", "json")
+	tables = nil
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &tables) != nil || !reflect.DeepEqual(tables, []string{"zeta", "wanted"}) {
+		t.Fatalf("db_tables all code=%d out=%q err=%q", code, out, errS)
+	}
+
+	// Missing database is false after one preflight; a failed table catalog is
+	// the source-compatible empty list after a successful preflight.
+	runner = &cliRecordingRunner{results: []process.CommandResult{{Stdout: []byte("Database\nother\n")}}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.db_tables", "--name", "missing", "-o", "json")
+	if code != ExitOK || errS != "" || strings.TrimSpace(out) != "false" || len(runner.calls) != 1 {
+		t.Fatalf("db_tables missing code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{Stdout: []byte("Database\ntest_db\n")},
+		{ExitCode: 1, Stderr: []byte("ERROR 1045: denied\n")},
+	}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.db_tables", "--name", "test_db", "-o", "json")
+	tables = nil
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &tables) != nil || len(tables) != 0 {
+		t.Fatalf("db_tables failed table catalog code=%d out=%q err=%q", code, out, errS)
+	}
+
+	if code, _, errS = captureCode(t, mysqlCLIRunnerApp(t, &cliRecordingRunner{}), "exec", "mysql.db_tables", "-o", "json"); code != ExitInvalidInput {
+		t.Fatalf("db_tables missing name code=%d err=%q", code, errS)
+	}
+}
+
+// TestMySQLCLIDBGetTablesRunnerErrorRedaction keeps synthetic Runner errors
+// value-free on both R9.3d registry paths.
+func TestMySQLCLIDBGetTablesRunnerErrorRedaction(t *testing.T) {
+	marker := "S3CRET-r93d-cli"
+	runner := &cliRecordingRunner{results: []process.CommandResult{{Err: errors.New("mysql failed with " + marker)}}}
+	code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.db_get", "--name", "db", "--connection-pass", marker, "-o", "json")
+	if code != ExitFailed || strings.Contains(out+errS, marker) || len(runner.calls) != 1 {
+		t.Fatalf("db_get redaction code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+
+	runner = &cliRecordingRunner{results: []process.CommandResult{{Err: errors.New("mysql failed with " + marker)}}}
+	code, out, errS = captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.db_tables", "--name", "db", "--connection-pass", marker, "-o", "json")
+	if code != ExitFailed || strings.Contains(out+errS, marker) || len(runner.calls) != 1 {
+		t.Fatalf("db_tables redaction code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+}
+
 // TestMySQLCLIVersion drives mysql.version end to end through the CLI:
 // the exact pinned SELECT VERSION() argv with the full connection surface,
 // the JSON string answer, the pinned "" compatibility data on a nonzero

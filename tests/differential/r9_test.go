@@ -191,8 +191,17 @@ import (
 // invocation, and every nonzero mysql exit in the flow a strict error —
 // never the read-only compatibility data — because REPAIR and OPTIMIZE
 // mutate and an unknown failure must not answer partial fake success.
-// The generic psql_query surface and the remaining mysql and postgres
-// surfaces need their client protocol boundaries and stay pending.
+// R9.3d registers mysql.db_get and mysql.db_tables (mysql.py:1198-1267):
+// db_get reads the fixed sentinel-mapped information_schema.SCHEMATA catalog,
+// returns the pinned character_set/collate dict with SQL NULL restored to nil,
+// and keeps the successful missing-row {}, nonzero [] shapes; db_tables keeps
+// the pinned db_exists preflight and fixed information_schema.TABLES catalog,
+// returns tables in server/source order with a client-side optional table
+// filter, and keeps the missing-database false and failed-table-catalog []
+// shapes. Both surfaces reuse the bounded batch NULL/CRLF decoder and never
+// interpolate caller strings into SQL. The generic psql_query surface and the
+// remaining mysql and postgres surfaces need their client protocol boundaries
+// and stay pending.
 type r9FamilySpec struct {
 	Source             string
 	SourceTests        string
@@ -248,6 +257,7 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"mysql.grant-lexer-shapes",
 			"mysql.read-only-catalog-lists",
 			"mysql.server-status-version-variables",
+			"mysql.db-get-tables",
 		},
 		Evidence: []string{
 			"source-derived quoting and lexer vectors from the pinned mysql.py, including the three _grant_to_tokens docstring split examples run verbatim",
@@ -266,12 +276,16 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"R9.3c shape vectors pin the empty table list (the pinned [] over zero tables after exactly two catalog calls), the rowless statement success, batch-escaped/CRLF-framed result fields, the literal NULL string staying a value, the sentinel rendering nil, and the defensive short-row prefix; the missing database answers the value-free errMysqlDatabaseMissing after exactly one catalog call, mapping the pinned db_tables False miss that makes the wrappers fail on `for table in False:`",
 			"R9.3c blocker regressions: TestMysqlMaintenanceRawCatalog checks raw schema/table identifier collisions with a synthetic redaction marker for CHECK/REPAIR/OPTIMIZE, exact original SQL, safe rendered maintenance commands and output, and redacted Runner errors at all three phases; TestMysqlRawCatalogSafeResult checks separate raw/safe stdout, failed-read raw suppression, truncation/size bounds, and the fixed-query allowlist. TestMysqlMaintenanceAllTables pins qualified ORDER BY information_schema.TABLES.TABLE_NAME and preserves an intentionally out-of-order fake catalog response without Go re-sorting",
 			"R9.3c nonzero vectors abort strictly at every phase (schema catalog, table catalog, single statement, second statement) with exact call counts and no partial success value, and the fail-closed vectors cover nil Runner, unavailable client, runas (zero calls), cancellation, Runner errors, output limits, and password-marker redaction; TestMysqlMaintenanceIdentifierBoundary rejects empty, NUL, and C0/DEL controls in both positions value-free with zero Runner calls while backtick/percent/underscore/non-ASCII identifiers stay accepted inside the doubled backticks",
-			"R9.3c registry tests drive all three names through the exec registry with exact JSON shapes (the wrapped [[...]] all-tables list and the bare [...] single-table list), and CLI tests drive the full table=None flow end to end (four-call argv sequence, MYSQL_PWD-only environment, Redact inventory, no password in CLI output), the single-table REPAIR/OPTIMIZE statements with the underscore flag spelling, the [] empty-table JSON, the ExitInvalidInput missing-name, the ExitFailed missing-database and strict-nonzero surfaces with value-free messages, the pre-Runner identifier rejection, and a synthetic secret-bearing Runner error redacted after one call",
+			"R9.3c registry tests drive all three names through the exec registry with exact JSON shapes (the wrapped [[...]] all-tables list and the bare [...] single-table list), and CLI tests drive the full table=None flow end to end (four-call argv sequence, MYSQL_PWD-only environment, Redact inventory, no password in CLI output), the single-table REPAIR/OPTIMIZE statements with the underscore flag spelling, the [] empty-table JSON, the ExitInvalidInput missing-name, the ExitFailed missing-database and strict-nonzero surfaces, the pre-Runner identifier rejection, and a synthetic secret-bearing Runner error redacted after one call",
+			"R9.3d direct tests pin db_get's fixed three-column SCHEMATA query, exact character_set/collate dict, successful {} miss, nonzero [] compatibility result, sentinel-to-nil and literal NULL distinction, CRLF framing, full connection argv/clean MYSQL_PWD/Redact/30s/4 MiB bounds, no-Runner runas/client/cancellation/output-limit guards, and value-free Runner-error redaction; db_tables tests pin the two-call db_exists preflight plus fixed TABLES query, False miss after one call, source-order list, literal/sentinel NULL behavior, exact client-side table filter, failed second-catalog [], no SQL interpolation, and the same fail-closed transport guards",
+			"R9.3d registry and CLI tests drive db_get and db_tables through the actual runtime names, mixed dict/list/false shapes, required-name validation, full connection flags, CRLF/NULL decoding, optional --table filtering, fixed query argv, nonzero compatibility data, call counts, and synthetic secret-bearing Runner errors without exposing the password",
 		},
 		CompatibilityNotes: []string{
-			"R9.2a registers the driver-free pure functions quote_identifier and tokenize_grant; R9.3a adds the read-only catalog family db_list, db_exists, user_list, and user_exists over the mysql CLI transport; R9.3b adds the read-only server facts family version, status, showvariables, and showglobal on the same transport; R9.3c adds the maintenance family db_check, db_repair, and db_optimize — REPAIR and OPTIMIZE are mutations, executed only through the (fake) Runner, never a live server; the remaining public surface requires the MySQL client protocol or mutation boundary (E5) and stays pending",
+			"R9.2a registers the driver-free pure functions quote_identifier and tokenize_grant; R9.3a adds the read-only catalog family db_list, db_exists, user_list, and user_exists over the mysql CLI transport; R9.3b adds the read-only server facts family version, status, showvariables, and showglobal on the same transport; R9.3c adds the maintenance family db_check, db_repair, and db_optimize — REPAIR and OPTIMIZE are mutations, executed only through the (fake) Runner, never a live server; R9.3d adds the read-only db_get and db_tables catalog surfaces on the same fixed-query transport; the remaining public surface requires the MySQL client protocol or mutation boundary (E5) and stays pending",
 			"R9.3c keeps the pinned statement construction exactly: the committed quote_identifier quotes both identifiers (backtick doubling plus MySQLdb's doubled percent), and the pinned _execute no-args unescape (qry.replace(\"%%\", \"%\")) restores single percent signs, so the --execute SQL is byte-identical to what the pinned __check_table/__repair_table/__optimize_table send through MySQLdb; for_grants stays false because these are not grant positions, and the underscore stays raw exactly like the pinned source",
 			"R9.3c keeps the pinned (name, table=None) wrapper shapes exactly: table=None lists the database's tables and answers the list of per-table fetchall lists in source order (the pinned ret.append loop), a given table answers that single statement's bare row list, and an empty table list answers the pinned [] after exactly two catalog calls",
+			"R9.3d keeps db_get's pinned dict keys character_set and collate, with a successful missing schema answering {} and a matching SQL NULL field answering nil; a nonzero mysql result stays the pinned [] connection/query-failure shape, while Runner, cancellation, client-discovery, and output-bound failures remain errors",
+			"R9.3d keeps db_tables' pinned db_exists preflight and list result: a missing database answers false after one fixed SCHEMATA call, a present database reads the fixed TABLES catalog in server/source order, an optional table is an exact client-side filter, and a failed second read answers [] without interpolating the schema or filter into SQL",
 			"the pinned db_tables interpolates the caller's database name into SHOW TABLES IN; StateKit instead runs the same fixed sentinel-mapped information_schema.TABLES catalog for every call and matches the schema client-side (the db_exists precedent), which is result-equivalent for every non-malicious input — the catalog lists the same base tables and views SHOW TABLES lists with the same privilege filtering, in result order — and refuses the identifier interpolation the pinned format permits; both catalog columns are NOT NULL in information_schema.TABLES, so the COALESCE sentinel is defense-in-depth, and a table literally spelled NULL stays the ordinary string",
 			"Ordering is server-side, not Go byte sorting: MySQL 8.0.44 sql/dd/info_schema/show.cc build_show_tables_query selects information_schema.TABLES.TABLE_NAME and orders its alias. The fixed query qualifies ORDER BY information_schema.TABLES.TABLE_NAME to retain the original column collation, avoiding the potentially binary COALESCE/UNHEX output alias. Fake catalog order is preserved after schema filtering; no live server collation parity is claimed",
 			"Only the two fixed maintenance catalog reads defer Runner output redaction so raw identifiers can be parsed without corruption; neither query selects a password or interpolates caller input. The transport returns a separately redacted result and sanitizes Runner errors before handing raw stdout to the internal parser on success only. Maintenance statements and all pre-existing user/status/catalog surfaces retain Runner Redact; raw catalog bytes are not returned as output or attached to errors",
@@ -301,9 +315,11 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 		RegisteredSubset: []string{
 			"mysql.db_check",
 			"mysql.db_exists",
+			"mysql.db_get",
 			"mysql.db_list",
 			"mysql.db_optimize",
 			"mysql.db_repair",
+			"mysql.db_tables",
 			"mysql.quote_identifier",
 			"mysql.showglobal",
 			"mysql.showvariables",
@@ -567,7 +583,7 @@ func TestR9DifferentialScopeReport(t *testing.T) {
 	registered := registeredNames(first)
 
 	report := r9Report{
-		Round:    "R9.3c",
+		Round:    "R9.3d",
 		Platform: "cross-platform",
 		RuntimeStatus: "mock-only: RabbitMQ is never started, MySQL is never connected, and PostgreSQL is never contacted; " +
 			"shell-free fake Runner tests and pure-function vectors provide the executable contract",
