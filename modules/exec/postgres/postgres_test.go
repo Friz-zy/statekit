@@ -350,9 +350,9 @@ func TestPostgresVersionInvalidInputs(t *testing.T) {
 	}
 }
 
-// TestPostgresRegistrySurface pins the forty-seven canonical
+// TestPostgresRegistrySurface pins the forty-eight canonical
 // registrations, their argument prototypes, and the absence of public
-// psql_query, create_metadata, and _parsed_version entries.
+// psql_query and _parsed_version entries.
 func TestPostgresRegistrySurface(t *testing.T) {
 	reg := runtime.NewExecRegistry()
 	if err := Register(reg); err != nil {
@@ -361,6 +361,7 @@ func TestPostgresRegistrySurface(t *testing.T) {
 	wantNames := []string{
 		"postgres.available_extensions",
 		"postgres.create_extension",
+		"postgres.create_metadata",
 		"postgres.db_alter",
 		"postgres.datadir_exists",
 		"postgres.datadir_init",
@@ -465,6 +466,8 @@ func TestPostgresRegistrySurface(t *testing.T) {
 			want = DefaultPrivilegesRevokeArgs{}
 		case "postgres.create_extension":
 			want = CreateExtensionArgs{}
+		case "postgres.create_metadata":
+			want = CreateMetadataArgs{}
 		case "postgres.drop_extension":
 			want = DropExtensionArgs{}
 		case "postgres.language_create", "postgres.language_remove":
@@ -500,12 +503,10 @@ func TestPostgresRegistrySurface(t *testing.T) {
 			t.Fatalf("%s prototype = %#v, want zero-value defaults %#v", name, fn.Args(), want)
 		}
 	}
-	// The generic query surface and the private helpers stay unregistered;
-	// create_metadata keeps its pending public name until a later round.
+	// The generic query surface and the private helpers stay unregistered.
 	for _, pending := range []string{
 		"postgres.psql_query",
 		"postgres._parsed_version",
-		"postgres.create_metadata",
 	} {
 		if _, ok := reg.Get(pending); ok {
 			t.Fatalf("%s must not be publicly registered", pending)
@@ -548,6 +549,7 @@ func TestPostgresRegistrySurface(t *testing.T) {
 			"name", "if_not_exists", "schema", "ext_version", "from_version",
 		}, connection...)},
 		{dropExtensionFunc{}, append([]string{"name", "if_exists", "restrict", "cascade"}, connection...)},
+		{createMetadataFunc{}, append([]string{"name", "ext_version", "schema"}, connection...)},
 		{languageListFunc{}, connection},
 		{languageExistsFunc{}, append([]string{"name"}, connection...)},
 		{languageCreateFunc{}, append([]string{"name"}, connection...)},
@@ -12949,6 +12951,244 @@ func TestPostgresCreateMetadataVectors(t *testing.T) {
 		if !reflect.DeepEqual(got, tc.want) {
 			t.Fatalf("%s metadata = %q, want %q", tc.name, got, tc.want)
 		}
+	}
+}
+
+// fullCreateMetadataArgs builds the public R9.2r arguments with the full
+// connection tuple, mirroring the pinned create_metadata CLI example
+// caller.
+func fullCreateMetadataArgs(name string) *CreateMetadataArgs {
+	return &CreateMetadataArgs{
+		Name:          name,
+		MaintenanceDB: postgresString("db_name"),
+		User:          postgresString("testuser"),
+		Host:          postgresString("testhost"),
+		Port:          postgresString("testport"),
+		Password:      postgresString("testpassword"),
+	}
+}
+
+// TestPostgresCreateMetadataArgv pins the single-call transport of the
+// public R9.2r registration: the fixed installed-extensions catalog query
+// — the pinned double space after "pg_extension a," byte-for-byte —
+// COPY-wrapped with no caller string inside, and the connection tuple
+// transported exactly like every pinned catalog call.
+func TestPostgresCreateMetadataArgv(t *testing.T) {
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(extMutInstalledCSV)},
+	)
+	args := fullCreateMetadataArgs("foo")
+	args.ExtVersion = postgresString("1.4")
+	args.Schema = postgresString("leakcheck_schema")
+	if _, err := (createMetadataFunc{}).Execute(context.Background(), rt, args); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d, want 1", len(runner.calls))
+	}
+	want := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--username", "testuser",
+		"--host", "testhost",
+		"--port", "testport",
+		"--dbname", "db_name",
+		"-v", "datestyle=ISO,MDY",
+		"-c", "COPY (select a.*, b.nspname as schema_name from pg_extension a,  pg_namespace b where a.extnamespace = b.oid) TO STDOUT WITH CSV HEADER",
+	}
+	command := runner.calls[0]
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+	if command.Shell {
+		t.Fatal("catalog call must be shell-free")
+	}
+	// Neither the extension name, the requested schema, nor the requested
+	// version ever reaches SQL: the lookup is client-side only.
+	if joined := strings.Join(command.Args, "\x00"); strings.Contains(joined, "foo") ||
+		strings.Contains(joined, "leakcheck_schema") || strings.Contains(joined, "1.4") {
+		t.Fatalf("catalog call leaked a lookup string into SQL: %q", joined)
+	}
+	// The connection tuple is transported exactly like the pinned
+	// psql_query call (runas rejected, password out of band).
+	if len(command.Env) != 4 || command.Env[0] != "PGPASSWORD=testpassword" {
+		t.Fatalf("unsafe catalog command: %#v", command)
+	}
+	if !reflect.DeepEqual(command.Redact, []string{"testpassword"}) {
+		t.Fatalf("redact = %q", command.Redact)
+	}
+	if strings.Contains(command.RedactedString(), "testpassword") {
+		t.Fatalf("rendered command leaks the password: %q", command.RedactedString())
+	}
+}
+
+// TestPostgresCreateMetadataPublicSemantics pins the public
+// postgres.create_metadata outcomes on the R9.2m fixtures, direct and
+// through the registry: the exact-case miss, the TO_UPGRADE and TO_MOVE
+// ladder (both flags together in the pinned append order), the pinned
+// .get fallbacks, the is-not-None empty-string quirks, and the exact-case
+// lookup that a case-variant name never satisfies.
+func TestPostgresCreateMetadataPublicSemantics(t *testing.T) {
+	for _, tc := range []struct {
+		label      string
+		name       string
+		csv        string
+		extVersion *string
+		schema     *string
+		want       []string
+	}{
+		{"miss", "foo", extMutHeaderCSV, nil, nil, []string{extFlagNotInstalled}},
+		{"case-variant miss", "FOO", extMutInstalledCSV, nil, nil, []string{extFlagNotInstalled}},
+		{"installed only", "foo", extMutInstalledCSV, nil, nil, []string{extFlagInstalled}},
+		{"to upgrade", "foo", extMutInstalledCSV, postgresString("1.4"), nil,
+			[]string{extFlagInstalled, extFlagToUpgrade}},
+		{"to move", "foo", extMutInstalledCSV, nil, postgresString("b"),
+			[]string{extFlagInstalled, extFlagToMove}},
+		{"upgrade and move", "foo", extMutInstalledCSV, postgresString("1.4"), postgresString("b"),
+			[]string{extFlagInstalled, extFlagToUpgrade, extFlagToMove}},
+		{
+			// A missing extversion column falls back to the caller's value
+			// and a missing schema_name column to the caller's schema, so
+			// only TO_UPGRADE can fire on this row.
+			label:      "get fallbacks",
+			name:       "foo",
+			csv:        "extname,extversion,extrelocatable\nfoo,,t\n",
+			extVersion: postgresString("1.4"),
+			schema:     postgresString("b"),
+			want:       []string{extFlagInstalled, extFlagToUpgrade},
+		},
+	} {
+		for _, entry := range []string{"direct", "registry"} {
+			t.Run(tc.label+"/"+entry, func(t *testing.T) {
+				rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(tc.csv)})
+				args := fullCreateMetadataArgs(tc.name)
+				args.ExtVersion = tc.extVersion
+				args.Schema = tc.schema
+				var value any
+				var err error
+				if entry == "registry" {
+					rt.Exec = runtime.NewExecRegistry()
+					if err := Register(rt.Exec); err != nil {
+						t.Fatal(err)
+					}
+					value, err = rt.Exec.Call(context.Background(), rt, "postgres.create_metadata", args)
+				} else {
+					value, err = (createMetadataFunc{}).Execute(context.Background(), rt, args)
+				}
+				if err != nil {
+					t.Fatalf("%s %s err = %v", tc.label, entry, err)
+				}
+				got, ok := value.([]string)
+				if !ok {
+					t.Fatalf("%s %s result = %#v, want a string list", tc.label, entry, value)
+				}
+				if !reflect.DeepEqual(got, tc.want) {
+					t.Fatalf("%s %s = %q, want %q", tc.label, entry, got, tc.want)
+				}
+				if len(runner.calls) != 1 {
+					t.Fatalf("%s %s calls = %d, want 1", tc.label, entry, len(runner.calls))
+				}
+			})
+		}
+	}
+
+	// The empty-string quirks carry values the table above leaves nil:
+	// an explicit empty ext_version never upgrades (LooseVersion("") is
+	// never newer than the installed 0.8), while an explicit empty schema
+	// moves the relocatable row because "" differs from "foo".
+	rt, _ := newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(extMutInstalledCSV)})
+	value, err := (createMetadataFunc{}).Execute(context.Background(), rt,
+		&CreateMetadataArgs{Name: "foo", ExtVersion: postgresString("")})
+	if err != nil || !reflect.DeepEqual(value, []string{extFlagInstalled}) {
+		t.Fatalf("empty ext_version = %#v err = %v, want [INSTALLED]", value, err)
+	}
+	rt, _ = newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(extMutInstalledCSV)})
+	value, err = (createMetadataFunc{}).Execute(context.Background(), rt,
+		&CreateMetadataArgs{Name: "foo", Schema: postgresString("")})
+	if err != nil || !reflect.DeepEqual(value, []string{extFlagInstalled, extFlagToMove}) {
+		t.Fatalf("empty schema = %#v err = %v, want [INSTALLED TO_MOVE]", value, err)
+	}
+}
+
+// TestPostgresCreateMetadataGuards pins the shared failure modes on the
+// public check: canceled context, runas rejection, redacted Runner
+// errors, output limits, psql-unavailability fail-closed, the typed-args
+// guard, the nil Runner, and Salt's nonzero-exit compatibility data.
+func TestPostgresCreateMetadataGuards(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	rt, runner := newPostgresRuntime()
+	if _, err := (createMetadataFunc{}).Execute(ctx, rt, fullCreateMetadataArgs("foo")); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("canceled run executed %d commands", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime()
+	args := fullCreateMetadataArgs("foo")
+	args.Runas = postgresString("postgres")
+	if _, err := (createMetadataFunc{}).Execute(context.Background(), rt, args); !errors.Is(err, errPostgresRunas) {
+		t.Fatalf("runas err = %v, want errPostgresRunas", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("runas run executed %d commands", len(runner.calls))
+	}
+
+	rt, _ = newPostgresRuntime(process.CommandResult{
+		ExitCode: -1,
+		Err:      fmt.Errorf("exec psql --dbname db_name: secret testpassword rejected"),
+	})
+	_, err := (createMetadataFunc{}).Execute(context.Background(), rt, fullCreateMetadataArgs("foo"))
+	if err == nil || strings.Contains(err.Error(), "testpassword") {
+		t.Fatalf("runner error = %v, want redacted", err)
+	}
+	if !strings.Contains(err.Error(), process.RedactedPlaceholder) {
+		t.Fatalf("error lacks redaction placeholder: %v", err)
+	}
+
+	for _, truncated := range []process.CommandResult{
+		{ExitCode: 0, StdoutTruncated: true, Stdout: []byte(strings.Repeat("9", outputLimit+1))},
+		{ExitCode: 0, StderrTruncated: true, Stderr: []byte(strings.Repeat("e", outputLimit+1))},
+	} {
+		rt, _ = newPostgresRuntime(truncated)
+		if _, err := (createMetadataFunc{}).Execute(context.Background(), rt,
+			fullCreateMetadataArgs("foo")); !errors.Is(err, process.ErrOutputLimit) {
+			t.Fatalf("truncated err = %v, want ErrOutputLimit", err)
+		}
+	}
+
+	rt, runner = newPostgresRuntime()
+	runner.available = map[string]bool{"psql": false}
+	if _, err := (createMetadataFunc{}).Execute(context.Background(), rt,
+		fullCreateMetadataArgs("foo")); !errors.Is(err, errPostgresPsqlUnavailable) {
+		t.Fatalf("psql-unavailable err = %v, want errPostgresPsqlUnavailable", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("unavailable psql executed %d commands", len(runner.calls))
+	}
+
+	if _, err := (createMetadataFunc{}).Execute(context.Background(), nil, "bogus"); err == nil {
+		t.Fatal("create_metadata must reject non-struct args")
+	}
+	rtEmpty := &runtime.Runtime{Runner: nil, FS: runtime.NewMemoryFS()}
+	if _, err := (createMetadataFunc{}).Execute(context.Background(), rtEmpty,
+		fullCreateMetadataArgs("foo")); !errors.Is(err, errPostgresRunnerUnavailable) {
+		t.Fatalf("nil runner err = %v, want errPostgresRunnerUnavailable", err)
+	}
+
+	// A non-zero psql exit keeps Salt's compatibility data: the catalog
+	// reads as the empty list and the miss answers NOT_INSTALLED, never
+	// an error.
+	rt, runner = newPostgresRuntime(process.CommandResult{
+		ExitCode: 2,
+		Stderr:   []byte("psql: error: connection refused"),
+	})
+	value, err := (createMetadataFunc{}).Execute(context.Background(), rt, fullCreateMetadataArgs("foo"))
+	if err != nil || !reflect.DeepEqual(value, []string{extFlagNotInstalled}) {
+		t.Fatalf("nonzero exit = %#v err = %v, want [NOT_INSTALLED], nil", value, err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("nonzero exit calls = %d, want 1", len(runner.calls))
 	}
 }
 

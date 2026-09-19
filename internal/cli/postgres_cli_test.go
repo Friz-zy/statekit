@@ -1336,6 +1336,141 @@ func TestPostgresCLIHasDefaultPrivileges(t *testing.T) {
 	}
 }
 
+// metaCLIRelocatableCSV renders the installed-extensions catalog with a
+// relocatable foo row for the R9.2r lifecycle flags.
+const metaCLIRelocatableCSV = `oid,extname,extowner,extnamespace,extrelocatable,extversion,extconfig,extcondition,schema_name
+16386,foo,10,11,t,0.8,,,foo
+`
+
+// TestPostgresCLICreateMetadata drives the R9.2r read-only check end to
+// end: the single fixed catalog query with no caller string inside the
+// SQL, the flag-list JSON rendering for the miss and every lifecycle
+// combination, the pinned empty-string quirks, the exact-case lookup,
+// validation failures before any psql call, and the nonzero-exit
+// compatibility shape.
+func TestPostgresCLICreateMetadata(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(metaCLIRelocatableCSV)},
+	}}
+	app := postgresCLIApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "postgres.create_metadata",
+		"--name", "foo", "--ext-version", "1.4", "--schema", "b",
+		"--maintenance-db", "db_name", "--user", "testuser",
+		"--host", "testhost", "--port", "testport",
+		"--password", "testpassword", "-o", "json")
+	var flags []string
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &flags) != nil ||
+		!reflect.DeepEqual(flags, []string{"EXTENSION INSTALLED", "EXTENSION TO UPGRADE", "EXTENSION TO MOVE"}) {
+		t.Fatalf("create_metadata code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("create_metadata calls = %d, want 1", len(runner.calls))
+	}
+	call := runner.calls[0]
+	sqlArg := call.Args[len(call.Args)-1]
+	if sqlArg != "COPY (select a.*, b.nspname as schema_name from pg_extension a,  pg_namespace b where a.extnamespace = b.oid) TO STDOUT WITH CSV HEADER" {
+		t.Fatalf("create_metadata SQL = %q", sqlArg)
+	}
+	// Neither the extension name, the requested version, nor the requested
+	// schema ever reaches the argv; the password stays out of band.
+	joined := strings.Join(call.Args, "\x00")
+	for _, leaked := range []string{"foo", "--name", "--ext-version", "--schema", "1.4", "testpassword"} {
+		if strings.Contains(joined, leaked) {
+			t.Fatalf("argv leaked %q: %q", leaked, joined)
+		}
+	}
+	if !strings.Contains(joined, "--dbname\x00db_name") {
+		t.Fatalf("argv misses the maintenance database: %q", joined)
+	}
+	if strings.Contains(out+errS, "COPY (select") || strings.Contains(out+errS, "testpassword") {
+		t.Fatalf("CLI output leaked SQL or password: %q %q", out, errS)
+	}
+
+	// The miss renders the single NOT_INSTALLED flag.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(pinnedCLIInstalledExtensionsCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.create_metadata",
+		"--name", "cube", "-o", "json")
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &flags) != nil ||
+		!reflect.DeepEqual(flags, []string{"EXTENSION NOT INSTALLED"}) {
+		t.Fatalf("create_metadata miss code=%d out=%q err=%q", code, out, errS)
+	}
+
+	// The installed lookup is exact-case: PLPGSQL misses the plpgsql row.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(pinnedCLIInstalledExtensionsCSV)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.create_metadata",
+		"--name", "PLPGSQL", "-o", "json")
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &flags) != nil ||
+		!reflect.DeepEqual(flags, []string{"EXTENSION NOT INSTALLED"}) {
+		t.Fatalf("create_metadata case miss code=%d out=%q err=%q", code, out, errS)
+	}
+
+	// The upgrade flag alone, and the pinned empty-string quirks: an
+	// explicit empty --ext-version keeps the INSTALLED-only answer while
+	// an explicit empty --schema moves the relocatable row.
+	for _, tc := range []struct {
+		label string
+		argv  []string
+		want  []string
+	}{
+		{"upgrade only", []string{"--name", "foo", "--ext-version", "1.4"},
+			[]string{"EXTENSION INSTALLED", "EXTENSION TO UPGRADE"}},
+		{"empty ext_version", []string{"--name", "foo", "--ext-version", ""},
+			[]string{"EXTENSION INSTALLED"}},
+		{"empty schema moves", []string{"--name", "foo", "--schema", ""},
+			[]string{"EXTENSION INSTALLED", "EXTENSION TO MOVE"}},
+	} {
+		runner = &cliRecordingRunner{results: []process.CommandResult{
+			{ExitCode: 0, Stdout: []byte(metaCLIRelocatableCSV)},
+		}}
+		app = postgresCLIApp(t, runner)
+		fullArgv := append([]string{"exec", "postgres.create_metadata"}, tc.argv...)
+		fullArgv = append(fullArgv, "-o", "json")
+		code, out, errS = captureCode(t, app, fullArgv...)
+		if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &flags) != nil ||
+			!reflect.DeepEqual(flags, tc.want) {
+			t.Fatalf("%s code=%d out=%q err=%q, want %q", tc.label, code, out, errS, tc.want)
+		}
+	}
+
+	// The required name is validated before any psql call.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.create_metadata",
+		"--ext-version", "1.4", "-o", "json")
+	if code != ExitInvalidInput || !strings.Contains(errS, "missing required argument") ||
+		len(runner.calls) != 0 {
+		t.Fatalf("missing name code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+
+	// runas is rejected before any Runner invocation.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.create_metadata",
+		"--name", "foo", "--runas", "postgres", "-o", "json")
+	if code != ExitFailed || !strings.Contains(errS, "runas") || len(runner.calls) != 0 {
+		t.Fatalf("runas code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+
+	// A failed connection keeps Salt's shape: no exception, the empty
+	// catalog answers the single NOT_INSTALLED flag.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 2, Stderr: []byte("psql: error: connection refused")},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.create_metadata",
+		"--name", "foo", "-o", "json")
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &flags) != nil ||
+		!reflect.DeepEqual(flags, []string{"EXTENSION NOT INSTALLED"}) {
+		t.Fatalf("nonzero exit code=%d out=%q err=%q, want NOT_INSTALLED", code, out, errS)
+	}
+}
+
 // TestPostgresCLIPrivilegesList drives privileges_list end to end for the
 // table and group flows: the pinned dictionaries render as nested JSON,
 // the single fixed catalog query embeds no caller string, the required

@@ -168,6 +168,21 @@
 // catalogs remain the only SQL with every lookup matched client-side,
 // so like has_privileges this read-only path needs no identifier
 // boundary: no caller string can reach a statement.
+// R9.2r registers the read-only extension-lifecycle check create_metadata
+// (postgres.py:1849-1892) on the exact internal ladder the R9.2m extension
+// mutations already run as their preflight and post-check: the pinned
+// (name, ext_version, schema, user, host, port, maintenance_db, password,
+// runas) signature, the exact-case installed-catalog lookup whose miss is
+// the single NOT_INSTALLED flag, and the pinned flag ladder — INSTALLED
+// plus TO_UPGRADE when the caller's ext_version is a LooseVersion-newer
+// one and TO_MOVE when the installed row is relocatable and its schema
+// differs, with the pinned .get fallbacks and the is-not-None (not
+// truthiness) comparison gates. The caller's own ext_version and schema
+// reach the ladder here exactly like the pinned public function. The
+// fixed installed-extensions catalog remains the only SQL with the
+// lookup matched client-side, so like has_default_privileges this
+// read-only path needs no identifier boundary: no caller string can
+// reach a statement.
 // Like Salt, every invocation is a shell-free psql argv executed through
 // the central Runner; this package links no database driver or protocol
 // client and never contacts a live server by itself. The catalog queries
@@ -2863,9 +2878,9 @@ func isOlderExtVer(a, b string) bool {
 // The .get fallbacks keep the pinned defaults: a missing extversion column
 // falls back to the caller's ext_version and a missing schema_name column
 // to the caller's schema, and both comparisons only run when the caller
-// argument is not None (not when it is an empty string). Internal-only:
-// the public name stays pending exactly like a later registered name, and
-// create_extension and drop_extension are its only callers.
+// argument is not None (not when it is an empty string). The ladder is
+// shared by the public postgres.create_metadata registration and the
+// create_extension/drop_extension preflight and post-check flows.
 func createMetadata(ctx context.Context, rt *runtime.Runtime, conn *pgConnection, name string, extVersion, schema *string) ([]string, error) {
 	installed, err := installedExtensions(ctx, rt, conn)
 	if err != nil {
@@ -2899,6 +2914,65 @@ func createMetadata(ctx context.Context, rt *runtime.Runtime, conn *pgConnection
 		}
 	}
 	return ret, nil
+}
+
+// CreateMetadataArgs are the canonical postgres.create_metadata
+// arguments, mirroring the pinned create_metadata(name, ext_version=None,
+// schema=None, user=None, host=None, port=None, maintenance_db=None,
+// password=None, runas=None) signature (postgres.py:1849-1859). Pointer
+// fields keep Salt's None defaults: nil ext_version and schema never
+// trigger their comparison branch while explicit empty strings keep the
+// pinned is-not-None behavior — the version compare runs against the
+// installed row over LooseVersion("") and the schema comparison sees a
+// differing empty string exactly like the pinned source.
+type CreateMetadataArgs struct {
+	Name          string  `statekit:"name=name,required"`
+	ExtVersion    *string `statekit:"name=ext_version"`
+	Schema        *string `statekit:"name=schema"`
+	User          *string `statekit:"name=user"`
+	Host          *string `statekit:"name=host"`
+	Port          *string `statekit:"name=port"`
+	MaintenanceDB *string `statekit:"name=maintenance_db"`
+	Password      *string `statekit:"name=password"`
+	Runas         *string `statekit:"name=runas"`
+}
+
+func (a *CreateMetadataArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: a.MaintenanceDB,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+type createMetadataFunc struct{}
+
+func (createMetadataFunc) Name() string { return "postgres.create_metadata" }
+func (createMetadataFunc) Args() any    { return CreateMetadataArgs{} }
+
+// Execute ports the pinned create_metadata flow (postgres.py:1870-1892):
+// one fixed installed-extensions catalog query, then the exact internal
+// ladder the R9.2m extension mutations run — with the caller's own
+// ext_version and schema reaching the comparisons, exactly like the
+// pinned public function. The lookup is the pinned exact-case keying
+// matched client-side, so no caller string reaches SQL and, like the
+// other read-only catalog paths, no identifier boundary exists. The
+// return is the pinned flag list (NOT_INSTALLED alone on a miss;
+// INSTALLED plus TO_UPGRADE and/or TO_MOVE on a hit), and the pinned
+// source has no validation head, so only the shared typed-args guard
+// runs before the catalog call.
+func (createMetadataFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[CreateMetadataArgs](args, "postgres.create_metadata")
+	if err != nil {
+		return nil, err
+	}
+	return createMetadata(ctx, rt, a.connection(), a.Name, a.ExtVersion, a.Schema)
 }
 
 // CreateExtensionArgs are the canonical postgres.create_extension
@@ -6459,14 +6533,17 @@ func redactedError(err error, secrets ...string) error {
 // R9.2q read-only default-privilege check has_default_privileges (the
 // decision core the R9.2l mutations already run as their preflight, now
 // registered under its canonical public name with the caller's own
-// grant_option). The remainder of the
+// grant_option), plus the R9.2r read-only extension-lifecycle check
+// create_metadata (the exact ladder the R9.2m extension mutations run
+// as their preflight and post-check, now registered under its canonical
+// public name with the caller's own ext_version and schema). The
+// remainder of the
 // postgres family needs the generic psql query surface (psql_query itself
 // stays pending; no arbitrary-query registration exists in this phase) and
 // stays pending for later R9 rounds; the internal parsed-version,
-// psql-query, role-statement, and create-metadata helpers are
+// psql-query, and role-statement helpers are
 // intentionally not registered, exactly like
-// the pinned private functions (create_metadata keeps its pending public
-// name until a later round registers it).
+// the pinned private functions.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		versionFunc{},
@@ -6491,6 +6568,7 @@ func Register(reg *runtime.ExecRegistry) error {
 		isInstalledExtensionFunc{},
 		createExtensionFunc{},
 		dropExtensionFunc{},
+		createMetadataFunc{},
 		languageListFunc{},
 		languageExistsFunc{},
 		languageCreateFunc{},
