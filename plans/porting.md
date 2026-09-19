@@ -1864,6 +1864,34 @@ report's `prior_report_sha256` block matches the committed R3-R8 reports),
 and neither the R9.2q nor the R9.2r commit touched `go.mod`/`go.sum` (no new
 dependency).
 
+##### 2026-09-19 current status (R9.2s PostgreSQL owner reassignment)
+
+Actual HEAD is `883f063` (R9.2s PostgreSQL owner reassignment; landed
+2026-09-19). R9.2s implementation and independent-gate ledger. The R9.2q
+(`e19cf7f`; lead and security gates passed) and R9.2r (`b386189`; scoped lead
+gate passed after the signature evidence correction) items are already
+recorded in the section above — no duplicate rows are added and that section
+stays unchanged; this section extends the ledger without rewriting any prior
+row, count, or report statement:
+
+| Commit | Scope | Implementation executor role(s) | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `883f063` | R9.2s `owner_to` registered (1 public; the pinned owner reassignment — five read-only catalog queries, then the single `begin;` / `alter database ... owner to ...;` / per-object / `commit;` transaction script — with the `db_alter` owner+owner_recurse delegation now running the registered flow) | `backend-engineer-senior` | `backend-engineer-lead` | passed after strict catalog abort / `ON_ERROR_STOP` / result-shape / redaction / evidence fixes; postgres 49 registered / 1 pending, totals registered_public 88 of 125; mock-only fake-Runner contract — no DB driver, no live PostgreSQL, live DB/broker integration excluded behind E5; no `go.mod`/`go.sum` change (no new dependency); R3-R8 report hashes unchanged; documented safe divergences per the report — psql `--set=ON_ERROR_STOP=on` before `-f -`, the in-memory bounded stdin script replacing the pinned NamedTemporaryFile, a nonzero catalog psql exit aborting before any mutation instead of the pinned silent skeleton mutation, value-free identifier validation (quoted dbname, bare ownername) before any Runner invocation, and the `{retcode, stdout, stderr}` run_all mapping shape; this registration supersedes the R9.2n-era nonblocking `owner_to` unsupported boundary recorded above, which is preserved unchanged as history; `psql_query` remains the one pending postgres name — the arbitrary-SQL boundary |
+
+Current R9 report (`docs/differential/R9/report.yaml` at `883f063`, `round:
+R9.2s`, `repeat_stable: true`): rabbitmq 37/37 registered, mysql 2/38 (36
+pending), postgres 49/50 registered_public (1 pending); totals
+registered_public 88 of 125 public functions (37 pending) across 172 catalog
+functions. The remaining postgres name from the report, in exact report
+order, stays pending: `psql_query` — the arbitrary-SQL boundary. R9 remains
+open — no closure claim is made. The report pins the mock-only boundary —
+RabbitMQ is never started, MySQL is never connected, PostgreSQL is never
+contacted; no database driver is linked — and live database/broker
+integration stays excluded behind E5. The prior differential report hashes
+for R3-R8 are unchanged (the report's `prior_report_sha256` block matches
+the committed R3-R8 reports), and the R9.2s commit touched no
+`go.mod`/`go.sum` (no new dependency).
+
 ##### 2026-09-17 current status (R9.2b PostgreSQL version probe)
 
 Actual HEAD is `23fba61` (R9.2b PostgreSQL version probe). R9.2b
