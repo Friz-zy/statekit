@@ -8,15 +8,19 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io/fs"
+	"path"
 	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/friz-zy/statekit/internal/config"
+	"github.com/friz-zy/statekit/internal/facts"
 	"github.com/friz-zy/statekit/internal/process"
 	"github.com/friz-zy/statekit/internal/runtime"
 )
@@ -358,6 +362,8 @@ func TestPostgresRegistrySurface(t *testing.T) {
 		"postgres.available_extensions",
 		"postgres.create_extension",
 		"postgres.db_alter",
+		"postgres.datadir_exists",
+		"postgres.datadir_init",
 		"postgres.db_create",
 		"postgres.db_exists",
 		"postgres.db_list",
@@ -464,6 +470,10 @@ func TestPostgresRegistrySurface(t *testing.T) {
 			want = SchemaCreateArgs{}
 		case "postgres.schema_remove":
 			want = SchemaRemoveArgs{}
+		case "postgres.datadir_exists":
+			want = DataDirExistsArgs{}
+		case "postgres.datadir_init":
+			want = DataDirInitArgs{}
 		case "postgres.db_exists", "postgres.tablespace_exists",
 			"postgres.user_exists",
 			"postgres.get_available_extension", "postgres.get_installed_extension",
@@ -520,6 +530,11 @@ func TestPostgresRegistrySurface(t *testing.T) {
 			"name", "new_name", "new_owner", "set_option", "reset_option",
 		}, connection...)},
 		{tablespaceRemoveFunc{}, append([]string{"name"}, connection...)},
+		{datadirExistsFunc{}, []string{"name"}},
+		{datadirInitFunc{}, []string{
+			"name", "auth", "user", "password", "encoding", "locale",
+			"waldir", "checksums", "runas",
+		}},
 		{userListFunc{}, append(connection, "return_password")},
 		{availableExtensionsFunc{}, connection},
 		{installedExtensionsFunc{}, connection},
@@ -3092,6 +3107,1066 @@ func TestPostgresTablespaceListAndExists(t *testing.T) {
 		if value != want {
 			t.Fatalf("tablespace_exists(%q) = %#v, want %v", name, value, want)
 		}
+	}
+}
+
+// postgresStubFS wraps a real FileSystem with selected failures so the
+// datadir family's Runtime.FS boundaries stay testable hermetically: a
+// denied Lstat (permission), a failing temp write, and a failing cleanup.
+// failMkdirErr/failWriteErr override the default EACCES shapes so the
+// raw filesystem errors can carry synthetic password, path, and stderr
+// markers the surfaced datadir errors must not contain.
+type postgresStubFS struct {
+	runtime.FileSystem
+	denyLstat    map[string]bool
+	failMkdir    bool
+	failWrite    bool
+	failRemove   bool
+	failMkdirErr error
+	failWriteErr error
+	writtenPath  string
+}
+
+func (f *postgresStubFS) Lstat(name string) (fs.FileInfo, error) {
+	if f.denyLstat[name] {
+		return nil, &fs.PathError{Op: "lstat", Path: name, Err: syscall.EACCES}
+	}
+	return f.FileSystem.Lstat(name)
+}
+
+func (f *postgresStubFS) MkdirTemp(dir, pattern string) (string, error) {
+	if f.failMkdir {
+		if f.failMkdirErr != nil {
+			return "", f.failMkdirErr
+		}
+		return "", &fs.PathError{Op: "mkdirtemp", Path: dir, Err: syscall.EACCES}
+	}
+	return f.FileSystem.MkdirTemp(dir, pattern)
+}
+
+func (f *postgresStubFS) WriteFile(name string, data []byte, perm fs.FileMode) error {
+	if f.failWrite {
+		if f.failWriteErr != nil {
+			return f.failWriteErr
+		}
+		return &fs.PathError{Op: "open", Path: name, Err: syscall.EACCES}
+	}
+	f.writtenPath = name
+	return f.FileSystem.WriteFile(name, data, perm)
+}
+
+func (f *postgresStubFS) RemoveAll(pathName string) error {
+	if f.failRemove {
+		return &fs.PathError{Op: "remove", Path: pathName, Err: syscall.EACCES}
+	}
+	return f.FileSystem.RemoveAll(pathName)
+}
+
+// seedDatadir writes the two pinned marker files into dir on fsys.
+func seedDatadir(t *testing.T, fsys runtime.FileSystem, dir string) {
+	t.Helper()
+	if err := fsys.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range []string{"PG_VERSION", "postgresql.conf"} {
+		if err := fsys.WriteFile(path.Join(dir, marker), []byte("9.6\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// tmpEntries returns the paths created under the MemoryFS temp root.
+func tmpEntries(t *testing.T, fsys runtime.FileSystem) []string {
+	t.Helper()
+	memory, ok := fsys.(*runtime.MemoryFS)
+	if !ok {
+		return nil
+	}
+	entries, err := memory.Glob("/tmp/*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return entries
+}
+
+// TestPostgresDatadirExistsShapes pins the pinned marker-file probe
+// (postgres.py:4390-4393) over the fake FS: both PG_VERSION and
+// postgresql.conf must be regular files for True, and every miss — an
+// absent marker, a marker that is a directory, a marker that is a symlink
+// (the no-follow boundary: the pinned os.path.isfile would follow it), a
+// name that is not a directory, and a permission error — answers the
+// pinned boolean False exactly like os.path.isfile swallows OSError.
+func TestPostgresDatadirExistsShapes(t *testing.T) {
+	cases := []struct {
+		name string
+		seed func(t *testing.T, fsys runtime.FileSystem)
+		want bool
+	}{
+		{"both markers", func(t *testing.T, fsys runtime.FileSystem) {
+			seedDatadir(t, fsys, "/var/lib/pgsql/data")
+		}, true},
+		{"empty directory", func(t *testing.T, fsys runtime.FileSystem) {
+			if err := fsys.MkdirAll("/var/lib/pgsql/data", 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}, false},
+		{"only PG_VERSION", func(t *testing.T, fsys runtime.FileSystem) {
+			if err := fsys.MkdirAll("/var/lib/pgsql/data", 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := fsys.WriteFile("/var/lib/pgsql/data/PG_VERSION", []byte("9.6\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}, false},
+		{"only postgresql.conf", func(t *testing.T, fsys runtime.FileSystem) {
+			if err := fsys.MkdirAll("/var/lib/pgsql/data", 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := fsys.WriteFile("/var/lib/pgsql/data/postgresql.conf", []byte(""), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}, false},
+		{"PG_VERSION is a directory", func(t *testing.T, fsys runtime.FileSystem) {
+			if err := fsys.MkdirAll("/var/lib/pgsql/data/PG_VERSION", 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := fsys.WriteFile("/var/lib/pgsql/data/postgresql.conf", []byte(""), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}, false},
+		{"PG_VERSION is a symlink to a regular file", func(t *testing.T, fsys runtime.FileSystem) {
+			seedDatadir(t, fsys, "/var/lib/pgsql/data")
+			if err := fsys.WriteFile("/version.txt", []byte("9.6\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := fsys.Remove("/var/lib/pgsql/data/PG_VERSION"); err != nil {
+				t.Fatal(err)
+			}
+			if err := fsys.Symlink("/version.txt", "/var/lib/pgsql/data/PG_VERSION"); err != nil {
+				t.Fatal(err)
+			}
+		}, false},
+		{"postgresql.conf is a symlink to a regular file", func(t *testing.T, fsys runtime.FileSystem) {
+			seedDatadir(t, fsys, "/var/lib/pgsql/data")
+			if err := fsys.WriteFile("/conf.txt", []byte(""), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := fsys.Remove("/var/lib/pgsql/data/postgresql.conf"); err != nil {
+				t.Fatal(err)
+			}
+			if err := fsys.Symlink("/conf.txt", "/var/lib/pgsql/data/postgresql.conf"); err != nil {
+				t.Fatal(err)
+			}
+		}, false},
+		{"name is a regular file", func(t *testing.T, fsys runtime.FileSystem) {
+			if err := fsys.MkdirAll("/var/lib", 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := fsys.WriteFile("/var/lib/pgsql", []byte("not a dir"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}, false},
+		{"absent name", func(t *testing.T, fsys runtime.FileSystem) {}, false},
+	}
+	for _, tc := range cases {
+		rt, _ := newPostgresRuntime()
+		tc.seed(t, rt.FS)
+		value, err := (datadirExistsFunc{}).Execute(context.Background(), rt, &DataDirExistsArgs{Name: "/var/lib/pgsql/data"})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if value != tc.want {
+			t.Fatalf("%s datadir_exists = %#v, want %v", tc.name, value, tc.want)
+		}
+	}
+
+	// A denied Lstat is the pinned os.path.isfile False, never an error.
+	rt, _ := newPostgresRuntime()
+	seedDatadir(t, rt.FS, "/var/lib/pgsql/data")
+	rt.FS = &postgresStubFS{FileSystem: rt.FS, denyLstat: map[string]bool{"/var/lib/pgsql/data/PG_VERSION": true}}
+	value, err := (datadirExistsFunc{}).Execute(context.Background(), rt, &DataDirExistsArgs{Name: "/var/lib/pgsql/data"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != false {
+		t.Fatalf("denied lstat datadir_exists = %#v, want false", value)
+	}
+
+	// A runtime without an FS fails closed instead of panicking: the probe
+	// answers False, the mutation answers the fixed unavailability error.
+	rt, _ = newPostgresRuntime()
+	rt.FS = nil
+	if value, err := (datadirExistsFunc{}).Execute(context.Background(), rt, &DataDirExistsArgs{Name: "/var/lib/pgsql/data"}); err != nil || value != false {
+		t.Fatalf("nil FS datadir_exists = (%#v, %v), want (false, nil)", value, err)
+	}
+	if _, err := (datadirInitFunc{}).Execute(context.Background(), rt, &DataDirInitArgs{Name: "/var/lib/pgsql/data"}); !errors.Is(err, errPostgresFSUnavailable) {
+		t.Fatalf("nil FS datadir_init err = %v", err)
+	}
+}
+
+// TestPostgresDatadirExistsValidation pins the value-free datadir path
+// boundary: empty, relative, unclean, and control-carrying names are
+// rejected before any filesystem access, direct and through the registry
+// dispatch the CLI drives, and the registered happy path answers over the
+// seeded markers.
+func TestPostgresDatadirExistsValidation(t *testing.T) {
+	for _, name := range []string{
+		"",
+		"var/lib/pgsql/data",
+		"/var/lib/pgsql/../pgsql/data",
+		"/var/lib//pgsql/data",
+		"/var/lib/pgsql/data/",
+		"/var/lib/pgsql/da\x00ta",
+		"/var/lib/pgsql/da\x1bta",
+		"/var/lib/pgsql/da\nta",
+	} {
+		rt, _ := newPostgresRuntime()
+		_, err := (datadirExistsFunc{}).Execute(context.Background(), rt, &DataDirExistsArgs{Name: name})
+		if !errors.Is(err, errPostgresInvalidDataDirPath) {
+			t.Fatalf("name %q err = %v, want the fixed data-directory rejection", name, err)
+		}
+		if name != "" && strings.Contains(err.Error(), name) {
+			t.Fatalf("rejection leaks the rejected path: %v", err)
+		}
+		if entries := tmpEntries(t, rt.FS); len(entries) != 0 {
+			t.Fatalf("name %q touched the temp root: %q", name, entries)
+		}
+	}
+
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	rt, runner := newPostgresRuntime()
+	seedDatadir(t, rt.FS, "/var/lib/pgsql/data")
+	value, err := reg.Call(context.Background(), rt, "postgres.datadir_exists", &DataDirExistsArgs{Name: "/var/lib/pgsql/data"})
+	if err != nil || value != true {
+		t.Fatalf("registry datadir_exists = (%#v, %v), want (true, nil)", value, err)
+	}
+	_, err = reg.Call(context.Background(), rt, "postgres.datadir_exists", &DataDirExistsArgs{Name: "relative/path"})
+	if !errors.Is(err, errPostgresInvalidDataDirPath) {
+		t.Fatalf("registry validation err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("registry probe executed %d commands", len(runner.calls))
+	}
+}
+
+// TestPostgresDatadirInitArgvAndResult drives the pinned
+// test__run_initdb_with_timeout vector (the pinned runas argument is
+// rejected by the single-user runtime, so the --username it would have
+// contributed is supplied directly, and the pinned relative fakename
+// name becomes the absolute /fakename the datadir path boundary
+// requires — the only two adaptations; every argv byte between them is
+// the pinned vector): the byte-exact pinned argv, the clean empty
+// environment, no stdin, shell-free central Runner execution with the
+// shared bounds, the retcode boolean, and the registry dispatch.
+func TestPostgresDatadirInitArgvAndResult(t *testing.T) {
+	rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0})
+	value, err := (datadirInitFunc{}).Execute(context.Background(), rt, &DataDirInitArgs{
+		Name: "/fakename",
+		User: postgresString("saltuser"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true {
+		t.Fatalf("datadir_init = %#v, want true", value)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d, want 1", len(runner.calls))
+	}
+	command := runner.calls[0]
+	want := []string{
+		"initdb",
+		"--pgdata=/fakename",
+		"--username=saltuser",
+		"--auth=password",
+		"--encoding=UTF8",
+	}
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+	if command.Env == nil || len(command.Env) != 0 {
+		t.Fatalf("env = %q, want clean empty non-nil environment", command.Env)
+	}
+	if command.Shell {
+		t.Fatal("initdb must run without a shell")
+	}
+	if command.Timeout != commandTimeout ||
+		command.MaxStdoutBytes != outputLimit || command.MaxStderrBytes != outputLimit {
+		t.Fatalf("unsafe command bounds: %#v", command)
+	}
+	if len(command.Stdin) != 0 || command.Dir != "" || command.WindowsCmdLine != "" {
+		t.Fatalf("unexpected command payload: %#v", command)
+	}
+	if command.Redact != nil {
+		t.Fatalf("no-password run carries redact secrets: %q", command.Redact)
+	}
+	if entries := tmpEntries(t, rt.FS); len(entries) != 0 {
+		t.Fatalf("no-password run left temp entries: %q", entries)
+	}
+
+	// The same dispatch through the registry the CLI drives.
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	rt, runner = newPostgresRuntime(process.CommandResult{ExitCode: 0})
+	value, err = reg.Call(context.Background(), rt, "postgres.datadir_init", &DataDirInitArgs{Name: "/var/lib/pgsql/data"})
+	if err != nil || value != true {
+		t.Fatalf("registry datadir_init = (%#v, %v), want (true, nil)", value, err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("registry runner calls = %d, want 1", len(runner.calls))
+	}
+	if got := runner.calls[0].Args[0]; got != "--pgdata=/var/lib/pgsql/data" {
+		t.Fatalf("registry argv[1] = %q", got)
+	}
+}
+
+// TestPostgresDatadirInitDefaults pins the omitted-argument shape: the
+// pinned user default (the effective postgres runas default the pinned
+// helper resolves), the pinned auth and encoding literal defaults, and
+// the omitted locale, -X waldir, checksums, and pwfile entries.
+func TestPostgresDatadirInitDefaults(t *testing.T) {
+	rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0})
+	value, err := (datadirInitFunc{}).Execute(context.Background(), rt, &DataDirInitArgs{Name: "/var/lib/pgsql/data"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true {
+		t.Fatalf("datadir_init = %#v, want true", value)
+	}
+	want := []string{
+		"initdb",
+		"--pgdata=/var/lib/pgsql/data",
+		"--username=postgres",
+		"--auth=password",
+		"--encoding=UTF8",
+	}
+	if got := append([]string{runner.calls[0].Name}, runner.calls[0].Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+}
+
+// TestPostgresDatadirInitFullArgv pins the full pinned argv order with
+// every optional entry present — --locale, the pinned short -X waldir
+// pair before --data-checksums, and --pwfile last — plus the pwfile
+// transport: the exact password bytes with no trailing newline at 0600
+// inside a private temp directory, the password as the only Redact
+// secret, and the removal of file and directory after initdb runs.
+func TestPostgresDatadirInitFullArgv(t *testing.T) {
+	rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0})
+	value, err := (datadirInitFunc{}).Execute(context.Background(), rt, &DataDirInitArgs{
+		Name:      "/var/lib/pgsql/data",
+		Auth:      postgresString("md5"),
+		User:      postgresString("testuser"),
+		Password:  postgresString("testpassword"),
+		Encoding:  postgresString("LATIN1"),
+		Locale:    postgresString("en_US.UTF-8"),
+		WalDir:    postgresString("/var/lib/postgresql/wal"),
+		Checksums: postgresBool(true),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true {
+		t.Fatalf("datadir_init = %#v, want true", value)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d, want 1", len(runner.calls))
+	}
+	command := runner.calls[0]
+	argv := append([]string{command.Name}, command.Args...)
+	if len(argv) != 10 {
+		t.Fatalf("argv = %q, want 10 entries", argv)
+	}
+	wantHead := []string{
+		"initdb",
+		"--pgdata=/var/lib/pgsql/data",
+		"--username=testuser",
+		"--auth=md5",
+		"--encoding=LATIN1",
+		"--locale=en_US.UTF-8",
+		"-X", "/var/lib/postgresql/wal",
+		"--data-checksums",
+	}
+	if !reflect.DeepEqual(argv[:9], wantHead) {
+		t.Fatalf("argv head = %q, want %q", argv[:9], wantHead)
+	}
+	if !strings.HasPrefix(argv[9], "--pwfile=") {
+		t.Fatalf("argv[9] = %q, want the --pwfile entry", argv[9])
+	}
+	pwPath := strings.TrimPrefix(argv[9], "--pwfile=")
+	if path.Base(pwPath) != "pwfile" {
+		t.Fatalf("pwfile base = %q", path.Base(pwPath))
+	}
+	if strings.Contains(argv[9], "testpassword") {
+		t.Fatalf("pwfile argv leaks the password: %q", argv[9])
+	}
+	if !reflect.DeepEqual(command.Redact, []string{"testpassword"}) {
+		t.Fatalf("redact = %q, want the password only", command.Redact)
+	}
+	if rendered := command.RedactedString(); strings.Contains(rendered, "testpassword") {
+		t.Fatalf("rendered command leaks password: %q", rendered)
+	}
+
+	// The pwfile held exactly the password bytes and both file and temp
+	// directory are gone after the run.
+	if data, err := rt.FS.ReadFile(pwPath); err == nil {
+		t.Fatalf("pwfile survived the run: %q", data)
+	}
+	if entries := tmpEntries(t, rt.FS); len(entries) != 0 {
+		t.Fatalf("temp entries survived: %q", entries)
+	}
+}
+
+// postgresPwfileCaptureFS records the pwfile write so the exact bytes and
+// mode can be asserted before the cleanup removes them.
+type postgresPwfileCaptureFS struct {
+	runtime.FileSystem
+	path string
+	data []byte
+	perm fs.FileMode
+}
+
+func (f *postgresPwfileCaptureFS) WriteFile(name string, data []byte, perm fs.FileMode) error {
+	if path.Base(name) == "pwfile" {
+		f.path, f.perm = name, perm
+		f.data = append([]byte(nil), data...)
+	}
+	return f.FileSystem.WriteFile(name, data, perm)
+}
+
+// TestPostgresDatadirInitPwfileBytes pins the pinned pwfile content: the
+// exact password with no trailing newline (fp_.write(f"{password}")), the
+// 0600 mode, and the password's absence from argv and the environment.
+func TestPostgresDatadirInitPwfileBytes(t *testing.T) {
+	rt, _ := newPostgresRuntime(process.CommandResult{ExitCode: 0})
+	capture := &postgresPwfileCaptureFS{FileSystem: rt.FS}
+	rt.FS = capture
+	if _, err := (datadirInitFunc{}).Execute(context.Background(), rt, &DataDirInitArgs{
+		Name:     "/var/lib/pgsql/data",
+		Password: postgresString("s3cr3t pass"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if capture.path == "" || string(capture.data) != "s3cr3t pass" {
+		t.Fatalf("pwfile = (%q, %q), want the exact password bytes", capture.path, capture.data)
+	}
+	if capture.perm != 0o600 {
+		t.Fatalf("pwfile mode = %o, want 0600", capture.perm)
+	}
+}
+
+// TestPostgresDatadirInitExistingNoop pins the pinned datadir_exists
+// preflight head: an initialized directory answers the logged-and-False
+// no-op with no initdb invocation and no pwfile write at all.
+func TestPostgresDatadirInitExistingNoop(t *testing.T) {
+	rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0})
+	seedDatadir(t, rt.FS, "/var/lib/pgsql/data")
+	value, err := (datadirInitFunc{}).Execute(context.Background(), rt, &DataDirInitArgs{
+		Name:     "/var/lib/pgsql/data",
+		Password: postgresString("testpassword"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != false {
+		t.Fatalf("datadir_init existing = %#v, want false", value)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("existing datadir executed %d commands", len(runner.calls))
+	}
+	if entries := tmpEntries(t, rt.FS); len(entries) != 0 {
+		t.Fatalf("existing datadir wrote temp entries: %q", entries)
+	}
+}
+
+// TestPostgresDatadirInitNonzeroExitIsFalse pins the pinned tail
+// ret["retcode"] == 0: a rejected initdb is the boolean false, never an
+// error, and captured output carrying the password stays redacted.
+func TestPostgresDatadirInitNonzeroExitIsFalse(t *testing.T) {
+	rt, _ := newPostgresRuntime(process.CommandResult{
+		ExitCode: 1,
+		Stderr:   []byte(`initdb: error: directory "/var/lib/pgsql/data" exists but is not empty`),
+	})
+	value, err := (datadirInitFunc{}).Execute(context.Background(), rt, &DataDirInitArgs{Name: "/var/lib/pgsql/data"})
+	if err != nil {
+		t.Fatalf("nonzero exit must not error: %v", err)
+	}
+	if value != false {
+		t.Fatalf("datadir_init = %#v, want false", value)
+	}
+
+	// A failing stderr that echoes the password stays redacted.
+	rt, _ = newPostgresRuntime(process.CommandResult{
+		ExitCode: 1,
+		Stderr:   []byte("initdb: error: read pwfile: wrong password testpassword"),
+	})
+	value, err = (datadirInitFunc{}).Execute(context.Background(), rt, &DataDirInitArgs{
+		Name:     "/var/lib/pgsql/data",
+		Password: postgresString("testpassword"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != false {
+		t.Fatalf("password run datadir_init = %#v, want false", value)
+	}
+	if entries := tmpEntries(t, rt.FS); len(entries) != 0 {
+		t.Fatalf("failed run left temp entries: %q", entries)
+	}
+}
+
+// TestPostgresDatadirInitEmptyWaldirShape pins the pinned waldir is not
+// None gate: an explicit empty string still appends the -X pair with the
+// empty element, exactly like the pinned source.
+func TestPostgresDatadirInitEmptyWaldirShape(t *testing.T) {
+	rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 1})
+	value, err := (datadirInitFunc{}).Execute(context.Background(), rt, &DataDirInitArgs{
+		Name:   "/var/lib/pgsql/data",
+		WalDir: postgresString(""),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != false {
+		t.Fatalf("datadir_init empty waldir = %#v, want the retcode false", value)
+	}
+	argv := append([]string{runner.calls[0].Name}, runner.calls[0].Args...)
+	want := []string{
+		"initdb",
+		"--pgdata=/var/lib/pgsql/data",
+		"--username=postgres",
+		"--auth=password",
+		"--encoding=UTF8",
+		"-X", "",
+	}
+	if !reflect.DeepEqual(argv, want) {
+		t.Fatalf("argv = %q, want %q", argv, want)
+	}
+}
+
+// TestPostgresDatadirInitPathInjection pins the fail-closed value-free
+// path boundary for both path arguments: relative, traversal, unclean,
+// and control-carrying names and waldirs are rejected before any Runner
+// invocation or pwfile write, and the errors name no rejected value.
+func TestPostgresDatadirInitPathInjection(t *testing.T) {
+	for _, tc := range []struct {
+		label  string
+		name   string
+		waldir *string
+	}{
+		{"relative name", "var/lib/pgsql/data", nil},
+		{"name traversal", "/var/lib/pgsql/../pgsql/data", nil},
+		{"name double slash", "/var/lib//pgsql/data", nil},
+		{"name trailing slash", "/var/lib/pgsql/data/", nil},
+		{"name control byte", "/var/lib/pgsql/da\x1bta", nil},
+		{"name newline", "/var/lib/pgsql/da\nta", nil},
+		{"name empty", "", nil},
+		{"relative waldir", "/var/lib/pgsql/data", postgresString("relwal")},
+		{"waldir traversal", "/var/lib/pgsql/data", postgresString("/traverse/../x")},
+		{"waldir control byte", "/var/lib/pgsql/data", postgresString("/wa\x1bl")},
+	} {
+		rt, runner := newPostgresRuntime()
+		_, err := (datadirInitFunc{}).Execute(context.Background(), rt, &DataDirInitArgs{
+			Name:     tc.name,
+			WalDir:   tc.waldir,
+			Password: postgresString("pw-secret"),
+		})
+		wantErr := errPostgresInvalidDataDirPath
+		if tc.waldir != nil {
+			wantErr = errPostgresInvalidWalDirPath
+		}
+		if !errors.Is(err, wantErr) {
+			t.Fatalf("%s err = %v", tc.label, err)
+		}
+		if tc.name != "" && strings.Contains(err.Error(), tc.name) {
+			t.Fatalf("%s rejection leaks the rejected path: %v", tc.label, err)
+		}
+		if waldir := pointerString(tc.waldir); waldir != "" && strings.Contains(err.Error(), waldir) {
+			t.Fatalf("%s rejection leaks the rejected waldir: %v", tc.label, err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s executed %d commands", tc.label, len(runner.calls))
+		}
+		if entries := tmpEntries(t, rt.FS); len(entries) != 0 {
+			t.Fatalf("%s wrote temp entries: %q", tc.label, entries)
+		}
+	}
+
+	// The same rejections through the registry dispatch, with a synthetic
+	// secret overlap in the password.
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	rt, runner := newPostgresRuntime()
+	_, err := reg.Call(context.Background(), rt, "postgres.datadir_init", &DataDirInitArgs{
+		Name:     "../escape",
+		Password: postgresString("secretpw"),
+	})
+	if !errors.Is(err, errPostgresInvalidDataDirPath) {
+		t.Fatalf("registry path err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("registry rejection executed %d commands", len(runner.calls))
+	}
+	if entries := tmpEntries(t, rt.FS); len(entries) != 0 {
+		t.Fatalf("registry rejection wrote temp entries: %q", entries)
+	}
+}
+
+// TestPostgresDatadirInitRunasRejected pins the runas boundary before any
+// observable action: an explicit runas is rejected before the read-only
+// preflight runs, and the pinned implicit default (nil) stays accepted.
+func TestPostgresDatadirInitRunasRejected(t *testing.T) {
+	rt, runner := newPostgresRuntime()
+	_, err := (datadirInitFunc{}).Execute(context.Background(), rt, &DataDirInitArgs{
+		Name:  "/var/lib/pgsql/data",
+		Runas: postgresString("postgres"),
+	})
+	if !errors.Is(err, errPostgresRunas) {
+		t.Fatalf("runas err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("runas run executed %d commands", len(runner.calls))
+	}
+	if entries := tmpEntries(t, rt.FS); len(entries) != 0 {
+		t.Fatalf("runas run wrote temp entries: %q", entries)
+	}
+	// An explicit empty-string runas is the pinned falsy no-runas and
+	// stays accepted exactly like nil.
+	rt, runner = newPostgresRuntime(process.CommandResult{ExitCode: 0})
+	value, err := (datadirInitFunc{}).Execute(context.Background(), rt, &DataDirInitArgs{
+		Name:  "/var/lib/pgsql/data",
+		Runas: postgresString(""),
+	})
+	if err != nil || value != true {
+		t.Fatalf("empty runas datadir_init = (%#v, %v)", value, err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("empty runas executed %d commands", len(runner.calls))
+	}
+}
+
+// TestPostgresDatadirInitGuards pins cancellation, initdb
+// unavailability, output limits, and the redacted Runner error on the
+// mutation's single statement.
+func TestPostgresDatadirInitGuards(t *testing.T) {
+	run := func(rt *runtime.Runtime, ctx context.Context) (any, error) {
+		return (datadirInitFunc{}).Execute(ctx, rt, &DataDirInitArgs{Name: "/var/lib/pgsql/data"})
+	}
+
+	rt, runner := newPostgresRuntime()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := run(rt, ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("pre-canceled ctx err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("canceled run executed %d commands", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime()
+	rt.Runner = nil
+	if _, err := run(rt, context.Background()); !errors.Is(err, errPostgresRunnerUnavailable) {
+		t.Fatalf("nil runner err = %v", err)
+	}
+
+	rt, runner = newPostgresRuntime()
+	runner.available = map[string]bool{"initdb": false}
+	if _, err := run(rt, context.Background()); !errors.Is(err, errPostgresInitdbUnavailable) {
+		t.Fatalf("initdb unavailable err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("unavailable initdb executed %d commands", len(runner.calls))
+	}
+	if entries := tmpEntries(t, rt.FS); len(entries) != 0 {
+		t.Fatalf("unavailable initdb wrote temp entries: %q", entries)
+	}
+
+	for _, truncated := range []process.CommandResult{
+		{ExitCode: 0, StdoutTruncated: true, Stdout: []byte(strings.Repeat("9", outputLimit+1))},
+		{ExitCode: 0, StderrTruncated: true, Stderr: []byte(strings.Repeat("e", outputLimit+1))},
+	} {
+		rt, _ := newPostgresRuntime(truncated)
+		if _, err := run(rt, context.Background()); !errors.Is(err, process.ErrOutputLimit) {
+			t.Fatalf("output limit err = %v", err)
+		}
+	}
+
+	// A raw Runner error carrying the password stays redacted.
+	rt, _ = newPostgresRuntime(process.CommandResult{
+		ExitCode: -1,
+		Err:      fmt.Errorf("exec initdb --pgdata=x: pwfile testpassword rejected"),
+	})
+	_, err := (datadirInitFunc{}).Execute(context.Background(), rt, &DataDirInitArgs{
+		Name:     "/var/lib/pgsql/data",
+		Password: postgresString("testpassword"),
+	})
+	if err == nil || strings.Contains(err.Error(), "testpassword") {
+		t.Fatalf("runner error must be redacted: %v", err)
+	}
+	if !strings.Contains(err.Error(), process.RedactedPlaceholder) {
+		t.Fatalf("error lacks redaction placeholder: %v", err)
+	}
+	// The cleanup ran despite the run error.
+	if entries := tmpEntries(t, rt.FS); len(entries) != 0 {
+		t.Fatalf("failed run left temp entries: %q", entries)
+	}
+}
+
+// TestPostgresDatadirInitTestMode pins the process-wide test-mode
+// no-mutation contract: with a missing datadir the answer is the nil
+// would-change prediction with no pwfile write and no Runner invocation,
+// and with an initialized datadir the pinned logged-and-False no-op still
+// applies because the preflight is read-only.
+func TestPostgresDatadirInitTestMode(t *testing.T) {
+	rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0})
+	rt.Options.Test = true
+	value, err := (datadirInitFunc{}).Execute(context.Background(), rt, &DataDirInitArgs{
+		Name:     "/var/lib/pgsql/data",
+		Password: postgresString("testpassword"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != nil {
+		t.Fatalf("test-mode datadir_init = %#v, want nil", value)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("test-mode run executed %d commands", len(runner.calls))
+	}
+	if entries := tmpEntries(t, rt.FS); len(entries) != 0 {
+		t.Fatalf("test-mode run wrote temp entries: %q", entries)
+	}
+
+	seedDatadir(t, rt.FS, "/var/lib/pgsql/data")
+	value, err = (datadirInitFunc{}).Execute(context.Background(), rt, &DataDirInitArgs{Name: "/var/lib/pgsql/data"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != false {
+		t.Fatalf("test-mode existing datadir_init = %#v, want the pinned false", value)
+	}
+}
+
+// TestPostgresDatadirInitPwfileFailures pins the pwfile transport's
+// fail-closed boundaries: a failing temp write or MkdirTemp errors before
+// any Runner invocation (and removes the temp directory), and a failing
+// cleanup after a successful run is the fixed value-free
+// errPostgresPwfileCleanup rather than a silent credential left on disk.
+func TestPostgresDatadirInitPwfileFailures(t *testing.T) {
+	rt, runner := newPostgresRuntime()
+	rt.FS = &postgresStubFS{FileSystem: rt.FS, failMkdir: true}
+	_, err := (datadirInitFunc{}).Execute(context.Background(), rt, &DataDirInitArgs{
+		Name:     "/var/lib/pgsql/data",
+		Password: postgresString("testpassword"),
+	})
+	if err == nil || strings.Contains(err.Error(), "testpassword") {
+		t.Fatalf("mkdirtemp failure must be a clean error: %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("mkdirtemp failure executed %d commands", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime()
+	rt.FS = &postgresStubFS{FileSystem: rt.FS, failWrite: true}
+	_, err = (datadirInitFunc{}).Execute(context.Background(), rt, &DataDirInitArgs{
+		Name:     "/var/lib/pgsql/data",
+		Password: postgresString("testpassword"),
+	})
+	if err == nil {
+		t.Fatal("pwfile write failure must error")
+	}
+	if strings.Contains(err.Error(), "testpassword") {
+		t.Fatalf("write failure leaks the password: %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("write failure executed %d commands", len(runner.calls))
+	}
+	if entries := tmpEntries(t, rt.FS); len(entries) != 0 {
+		t.Fatalf("write failure left the temp directory: %q", entries)
+	}
+
+	rt, runner = newPostgresRuntime(process.CommandResult{ExitCode: 0})
+	rt.FS = &postgresStubFS{FileSystem: rt.FS, failRemove: true}
+	value, err := (datadirInitFunc{}).Execute(context.Background(), rt, &DataDirInitArgs{
+		Name:     "/var/lib/pgsql/data",
+		Password: postgresString("testpassword"),
+	})
+	if !errors.Is(err, errPostgresPwfileCleanup) {
+		t.Fatalf("cleanup failure err = %v, want the fixed cleanup error", err)
+	}
+	if strings.Contains(err.Error(), "testpassword") {
+		t.Fatalf("cleanup failure leaks the password: %v", err)
+	}
+	if value != nil {
+		t.Fatalf("cleanup failure value = %#v, want nil", value)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("cleanup-failure run executed %d commands", len(runner.calls))
+	}
+
+	// A primary Runner error keeps its sentinel semantics over the
+	// cleanup failure.
+	rt, _ = newPostgresRuntime(process.CommandResult{
+		ExitCode: -1,
+		Err:      fmt.Errorf("exec initdb: canceled"),
+	})
+	rt.FS = &postgresStubFS{FileSystem: rt.FS, failRemove: true}
+	_, err = (datadirInitFunc{}).Execute(context.Background(), rt, &DataDirInitArgs{
+		Name:     "/var/lib/pgsql/data",
+		Password: postgresString("testpassword"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "exec initdb") {
+		t.Fatalf("primary run error must win: %v", err)
+	}
+}
+
+// TestPostgresDatadirInitPwfileErrorRedaction pins the value-free
+// passthrough of the pwfile transport's preparation failures: a faulting
+// filesystem whose MkdirTemp/WriteFile errors carry synthetic password,
+// path, and stderr markers surfaces only the fixed sentinels — the raw
+// filesystem rendering (an *fs.PathError names the credential-holding
+// temp location) never travels — asserted direct and through the
+// registry, with zero Runner invocations and no temp mutation.
+func TestPostgresDatadirInitPwfileErrorRedaction(t *testing.T) {
+	const (
+		passwordMarker = "synthetic-pwfile-password"
+		pathMarker     = "/synthetic/pwfile-path-marker"
+		stderrMarker   = "synthetic pwfile stderr marker"
+	)
+	markers := []string{passwordMarker, pathMarker, stderrMarker}
+	assertClean := func(label string, err error, want error, memory *runtime.MemoryFS, runner *postgresFakeRunner) {
+		t.Helper()
+		if !errors.Is(err, want) {
+			t.Fatalf("%s err = %v, want %v", label, err, want)
+		}
+		if err.Error() != want.Error() {
+			t.Fatalf("%s renders %q, want the exact sentinel %q", label, err, want)
+		}
+		for _, marker := range markers {
+			if strings.Contains(err.Error(), marker) {
+				t.Fatalf("%s leaks the marker %q: %v", label, marker, err)
+			}
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s executed %d commands", label, len(runner.calls))
+		}
+		if entries := tmpEntries(t, memory); len(entries) != 0 {
+			t.Fatalf("%s touched the temp root: %q", label, entries)
+		}
+	}
+
+	// MkdirTemp failure: the fixed temp-dir category only.
+	memory := runtime.NewMemoryFS()
+	rt, runner := newPostgresRuntime()
+	rt.FS = &postgresStubFS{FileSystem: memory, failMkdir: true, failMkdirErr: fmt.Errorf(
+		"mkdir %s: %s: %s", pathMarker, passwordMarker, stderrMarker)}
+	_, err := (datadirInitFunc{}).Execute(context.Background(), rt, &DataDirInitArgs{
+		Name:     "/var/lib/pgsql/data",
+		Password: postgresString(passwordMarker),
+	})
+	assertClean("mkdirtemp failure", err, errPostgresPwfileTempDir, memory, runner)
+
+	// WriteFile failure: the fixed write category only, and the temp
+	// directory the failed write lived in is removed.
+	memory = runtime.NewMemoryFS()
+	rt, runner = newPostgresRuntime()
+	rt.FS = &postgresStubFS{FileSystem: memory, failWrite: true, failWriteErr: fmt.Errorf(
+		"open %s/pwfile: wrote %s: %s", pathMarker, passwordMarker, stderrMarker)}
+	_, err = (datadirInitFunc{}).Execute(context.Background(), rt, &DataDirInitArgs{
+		Name:     "/var/lib/pgsql/data",
+		Password: postgresString(passwordMarker),
+	})
+	assertClean("write failure", err, errPostgresPwfileWrite, memory, runner)
+
+	// The same two failures through the registry dispatch the CLI drives.
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	memory = runtime.NewMemoryFS()
+	rt, runner = newPostgresRuntime()
+	rt.FS = &postgresStubFS{FileSystem: memory, failMkdir: true, failMkdirErr: fmt.Errorf(
+		"mkdir %s: %s: %s", pathMarker, passwordMarker, stderrMarker)}
+	_, err = reg.Call(context.Background(), rt, "postgres.datadir_init", &DataDirInitArgs{
+		Name:     "/var/lib/pgsql/data",
+		Password: postgresString(passwordMarker),
+	})
+	assertClean("registry mkdirtemp failure", err, errPostgresPwfileTempDir, memory, runner)
+
+	memory = runtime.NewMemoryFS()
+	rt, runner = newPostgresRuntime()
+	rt.FS = &postgresStubFS{FileSystem: memory, failWrite: true, failWriteErr: fmt.Errorf(
+		"open %s/pwfile: wrote %s: %s", pathMarker, passwordMarker, stderrMarker)}
+	_, err = reg.Call(context.Background(), rt, "postgres.datadir_init", &DataDirInitArgs{
+		Name:     "/var/lib/pgsql/data",
+		Password: postgresString(passwordMarker),
+	})
+	assertClean("registry write failure", err, errPostgresPwfileWrite, memory, runner)
+}
+
+// TestPostgresDatadirInitPwfileDoubleFailure pins the partial-write
+// cleanup precedence: a failed write whose RemoveAll cleanup succeeds is
+// the write category with the temp directory removed, and a failed write
+// whose cleanup also fails joins the write category with the fixed
+// errPostgresPwfileCleanup so the stranded credential stays observable
+// without hiding the primary category — value-free on both paths, with
+// no Runner invocation.
+func TestPostgresDatadirInitPwfileDoubleFailure(t *testing.T) {
+	const passwordMarker = "synthetic-double-failure-pw"
+
+	// Full partial-write: the write fails, the cleanup succeeds.
+	memory := runtime.NewMemoryFS()
+	rt, runner := newPostgresRuntime()
+	rt.FS = &postgresStubFS{FileSystem: memory, failWrite: true, failWriteErr: fmt.Errorf(
+		"open /synthetic/pwfile: partial write of %s", passwordMarker)}
+	_, err := (datadirInitFunc{}).Execute(context.Background(), rt, &DataDirInitArgs{
+		Name:     "/var/lib/pgsql/data",
+		Password: postgresString(passwordMarker),
+	})
+	if !errors.Is(err, errPostgresPwfileWrite) {
+		t.Fatalf("partial-write err = %v, want the write category", err)
+	}
+	if errors.Is(err, errPostgresPwfileCleanup) {
+		t.Fatalf("successful cleanup must not raise the cleanup category: %v", err)
+	}
+	if err.Error() != errPostgresPwfileWrite.Error() {
+		t.Fatalf("partial-write renders %q, want the exact sentinel", err)
+	}
+	if strings.Contains(err.Error(), passwordMarker) {
+		t.Fatalf("partial-write leaks the password marker: %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("partial-write executed %d commands", len(runner.calls))
+	}
+	if entries := tmpEntries(t, memory); len(entries) != 0 {
+		t.Fatalf("successful cleanup left the temp directory: %q", entries)
+	}
+
+	// Double failure: the write and the cleanup both fail, so the joined
+	// error exposes the cleanup failure while keeping the primary write
+	// category, and the stranded directory stays observable.
+	memory = runtime.NewMemoryFS()
+	rt, runner = newPostgresRuntime()
+	rt.FS = &postgresStubFS{
+		FileSystem:   memory,
+		failWrite:    true,
+		failRemove:   true,
+		failWriteErr: fmt.Errorf("open /synthetic/pwfile: partial write of %s", passwordMarker),
+	}
+	_, err = (datadirInitFunc{}).Execute(context.Background(), rt, &DataDirInitArgs{
+		Name:     "/var/lib/pgsql/data",
+		Password: postgresString(passwordMarker),
+	})
+	if !errors.Is(err, errPostgresPwfileWrite) {
+		t.Fatalf("double failure hides the primary write category: %v", err)
+	}
+	if !errors.Is(err, errPostgresPwfileCleanup) {
+		t.Fatalf("double failure hides the cleanup category: %v", err)
+	}
+	if want := errPostgresPwfileWrite.Error() + "\n" + errPostgresPwfileCleanup.Error(); err.Error() != want {
+		t.Fatalf("double failure renders %q, want %q", err, want)
+	}
+	if strings.Contains(err.Error(), passwordMarker) {
+		t.Fatalf("double failure leaks the password marker: %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("double failure executed %d commands", len(runner.calls))
+	}
+	if entries := tmpEntries(t, memory); len(entries) != 1 {
+		t.Fatalf("double-failure temp entries = %q, want the single stranded directory", entries)
+	}
+}
+
+// TestPostgresDatadirInitKernelDefaultUser pins the pinned runas default
+// resolution of _run_initdb through the argv: OpenBSD resolves the
+// _postgresql service account, FreeBSD and the Linux families keep
+// postgres, a Facts-less runtime falls back to the compile-time GOOS,
+// and an explicit user (including the pinned empty-string shape) always
+// overrides. The mapping is argv-only; no native initdb execution on any
+// kernel is claimed.
+func TestPostgresDatadirInitKernelDefaultUser(t *testing.T) {
+	for _, tc := range []struct {
+		label  string
+		family string
+		want   string
+	}{
+		{"openbsd", facts.FamilyOpenBSD, "_postgresql"},
+		{"freebsd", facts.FamilyFreeBSD, "postgres"},
+		{"debian linux", facts.FamilyDebian, "postgres"},
+		{"redhat linux", facts.FamilyRedHat, "postgres"},
+		{"unknown family", "", "postgres"},
+	} {
+		rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0})
+		rt.Facts = facts.ForTesting(facts.Overrides{OS: &facts.OSFacts{Family: tc.family}})
+		value, err := (datadirInitFunc{}).Execute(context.Background(), rt, &DataDirInitArgs{Name: "/var/lib/pgsql/data"})
+		if err != nil || value != true {
+			t.Fatalf("%s datadir_init = (%#v, %v)", tc.label, value, err)
+		}
+		if got := runner.calls[0].Args[1]; got != "--username="+tc.want {
+			t.Fatalf("%s argv username = %q, want --username=%s", tc.label, got, tc.want)
+		}
+	}
+
+	// A Facts-less runtime falls back to the compile-time GOOS: the same
+	// openbsd answer a real OpenBSD host would resolve, postgres
+	// elsewhere (the platform the hermetic suites run on).
+	want := "postgres"
+	if runtime.CurrentGOOS() == "openbsd" {
+		want = "_postgresql"
+	}
+	if got := initdbDefaultUser(nil); got != want {
+		t.Fatalf("nil-runtime default user = %q, want %q", got, want)
+	}
+	rt, _ := newPostgresRuntime()
+	if got := initdbDefaultUser(rt); got != want {
+		t.Fatalf("factsless default user = %q, want %q", got, want)
+	}
+
+	// The explicit user override wins on OpenBSD, including the pinned
+	// explicit empty-string shape.
+	for _, tc := range []struct {
+		label string
+		user  string
+		want  string
+	}{
+		{"explicit user", "pgadmin", "--username=pgadmin"},
+		{"explicit postgres", "postgres", "--username=postgres"},
+		{"explicit empty", "", "--username="},
+	} {
+		rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0})
+		rt.Facts = facts.ForTesting(facts.Overrides{OS: &facts.OSFacts{Family: facts.FamilyOpenBSD}})
+		if _, err := (datadirInitFunc{}).Execute(context.Background(), rt, &DataDirInitArgs{
+			Name: "/var/lib/pgsql/data",
+			User: postgresString(tc.user),
+		}); err != nil {
+			t.Fatalf("%s err = %v", tc.label, err)
+		}
+		if got := runner.calls[0].Args[1]; got != tc.want {
+			t.Fatalf("%s argv username = %q, want %q", tc.label, got, tc.want)
+		}
+	}
+
+	// The same kernel mapping through the registry dispatch the CLI
+	// drives.
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0})
+	rt.Facts = facts.ForTesting(facts.Overrides{OS: &facts.OSFacts{Family: facts.FamilyOpenBSD}})
+	value, err := reg.Call(context.Background(), rt, "postgres.datadir_init", &DataDirInitArgs{Name: "/var/lib/pgsql/data"})
+	if err != nil || value != true {
+		t.Fatalf("registry openbsd datadir_init = (%#v, %v)", value, err)
+	}
+	if got := runner.calls[0].Args[1]; got != "--username=_postgresql" {
+		t.Fatalf("registry openbsd argv username = %q, want --username=_postgresql", got)
 	}
 }
 

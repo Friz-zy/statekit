@@ -193,6 +193,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/friz-zy/statekit/internal/facts"
 	"github.com/friz-zy/statekit/internal/process"
 	"github.com/friz-zy/statekit/internal/runtime"
 )
@@ -203,6 +204,10 @@ const (
 	// StateKit has no module config surface, so resolution stays with the
 	// Runner's PATH discovery and fails closed when psql is absent.
 	psqlCommand = "psql"
+	// initdbCommand is the pinned datadir_init executable (_find_pg_binary
+	// ("initdb"), postgres.py:260-262); like psql it resolves through the
+	// Runner's PATH discovery only and fails closed when absent.
+	initdbCommand = "initdb"
 	// commandTimeout bounds every psql execution. Salt's postgres.timeout
 	// option defaults to 0 (unbounded); StateKit keeps a finite ceiling as
 	// a resource control, matching the R9.1 rabbitmq CLI bound.
@@ -409,7 +414,55 @@ var (
 	// a Go map carries no insertion order, so more than one entry is
 	// ambiguous and refused rather than silently applying one of them.
 	errPostgresTablespaceSetOption = fmt.Errorf("%w: set_option must carry exactly one tablespace option", errPostgresInvalidArgument)
+	// errPostgresInitdbUnavailable is the fail-closed answer when the
+	// Runner cannot resolve the initdb binary (the pinned _find_pg_binary
+	// CommandExecutionError has no StateKit fallback discovery).
+	errPostgresInitdbUnavailable = errors.New("postgres: initdb is unavailable")
+	// errPostgresFSUnavailable guards the datadir family's Runtime.FS
+	// dependency the way errPostgresRunnerUnavailable guards the Runner.
+	errPostgresFSUnavailable = errors.New("postgres: filesystem unavailable")
+	// errPostgresInvalidDataDirPath and errPostgresInvalidWalDirPath are
+	// the fixed, value-free rejections for the datadir family's path
+	// arguments: both reach initdb as paths it creates or writes under, so
+	// like the tablespace LOCATION they must be absolute, clean
+	// (path.Clean equality), and control-free; neither error names the
+	// rejected path so it cannot leak.
+	errPostgresInvalidDataDirPath = fmt.Errorf("%w: invalid data directory path", errPostgresInvalidArgument)
+	errPostgresInvalidWalDirPath  = fmt.Errorf("%w: invalid wal directory path", errPostgresInvalidArgument)
+	// errPostgresPwfileCleanup is the fixed, value-free fail-closed error
+	// for a password file that cannot be removed after initdb ran: the
+	// pinned source only logs a warning, but StateKit modules have no
+	// logging surface, and silently leaving credential bytes on disk is
+	// the strictly worse outcome, so the cleanup failure is surfaced.
+	errPostgresPwfileCleanup = errors.New("postgres: password file cleanup failed")
+	// errPostgresPwfileTempDir and errPostgresPwfileWrite are the fixed,
+	// value-free fail-closed errors for the pwfile transport's
+	// preparation half: the raw MkdirTemp/WriteFile errors are
+	// *fs.PathError values whose Op/Path fields name the
+	// credential-holding temp location, and a faulting filesystem may
+	// fold any bytes (path echoes, captured stderr) into its error
+	// strings, so only the stable category travels onward — the same
+	// redaction boundary errPostgresPwfileCleanup holds for the removal.
+	errPostgresPwfileTempDir = errors.New("postgres: password file temp directory failed")
+	errPostgresPwfileWrite   = errors.New("postgres: password file write failed")
 )
+
+// validateDataDirPath enforces the datadir family's path boundary shared
+// with the tablespace LOCATION: an absolute, already-clean path
+// (path.Clean equality rejects dot and dot-dot segments, redundant
+// separators, and trailing slashes) carrying no control bytes. The
+// rejection is value-free.
+func validateDataDirPath(name string, rejection error) error {
+	if name == "" || !strings.HasPrefix(name, "/") || name != path.Clean(name) {
+		return rejection
+	}
+	for i := 0; i < len(name); i++ {
+		if name[i] < 0x20 || name[i] == 0x7f {
+			return rejection
+		}
+	}
+	return nil
+}
 
 // privilegesMap ports the pinned _PRIVILEGES_MAP (postgres.py:86-101): the
 // ACL privilege characters to their privilege names, including "*" → GRANT
@@ -2062,6 +2115,354 @@ func (tablespaceRemoveFunc) Execute(ctx context.Context, rt *runtime.Runtime, ar
 		return nil, err
 	}
 	return result.ExitCode == 0, nil
+}
+
+// ---------------------------------------------------------------------------
+// datadir_exists / datadir_init — salt/modules/postgres.py:4300-4393 @
+// pinned revision (_run_initdb: postgres.py:236-306).
+
+// DataDirExistsArgs are the canonical postgres.datadir_exists arguments:
+// the pinned datadir_exists(name) signature (postgres.py:4375-4393).
+type DataDirExistsArgs struct {
+	Name string `statekit:"name=name,required"`
+}
+
+// datadirMarkerFiles are the two regular files the pinned datadir_exists
+// requires (postgres.py:4390-4393): PG_VERSION and postgresql.conf, joined
+// onto the caller's name with os.path.join.
+var datadirMarkerFiles = []string{"PG_VERSION", "postgresql.conf"}
+
+type datadirExistsFunc struct{}
+
+func (datadirExistsFunc) Name() string { return "postgres.datadir_exists" }
+func (datadirExistsFunc) Args() any    { return DataDirExistsArgs{} }
+
+// Execute ports the pinned datadir_exists
+// (postgres.py:4390-4393): os.path.isfile over name/PG_VERSION and
+// name/postgresql.conf, both required. The probe is read-only, runs
+// entirely through Runtime.FS, and never touches a Runner or a live
+// PostgreSQL. StateKit replaces the follow-symlink os.path.isfile with a
+// no-follow Lstat plus the regular-file mode check: the marker must be a
+// regular file itself, not a symlink to one, so a planted link cannot
+// satisfy the preflight datadir_init gates on. Every Lstat outcome the
+// caller cannot distinguish from a miss — absent path, non-directory
+// parent, permission error — answers the pinned boolean False exactly like
+// os.path.isfile swallows OSError, never an error. Only the value-free
+// path validation rejects before the filesystem.
+func (datadirExistsFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	a, err := typedArgs[DataDirExistsArgs](args, "postgres.datadir_exists")
+	if err != nil {
+		return nil, err
+	}
+	if err := validateDataDirPath(a.Name, errPostgresInvalidDataDirPath); err != nil {
+		return nil, err
+	}
+	return dataDirExists(rt, a.Name), nil
+}
+
+// dataDirExists answers the pinned marker-file question over Runtime.FS.
+// The nil-FS guard keeps the probe fail-closed like the Runner
+// unavailability guard instead of panicking on a misbuilt runtime.
+func dataDirExists(rt *runtime.Runtime, name string) bool {
+	if rt == nil || rt.FS == nil {
+		return false
+	}
+	for _, marker := range datadirMarkerFiles {
+		info, err := rt.FS.Lstat(path.Join(name, marker))
+		if err != nil || !info.Mode().IsRegular() {
+			// The pinned os.path.isfile maps every stat failure to False.
+			return false
+		}
+	}
+	return true
+}
+
+// DataDirInitArgs are the canonical postgres.datadir_init arguments,
+// mirroring the pinned datadir_init(name, auth="password", user=None,
+// password=None, encoding="UTF8", locale=None, waldir=None,
+// checksums=False, runas=None) signature (postgres.py:4300-4310). Pointer
+// fields keep Salt's None defaults: nil auth/encoding keep the pinned
+// literal defaults, nil locale/waldir/password omit their argv entries,
+// and nil checksums is the pinned False.
+type DataDirInitArgs struct {
+	Name      string  `statekit:"name=name,required"`
+	Auth      *string `statekit:"name=auth"`
+	User      *string `statekit:"name=user"`
+	Password  *string `statekit:"name=password"`
+	Encoding  *string `statekit:"name=encoding"`
+	Locale    *string `statekit:"name=locale"`
+	WalDir    *string `statekit:"name=waldir"`
+	Checksums *bool   `statekit:"name=checksums"`
+	Runas     *string `statekit:"name=runas"`
+}
+
+type datadirInitFunc struct{}
+
+func (datadirInitFunc) Name() string { return "postgres.datadir_init" }
+func (datadirInitFunc) Args() any    { return DataDirInitArgs{} }
+
+// Execute ports the pinned datadir_init flow (postgres.py:4356-4372): the
+// datadir_exists preflight answers the logged-and-False no-op for an
+// initialized directory with no initdb invocation, and otherwise one
+// initdb execution through the central shell-free Runner whose pinned
+// tail ret["retcode"] == 0 makes a rejected initdb the boolean false,
+// never an error. initdb itself — never a live PostgreSQL — is the only
+// executable; no psql, driver, or network egress exists on this path.
+// runas is rejected before any observable action (the single-user runtime
+// has no elevation contract, so Salt's implicit runas elevation does not
+// apply — the pinned kernel-mapped runas default still names the
+// --username superuser through initdbDefaultUser), and the process-wide
+// test mode is the no-mutation
+// contract: it answers nil (Salt's postgres_initdb state renders that as
+// "set to be initialized") after the read-only preflight, with no pwfile
+// written and no Runner invocation.
+func (datadirInitFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	a, err := typedArgs[DataDirInitArgs](args, "postgres.datadir_init")
+	if err != nil {
+		return nil, err
+	}
+	if err := validateDataDirPath(a.Name, errPostgresInvalidDataDirPath); err != nil {
+		return nil, err
+	}
+	if a.WalDir != nil && *a.WalDir != "" {
+		if err := validateDataDirPath(*a.WalDir, errPostgresInvalidWalDirPath); err != nil {
+			return nil, err
+		}
+	}
+	// runas is rejected before the read-only preflight: no observable
+	// action may run on behalf of another user.
+	if err := rejectRunas(a.Runas); err != nil {
+		return nil, err
+	}
+	if rt == nil || rt.FS == nil {
+		return nil, errPostgresFSUnavailable
+	}
+	if dataDirExists(rt, a.Name) {
+		// The pinned datadir_exists(name) head: "%s already exists",
+		// return False — a logged no-op, never an error.
+		return false, nil
+	}
+	if rt.Options.Test {
+		// Dry-run: the pinned flow would initialize; nil is the tri-state
+		// "would change" answer (the pkg/file test-mode convention), with
+		// no pwfile write and no Runner invocation.
+		return nil, nil
+	}
+	argv, cleanup, err := datadirInitArgv(rt, a)
+	if err != nil {
+		return nil, err
+	}
+	result, err := runInitdb(ctx, rt, argv, a.Password)
+	if cleanup != nil {
+		// The pinned flow removes the password file after initdb runs
+		// (postgres.py:303-304) on every path. The pinned source only
+		// logs a removal failure; StateKit has no logging surface and
+		// silently leaving credential bytes on disk is the strictly worse
+		// outcome, so a cleanup failure is the fail-closed
+		// errPostgresPwfileCleanup — superseded only by a primary Runner
+		// error, whose sentinel semantics (cancellation, output limits)
+		// must stay observable.
+		if cleanupErr := cleanup(); err == nil {
+			err = cleanupErr
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	return result.ExitCode == 0, nil
+}
+
+// datadirInitArgv ports the pinned _run_initdb argv construction
+// (postgres.py:263-288) in the pinned order: --pgdata, --username,
+// --auth, --encoding, then the optional --locale, the pinned short -X
+// waldir pair (the long option was renamed xlogdir→waldir in PostgreSQL
+// 10, which is why the source pins -X), --data-checksums, and finally
+// --pwfile. user keeps the pinned resolution: the pinned helper defaults
+// runas per kernel (postgres everywhere except OpenBSD's _postgresql
+// service account) and user to runas, so an omitted user is that
+// kernel-mapped superuser name (the explicit runas itself is rejected by
+// the single-user runtime before this point). The pinned waldir is not
+// None gate appends the -X pair for an explicit empty string too, exactly
+// like the source. When a password is supplied its bytes travel through a
+// Runtime.FS temp file — the pinned pwfile transport — and the returned
+// cleanup removes it; the password itself never enters argv, the
+// environment, or the rendered command.
+func datadirInitArgv(rt *runtime.Runtime, a *DataDirInitArgs) ([]string, func() error, error) {
+	// user keeps the pinned is-None resolution: the pinned helper defaults
+	// runas per kernel and user to runas, so an omitted user is the
+	// kernel-mapped superuser name while an explicit empty string keeps
+	// the pinned --username= shape.
+	user := initdbDefaultUser(rt)
+	if a.User != nil {
+		user = *a.User
+	}
+	// The pinned signature defaults apply only to an omitted argument; an
+	// explicit empty string keeps Salt's --auth=/--encoding= shape.
+	auth := "password"
+	if a.Auth != nil {
+		auth = *a.Auth
+	}
+	encoding := "UTF8"
+	if a.Encoding != nil {
+		encoding = *a.Encoding
+	}
+	argv := []string{
+		initdbCommand,
+		"--pgdata=" + a.Name,
+		"--username=" + user,
+		"--auth=" + auth,
+		"--encoding=" + encoding,
+	}
+	if a.Locale != nil {
+		argv = append(argv, "--locale="+*a.Locale)
+	}
+	if a.WalDir != nil {
+		// The pinned short option, deliberately: see the function comment.
+		argv = append(argv, "-X", *a.WalDir)
+	}
+	if pointerBool(a.Checksums) {
+		argv = append(argv, "--data-checksums")
+	}
+	var cleanup func() error
+	if a.Password != nil {
+		pwfile, remove, err := writeInitdbPwfile(rt, *a.Password)
+		if err != nil {
+			return nil, nil, err
+		}
+		argv = append(argv, "--pwfile="+pwfile)
+		cleanup = remove
+	}
+	return argv, cleanup, nil
+}
+
+// initdbDefaultUser ports the pinned runas default resolution of
+// _run_initdb (postgres.py:250-256): FreeBSD and every unlisted kernel
+// resolve postgres while OpenBSD resolves its _postgresql service
+// account, and the pinned user then defaults to that runas. The
+// runtime's Facts OS family is the StateKit equivalent of the pinned
+// os_family grain; a runtime without Facts falls back to the compile-time
+// GOOS the platform helper exposes — on a real OpenBSD host both answer
+// openbsd. The mapping is argv-only: no native initdb execution is
+// claimed for any kernel, and an explicit user argument always overrides
+// the default.
+func initdbDefaultUser(rt *runtime.Runtime) string {
+	family := runtime.CurrentGOOS()
+	if rt != nil && rt.Facts != nil {
+		family = rt.Facts.OS().Family
+	}
+	if family == facts.FamilyOpenBSD {
+		return "_postgresql"
+	}
+	return "postgres"
+}
+
+// writeInitdbPwfile ports the pinned pwfile half of _run_initdb
+// (postgres.py:283-288): the password is written to a fresh private temp
+// location and removed after initdb runs. Salt writes a mkstemp file and
+// chowns it to the runas user; the StateKit runtime is single-user, so
+// the file keeps its 0600 mode inside a 0700 temp directory owned by the
+// runtime user and no chown exists. The file holds exactly the password
+// bytes the pinned fp_.write(f"{password}") leaves — no trailing newline.
+// Every preparation failure surfaces as a fixed value-free category
+// (errPostgresPwfileTempDir/errPostgresPwfileWrite): the raw filesystem
+// errors name the temp path and a faulting filesystem may echo arbitrary
+// bytes, so neither can travel through the returned error. A partial
+// write whose RemoveAll cleanup also fails joins the write category with
+// errPostgresPwfileCleanup so the stranded credential stays observable
+// without hiding the primary category.
+func writeInitdbPwfile(rt *runtime.Runtime, password string) (string, func() error, error) {
+	dir, err := rt.FS.MkdirTemp("", "statekit-postgres-pwfile-")
+	if err != nil {
+		return "", nil, errPostgresPwfileTempDir
+	}
+	pwfile := path.Join(dir, "pwfile")
+	if err := rt.FS.WriteFile(pwfile, []byte(password), 0o600); err != nil {
+		if rmErr := rt.FS.RemoveAll(dir); rmErr != nil {
+			return "", nil, errors.Join(errPostgresPwfileWrite, errPostgresPwfileCleanup)
+		}
+		return "", nil, errPostgresPwfileWrite
+	}
+	remove := func() error {
+		if err := rt.FS.RemoveAll(dir); err != nil {
+			return errPostgresPwfileCleanup
+		}
+		return nil
+	}
+	return pwfile, remove, nil
+}
+
+// runInitdb ports the pinned _run_initdb execution half
+// (postgres.py:290-298): the argv travels through the central shell-free
+// Runner (Salt's shlex.join string plus python_shell=False becomes the
+// direct argv the Runner contract already enforces) with the pinned
+// clean_env=True — a clean empty environment, because initdb reads its
+// credentials from the pwfile, not the environment — the finite 30s
+// timeout ceiling, bounded output, and the password as a Redact secret so
+// neither the rendered command, captured output, nor returned errors can
+// leak it. A non-zero initdb exit stays compatibility data exactly like
+// the pinned retcode return.
+func runInitdb(ctx context.Context, rt *runtime.Runtime, argv []string, password *string) (process.CommandResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return process.CommandResult{ExitCode: -1}, err
+	}
+	if rt == nil || rt.Runner == nil {
+		return process.CommandResult{ExitCode: -1}, errPostgresRunnerUnavailable
+	}
+	if err := validateArgv(argv); err != nil {
+		return process.CommandResult{ExitCode: -1}, err
+	}
+	if available, ok := rt.Runner.(process.CommandAvailability); ok && !available.CommandAvailable(initdbCommand) {
+		// Fail closed: like psql, initdb has no package-manager or other
+		// fallback discovery in this module.
+		return process.CommandResult{ExitCode: -1}, errPostgresInitdbUnavailable
+	}
+	var secrets []string
+	if password != nil {
+		secrets = append(secrets, *password)
+	}
+	secrets = secretList(secrets...)
+	command := process.Command{
+		Name:           argv[0],
+		Args:           append([]string(nil), argv[1:]...),
+		Timeout:        commandTimeout,
+		MaxStdoutBytes: outputLimit,
+		MaxStderrBytes: outputLimit,
+		Env:            []string{},
+	}
+	if len(secrets) > 0 {
+		command.Redact = secretList(secrets...)
+	}
+	result := rt.Runner.Run(ctx, command)
+	outputExceeded := len(result.Stdout) > outputLimit || len(result.Stderr) > outputLimit
+	// Defend against custom Runners that do not sanitize their own results.
+	result.Stdout = process.RedactBytes(secrets, result.Stdout)
+	result.Stderr = process.RedactBytes(secrets, result.Stderr)
+	if result.Err != nil {
+		result.Err = redactedError(result.Err, secrets...)
+		return result, result.Err
+	}
+	if err := ctx.Err(); err != nil {
+		return result, err
+	}
+	if result.StdoutTruncated || result.StderrTruncated || outputExceeded {
+		return result, process.ErrOutputLimit
+	}
+	return result, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -5964,7 +6365,10 @@ func redactedError(err error, secrets ...string) error {
 // tablespace mutations tablespace_create, tablespace_alter, and
 // tablespace_remove (the pinned CREATE/ALTER/DROP TABLESPACE statements
 // with the pinned truthiness no-op head, clause order, and retcode
-// booleans). The remainder of the
+// booleans), and the R9.2p datadir pair datadir_exists and datadir_init
+// (the pinned PG_VERSION/postgresql.conf marker probe over Runtime.FS and
+// the pinned initdb argv with the pwfile credential transport and the
+// pinned kernel-mapped OpenBSD _postgresql runas default). The remainder of the
 // postgres family needs the generic psql query surface (psql_query itself
 // stays pending; no arbitrary-query registration exists in this phase) and
 // stays pending for later R9 rounds; the internal parsed-version,
@@ -5985,6 +6389,8 @@ func Register(reg *runtime.ExecRegistry) error {
 		tablespaceCreateFunc{},
 		tablespaceAlterFunc{},
 		tablespaceRemoveFunc{},
+		datadirExistsFunc{},
+		datadirInitFunc{},
 		userListFunc{},
 		availableExtensionsFunc{},
 		installedExtensionsFunc{},

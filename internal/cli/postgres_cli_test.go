@@ -6,8 +6,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io/fs"
 	"reflect"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/friz-zy/statekit/internal/facts"
@@ -28,12 +31,36 @@ func postgresCLIMD5Hex(s string) string {
 // must never reach a real psql or database.
 func postgresCLIApp(t *testing.T, runner process.Runner) *App {
 	t.Helper()
+	return postgresCLIAppFS(t, runner, nil)
+}
+
+// postgresCLIAppFS builds the same app with an optional filesystem seed
+// so the R9.2p datadir family's Runtime.FS boundary stays testable
+// end to end.
+func postgresCLIAppFS(t *testing.T, runner process.Runner, seed func(fsys runtime.FileSystem)) *App {
+	t.Helper()
+	return postgresCLIAppConfigured(t, runner, func(rt *runtime.Runtime) {
+		if seed != nil {
+			seed(rt.FS)
+		}
+	})
+}
+
+// postgresCLIAppConfigured builds the app around a caller-configured
+// runtime so the R9.2p kernel-mapped defaults (injected OpenBSD facts)
+// and the pwfile fault-injecting filesystems stay testable through the
+// full CLI path.
+func postgresCLIAppConfigured(t *testing.T, runner process.Runner, configure func(rt *runtime.Runtime)) *App {
+	t.Helper()
 	rt := &runtime.Runtime{
 		Exec:   runtime.NewExecRegistry(),
 		States: runtime.NewStateRegistry(),
 		Facts:  facts.ForTesting(facts.Overrides{}),
 		Runner: runner,
 		FS:     runtime.NewMemoryFS(),
+	}
+	if configure != nil {
+		configure(rt)
 	}
 	if err := execpostgres.Register(rt.Exec); err != nil {
 		t.Fatal(err)
@@ -4285,4 +4312,349 @@ func TestPostgresCLICreateExtensionEmptyVersions(t *testing.T) {
 func lastCommandArg(runner *cliRecordingRunner, call int) string {
 	args := runner.calls[call].Args
 	return args[len(args)-1]
+}
+
+// cliSeedDatadir seeds both pinned datadir marker files under dir.
+func cliSeedDatadir(t *testing.T, dir string) func(fsys runtime.FileSystem) {
+	return func(fsys runtime.FileSystem) {
+		if err := fsys.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		for _, marker := range []string{"PG_VERSION", "postgresql.conf"} {
+			if err := fsys.WriteFile(dir+"/"+marker, []byte("9.6\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+}
+
+// TestPostgresCLIDatadirExists drives the R9.2p datadir_exists path end
+// to end over the CLI's fake FS: the JSON true/false marker shapes, the
+// value-free path rejections, the required name, and zero Runner calls on
+// every path (the probe is read-only and never touches a Runner).
+func TestPostgresCLIDatadirExists(t *testing.T) {
+	runner := &cliRecordingRunner{}
+	app := postgresCLIAppFS(t, runner, cliSeedDatadir(t, "/var/lib/pgsql/data"))
+	code, out, errS := captureCode(t, app, "exec", "postgres.datadir_exists",
+		"--name", "/var/lib/pgsql/data", "-o", "json")
+	var exists bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &exists) != nil || !exists {
+		t.Fatalf("datadir_exists code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("probe executed %d commands", len(runner.calls))
+	}
+
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.datadir_exists",
+		"--name", "/var/lib/pgsql/data", "-o", "json")
+	var missing bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &missing) != nil || missing {
+		t.Fatalf("missing code=%d out=%q err=%q, want false", code, out, errS)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("missing probe executed %d commands", len(runner.calls))
+	}
+
+	for _, tc := range []struct {
+		name string
+		path string
+	}{
+		{"relative name", "var/lib/pgsql/data"},
+		{"traversal name", "/var/lib/pgsql/../data"},
+		{"trailing slash", "/var/lib/pgsql/data/"},
+		{"control byte", "/var/lib/pgsql/da\tta"},
+	} {
+		runner = &cliRecordingRunner{}
+		app = postgresCLIApp(t, runner)
+		code, _, errS = captureCode(t, app, "exec", "postgres.datadir_exists",
+			"--name", tc.path, "-o", "json")
+		if code != ExitFailed ||
+			!strings.Contains(errS, "postgres: invalid argument: invalid data directory path") ||
+			strings.Contains(errS, tc.path) ||
+			len(runner.calls) != 0 {
+			t.Fatalf("%s code=%d err=%q calls=%d", tc.name, code, errS, len(runner.calls))
+		}
+	}
+
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.datadir_exists", "-o", "json")
+	if code != ExitInvalidInput || !strings.Contains(errS, "name") || len(runner.calls) != 0 {
+		t.Fatalf("missing name code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+}
+
+// TestPostgresCLIDatadirInit drives the R9.2p datadir_init path end to
+// end with the pinned test_datadir_init and test__run_initdb_with_timeout
+// vectors (the pinned runas rejected by the single-user runtime, so the
+// --username it would have contributed is supplied directly): the
+// byte-exact pinned argv with no password token, the pwfile transport and
+// db_password redaction, the existing-datadir false no-op with no
+// statement, the retcode-false compatibility shape, the value-free path
+// and waldir rejections, and the required name.
+func TestPostgresCLIDatadirInit(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0},
+	}}
+	app := postgresCLIApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "postgres.datadir_init",
+		"--name", "/var/lib/pgsql/data",
+		"--user", "postgres", "--password", "test", "-o", "json")
+	var initialized bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &initialized) != nil || !initialized {
+		t.Fatalf("datadir_init code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d, want 1", len(runner.calls))
+	}
+	command := runner.calls[0]
+	argv := append([]string{command.Name}, command.Args...)
+	wantHead := []string{
+		"initdb",
+		"--pgdata=/var/lib/pgsql/data",
+		"--username=postgres",
+		"--auth=password",
+		"--encoding=UTF8",
+	}
+	if len(argv) != 6 || !reflect.DeepEqual(argv[:5], wantHead) {
+		t.Fatalf("argv = %q, want %q plus one pwfile entry", argv, wantHead)
+	}
+	if !strings.HasPrefix(argv[5], "--pwfile=/tmp/") {
+		t.Fatalf("pwfile entry = %q", argv[5])
+	}
+	if strings.Contains(strings.Join(argv, "\x00"), "test") {
+		t.Fatalf("argv carries the password token: %q", argv)
+	}
+	if len(command.Env) != 0 || command.Shell || len(command.Stdin) != 0 {
+		t.Fatalf("unsafe command: %#v", command)
+	}
+	if len(command.Redact) != 1 || command.Redact[0] != "test" {
+		t.Fatalf("redact = %q, want the password", command.Redact)
+	}
+	if strings.Contains(command.RedactedString(), "test") || strings.Contains(out+errS, "test") {
+		t.Fatalf("password leaked: %q %q", command.RedactedString(), out+errS)
+	}
+
+	// The full pinned option set: auth, encoding, locale, the short -X
+	// waldir pair, checksums, and the user override.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.datadir_init",
+		"--name", "/var/lib/pgsql/data",
+		"--auth", "md5", "--user", "testuser", "--encoding", "LATIN1",
+		"--locale", "en_US.UTF-8", "--waldir", "/var/lib/postgresql/wal",
+		"--checksums", "-o", "json")
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &initialized) != nil || !initialized {
+		t.Fatalf("full flags code=%d out=%q err=%q", code, out, errS)
+	}
+	argv = append([]string{runner.calls[0].Name}, runner.calls[0].Args...)
+	wantFull := []string{
+		"initdb",
+		"--pgdata=/var/lib/pgsql/data",
+		"--username=testuser",
+		"--auth=md5",
+		"--encoding=LATIN1",
+		"--locale=en_US.UTF-8",
+		"-X", "/var/lib/postgresql/wal",
+		"--data-checksums",
+	}
+	if !reflect.DeepEqual(argv[:len(wantFull)], wantFull) {
+		t.Fatalf("full argv = %q, want %q", argv, wantFull)
+	}
+	if argv[len(argv)-1] != "--data-checksums" {
+		t.Fatalf("no-password argv tail = %q, want --data-checksums last", argv[len(argv)-1])
+	}
+
+	// An initialized datadir answers the pinned logged-and-False no-op
+	// with no statement at all.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIAppFS(t, runner, cliSeedDatadir(t, "/var/lib/pgsql/data"))
+	code, out, errS = captureCode(t, app, "exec", "postgres.datadir_init",
+		"--name", "/var/lib/pgsql/data", "-o", "json")
+	var existsFalse bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &existsFalse) != nil || existsFalse {
+		t.Fatalf("existing code=%d out=%q err=%q, want false", code, out, errS)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("existing datadir executed %d commands", len(runner.calls))
+	}
+
+	// A rejected initdb keeps Salt's retcode boolean: exit OK, JSON false.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 1, Stderr: []byte(`initdb: error: directory "/var/lib/pgsql/data" contains files`)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.datadir_init",
+		"--name", "/var/lib/pgsql/data", "-o", "json")
+	var failed bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &failed) != nil || failed {
+		t.Fatalf("nonzero exit code=%d out=%q err=%q, want false", code, out, errS)
+	}
+
+	// The fail-closed path boundaries reject before any initdb call.
+	for _, tc := range []struct {
+		name string
+		argv []string
+		want string
+	}{
+		{"relative name", []string{"--name", "var/lib/pgsql/data"},
+			"postgres: invalid argument: invalid data directory path"},
+		{"traversal name", []string{"--name", "/var/lib/../pgsql/data"},
+			"postgres: invalid argument: invalid data directory path"},
+		{"relative waldir", []string{"--name", "/var/lib/pgsql/data", "--waldir", "wal"},
+			"postgres: invalid argument: invalid wal directory path"},
+		{"waldir traversal", []string{"--name", "/var/lib/pgsql/data", "--waldir", "/wal/../x"},
+			"postgres: invalid argument: invalid wal directory path"},
+		{"runas", []string{"--name", "/var/lib/pgsql/data", "--runas", "postgres"},
+			"runas"},
+	} {
+		runner = &cliRecordingRunner{}
+		app = postgresCLIApp(t, runner)
+		fullArgv := append(append([]string{"exec", "postgres.datadir_init"}, tc.argv...), "-o", "json")
+		code, _, errS = captureCode(t, app, fullArgv...)
+		if code != ExitFailed || !strings.Contains(errS, tc.want) || len(runner.calls) != 0 {
+			t.Fatalf("%s code=%d err=%q calls=%d", tc.name, code, errS, len(runner.calls))
+		}
+	}
+
+	// The required name fails validation first.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.datadir_init", "-o", "json")
+	if code != ExitInvalidInput || !strings.Contains(errS, "name") || len(runner.calls) != 0 {
+		t.Fatalf("missing name code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+}
+
+// cliPostgresFaultFS wraps the CLI runtime's memory filesystem with the
+// R9.2p pwfile fault injections; the injected raw errors carry synthetic
+// password, path, and stderr markers the CLI error path must not echo.
+type cliPostgresFaultFS struct {
+	runtime.FileSystem
+	failMkdir    bool
+	failWrite    bool
+	failRemove   bool
+	failMkdirErr error
+	failWriteErr error
+}
+
+func (f *cliPostgresFaultFS) MkdirTemp(dir, pattern string) (string, error) {
+	if f.failMkdir {
+		if f.failMkdirErr != nil {
+			return "", f.failMkdirErr
+		}
+		return "", &fs.PathError{Op: "mkdirtemp", Path: dir, Err: syscall.EACCES}
+	}
+	return f.FileSystem.MkdirTemp(dir, pattern)
+}
+
+func (f *cliPostgresFaultFS) WriteFile(name string, data []byte, perm fs.FileMode) error {
+	if f.failWrite {
+		if f.failWriteErr != nil {
+			return f.failWriteErr
+		}
+		return &fs.PathError{Op: "open", Path: name, Err: syscall.EACCES}
+	}
+	return f.FileSystem.WriteFile(name, data, perm)
+}
+
+func (f *cliPostgresFaultFS) RemoveAll(pathName string) error {
+	if f.failRemove {
+		return &fs.PathError{Op: "remove", Path: pathName, Err: syscall.EACCES}
+	}
+	return f.FileSystem.RemoveAll(pathName)
+}
+
+// TestPostgresCLIDatadirInitPwfileErrorRedaction pins the CLI half of the
+// value-free pwfile preparation passthrough: fault-injected filesystem
+// errors carrying synthetic password, path, and stderr markers surface as
+// the exact fixed sentinel stderr lines (the joined write-plus-cleanup
+// shape when both fail), with empty stdout, zero Runner invocations, and
+// no marker anywhere in the CLI output.
+func TestPostgresCLIDatadirInitPwfileErrorRedaction(t *testing.T) {
+	const (
+		passwordMarker = "synthetic-cli-pwfile-password"
+		pathMarker     = "/synthetic/cli-pwfile-path"
+		stderrMarker   = "synthetic cli pwfile stderr"
+	)
+	for _, tc := range []struct {
+		label string
+		stub  *cliPostgresFaultFS
+		want  string
+	}{
+		{"mkdirtemp failure", &cliPostgresFaultFS{
+			failMkdir:    true,
+			failMkdirErr: fmt.Errorf("mkdir %s: %s: %s", pathMarker, passwordMarker, stderrMarker),
+		}, "statekit: postgres: password file temp directory failed\n"},
+		{"write failure", &cliPostgresFaultFS{
+			failWrite:    true,
+			failWriteErr: fmt.Errorf("open %s/pwfile: %s: %s", pathMarker, passwordMarker, stderrMarker),
+		}, "statekit: postgres: password file write failed\n"},
+		{"double failure", &cliPostgresFaultFS{
+			failWrite:    true,
+			failRemove:   true,
+			failWriteErr: fmt.Errorf("open %s/pwfile: %s: %s", pathMarker, passwordMarker, stderrMarker),
+		}, "statekit: postgres: password file write failed\npostgres: password file cleanup failed\n"},
+	} {
+		runner := &cliRecordingRunner{}
+		tc.stub.FileSystem = runtime.NewMemoryFS()
+		app := postgresCLIAppConfigured(t, runner, func(rt *runtime.Runtime) { rt.FS = tc.stub })
+		code, out, errS := captureCode(t, app, "exec", "postgres.datadir_init",
+			"--name", "/var/lib/pgsql/data", "--password", passwordMarker, "-o", "json")
+		if code != ExitFailed || out != "" || errS != tc.want {
+			t.Fatalf("%s code=%d out=%q err=%q, want the exact %q", tc.label, code, out, errS, tc.want)
+		}
+		for _, marker := range []string{passwordMarker, pathMarker, stderrMarker} {
+			if strings.Contains(out+errS, marker) {
+				t.Fatalf("%s leaks the marker %q: out=%q err=%q", tc.label, marker, out, errS)
+			}
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s executed %d commands", tc.label, len(runner.calls))
+		}
+	}
+}
+
+// TestPostgresCLIDatadirInitKernelDefaultUser pins the CLI half of the
+// pinned kernel-mapped runas default of _run_initdb: an OpenBSD-facts
+// runtime renders --username=_postgresql, FreeBSD and Linux-family
+// runtimes keep --username=postgres, and an explicit --user flag
+// overrides on every kernel including the pinned empty-string shape —
+// argv vectors only, with no native initdb execution claimed for any
+// kernel.
+func TestPostgresCLIDatadirInitKernelDefaultUser(t *testing.T) {
+	for _, tc := range []struct {
+		label   string
+		family  string
+		userArg []string
+		want    string
+	}{
+		{"openbsd default", facts.FamilyOpenBSD, nil, "--username=_postgresql"},
+		{"openbsd explicit user", facts.FamilyOpenBSD, []string{"--user", "pgadmin"}, "--username=pgadmin"},
+		{"openbsd explicit empty", facts.FamilyOpenBSD, []string{"--user="}, "--username="},
+		{"debian linux default", facts.FamilyDebian, nil, "--username=postgres"},
+		{"freebsd default", facts.FamilyFreeBSD, nil, "--username=postgres"},
+	} {
+		runner := &cliRecordingRunner{results: []process.CommandResult{{ExitCode: 0}}}
+		app := postgresCLIAppConfigured(t, runner, func(rt *runtime.Runtime) {
+			rt.Facts = facts.ForTesting(facts.Overrides{OS: &facts.OSFacts{Family: tc.family}})
+		})
+		argv := append([]string{"exec", "postgres.datadir_init", "--name", "/var/lib/pgsql/data"}, tc.userArg...)
+		argv = append(argv, "-o", "json")
+		code, out, errS := captureCode(t, app, argv...)
+		var initialized bool
+		if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &initialized) != nil || !initialized {
+			t.Fatalf("%s code=%d out=%q err=%q", tc.label, code, out, errS)
+		}
+		if len(runner.calls) != 1 {
+			t.Fatalf("%s runner calls = %d, want 1", tc.label, len(runner.calls))
+		}
+		if got := runner.calls[0].Args[1]; got != tc.want {
+			t.Fatalf("%s argv username = %q, want %q", tc.label, got, tc.want)
+		}
+	}
 }
