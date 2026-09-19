@@ -1923,6 +1923,37 @@ for R3-R8 are unchanged (the report's `prior_report_sha256` block matches
 the committed R3-R8 reports), and the R9.3a commit touched no
 `go.mod`/`go.sum` (no new dependency).
 
+##### 2026-09-19 current status (R9.3b MySQL read-only server facts family)
+
+Actual HEAD is `99d904c` (R9.3b MySQL version/status/showvariables/showglobal;
+landed 2026-09-19). R9.3b implementation and independent-gate ledger. The
+R9.3a item (`ec9271a`; MySQL `quote_identifier`/`tokenize_grant` pure helpers
+plus the 6-public `db_list`/`db_exists`/`user_list`/`user_exists` read-only
+catalog family, `backend-engineer-senior`, `backend-engineer-lead` gate
+passed after the NULL sentinel/CRLF/backslash fixes, mysql 6 registered /
+32 pending, totals 92 of 125, mock-only/E5/no-dependency boundary) is
+already recorded verbatim in the section above — no duplicate row is added
+and that section stays unchanged; this section extends the ledger without
+rewriting any prior row, count, or report statement:
+
+| Commit | Scope | Implementation executor role(s) | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `99d904c` | R9.3b `version`/`status`/`showvariables`/`showglobal` registered (4 public; the read-only server facts family on the same mysql CLI transport — the fixed pinned `SELECT VERSION()`, `SHOW STATUS`, `SHOW VARIABLES`, and `SHOW GLOBAL VARIABLES` queries; safe read-only server introspection with no mutation surface and no live MySQL) | `backend-engineer-senior` | `backend-engineer-lead` | passed after direct-redaction/evidence fixes; mysql 10 registered / 28 pending, R9 totals registered_public 96 of 125; mock-only fake-Runner contract — no DB driver, no live MySQL, live DB/broker integration excluded behind E5; no `go.mod`/`go.sum` change (no new dependency); R3-R8 report hashes unchanged |
+
+Current R9 report (`docs/differential/R9/report.yaml` at `99d904c`, `round:
+R9.3b`, `repeat_stable: true`): rabbitmq 37/37 registered, mysql 10/38 (28
+pending), postgres 49/50 registered_public (1 pending); totals
+registered_public 96 of 125 public functions (29 pending) across 172 catalog
+functions. The remaining postgres name from the report, in exact report
+order, stays pending: `psql_query` — the arbitrary-SQL boundary. R9 remains
+open — no closure claim is made. The report pins the mock-only boundary —
+RabbitMQ is never started, MySQL is never connected, PostgreSQL is never
+contacted; no database driver is linked — and live database/broker
+integration stays excluded behind E5. The prior differential report hashes
+for R3-R8 are unchanged (the report's `prior_report_sha256` block matches
+the committed R3-R8 reports), and the R9.3b commit touched no
+`go.mod`/`go.sum` (no new dependency).
+
 ##### 2026-09-17 current status (R9.2b PostgreSQL version probe)
 
 Actual HEAD is `23fba61` (R9.2b PostgreSQL version probe). R9.2b
