@@ -1836,6 +1836,34 @@ report hashes for R3-R8 are unchanged (the report's `prior_report_sha256`
 block matches the committed R3-R8 reports), and neither the R9.2o nor the
 R9.2p commit touched `go.mod`/`go.sum` (no new dependency).
 
+##### 2026-09-19 current status (R9.2q-R9.2r PostgreSQL default-privileges check and metadata evidence)
+
+Actual HEAD is `b386189` (R9.2r PostgreSQL metadata check with its signature
+evidence correction; both `e19cf7f` and `b386189` landed 2026-09-19).
+R9.2q-R9.2r implementation and independent-gate ledger. The R9.2o-R9.2p items
+(`a5bda4f`/`b33eba4`) are already recorded in the section above — no duplicate
+rows are added and that section stays unchanged; this section extends the
+ledger without rewriting any prior row, count, or report statement:
+
+| Commit | Scope | Implementation executor role(s) | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `e19cf7f` | R9.2q `has_default_privileges` registered (1 public; the read-only default-privilege check, public form of the R9.2l decision core) | `backend-engineer-senior` | `backend-engineer-lead` | passed; security redaction verified; postgres 47 registered / 3 pending, totals 86 of 125; mock-only fake-Runner contract — no DB driver, no live PostgreSQL, live DB/broker integration excluded behind E5; no `go.mod`/`go.sum` change (no new dependency); R3-R8 report hashes unchanged; R9 report repeat stable |
+| `b386189` | R9.2r `create_metadata` registered (1 public; the read-only extension-lifecycle check, public form of the R9.2m internal ladder) | `backend-engineer-senior` | `backend-engineer-lead` (scoped) | scoped gate passed after signature evidence correction; postgres 48 registered / 2 pending, totals 87 of 125; `owner_to` and `psql_query` stay pending; mock-only fake-Runner contract — no DB driver, no live PostgreSQL, live DB/broker integration excluded behind E5; no `go.mod`/`go.sum` change (no new dependency); R3-R8 report hashes unchanged; the pre-existing full-tree statfs OpenBSD baseline stays outside scope |
+
+Current R9 report (`docs/differential/R9/report.yaml` at `b386189`, `round:
+R9.2r`, `repeat_stable: true`): rabbitmq 37/37 registered, mysql 2/38 (36
+pending), postgres 48/50 registered_public (2 pending); totals
+registered_public 87 of 125 public functions (38 pending) across 172 catalog
+functions. The remaining postgres names from the report, in exact report
+order, stay pending: `owner_to`, `psql_query`. R9 remains open — no closure
+claim is made. The report pins the mock-only boundary — RabbitMQ is never
+started, MySQL is never connected, PostgreSQL is never contacted; no database
+driver is linked — and live database/broker integration stays excluded behind
+E5. The prior differential report hashes for R3-R8 are unchanged (the
+report's `prior_report_sha256` block matches the committed R3-R8 reports),
+and neither the R9.2q nor the R9.2r commit touched `go.mod`/`go.sum` (no new
+dependency).
+
 ##### 2026-09-17 current status (R9.2b PostgreSQL version probe)
 
 Actual HEAD is `23fba61` (R9.2b PostgreSQL version probe). R9.2b
