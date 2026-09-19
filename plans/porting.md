@@ -1805,6 +1805,37 @@ The prior differential report hashes for R3-R8 are unchanged (the report's
 neither the R9.2m nor the R9.2n commit touched `go.mod`/`go.sum` (no new
 dependency).
 
+##### 2026-09-19 current status (R9.2o-R9.2p PostgreSQL tablespace mutations and datadir checks/init)
+
+Actual HEAD is `b33eba4` (R9.2p PostgreSQL datadir checks/init plus pwfile
+and OpenBSD-scope fixes; both `a5bda4f` and `b33eba4` landed 2026-09-19).
+R9.2o-R9.2p implementation and independent-gate ledger. The dispatch's R9.2n
+item (`ee3023c`, `db_alter`, `backend-engineer-senior`,
+`backend-engineer-lead` gate passed after the writable filtered payload,
+postgres 41 registered / 9 pending, totals 80 of 125, `owner_to` unsupported
+boundary) is already recorded verbatim as the closing row of the 2026-09-18
+R9.2m-R9.2n section above — no duplicate row is added and that section stays
+unchanged:
+
+| Commit | Scope | Implementation executor role(s) | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `a5bda4f` | R9.2o `tablespace_create`/`tablespace_alter`/`tablespace_remove` registered (3 public; the pinned CREATE/ALTER/DROP TABLESPACE statements) | `backend-engineer-senior` | `backend-engineer-lead` | passed; postgres 44 registered / 6 pending, totals 83 of 125; mock-only fake-Runner contract — no DB driver, no live PostgreSQL, live DB/broker integration excluded behind E5; no `go.mod`/`go.sum` change (no new dependency); R3-R8 report hashes unchanged; source deviations documented — the pinned single first-inserted `set_option` pair becomes an exactly-one-entry contract with the value-free ambiguity rejection, `tablespace_create` options render in sorted Go map order where Python dict insertion order is unspecified, and the raw `LOCATION` token gains the absolute/clean/control-free single-quote-free validation boundary |
+| `b33eba4` | R9.2p `datadir_exists`/`datadir_init` registered (2 public; the pinned PG_VERSION/postgresql.conf marker probe and the initdb wrapper with the pwfile transport) plus the pwfile/OpenBSD fixes | `backend-engineer-senior` | `backend-engineer-lead` | passed; postgres 46 registered / 4 pending, totals 85 of 125; mock-only fake-Runner contract — no DB driver, no live PostgreSQL, live DB/broker integration excluded behind E5; no `go.mod`/`go.sum` change (no new dependency); R3-R8 report hashes unchanged; mock-only with a scoped OpenBSD compile — the kernel-mapped `_postgresql` runas default and the module's GOOS=openbsd cross-build are covered, while the pre-existing full-tree statfs OpenBSD baseline stays outside scope |
+
+Current R9 report (`docs/differential/R9/report.yaml` at `b33eba4`, `round:
+R9.2p`, `repeat_stable: true`): rabbitmq 37/37 registered, mysql 2/38 (36
+pending), postgres 46/50 registered_public (4 pending); totals
+registered_public 85 of 125 public functions (40 pending) across 172 catalog
+functions. The remaining postgres names from the report, in exact report
+order, stay pending: `create_metadata`, `has_default_privileges`, `owner_to`,
+`psql_query`. R9 remains open — no closure claim is made. The report pins the
+mock-only boundary — RabbitMQ is never started, MySQL is never connected,
+PostgreSQL is never contacted; no database driver is linked — and live
+database/broker integration stays excluded behind E5. The prior differential
+report hashes for R3-R8 are unchanged (the report's `prior_report_sha256`
+block matches the committed R3-R8 reports), and neither the R9.2o nor the
+R9.2p commit touched `go.mod`/`go.sum` (no new dependency).
+
 ##### 2026-09-17 current status (R9.2b PostgreSQL version probe)
 
 Actual HEAD is `23fba61` (R9.2b PostgreSQL version probe). R9.2b
