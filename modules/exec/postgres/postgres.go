@@ -136,13 +136,31 @@
 // double-quoted identifier positions the pinned format strings interpolate
 // unescaped are validated fail-closed with the shared value-free
 // rejections before any Runner invocation.
+// R9.2o adds the tablespace mutation family tablespace_create,
+// tablespace_alter, and tablespace_remove (postgres.py:840-886, 889-947,
+// 950-980): tablespace_create builds the pinned CREATE TABLESPACE
+// statement (the truthy OWNER clause, the LOCATION literal, and the
+// pinned WITH ( k = v, ... ) options join) and answers the pinned retcode
+// boolean; tablespace_alter keeps the pinned any([...]) no-op head, the
+// pinned RENAME/OWNER TO/SET/RESET clause order, and the pinned
+// first-nonzero False abort; tablespace_remove runs the pinned single
+// DROP TABLESPACE statement with the pinned retcode boolean and, exactly
+// like the pinned source, no existence preflight. The identifier and
+// literal positions the pinned format strings interpolate raw — the
+// tablespace name, the owner, the new names, the option tokens, and the
+// LOCATION path (whose single-quoted literal the pinned source never
+// escapes) — are validated fail-closed with value-free errors before any
+// Runner invocation, and the LOCATION boundary additionally requires an
+// absolute, clean, control-free path so no traversal or escape can reach
+// the fixed statement.
 // Like Salt, every invocation is a shell-free psql argv executed through
 // the central Runner; this package links no database driver or protocol
 // client and never contacts a live server by itself. The catalog queries
 // are fixed SQL fragments — no caller-controlled SQL or identifier is
 // interpolated — and the R9.2h write paths construct only the pinned
 // CREATE DATABASE and REVOKE/terminate/DROP statements, the R9.2n path
-// only the pinned ALTER DATABASE OWNER/TABLESPACE statements, and the
+// only the pinned ALTER DATABASE OWNER/TABLESPACE statements, the R9.2o
+// paths only the pinned CREATE/ALTER/DROP TABLESPACE statements, and the
 // R9.2i role paths construct only the pinned CREATE/ALTER/DROP ROLE and
 // GRANT statements with the same validated identifiers, so the generic
 // psql_query surface stays
@@ -167,6 +185,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"path"
 	"regexp"
 	"sort"
 	"strconv"
@@ -369,6 +388,27 @@ var (
 	// producing a boolean. StateKit maps that deterministic pinned failure
 	// to this execution error; no caller value ever enters it.
 	errPostgresDefprivilegesAllCompare = fmt.Errorf("%w: default privileges all comparison unavailable", errPostgresInvalidArgument)
+	// errPostgresInvalidLocation is the fixed, value-free rejection for a
+	// tablespace LOCATION that is not an absolute, clean, control-free
+	// path: the pinned format string interpolates the location raw into a
+	// single-quoted literal with no escaping, so the boundary refuses
+	// relative paths, traversal or dot segments, redundant separators, and
+	// control bytes — naming no value so a rejected path cannot leak.
+	errPostgresInvalidLocation = fmt.Errorf("%w: invalid tablespace location", errPostgresInvalidArgument)
+	// errPostgresInvalidOptionName and errPostgresInvalidOptionValue are
+	// the fixed, value-free rejections for tablespace option tokens: the
+	// pinned source interpolates both the option key and value raw into
+	// the WITH/SET clause with no quoting, so keys must be bare
+	// PostgreSQL identifiers and values bare version-class tokens, and
+	// neither error names the rejected token.
+	errPostgresInvalidOptionName  = fmt.Errorf("%w: unsupported tablespace option name", errPostgresInvalidArgument)
+	errPostgresInvalidOptionValue = fmt.Errorf("%w: unsupported tablespace option value", errPostgresInvalidArgument)
+	// errPostgresTablespaceSetOption is the fixed, value-free rejection
+	// for a multi-entry set_option map: the pinned tablespace_alter reads
+	// only next(iter(set_option.items())) — the first inserted pair — but
+	// a Go map carries no insertion order, so more than one entry is
+	// ambiguous and refused rather than silently applying one of them.
+	errPostgresTablespaceSetOption = fmt.Errorf("%w: set_option must carry exactly one tablespace option", errPostgresInvalidArgument)
 )
 
 // privilegesMap ports the pinned _PRIVILEGES_MAP (postgres.py:86-101): the
@@ -1663,6 +1703,365 @@ func (tablespaceExistsFunc) Execute(ctx context.Context, rt *runtime.Runtime, ar
 	}
 	_, exists := tablespaces[a.Name]
 	return exists, nil
+}
+
+// ---------------------------------------------------------------------------
+// tablespace_create / tablespace_alter / tablespace_remove —
+// salt/modules/postgres.py:840-886, 889-947, 950-980 @ pinned revision.
+
+// TablespaceCreateArgs are the canonical postgres.tablespace_create
+// arguments, mirroring the pinned tablespace_create(name, location,
+// options=None, owner=None, user, host, port, maintenance_db, password,
+// runas) signature (postgres.py:840-851). options keeps Salt's None
+// default as a nil map (an explicit empty map is the pinned falsy empty
+// dict and omits the WITH clause entirely), and owner keeps the pinned
+// truthiness: nil and the explicit empty string both omit the clause.
+type TablespaceCreateArgs struct {
+	Name          string            `statekit:"name=name,required"`
+	Location      string            `statekit:"name=location,required"`
+	Options       map[string]string `statekit:"name=options"`
+	Owner         *string           `statekit:"name=owner"`
+	User          *string           `statekit:"name=user"`
+	Host          *string           `statekit:"name=host"`
+	Port          *string           `statekit:"name=port"`
+	MaintenanceDB *string           `statekit:"name=maintenance_db"`
+	Password      *string           `statekit:"name=password"`
+	Runas         *string           `statekit:"name=runas"`
+}
+
+func (a *TablespaceCreateArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: a.MaintenanceDB,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+// validateTablespaceLocation enforces the StateKit LOCATION boundary. The
+// pinned format string interpolates the location raw into a single-quoted
+// SQL literal with no escaping, so beyond the shared quote rejection the
+// port requires an absolute path that is already clean (path.Clean
+// equality rejects dot and dot-dot segments, redundant separators, and
+// trailing slashes) and carries no control bytes, keeping the fixed
+// statement shape unalterable. The rejection is value-free.
+func validateTablespaceLocation(location string) error {
+	if !strings.HasPrefix(location, "/") || location != path.Clean(location) {
+		return errPostgresInvalidLocation
+	}
+	for i := 0; i < len(location); i++ {
+		if location[i] < 0x20 || location[i] == 0x7f {
+			return errPostgresInvalidLocation
+		}
+	}
+	if strings.Contains(location, "'") {
+		// The single-quoted literal context has no escaping in the pinned
+		// source; the only character that can escape it is rejected with
+		// the shared quote error naming the argument key.
+		return ddlValidationError("location")
+	}
+	return nil
+}
+
+// tablespaceOptionsQuery renders the pinned options tail: the pinned
+// "WITH ( {} )".format(", ".join("{k} = {v}")) — byte-for-byte including
+// the spaces inside the parentheses. Python joins dict items in insertion
+// order; a Go map has none, so the port fixes the deterministic sorted-key
+// order instead (the only ordering deviation, shared with the mdadm and
+// extfs options maps). The pinned source interpolates every key and value
+// raw with no quoting, so both must stay inside the bare token classes —
+// keys are bare PostgreSQL identifiers like db_create's TEMPLATE, values
+// bare version-class tokens like the extension version strings — and each
+// rejection is value-free.
+func tablespaceOptionsQuery(options map[string]string) (string, error) {
+	if len(options) == 0 {
+		// The pinned truthy-dict gate: None and the empty dict both keep
+		// the tail empty.
+		return "", nil
+	}
+	keys := make([]string, 0, len(options))
+	for key := range options {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	chunks := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if !bareIdentifierRE.MatchString(key) {
+			return "", errPostgresInvalidOptionName
+		}
+		if !bareVersionRE.MatchString(options[key]) {
+			return "", errPostgresInvalidOptionValue
+		}
+		chunks = append(chunks, key+" = "+options[key])
+	}
+	return "WITH ( " + strings.Join(chunks, ", ") + " )", nil
+}
+
+// tablespaceCreateQuery ports the pinned statement construction
+// (postgres.py:863-874): the fixed head, the truthy OWNER clause, the
+// LOCATION literal, and the truthy WITH options tail, joined by the
+// pinned format string exactly — including the double space before
+// LOCATION when the OWNER clause is absent and the trailing space when
+// the options tail is empty, both of which the pinned test asserts. Every
+// validation runs here, before any Runner invocation, and every rejection
+// is value-free.
+func tablespaceCreateQuery(a *TablespaceCreateArgs) (string, error) {
+	if strings.Contains(a.Name, `"`) {
+		// The pinned head formats the name into double quotes unescaped.
+		return "", ddlValidationError("name")
+	}
+	if err := validateTablespaceLocation(a.Location); err != nil {
+		return "", err
+	}
+	ownerQuery := ""
+	if a.Owner != nil && *a.Owner != "" {
+		// The pinned if owner: gate — Python truthiness makes the explicit
+		// empty string the same as None.
+		if strings.Contains(*a.Owner, `"`) {
+			return "", ddlValidationError("owner")
+		}
+		ownerQuery = `OWNER "` + *a.Owner + `"`
+	}
+	optionsQuery, err := tablespaceOptionsQuery(a.Options)
+	if err != nil {
+		return "", err
+	}
+	return `CREATE TABLESPACE "` + a.Name + `" ` + ownerQuery +
+		` LOCATION '` + a.Location + `' ` + optionsQuery, nil
+}
+
+type tablespaceCreateFunc struct{}
+
+func (tablespaceCreateFunc) Name() string { return "postgres.tablespace_create" }
+func (tablespaceCreateFunc) Args() any    { return TablespaceCreateArgs{} }
+
+// Execute ports the pinned tablespace_create flow (postgres.py:876-886):
+// exactly one fixed CREATE TABLESPACE statement over the central
+// maintenance-database connection with no test mode and no existence
+// preflight (tablespace_exists is never consulted), and the pinned tail
+// ret["retcode"] == 0 — a rejected CREATE is the boolean false, never an
+// exception.
+func (tablespaceCreateFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[TablespaceCreateArgs](args, "postgres.tablespace_create")
+	if err != nil {
+		return nil, err
+	}
+	query, err := tablespaceCreateQuery(a)
+	if err != nil {
+		return nil, err
+	}
+	argv := psqlArgv(
+		pointerString(a.User),
+		pointerString(a.Host),
+		pointerString(a.Port),
+		pointerString(a.MaintenanceDB),
+		"-c", query,
+	)
+	result, err := runPsql(ctx, rt, argv, a.connection())
+	if err != nil {
+		return nil, err
+	}
+	return result.ExitCode == 0, nil
+}
+
+// TablespaceAlterArgs are the canonical postgres.tablespace_alter
+// arguments, mirroring the pinned tablespace_alter(name, user, host,
+// port, maintenance_db, password, new_name, new_owner, set_option,
+// reset_option, runas) signature (postgres.py:889-901). Pointer fields
+// keep Salt's None defaults and the map keeps the None dict default; the
+// pinned truthiness head treats nil and explicit empty values alike.
+type TablespaceAlterArgs struct {
+	Name          string            `statekit:"name=name,required"`
+	User          *string           `statekit:"name=user"`
+	Host          *string           `statekit:"name=host"`
+	Port          *string           `statekit:"name=port"`
+	MaintenanceDB *string           `statekit:"name=maintenance_db"`
+	Password      *string           `statekit:"name=password"`
+	NewName       *string           `statekit:"name=new_name"`
+	NewOwner      *string           `statekit:"name=new_owner"`
+	SetOption     map[string]string `statekit:"name=set_option"`
+	ResetOption   *string           `statekit:"name=reset_option"`
+	Runas         *string           `statekit:"name=runas"`
+}
+
+func (a *TablespaceAlterArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: a.MaintenanceDB,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+type tablespaceAlterFunc struct{}
+
+func (tablespaceAlterFunc) Name() string { return "postgres.tablespace_alter" }
+func (tablespaceAlterFunc) Args() any    { return TablespaceAlterArgs{} }
+
+// Execute ports the pinned tablespace_alter flow (postgres.py:916-947):
+// the pinned any([new_name, new_owner, set_option, reset_option]) head
+// answers the no-op True with no Runner invocation when no argument
+// carries a truthy value (Python truthiness: nil, the explicit empty
+// string, and the empty map all select nothing); otherwise the pinned
+// clause order — RENAME TO, OWNER TO, SET, RESET — runs one statement per
+// truthy argument, each through the same central maintenance-database
+// connection, and the pinned ret["retcode"] != 0 return False aborts at
+// the first failed statement so no later mutation follows a failed one.
+// The pinned set_option branch reads only next(iter(set_option.items()))
+// — the first inserted pair — which a Go map cannot reproduce, so exactly
+// one entry is accepted and more is the fixed value-free ambiguity
+// rejection above. The identifier positions the pinned format strings
+// interpolate into double quotes without escaping (name, new_name,
+// new_owner) and the raw option tokens are validated fail-closed with
+// value-free errors before any Runner invocation, exactly like the
+// create-side boundary.
+func (tablespaceAlterFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[TablespaceAlterArgs](args, "postgres.tablespace_alter")
+	if err != nil {
+		return nil, err
+	}
+	newName := a.NewName != nil && *a.NewName != ""
+	newOwner := a.NewOwner != nil && *a.NewOwner != ""
+	setOption := len(a.SetOption) > 0
+	resetOption := a.ResetOption != nil && *a.ResetOption != ""
+	if !newName && !newOwner && !setOption && !resetOption {
+		// The pinned "Nothing todo?" early True of the any([...]) head: no
+		// Runner invocation.
+		return true, nil
+	}
+	if strings.Contains(a.Name, `"`) {
+		return nil, ddlValidationError("name")
+	}
+	var queries []string
+	if newName {
+		if strings.Contains(*a.NewName, `"`) {
+			return nil, ddlValidationError("new_name")
+		}
+		queries = append(queries, `ALTER TABLESPACE "`+a.Name+`" RENAME TO "`+*a.NewName+`"`)
+	}
+	if newOwner {
+		if strings.Contains(*a.NewOwner, `"`) {
+			return nil, ddlValidationError("new_owner")
+		}
+		queries = append(queries, `ALTER TABLESPACE "`+a.Name+`" OWNER TO "`+*a.NewOwner+`"`)
+	}
+	if setOption {
+		if len(a.SetOption) != 1 {
+			return nil, errPostgresTablespaceSetOption
+		}
+		var key, value string
+		for k, v := range a.SetOption {
+			key, value = k, v
+		}
+		if !bareIdentifierRE.MatchString(key) {
+			return nil, errPostgresInvalidOptionName
+		}
+		if !bareVersionRE.MatchString(value) {
+			return nil, errPostgresInvalidOptionValue
+		}
+		queries = append(queries, `ALTER TABLESPACE "`+a.Name+`" SET (`+key+` = `+value+`)`)
+	}
+	if resetOption {
+		if !bareIdentifierRE.MatchString(*a.ResetOption) {
+			return nil, errPostgresInvalidOptionName
+		}
+		queries = append(queries, `ALTER TABLESPACE "`+a.Name+`" RESET (`+*a.ResetOption+`)`)
+	}
+	for _, query := range queries {
+		argv := psqlArgv(
+			pointerString(a.User),
+			pointerString(a.Host),
+			pointerString(a.Port),
+			pointerString(a.MaintenanceDB),
+			"-c", query,
+		)
+		result, err := runPsql(ctx, rt, argv, a.connection())
+		if err != nil {
+			return nil, err
+		}
+		if result.ExitCode != 0 {
+			// The pinned ret["retcode"] != 0 → False, compatibility data:
+			// a rejected ALTER is the boolean false, never an error, and
+			// the flow stops so no later mutation follows a failed one.
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// TablespaceRemoveArgs are the canonical postgres.tablespace_remove
+// arguments, mirroring the pinned tablespace_remove(name, user, host,
+// port, maintenance_db, password, runas) signature
+// (postgres.py:950-958).
+type TablespaceRemoveArgs struct {
+	Name          string  `statekit:"name=name,required"`
+	User          *string `statekit:"name=user"`
+	Host          *string `statekit:"name=host"`
+	Port          *string `statekit:"name=port"`
+	MaintenanceDB *string `statekit:"name=maintenance_db"`
+	Password      *string `statekit:"name=password"`
+	Runas         *string `statekit:"name=runas"`
+}
+
+func (a *TablespaceRemoveArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: a.MaintenanceDB,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+type tablespaceRemoveFunc struct{}
+
+func (tablespaceRemoveFunc) Name() string { return "postgres.tablespace_remove" }
+func (tablespaceRemoveFunc) Args() any    { return TablespaceRemoveArgs{} }
+
+// Execute ports the pinned tablespace_remove flow
+// (postgres.py:970-980): exactly one fixed DROP TABLESPACE statement —
+// the pinned form carries no trailing semicolon — over the central
+// maintenance-database connection with no existence preflight
+// (tablespace_exists/tablespace_list are never consulted, so a missing
+// tablespace is a server-side rejection that lands in the retcode
+// boolean), and the pinned tail ret["retcode"] == 0: a rejected DROP is
+// the boolean false, never an exception. The name is validated for its
+// double-quoted identifier context up front because the pinned format
+// string interpolates it raw, with the shared value-free rejection.
+func (tablespaceRemoveFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[TablespaceRemoveArgs](args, "postgres.tablespace_remove")
+	if err != nil {
+		return nil, err
+	}
+	if strings.Contains(a.Name, `"`) {
+		return nil, ddlValidationError("name")
+	}
+	argv := psqlArgv(
+		pointerString(a.User),
+		pointerString(a.Host),
+		pointerString(a.Port),
+		pointerString(a.MaintenanceDB),
+		"-c", `DROP TABLESPACE "`+a.Name+`"`,
+	)
+	result, err := runPsql(ctx, rt, argv, a.connection())
+	if err != nil {
+		return nil, err
+	}
+	return result.ExitCode == 0, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -5547,21 +5946,25 @@ func redactedError(err error, secrets ...string) error {
 	return errors.New(message)
 }
 
-// Register installs the R9.2n postgres slice: the version probe, the five
+// Register installs the R9.2o postgres slice: the version probe, the five
 // R9.2c read-only catalog primitives, the R9.2h write paths db_create and
 // db_remove, the eight R9.2d extension and language catalog functions,
 // the three R9.2e schema catalog functions, the three R9.2f role and
 // privilege checks, the R9.2g ACL listing privileges_list, the R9.2i
 // role mutations user_create, user_update, and user_remove, the R9.2j
-// group mutations group_create, group_update, and group_remove, the
-// R9.2k privilege mutations privileges_grant and privileges_revoke, the
-// R9.2l default-privilege family default_privileges_list,
+// group mutations group_create, group_update, and group_remove, the R9.2k
+// privilege mutations privileges_grant and privileges_revoke, the R9.2l
+// default-privilege family default_privileges_list,
 // default_privileges_grant, and default_privileges_revoke, the R9.2m
 // schema, extension, and language mutations schema_create,
 // schema_remove, create_extension, drop_extension, language_create, and
-// language_remove, and the R9.2n database mutation db_alter (whose
+// language_remove, the R9.2n database mutation db_alter (whose
 // owner_recurse branch answers the pending owner_to name with the fixed
-// UnsupportedError instead of a shallow ALTER OWNER). The remainder of the
+// UnsupportedError instead of a shallow ALTER OWNER), and the R9.2o
+// tablespace mutations tablespace_create, tablespace_alter, and
+// tablespace_remove (the pinned CREATE/ALTER/DROP TABLESPACE statements
+// with the pinned truthiness no-op head, clause order, and retcode
+// booleans). The remainder of the
 // postgres family needs the generic psql query surface (psql_query itself
 // stays pending; no arbitrary-query registration exists in this phase) and
 // stays pending for later R9 rounds; the internal parsed-version,
@@ -5579,6 +5982,9 @@ func Register(reg *runtime.ExecRegistry) error {
 		dbAlterFunc{},
 		tablespaceListFunc{},
 		tablespaceExistsFunc{},
+		tablespaceCreateFunc{},
+		tablespaceAlterFunc{},
+		tablespaceRemoveFunc{},
 		userListFunc{},
 		availableExtensionsFunc{},
 		installedExtensionsFunc{},

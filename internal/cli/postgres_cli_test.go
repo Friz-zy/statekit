@@ -1566,6 +1566,24 @@ func TestPostgresCLIDbValidationRedaction(t *testing.T) {
 			"statekit: postgres: invalid argument: unsupported quote character in owner\n"},
 		{"postgres.db_alter", []string{"--name", "db", "--tablespace", `ts-` + marker + `"`},
 			"statekit: postgres: invalid argument: unsupported quote character in tablespace\n"},
+		{"postgres.tablespace_create", []string{"--name", `ts-` + marker + `"`, "--location", "/srv/ts"},
+			"statekit: postgres: invalid argument: unsupported quote character in name\n"},
+		{"postgres.tablespace_create", []string{"--name", "ts", "--location", "/srv/ts", "--owner", `own-` + marker + `"`},
+			"statekit: postgres: invalid argument: unsupported quote character in owner\n"},
+		{"postgres.tablespace_create", []string{"--name", "ts", "--location", `/srv/` + marker + `'`},
+			"statekit: postgres: invalid argument: unsupported quote character in location\n"},
+		{"postgres.tablespace_create", []string{"--name", "ts", "--location", marker + "/ts"},
+			"statekit: postgres: invalid argument: invalid tablespace location\n"},
+		{"postgres.tablespace_alter", []string{"--name", `ts-` + marker + `"`, "--new-owner", "own"},
+			"statekit: postgres: invalid argument: unsupported quote character in name\n"},
+		{"postgres.tablespace_alter", []string{"--name", "ts", "--new-name", `x-` + marker + `"`},
+			"statekit: postgres: invalid argument: unsupported quote character in new_name\n"},
+		{"postgres.tablespace_alter", []string{"--name", "ts", "--new-owner", `x-` + marker + `"`},
+			"statekit: postgres: invalid argument: unsupported quote character in new_owner\n"},
+		{"postgres.tablespace_alter", []string{"--name", "ts", "--reset-option", marker},
+			"statekit: postgres: invalid argument: unsupported tablespace option name\n"},
+		{"postgres.tablespace_remove", []string{"--name", `ts-` + marker + `"`},
+			"statekit: postgres: invalid argument: unsupported quote character in name\n"},
 	} {
 		runner := &cliRecordingRunner{}
 		app := postgresCLIApp(t, runner)
@@ -1580,6 +1598,363 @@ func TestPostgresCLIDbValidationRedaction(t *testing.T) {
 			t.Fatalf("%s %s output leaks the rejected value: out=%q err=%q",
 				tc.fn, tc.argv, out, errS)
 		}
+	}
+}
+
+// TestPostgresCLITablespaceCreate drives the R9.2o create path end to
+// end with the pinned test_tablespace_create arguments as flags (the
+// pinned runas rejected by the single-user runtime): the byte-exact full
+// pinned argv (psql binary, connection flags and order, maintenance_db,
+// -c SQL) with no password token, the JSON true rendering,
+// the db_password redaction, the structured-input options map with its
+// sorted-key WITH tail, the retcode-false compatibility shape, the
+// fail-closed name/location boundaries, and the required arguments.
+func TestPostgresCLITablespaceCreate(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0},
+	}}
+	app := postgresCLIApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "postgres.tablespace_create",
+		"--name", "test_tablespace", "--location", "/tmp/postgres_test_tablespace",
+		"--owner", "otheruser",
+		"--user", "testuser", "--host", "testhost", "--port", "testport",
+		"--maintenance-db", "maint_db", "--password", "foo", "-o", "json")
+	var created bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &created) != nil || !created {
+		t.Fatalf("tablespace_create code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d, want 1", len(runner.calls))
+	}
+	command := runner.calls[0]
+	argv := append([]string{command.Name}, command.Args...)
+	wantArgv := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--username", "testuser", "--host", "testhost", "--port", "testport",
+		"--dbname", "maint_db",
+		"-c", `CREATE TABLESPACE "test_tablespace" OWNER "otheruser" LOCATION '/tmp/postgres_test_tablespace' `,
+	}
+	if !reflect.DeepEqual(argv, wantArgv) {
+		t.Fatalf("argv = %q, want %q", argv, wantArgv)
+	}
+	if strings.Contains(strings.Join(argv, "\x00"), "foo") {
+		t.Fatalf("argv carries the password token: %q", argv)
+	}
+	if len(command.Env) != 4 || command.Env[0] != "PGPASSWORD=foo" ||
+		command.Shell || len(command.Redact) != 1 || command.Redact[0] != "foo" {
+		t.Fatalf("unsafe command: %#v", command)
+	}
+	if strings.Contains(command.RedactedString(), "foo") || strings.Contains(out+errS, "foo") {
+		t.Fatalf("password leaked: %q %q", command.RedactedString(), out+errS)
+	}
+
+	// The options map travels through structured input only and renders
+	// the pinned WITH tail in the deterministic sorted-key order.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.tablespace_create",
+		"--name", "test_tablespace", "--location", "/tmp/postgres_test_tablespace",
+		"--config", `{"options":{"opt1":"1.0","opt2":"4.0"}}`, "-o", "json")
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &created) != nil || !created {
+		t.Fatalf("options code=%d out=%q err=%q", code, out, errS)
+	}
+	if got := runner.calls[0].Args[len(runner.calls[0].Args)-1]; got !=
+		`CREATE TABLESPACE "test_tablespace"  LOCATION '/tmp/postgres_test_tablespace' WITH ( opt1 = 1.0, opt2 = 4.0 )` {
+		t.Fatalf("options statement = %q", got)
+	}
+
+	// An option token outside the bare classes fails closed through the
+	// structured path too, value-free.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.tablespace_create",
+		"--name", "ts", "--location", "/srv/ts",
+		"--config", `{"options":{"seq_page_cost":"1.1) ; DROP TABLESPACE x; --"}}`, "-o", "json")
+	if code != ExitFailed ||
+		!strings.Contains(errS, "postgres: invalid argument: unsupported tablespace option value") ||
+		len(runner.calls) != 0 {
+		t.Fatalf("options value code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+
+	// A rejected CREATE keeps Salt's retcode boolean: exit OK, JSON false.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 1, Stderr: []byte(`psql: error: ERROR: directory "/tmp/postgres_test_tablespace" does not exist`)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.tablespace_create",
+		"--name", "ts", "--location", "/srv/ts", "-o", "json")
+	var failed bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &failed) != nil || failed {
+		t.Fatalf("nonzero exit code=%d out=%q err=%q, want false", code, out, errS)
+	}
+
+	// The fail-closed boundaries reject before any psql call, and the
+	// required name and location fail validation first.
+	for _, tc := range []struct {
+		name string
+		argv []string
+		want string
+	}{
+		{"name quote", []string{"--name", `ts"; DROP TABLESPACE x; --`, "--location", "/srv/ts"},
+			"postgres: invalid argument: unsupported quote character in name"},
+		{"location relative", []string{"--name", "ts", "--location", "srv/ts"},
+			"postgres: invalid argument: invalid tablespace location"},
+		{"location traversal", []string{"--name", "ts", "--location", "/srv/../etc"},
+			"postgres: invalid argument: invalid tablespace location"},
+		{"location quote", []string{"--name", "ts", "--location", "/srv/ts'"},
+			"postgres: invalid argument: unsupported quote character in location"},
+	} {
+		runner = &cliRecordingRunner{}
+		app = postgresCLIApp(t, runner)
+		fullArgv := append(append([]string{"exec", "postgres.tablespace_create"}, tc.argv...), "-o", "json")
+		code, _, errS = captureCode(t, app, fullArgv...)
+		if code != ExitFailed || !strings.Contains(errS, tc.want) || len(runner.calls) != 0 {
+			t.Fatalf("%s code=%d err=%q calls=%d", tc.name, code, errS, len(runner.calls))
+		}
+	}
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.tablespace_create",
+		"--location", "/srv/ts", "-o", "json")
+	if code != ExitInvalidInput || !strings.Contains(errS, "name") || len(runner.calls) != 0 {
+		t.Fatalf("missing name code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.tablespace_create",
+		"--name", "ts", "-o", "json")
+	if code != ExitInvalidInput || !strings.Contains(errS, "location") || len(runner.calls) != 0 {
+		t.Fatalf("missing location code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.tablespace_create",
+		"--name", "ts", "--location", "/srv/ts", "--runas", "postgres", "-o", "json")
+	if code != ExitFailed || !strings.Contains(errS, "runas") || len(runner.calls) != 0 {
+		t.Fatalf("runas code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+}
+
+// TestPostgresCLITablespaceAlter drives the R9.2o alter path end to end:
+// the pinned new_owner statement byte-for-byte on the full pinned argv
+// (psql binary, connection flags and order, maintenance_db, -c SQL, no
+// password token) and the pinned new_name statement, the
+// structured-input set_option and the flag-borne reset_option
+// statements, the pinned four-clause order, the no-op True
+// without any psql call, the retcode-false stop, the multi-entry
+// set_option rejection, and the required name.
+func TestPostgresCLITablespaceAlter(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0},
+	}}
+	app := postgresCLIApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "postgres.tablespace_alter",
+		"--name", "test_tablespace", "--new-owner", "testuser",
+		"--user", "testuser", "--host", "testhost", "--port", "testport",
+		"--maintenance-db", "maint_db", "--password", "foo", "-o", "json")
+	var altered bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &altered) != nil || !altered {
+		t.Fatalf("tablespace_alter code=%d out=%q err=%q", code, out, errS)
+	}
+	command := runner.calls[0]
+	argv := append([]string{command.Name}, command.Args...)
+	wantArgv := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--username", "testuser", "--host", "testhost", "--port", "testport",
+		"--dbname", "maint_db",
+		"-c", `ALTER TABLESPACE "test_tablespace" OWNER TO "testuser"`,
+	}
+	if !reflect.DeepEqual(argv, wantArgv) {
+		t.Fatalf("owner argv = %q, want %q", argv, wantArgv)
+	}
+	if strings.Contains(strings.Join(argv, "\x00"), "foo") {
+		t.Fatalf("owner argv carries the password token: %q", argv)
+	}
+	if command.Shell || len(command.Redact) != 1 || command.Redact[0] != "foo" {
+		t.Fatalf("unsafe command: %#v", command)
+	}
+	if strings.Contains(command.RedactedString(), "foo") ||
+		strings.Contains(out+errS, "foo") {
+		t.Fatalf("password leaked")
+	}
+
+	// The pinned new_name statement on the same transport.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.tablespace_alter",
+		"--name", "test_tablespace", "--new-name", "test_tablespace2", "-o", "json")
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &altered) != nil || !altered {
+		t.Fatalf("new_name code=%d out=%q err=%q", code, out, errS)
+	}
+	if got := runner.calls[0].Args[len(runner.calls[0].Args)-1]; got !=
+		`ALTER TABLESPACE "test_tablespace" RENAME TO "test_tablespace2"` {
+		t.Fatalf("new_name statement = %q", got)
+	}
+
+	// set_option arrives through structured input, reset_option as a
+	// flag; all four clauses keep the pinned order.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0},
+		{ExitCode: 0},
+		{ExitCode: 0},
+		{ExitCode: 0},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.tablespace_alter",
+		"--name", "test_tablespace", "--reset-option", "seq_page_cost",
+		"--config", `{"set_option":{"seq_page_cost":"1.1"},"new_name":"test_tablespace2","new_owner":"testuser"}`,
+		"-o", "json")
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &altered) != nil || !altered {
+		t.Fatalf("four clauses code=%d out=%q err=%q", code, out, errS)
+	}
+	wantStatements := []string{
+		`ALTER TABLESPACE "test_tablespace" RENAME TO "test_tablespace2"`,
+		`ALTER TABLESPACE "test_tablespace" OWNER TO "testuser"`,
+		`ALTER TABLESPACE "test_tablespace" SET (seq_page_cost = 1.1)`,
+		`ALTER TABLESPACE "test_tablespace" RESET (seq_page_cost)`,
+	}
+	if len(runner.calls) != 4 {
+		t.Fatalf("four clauses calls = %d, want 4", len(runner.calls))
+	}
+	for i, command := range runner.calls {
+		if got := command.Args[len(command.Args)-1]; got != wantStatements[i] {
+			t.Fatalf("clause %d statement = %q, want %q", i, got, wantStatements[i])
+		}
+		if command.Shell {
+			t.Fatalf("clause %d must run without a shell", i)
+		}
+	}
+
+	// The pinned no-op head: exit OK, JSON true, zero psql calls.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.tablespace_alter",
+		"--name", "test_tablespace", "-o", "json")
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &altered) != nil || !altered {
+		t.Fatalf("no-op code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("no-op calls = %d, want 0", len(runner.calls))
+	}
+
+	// A rejected first clause answers JSON false and stops the flow.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 1, Stderr: []byte(`psql: error: ERROR: tablespace "test_tablespace" does not exist`)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.tablespace_alter",
+		"--name", "test_tablespace", "--new-owner", "testuser",
+		"--new-name", "test_tablespace2", "-o", "json")
+	var rejected bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &rejected) != nil || rejected {
+		t.Fatalf("rejected clause code=%d out=%q err=%q, want false", code, out, errS)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("rejected clause calls = %d, want 1", len(runner.calls))
+	}
+
+	// A multi-entry set_option is the value-free ambiguity rejection
+	// before any psql call.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.tablespace_alter",
+		"--name", "ts", "--config", `{"set_option":{"seq_page_cost":"1.1","random_page_cost":"4.0"}}`,
+		"-o", "json")
+	if code != ExitFailed ||
+		!strings.Contains(errS, "postgres: invalid argument: set_option must carry exactly one tablespace option") ||
+		len(runner.calls) != 0 {
+		t.Fatalf("multi set_option code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+
+	// The required name is validated before any psql call.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.tablespace_alter", "-o", "json")
+	if code != ExitInvalidInput || !strings.Contains(errS, "name") || len(runner.calls) != 0 {
+		t.Fatalf("missing name code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+}
+
+// TestPostgresCLITablespaceRemove drives the R9.2o remove path end to
+// end: the byte-exact full pinned argv (psql binary, connection flags
+// and order, maintenance_db, -c SQL) with no password token carrying
+// the pinned DROP TABLESPACE statement, the JSON true rendering, the
+// no-preflight missing-tablespace boolean false, the fail-closed name
+// boundary, and the required name.
+func TestPostgresCLITablespaceRemove(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0},
+	}}
+	app := postgresCLIApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "postgres.tablespace_remove",
+		"--name", "test_tablespace",
+		"--user", "testuser", "--host", "testhost", "--port", "testport",
+		"--maintenance-db", "maint_db", "--password", "foo", "-o", "json")
+	var removed bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &removed) != nil || !removed {
+		t.Fatalf("tablespace_remove code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d, want 1", len(runner.calls))
+	}
+	command := runner.calls[0]
+	argv := append([]string{command.Name}, command.Args...)
+	wantArgv := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--username", "testuser", "--host", "testhost", "--port", "testport",
+		"--dbname", "maint_db",
+		"-c", `DROP TABLESPACE "test_tablespace"`,
+	}
+	if !reflect.DeepEqual(argv, wantArgv) {
+		t.Fatalf("argv = %q, want %q", argv, wantArgv)
+	}
+	if strings.Contains(strings.Join(argv, "\x00"), "foo") {
+		t.Fatalf("argv carries the password token: %q", argv)
+	}
+	if len(command.Env) != 4 || command.Env[0] != "PGPASSWORD=foo" ||
+		command.Shell || len(command.Redact) != 1 || command.Redact[0] != "foo" {
+		t.Fatalf("unsafe command: %#v", command)
+	}
+	if strings.Contains(command.RedactedString(), "foo") || strings.Contains(out+errS, "foo") {
+		t.Fatalf("password leaked: %q %q", command.RedactedString(), out+errS)
+	}
+
+	// A missing tablespace keeps the pinned no-preflight shape: one
+	// statement, the server rejection in the JSON false.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 1, Stderr: []byte(`psql: error: ERROR: tablespace "test_tablespace" does not exist`)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.tablespace_remove",
+		"--name", "test_tablespace", "-o", "json")
+	var missing bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &missing) != nil || missing {
+		t.Fatalf("missing code=%d out=%q err=%q, want false", code, out, errS)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("missing calls = %d, want 1 (no preflight)", len(runner.calls))
+	}
+
+	// Injection attempts fail closed before any psql call, and the
+	// required name is validated first.
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.tablespace_remove",
+		"--name", `ts"; DROP TABLESPACE x; --`, "-o", "json")
+	if code != ExitFailed ||
+		!strings.Contains(errS, "postgres: invalid argument: unsupported quote character in name") ||
+		len(runner.calls) != 0 {
+		t.Fatalf("injected name code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.tablespace_remove", "-o", "json")
+	if code != ExitInvalidInput || !strings.Contains(errS, "name") || len(runner.calls) != 0 {
+		t.Fatalf("missing name code=%d err=%q calls=%d", code, errS, len(runner.calls))
 	}
 }
 

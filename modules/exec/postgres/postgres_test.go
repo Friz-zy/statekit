@@ -346,7 +346,7 @@ func TestPostgresVersionInvalidInputs(t *testing.T) {
 	}
 }
 
-// TestPostgresRegistrySurface pins the forty-one canonical registrations,
+// TestPostgresRegistrySurface pins the forty-four canonical registrations,
 // their argument prototypes, and the absence of public psql_query,
 // has_default_privileges, create_metadata, and _parsed_version entries.
 func TestPostgresRegistrySurface(t *testing.T) {
@@ -388,8 +388,11 @@ func TestPostgresRegistrySurface(t *testing.T) {
 		"postgres.schema_get",
 		"postgres.schema_list",
 		"postgres.schema_remove",
+		"postgres.tablespace_alter",
+		"postgres.tablespace_create",
 		"postgres.tablespace_exists",
 		"postgres.tablespace_list",
+		"postgres.tablespace_remove",
 		"postgres.user_create",
 		"postgres.user_exists",
 		"postgres.user_list",
@@ -415,6 +418,12 @@ func TestPostgresRegistrySurface(t *testing.T) {
 			want = DbRemoveArgs{}
 		case "postgres.db_alter":
 			want = DbAlterArgs{}
+		case "postgres.tablespace_create":
+			want = TablespaceCreateArgs{}
+		case "postgres.tablespace_alter":
+			want = TablespaceAlterArgs{}
+		case "postgres.tablespace_remove":
+			want = TablespaceRemoveArgs{}
 		case "postgres.user_create":
 			want = UserCreateArgs{}
 		case "postgres.user_update":
@@ -506,6 +515,11 @@ func TestPostgresRegistrySurface(t *testing.T) {
 		{dbAlterFunc{}, append([]string{"name", "tablespace", "owner", "owner_recurse"}, connection...)},
 		{tablespaceListFunc{}, connection},
 		{tablespaceExistsFunc{}, append([]string{"name"}, connection...)},
+		{tablespaceCreateFunc{}, append([]string{"name", "location", "options", "owner"}, connection...)},
+		{tablespaceAlterFunc{}, append([]string{
+			"name", "new_name", "new_owner", "set_option", "reset_option",
+		}, connection...)},
+		{tablespaceRemoveFunc{}, append([]string{"name"}, connection...)},
 		{userListFunc{}, append(connection, "return_password")},
 		{availableExtensionsFunc{}, connection},
 		{installedExtensionsFunc{}, connection},
@@ -2046,6 +2060,982 @@ func TestPostgresDbAlterGuards(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), process.RedactedPlaceholder) {
 		t.Fatalf("error lacks redaction placeholder: %v", err)
+	}
+}
+
+// wantTablespaceCreateStatement is the exact statement of the pinned
+// test_tablespace_create, byte-for-byte including the trailing space the
+// pinned format string leaves for the empty options tail.
+const wantTablespaceCreateStatement = `CREATE TABLESPACE "test_tablespace" OWNER "otheruser" LOCATION '/tmp/postgres_test_tablespace' `
+
+// TestPostgresTablespaceCreateArgvAndResult ports the pinned
+// test_tablespace_create: the exact CREATE TABLESPACE statement on the
+// full pinned argv (SQL at index 14), the clean PG environment, password
+// redaction, and the retcode boolean. The pinned test's runas="foo" is
+// covered by the shared guards test because the single-user runtime
+// rejects it before execution.
+func TestPostgresTablespaceCreateArgvAndResult(t *testing.T) {
+	rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0})
+	value, err := (tablespaceCreateFunc{}).Execute(context.Background(), rt, &TablespaceCreateArgs{
+		Name:          "test_tablespace",
+		Location:      "/tmp/postgres_test_tablespace",
+		Owner:         postgresString("otheruser"),
+		User:          postgresString("testuser"),
+		Host:          postgresString("testhost"),
+		Port:          postgresString("testport"),
+		MaintenanceDB: postgresString("maint_db"),
+		Password:      postgresString("foo"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true {
+		t.Fatalf("tablespace_create = %#v, want true", value)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d, want 1", len(runner.calls))
+	}
+	command := runner.calls[0]
+	want := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--username", "testuser",
+		"--host", "testhost",
+		"--port", "testport",
+		"--dbname", "maint_db",
+		"-c", wantTablespaceCreateStatement,
+	}
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+	if all := append([]string{command.Name}, command.Args...); all[14] != wantTablespaceCreateStatement {
+		t.Fatalf("argv[14] = %q, want the pinned CREATE TABLESPACE statement", all[14])
+	}
+	wantEnv := []string{
+		"PGPASSWORD=foo",
+		"PGUSER=testuser",
+		"PGHOST=testhost",
+		"PGPORT=testport",
+	}
+	if !reflect.DeepEqual(command.Env, wantEnv) {
+		t.Fatalf("env = %q, want %q", command.Env, wantEnv)
+	}
+	if command.Shell {
+		t.Fatal("psql must run without a shell")
+	}
+	if command.Timeout != commandTimeout ||
+		command.MaxStdoutBytes != outputLimit || command.MaxStderrBytes != outputLimit {
+		t.Fatalf("unsafe command bounds: %#v", command)
+	}
+	if len(command.Stdin) != 0 || command.Dir != "" || command.WindowsCmdLine != "" {
+		t.Fatalf("unexpected command payload: %#v", command)
+	}
+	if !reflect.DeepEqual(command.Redact, []string{"foo"}) {
+		t.Fatalf("redact = %q", command.Redact)
+	}
+	if rendered := command.RedactedString(); strings.Contains(rendered, "foo") {
+		t.Fatalf("rendered command leaks password: %q", rendered)
+	}
+}
+
+// TestPostgresTablespaceCreateShapes pins the remaining pinned statement
+// shapes: the no-owner head keeps the pinned double space before
+// LOCATION, the truthy options map renders the pinned WITH tail in the
+// deterministic sorted-key order, an explicit empty owner string is the
+// pinned falsy no-op, and the "postgres" maintenance fallback plus a
+// clean environment apply like every connection default.
+func TestPostgresTablespaceCreateShapes(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		owner *string
+		opts  map[string]string
+		want  string
+	}{
+		{
+			"no owner",
+			nil,
+			nil,
+			`CREATE TABLESPACE "ts"  LOCATION '/srv/ts' `,
+		},
+		{
+			"empty owner is falsy",
+			postgresString(""),
+			nil,
+			`CREATE TABLESPACE "ts"  LOCATION '/srv/ts' `,
+		},
+		{
+			"options only",
+			nil,
+			map[string]string{"opt2": "4.0", "opt1": "1.0"},
+			`CREATE TABLESPACE "ts"  LOCATION '/srv/ts' WITH ( opt1 = 1.0, opt2 = 4.0 )`,
+		},
+		{
+			"owner and options",
+			postgresString("own"),
+			map[string]string{"seq_page_cost": "1.1"},
+			`CREATE TABLESPACE "ts" OWNER "own" LOCATION '/srv/ts' WITH ( seq_page_cost = 1.1 )`,
+		},
+		{
+			"empty options map is falsy",
+			nil,
+			map[string]string{},
+			`CREATE TABLESPACE "ts"  LOCATION '/srv/ts' `,
+		},
+	} {
+		rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0})
+		value, err := (tablespaceCreateFunc{}).Execute(context.Background(), rt, &TablespaceCreateArgs{
+			Name:     "ts",
+			Location: "/srv/ts",
+			Owner:    tc.owner,
+			Options:  tc.opts,
+		})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if value != true {
+			t.Fatalf("%s tablespace_create = %#v, want true", tc.name, value)
+		}
+		if len(runner.calls) != 1 {
+			t.Fatalf("%s runner calls = %d, want 1", tc.name, len(runner.calls))
+		}
+		command := runner.calls[0]
+		want := []string{
+			"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+			"--dbname", "postgres",
+			"-c", tc.want,
+		}
+		if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s argv = %q, want %q", tc.name, got, want)
+		}
+		if command.Env == nil || len(command.Env) != 0 {
+			t.Fatalf("%s env = %q, want clean empty environment", tc.name, command.Env)
+		}
+		if command.Redact != nil {
+			t.Fatalf("%s redact = %q, want none", tc.name, command.Redact)
+		}
+	}
+}
+
+// TestPostgresTablespaceCreateNonzeroExitIsFalse pins the pinned tail
+// ret["retcode"] == 0: a rejected CREATE is the boolean false, never an
+// exception — including the missing-directory and duplicate-tablespace
+// server rejections.
+func TestPostgresTablespaceCreateNonzeroExitIsFalse(t *testing.T) {
+	rt, _ := newPostgresRuntime(process.CommandResult{
+		ExitCode: 1,
+		Stderr:   []byte(`psql: error: ERROR: directory "/srv/ts" does not exist`),
+	})
+	value, err := (tablespaceCreateFunc{}).Execute(context.Background(), rt, &TablespaceCreateArgs{
+		Name:     "ts",
+		Location: "/srv/ts",
+	})
+	if err != nil {
+		t.Fatalf("nonzero exit must not error: %v", err)
+	}
+	if value != false {
+		t.Fatalf("tablespace_create = %#v, want false", value)
+	}
+}
+
+// TestPostgresTablespaceCreateLocationBoundary pins the StateKit LOCATION
+// boundary: the pinned format string interpolates the location raw into a
+// single-quoted literal, so anything but an absolute, clean,
+// control-free, quote-free path is rejected value-free before any Runner
+// invocation.
+func TestPostgresTablespaceCreateLocationBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		location string
+		want     string
+	}{
+		{"relative", "srv/ts", "postgres: invalid argument: invalid tablespace location"},
+		{"empty", "", "postgres: invalid argument: invalid tablespace location"},
+		{"dot segment", "/srv/./ts", "postgres: invalid argument: invalid tablespace location"},
+		{"parent traversal", "/srv/../ts", "postgres: invalid argument: invalid tablespace location"},
+		{"trailing slash", "/srv/ts/", "postgres: invalid argument: invalid tablespace location"},
+		{"double slash", "//srv/ts", "postgres: invalid argument: invalid tablespace location"},
+		{"bare traversal", "..", "postgres: invalid argument: invalid tablespace location"},
+		{"control newline", "/srv/t\ns", "postgres: invalid argument: invalid tablespace location"},
+		{"control nul", "/srv/t\x00s", "postgres: invalid argument: invalid tablespace location"},
+		{"control del", "/srv/t\x7fs", "postgres: invalid argument: invalid tablespace location"},
+		{"quote escape", "/srv/ts'", "postgres: invalid argument: unsupported quote character in location"},
+		{"quote injection", `/srv/ts' ; DROP TABLESPACE x; --`, "postgres: invalid argument: unsupported quote character in location"},
+	} {
+		rt, runner := newPostgresRuntime()
+		_, err := (tablespaceCreateFunc{}).Execute(context.Background(), rt, &TablespaceCreateArgs{
+			Name:     "ts",
+			Location: tc.location,
+		})
+		if err == nil || err.Error() != tc.want {
+			t.Fatalf("%s err = %v, want %q", tc.name, err, tc.want)
+		}
+		if !errors.Is(err, errPostgresInvalidArgument) {
+			t.Fatalf("%s err = %v, want invalid argument", tc.name, err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s executed %d commands", tc.name, len(runner.calls))
+		}
+	}
+
+	// A clean multi-segment absolute path with legal punctuation stays
+	// inside the boundary; the server remains the semantic judge.
+	rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0})
+	value, err := (tablespaceCreateFunc{}).Execute(context.Background(), rt, &TablespaceCreateArgs{
+		Name:     "ts",
+		Location: "/var/lib/postgresql/16/data-ts",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true || len(runner.calls) != 1 {
+		t.Fatalf("clean location value=%#v calls=%d", value, len(runner.calls))
+	}
+	if got := runner.calls[0].Args[len(runner.calls[0].Args)-1]; got !=
+		`CREATE TABLESPACE "ts"  LOCATION '/var/lib/postgresql/16/data-ts' ` {
+		t.Fatalf("clean location statement = %q", got)
+	}
+}
+
+// TestPostgresTablespaceCreateOptionsBoundary pins the raw option-token
+// boundary: the pinned source interpolates both the key and the value
+// into the WITH clause with no quoting, so each must stay inside the
+// bare token classes and every rejection is value-free.
+func TestPostgresTablespaceCreateOptionsBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opts map[string]string
+		want string
+	}{
+		{
+			"key injection",
+			map[string]string{"seq_page_cost": "1.1", `x; DROP TABLESPACE y; --`: "1"},
+			"postgres: invalid argument: unsupported tablespace option name",
+		},
+		{
+			"key quote",
+			map[string]string{`x"`: "1"},
+			"postgres: invalid argument: unsupported tablespace option name",
+		},
+		{
+			"key empty",
+			map[string]string{"": "1"},
+			"postgres: invalid argument: unsupported tablespace option name",
+		},
+		{
+			"value injection",
+			map[string]string{"seq_page_cost": `1.1) ; DROP TABLESPACE x; --`},
+			"postgres: invalid argument: unsupported tablespace option value",
+		},
+		{
+			"value quote",
+			map[string]string{"seq_page_cost": "'1.1'"},
+			"postgres: invalid argument: unsupported tablespace option value",
+		},
+		{
+			"value bare token class is accepted shape-wise",
+			map[string]string{"max_stack_depth": "2MB"},
+			"", // accepted: the server stays the semantic judge
+		},
+	} {
+		rt, runner := newPostgresRuntime()
+		_, err := (tablespaceCreateFunc{}).Execute(context.Background(), rt, &TablespaceCreateArgs{
+			Name:     "ts",
+			Location: "/srv/ts",
+			Options:  tc.opts,
+		})
+		if tc.want == "" {
+			// The bare token class accepted shape: exactly one statement
+			// runs and no rejection exists.
+			if err != nil {
+				t.Fatalf("%s unexpected err = %v", tc.name, err)
+			}
+			if len(runner.calls) != 1 {
+				t.Fatalf("%s executed %d commands, want 1", tc.name, len(runner.calls))
+			}
+			continue
+		}
+		if err == nil || err.Error() != tc.want {
+			t.Fatalf("%s err = %v, want %q", tc.name, err, tc.want)
+		}
+		if !errors.Is(err, errPostgresInvalidArgument) {
+			t.Fatalf("%s err = %v, want invalid argument", tc.name, err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s executed %d commands", tc.name, len(runner.calls))
+		}
+	}
+}
+
+// TestPostgresTablespaceCreateInjection pins the fail-closed identifier
+// boundary on the double-quoted positions: the name and the truthy owner
+// may not carry the double quote, with the exact value-free stable error
+// naming the argument key.
+func TestPostgresTablespaceCreateInjection(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		ts    string
+		owner *string
+		want  string
+	}{
+		{`name quote`, `ts" )`, postgresString("own"), "postgres: invalid argument: unsupported quote character in name"},
+		{"owner quote", "ts", postgresString(`own"; DROP TABLESPACE x; --`), "postgres: invalid argument: unsupported quote character in owner"},
+	} {
+		rt, runner := newPostgresRuntime()
+		_, err := (tablespaceCreateFunc{}).Execute(context.Background(), rt, &TablespaceCreateArgs{
+			Name:     tc.ts,
+			Location: "/srv/ts",
+			Owner:    tc.owner,
+		})
+		if err == nil || err.Error() != tc.want {
+			t.Fatalf("%s err = %v, want %q", tc.name, err, tc.want)
+		}
+		if !errors.Is(err, errPostgresInvalidArgument) {
+			t.Fatalf("%s err = %v, want invalid argument", tc.name, err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s executed %d commands", tc.name, len(runner.calls))
+		}
+	}
+}
+
+// wantTablespaceAlterStatements is the pinned four-statement sequence in
+// the pinned clause order: RENAME TO, OWNER TO, SET, RESET.
+var wantTablespaceAlterStatements = []string{
+	`ALTER TABLESPACE "test_tablespace" RENAME TO "test_tablespace2"`,
+	`ALTER TABLESPACE "test_tablespace" OWNER TO "testuser"`,
+	`ALTER TABLESPACE "test_tablespace" SET (seq_page_cost = 1.1)`,
+	`ALTER TABLESPACE "test_tablespace" RESET (seq_page_cost)`,
+}
+
+// TestPostgresTablespaceAlterArgvAndResult ports the pinned
+// test_tablespace_alter_new_name and test_tablespace_alter_new_owner —
+// each statement byte-for-byte on the full pinned argv (SQL at index 14)
+// — and the SET/RESET statements of the pinned docstring examples on the
+// same transport.
+func TestPostgresTablespaceAlterArgvAndResult(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		args  *TablespaceAlterArgs
+		calls int
+		want  []string
+	}{
+		{
+			"new owner (pinned)",
+			&TablespaceAlterArgs{
+				Name:          "test_tablespace",
+				NewOwner:      postgresString("testuser"),
+				User:          postgresString("testuser"),
+				Host:          postgresString("testhost"),
+				Port:          postgresString("testport"),
+				MaintenanceDB: postgresString("maint_db"),
+				Password:      postgresString("foo"),
+			},
+			1,
+			[]string{wantTablespaceAlterStatements[1]},
+		},
+		{
+			"new name (pinned)",
+			&TablespaceAlterArgs{
+				Name:          "test_tablespace",
+				NewName:       postgresString("test_tablespace2"),
+				User:          postgresString("testuser"),
+				Host:          postgresString("testhost"),
+				Port:          postgresString("testport"),
+				MaintenanceDB: postgresString("maint_db"),
+				Password:      postgresString("foo"),
+			},
+			1,
+			[]string{wantTablespaceAlterStatements[0]},
+		},
+		{
+			"set option",
+			&TablespaceAlterArgs{
+				Name:      "test_tablespace",
+				SetOption: map[string]string{"seq_page_cost": "1.1"},
+			},
+			1,
+			[]string{wantTablespaceAlterStatements[2]},
+		},
+		{
+			"reset option",
+			&TablespaceAlterArgs{
+				Name:        "test_tablespace",
+				ResetOption: postgresString("seq_page_cost"),
+			},
+			1,
+			[]string{wantTablespaceAlterStatements[3]},
+		},
+		{
+			"all four clauses in the pinned order",
+			&TablespaceAlterArgs{
+				Name:        "test_tablespace",
+				NewName:     postgresString("test_tablespace2"),
+				NewOwner:    postgresString("testuser"),
+				SetOption:   map[string]string{"seq_page_cost": "1.1"},
+				ResetOption: postgresString("seq_page_cost"),
+			},
+			4,
+			wantTablespaceAlterStatements,
+		},
+	} {
+		results := make([]process.CommandResult, tc.calls)
+		for i := range results {
+			results[i] = process.CommandResult{ExitCode: 0}
+		}
+		rt, runner := newPostgresRuntime(results...)
+		value, err := (tablespaceAlterFunc{}).Execute(context.Background(), rt, tc.args)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if value != true {
+			t.Fatalf("%s tablespace_alter = %#v, want true", tc.name, value)
+		}
+		if len(runner.calls) != tc.calls {
+			t.Fatalf("%s runner calls = %d, want %d", tc.name, len(runner.calls), tc.calls)
+		}
+		for i, command := range runner.calls {
+			want := []string{
+				"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+			}
+			if tc.args.User != nil {
+				want = append(want,
+					"--username", "testuser",
+					"--host", "testhost",
+					"--port", "testport",
+				)
+			}
+			if tc.args.MaintenanceDB != nil {
+				want = append(want, "--dbname", "maint_db")
+			} else {
+				want = append(want, "--dbname", "postgres")
+			}
+			want = append(want, "-c", tc.want[i])
+			if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+				t.Fatalf("%s call %d argv = %q, want %q", tc.name, i, got, want)
+			}
+			if all := append([]string{command.Name}, command.Args...); all[len(all)-1] != tc.want[i] {
+				t.Fatalf("%s call %d statement = %q, want %q", tc.name, i, all[len(all)-1], tc.want[i])
+			}
+			if tc.args.Password == nil {
+				continue
+			}
+			if !reflect.DeepEqual(command.Redact, []string{"foo"}) {
+				t.Fatalf("%s call %d redact = %#v", tc.name, i, command.Redact)
+			}
+			if rendered := command.RedactedString(); strings.Contains(rendered, "foo") {
+				t.Fatalf("%s call %d rendered command leaks password: %q", tc.name, i, rendered)
+			}
+		}
+	}
+}
+
+// TestPostgresTablespaceAlterNoop pins the pinned any([new_name,
+// new_owner, set_option, reset_option]) head: nil arguments, the
+// Python-falsy explicit empty strings, and the empty map all answer the
+// no-op True with no Runner invocation.
+func TestPostgresTablespaceAlterNoop(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		newName *string
+		owner   *string
+		setOpt  map[string]string
+		reset   *string
+	}{
+		{"nothing set", nil, nil, nil, nil},
+		{"new name empty", postgresString(""), nil, nil, nil},
+		{"new owner empty", nil, postgresString(""), nil, nil},
+		{"set option empty map", nil, nil, map[string]string{}, nil},
+		{"reset option empty", nil, nil, nil, postgresString("")},
+		{"all falsy", postgresString(""), postgresString(""), map[string]string{}, postgresString("")},
+	} {
+		rt, runner := newPostgresRuntime()
+		value, err := (tablespaceAlterFunc{}).Execute(context.Background(), rt, &TablespaceAlterArgs{
+			Name:        "test_tablespace",
+			NewName:     tc.newName,
+			NewOwner:    tc.owner,
+			SetOption:   tc.setOpt,
+			ResetOption: tc.reset,
+		})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if value != true {
+			t.Fatalf("%s tablespace_alter = %#v, want true", tc.name, value)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s executed %d commands, want none", tc.name, len(runner.calls))
+		}
+	}
+}
+
+// TestPostgresTablespaceAlterNonzeroRetcodeStops pins the pinned
+// ret["retcode"] != 0 → False abort: the first nonzero retcode answers
+// the boolean false and no later clause statement runs.
+func TestPostgresTablespaceAlterNonzeroRetcodeStops(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		fails int // 1-based statement index that returns nonzero
+		calls int // runner calls before the stop
+	}{
+		{"first fails", 1, 1},
+		{"second fails", 2, 2},
+		{"third fails", 3, 3},
+	} {
+		results := make([]process.CommandResult, tc.calls)
+		for i := range results {
+			exit := 0
+			if i+1 == tc.fails {
+				exit = 3
+			}
+			results[i] = process.CommandResult{
+				ExitCode: exit,
+				Stderr:   []byte(`psql: error: ERROR: tablespace "test_tablespace" does not exist`),
+			}
+		}
+		rt, runner := newPostgresRuntime(results...)
+		value, err := (tablespaceAlterFunc{}).Execute(context.Background(), rt, &TablespaceAlterArgs{
+			Name:        "test_tablespace",
+			NewName:     postgresString("test_tablespace2"),
+			NewOwner:    postgresString("testuser"),
+			SetOption:   map[string]string{"seq_page_cost": "1.1"},
+			ResetOption: postgresString("seq_page_cost"),
+		})
+		if err != nil {
+			t.Fatalf("%s err = %v, want the retcode boolean only", tc.name, err)
+		}
+		if value != false {
+			t.Fatalf("%s tablespace_alter = %#v, want false", tc.name, value)
+		}
+		if len(runner.calls) != tc.calls {
+			t.Fatalf("%s runner calls = %d, want %d", tc.name, len(runner.calls), tc.calls)
+		}
+		last := runner.calls[len(runner.calls)-1].Args[len(runner.calls[len(runner.calls)-1].Args)-1]
+		if last != wantTablespaceAlterStatements[tc.calls-1] {
+			t.Fatalf("%s last statement = %q, want %q", tc.name, last, wantTablespaceAlterStatements[tc.calls-1])
+		}
+	}
+}
+
+// TestPostgresTablespaceAlterInjection pins the fail-closed boundaries:
+// the double-quoted identifier positions (name, new_name, new_owner),
+// the raw reset_option token, the raw set_option key and value, and the
+// multi-entry set_option ambiguity — every rejection value-free and
+// before any Runner invocation.
+func TestPostgresTablespaceAlterInjection(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args *TablespaceAlterArgs
+		want string
+	}{
+		{
+			"name quote",
+			&TablespaceAlterArgs{Name: `ts" )`, NewOwner: postgresString("own")},
+			"postgres: invalid argument: unsupported quote character in name",
+		},
+		{
+			"new name quote",
+			&TablespaceAlterArgs{Name: "ts", NewName: postgresString(`x"; DROP TABLESPACE y; --`)},
+			"postgres: invalid argument: unsupported quote character in new_name",
+		},
+		{
+			"new owner quote",
+			&TablespaceAlterArgs{Name: "ts", NewOwner: postgresString(`own"; DROP TABLESPACE y; --`)},
+			"postgres: invalid argument: unsupported quote character in new_owner",
+		},
+		{
+			"reset option injection",
+			&TablespaceAlterArgs{Name: "ts", ResetOption: postgresString(`x) ; DROP TABLESPACE y; --`)},
+			"postgres: invalid argument: unsupported tablespace option name",
+		},
+		{
+			"set option key injection",
+			&TablespaceAlterArgs{Name: "ts", SetOption: map[string]string{`x; DROP TABLESPACE y; --`: "1"}},
+			"postgres: invalid argument: unsupported tablespace option name",
+		},
+		{
+			"set option value injection",
+			&TablespaceAlterArgs{Name: "ts", SetOption: map[string]string{"seq_page_cost": `1.1) ; DROP TABLESPACE y; --`}},
+			"postgres: invalid argument: unsupported tablespace option value",
+		},
+		{
+			"set option multiple entries",
+			&TablespaceAlterArgs{Name: "ts", SetOption: map[string]string{"seq_page_cost": "1.1", "random_page_cost": "4.0"}},
+			"postgres: invalid argument: set_option must carry exactly one tablespace option",
+		},
+	} {
+		rt, runner := newPostgresRuntime()
+		_, err := (tablespaceAlterFunc{}).Execute(context.Background(), rt, tc.args)
+		if err == nil || err.Error() != tc.want {
+			t.Fatalf("%s err = %v, want %q", tc.name, err, tc.want)
+		}
+		if !errors.Is(err, errPostgresInvalidArgument) {
+			t.Fatalf("%s err = %v, want invalid argument", tc.name, err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s executed %d commands", tc.name, len(runner.calls))
+		}
+	}
+}
+
+// TestPostgresTablespaceRemoveArgvAndResult ports the pinned
+// test_tablespace_remove: the exact DROP TABLESPACE statement (no
+// trailing semicolon) on the full pinned argv (SQL at index 14), the
+// clean PG environment, password redaction, and the retcode boolean —
+// including the no-preflight missing-tablespace shape: exactly one call,
+// the server rejection lands in the boolean false.
+func TestPostgresTablespaceRemoveArgvAndResult(t *testing.T) {
+	rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0})
+	value, err := (tablespaceRemoveFunc{}).Execute(context.Background(), rt, &TablespaceRemoveArgs{
+		Name:          "test_tablespace",
+		User:          postgresString("testuser"),
+		Host:          postgresString("testhost"),
+		Port:          postgresString("testport"),
+		MaintenanceDB: postgresString("maint_db"),
+		Password:      postgresString("foo"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true {
+		t.Fatalf("tablespace_remove = %#v, want true", value)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d, want 1", len(runner.calls))
+	}
+	command := runner.calls[0]
+	want := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--username", "testuser",
+		"--host", "testhost",
+		"--port", "testport",
+		"--dbname", "maint_db",
+		"-c", `DROP TABLESPACE "test_tablespace"`,
+	}
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+	if all := append([]string{command.Name}, command.Args...); all[14] != `DROP TABLESPACE "test_tablespace"` {
+		t.Fatalf("argv[14] = %q, want the pinned DROP TABLESPACE statement", all[14])
+	}
+	wantEnv := []string{
+		"PGPASSWORD=foo",
+		"PGUSER=testuser",
+		"PGHOST=testhost",
+		"PGPORT=testport",
+	}
+	if !reflect.DeepEqual(command.Env, wantEnv) {
+		t.Fatalf("env = %q, want %q", command.Env, wantEnv)
+	}
+	if command.Shell {
+		t.Fatal("psql must run without a shell")
+	}
+	if command.Timeout != commandTimeout ||
+		command.MaxStdoutBytes != outputLimit || command.MaxStderrBytes != outputLimit {
+		t.Fatalf("unsafe command bounds: %#v", command)
+	}
+	if !reflect.DeepEqual(command.Redact, []string{"foo"}) {
+		t.Fatalf("redact = %q", command.Redact)
+	}
+	if rendered := command.RedactedString(); strings.Contains(rendered, "foo") {
+		t.Fatalf("rendered command leaks password: %q", rendered)
+	}
+
+	// A missing tablespace keeps the pinned shape: no preflight call, one
+	// statement, and the server rejection in the boolean false.
+	rt, runner = newPostgresRuntime(process.CommandResult{
+		ExitCode: 1,
+		Stderr:   []byte(`psql: error: ERROR: tablespace "test_tablespace" does not exist`),
+	})
+	value, err = (tablespaceRemoveFunc{}).Execute(context.Background(), rt, &TablespaceRemoveArgs{
+		Name: "test_tablespace",
+	})
+	if err != nil {
+		t.Fatalf("missing tablespace must not error: %v", err)
+	}
+	if value != false {
+		t.Fatalf("missing tablespace = %#v, want false", value)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("missing tablespace calls = %d, want 1 (no preflight)", len(runner.calls))
+	}
+}
+
+// TestPostgresTablespaceRemoveInjection pins the fail-closed identifier
+// boundary: the name may not carry the double quote, value-free and
+// before any Runner invocation.
+func TestPostgresTablespaceRemoveInjection(t *testing.T) {
+	rt, runner := newPostgresRuntime()
+	_, err := (tablespaceRemoveFunc{}).Execute(context.Background(), rt, &TablespaceRemoveArgs{
+		Name: `ts"; DROP TABLESPACE x; --`,
+	})
+	if err == nil || err.Error() != "postgres: invalid argument: unsupported quote character in name" {
+		t.Fatalf("injected name err = %v", err)
+	}
+	if !errors.Is(err, errPostgresInvalidArgument) {
+		t.Fatalf("injected name err = %v, want invalid argument", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("injected name executed %d commands", len(runner.calls))
+	}
+}
+
+// tablespaceRejectedCalls enumerates every tablespace mutation field the
+// fail-closed boundaries reject, with a rejected value embedding the
+// marker and the exact value-free stable error each rejection must
+// return, keyed by the registered function name the registry dispatch
+// must reproduce.
+func tablespaceRejectedCalls() []struct {
+	fn   string
+	args any
+	want string
+} {
+	marker := postgresValidationMarker
+	return []struct {
+		fn   string
+		args any
+		want string
+	}{
+		{
+			"postgres.tablespace_create",
+			&TablespaceCreateArgs{Name: "ts-" + marker + `"`},
+			"postgres: invalid argument: unsupported quote character in name",
+		},
+		{
+			"postgres.tablespace_create",
+			&TablespaceCreateArgs{Name: "ts", Location: "/srv/ts", Owner: postgresString(`own-` + marker + `"`)},
+			"postgres: invalid argument: unsupported quote character in owner",
+		},
+		{
+			"postgres.tablespace_create",
+			&TablespaceCreateArgs{Name: "ts", Location: "/srv/" + marker + "'"},
+			"postgres: invalid argument: unsupported quote character in location",
+		},
+		{
+			"postgres.tablespace_create",
+			&TablespaceCreateArgs{Name: "ts", Location: marker + "/ts"},
+			"postgres: invalid argument: invalid tablespace location",
+		},
+		{
+			"postgres.tablespace_create",
+			&TablespaceCreateArgs{Name: "ts", Location: "/srv/ts", Options: map[string]string{marker: "1"}},
+			"postgres: invalid argument: unsupported tablespace option name",
+		},
+		{
+			"postgres.tablespace_create",
+			&TablespaceCreateArgs{Name: "ts", Location: "/srv/ts", Options: map[string]string{"seq_page_cost": marker}},
+			"postgres: invalid argument: unsupported tablespace option value",
+		},
+		{
+			"postgres.tablespace_alter",
+			&TablespaceAlterArgs{Name: "ts-" + marker + `"`, NewOwner: postgresString("own")},
+			"postgres: invalid argument: unsupported quote character in name",
+		},
+		{
+			"postgres.tablespace_alter",
+			&TablespaceAlterArgs{Name: "ts", NewName: postgresString(`x-` + marker + `"`)},
+			"postgres: invalid argument: unsupported quote character in new_name",
+		},
+		{
+			"postgres.tablespace_alter",
+			&TablespaceAlterArgs{Name: "ts", NewOwner: postgresString(`x-` + marker + `"`)},
+			"postgres: invalid argument: unsupported quote character in new_owner",
+		},
+		{
+			"postgres.tablespace_alter",
+			&TablespaceAlterArgs{Name: "ts", ResetOption: postgresString(marker)},
+			"postgres: invalid argument: unsupported tablespace option name",
+		},
+		{
+			"postgres.tablespace_alter",
+			&TablespaceAlterArgs{Name: "ts", SetOption: map[string]string{"seq_page_cost": "1.1", marker: "4.0"}},
+			"postgres: invalid argument: set_option must carry exactly one tablespace option",
+		},
+		{
+			"postgres.tablespace_remove",
+			&TablespaceRemoveArgs{Name: `ts-` + marker + `"`},
+			"postgres: invalid argument: unsupported quote character in name",
+		},
+	}
+}
+
+// TestPostgresTablespaceValidationErrorsRedacted repeats every rejected
+// tablespace field with a value embedding the same synthetic marker as
+// the connection password, both direct and through the ExecRegistry
+// dispatch (the path the CLI drives): the error must be exactly the
+// stable value-free message under the invalid-argument category — never
+// the rejected value, so the marker cannot leak — and no Runner call may
+// happen.
+func TestPostgresTablespaceValidationErrorsRedacted(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range tablespaceRejectedCalls() {
+		setPassword(tc.args, postgresString(postgresValidationMarker))
+		rt, runner := newPostgresRuntime()
+		var execErr error
+		switch args := tc.args.(type) {
+		case *TablespaceCreateArgs:
+			_, execErr = (tablespaceCreateFunc{}).Execute(context.Background(), rt, args)
+		case *TablespaceAlterArgs:
+			_, execErr = (tablespaceAlterFunc{}).Execute(context.Background(), rt, args)
+		case *TablespaceRemoveArgs:
+			_, execErr = (tablespaceRemoveFunc{}).Execute(context.Background(), rt, args)
+		}
+		if execErr == nil || execErr.Error() != tc.want {
+			t.Fatalf("%s direct err = %v, want %q", tc.fn, execErr, tc.want)
+		}
+		if !errors.Is(execErr, errPostgresInvalidArgument) {
+			t.Fatalf("%s direct err = %v, want invalid argument", tc.fn, execErr)
+		}
+		if strings.Contains(execErr.Error(), postgresValidationMarker) {
+			t.Fatalf("%s direct error leaks the rejected value: %v", tc.fn, execErr)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s direct executed %d commands", tc.fn, len(runner.calls))
+		}
+
+		rt, runner = newPostgresRuntime()
+		_, registryErr := reg.Call(context.Background(), rt, tc.fn, tc.args)
+		if registryErr == nil || registryErr.Error() != tc.want {
+			t.Fatalf("%s registry err = %v, want %q", tc.fn, registryErr, tc.want)
+		}
+		if strings.Contains(registryErr.Error(), postgresValidationMarker) {
+			t.Fatalf("%s registry error leaks the rejected value: %v", tc.fn, registryErr)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s registry executed %d commands", tc.fn, len(runner.calls))
+		}
+	}
+}
+
+// setPassword stamps the connection password on any tablespace args
+// struct for the marker-overlap redaction tests.
+func setPassword(args any, password *string) {
+	switch a := args.(type) {
+	case *TablespaceCreateArgs:
+		a.Password = password
+	case *TablespaceAlterArgs:
+		a.Password = password
+	case *TablespaceRemoveArgs:
+		a.Password = password
+	}
+}
+
+// TestPostgresTablespaceGuards pins cancellation, runas rejection, psql
+// unavailability, output limits, and redacted Runner errors across the
+// three tablespace mutations on their first statement.
+func TestPostgresTablespaceGuards(t *testing.T) {
+	type guardCase struct {
+		name string
+		run  func(rt *runtime.Runtime, ctx context.Context) (any, error)
+	}
+	cases := []guardCase{
+		{"create", func(rt *runtime.Runtime, ctx context.Context) (any, error) {
+			return (tablespaceCreateFunc{}).Execute(ctx, rt, &TablespaceCreateArgs{Name: "ts", Location: "/srv/ts"})
+		}},
+		{"alter", func(rt *runtime.Runtime, ctx context.Context) (any, error) {
+			return (tablespaceAlterFunc{}).Execute(ctx, rt, &TablespaceAlterArgs{Name: "ts", NewOwner: postgresString("own")})
+		}},
+		{"remove", func(rt *runtime.Runtime, ctx context.Context) (any, error) {
+			return (tablespaceRemoveFunc{}).Execute(ctx, rt, &TablespaceRemoveArgs{Name: "ts"})
+		}},
+	}
+	for _, gc := range cases {
+		rt, runner := newPostgresRuntime()
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		if _, err := gc.run(rt, ctx); !errors.Is(err, context.Canceled) {
+			t.Fatalf("%s pre-canceled ctx err = %v", gc.name, err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s canceled run executed %d commands", gc.name, len(runner.calls))
+		}
+
+		rt, runner = newPostgresRuntime()
+		var runasErr error
+		switch gc.name {
+		case "create":
+			_, runasErr = (tablespaceCreateFunc{}).Execute(context.Background(), rt, &TablespaceCreateArgs{
+				Name: "ts", Location: "/srv/ts", Runas: postgresString("postgres"),
+			})
+		case "alter":
+			_, runasErr = (tablespaceAlterFunc{}).Execute(context.Background(), rt, &TablespaceAlterArgs{
+				Name: "ts", NewOwner: postgresString("own"), Runas: postgresString("postgres"),
+			})
+		case "remove":
+			_, runasErr = (tablespaceRemoveFunc{}).Execute(context.Background(), rt, &TablespaceRemoveArgs{
+				Name: "ts", Runas: postgresString("postgres"),
+			})
+		}
+		if !errors.Is(runasErr, errPostgresRunas) {
+			t.Fatalf("%s runas err = %v", gc.name, runasErr)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s runas run executed %d commands", gc.name, len(runner.calls))
+		}
+
+		rt, runner = newPostgresRuntime()
+		runner.available = map[string]bool{"psql": false}
+		if _, err := gc.run(rt, context.Background()); !errors.Is(err, errPostgresPsqlUnavailable) {
+			t.Fatalf("%s psql unavailable err = %v", gc.name, err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s unavailable psql executed %d commands", gc.name, len(runner.calls))
+		}
+
+		for _, truncated := range []process.CommandResult{
+			{ExitCode: 0, StdoutTruncated: true, Stdout: []byte(strings.Repeat("9", outputLimit+1))},
+			{ExitCode: 0, StderrTruncated: true, Stderr: []byte(strings.Repeat("e", outputLimit+1))},
+		} {
+			rt, _ := newPostgresRuntime(truncated)
+			if _, err := gc.run(rt, context.Background()); !errors.Is(err, process.ErrOutputLimit) {
+				t.Fatalf("%s output limit err = %v", gc.name, err)
+			}
+		}
+	}
+
+	// A raw Runner error carrying the password stays redacted on every
+	// mutation's first statement.
+	for _, tc := range []struct {
+		name string
+		run  func(rt *runtime.Runtime) (any, error)
+	}{
+		{
+			"create",
+			func(rt *runtime.Runtime) (any, error) {
+				return (tablespaceCreateFunc{}).Execute(context.Background(), rt, &TablespaceCreateArgs{
+					Name: "ts", Location: "/srv/ts", Password: postgresString("foo"),
+				})
+			},
+		},
+		{
+			"alter",
+			func(rt *runtime.Runtime) (any, error) {
+				return (tablespaceAlterFunc{}).Execute(context.Background(), rt, &TablespaceAlterArgs{
+					Name: "ts", NewOwner: postgresString("own"), Password: postgresString("foo"),
+				})
+			},
+		},
+		{
+			"remove",
+			func(rt *runtime.Runtime) (any, error) {
+				return (tablespaceRemoveFunc{}).Execute(context.Background(), rt, &TablespaceRemoveArgs{
+					Name: "ts", Password: postgresString("foo"),
+				})
+			},
+		},
+	} {
+		rt, _ := newPostgresRuntime(process.CommandResult{
+			ExitCode: -1,
+			Err:      fmt.Errorf("exec psql --dbname postgres: secret foo rejected"),
+		})
+		_, err := tc.run(rt)
+		if err == nil || strings.Contains(err.Error(), "foo") {
+			t.Fatalf("%s runner error must be redacted: %v", tc.name, err)
+		}
+		if !strings.Contains(err.Error(), process.RedactedPlaceholder) {
+			t.Fatalf("%s error lacks redaction placeholder: %v", tc.name, err)
+		}
 	}
 }
 
