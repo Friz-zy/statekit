@@ -1739,10 +1739,10 @@ func TestPostgresCLIDbRemove(t *testing.T) {
 // TestPostgresCLIDbAlter drives the R9.2n mutation end to end: the two
 // pinned statements in the pinned order through the fake Runner, the JSON
 // true rendering, the no-op True without any psql call, the retcode-false
-// compatibility shape with its stop, the owner_recurse UnsupportedError,
-// the fail-closed identifier boundary, the required name, and the runas
-// rejection, with no password anywhere in the rendered command or CLI
-// output.
+// compatibility shape with its stop, the owner_recurse delegation into
+// the registered owner_to flow, the fail-closed identifier boundary, the
+// required name, and the runas rejection, with no password anywhere in
+// the rendered command or CLI output.
 func TestPostgresCLIDbAlter(t *testing.T) {
 	runner := &cliRecordingRunner{results: []process.CommandResult{
 		{ExitCode: 0},
@@ -1817,16 +1817,57 @@ func TestPostgresCLIDbAlter(t *testing.T) {
 		t.Fatalf("nonzero exit calls = %d, want the stop after 1", len(runner.calls))
 	}
 
-	// owner_recurse fails with the deterministic UnsupportedError (exit 3)
-	// before any psql call, whatever the tablespace argument carries.
-	runner = &cliRecordingRunner{}
+	// owner_recurse delegates to the registered owner_to (R9.2s): the
+	// five catalog queries run against the dbname — db_alter's
+	// maintenance_db is dropped exactly like the pinned projection — and
+	// the single -f - stdin script is the only mutation; the shallow ALTER
+	// statements never run, whatever the tablespace argument carries.
+	ownerToResults := []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("n\npublic\n")},
+		{ExitCode: 0, Stdout: []byte("n\npublic.accounts\n")},
+		{ExitCode: 0, Stdout: []byte("n\n")},
+		{ExitCode: 0, Stdout: []byte("n\n")},
+		{ExitCode: 0, Stdout: []byte("n\n")},
+		{ExitCode: 0},
+	}
+	runner = &cliRecordingRunner{results: ownerToResults}
 	app = postgresCLIApp(t, runner)
-	code, _, errS = captureCode(t, app, "exec", "postgres.db_alter",
+	code, out, errS = captureCode(t, app, "exec", "postgres.db_alter",
 		"--name", "dbname", "--owner", "otheruser", "--owner-recurse",
-		"--tablespace", "testspace", "-o", "json")
-	if code != ExitUnsupported || errS != "statekit: unsupported function \"postgres.owner_to\"\n" ||
-		len(runner.calls) != 0 {
-		t.Fatalf("owner_recurse code=%d err=%q calls=%d", code, errS, len(runner.calls))
+		"--tablespace", "testspace", "--maintenance-db", "maint_db", "-o", "json")
+	var recursed bool
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &recursed) != nil || !recursed {
+		t.Fatalf("owner_recurse code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 6 {
+		t.Fatalf("owner_recurse calls = %d, want the owner_to flow", len(runner.calls))
+	}
+	for i := 0; i < 5; i++ {
+		argv := append([]string{runner.calls[i].Name}, runner.calls[i].Args...)
+		if argv[5] != "--dbname" || argv[6] != "dbname" {
+			t.Fatalf("owner_recurse catalog %d runs against %q, want the dbname", i, argv[6])
+		}
+	}
+	delegated := append([]string{runner.calls[5].Name}, runner.calls[5].Args...)
+	if delegated[len(delegated)-3] != "--set=ON_ERROR_STOP=on" ||
+		delegated[len(delegated)-2] != "-f" || delegated[len(delegated)-1] != "-" {
+		t.Fatalf("owner_recurse script argv = %q", delegated)
+	}
+	wantScript := "begin;\n" +
+		"alter database \"dbname\" owner to \"otheruser\";\n" +
+		"alter schema public owner to otheruser;\n" +
+		"alter table public.accounts owner to otheruser;\n" +
+		"commit;\n"
+	if string(runner.calls[5].Stdin) != wantScript {
+		t.Fatalf("owner_recurse script = %q, want %q", runner.calls[5].Stdin, wantScript)
+	}
+	for i, command := range runner.calls {
+		argv := append([]string{command.Name}, command.Args...)
+		for _, arg := range argv {
+			if strings.Contains(strings.ToUpper(arg), "TABLESPACE") {
+				t.Fatalf("owner_recurse call %d carries a shallow statement: %q", i, arg)
+			}
+		}
 	}
 
 	// Injection attempts fail closed before any psql call, with the exact
@@ -1863,6 +1904,194 @@ func TestPostgresCLIDbAlter(t *testing.T) {
 	app = postgresCLIApp(t, runner)
 	code, _, errS = captureCode(t, app, "exec", "postgres.db_alter",
 		"--name", "dbname", "--owner", "otheruser", "--runas", "postgres", "-o", "json")
+	if code != ExitFailed || !strings.Contains(errS, "runas") || len(runner.calls) != 0 {
+		t.Fatalf("runas code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+}
+
+// TestPostgresCLIOwnerTo drives the R9.2s ownership mutation end to end:
+// the five catalog queries and the single -f - stdin transaction script
+// (with ON_ERROR_STOP before it) through the fake Runner, the JSON
+// run_all mapping {retcode, stdout, stderr}, the password redaction, the
+// retcode compatibility shape of a rejected script, the fail-closed
+// identifier boundary (the quote-carrying dbname and the non-bare
+// ownername), the required arguments, the runas rejection, and the
+// redacted catalog failure.
+func TestPostgresCLIOwnerTo(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("n\npublic\n")},
+		{ExitCode: 0, Stdout: []byte("n\npublic.accounts\n")},
+		{ExitCode: 0, Stdout: []byte("n\n")},
+		{ExitCode: 0, Stdout: []byte("n\n")},
+		{ExitCode: 0, Stdout: []byte("n\n")},
+		{ExitCode: 0, Stdout: []byte("ALTER DATABASE\nALTER SCHEMA\n")},
+	}}
+	app := postgresCLIApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "postgres.owner_to",
+		"--dbname", "dbname", "--ownername", "otheruser",
+		"--user", "testuser", "--host", "testhost", "--port", "testport",
+		"--password", "foo", "-o", "json")
+	var runAll map[string]any
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &runAll) != nil ||
+		len(runAll) != 3 || runAll["retcode"] != float64(0) ||
+		runAll["stdout"] != "ALTER DATABASE\nALTER SCHEMA\n" || runAll["stderr"] != "" {
+		t.Fatalf("owner_to code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 6 {
+		t.Fatalf("runner calls = %d, want 5 catalogs + 1 script", len(runner.calls))
+	}
+	wantCatalogSQL := []string{
+		"COPY (select quote_ident(schema_name) as n from information_schema.schemata) TO STDOUT WITH CSV HEADER",
+		"COPY (select quote_ident(table_schema)||'.'||quote_ident(table_name) as n from information_schema.tables where table_schema not in ('pg_catalog', 'information_schema')) TO STDOUT WITH CSV HEADER",
+		"COPY (select p.oid::regprocedure::text as n from pg_catalog.pg_proc p join pg_catalog.pg_namespace ns on p.pronamespace=ns.oid where ns.nspname not in ('pg_catalog', 'information_schema')  and not p.proisagg) TO STDOUT WITH CSV HEADER",
+		"COPY (select p.oid::regprocedure::text as n from pg_catalog.pg_proc p join pg_catalog.pg_namespace ns on p.pronamespace=ns.oid where ns.nspname not in ('pg_catalog', 'information_schema') and p.proisagg) TO STDOUT WITH CSV HEADER",
+		"COPY (select quote_ident(sequence_schema)||'.'||quote_ident(sequence_name) as n from information_schema.sequences) TO STDOUT WITH CSV HEADER",
+	}
+	for i := 0; i < 5; i++ {
+		argv := append([]string{runner.calls[i].Name}, runner.calls[i].Args...)
+		if len(argv) != 17 || argv[13] != "-v" || argv[14] != "datestyle=ISO,MDY" ||
+			argv[15] != "-c" || argv[16] != wantCatalogSQL[i] {
+			t.Fatalf("catalog %d argv = %q", i, argv)
+		}
+		if command := runner.calls[i]; command.Shell || len(command.Redact) != 1 || command.Redact[0] != "foo" {
+			t.Fatalf("catalog %d unsafe command: %#v", i, command)
+		}
+		if strings.Contains(runner.calls[i].RedactedString(), "foo") {
+			t.Fatalf("catalog %d rendered command leaks password", i)
+		}
+	}
+	script := append([]string{runner.calls[5].Name}, runner.calls[5].Args...)
+	if len(script) != 16 || script[13] != "--set=ON_ERROR_STOP=on" ||
+		script[14] != "-f" || script[15] != "-" {
+		t.Fatalf("script argv = %q", script)
+	}
+	wantScript := "begin;\n" +
+		"alter database \"dbname\" owner to \"otheruser\";\n" +
+		"alter schema public owner to otheruser;\n" +
+		"alter table public.accounts owner to otheruser;\n" +
+		"commit;\n"
+	if string(runner.calls[5].Stdin) != wantScript {
+		t.Fatalf("script stdin = %q, want %q", runner.calls[5].Stdin, wantScript)
+	}
+	if command := runner.calls[5]; command.Shell || len(command.Redact) != 1 || command.Redact[0] != "foo" {
+		t.Fatalf("script unsafe command: %#v", command)
+	}
+	if strings.Contains(runner.calls[5].RedactedString(), "foo") {
+		t.Fatal("script rendered command leaks password")
+	}
+	if strings.Contains(out+errS, "foo") {
+		t.Fatalf("CLI output leaks password: out=%q err=%q", out, errS)
+	}
+
+	// A rejected script keeps the pinned run_all shape — exit OK with
+	// the retcode and captured stderr as compatibility data — after the
+	// full catalog pass.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("n\n")},
+		{ExitCode: 0, Stdout: []byte("n\n")},
+		{ExitCode: 0, Stdout: []byte("n\n")},
+		{ExitCode: 0, Stdout: []byte("n\n")},
+		{ExitCode: 0, Stdout: []byte("n\n")},
+		{ExitCode: 1, Stderr: []byte(`psql: error: ERROR:  role "otheruser" does not exist`)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.owner_to",
+		"--dbname", "dbname", "--ownername", "otheruser", "-o", "json")
+	var rejected map[string]any
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &rejected) != nil ||
+		len(rejected) != 3 || rejected["retcode"] != float64(1) ||
+		rejected["stdout"] != "" ||
+		rejected["stderr"] != `psql: error: ERROR:  role "otheruser" does not exist` {
+		t.Fatalf("rejected script code=%d out=%q err=%q, want the run_all mapping", code, out, errS)
+	}
+	if len(runner.calls) != 6 {
+		t.Fatalf("rejected script calls = %d", len(runner.calls))
+	}
+
+	// A script stderr echoing the password is scrubbed out of the JSON
+	// mapping: the transport's redaction covers the run_all fields.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("n\n")},
+		{ExitCode: 0, Stdout: []byte("n\n")},
+		{ExitCode: 0, Stdout: []byte("n\n")},
+		{ExitCode: 0, Stdout: []byte("n\n")},
+		{ExitCode: 0, Stdout: []byte("n\n")},
+		{ExitCode: 3, Stderr: []byte(`psql: error: FATAL: password authentication failed <foo>`)},
+	}}
+	app = postgresCLIApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "postgres.owner_to",
+		"--dbname", "dbname", "--ownername", "otheruser", "--password", "foo", "-o", "json")
+	var leaked map[string]any
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &leaked) != nil ||
+		leaked["retcode"] != float64(3) {
+		t.Fatalf("redacted script code=%d out=%q err=%q", code, out, errS)
+	}
+	if strings.Contains(out+errS, "foo") {
+		t.Fatalf("redacted mapping leaks password: out=%q err=%q", out, errS)
+	}
+
+	// A failing catalog (Runner error or nonzero psql exit) surfaces the
+	// redacted value-free error and never reaches the mutation run.
+	for _, catalog := range []process.CommandResult{
+		{ExitCode: -1, Err: errors.New("owner-to catalog boom")},
+		{ExitCode: 2, Stderr: []byte(`psql: error: connection refused`)},
+	} {
+		runner = &cliRecordingRunner{results: []process.CommandResult{catalog}}
+		app = postgresCLIApp(t, runner)
+		code, _, errS = captureCode(t, app, "exec", "postgres.owner_to",
+			"--dbname", "dbname", "--ownername", "otheruser", "-o", "json")
+		wantErr := "owner-to catalog boom"
+		if catalog.ExitCode == 2 {
+			wantErr = "postgres.owner_to: catalog query failed with retcode 2"
+		}
+		if code != ExitFailed || !strings.Contains(errS, wantErr) || len(runner.calls) != 1 {
+			t.Fatalf("catalog failure code=%d err=%q calls=%d", code, errS, len(runner.calls))
+		}
+	}
+
+	// Injection attempts fail closed before any psql call, with the exact
+	// value-free stable errors naming the argument key only.
+	for _, tc := range []struct {
+		name string
+		argv []string
+		want string
+	}{
+		{"dbname quote", []string{"--dbname", `db"; DROP DATABASE x; --`, "--ownername", "own"},
+			"statekit: postgres: invalid argument: unsupported quote character in dbname\n"},
+		{"ownername quote", []string{"--dbname", "db", "--ownername", `own"; DROP DATABASE x; --`},
+			"statekit: postgres: invalid argument: unsupported ownername identifier\n"},
+		{"ownername space", []string{"--dbname", "db", "--ownername", "own er"},
+			"statekit: postgres: invalid argument: unsupported ownername identifier\n"},
+	} {
+		runner = &cliRecordingRunner{}
+		app = postgresCLIApp(t, runner)
+		fullArgv := append([]string{"exec", "postgres.owner_to"}, tc.argv...)
+		fullArgv = append(fullArgv, "-o", "json")
+		code, _, errS = captureCode(t, app, fullArgv...)
+		if code != ExitFailed || errS != tc.want || len(runner.calls) != 0 {
+			t.Fatalf("%s code=%d err=%q calls=%d", tc.name, code, errS, len(runner.calls))
+		}
+	}
+
+	// Both required positionals are validated before any psql call, and
+	// runas is rejected the same way.
+	for _, argv := range [][]string{
+		{"--ownername", "own"},
+		{"--dbname", "db"},
+	} {
+		runner = &cliRecordingRunner{}
+		app = postgresCLIApp(t, runner)
+		fullArgv := append([]string{"exec", "postgres.owner_to"}, argv...)
+		fullArgv = append(fullArgv, "-o", "json")
+		code, _, errS = captureCode(t, app, fullArgv...)
+		if code != ExitInvalidInput || len(runner.calls) != 0 {
+			t.Fatalf("required %v code=%d err=%q calls=%d", argv, code, errS, len(runner.calls))
+		}
+	}
+	runner = &cliRecordingRunner{}
+	app = postgresCLIApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "postgres.owner_to",
+		"--dbname", "dbname", "--ownername", "otheruser", "--runas", "postgres", "-o", "json")
 	if code != ExitFailed || !strings.Contains(errS, "runas") || len(runner.calls) != 0 {
 		t.Fatalf("runas code=%d err=%q calls=%d", code, errS, len(runner.calls))
 	}

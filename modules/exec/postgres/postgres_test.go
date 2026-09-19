@@ -350,7 +350,7 @@ func TestPostgresVersionInvalidInputs(t *testing.T) {
 	}
 }
 
-// TestPostgresRegistrySurface pins the forty-eight canonical
+// TestPostgresRegistrySurface pins the forty-nine canonical
 // registrations, their argument prototypes, and the absence of public
 // psql_query and _parsed_version entries.
 func TestPostgresRegistrySurface(t *testing.T) {
@@ -387,6 +387,7 @@ func TestPostgresRegistrySurface(t *testing.T) {
 		"postgres.language_exists",
 		"postgres.language_list",
 		"postgres.language_remove",
+		"postgres.owner_to",
 		"postgres.privileges_grant",
 		"postgres.privileges_list",
 		"postgres.privileges_revoke",
@@ -426,6 +427,8 @@ func TestPostgresRegistrySurface(t *testing.T) {
 			want = DbRemoveArgs{}
 		case "postgres.db_alter":
 			want = DbAlterArgs{}
+		case "postgres.owner_to":
+			want = OwnerToArgs{}
 		case "postgres.tablespace_create":
 			want = TablespaceCreateArgs{}
 		case "postgres.tablespace_alter":
@@ -526,6 +529,7 @@ func TestPostgresRegistrySurface(t *testing.T) {
 		}, connection...)},
 		{dbRemoveFunc{}, append([]string{"name"}, connection...)},
 		{dbAlterFunc{}, append([]string{"name", "tablespace", "owner", "owner_recurse"}, connection...)},
+		{ownerToFunc{}, append([]string{"dbname", "ownername"}, []string{"host", "password", "port", "runas", "user"}...)},
 		{tablespaceListFunc{}, connection},
 		{tablespaceExistsFunc{}, append([]string{"name"}, connection...)},
 		{tablespaceCreateFunc{}, append([]string{"name", "location", "options", "owner"}, connection...)},
@@ -1490,7 +1494,8 @@ func TestPostgresDbRemoveValidationErrorRedaction(t *testing.T) {
 // TestPostgresDbValidationErrorsRedactedThroughRegistry repeats the loops
 // through the ExecRegistry dispatch (the path the CLI drives): the same
 // exact, marker-free stable errors and zero Runner calls, plus db_alter's
-// owner_recurse UnsupportedError under the same marker overlap.
+// owner_recurse delegation reaching owner_to's bare-ownername rejection
+// under the same marker overlap.
 func TestPostgresDbValidationErrorsRedactedThroughRegistry(t *testing.T) {
 	reg := runtime.NewExecRegistry()
 	if err := Register(reg); err != nil {
@@ -1521,7 +1526,7 @@ func TestPostgresDbValidationErrorsRedactedThroughRegistry(t *testing.T) {
 		Owner:        postgresString(`own-` + postgresValidationMarker),
 		OwnerRecurse: postgresBool(true),
 		Password:     postgresString(postgresValidationMarker),
-	}, `unsupported function "postgres.owner_to"`})
+	}, "postgres: invalid argument: unsupported ownername identifier"})
 	for _, tc := range calls {
 		rt, runner := newPostgresRuntime()
 		_, err := reg.Call(context.Background(), rt, tc.fn, tc.args)
@@ -1787,35 +1792,864 @@ func TestPostgresDbAlterNoop(t *testing.T) {
 	}
 }
 
-// TestPostgresDbAlterOwnerRecurseUnsupported pins the owner+owner_recurse
-// branch: owner_to stays pending, so the branch answers the deterministic
-// value-free UnsupportedError before any Runner invocation instead of
-// silently running the shallow ALTER OWNER — while owner_recurse without
-// a truthy owner keeps the pinned else branch, and an explicit false
-// owner_recurse runs the pinned shallow statements.
-func TestPostgresDbAlterOwnerRecurseUnsupported(t *testing.T) {
+// ownerToCatalogArgv is the exact argv each of the five pinned owner_to
+// catalog queries produces through the COPY-to-CSV transport with no
+// connection arguments: the fixed never-prompt flags, the dbname as the
+// maintenance database, the pinned datestyle variable, and the wrapped
+// pinned SQL fragment.
+func ownerToCatalogArgv(query string) []string {
+	return []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--dbname", "dbname",
+		"-v", "datestyle=ISO,MDY",
+		"-c", "COPY (" + strings.TrimSuffix(strings.TrimSpace(query), ";") + ") TO STDOUT WITH CSV HEADER",
+	}
+}
+
+// ownerToCatalogQueries are the five pinned catalog SQL fragments of
+// postgres.py:2246-2281 in the pinned order, including the pinned double
+// space of the functions concatenation.
+var ownerToCatalogQueries = []string{
+	"select quote_ident(schema_name) as n from information_schema.schemata;",
+	"select quote_ident(table_schema)||'.'||quote_ident(table_name) as " +
+		"n from information_schema.tables where table_schema not in " +
+		"('pg_catalog', 'information_schema');",
+	"select p.oid::regprocedure::text as n from pg_catalog.pg_proc p " +
+		"join pg_catalog.pg_namespace ns on p.pronamespace=ns.oid where " +
+		"ns.nspname not in ('pg_catalog', 'information_schema') " +
+		" and not p.proisagg;",
+	"select p.oid::regprocedure::text as n from pg_catalog.pg_proc p " +
+		"join pg_catalog.pg_namespace ns on p.pronamespace=ns.oid where " +
+		"ns.nspname not in ('pg_catalog', 'information_schema') " +
+		"and p.proisagg;",
+	"select quote_ident(sequence_schema)||'.'||" +
+		"quote_ident(sequence_name) as n from information_schema.sequences;",
+}
+
+// ownerToCatalogResults feeds every catalog with one or two rows so the
+// generated script exercises every statement family in source order.
+func ownerToCatalogResults() []process.CommandResult {
+	return []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("n\npublic\npg_catalog\n")},
+		{ExitCode: 0, Stdout: []byte("n\npublic.accounts\n\"public.\"\"weird tbl\"\"\"\n")},
+		{ExitCode: 0, Stdout: []byte("n\n lower(text)\n")},
+		{ExitCode: 0, Stdout: []byte("n\narray_agg(anyarray)\n")},
+		{ExitCode: 0, Stdout: []byte("n\npublic.accounts_owner_seq\n")},
+	}
+}
+
+// wantOwnerToScript is the byte-exact transaction script the pinned
+// format strings produce for the ownerToCatalogResults rows: the
+// begin/ALTER DATABASE head, one statement per row in source order (the
+// regprocedure leading space included), and the commit tail.
+const wantOwnerToScript = "begin;\n" +
+	"alter database \"dbname\" owner to \"otheruser\";\n" +
+	"alter schema public owner to otheruser;\n" +
+	"alter schema pg_catalog owner to otheruser;\n" +
+	"alter table public.accounts owner to otheruser;\n" +
+	"alter table public.\"weird tbl\" owner to otheruser;\n" +
+	"alter function  lower(text) owner to otheruser;\n" +
+	"alter aggregate array_agg(anyarray) owner to otheruser;\n" +
+	"alter sequence public.accounts_owner_seq owner to otheruser;\n" +
+	"commit;\n"
+
+// ownerToScriptArgv is the argv of the single mutation run: the pinned
+// _psql_prepare_and_run(["-f", ...]) with the temp file replaced by
+// psql's read-from-stdin form and psql's --set=ON_ERROR_STOP=on added
+// before it — the deliberate safe divergence from the pinned argv that
+// turns an SQL error inside the transaction into psql's nonzero stop
+// exit instead of a continue-and-succeed exit.
+var ownerToScriptArgv = []string{
+	"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+	"--dbname", "dbname",
+	"--set=ON_ERROR_STOP=on",
+	"-f", "-",
+}
+
+// assertOwnerToResult pins the public run_all mapping shape: exactly the
+// retcode, stdout, and stderr keys the central Runner supports of Salt's
+// cmd.run_all dictionary (no pid — the documented boundary), with the
+// captured output already redacted.
+func assertOwnerToResult(t *testing.T, value any, retcode int, stdout, stderr string) {
+	t.Helper()
+	got, ok := value.(map[string]any)
+	if !ok {
+		t.Fatalf("owner_to = %#v, want the run_all mapping", value)
+	}
+	if len(got) != 3 {
+		t.Fatalf("owner_to mapping = %#v, want exactly retcode/stdout/stderr", got)
+	}
+	if code, ok := got["retcode"].(int); !ok || code != retcode {
+		t.Fatalf("owner_to retcode = %#v, want %d", got["retcode"], retcode)
+	}
+	if out, ok := got["stdout"].(string); !ok || out != stdout {
+		t.Fatalf("owner_to stdout = %#v, want %q", got["stdout"], stdout)
+	}
+	if errs, ok := got["stderr"].(string); !ok || errs != stderr {
+		t.Fatalf("owner_to stderr = %#v, want %q", got["stderr"], stderr)
+	}
+}
+
+// ownerToCancelRunner wraps the fake Runner with a context cancellation
+// fired after the recorded call count reaches cancelAfter, so a flow can
+// be canceled between the catalog phase and the mutation run.
+type ownerToCancelRunner struct {
+	*postgresFakeRunner
+	cancelAfter int
+	cancel      func()
+}
+
+func (r *ownerToCancelRunner) Run(ctx context.Context, command process.Command) process.CommandResult {
+	result := r.postgresFakeRunner.Run(ctx, command)
+	if r.cancelAfter > 0 && len(r.calls) == r.cancelAfter {
+		r.cancel()
+	}
+	return result
+}
+
+// TestPostgresOwnerToCatalogsAndScript pins the full R9.2s flow: the
+// five pinned catalog queries through the COPY transport (each against
+// the dbname maintenance database), the byte-exact transaction script
+// assembled in source order, and the single -f - stdin run with
+// ON_ERROR_STOP and its shell-free bounded command shape answering the
+// run_all mapping.
+func TestPostgresOwnerToCatalogsAndScript(t *testing.T) {
+	results := append(ownerToCatalogResults(), process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte("ALTER DATABASE\nALTER SCHEMA\n"),
+		Stderr:   []byte("psql: notice"),
+	})
+	rt, runner := newPostgresRuntime(results...)
+	value, err := (ownerToFunc{}).Execute(context.Background(), rt, &OwnerToArgs{
+		DBName: "dbname",
+		Owner:  "otheruser",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertOwnerToResult(t, value, 0, "ALTER DATABASE\nALTER SCHEMA\n", "psql: notice")
+	if len(runner.calls) != 6 {
+		t.Fatalf("runner calls = %d, want 5 catalogs + 1 script", len(runner.calls))
+	}
+	for i := 0; i < 5; i++ {
+		got := append([]string{runner.calls[i].Name}, runner.calls[i].Args...)
+		if want := ownerToCatalogArgv(ownerToCatalogQueries[i]); !reflect.DeepEqual(got, want) {
+			t.Fatalf("catalog %d argv = %q, want %q", i, got, want)
+		}
+		if len(runner.calls[i].Stdin) != 0 {
+			t.Fatalf("catalog %d carries stdin", i)
+		}
+		if runner.calls[i].Shell {
+			t.Fatalf("catalog %d runs a shell", i)
+		}
+	}
+	script := runner.calls[5]
+	if got := append([]string{script.Name}, script.Args...); !reflect.DeepEqual(got, ownerToScriptArgv) {
+		t.Fatalf("script argv = %q, want %q", got, ownerToScriptArgv)
+	}
+	if string(script.Stdin) != wantOwnerToScript {
+		t.Fatalf("script stdin = %q, want %q", script.Stdin, wantOwnerToScript)
+	}
+	if script.Shell {
+		t.Fatal("the script run must be shell-free")
+	}
+	if script.Timeout != commandTimeout ||
+		script.MaxStdoutBytes != outputLimit || script.MaxStderrBytes != outputLimit {
+		t.Fatalf("unsafe script command bounds: %#v", script)
+	}
+	if script.Env == nil || len(script.Env) != 0 {
+		t.Fatalf("script env = %q, want clean empty environment", script.Env)
+	}
+	if script.Redact != nil {
+		t.Fatalf("script redact = %q, want none", script.Redact)
+	}
+	if script.Dir != "" || script.WindowsCmdLine != "" {
+		t.Fatalf("unexpected script payload: %#v", script)
+	}
+}
+
+// TestPostgresOwnerToConnectionArgv pins the full-connection shape: the
+// connection flags precede the maintenance database on every catalog
+// argv, the script run carries the same flags with -f - at the tail, the
+// password travels only in the clean PG environment and the Redact
+// list, and no connection value reaches the script itself.
+func TestPostgresOwnerToConnectionArgv(t *testing.T) {
+	results := ownerToCatalogResults()
+	// One row per family is enough here; the empty catalog shape has its
+	// own test.
+	for i := range results {
+		results[i].Stdout = []byte("n\nx\n")
+	}
+	results = append(results, process.CommandResult{ExitCode: 0})
+	rt, runner := newPostgresRuntime(results...)
+	value, err := (ownerToFunc{}).Execute(context.Background(), rt, &OwnerToArgs{
+		DBName:   "dbname",
+		Owner:    "otheruser",
+		User:     postgresString("test_user"),
+		Host:     postgresString("test_host"),
+		Port:     postgresString("test_port"),
+		Password: postgresString("test_pass"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertOwnerToResult(t, value, 0, "", "")
+	base := []string{
+		"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password",
+		"--username", "test_user",
+		"--host", "test_host",
+		"--port", "test_port",
+		"--dbname", "dbname",
+	}
+	first := append([]string{runner.calls[0].Name}, runner.calls[0].Args...)
+	wantFirst := append(append([]string(nil), base...),
+		"-v", "datestyle=ISO,MDY", "-c",
+		"COPY ("+strings.TrimSuffix(strings.TrimSpace(ownerToCatalogQueries[0]), ";")+") TO STDOUT WITH CSV HEADER")
+	if !reflect.DeepEqual(first, wantFirst) {
+		t.Fatalf("catalog argv = %q, want %q", first, wantFirst)
+	}
+	wantEnv := []string{
+		"PGPASSWORD=test_pass",
+		"PGUSER=test_user",
+		"PGHOST=test_host",
+		"PGPORT=test_port",
+	}
+	if !reflect.DeepEqual(runner.calls[0].Env, wantEnv) {
+		t.Fatalf("catalog env = %q, want %q", runner.calls[0].Env, wantEnv)
+	}
+	if !reflect.DeepEqual(runner.calls[0].Redact, []string{"test_pass"}) {
+		t.Fatalf("catalog redact = %q", runner.calls[0].Redact)
+	}
+	script := runner.calls[5]
+	got := append([]string{script.Name}, script.Args...)
+	want := append(append([]string(nil), base...), "--set=ON_ERROR_STOP=on", "-f", "-")
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("script argv = %q, want %q", got, want)
+	}
+	if got[len(got)-1] != "-" || got[len(got)-2] != "-f" ||
+		got[len(got)-3] != "--set=ON_ERROR_STOP=on" {
+		t.Fatalf("script tail = %q", got[len(got)-3:])
+	}
+	if !reflect.DeepEqual(script.Env, wantEnv) {
+		t.Fatalf("script env = %q, want %q", script.Env, wantEnv)
+	}
+	if !reflect.DeepEqual(script.Redact, []string{"test_pass"}) {
+		t.Fatalf("script redact = %q", script.Redact)
+	}
+	if strings.Contains(string(script.Stdin), "test_pass") {
+		t.Fatalf("script stdin carries the password: %q", script.Stdin)
+	}
+	if rendered := script.RedactedString(); strings.Contains(rendered, "test_pass") {
+		t.Fatalf("rendered command leaks password: %q", rendered)
+	}
+}
+
+// TestPostgresOwnerToEmptyCatalogs pins the empty-catalog shape: the
+// script collapses to the begin/ALTER DATABASE/commit lines with exactly
+// six Runner calls and the run_all mapping answers the zero retcode.
+// The pinned empty-row mapping of a nonzero catalog exit is deliberately
+// not inherited here: that case is the strict abort of the
+// catalog-errors test, because it would silently mutate only the
+// database owner.
+func TestPostgresOwnerToEmptyCatalogs(t *testing.T) {
+	empty := process.CommandResult{ExitCode: 0, Stdout: []byte("n\n")}
+	results := []process.CommandResult{empty, empty, empty, empty, empty, {ExitCode: 0}}
+	rt, runner := newPostgresRuntime(results...)
+	value, err := (ownerToFunc{}).Execute(context.Background(), rt, &OwnerToArgs{
+		DBName: "dbname",
+		Owner:  "otheruser",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertOwnerToResult(t, value, 0, "", "")
+	if len(runner.calls) != 6 {
+		t.Fatalf("runner calls = %d, want 6", len(runner.calls))
+	}
+	want := "begin;\nalter database \"dbname\" owner to \"otheruser\";\ncommit;\n"
+	if string(runner.calls[5].Stdin) != want {
+		t.Fatalf("empty script = %q, want %q", runner.calls[5].Stdin, want)
+	}
+}
+
+// TestPostgresOwnerToCatalogErrorsAbortBeforeMutation pins the abort: a
+// Runner failure, a nonzero psql exit, cancellation, or an output-limit
+// violation on any of the five catalog queries errors before the
+// mutation run — only the failed catalog's calls happened, no -f -
+// invocation follows, and a row whose header lacks the pinned n column
+// is Salt's KeyError mapped to the value-free missing-column execution
+// error. The nonzero exit is the deliberate strict divergence from the
+// pinned psql_query empty-row mapping: without it a failed catalog
+// would shrink the script to its begin/ALTER DATABASE/commit skeleton
+// and silently mutate only the database owner.
+func TestPostgresOwnerToCatalogErrorsAbortBeforeMutation(t *testing.T) {
+	for failAt := 0; failAt < 5; failAt++ {
+		results := append([]process.CommandResult(nil), ownerToCatalogResults()...)
+		results[failAt] = process.CommandResult{
+			ExitCode: -1,
+			Err:      errors.New("owner-to catalog boom"),
+		}
+		rt, runner := newPostgresRuntime(results...)
+		_, err := (ownerToFunc{}).Execute(context.Background(), rt, &OwnerToArgs{
+			DBName: "dbname",
+			Owner:  "otheruser",
+		})
+		if err == nil || !strings.Contains(err.Error(), "owner-to catalog boom") {
+			t.Fatalf("failAt %d err = %v, want the Runner error", failAt, err)
+		}
+		if len(runner.calls) != failAt+1 {
+			t.Fatalf("failAt %d runner calls = %d, want %d", failAt, len(runner.calls), failAt+1)
+		}
+		for _, call := range runner.calls {
+			if tail := call.Args[len(call.Args)-1]; tail == "-" {
+				t.Fatalf("failAt %d reached the mutation run", failAt)
+			}
+		}
+	}
+
+	// A psql run that completes nonzero is the strict value-free abort,
+	// never the empty catalog: the error carries the retcode only, and
+	// the marker-carrying stderr the fake server produced never leaks.
+	for failAt := 0; failAt < 5; failAt++ {
+		results := append([]process.CommandResult(nil), ownerToCatalogResults()...)
+		results[failAt] = process.CommandResult{
+			ExitCode: 3,
+			Stderr:   []byte(`psql: error: connection refused ` + postgresValidationMarker),
+		}
+		rt, runner := newPostgresRuntime(results...)
+		_, err := (ownerToFunc{}).Execute(context.Background(), rt, &OwnerToArgs{
+			DBName: "dbname",
+			Owner:  "otheruser",
+		})
+		want := "postgres.owner_to: catalog query failed with retcode 3"
+		if err == nil || err.Error() != want {
+			t.Fatalf("failAt %d err = %v, want %q", failAt, err, want)
+		}
+		if strings.Contains(err.Error(), postgresValidationMarker) {
+			t.Fatalf("failAt %d error leaks captured output: %v", failAt, err)
+		}
+		if len(runner.calls) != failAt+1 {
+			t.Fatalf("failAt %d nonzero runner calls = %d, want %d", failAt, len(runner.calls), failAt+1)
+		}
+		for _, call := range runner.calls {
+			if tail := call.Args[len(call.Args)-1]; tail == "-" {
+				t.Fatalf("failAt %d nonzero reached the mutation run", failAt)
+			}
+		}
+	}
+
+	// A pre-canceled context never reaches the Runner at all.
 	rt, runner := newPostgresRuntime()
-	_, err := (dbAlterFunc{}).Execute(context.Background(), rt, &DbAlterArgs{
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := (ownerToFunc{}).Execute(ctx, rt, &OwnerToArgs{DBName: "dbname", Owner: "otheruser"}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("pre-canceled ctx err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("canceled run executed %d commands", len(runner.calls))
+	}
+
+	// An output-limit violation on the first catalog aborts too.
+	rt, runner = newPostgresRuntime(process.CommandResult{
+		ExitCode: 0, StdoutTruncated: true, Stdout: []byte(strings.Repeat("9", outputLimit+1)),
+	})
+	if _, err := (ownerToFunc{}).Execute(context.Background(), rt, &OwnerToArgs{DBName: "dbname", Owner: "otheruser"}); !errors.Is(err, process.ErrOutputLimit) {
+		t.Fatalf("output limit err = %v", err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("output-limit run executed %d commands", len(runner.calls))
+	}
+
+	// A catalog row whose header lacks n is the pinned row["n"] KeyError.
+	rt, runner = newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("not_n\nx\n")})
+	_, err := (ownerToFunc{}).Execute(context.Background(), rt, &OwnerToArgs{DBName: "dbname", Owner: "otheruser"})
+	if err == nil || err.Error() != `postgres.owner_to: missing column "n"` {
+		t.Fatalf("missing column err = %v", err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("missing column executed %d commands", len(runner.calls))
+	}
+}
+
+// ownerToRejectedCase is one owner_to argument vector the fail-closed
+// identifier boundary rejects.
+type ownerToRejectedCase struct {
+	field string
+	args  *OwnerToArgs
+	want  string
+}
+
+// ownerToRejectedArgs enumerates every owner_to argument the fail-closed
+// identifier boundary rejects, with the rejected value embedding the
+// marker and the exact value-free stable error each rejection returns.
+func ownerToRejectedArgs() []ownerToRejectedCase {
+	return []ownerToRejectedCase{
+		{
+			field: "dbname",
+			args:  &OwnerToArgs{DBName: "db-" + postgresValidationMarker + `"`, Owner: "own"},
+			want:  "postgres: invalid argument: unsupported quote character in dbname",
+		},
+		{
+			field: "ownername quote",
+			args:  &OwnerToArgs{DBName: "db", Owner: `own"; DROP DATABASE x; --`},
+			want:  "postgres: invalid argument: unsupported ownername identifier",
+		},
+		{
+			field: "ownername space",
+			args:  &OwnerToArgs{DBName: "db", Owner: "own er"},
+			want:  "postgres: invalid argument: unsupported ownername identifier",
+		},
+		{
+			field: "ownername hyphen",
+			args:  &OwnerToArgs{DBName: "db", Owner: "own-" + postgresValidationMarker},
+			want:  "postgres: invalid argument: unsupported ownername identifier",
+		},
+		{
+			field: "ownername empty",
+			args:  &OwnerToArgs{DBName: "db", Owner: ""},
+			want:  "postgres: invalid argument: unsupported ownername identifier",
+		},
+	}
+}
+
+// TestPostgresOwnerToValidationRedaction loops every rejected owner_to
+// argument with the rejected value embedding the same synthetic marker
+// as the connection password: the error must be exactly the stable
+// argument-key message — never the rejected value — and no Runner call
+// may happen.
+func TestPostgresOwnerToValidationRedaction(t *testing.T) {
+	for _, tc := range ownerToRejectedArgs() {
+		tc.args.Password = postgresString(postgresValidationMarker)
+		rt, runner := newPostgresRuntime()
+		_, err := (ownerToFunc{}).Execute(context.Background(), rt, tc.args)
+		if err == nil || err.Error() != tc.want {
+			t.Fatalf("%s err = %v, want %q", tc.field, err, tc.want)
+		}
+		if !errors.Is(err, errPostgresInvalidArgument) {
+			t.Fatalf("%s err = %v, want invalid argument", tc.field, err)
+		}
+		if strings.Contains(err.Error(), postgresValidationMarker) {
+			t.Fatalf("%s error leaks the rejected value: %v", tc.field, err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("%s executed %d commands", tc.field, len(runner.calls))
+		}
+	}
+}
+
+// TestPostgresOwnerToScriptBound pins the bounded-input ceiling of the
+// stdin transport: a catalog whose rows grow the assembled script past
+// the bounded command-input limit answers the fixed input-limit error
+// with no mutation run, while a script just under the ceiling still
+// runs.
+func TestPostgresOwnerToScriptBound(t *testing.T) {
+	// Rows stay under the pinned 131072-character CSV field limit; nine
+	// of them push the assembled script past 1 MiB while eight stay just
+	// under the ceiling.
+	bigRow := strings.Repeat("a", 130000)
+	bigCatalog := "n\n" + strings.Repeat(bigRow+"\n", 9)
+	results := []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("n\n")},
+		{ExitCode: 0, Stdout: []byte(bigCatalog)},
+		{ExitCode: 0, Stdout: []byte("n\n")},
+		{ExitCode: 0, Stdout: []byte("n\n")},
+		{ExitCode: 0, Stdout: []byte("n\n")},
+	}
+	rt, runner := newPostgresRuntime(results...)
+	_, err := (ownerToFunc{}).Execute(context.Background(), rt, &OwnerToArgs{
+		DBName: "dbname",
+		Owner:  "otheruser",
+	})
+	if !errors.Is(err, runtime.ErrCommandInputLimit) {
+		t.Fatalf("oversized script err = %v, want %v", err, runtime.ErrCommandInputLimit)
+	}
+	if len(runner.calls) != 5 {
+		t.Fatalf("oversized script executed %d commands, want the 5 catalogs only", len(runner.calls))
+	}
+	for _, call := range runner.calls {
+		if tail := call.Args[len(call.Args)-1]; tail == "-" {
+			t.Fatal("oversized script reached the mutation run")
+		}
+	}
+
+	// Eight rows stay just under the ceiling and the script runs.
+	okCatalog := "n\n" + strings.Repeat(bigRow+"\n", 8)
+	results[1] = process.CommandResult{ExitCode: 0, Stdout: []byte(okCatalog)}
+	results = append(results, process.CommandResult{ExitCode: 0})
+	rt, runner = newPostgresRuntime(results...)
+	value, err := (ownerToFunc{}).Execute(context.Background(), rt, &OwnerToArgs{
+		DBName: "dbname",
+		Owner:  "otheruser",
+	})
+	if err != nil {
+		t.Fatalf("in-bound script err = %v", err)
+	}
+	assertOwnerToResult(t, value, 0, "", "")
+	if len(runner.calls) != 6 {
+		t.Fatalf("in-bound script calls = %d", len(runner.calls))
+	}
+	if size := len(runner.calls[5].Stdin); size <= runtime.MaxCommandInputBytes-16384 {
+		t.Fatalf("in-bound script size = %d, expected near the ceiling", size)
+	}
+}
+
+// TestPostgresOwnerToGuards pins cancellation, runas rejection, psql
+// unavailability, output limits, the run_all retcode mapping, and
+// redacted Runner errors on the mutation run.
+func TestPostgresOwnerToGuards(t *testing.T) {
+	// A rejected script keeps the pinned run_all mapping — retcode
+	// compatibility data, never an error — with the captured stderr
+	// traveling redacted.
+	results := append(ownerToCatalogResults(), process.CommandResult{
+		ExitCode: 1,
+		Stderr:   []byte(`psql: error: ERROR:  role "otheruser" does not exist`),
+	})
+	rt, runner := newPostgresRuntime(results...)
+	value, err := (ownerToFunc{}).Execute(context.Background(), rt, &OwnerToArgs{
+		DBName: "dbname",
+		Owner:  "otheruser",
+	})
+	if err != nil {
+		t.Fatalf("rejected script err = %v, want the run_all mapping", err)
+	}
+	assertOwnerToResult(t, value, 1, "",
+		`psql: error: ERROR:  role "otheruser" does not exist`)
+	if len(runner.calls) != 6 {
+		t.Fatalf("rejected script calls = %d", len(runner.calls))
+	}
+	// ON_ERROR_STOP rides before -f - on the rejected run too.
+	script := append([]string{runner.calls[5].Name}, runner.calls[5].Args...)
+	if !reflect.DeepEqual(script, ownerToScriptArgv) {
+		t.Fatalf("rejected script argv = %q, want %q", script, ownerToScriptArgv)
+	}
+
+	// A password echoed into the script stderr is scrubbed out of the
+	// returned mapping — the transport's redaction pass covers the
+	// run_all fields exactly like the error paths.
+	results = append(ownerToCatalogResults(), process.CommandResult{
+		ExitCode: 3,
+		Stderr:   []byte(`psql: error: FATAL: password authentication failed <` + postgresValidationMarker + `>`),
+	})
+	rt, _ = newPostgresRuntime(results...)
+	value, err = (ownerToFunc{}).Execute(context.Background(), rt, &OwnerToArgs{
+		DBName:   "dbname",
+		Owner:    "otheruser",
+		Password: postgresString(postgresValidationMarker),
+	})
+	if err != nil {
+		t.Fatalf("redacted script err = %v, want the run_all mapping", err)
+	}
+	mapping, ok := value.(map[string]any)
+	if !ok {
+		t.Fatalf("redacted script value = %#v, want the run_all mapping", value)
+	}
+	if strings.Contains(mapping["stderr"].(string), postgresValidationMarker) {
+		t.Fatalf("redacted mapping leaks the password: %#v", mapping)
+	}
+	if mapping["retcode"].(int) != 3 {
+		t.Fatalf("redacted mapping retcode = %#v, want 3", mapping["retcode"])
+	}
+
+	// A Runner error on the mutation run propagates redacted.
+	results = append(ownerToCatalogResults(), process.CommandResult{
+		ExitCode: -1,
+		Err:      errors.New("script boom " + postgresValidationMarker),
+	})
+	rt, _ = newPostgresRuntime(results...)
+	_, err = (ownerToFunc{}).Execute(context.Background(), rt, &OwnerToArgs{
+		DBName:   "dbname",
+		Owner:    "otheruser",
+		Password: postgresString(postgresValidationMarker),
+	})
+	if err == nil || !strings.Contains(err.Error(), "script boom") {
+		t.Fatalf("script err = %v, want the Runner error", err)
+	}
+	if strings.Contains(err.Error(), postgresValidationMarker) {
+		t.Fatalf("script err leaks the password marker: %v", err)
+	}
+
+	// A context canceled after the catalog phase aborts before the
+	// script run: the stdin transport checks cancellation before any
+	// Runner invocation, so no mutation command exists at all.
+	rt, runner = newPostgresRuntime(append(ownerToCatalogResults(), process.CommandResult{ExitCode: 0})...)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancelling := &ownerToCancelRunner{postgresFakeRunner: runner, cancelAfter: 5, cancel: cancel}
+	rt.Runner = cancelling
+	_, err = (ownerToFunc{}).Execute(ctx, rt, &OwnerToArgs{
+		DBName: "dbname",
+		Owner:  "otheruser",
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled script err = %v, want %v", err, context.Canceled)
+	}
+	if len(runner.calls) != 5 {
+		t.Fatalf("canceled script calls = %d, want the 5 catalogs only", len(runner.calls))
+	}
+	for _, call := range runner.calls {
+		if tail := call.Args[len(call.Args)-1]; tail == "-" {
+			t.Fatal("canceled script reached the mutation run")
+		}
+	}
+
+	// runas is rejected before any Runner invocation.
+	rt, runner = newPostgresRuntime()
+	_, err = (ownerToFunc{}).Execute(context.Background(), rt, &OwnerToArgs{
+		DBName: "dbname",
+		Owner:  "otheruser",
+		Runas:  postgresString("postgres"),
+	})
+	if !errors.Is(err, errPostgresRunas) {
+		t.Fatalf("runas err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("runas run executed %d commands", len(runner.calls))
+	}
+
+	// psql unavailability fails closed before any Runner invocation.
+	rt, runner = newPostgresRuntime()
+	runner.available = map[string]bool{"psql": false}
+	if _, err := (ownerToFunc{}).Execute(context.Background(), rt, &OwnerToArgs{
+		DBName: "dbname",
+		Owner:  "otheruser",
+	}); !errors.Is(err, errPostgresPsqlUnavailable) {
+		t.Fatalf("psql unavailable err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("unavailable psql executed %d commands", len(runner.calls))
+	}
+
+	// An output-limit violation on the mutation run errors.
+	results = append(ownerToCatalogResults(), process.CommandResult{
+		ExitCode: 0, StderrTruncated: true, Stderr: []byte(strings.Repeat("e", outputLimit+1)),
+	})
+	rt, _ = newPostgresRuntime(results...)
+	if _, err := (ownerToFunc{}).Execute(context.Background(), rt, &OwnerToArgs{
+		DBName: "dbname",
+		Owner:  "otheruser",
+	}); !errors.Is(err, process.ErrOutputLimit) {
+		t.Fatalf("output limit err = %v", err)
+	}
+}
+
+// TestPostgresOwnerToNoFilesystem pins the temp-file replacement: the
+// pinned flow writes a NamedTemporaryFile and chmods it, while the port
+// keeps the script in memory, so owner_to completes unchanged against a
+// filesystem whose every write-capable method fails.
+func TestPostgresOwnerToNoFilesystem(t *testing.T) {
+	results := append(ownerToCatalogResults(), process.CommandResult{ExitCode: 0})
+	rt, runner := newPostgresRuntime(results...)
+	rt.FS = &postgresStubFS{
+		FileSystem: runtime.NewMemoryFS(),
+		failMkdir:  true,
+		failWrite:  true,
+		failRemove: true,
+	}
+	value, err := (ownerToFunc{}).Execute(context.Background(), rt, &OwnerToArgs{
+		DBName: "dbname",
+		Owner:  "otheruser",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertOwnerToResult(t, value, 0, "", "")
+	if len(runner.calls) != 6 {
+		t.Fatalf("no-fs calls = %d", len(runner.calls))
+	}
+	if stub, ok := rt.FS.(*postgresStubFS); ok && stub.writtenPath != "" {
+		t.Fatalf("owner_to wrote %q through the filesystem", stub.writtenPath)
+	}
+}
+
+// TestPostgresOwnerToThroughRegistry repeats the flow through the
+// ExecRegistry dispatch (the path the CLI drives): the happy path runs
+// all six calls and answers the run_all mapping, a rejected script
+// carries its retcode through the registry unchanged, the identifier
+// rejections stay exact and marker-free with zero Runner calls, and
+// psql_query keeps its pending surface.
+func TestPostgresOwnerToThroughRegistry(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	results := append(ownerToCatalogResults(), process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte("ALTER DATABASE\n"),
+	})
+	rt, runner := newPostgresRuntime(results...)
+	value, err := reg.Call(context.Background(), rt, "postgres.owner_to", &OwnerToArgs{
+		DBName: "dbname",
+		Owner:  "otheruser",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertOwnerToResult(t, value, 0, "ALTER DATABASE\n", "")
+	if len(runner.calls) != 6 {
+		t.Fatalf("registry calls = %d", len(runner.calls))
+	}
+
+	// The rejected script's retcode survives the registry dispatch as
+	// compatibility data, never an error.
+	results = append(ownerToCatalogResults(), process.CommandResult{
+		ExitCode: 1,
+		Stderr:   []byte("psql: error: ERROR:  stop"),
+	})
+	rt, runner = newPostgresRuntime(results...)
+	value, err = reg.Call(context.Background(), rt, "postgres.owner_to", &OwnerToArgs{
+		DBName: "dbname",
+		Owner:  "otheruser",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertOwnerToResult(t, value, 1, "", "psql: error: ERROR:  stop")
+	if len(runner.calls) != 6 {
+		t.Fatalf("registry rejected calls = %d", len(runner.calls))
+	}
+
+	for _, tc := range ownerToRejectedArgs() {
+		tc.args.Password = postgresString(postgresValidationMarker)
+		rt, runner := newPostgresRuntime()
+		_, err := reg.Call(context.Background(), rt, "postgres.owner_to", tc.args)
+		if err == nil || err.Error() != tc.want {
+			t.Fatalf("registry %s err = %v, want %q", tc.field, err, tc.want)
+		}
+		if strings.Contains(err.Error(), postgresValidationMarker) {
+			t.Fatalf("registry %s error leaks the rejected value: %v", tc.field, err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("registry %s executed %d commands", tc.field, len(runner.calls))
+		}
+	}
+}
+
+// TestPostgresDbAlterOwnerRecurseDelegates pins the R9.2s boundary
+// resolution: the owner+owner_recurse branch delegates to the registered
+// owner_to with the exact pinned argument projection (no maintenance_db
+// — the catalogs run against the dbname), runs no shallow ALTER
+// statement whatever the tablespace argument carries, maps the script's
+// retcode onto the boolean, and propagates owner_to errors — while
+// owner_recurse without a truthy owner keeps the pinned else branch and
+// an explicit false owner_recurse runs the pinned shallow statements.
+func TestPostgresDbAlterOwnerRecurseDelegates(t *testing.T) {
+	results := append(ownerToCatalogResults(), process.CommandResult{ExitCode: 0})
+	rt, runner := newPostgresRuntime(results...)
+	value, err := (dbAlterFunc{}).Execute(context.Background(), rt, &DbAlterArgs{
+		Name:          "dbname",
+		Owner:         postgresString("otheruser"),
+		OwnerRecurse:  postgresBool(true),
+		Tablespace:    postgresString("testspace"),
+		MaintenanceDB: postgresString("maint_db"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != true {
+		t.Fatalf("db_alter owner_recurse = %#v, want true", value)
+	}
+	if len(runner.calls) != 6 {
+		t.Fatalf("db_alter owner_recurse calls = %d, want the owner_to flow", len(runner.calls))
+	}
+	// The delegation drops maintenance_db: every catalog runs against
+	// the dbname, never db_alter's maint_db.
+	for i := 0; i < 5; i++ {
+		argv := append([]string{runner.calls[i].Name}, runner.calls[i].Args...)
+		if want := ownerToCatalogArgv(ownerToCatalogQueries[i]); !reflect.DeepEqual(argv, want) {
+			t.Fatalf("delegated catalog %d argv = %q, want %q", i, argv, want)
+		}
+	}
+	script := append([]string{runner.calls[5].Name}, runner.calls[5].Args...)
+	if !reflect.DeepEqual(script, ownerToScriptArgv) {
+		t.Fatalf("delegated script argv = %q, want %q", script, ownerToScriptArgv)
+	}
+	if string(runner.calls[5].Stdin) != wantOwnerToScript {
+		t.Fatalf("delegated script = %q", runner.calls[5].Stdin)
+	}
+	// The pinned if/else: no shallow ALTER DATABASE statement runs.
+	for i, call := range runner.calls {
+		for _, arg := range call.Args {
+			if strings.Contains(strings.ToUpper(arg), "TABLESPACE") || strings.HasPrefix(strings.ToUpper(arg), "ALTER DATABASE") {
+				t.Fatalf("call %d carries a shallow statement: %q", i, arg)
+			}
+		}
+	}
+
+	// A rejected script maps onto the pinned False.
+	results = append(ownerToCatalogResults(), process.CommandResult{ExitCode: 1})
+	rt, runner = newPostgresRuntime(results...)
+	value, err = (dbAlterFunc{}).Execute(context.Background(), rt, &DbAlterArgs{
 		Name:         "dbname",
 		Owner:        postgresString("otheruser"),
 		OwnerRecurse: postgresBool(true),
 	})
-	if err == nil || err.Error() != `unsupported function "postgres.owner_to"` {
-		t.Fatalf("owner_recurse err = %v", err)
+	if err != nil {
+		t.Fatal(err)
 	}
-	var unsupported *runtime.UnsupportedError
-	if !errors.As(err, &unsupported) || unsupported.Name != "postgres.owner_to" {
-		t.Fatalf("owner_recurse err = %v, want UnsupportedError for owner_to", err)
+	if value != false || len(runner.calls) != 6 {
+		t.Fatalf("rejected delegation value=%#v calls=%d", value, len(runner.calls))
+	}
+
+	// An owner_to error propagates with no mutation run.
+	results = []process.CommandResult{{ExitCode: -1, Err: errors.New("delegated catalog boom")}}
+	rt, runner = newPostgresRuntime(results...)
+	_, err = (dbAlterFunc{}).Execute(context.Background(), rt, &DbAlterArgs{
+		Name:         "dbname",
+		Owner:        postgresString("otheruser"),
+		OwnerRecurse: postgresBool(true),
+	})
+	if err == nil || !strings.Contains(err.Error(), "delegated catalog boom") {
+		t.Fatalf("delegation err = %v", err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("delegation error calls = %d", len(runner.calls))
+	}
+
+	// A delegated catalog that completes nonzero is the strict abort
+	// through db_alter too: the value-free retcode-only error, no
+	// mutation run, no silent begin/ALTER DATABASE/commit skeleton.
+	results = []process.CommandResult{{ExitCode: 3, Stderr: []byte(`psql: error: connection refused`)}}
+	rt, runner = newPostgresRuntime(results...)
+	_, err = (dbAlterFunc{}).Execute(context.Background(), rt, &DbAlterArgs{
+		Name:         "dbname",
+		Owner:        postgresString("otheruser"),
+		OwnerRecurse: postgresBool(true),
+	})
+	if err == nil || err.Error() != "postgres.owner_to: catalog query failed with retcode 3" {
+		t.Fatalf("delegated strict err = %v", err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("delegated strict calls = %d", len(runner.calls))
+	}
+	for _, call := range runner.calls {
+		if tail := call.Args[len(call.Args)-1]; tail == "-" {
+			t.Fatal("delegated strict run reached the mutation")
+		}
+	}
+
+	// An owner that passes db_alter's quote boundary but not owner_to's
+	// bare-identifier class is rejected value-free through the
+	// delegation, before any Runner invocation.
+	rt, runner = newPostgresRuntime()
+	_, err = (dbAlterFunc{}).Execute(context.Background(), rt, &DbAlterArgs{
+		Name:         "db-" + postgresValidationMarker,
+		Owner:        postgresString(`own-` + postgresValidationMarker),
+		OwnerRecurse: postgresBool(true),
+		Password:     postgresString(postgresValidationMarker),
+	})
+	if err == nil || err.Error() != "postgres: invalid argument: unsupported ownername identifier" {
+		t.Fatalf("bare-owner err = %v", err)
+	}
+	if strings.Contains(err.Error(), postgresValidationMarker) {
+		t.Fatalf("bare-owner err leaks a value: %v", err)
 	}
 	if len(runner.calls) != 0 {
-		t.Fatalf("owner_recurse executed %d commands", len(runner.calls))
+		t.Fatalf("bare-owner executed %d commands", len(runner.calls))
 	}
 
 	// owner_recurse without an owner never selects the branch: the pinned
-	// tablespace statement still runs (the pinned owner_to call passes no
-	// maintenance_db either way; the pending name is not consulted).
+	// tablespace statement still runs.
 	rt, runner = newPostgresRuntime(process.CommandResult{ExitCode: 0})
-	value, err := (dbAlterFunc{}).Execute(context.Background(), rt, &DbAlterArgs{
+	value, err = (dbAlterFunc{}).Execute(context.Background(), rt, &DbAlterArgs{
 		Name:         "dbname",
 		Tablespace:   postgresString("testspace"),
 		OwnerRecurse: postgresBool(true),
@@ -1982,8 +2816,8 @@ func dbAlterRejectedFields() []struct {
 // db_alter field with a value embedding the same synthetic marker as the
 // connection password: the error must be exactly the stable argument-key
 // message — never the rejected value — and no Runner call may happen. The
-// owner_recurse UnsupportedError is value-free by construction and is
-// asserted the same way.
+// owner_recurse delegation's ownername rejection is value-free by
+// construction and is asserted the same way.
 func TestPostgresDbAlterValidationErrorRedaction(t *testing.T) {
 	for _, tc := range dbAlterRejectedFields() {
 		tc.args.Password = postgresString(postgresValidationMarker)
@@ -2003,8 +2837,10 @@ func TestPostgresDbAlterValidationErrorRedaction(t *testing.T) {
 		}
 	}
 
-	// The owner_recurse branch must stay value-free under the same marker
-	// overlap: neither the owner nor the password can reach the error.
+	// The owner_recurse delegation must stay value-free under the same
+	// marker overlap: the owner reaching owner_to's raw identifier
+	// position is rejected with the fixed argument-key error, and neither
+	// the owner nor the password can reach any error or Runner call.
 	rt, runner := newPostgresRuntime()
 	_, err := (dbAlterFunc{}).Execute(context.Background(), rt, &DbAlterArgs{
 		Name:         "db-" + postgresValidationMarker,
@@ -2012,7 +2848,7 @@ func TestPostgresDbAlterValidationErrorRedaction(t *testing.T) {
 		OwnerRecurse: postgresBool(true),
 		Password:     postgresString(postgresValidationMarker),
 	})
-	if err == nil || err.Error() != `unsupported function "postgres.owner_to"` {
+	if err == nil || err.Error() != "postgres: invalid argument: unsupported ownername identifier" {
 		t.Fatalf("owner_recurse marker err = %v", err)
 	}
 	if strings.Contains(err.Error(), postgresValidationMarker) {

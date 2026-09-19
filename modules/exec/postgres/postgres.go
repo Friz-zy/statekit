@@ -128,14 +128,15 @@
 // statement sequence — ALTER DATABASE "name" OWNER TO "owner" before
 // ALTER DATABASE "name" SET TABLESPACE "tablespace" — each through the
 // central maintenance-database connection. The pinned owner+owner_recurse
-// branch delegates to owner_to, which stays pending, so that branch is a
-// deterministic value-free UnsupportedError raised before any mutation
-// rather than a silent shallow ALTER OWNER; the port also checks every
-// statement's retcode instead of only the pinned loop's last-overwritten
-// ret, stopping at the first failure with the pinned False. The three
-// double-quoted identifier positions the pinned format strings interpolate
-// unescaped are validated fail-closed with the shared value-free
-// rejections before any Runner invocation.
+// branch delegates to the R9.2s owner_to registration with the exact
+// pinned argument projection (name, owner, user, host, port, password,
+// runas — no maintenance_db) and maps its retcode onto the boolean like
+// the pinned tail; the port also checks every statement's retcode
+// instead of only the pinned loop's last-overwritten ret, stopping at
+// the first failure with the pinned False. The three double-quoted
+// identifier positions the pinned format strings interpolate unescaped
+// are validated fail-closed with the shared value-free rejections
+// before any Runner invocation.
 // R9.2o adds the tablespace mutation family tablespace_create,
 // tablespace_alter, and tablespace_remove (postgres.py:840-886, 889-947,
 // 950-980): tablespace_create builds the pinned CREATE TABLESPACE
@@ -183,6 +184,45 @@
 // lookup matched client-side, so like has_default_privileges this
 // read-only path needs no identifier boundary: no caller string can
 // reach a statement.
+// R9.2s registers the ownership mutation owner_to
+// (postgres.py:2228-2310): the pinned (dbname, ownername, user, host,
+// port, password, runas) signature with no maintenance_db — the dbname
+// itself is the database the flow runs against — then the five pinned
+// fixed catalog queries (schemas, tables and views, functions,
+// aggregates, sequences, each through the existing psql query transport
+// with maintenance_db=dbname) whose quote_ident/regprocedure rows are
+// parsed in source order into the single in-memory BEGIN; ALTER DATABASE
+// OWNER; ALTER SCHEMA/TABLE/FUNCTION/AGGREGATE/SEQUENCE OWNER; COMMIT
+// script the pinned format strings produce. The catalog reads are
+// strict — a deliberate safe divergence from the pinned psql_query
+// mapping: a psql run that completes nonzero, a Runner failure,
+// cancellation, an output-limit violation, or a malformed row missing
+// the pinned n column aborts before any mutation statement with a
+// value-free error, because the pinned empty-row mapping would shrink
+// the script to its begin/ALTER DATABASE/commit skeleton and silently
+// mutate only the database owner. Salt writes that script to a
+// world-readable NamedTemporaryFile and runs -f <path>; StateKit keeps
+// the script in memory and runs psql's -f - (read-from-stdin) form
+// through CommandWithInputBounded on the bounded central transport, so
+// no host filesystem artifact, chmod, or cleanup exists on this path and
+// the script cannot exceed the bounded-input ceiling (a surplus catalog
+// answers the fixed input-limit error before any mutation). The script
+// argv carries psql's --set=ON_ERROR_STOP=on before -f - — the second
+// deliberate safe divergence from the pinned argv — so an SQL error
+// inside the transaction answers psql's nonzero stop exit instead of
+// psql continuing toward commit and a zero exit (no false success); a
+// nonzero script exit is compatibility data in the returned retcode
+// while Runner errors, cancellation, and output-limit violations are
+// errors. The ownername reaches the per-object
+// statements raw (an unquoted identifier position the pinned format
+// strings never escape), so it must be a bare PostgreSQL identifier —
+// rejected value-free otherwise — while the dbname keeps the shared
+// quote-free double-quoted boundary of the database family. The pinned
+// function returns _psql_prepare_and_run's cmd.run_all dictionary; the
+// port answers the same mapping shape as far as the central Runner
+// supports it — retcode, stdout, and stderr (already redacted), with no
+// pid because the Runner tracks none — while db_alter's owner_recurse
+// delegation projects that retcode onto its pinned boolean.
 // Like Salt, every invocation is a shell-free psql argv executed through
 // the central Runner; this package links no database driver or protocol
 // client and never contacts a live server by itself. The catalog queries
@@ -190,7 +230,9 @@
 // interpolated — and the R9.2h write paths construct only the pinned
 // CREATE DATABASE and REVOKE/terminate/DROP statements, the R9.2n path
 // only the pinned ALTER DATABASE OWNER/TABLESPACE statements, the R9.2o
-// paths only the pinned CREATE/ALTER/DROP TABLESPACE statements, and the
+// paths only the pinned CREATE/ALTER/DROP TABLESPACE statements, the
+// R9.2s path only the pinned transaction script assembled from the five
+// fixed catalogs and the two validated identifiers, and the
 // R9.2i role paths construct only the pinned CREATE/ALTER/DROP ROLE and
 // GRANT statements with the same validated identifiers, so the generic
 // psql_query surface stays
@@ -400,6 +442,24 @@ const (
 		`JOIN pg_namespace nsp  ` +
 		`ON nsp.oid = defacl.defaclnamespace ` +
 		`WHERE defaclobjtype ='f' ORDER BY nspname`
+	// The R9.2s owner_to catalog queries — the exact pinned fragments of
+	// postgres.py:2246-2281, byte-for-byte including the pinned double
+	// space the functions concatenation leaves before " and not
+	// p.proisagg" (the aggregates branch joins with a single space).
+	ownerToSchemaQuery = "select quote_ident(schema_name) as n from information_schema.schemata;"
+	ownerToTableQuery  = "select quote_ident(table_schema)||'.'||quote_ident(table_name) as " +
+		"n from information_schema.tables where table_schema not in " +
+		"('pg_catalog', 'information_schema');"
+	ownerToFunctionQuery = "select p.oid::regprocedure::text as n from pg_catalog.pg_proc p " +
+		"join pg_catalog.pg_namespace ns on p.pronamespace=ns.oid where " +
+		"ns.nspname not in ('pg_catalog', 'information_schema') " +
+		" and not p.proisagg;"
+	ownerToAggregateQuery = "select p.oid::regprocedure::text as n from pg_catalog.pg_proc p " +
+		"join pg_catalog.pg_namespace ns on p.pronamespace=ns.oid where " +
+		"ns.nspname not in ('pg_catalog', 'information_schema') " +
+		"and p.proisagg;"
+	ownerToSequenceQuery = "select quote_ident(sequence_schema)||'.'||" +
+		"quote_ident(sequence_name) as n from information_schema.sequences;"
 )
 
 var (
@@ -771,6 +831,14 @@ func runPsqlSecrets(ctx context.Context, rt *runtime.Runtime, argv []string, con
 		MaxStderrBytes: outputLimit,
 		Env:            psqlEnvironment(conn),
 	}
+	return finishPsqlRun(ctx, rt, command, secrets)
+}
+
+// finishPsqlRun is the shared transport tail of every psql invocation:
+// the Redact assembly, the central bounded run, and the secret-scrubbing
+// pass that defends against custom Runners not sanitizing their own
+// results. secrets arrive already deduplicated and sorted.
+func finishPsqlRun(ctx context.Context, rt *runtime.Runtime, command process.Command, secrets []string) (process.CommandResult, error) {
 	if len(secrets) > 0 {
 		command.Redact = secretList(secrets...)
 	}
@@ -791,6 +859,56 @@ func runPsqlSecrets(ctx context.Context, rt *runtime.Runtime, argv []string, con
 		return result, process.ErrOutputLimit
 	}
 	return result, nil
+}
+
+// runPsqlScript runs one psql invocation whose script travels over stdin
+// instead of an argv -c payload: the R9.2s owner_to transport. Salt
+// writes the generated SQL to a NamedTemporaryFile, chmods it
+// world-readable, and passes -f <path>; StateKit keeps the script in
+// memory and passes psql's -f - (read-from-stdin) form through
+// CommandWithInputBounded, so no host filesystem artifact, chmod, or
+// cleanup exists on this path — the bounded central Runner receives the
+// bytes directly. Shell stays false, the password stays out of band in
+// the clean PG environment, and the shared guards (cancellation, runas,
+// argv bounds, psql availability) run before any Runner invocation; the
+// script itself is bounded twice, once by the caller's accumulation
+// ceiling and once by CommandWithInputBounded.
+func runPsqlScript(ctx context.Context, rt *runtime.Runtime, argv []string, conn *pgConnection, script string) (process.CommandResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return process.CommandResult{ExitCode: -1}, err
+	}
+	if rt == nil || rt.Runner == nil {
+		return process.CommandResult{ExitCode: -1}, errPostgresRunnerUnavailable
+	}
+	if conn == nil {
+		conn = &pgConnection{}
+	}
+	if err := rejectRunas(conn.Runas); err != nil {
+		return process.CommandResult{ExitCode: -1}, err
+	}
+	if err := validateArgv(argv); err != nil {
+		return process.CommandResult{ExitCode: -1}, err
+	}
+	if available, ok := rt.Runner.(process.CommandAvailability); ok && !available.CommandAvailable(psqlCommand) {
+		// Fail closed: psql discovery has no fallback in this module.
+		return process.CommandResult{ExitCode: -1}, errPostgresPsqlUnavailable
+	}
+	command, err := runtime.CommandWithInputBounded(argv, script)
+	if err != nil {
+		return process.CommandResult{ExitCode: -1}, err
+	}
+	command.Timeout = commandTimeout
+	command.MaxStdoutBytes = outputLimit
+	command.MaxStderrBytes = outputLimit
+	command.Env = psqlEnvironment(conn)
+	secrets := append([]string(nil), conn.Secrets...)
+	if conn.Password != nil {
+		secrets = append(secrets, *conn.Password)
+	}
+	return finishPsqlRun(ctx, rt, command, secretList(secrets...))
 }
 
 // psqlEnvironment builds the clean child environment for psql. Salt runs
@@ -963,20 +1081,48 @@ func parsedServerVersion(ctx context.Context, rt *runtime.Runtime, conn *pgConne
 // The generic query surface stays unregistered: callers pass fixed SQL
 // fragments only.
 func psqlQueryRows(ctx context.Context, rt *runtime.Runtime, conn *pgConnection, query string) ([]map[string]string, error) {
+	result, err := runPsql(ctx, rt, psqlCatalogArgv(conn, query), conn)
+	if err != nil {
+		return nil, err
+	}
+	if result.ExitCode > 0 {
+		return []map[string]string{}, nil
+	}
+	return parseCSVRows(string(result.Stdout))
+}
+
+// psqlCatalogArgv builds the pinned COPY-to-CSV query argv shared by the
+// compatibility reader above and the strict owner_to catalog reader below:
+// the wrapped query on the full pinned psql argv with the pinned datestyle
+// variable.
+func psqlCatalogArgv(conn *pgConnection, query string) []string {
 	csvQuery := "COPY (" + strings.TrimRight(strings.TrimSpace(query), ";") + ") TO STDOUT WITH CSV HEADER"
-	argv := psqlArgv(
+	return psqlArgv(
 		pointerString(conn.User),
 		pointerString(conn.Host),
 		pointerString(conn.Port),
 		pointerString(conn.MaintenanceDB),
 		"-v", "datestyle=ISO,MDY", "-c", csvQuery,
 	)
-	result, err := runPsql(ctx, rt, argv, conn)
+}
+
+// psqlQueryRowsStrict is the strict owner_to catalog reader: the same pinned
+// COPY-to-CSV transport as psqlQueryRows, but a psql run that completes
+// nonzero is an error instead of Salt's empty-row compatibility data. The
+// pinned owner_to inherits psql_query's mapping, so a failed catalog would
+// silently shrink the generated script to its begin/ALTER DATABASE/commit
+// skeleton and mutate only the database owner — a false success this
+// mutation path refuses. The error is value-free (the retcode only, never
+// captured output or a caller value) and aborts the flow before any
+// mutation statement; Runner failures, cancellation, and output-limit
+// violations error through the shared transport exactly like psqlQueryRows.
+func psqlQueryRowsStrict(ctx context.Context, rt *runtime.Runtime, conn *pgConnection, query string) ([]map[string]string, error) {
+	result, err := runPsql(ctx, rt, psqlCatalogArgv(conn, query), conn)
 	if err != nil {
 		return nil, err
 	}
-	if result.ExitCode > 0 {
-		return []map[string]string{}, nil
+	if result.ExitCode != 0 {
+		return nil, fmt.Errorf("postgres.owner_to: catalog query failed with retcode %d", result.ExitCode)
 	}
 	return parseCSVRows(string(result.Stdout))
 }
@@ -1672,11 +1818,16 @@ func (dbAlterFunc) Args() any    { return DbAlterArgs{} }
 // any((tablespace, owner)) head answers the pinned no-op True with no
 // Runner invocation when neither argument carries a truthy value (Python
 // truthiness makes an explicit empty string the same as None, so both omit
-// the statement), the owner+owner_recurse branch delegates to owner_to —
-// which stays pending exactly like a later name, so the branch surfaces a
-// deterministic value-free UnsupportedError before any mutation instead of
-// silently degrading to the shallow ALTER OWNER the else branch would run —
-// and otherwise the pinned statements run in the pinned order, the OWNER
+// the statement), the owner+owner_recurse branch delegates to the
+// registered owner_to with the exact pinned argument projection (name,
+// owner, user, host, port, password, runas — no maintenance_db) and
+// projects the delegated run_all result's retcode onto the boolean
+// exactly like the pinned ret["retcode"] tail (owner_to's public run_all
+// mapping is the same projection's source; db_alter keeps its own pinned
+// boolean contract) — the pinned
+// if/else makes that delegation the single mutation, so a tablespace
+// argument carried alongside a truthy owner+owner_recurse is left
+// unapplied exactly like Salt — and otherwise the pinned statements run in the pinned order, the OWNER
 // change before the TABLESPACE change, each through the same central
 // maintenance-database connection. The identifier boundary is the
 // StateKit addition: the pinned format strings interpolate the name, the
@@ -1714,13 +1865,31 @@ func (dbAlterFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (
 		return nil, ddlValidationError("tablespace")
 	}
 	if owner && pointerBool(a.OwnerRecurse) {
-		// The pinned branch calls owner_to(name, owner, user=..., host=...,
-		// port=..., password=..., runas=...) — the recursive REASSIGN OWNED
-		// flow. owner_to is not registered in this phase, so the branch
-		// cannot run its pinned flow; failing with the fixed UnsupportedError
-		// (never a value from the arguments) keeps the unsupported surface
-		// explicit instead of silently performing the shallow ALTER OWNER.
-		return nil, &runtime.UnsupportedError{Kind: "function", Name: "postgres.owner_to"}
+		// The pinned branch calls owner_to(name, owner, user=...,
+		// host=..., port=..., password=..., runas=...) — the recursive
+		// ownership flow — and nothing else: the pinned if/else never
+		// also runs the shallow ALTER statements, and the call drops
+		// maintenance_db exactly like the pinned projection (the dbname
+		// is the database every owner_to statement runs against).
+		result, err := ownerTo(ctx, rt, &OwnerToArgs{
+			DBName:   a.Name,
+			Owner:    *a.Owner,
+			User:     a.User,
+			Host:     a.Host,
+			Port:     a.Port,
+			Password: a.Password,
+			Runas:    a.Runas,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if result.ExitCode != 0 {
+			// The pinned ret["retcode"] != 0 → False, compatibility
+			// data: a rejected script is the boolean false, never an
+			// error.
+			return false, nil
+		}
+		return true, nil
 	}
 	// The pinned statement order: OWNER before TABLESPACE, each statement
 	// on the full pinned psql argv exactly as the pinned test asserts.
@@ -1751,6 +1920,208 @@ func (dbAlterFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (
 		}
 	}
 	return true, nil
+}
+
+// ---------------------------------------------------------------------------
+// owner_to — salt/modules/postgres.py:2228-2310 @ pinned revision.
+
+// ownerToCatalogs are the five pinned (statement, catalog query) pairs in
+// the pinned order: schemas, tables and views, functions, aggregate
+// functions, sequences. The statements are the exact pinned format
+// strings whose {n} is the row's server-quoted identifier (quote_ident
+// output or a regprocedure cast) and whose {owner} is the caller's
+// ownername; the queries are the exact pinned SQL fragments run through
+// the shared psql query transport with maintenance_db=dbname.
+var ownerToCatalogs = []struct {
+	statement string
+	query     string
+}{
+	{
+		"alter schema {n} owner to {owner};",
+		ownerToSchemaQuery,
+	},
+	{
+		"alter table {n} owner to {owner};",
+		ownerToTableQuery,
+	},
+	{
+		"alter function {n} owner to {owner};",
+		ownerToFunctionQuery,
+	},
+	{
+		"alter aggregate {n} owner to {owner};",
+		ownerToAggregateQuery,
+	},
+	{
+		"alter sequence {n} owner to {owner};",
+		ownerToSequenceQuery,
+	},
+}
+
+// OwnerToArgs are the canonical postgres.owner_to arguments, mirroring
+// the pinned owner_to(dbname, ownername, user, host, port, password,
+// runas) signature (postgres.py:2228-2230): the recursive ownership flow
+// carries no maintenance_db — the dbname itself is the database every
+// catalog query and the generated script run against.
+type OwnerToArgs struct {
+	DBName   string  `statekit:"name=dbname,required"`
+	Owner    string  `statekit:"name=ownername,required"`
+	User     *string `statekit:"name=user"`
+	Host     *string `statekit:"name=host"`
+	Port     *string `statekit:"name=port"`
+	Password *string `statekit:"name=password"`
+	Runas    *string `statekit:"name=runas"`
+}
+
+func (a *OwnerToArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: &a.DBName,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+// ownerToScript assembles the pinned transaction script in memory: the
+// "begin;" head, the quoted ALTER DATABASE OWNER TO line, one pinned
+// format-string statement per catalog row in source order, and the
+// "commit;" tail — byte-for-byte the lines the pinned owner_to writes
+// into its NamedTemporaryFile. The accumulation stays under the bounded
+// input ceiling of the stdin transport, so an oversized catalog answers
+// the fixed input-limit error here, before any mutation is attempted.
+func ownerToScript(dbname, ownername string, catalogs [][]string) (string, error) {
+	var script strings.Builder
+	script.WriteString("begin;\n")
+	script.WriteString(`alter database "` + dbname + `" owner to "` + ownername + `";` + "\n")
+	for family, rows := range catalogs {
+		for _, n := range rows {
+			line := strings.NewReplacer("{n}", n, "{owner}", ownername).
+				Replace(ownerToCatalogs[family].statement)
+			script.WriteString(line)
+			script.WriteString("\n")
+			if script.Len() > runtime.MaxCommandInputBytes {
+				return "", runtime.ErrCommandInputLimit
+			}
+		}
+	}
+	script.WriteString("commit;\n")
+	return script.String(), nil
+}
+
+// ownerTo ports the pinned owner_to flow (postgres.py:2242-2310): the
+// five fixed catalog queries through the strict psql catalog reader —
+// each with maintenance_db=dbname and any nonzero psql exit, Runner
+// failure, cancellation, output-limit violation, or malformed row
+// aborting before any mutation statement, because the pinned
+// empty-row mapping would silently shrink the script to its
+// begin/ALTER DATABASE/commit skeleton — then the single generated
+// transaction script. The pinned temp-file execution half is adapted:
+// psql's -f - (read-from-stdin) form carries the in-memory script
+// through CommandWithInputBounded on the bounded central transport, so
+// no host filesystem artifact, chmod, or cleanup exists on this path.
+// The script argv adds psql's --set=ON_ERROR_STOP=on before -f - — a
+// deliberate safe divergence from the pinned argv — so an SQL error
+// inside the transaction answers psql's nonzero stop exit instead of
+// psql continuing toward commit and a zero exit; the caller-facing
+// result mapping lives with the function wrapper.
+func ownerTo(ctx context.Context, rt *runtime.Runtime, a *OwnerToArgs) (process.CommandResult, error) {
+	// The identifier boundary, before any Runner invocation: the pinned
+	// head interpolates dbname into a double-quoted identifier position
+	// unescaped, and every per-object statement interpolates ownername
+	// raw — an unquoted identifier position the pinned format strings
+	// never escape. Both rejections are value-free.
+	if strings.Contains(a.DBName, `"`) {
+		return process.CommandResult{ExitCode: -1}, ddlValidationError("dbname")
+	}
+	if !bareIdentifierRE.MatchString(a.Owner) {
+		return process.CommandResult{ExitCode: -1}, fmt.Errorf(
+			"%w: unsupported ownername identifier", errPostgresInvalidArgument)
+	}
+	conn := a.connection()
+	catalogs := make([][]string, 0, len(ownerToCatalogs))
+	for _, catalog := range ownerToCatalogs {
+		rows, err := psqlQueryRowsStrict(ctx, rt, conn, catalog.query)
+		if err != nil {
+			// A failing catalog aborts before any mutation.
+			return process.CommandResult{ExitCode: -1}, err
+		}
+		names := make([]string, 0, len(rows))
+		for _, row := range rows {
+			// Salt's row["n"] KeyError becomes the value-free missing-
+			// column execution error.
+			n, err := rowString(row, "n", "postgres.owner_to")
+			if err != nil {
+				return process.CommandResult{ExitCode: -1}, err
+			}
+			names = append(names, n)
+		}
+		catalogs = append(catalogs, names)
+	}
+	script, err := ownerToScript(a.DBName, a.Owner, catalogs)
+	if err != nil {
+		return process.CommandResult{ExitCode: -1}, err
+	}
+	// The pinned _psql_prepare_and_run(["-f", <file>]) becomes the
+	// stdin form: the script is bounded input, never an argv element and
+	// never a host file. ON_ERROR_STOP=on is the deliberate safe
+	// divergence: without it psql continues past an SQL error inside the
+	// script and can still exit zero (a false success over a partially
+	// committed transaction); with it the first SQL error stops psql
+	// with a nonzero exit that lands in the returned retcode.
+	argv := psqlArgv(
+		pointerString(a.User),
+		pointerString(a.Host),
+		pointerString(a.Port),
+		a.DBName,
+		"--set=ON_ERROR_STOP=on",
+		"-f", "-",
+	)
+	return runPsqlScript(ctx, rt, argv, conn, script)
+}
+
+type ownerToFunc struct{}
+
+func (ownerToFunc) Name() string { return "postgres.owner_to" }
+func (ownerToFunc) Args() any    { return OwnerToArgs{} }
+
+// Execute answers the cmd.run_all mapping of the single script run: the
+// pinned owner_to returns _psql_prepare_and_run's cmd.run_all dictionary
+// verbatim, so the port exposes the same shape as far as the central
+// Runner supports it — retcode, stdout, and stderr, with the captured
+// output already redacted and no pid because the Runner tracks none. A
+// script psql rejects (including an ON_ERROR_STOP stop) is retcode
+// compatibility data, never an error and never a false success; the
+// shared guards return errors.
+func (ownerToFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[OwnerToArgs](args, "postgres.owner_to")
+	if err != nil {
+		return nil, err
+	}
+	result, err := ownerTo(ctx, rt, a)
+	if err != nil {
+		return nil, err
+	}
+	return ownerToRunAllResult(result), nil
+}
+
+// ownerToRunAllResult maps the script run's CommandResult onto Salt's
+// cmd.run_all dictionary shape — the dictionary the pinned owner_to
+// returns from _psql_prepare_and_run and the only pinned consumer
+// (db_alter's owner_recurse tail) reads by retcode. The central Runner
+// tracks no pid and no deterministic sentinel exists for it (the same
+// documented boundary the selinux run_all mappings hold), so the
+// mapping carries the consumed fields retcode, stdout, and stderr.
+func ownerToRunAllResult(res process.CommandResult) map[string]any {
+	return map[string]any{
+		"retcode": res.ExitCode,
+		"stdout":  string(res.Stdout),
+		"stderr":  string(res.Stderr),
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -6521,8 +6892,11 @@ func redactedError(err error, secrets ...string) error {
 // schema, extension, and language mutations schema_create,
 // schema_remove, create_extension, drop_extension, language_create, and
 // language_remove, the R9.2n database mutation db_alter (whose
-// owner_recurse branch answers the pending owner_to name with the fixed
-// UnsupportedError instead of a shallow ALTER OWNER), and the R9.2o
+// owner_recurse branch delegates to the registered owner_to with the
+// exact pinned argument projection instead of a shallow ALTER OWNER),
+// the R9.2s ownership mutation owner_to (the five fixed catalogs and the
+// single in-memory transaction script over the bounded -f - stdin
+// transport), and the R9.2o
 // tablespace mutations tablespace_create, tablespace_alter, and
 // tablespace_remove (the pinned CREATE/ALTER/DROP TABLESPACE statements
 // with the pinned truthiness no-op head, clause order, and retcode
@@ -6552,6 +6926,7 @@ func Register(reg *runtime.ExecRegistry) error {
 		dbCreateFunc{},
 		dbRemoveFunc{},
 		dbAlterFunc{},
+		ownerToFunc{},
 		tablespaceListFunc{},
 		tablespaceExistsFunc{},
 		tablespaceCreateFunc{},
