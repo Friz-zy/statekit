@@ -153,6 +153,21 @@
 // Runner invocation, and the LOCATION boundary additionally requires an
 // absolute, clean, control-free path so no traversal or escape can reach
 // the fixed statement.
+// R9.2q registers the read-only default-privilege check
+// has_default_privileges (postgres.py:3435-3571) on the exact internal
+// decision core the R9.2l mutations already run as their preflight: the
+// pinned (name, object_name, object_type, defprivileges, grant_option,
+// prepend="public", maintenance_db, user, host, port, password, runas)
+// signature, the shared _mod_defpriv_opts/_validate_default_privileges
+// head, the owner shortcut, the default-ACL decode, and the pinned group
+// admin_option, grant-option dict-equality, ALL, and strict-subset
+// comparisons. The caller's own grant_option reaches the check here —
+// unlike the mutation preflights, which always drop theirs — and the
+// pinned ALL dict_keys.sort() AttributeError stays the fixed value-free
+// execution error of the R9.2l port. The fixed owner and pg_default_acl
+// catalogs remain the only SQL with every lookup matched client-side,
+// so like has_privileges this read-only path needs no identifier
+// boundary: no caller string can reach a statement.
 // Like Salt, every invocation is a shell-free psql argv executed through
 // the central Runner; this package links no database driver or protocol
 // client and never contacts a live server by itself. The catalog queries
@@ -5891,13 +5906,14 @@ func (defaultPrivilegesListFunc) Execute(ctx context.Context, rt *runtime.Runtim
 }
 
 // hasDefaultPrivileges is the internal decision core of the pinned
-// has_default_privileges (postgres.py:3516-3571) that the default-privilege
-// mutations run as their preflight: the owner shortcut over the shared
-// owner catalog, the default-ACL decode, and the pinned membership,
-// grant-option, ALL, and subset comparisons. The object type arrives
-// lowercased and the privileges split from a completed
-// modPrivOpts/validateDefaultPrivileges pass, exactly the state the pinned
-// function is in after its own head. The pinned ALL comparison
+// has_default_privileges (postgres.py:3516-3571) shared by the public
+// postgres.has_default_privileges registration and the default-privilege
+// mutations' preflight: the owner shortcut over the shared owner catalog,
+// the default-ACL decode, and the pinned membership, grant-option, ALL,
+// and subset comparisons. The object type arrives lowercased and the
+// privileges split from a completed modPrivOpts/validateDefaultPrivileges
+// pass, exactly the state the pinned function is in after its own head.
+// The pinned ALL comparison
 // defperms.sort() == _defprivileges[name].keys().sort() evaluates
 // list.sort() == dict_keys.sort(): dict_keys carries no sort method, so
 // Python raises AttributeError before producing a boolean — StateKit maps
@@ -5952,6 +5968,77 @@ func hasDefaultPrivileges(ctx context.Context, rt *runtime.Runtime, conn *pgConn
 		}
 	}
 	return true, nil
+}
+
+// HasDefaultPrivilegesArgs are the canonical
+// postgres.has_default_privileges arguments, mirroring the pinned
+// has_default_privileges(name, object_name, object_type,
+// defprivileges=None, grant_option=None, prepend="public",
+// maintenance_db=None, user, host, port, password, runas) signature
+// (postgres.py:3435-3448). DefPrivileges keeps Salt's None default as the
+// empty string because the pinned _mod_defpriv_opts collapses None to ""
+// before any use; grant_option is only ever truthiness-tested, so a plain
+// bool is exact; prepend nil means the pinned "public" default while an
+// explicit empty string keeps Salt's empty-schema handling.
+type HasDefaultPrivilegesArgs struct {
+	Name          string  `statekit:"name=name,required"`
+	ObjectName    string  `statekit:"name=object_name,required"`
+	ObjectType    string  `statekit:"name=object_type,required"`
+	DefPrivileges string  `statekit:"name=defprivileges"`
+	GrantOption   bool    `statekit:"name=grant_option"`
+	Prepend       *string `statekit:"name=prepend"`
+	MaintenanceDB *string `statekit:"name=maintenance_db"`
+	User          *string `statekit:"name=user"`
+	Host          *string `statekit:"name=host"`
+	Port          *string `statekit:"name=port"`
+	Password      *string `statekit:"name=password"`
+	Runas         *string `statekit:"name=runas"`
+}
+
+func (a *HasDefaultPrivilegesArgs) connection() *pgConnection {
+	if a == nil {
+		return &pgConnection{}
+	}
+	return &pgConnection{
+		User:          a.User,
+		Host:          a.Host,
+		Port:          a.Port,
+		MaintenanceDB: a.MaintenanceDB,
+		Password:      a.Password,
+		Runas:         a.Runas,
+	}
+}
+
+type hasDefaultPrivilegesFunc struct{}
+
+func (hasDefaultPrivilegesFunc) Name() string { return "postgres.has_default_privileges" }
+func (hasDefaultPrivilegesFunc) Args() any    { return HasDefaultPrivilegesArgs{} }
+
+// Execute ports the pinned has_default_privileges flow
+// (postgres.py:3516-3571): the shared _mod_defpriv_opts/
+// _validate_default_privileges head with validation before any query,
+// then the R9.2l decision core — with the caller's own grant_option,
+// unlike the mutation preflights that always drop theirs, so the
+// grant-option dict equality and the group admin_option boolean are
+// reachable here exactly like the pinned public function. The fixed owner
+// and pg_default_acl catalogs stay the only SQL, with every lookup
+// matched client-side, so no caller string reaches a statement and no
+// identifier boundary exists on this read-only path.
+func (hasDefaultPrivilegesFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[HasDefaultPrivilegesArgs](args, "postgres.has_default_privileges")
+	if err != nil {
+		return nil, err
+	}
+	objectType, privs := modPrivOpts(a.ObjectType, a.DefPrivileges)
+	if err := validateDefaultPrivileges(objectType, privs, a.DefPrivileges); err != nil {
+		return nil, err
+	}
+	prepend := defaultPrependSchema
+	if a.Prepend != nil {
+		prepend = *a.Prepend
+	}
+	return hasDefaultPrivileges(ctx, rt, a.connection(), "postgres.has_default_privileges",
+		a.Name, a.ObjectName, objectType, privs, a.GrantOption, prepend)
 }
 
 // DefaultPrivilegesGrantArgs are the canonical
@@ -6368,12 +6455,16 @@ func redactedError(err error, secrets ...string) error {
 // booleans), and the R9.2p datadir pair datadir_exists and datadir_init
 // (the pinned PG_VERSION/postgresql.conf marker probe over Runtime.FS and
 // the pinned initdb argv with the pwfile credential transport and the
-// pinned kernel-mapped OpenBSD _postgresql runas default). The remainder of the
+// pinned kernel-mapped OpenBSD _postgresql runas default), plus the
+// R9.2q read-only default-privilege check has_default_privileges (the
+// decision core the R9.2l mutations already run as their preflight, now
+// registered under its canonical public name with the caller's own
+// grant_option). The remainder of the
 // postgres family needs the generic psql query surface (psql_query itself
 // stays pending; no arbitrary-query registration exists in this phase) and
 // stays pending for later R9 rounds; the internal parsed-version,
-// psql-query, role-statement, has-default-privileges, and
-// create-metadata helpers are intentionally not registered, exactly like
+// psql-query, role-statement, and create-metadata helpers are
+// intentionally not registered, exactly like
 // the pinned private functions (create_metadata keeps its pending public
 // name until a later round registers it).
 func Register(reg *runtime.ExecRegistry) error {
@@ -6416,6 +6507,7 @@ func Register(reg *runtime.ExecRegistry) error {
 		privilegesGrantFunc{},
 		privilegesRevokeFunc{},
 		defaultPrivilegesListFunc{},
+		hasDefaultPrivilegesFunc{},
 		defaultPrivilegesGrantFunc{},
 		defaultPrivilegesRevokeFunc{},
 		userCreateFunc{},

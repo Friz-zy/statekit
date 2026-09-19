@@ -350,9 +350,9 @@ func TestPostgresVersionInvalidInputs(t *testing.T) {
 	}
 }
 
-// TestPostgresRegistrySurface pins the forty-four canonical registrations,
-// their argument prototypes, and the absence of public psql_query,
-// has_default_privileges, create_metadata, and _parsed_version entries.
+// TestPostgresRegistrySurface pins the forty-seven canonical
+// registrations, their argument prototypes, and the absence of public
+// psql_query, create_metadata, and _parsed_version entries.
 func TestPostgresRegistrySurface(t *testing.T) {
 	reg := runtime.NewExecRegistry()
 	if err := Register(reg); err != nil {
@@ -377,6 +377,7 @@ func TestPostgresRegistrySurface(t *testing.T) {
 		"postgres.group_create",
 		"postgres.group_remove",
 		"postgres.group_update",
+		"postgres.has_default_privileges",
 		"postgres.has_privileges",
 		"postgres.installed_extensions",
 		"postgres.is_available_extension",
@@ -448,6 +449,8 @@ func TestPostgresRegistrySurface(t *testing.T) {
 			want = RoleGetArgs{}
 		case "postgres.has_privileges":
 			want = HasPrivilegesArgs{}
+		case "postgres.has_default_privileges":
+			want = HasDefaultPrivilegesArgs{}
 		case "postgres.privileges_list":
 			want = PrivilegesListArgs{}
 		case "postgres.privileges_grant":
@@ -502,7 +505,6 @@ func TestPostgresRegistrySurface(t *testing.T) {
 	for _, pending := range []string{
 		"postgres.psql_query",
 		"postgres._parsed_version",
-		"postgres.has_default_privileges",
 		"postgres.create_metadata",
 	} {
 		if _, ok := reg.Get(pending); ok {
@@ -590,6 +592,10 @@ func TestPostgresRegistrySurface(t *testing.T) {
 			"name", "object_name", "object_type", "privileges", "prepend",
 		}, connection...)},
 		{defaultPrivilegesListFunc{}, append([]string{"name", "object_type", "prepend"}, connection...)},
+		{hasDefaultPrivilegesFunc{}, append([]string{
+			"name", "object_name", "object_type", "defprivileges",
+			"grant_option", "prepend",
+		}, connection...)},
 		{defaultPrivilegesGrantFunc{}, append([]string{
 			"name", "object_name", "object_type", "defprivileges",
 			"grant_option", "prepend",
@@ -10281,6 +10287,20 @@ func fullDefaultPrivilegesRevokeArgs(name, objectName, objectType, defprivileges
 	}
 }
 
+func fullHasDefaultPrivilegesArgs(name, objectName, objectType, defprivileges string) *HasDefaultPrivilegesArgs {
+	return &HasDefaultPrivilegesArgs{
+		Name:          name,
+		ObjectName:    objectName,
+		ObjectType:    objectType,
+		DefPrivileges: defprivileges,
+		MaintenanceDB: postgresString("db_name"),
+		User:          postgresString("testuser"),
+		Host:          postgresString("testhost"),
+		Port:          postgresString("testport"),
+		Password:      postgresString("testpassword"),
+	}
+}
+
 // TestPostgresDefaultPrivilegesListArgv pins the fixed COPY-wrapped
 // pg_default_acl catalog query on the full pinned argv with the pinned
 // clean environment, the password as the only Redact secret, the shared
@@ -11038,9 +11058,9 @@ func TestPostgresDefaultPrivilegesMutationNoop(t *testing.T) {
 }
 
 // TestPostgresDefaultPrivilegesHasSemantics pins the internal
-// has_default_privileges decision core directly (the public
-// has_default_privileges registration stays pending, like the pinned
-// module's private surface): the grant-option dict equality, the pinned
+// has_default_privileges decision core directly (the shared core the
+// R9.2q public registration and the pinned mutations both run): the
+// grant-option dict equality, the pinned
 // ALL comparison whose dict_keys.sort() shape is a deterministic
 // AttributeError mapped to a fixed value-free error, the strict-subset
 // miss, and the group admin_option boolean under grant_option.
@@ -11149,6 +11169,445 @@ func TestPostgresDefaultPrivilegesHasSemantics(t *testing.T) {
 		if err != nil || got != tc.want {
 			t.Fatalf("group grant-option %s = %v err = %v, want %v", tc.name, got, err, tc.want)
 		}
+	}
+}
+
+// TestPostgresHasDefaultPrivilegesArgv pins the exact two-call transport
+// of the public R9.2q registration: the fixed owner catalog query first,
+// the fixed pg_default_acl default-privilege catalog second, both
+// COPY-wrapped SQL with no caller string inside, and the connection tuple
+// transported exactly like the pinned psql_query call.
+func TestPostgresHasDefaultPrivilegesArgv(t *testing.T) {
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(ownerTableCSV)},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(defPrivTableCSV)},
+	)
+	args := fullHasDefaultPrivilegesArgs("baruwa", "awl", "table", "SELECT,INSERT")
+	args.Prepend = postgresString("testschema")
+	if _, err := (hasDefaultPrivilegesFunc{}).Execute(context.Background(), rt, args); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("runner calls = %d, want 2 (owner + default privileges)", len(runner.calls))
+	}
+	for i, want := range []string{
+		`COPY (SELECT schemaname, tablename, tableowner AS name FROM pg_tables) TO STDOUT WITH CSV HEADER`,
+		`COPY (SELECT nspname, defacl.defaclacl AS name FROM pg_default_acl defacl JOIN pg_authid aid ON defacl.defaclrole = aid.oid  JOIN pg_namespace nsp  ON nsp.oid = defacl.defaclnamespace WHERE defaclobjtype ='r' ORDER BY nspname) TO STDOUT WITH CSV HEADER`,
+	} {
+		all := append([]string{runner.calls[i].Name}, runner.calls[i].Args...)
+		if got := all[len(all)-1]; got != want {
+			t.Fatalf("call %d SQL = %q, want %q", i, got, want)
+		}
+		if !strings.HasPrefix(all[0], "psql") || all[1] != "--no-align" {
+			t.Fatalf("call %d argv head = %q", i, all)
+		}
+	}
+	// Neither the role name, the object name, nor the schema prefix ever
+	// reaches SQL.
+	for i, call := range runner.calls {
+		if joined := strings.Join(call.Args, "\x00"); strings.Contains(joined, "awl") ||
+			strings.Contains(joined, "baruwa") || strings.Contains(joined, "testschema") {
+			t.Fatalf("call %d leaked a lookup string into SQL: %q", i, joined)
+		}
+	}
+	// The connection tuple is transported exactly like the pinned
+	// psql_query call (runas rejected, password out of band).
+	command := runner.calls[0]
+	if command.Shell || len(command.Env) != 4 || command.Env[0] != "PGPASSWORD=testpassword" {
+		t.Fatalf("unsafe owner command: %#v", command)
+	}
+	if !reflect.DeepEqual(command.Redact, []string{"testpassword"}) {
+		t.Fatalf("redact = %q", command.Redact)
+	}
+}
+
+// TestPostgresHasDefaultPrivilegesSemantics pins the public
+// postgres.has_default_privileges outcomes on the R9.2l fixtures: the
+// owner shortcut after the owner query alone, the strict-subset hit and
+// miss, the schema-prefix client-side match, the grant-option dict
+// equality under the caller's own grant_option, the absent-grantee false,
+// and the pinned ALL comparison error against a grantee holding an entry.
+func TestPostgresHasDefaultPrivilegesSemantics(t *testing.T) {
+	cases := []struct {
+		label         string
+		name          string
+		defprivileges string
+		grantOption   bool
+		prepend       string
+		shortcut      bool
+		want          bool
+	}{
+		{"baruwa subset hit", "baruwa", "SELECT,INSERT", false, "public", false, true},
+		{"baruwatest subset miss", "baruwatest", "SELECT,INSERT,TRUNCATE", false, "public", false, false},
+		{"baruwa grant option", "baruwa", "SELECT", true, "public", false, true},
+		{"baruwatest grant option", "baruwatest", "SELECT", true, "public", false, false},
+		{"private schema subset", "bayestest", "SELECT,INSERT,UPDATE", false, "private", false, true},
+		{"public schema miss", "bayestest", "SELECT", false, "public", false, false},
+		{"absent role", "tony", "SELECT", false, "public", false, false},
+		{"owner shortcut", "postgres", "SELECT", false, "public", true, true},
+		{"owner shortcut named", "baruwa", "SELECT", false, "public", true, true},
+	}
+	for _, tc := range cases {
+		ownerCSV := ownerTableCSV
+		if tc.shortcut && tc.name == "baruwa" {
+			// awl owned by baruwa: the owner shortcut returns true after
+			// the owner query alone.
+			ownerCSV = "schemaname,tablename,name\npublic,awl,baruwa\n"
+		}
+		results := []process.CommandResult{
+			{ExitCode: 0, Stdout: []byte(ownerCSV)},
+			{ExitCode: 0, Stdout: []byte(defPrivTableCSV)},
+		}
+		rt, runner := newPostgresRuntime(results...)
+		args := fullHasDefaultPrivilegesArgs(tc.name, "awl", "table", tc.defprivileges)
+		args.GrantOption = tc.grantOption
+		args.Prepend = postgresString(tc.prepend)
+		value, err := (hasDefaultPrivilegesFunc{}).Execute(context.Background(), rt, args)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.label, err)
+		}
+		if value != tc.want {
+			t.Fatalf("%s = %#v, want %#v", tc.label, value, tc.want)
+		}
+		wantCalls := 2
+		if tc.shortcut {
+			wantCalls = 1
+		}
+		if len(runner.calls) != wantCalls {
+			t.Fatalf("%s calls = %d, want %d", tc.label, len(runner.calls), wantCalls)
+		}
+	}
+
+	// The pinned ALL branch: against a grantee holding a default ACL
+	// entry the dict_keys.sort() comparison is the fixed value-free
+	// error; against an absent grantee the miss answers false without
+	// reaching the branch.
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(ownerTableCSV)},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(defPrivTableCSV)},
+	)
+	_, err := (hasDefaultPrivilegesFunc{}).Execute(context.Background(), rt,
+		fullHasDefaultPrivilegesArgs("baruwa", "awl", "table", "ALL"))
+	if !errors.Is(err, errPostgresDefprivilegesAllCompare) {
+		t.Fatalf("held ALL err = %v, want errPostgresDefprivilegesAllCompare", err)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("held ALL calls = %d, want 2", len(runner.calls))
+	}
+	rt, runner = newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(ownerTableCSV)},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(defPrivGrantTableCSV)},
+	)
+	value, err := (hasDefaultPrivilegesFunc{}).Execute(context.Background(), rt,
+		fullHasDefaultPrivilegesArgs("baruwa", "awl", "table", "ALL"))
+	if err != nil || value != false {
+		t.Fatalf("absent ALL = %#v err = %v, want false, nil", value, err)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("absent ALL calls = %d, want 2", len(runner.calls))
+	}
+	// The error is value-free: a caller secret overlapping the connection
+	// cannot travel through it.
+	rt, runner = newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(ownerTableCSV)},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(defPrivTableCSV)},
+	)
+	marker := "synthetic_hasdefpriv_all_marker"
+	args := fullHasDefaultPrivilegesArgs("baruwa", "awl", "table", "ALL")
+	args.Password = postgresString(marker)
+	_, err = (hasDefaultPrivilegesFunc{}).Execute(context.Background(), rt, args)
+	if !errors.Is(err, errPostgresDefprivilegesAllCompare) || strings.Contains(err.Error(), marker) {
+		t.Fatalf("ALL overlap err = %v", err)
+	}
+}
+
+// TestPostgresHasDefaultPrivilegesGroup pins the public group flow: no
+// owner query at all, membership true, the grant-option check answering
+// the member's admin_option boolean, an absent role false, and the group
+// name matched client-side only.
+func TestPostgresHasDefaultPrivilegesGroup(t *testing.T) {
+	for _, tc := range []struct {
+		label       string
+		name        string
+		grantOption bool
+		want        bool
+	}{
+		{"member", "baruwa", false, true},
+		{"member admin check", "baruwa", true, false},
+		{"member admin true", "baruwatest2", true, true},
+		{"non member", "tony", false, false},
+	} {
+		rt, runner := newPostgresRuntime(
+			process.CommandResult{ExitCode: 0, Stdout: []byte(privGroupCSV)},
+		)
+		args := fullHasDefaultPrivilegesArgs(tc.name, "admin", "group", "")
+		args.GrantOption = tc.grantOption
+		value, err := (hasDefaultPrivilegesFunc{}).Execute(context.Background(), rt, args)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.label, err)
+		}
+		if value != tc.want {
+			t.Fatalf("%s = %#v, want %v", tc.label, value, tc.want)
+		}
+		if len(runner.calls) != 1 {
+			t.Fatalf("%s calls = %d, want 1 (no owner query for groups)", tc.label, len(runner.calls))
+		}
+		got := runner.calls[0].Args[len(runner.calls[0].Args)-1]
+		if !strings.HasPrefix(got, "COPY (SELECT (SELECT rolname FROM pg_catalog.pg_roles rr WHERE rr.oid = m.roleid) AS member_of, rolname, admin_option") {
+			t.Fatalf("%s group SQL = %q", tc.label, got)
+		}
+	}
+
+	// The group name never reaches SQL.
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(privGroupCSV)},
+	)
+	value, err := (hasDefaultPrivilegesFunc{}).Execute(context.Background(), rt,
+		fullHasDefaultPrivilegesArgs("baruwa", "grp_leak_check", "group", ""))
+	if err != nil || value != false {
+		t.Fatalf("group leak check = %#v err = %v, want false", value, err)
+	}
+	if joined := strings.Join(runner.calls[0].Args, "\x00"); strings.Contains(joined, "grp_leak_check") {
+		t.Fatalf("group query leaked the group name into SQL: %q", joined)
+	}
+}
+
+// TestPostgresHasDefaultPrivilegesObjectTypes sweeps the remaining
+// default-privilege object types through their fixed owner and
+// pg_default_acl catalogs, including the schema branch that keys the
+// object name (not the prepend prefix) on nspname.
+func TestPostgresHasDefaultPrivilegesObjectTypes(t *testing.T) {
+	defPrivSequenceCSV := `nspname,name
+public,"{baruwa=rwU/public}"
+`
+	ownerSchemaCSV := `nspname,name
+public,postgres
+private,postgres
+`
+	defPrivSchemaCSV := `nspname,name
+public,"{postgres=UC/postgres,baruwa=U/public}"
+private,"{bayestest=U/public}"
+`
+	ownerFunctionFixtureCSV := `nspname,regprocedure,name
+public,awl,postgres
+`
+	sequenceSQL := `COPY (SELECT nspname, defacl.defaclacl AS name FROM pg_default_acl defacl JOIN pg_authid aid ON defacl.defaclrole = aid.oid  JOIN pg_namespace nsp  ON nsp.oid = defacl.defaclnamespace WHERE defaclobjtype ='S' ORDER BY nspname) TO STDOUT WITH CSV HEADER`
+	schemaSQL := `COPY (SELECT nspname, nspacl AS name FROM pg_catalog.pg_namespace ORDER BY nspname) TO STDOUT WITH CSV HEADER`
+	functionSQL := `COPY (SELECT nspname, defacl.defaclacl AS name FROM pg_default_acl defacl JOIN pg_authid aid ON defacl.defaclrole = aid.oid  JOIN pg_namespace nsp  ON nsp.oid = defacl.defaclnamespace WHERE defaclobjtype ='f' ORDER BY nspname) TO STDOUT WITH CSV HEADER`
+	for _, tc := range []struct {
+		label         string
+		name          string
+		objectType    string
+		objectName    string
+		defprivileges string
+		ownerCSV      string
+		privCSV       string
+		want          bool
+		wantObjectSQL string
+	}{
+		{
+			"sequence", "baruwa", "sequence", "awl_seq", "SELECT,UPDATE,USAGE",
+			"nspname,relname,name\npublic,awl_seq,postgres\n",
+			defPrivSequenceCSV, true, sequenceSQL,
+		},
+		{
+			"schema public row", "baruwa", "schema", "public", "USAGE",
+			ownerSchemaCSV, defPrivSchemaCSV, true, schemaSQL,
+		},
+		{
+			"schema subset miss", "baruwa", "schema", "public", "USAGE,CREATE",
+			ownerSchemaCSV, defPrivSchemaCSV, false, "",
+		},
+		{
+			"schema other row", "bayestest", "schema", "private", "USAGE",
+			ownerSchemaCSV, defPrivSchemaCSV, true, "",
+		},
+		{
+			"schema wrong row for role", "baruwa", "schema", "private", "USAGE",
+			ownerSchemaCSV, defPrivSchemaCSV, false, "",
+		},
+		{
+			"function", "baruwa", "function", "awl", "EXECUTE",
+			ownerFunctionFixtureCSV, defPrivFunctionCSV, true, functionSQL,
+		},
+	} {
+		rt, runner := newPostgresRuntime(
+			process.CommandResult{ExitCode: 0, Stdout: []byte(tc.ownerCSV)},
+			process.CommandResult{ExitCode: 0, Stdout: []byte(tc.privCSV)},
+		)
+		value, err := (hasDefaultPrivilegesFunc{}).Execute(context.Background(), rt,
+			fullHasDefaultPrivilegesArgs(tc.name, tc.objectName, tc.objectType, tc.defprivileges))
+		if err != nil {
+			t.Fatalf("%s: %v", tc.label, err)
+		}
+		if value != tc.want {
+			t.Fatalf("%s = %#v, want %#v", tc.label, value, tc.want)
+		}
+		if len(runner.calls) != 2 {
+			t.Fatalf("%s calls = %d, want 2", tc.label, len(runner.calls))
+		}
+		if tc.wantObjectSQL != "" {
+			if got := runner.calls[1].Args[len(runner.calls[1].Args)-1]; got != tc.wantObjectSQL {
+				t.Fatalf("%s default-privilege SQL = %q, want %q", tc.label, got, tc.wantObjectSQL)
+			}
+		}
+	}
+}
+
+// TestPostgresHasDefaultPrivilegesValidation pins the pinned validation
+// head for the public check: every rejected input fails value-free before
+// any Runner invocation, direct and through the registry, and the
+// default-privilege allowlist refuses the characters the pinned
+// _PRIVILEGES map carries but the pinned _DEFAULT_PRIVILEGES map does
+// not.
+func TestPostgresHasDefaultPrivilegesValidation(t *testing.T) {
+	const marker = "synthetic_hasdefpriv_marker"
+	for _, tc := range []struct {
+		label      string
+		objectType string
+		defprivs   string
+	}{
+		{"unknown object type", "bogus", "SELECT"},
+		{"empty object type", "", "SELECT"},
+		{"non-default object type", "tablespace", "CREATE"},
+		{"non-default object type language", "language", "USAGE"},
+		{"non-default object type database", "database", "CONNECT"},
+		{"invalid privilege", "table", "SELECT,BOGUS"},
+		{"missing privileges", "table", ""},
+		{"connect not a default privilege", "table", "CONNECT"},
+		{"temporary not a default privilege", "schema", "TEMPORARY"},
+		{"maintain not a default privilege", "table", "MAINTAIN"},
+		{"privileges for group", "group", "SELECT"},
+	} {
+		for _, entry := range []string{"direct", "registry"} {
+			t.Run(tc.label+"/"+entry, func(t *testing.T) {
+				rt, runner := newPostgresRuntime()
+				args := fullHasDefaultPrivilegesArgs("baruwa", "awl", tc.objectType, tc.defprivs)
+				args.Password = postgresString(marker)
+				var err error
+				if entry == "registry" {
+					rt.Exec = runtime.NewExecRegistry()
+					if err := Register(rt.Exec); err != nil {
+						t.Fatal(err)
+					}
+					_, err = rt.Exec.Call(context.Background(), rt, "postgres.has_default_privileges", args)
+				} else {
+					_, err = (hasDefaultPrivilegesFunc{}).Execute(context.Background(), rt, args)
+				}
+				if !errors.Is(err, errPostgresInvalidArgument) {
+					t.Fatalf("%s %s err = %v, want errPostgresInvalidArgument", tc.label, entry, err)
+				}
+				if strings.Contains(err.Error(), marker) || len(runner.calls) != 0 {
+					t.Fatalf("%s %s leaked input or invoked Runner", tc.label, entry)
+				}
+			})
+		}
+	}
+
+	// Mixed-case object types and spaced privilege lists behave exactly
+	// like the pinned _mod_defpriv_opts.
+	rt, runner := newPostgresRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(ownerTableCSV)},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(defPrivTableCSV)},
+	)
+	value, err := (hasDefaultPrivilegesFunc{}).Execute(context.Background(), rt,
+		fullHasDefaultPrivilegesArgs("baruwa", "awl", "TABLE", "select , insert"))
+	if err != nil || value != true {
+		t.Fatalf("TABLE case/spaces = %#v err = %v, want true", value, err)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("TABLE case calls = %d, want 2", len(runner.calls))
+	}
+}
+
+// TestPostgresHasDefaultPrivilegesCompatibilityData pins Salt's
+// nonzero-exit shape on the public check: both catalog queries return the
+// empty list, so the owner is None and every membership is false — data,
+// not an error.
+func TestPostgresHasDefaultPrivilegesCompatibilityData(t *testing.T) {
+	failed := process.CommandResult{ExitCode: 2, Stderr: []byte("psql: error: connection refused")}
+	rt, _ := newPostgresRuntime(failed)
+	value, err := (hasDefaultPrivilegesFunc{}).Execute(context.Background(), rt,
+		fullHasDefaultPrivilegesArgs("baruwa", "awl", "table", "SELECT"))
+	if err != nil || value != false {
+		t.Fatalf("nonzero exit = %#v err = %v, want false, nil", value, err)
+	}
+	rt, _ = newPostgresRuntime(failed)
+	value, err = (hasDefaultPrivilegesFunc{}).Execute(context.Background(), rt,
+		fullHasDefaultPrivilegesArgs("baruwa", "admin", "group", ""))
+	if err != nil || value != false {
+		t.Fatalf("group nonzero exit = %#v err = %v, want false, nil", value, err)
+	}
+}
+
+// TestPostgresHasDefaultPrivilegesGuards pins the shared failure modes on
+// the public check: canceled context, runas rejection, redacted Runner
+// errors, output limits, psql-unavailable fail-closed, and the argument
+// guards, each with zero Runner executions where the guard precedes the
+// call.
+func TestPostgresHasDefaultPrivilegesGuards(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	rt, runner := newPostgresRuntime()
+	if _, err := (hasDefaultPrivilegesFunc{}).Execute(ctx, rt,
+		fullHasDefaultPrivilegesArgs("baruwa", "awl", "table", "SELECT")); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled err = %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("canceled run executed %d commands", len(runner.calls))
+	}
+
+	rt, runner = newPostgresRuntime()
+	args := fullHasDefaultPrivilegesArgs("baruwa", "awl", "table", "SELECT")
+	args.Runas = postgresString("postgres")
+	if _, err := (hasDefaultPrivilegesFunc{}).Execute(context.Background(), rt, args); !errors.Is(err, errPostgresRunas) {
+		t.Fatalf("runas err = %v, want errPostgresRunas", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("runas run executed %d commands", len(runner.calls))
+	}
+
+	rt, _ = newPostgresRuntime(process.CommandResult{
+		ExitCode: -1,
+		Err:      fmt.Errorf("exec psql --dbname db_name: secret testpassword rejected"),
+	})
+	_, err := (hasDefaultPrivilegesFunc{}).Execute(context.Background(), rt,
+		fullHasDefaultPrivilegesArgs("baruwa", "awl", "table", "SELECT"))
+	if err == nil || strings.Contains(err.Error(), "testpassword") {
+		t.Fatalf("runner error = %v, want redacted", err)
+	}
+	if !strings.Contains(err.Error(), process.RedactedPlaceholder) {
+		t.Fatalf("error lacks redaction placeholder: %v", err)
+	}
+
+	for _, truncated := range []process.CommandResult{
+		{ExitCode: 0, StdoutTruncated: true, Stdout: []byte(strings.Repeat("9", outputLimit+1))},
+		{ExitCode: 0, StderrTruncated: true, Stderr: []byte(strings.Repeat("e", outputLimit+1))},
+	} {
+		rt, _ = newPostgresRuntime(truncated)
+		if _, err := (hasDefaultPrivilegesFunc{}).Execute(context.Background(), rt,
+			fullHasDefaultPrivilegesArgs("baruwa", "awl", "table", "SELECT")); !errors.Is(err, process.ErrOutputLimit) {
+			t.Fatalf("truncated err = %v, want ErrOutputLimit", err)
+		}
+	}
+
+	rt, runner = newPostgresRuntime()
+	runner.available = map[string]bool{"psql": false}
+	if _, err := (hasDefaultPrivilegesFunc{}).Execute(context.Background(), rt,
+		fullHasDefaultPrivilegesArgs("baruwa", "awl", "table", "SELECT")); !errors.Is(err, errPostgresPsqlUnavailable) {
+		t.Fatalf("psql-unavailable err = %v, want errPostgresPsqlUnavailable", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("unavailable psql executed %d commands", len(runner.calls))
+	}
+
+	if _, err := (hasDefaultPrivilegesFunc{}).Execute(context.Background(), nil, "bogus"); err == nil {
+		t.Fatal("has_default_privileges must reject non-struct args")
+	}
+	rtEmpty := &runtime.Runtime{Runner: nil, FS: runtime.NewMemoryFS()}
+	if _, err := (hasDefaultPrivilegesFunc{}).Execute(context.Background(), rtEmpty,
+		fullHasDefaultPrivilegesArgs("baruwa", "awl", "table", "SELECT")); !errors.Is(err, errPostgresRunnerUnavailable) {
+		t.Fatalf("nil runner err = %v, want errPostgresRunnerUnavailable", err)
 	}
 }
 
