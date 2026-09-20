@@ -85,6 +85,11 @@ type Command struct {
 	Timeout        time.Duration
 	Shell          bool     // explicit opt-in: run Name via "sh -c"
 	Redact         []string // secret substrings scrubbed from output and rendering
+	// PreserveStdout is an internal-only escape hatch for callers that parse a
+	// fixed, non-secret result before returning a separately sanitized value.
+	// Stderr, command displays, and errors remain redacted; callers must never
+	// expose the preserved bytes.
+	PreserveStdout bool
 	// MaxStdoutBytes and MaxStderrBytes bound captured output. Zero selects
 	// DefaultCaptureLimit; positive values override it. Negative values are
 	// rejected before the process is started. MaxCaptureLimit is the largest
@@ -436,7 +441,11 @@ func (r DefaultRunner) Run(ctx context.Context, c Command) CommandResult {
 		cmd.Stdin = bytes.NewReader(c.Stdin)
 	}
 
-	stdout := boundedBuffer{limit: stdoutLimit, retainedLimit: captureRetainedLimit(stdoutLimit, c.Redact)}
+	stdoutRetainedLimit := captureRetainedLimit(stdoutLimit, c.Redact)
+	if c.PreserveStdout {
+		stdoutRetainedLimit = stdoutLimit
+	}
+	stdout := boundedBuffer{limit: stdoutLimit, retainedLimit: stdoutRetainedLimit}
 	stderr := boundedBuffer{limit: stderrLimit, retainedLimit: captureRetainedLimit(stderrLimit, c.Redact)}
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -444,7 +453,11 @@ func (r DefaultRunner) Run(ctx context.Context, c Command) CommandResult {
 	err = cmd.Run()
 	res.Duration = time.Since(start)
 	var stdoutClipped, stderrClipped bool
-	res.Stdout, stdoutClipped = redactAndLimit(c.Redact, stdout.buf.Bytes(), stdoutLimit)
+	if c.PreserveStdout {
+		res.Stdout, stdoutClipped = redactAndLimit(nil, stdout.buf.Bytes(), stdoutLimit)
+	} else {
+		res.Stdout, stdoutClipped = redactAndLimit(c.Redact, stdout.buf.Bytes(), stdoutLimit)
+	}
 	res.Stderr, stderrClipped = redactAndLimit(c.Redact, stderr.buf.Bytes(), stderrLimit)
 	res.StdoutTruncated = stdout.overflow || stdoutClipped
 	res.StderrTruncated = stderr.overflow || stderrClipped

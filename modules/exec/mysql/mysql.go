@@ -1,9 +1,11 @@
 // Package mysql implements slices of the pinned Salt mysql execution
 // surface: the driver-free pure functions quote_identifier and
 // tokenize_grant (R9.2a), the read-only catalog family db_list, db_exists,
-// user_list, user_exists, db_get, and db_tables (R9.3a/R9.3d), the read-only
-// server facts family version, status, showvariables, and showglobal (R9.3b),
-// and the maintenance family db_check, db_repair, and db_optimize (R9.3c).
+// user_list, user_exists, user_info, db_get, and db_tables (R9.3a/R9.3d/R9.3e),
+// the read-only server facts family version, status, showvariables, and
+// showglobal (R9.3b), the maintenance family db_check, db_repair, and
+// db_optimize (R9.3c), and the fixed-query user_create/user_remove mutation
+// family (R9.3e).
 //
 // Boundaries (R9.2a): no MySQL client driver or protocol, no new
 // dependencies, no Runner spawns, no filesystem access, and no live MySQL
@@ -49,15 +51,26 @@
 // table names are matched or filtered client-side, so caller input never
 // reaches SQL; SQL NULL is carried by the shared NUL sentinel and the batch
 // decoder preserves LF/CRLF framing and escaped field bytes.
+//
+// Boundaries (R9.3e): user_info reads an explicit, non-secret mysql.user
+// column set and matches User/Host client-side; account mutations build only
+// the pinned CREATE USER and DROP USER IF EXISTS forms with SQL string
+// literals, allowlisted authentication-plugin tokens, the shared MYSQL_PWD
+// connection transport, and bounded Runner cancellation/output controls.
+// No database driver or live server is used by this package or its tests.
 package mysql
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/friz-zy/statekit/internal/process"
@@ -468,6 +481,23 @@ const (
 	// aliases keep the pinned DictRow header keys. Only the User and Host
 	// columns are ever selected — no password column enters the catalog.
 	userListQuery = "SELECT COALESCE(User, " + nullSentinelSQL + ") AS User, COALESCE(Host, " + nullSentinelSQL + ") AS Host FROM mysql.user"
+	// userPluginQuery is the fixed post-mutation account catalog. User and
+	// Host are matched in Go; the plugin is read only to decide whether the
+	// pinned mysql_native_password verifier comparison is meaningful.
+	userPluginQuery = "SELECT COALESCE(User, " + nullSentinelSQL + ") AS User, COALESCE(Host, " + nullSentinelSQL + ") AS Host, COALESCE(plugin, " + nullSentinelSQL + ") AS plugin FROM mysql.user"
+	// userInfoQuery is deliberately explicit rather than SELECT *: these are
+	// the stable account/privilege fields asserted by the pinned functional
+	// tests. Authentication material is never selected. User and Host are
+	// matched in Go, so no caller string reaches SQL or a WHERE clause.
+	userInfoQuery = "SELECT COALESCE(User, " + nullSentinelSQL + ") AS User, COALESCE(Host, " + nullSentinelSQL + ") AS Host, COALESCE(Select_priv, " + nullSentinelSQL + ") AS Select_priv, COALESCE(Insert_priv, " + nullSentinelSQL + ") AS Insert_priv, COALESCE(Update_priv, " + nullSentinelSQL + ") AS Update_priv, COALESCE(Delete_priv, " + nullSentinelSQL + ") AS Delete_priv, COALESCE(Create_priv, " + nullSentinelSQL + ") AS Create_priv, COALESCE(Drop_priv, " + nullSentinelSQL + ") AS Drop_priv, COALESCE(Reload_priv, " + nullSentinelSQL + ") AS Reload_priv, COALESCE(Shutdown_priv, " + nullSentinelSQL + ") AS Shutdown_priv, COALESCE(Process_priv, " + nullSentinelSQL + ") AS Process_priv, COALESCE(File_priv, " + nullSentinelSQL + ") AS File_priv, COALESCE(Grant_priv, " + nullSentinelSQL + ") AS Grant_priv, COALESCE(References_priv, " + nullSentinelSQL + ") AS References_priv, COALESCE(Index_priv, " + nullSentinelSQL + ") AS Index_priv, COALESCE(Alter_priv, " + nullSentinelSQL + ") AS Alter_priv, COALESCE(Show_db_priv, " + nullSentinelSQL + ") AS Show_db_priv, COALESCE(Super_priv, " + nullSentinelSQL + ") AS Super_priv, COALESCE(Create_tmp_table_priv, " + nullSentinelSQL + ") AS Create_tmp_table_priv, COALESCE(Lock_tables_priv, " + nullSentinelSQL + ") AS Lock_tables_priv, COALESCE(Execute_priv, " + nullSentinelSQL + ") AS Execute_priv, COALESCE(Repl_slave_priv, " + nullSentinelSQL + ") AS Repl_slave_priv, COALESCE(Repl_client_priv, " + nullSentinelSQL + ") AS Repl_client_priv, COALESCE(Create_view_priv, " + nullSentinelSQL + ") AS Create_view_priv, COALESCE(Show_view_priv, " + nullSentinelSQL + ") AS Show_view_priv, COALESCE(Create_routine_priv, " + nullSentinelSQL + ") AS Create_routine_priv, COALESCE(Alter_routine_priv, " + nullSentinelSQL + ") AS Alter_routine_priv, COALESCE(Create_user_priv, " + nullSentinelSQL + ") AS Create_user_priv, COALESCE(Event_priv, " + nullSentinelSQL + ") AS Event_priv, COALESCE(Trigger_priv, " + nullSentinelSQL + ") AS Trigger_priv, COALESCE(Create_tablespace_priv, " + nullSentinelSQL + ") AS Create_tablespace_priv FROM mysql.user"
+	// pluginStatusQuery is the fixed source plugin_status catalog. Plugin names
+	// are matched in Go so the unix-socket preflight never interpolates a
+	// caller token into SQL.
+	pluginStatusQuery = "SELECT COALESCE(PLUGIN_NAME, " + nullSentinelSQL + ") AS PLUGIN_NAME, COALESCE(PLUGIN_STATUS, " + nullSentinelSQL + ") AS PLUGIN_STATUS FROM information_schema.PLUGINS"
+	// passwordColumnQuery is the fixed __password_column schema probe. It
+	// intentionally asks only whether the legacy Password column exists; an
+	// empty successful result selects authentication_string in Go.
+	passwordColumnQuery = "SELECT 1 AS HasPassword FROM information_schema.COLUMNS WHERE table_schema = 'mysql' AND table_name = 'user' AND column_name = 'Password'"
 	// defaultUserHost is the pinned user_exists host default.
 	defaultUserHost = "localhost"
 	// selectVersionQuery is the reader of version: the exact pinned
@@ -504,6 +534,16 @@ const (
 	tableCatalogQuery = "SELECT COALESCE(TABLE_SCHEMA, " + nullSentinelSQL + ") AS TABLE_SCHEMA, COALESCE(TABLE_NAME, " + nullSentinelSQL + ") AS TABLE_NAME FROM information_schema.TABLES ORDER BY information_schema.TABLES.TABLE_NAME"
 )
 
+var userInfoColumns = []string{
+	"User", "Host", "Select_priv", "Insert_priv", "Update_priv", "Delete_priv",
+	"Create_priv", "Drop_priv", "Reload_priv", "Shutdown_priv", "Process_priv",
+	"File_priv", "Grant_priv", "References_priv", "Index_priv", "Alter_priv",
+	"Show_db_priv", "Super_priv", "Create_tmp_table_priv", "Lock_tables_priv",
+	"Execute_priv", "Repl_slave_priv", "Repl_client_priv", "Create_view_priv",
+	"Show_view_priv", "Create_routine_priv", "Alter_routine_priv", "Create_user_priv",
+	"Event_priv", "Trigger_priv", "Create_tablespace_priv",
+}
+
 var (
 	errMysqlRunnerUnavailable = errors.New("mysql: runner unavailable")
 	errMysqlClientUnavailable = errors.New("mysql: mysql client is unavailable")
@@ -524,7 +564,12 @@ var (
 	// an unknown failure answered as data would be partial fake success
 	// — the same strict catalog divergence the R9.2s owner_to flow
 	// made before its mutation.
-	errMysqlMaintenanceExit = errors.New("mysql: maintenance run completed nonzero")
+	errMysqlMaintenanceExit  = errors.New("mysql: maintenance run completed nonzero")
+	errMysqlUserInfoColumn   = errors.New("mysql.user_info: missing fixed column")
+	errMysqlUserPluginColumn = errors.New("mysql.user_create: missing plugin column")
+	errMysqlAccountArgument  = errors.New("mysql: invalid account argument")
+	errMysqlAuthPlugin       = errors.New("mysql: unsupported authentication plugin")
+	errMysqlPasswordColumn   = errors.New("mysql: unsupported password column")
 )
 
 // myConnection is the transport half of the pinned **connection_args
@@ -549,16 +594,34 @@ type myConnection struct {
 }
 
 // runMysql is the central mysql CLI execution half shared by the whole
-// R9.3a family: a shell-free, centrally executed mysql command with a
+// R9.3 transport: a shell-free, centrally executed mysql command with a
 // finite timeout, bounded output, a clean child environment, and the
-// connection password as the single Redact secret so it never appears in
-// the rendered command, captured output, or returned errors. Cancellation,
-// runas rejection, argv bounds, and client-unavailability all fail closed
-// before any Runner invocation; a non-zero mysql exit stays compatibility
-// data for the callers, exactly like the pinned module's logged error
-// paths.
-func runMysql(ctx context.Context, rt *runtime.Runtime, argv []string, conn *myConnection) (process.CommandResult, error) {
-	return runMysqlResult(ctx, rt, argv, conn, nil)
+// connection password as a Redact secret so it never appears in the
+// rendered command, captured output, or returned errors. Mutation callers
+// use runMysqlSecrets to add statement credentials to the same bounded
+// redaction inventory. Cancellation, runas rejection, argv bounds, and
+// client-unavailability all fail closed before any Runner invocation; a
+// non-zero mysql exit stays compatibility data for read-only callers.
+func runMysql(ctx context.Context, rt *runtime.Runtime, argv []string, conn *myConnection, extraSecrets ...string) (process.CommandResult, error) {
+	return runMysqlResultSecrets(ctx, rt, argv, conn, nil, false, extraSecrets...)
+}
+
+// runMysqlSecrets is the mutation-safe transport entry point. Extra secrets
+// are statement values that must be redacted even though they are not the
+// MYSQL_PWD connection credential.
+func runMysqlSecrets(ctx context.Context, rt *runtime.Runtime, argv []string, conn *myConnection, secrets ...string) (process.CommandResult, error) {
+	return runMysqlResultSecrets(ctx, rt, argv, conn, nil, false, secrets...)
+}
+
+// runMysqlPreserve is limited to internal fixed-result parsers. The Runner
+// keeps stdout raw only long enough for the caller to match it; command
+// displays, stderr, and errors retain the normal redaction inventory.
+func runMysqlPreserve(ctx context.Context, rt *runtime.Runtime, argv []string, conn *myConnection, extraSecrets ...string) (process.CommandResult, error) {
+	return runMysqlResultSecrets(ctx, rt, argv, conn, nil, true, extraSecrets...)
+}
+
+func runMysqlPreserveSecrets(ctx context.Context, rt *runtime.Runtime, argv []string, conn *myConnection, secrets ...string) (process.CommandResult, error) {
+	return runMysqlResultSecrets(ctx, rt, argv, conn, nil, true, secrets...)
 }
 
 // runMysqlResult optionally retains raw stdout for the two fixed maintenance
@@ -566,6 +629,10 @@ func runMysql(ctx context.Context, rt *runtime.Runtime, argv []string, conn *myC
 // can contain the redaction substring. The raw bytes never enter the safe result
 // or errors, and are handed to the parser only after all transport checks pass.
 func runMysqlResult(ctx context.Context, rt *runtime.Runtime, argv []string, conn *myConnection, catalogStdout *[]byte) (process.CommandResult, error) {
+	return runMysqlResultSecrets(ctx, rt, argv, conn, catalogStdout, false)
+}
+
+func runMysqlResultSecrets(ctx context.Context, rt *runtime.Runtime, argv []string, conn *myConnection, catalogStdout *[]byte, preserveStdout bool, extraSecrets ...string) (process.CommandResult, error) {
 	if catalogStdout != nil {
 		*catalogStdout = nil
 		if len(argv) == 0 || (argv[len(argv)-1] != "--execute="+showDatabasesQuery && argv[len(argv)-1] != "--execute="+tableCatalogQuery) {
@@ -596,10 +663,11 @@ func runMysqlResult(ctx context.Context, rt *runtime.Runtime, argv []string, con
 		return process.CommandResult{ExitCode: -1}, errMysqlClientUnavailable
 	}
 
-	var secrets []string
+	secrets := make([]string, 0, len(extraSecrets)+1)
 	if conn.Password != nil {
-		secrets = secretList(*conn.Password)
+		secrets = append(secrets, *conn.Password)
 	}
+	secrets = secretList(append(secrets, extraSecrets...)...)
 	command := process.Command{
 		Name:           argv[0],
 		Args:           append([]string(nil), argv[1:]...),
@@ -607,6 +675,7 @@ func runMysqlResult(ctx context.Context, rt *runtime.Runtime, argv []string, con
 		MaxStdoutBytes: outputLimit,
 		MaxStderrBytes: outputLimit,
 		Env:            mysqlEnvironment(conn),
+		PreserveStdout: preserveStdout,
 	}
 	if len(secrets) > 0 && catalogStdout == nil {
 		command.Redact = secrets
@@ -615,17 +684,35 @@ func runMysqlResult(ctx context.Context, rt *runtime.Runtime, argv []string, con
 	rawStdout := result.Stdout
 	outputExceeded := len(result.Stdout) > outputLimit || len(result.Stderr) > outputLimit
 	// Defend against custom Runners that do not sanitize their own results.
-	result.Stdout = process.RedactBytes(secrets, result.Stdout)
+	if !preserveStdout {
+		result.Stdout = process.RedactBytes(secrets, result.Stdout)
+	}
 	result.Stderr = process.RedactBytes(secrets, result.Stderr)
 	if result.Err != nil {
+		// PreserveStdout is an internal parser-only escape hatch. A failed
+		// preserved run must still return a safe result to direct callers.
+		if preserveStdout {
+			result.Stdout = process.RedactBytes(secrets, result.Stdout)
+		}
 		result.Err = redactedError(result.Err, secrets...)
 		return result, result.Err
 	}
 	if err := ctx.Err(); err != nil {
+		if preserveStdout {
+			result.Stdout = process.RedactBytes(secrets, result.Stdout)
+		}
 		return result, err
 	}
 	if result.StdoutTruncated || result.StderrTruncated || outputExceeded {
+		if preserveStdout {
+			result.Stdout = process.RedactBytes(secrets, result.Stdout)
+		}
 		return result, process.ErrOutputLimit
+	}
+	if preserveStdout && result.ExitCode != 0 {
+		// Non-zero results are compatibility data, but their stdout is never
+		// a parser input. Keep the returned result safe on this branch too.
+		result.Stdout = process.RedactBytes(secrets, result.Stdout)
 	}
 	if catalogStdout != nil && result.ExitCode == 0 {
 		*catalogStdout = rawStdout
@@ -694,8 +781,20 @@ func mysqlEnvironment(conn *myConnection) []string {
 // OperationalError paths log an error and answer the empty result ([]) or
 // False, never an exception — so only Runner failures, cancellation, and
 // output-limit violations are errors here.
-func mysqlQueryRows(ctx context.Context, rt *runtime.Runtime, conn *myConnection, query string) ([]string, [][]batchField, error) {
-	result, err := runMysql(ctx, rt, mysqlQueryArgv(conn, query), conn)
+func mysqlQueryRows(ctx context.Context, rt *runtime.Runtime, conn *myConnection, query string, secrets ...string) ([]string, [][]batchField, error) {
+	result, err := runMysql(ctx, rt, mysqlQueryArgv(conn, query), conn, secrets...)
+	if err != nil {
+		return nil, nil, err
+	}
+	if result.ExitCode > 0 {
+		return []string{}, [][]batchField{}, nil
+	}
+	header, rows := parseBatchRows(string(result.Stdout))
+	return header, rows, nil
+}
+
+func mysqlQueryRowsPreserve(ctx context.Context, rt *runtime.Runtime, conn *myConnection, query string, secrets ...string) ([]string, [][]batchField, error) {
+	result, err := runMysqlPreserve(ctx, rt, mysqlQueryArgv(conn, query), conn, secrets...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1196,6 +1295,15 @@ func (userListFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) 
 // string NULL.
 func userCatalog(ctx context.Context, rt *runtime.Runtime, conn *myConnection) ([]map[string]any, error) {
 	header, rows, err := mysqlQueryRows(ctx, rt, conn, userListQuery)
+	return renderUserCatalog(header, rows, err)
+}
+
+func userCatalogRaw(ctx context.Context, rt *runtime.Runtime, conn *myConnection, secrets ...string) ([]map[string]any, error) {
+	header, rows, err := mysqlQueryRowsPreserve(ctx, rt, conn, userListQuery, secrets...)
+	return renderUserCatalog(header, rows, err)
+}
+
+func renderUserCatalog(header []string, rows [][]batchField, err error) ([]map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
@@ -1216,6 +1324,177 @@ func userCatalog(ctx context.Context, rt *runtime.Runtime, conn *myConnection) (
 		out = append(out, entry)
 	}
 	return out, nil
+}
+
+// userExistsCatalog matches the pinned bare User/Host existence check over
+// the fixed user catalog. It intentionally accepts the requested pair only
+// as Go values: the SQL sent to mysql is byte-identical for every caller.
+func userExistsCatalog(ctx context.Context, rt *runtime.Runtime, conn *myConnection, user, host string, secrets ...string) (bool, error) {
+	rows, err := userCatalogRaw(ctx, rt, conn, secrets...)
+	if err != nil {
+		return false, err
+	}
+	for _, row := range rows {
+		userValue, hasUser := row["User"]
+		hostValue, hasHost := row["Host"]
+		if !hasUser || !hasHost {
+			return false, fmt.Errorf("mysql.user_exists: missing column %q or %q", "User", "Host")
+		}
+		if userValue == user && hostValue == host {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// ---------------------------------------------------------------------------
+// user_info — salt/modules/mysql.py:1608-1637 @ pinned revision.
+
+// UserInfoArgs are the canonical mysql.user_info arguments. The pinned
+// function has no return_password option; StateKit therefore keeps password
+// and authentication_string out of the fixed projection rather than adding a
+// new secret-returning API.
+type UserInfoArgs struct {
+	User     string  `statekit:"name=user,required"`
+	Host     *string `statekit:"name=host"`
+	ConnUser *string `statekit:"name=connection_user"`
+	ConnHost *string `statekit:"name=connection_host"`
+	ConnPort *string `statekit:"name=connection_port"`
+	ConnPass *string `statekit:"name=connection_pass"`
+	ConnDB   *string `statekit:"name=connection_db"`
+	Runas    *string `statekit:"name=runas"`
+}
+
+func (a *UserInfoArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return &myConnection{
+		User:     a.ConnUser,
+		Host:     a.ConnHost,
+		Port:     a.ConnPort,
+		Password: a.ConnPass,
+		DB:       a.ConnDB,
+		Runas:    a.Runas,
+	}
+}
+
+type userInfoFunc struct{}
+
+func (userInfoFunc) Name() string { return "mysql.user_info" }
+func (userInfoFunc) Args() any    { return UserInfoArgs{} }
+
+// userInfoCatalog preserves the pinned result distinction: a nonzero mysql
+// exit is the connection/query False shape, a successful missing account is
+// None/nil, and a matching row is one fixed map. Malformed output fails
+// closed instead of fabricating a partial account record.
+func userInfoCatalog(ctx context.Context, rt *runtime.Runtime, conn *myConnection, user, host string) (any, error) {
+	result, err := runMysqlPreserve(ctx, rt, mysqlQueryArgv(conn, userInfoQuery), conn)
+	if err != nil {
+		return nil, err
+	}
+	if result.ExitCode != 0 {
+		return false, nil
+	}
+	header, rows := parseBatchRows(string(result.Stdout))
+	indexes := make(map[string]int, len(header))
+	for i, column := range header {
+		indexes[column] = i
+	}
+	userIndex, hasUser := indexes["User"]
+	hostIndex, hasHost := indexes["Host"]
+	if !hasUser || !hasHost {
+		return nil, errMysqlUserInfoColumn
+	}
+	for _, column := range userInfoColumns {
+		if _, ok := indexes[column]; !ok {
+			return nil, errMysqlUserInfoColumn
+		}
+	}
+	for _, row := range rows {
+		if userIndex >= len(row) || hostIndex >= len(row) {
+			return nil, errMysqlUserInfoColumn
+		}
+		if row[userIndex].null || row[hostIndex].null || row[userIndex].value != user || row[hostIndex].value != host {
+			continue
+		}
+		out := make(map[string]any, len(userInfoColumns))
+		for _, column := range userInfoColumns {
+			i := indexes[column]
+			if i >= len(row) {
+				return nil, errMysqlUserInfoColumn
+			}
+			if mysqlSensitiveUserField(column) {
+				continue
+			}
+			if row[i].null {
+				out[column] = nil
+			} else {
+				out[column] = redactMysqlCatalogValue(conn, row[i].value)
+			}
+		}
+		return out, nil
+	}
+	return nil, nil
+}
+
+func redactMysqlCatalogValue(conn *myConnection, value string) string {
+	if conn == nil || conn.Password == nil || *conn.Password == "" {
+		return value
+	}
+	return process.RedactString([]string{*conn.Password}, value)
+}
+
+func mysqlSensitiveUserField(column string) bool {
+	switch strings.ToLower(column) {
+	case "password", "password_hash", "authentication_string", "auth_string", "passwd":
+		return true
+	default:
+		return false
+	}
+}
+
+func (userInfoFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[UserInfoArgs](args, "mysql.user_info")
+	if err != nil {
+		return nil, err
+	}
+	host := defaultUserHost
+	if a.Host != nil {
+		host = *a.Host
+	}
+	return userInfoCatalog(ctx, rt, a.connection(), a.User, host)
+}
+
+// mysqlPluginEnabled is the source plugin_status preflight used by both
+// unix-socket CREATE USER paths. A row with any non-empty status is the Salt
+// truthy result; a missing plugin, nonzero mysql exit, or SQL NULL is false.
+func mysqlPluginEnabled(ctx context.Context, rt *runtime.Runtime, conn *myConnection, plugin string, secrets ...string) (bool, error) {
+	header, rows, err := mysqlQueryRowsPreserve(ctx, rt, conn, pluginStatusQuery, secrets...)
+	if err != nil {
+		return false, err
+	}
+	nameIndex, statusIndex := -1, -1
+	for i, column := range header {
+		switch column {
+		case "PLUGIN_NAME":
+			nameIndex = i
+		case "PLUGIN_STATUS":
+			statusIndex = i
+		}
+	}
+	if nameIndex < 0 || statusIndex < 0 {
+		return false, errMysqlUserInfoColumn
+	}
+	for _, row := range rows {
+		if nameIndex >= len(row) || statusIndex >= len(row) || row[nameIndex].null || row[statusIndex].null {
+			continue
+		}
+		if row[nameIndex].value == plugin && row[statusIndex].value != "" {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -1270,30 +1549,11 @@ func (userExistsFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any
 	if err := a.verifyUnsupported(); err != nil {
 		return nil, err
 	}
-	rows, err := userCatalog(ctx, rt, a.connection())
-	if err != nil {
-		return nil, err
-	}
 	host := defaultUserHost
 	if a.Host != nil {
 		host = *a.Host
 	}
-	for _, row := range rows {
-		userValue, hasUser := row["User"]
-		hostValue, hasHost := row["Host"]
-		if !hasUser || !hasHost {
-			// Salt's DictRow always carries both columns of the fixed
-			// query; a row without them is the missing-column KeyError
-			// precedent, answered value-free.
-			return nil, fmt.Errorf("mysql.user_exists: missing column %q or %q", "User", "Host")
-		}
-		if userValue == a.User && hostValue == host {
-			// (User, Host) is the mysql.user primary key, so a hit is the
-			// pinned cur.rowcount == 1.
-			return true, nil
-		}
-	}
-	return false, nil
+	return userExistsCatalog(ctx, rt, a.connection(), a.User, host)
 }
 
 // verifyUnsupported rejects the pinned password-verification variants:
@@ -1315,6 +1575,581 @@ func (a *UserExistsArgs) verifyUnsupported() error {
 		return &runtime.UnsupportedError{Kind: "function", Name: "mysql.user_exists password verification"}
 	}
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// user_create/user_remove — salt/modules/mysql.py:1749-1889 and
+// 2187-2230 @ pinned revision.
+
+// UserCreateArgs mirrors the public user_create signature and the shared
+// connection surface. Password values stay pointer-typed so nil (no value)
+// remains distinct from an explicitly empty password, matching Salt's
+// `is not None` clause selection.
+type UserCreateArgs struct {
+	User              string  `statekit:"name=user,required"`
+	Host              *string `statekit:"name=host"`
+	Password          *string `statekit:"name=password"`
+	PasswordHash      *string `statekit:"name=password_hash"`
+	AllowPasswordless *bool   `statekit:"name=allow_passwordless"`
+	UnixSocket        *bool   `statekit:"name=unix_socket"`
+	PasswordColumn    *string `statekit:"name=password_column"`
+	AuthPlugin        *string `statekit:"name=auth_plugin"`
+	ConnUser          *string `statekit:"name=connection_user"`
+	ConnHost          *string `statekit:"name=connection_host"`
+	ConnPort          *string `statekit:"name=connection_port"`
+	ConnPass          *string `statekit:"name=connection_pass"`
+	ConnDB            *string `statekit:"name=connection_db"`
+	Runas             *string `statekit:"name=runas"`
+}
+
+func (a *UserCreateArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return &myConnection{
+		User:     a.ConnUser,
+		Host:     a.ConnHost,
+		Port:     a.ConnPort,
+		Password: a.ConnPass,
+		DB:       a.ConnDB,
+		Runas:    a.Runas,
+	}
+}
+
+type userCreateFunc struct{}
+
+func (userCreateFunc) Name() string { return "mysql.user_create" }
+func (userCreateFunc) Args() any    { return UserCreateArgs{} }
+
+// UserRemoveArgs mirrors user_remove(user, host="localhost", **connection)
+// and keeps the connection credential out of argv through MYSQL_PWD.
+type UserRemoveArgs struct {
+	User     string  `statekit:"name=user,required"`
+	Host     *string `statekit:"name=host"`
+	ConnUser *string `statekit:"name=connection_user"`
+	ConnHost *string `statekit:"name=connection_host"`
+	ConnPort *string `statekit:"name=connection_port"`
+	ConnPass *string `statekit:"name=connection_pass"`
+	ConnDB   *string `statekit:"name=connection_db"`
+	Runas    *string `statekit:"name=runas"`
+}
+
+func (a *UserRemoveArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return &myConnection{
+		User:     a.ConnUser,
+		Host:     a.ConnHost,
+		Port:     a.ConnPort,
+		Password: a.ConnPass,
+		DB:       a.ConnDB,
+		Runas:    a.Runas,
+	}
+}
+
+type userRemoveFunc struct{}
+
+func (userRemoveFunc) Name() string { return "mysql.user_remove" }
+func (userRemoveFunc) Args() any    { return UserRemoveArgs{} }
+
+// validAccountPart is intentionally smaller than MySQL's account-name
+// grammar: printable UTF-8 remains valid SQL string data, while backslashes,
+// NUL, and controls are rejected before any read-only preflight. Rejecting
+// backslashes avoids changing account bytes when the server's
+// NO_BACKSLASH_ESCAPES mode differs from the mode assumed by a literal.
+// The rejection omits the value so embedded secrets cannot enter an error
+// message.
+func validAccountPart(value string) bool {
+	if !utf8.ValidString(value) {
+		return false
+	}
+	for _, char := range value {
+		if char == '\\' || char == 0 || unicode.IsControl(char) {
+			return false
+		}
+	}
+	return true
+}
+
+func accountArgumentError() error { return errMysqlAccountArgument }
+
+// validateMysqlMutationInputs applies the same SQL-literal boundary to
+// account parts and credential values. Quotes, percent signs, and valid
+// Unicode remain ordinary literal data; backslashes and controls fail closed
+// instead of relying on a session sql_mode that the CLI does not pin.
+func validateMysqlMutationInputs(user, host string, password, passwordHash *string) error {
+	if !validAccountPart(user) || !validAccountPart(host) {
+		return accountArgumentError()
+	}
+	for _, credential := range []*string{password, passwordHash} {
+		if credential != nil && !validAccountPart(*credential) {
+			return accountArgumentError()
+		}
+	}
+	return nil
+}
+
+// mysqlStringLiteral quotes a value for a MySQL string literal without ever
+// treating it as SQL. Backslash escapes cover the default MySQL sql_mode;
+// doubled quotes retain the standard SQL form. It is used only for fixed
+// statements, never for caller-provided query text.
+func mysqlStringLiteral(value string) string {
+	var b strings.Builder
+	b.Grow(len(value) + 2)
+	b.WriteByte('\'')
+	for i := 0; i < len(value); i++ {
+		switch value[i] {
+		case '\\':
+			b.WriteString(`\\`)
+		case '\'':
+			b.WriteString(`''`)
+		case 0:
+			b.WriteString(`\0`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		case '\b':
+			b.WriteString(`\b`)
+		case 0x1a:
+			b.WriteString(`\Z`)
+		default:
+			b.WriteByte(value[i])
+		}
+	}
+	b.WriteByte('\'')
+	return b.String()
+}
+
+// mysqlLiteralSecretForms returns every credential spelling that can occur in
+// a fixed SQL statement: the raw value, the quote-doubled inner value, and the
+// complete single-quoted literal. The forms are kept even when one contains
+// another because Runner errors may quote only part of a statement.
+func mysqlLiteralSecretForms(value string) []string {
+	doubled := strings.ReplaceAll(value, "'", "''")
+	return []string{value, doubled, "'" + doubled + "'"}
+}
+
+// mysqlMutationSecretInventory is built before the first version/existence
+// preflight. It deliberately includes connection credentials, raw password
+// and hash inputs, SQL-escaped forms, and the native verifier forms so every
+// preflight, retry, mutation, and post-check uses one complete inventory.
+func mysqlMutationSecretInventory(conn *myConnection, password, passwordHash *string) []string {
+	values := make([]string, 0, 16)
+	if conn != nil && conn.Password != nil {
+		values = append(values, *conn.Password)
+		if *conn.Password != "" {
+			values = append(values, mysqlLiteralSecretForms(*conn.Password)...)
+			values = append(values, mysqlLiteralSecretForms(mysqlNativePasswordHash(*conn.Password))...)
+		}
+	}
+	if password != nil {
+		values = append(values, mysqlLiteralSecretForms(*password)...)
+		nativeHash := mysqlNativePasswordHash(*password)
+		values = append(values, mysqlLiteralSecretForms(nativeHash)...)
+	}
+	if passwordHash != nil {
+		values = append(values, mysqlLiteralSecretForms(*passwordHash)...)
+	}
+	return secretList(values...)
+}
+
+// mysqlUserRemoveSecretInventory extends the credential inventory with every
+// account spelling that can cross the user_remove transport boundary. The
+// fixed User/Host catalog is preserved for matching, so the raw account
+// values must remain available to the internal parser while their raw,
+// quote-doubled, quoted-literal, and rendered account forms stay redacted on
+// errors, stderr, and command displays. The shared inventory also carries the
+// connection credential's derived literal forms and is normalized
+// longest-first before the first Runner call.
+func mysqlUserRemoveSecretInventory(conn *myConnection, user, host string) []string {
+	values := mysqlMutationSecretInventory(conn, nil, nil)
+	values = append(values, mysqlLiteralSecretForms(user)...)
+	values = append(values, mysqlLiteralSecretForms(host)...)
+	values = append(values, mysqlAccount(user, host))
+	return secretList(values...)
+}
+
+func mysqlAccount(user, host string) string {
+	return mysqlStringLiteral(user) + "@" + mysqlStringLiteral(host)
+}
+
+func mysqlAuthPlugin(value *string) (string, error) {
+	plugin := "mysql_native_password"
+	if value != nil {
+		plugin = *value
+	}
+	if plugin == "" {
+		return "", errMysqlAuthPlugin
+	}
+	for i := 0; i < len(plugin); i++ {
+		c := plugin[i]
+		if !(c >= 'a' && c <= 'z') && !(c >= 'A' && c <= 'Z') && !(c >= '0' && c <= '9') && c != '_' {
+			return "", errMysqlAuthPlugin
+		}
+	}
+	return plugin, nil
+}
+
+func versionAtLeast(version string, wantMajor, wantMinor, wantPatch int) bool {
+	version = strings.TrimSpace(version)
+	if dash := strings.IndexByte(version, '-'); dash >= 0 {
+		version = version[:dash]
+	}
+	parts := strings.Split(version, ".")
+	if len(parts) < 2 {
+		return false
+	}
+	values := [3]int{}
+	for i := 0; i < len(values) && i < len(parts); i++ {
+		value, err := strconv.Atoi(parts[i])
+		if err != nil {
+			return false
+		}
+		values[i] = value
+	}
+	if values[0] != wantMajor {
+		return values[0] > wantMajor
+	}
+	if values[1] != wantMinor {
+		return values[1] > wantMinor
+	}
+	return values[2] >= wantPatch
+}
+
+// mysqlCreateStatement is the fixed clause machine from the pinned
+// _mysql_user_create/_mariadb_user_create helpers. It returns ok=false for
+// Salt's source-level no-op cases (password required, or localhost required
+// by unix_socket), never an arbitrary SQL fragment.
+func mysqlCreateStatement(user, host, serverVersion string, password, passwordHash *string, allowPasswordless, unixSocket bool, authPlugin string) (statement string, secrets []string, ok bool) {
+	if !validAccountPart(user) || !validAccountPart(host) {
+		return "", nil, false
+	}
+	for _, credential := range []*string{password, passwordHash} {
+		if credential != nil && !validAccountPart(*credential) {
+			return "", nil, false
+		}
+	}
+	if _, err := mysqlAuthPlugin(&authPlugin); err != nil {
+		return "", nil, false
+	}
+	statement = "CREATE USER " + mysqlAccount(user, host)
+	if unixSocket {
+		if host != defaultUserHost {
+			return "", nil, false
+		}
+		if strings.Contains(serverVersion, "MariaDB") {
+			return statement + " IDENTIFIED VIA unix_socket", nil, true
+		}
+		return statement + " IDENTIFIED WITH auth_socket", nil, true
+	}
+	if allowPasswordless {
+		// Salt treats allow_passwordless as an explicit bare-account mode;
+		// even supplied password material is ignored by the CREATE clause.
+		return statement, nil, true
+	}
+	if password != nil {
+		literal := mysqlStringLiteral(*password)
+		secrets = mysqlLiteralSecretForms(*password)
+		if strings.Contains(serverVersion, "MariaDB") || !versionAtLeast(serverVersion, 8, 0, 11) {
+			return statement + " IDENTIFIED BY " + literal, secrets, true
+		}
+		return statement + " IDENTIFIED WITH " + authPlugin + " BY " + literal, secrets, true
+	}
+	if passwordHash != nil {
+		literal := mysqlStringLiteral(*passwordHash)
+		secrets = mysqlLiteralSecretForms(*passwordHash)
+		if strings.Contains(serverVersion, "MariaDB") || !versionAtLeast(serverVersion, 8, 0, 11) {
+			return statement + " IDENTIFIED BY PASSWORD " + literal, secrets, true
+		}
+		return statement + " IDENTIFIED WITH " + authPlugin + " AS " + literal, secrets, true
+	}
+	return "", nil, false
+}
+
+func mysqlPasswordColumn(requested *string) (string, error) {
+	if requested != nil && *requested != "" {
+		switch *requested {
+		case "Password", "authentication_string":
+			return *requested, nil
+		default:
+			return "", errMysqlPasswordColumn
+		}
+	}
+	return "", nil
+}
+
+// mysqlResolvePasswordColumn mirrors Salt's __password_column probe without
+// interpolating a caller column name. A failed connection returns the pinned
+// legacy fallback Password; a successful empty schema result selects the
+// modern authentication_string column.
+func mysqlResolvePasswordColumn(ctx context.Context, rt *runtime.Runtime, conn *myConnection, requested *string, secrets ...string) (string, error) {
+	if column, err := mysqlPasswordColumn(requested); err != nil || column != "" {
+		return column, err
+	}
+	result, err := runMysqlPreserveSecrets(ctx, rt, mysqlQueryArgv(conn, passwordColumnQuery), conn, secrets...)
+	if err != nil {
+		return "", err
+	}
+	if result.ExitCode != 0 {
+		return "Password", nil
+	}
+	header, rows := parseBatchRows(string(result.Stdout))
+	if len(header) > 0 && len(rows) > 0 {
+		return "Password", nil
+	}
+	return "authentication_string", nil
+}
+
+// mysqlNativePasswordHash is the legacy mysql_native_password verifier that
+// the pinned user_exists path computes before comparing a modern account row.
+// SHA-1 here is a compatibility algorithm selected by the MySQL plugin, not a
+// new password-hashing policy.
+func mysqlNativePasswordHash(password string) string {
+	first := sha1.Sum([]byte(password))
+	second := sha1.Sum(first[:])
+	return "*" + strings.ToUpper(hex.EncodeToString(second[:]))
+}
+
+func mysqlVerificationSucceeded(rows [][]batchField) bool {
+	for _, row := range rows {
+		if len(row) > 0 && !row[0].null && row[0].value == "1" {
+			return true
+		}
+	}
+	return false
+}
+
+// mysqlAccountPluginCatalog performs the post-create existence/plugin check
+// over a fixed mysql.user projection. A missing or NULL plugin is treated as
+// an unsupported/default plugin: existence is still observable, but no native
+// password comparison is attempted.
+func mysqlAccountPluginCatalog(ctx context.Context, rt *runtime.Runtime, conn *myConnection, user, host string, secrets ...string) (bool, string, error) {
+	result, err := runMysqlPreserve(ctx, rt, mysqlQueryArgv(conn, userPluginQuery), conn, secrets...)
+	if err != nil {
+		return false, "", err
+	}
+	if result.ExitCode != 0 {
+		return false, "", nil
+	}
+	header, rows := parseBatchRows(string(result.Stdout))
+	userIndex, hostIndex, pluginIndex := -1, -1, -1
+	for i, column := range header {
+		switch strings.ToLower(column) {
+		case "user":
+			userIndex = i
+		case "host":
+			hostIndex = i
+		case "plugin":
+			pluginIndex = i
+		}
+	}
+	if userIndex < 0 || hostIndex < 0 || pluginIndex < 0 {
+		return false, "", errMysqlUserPluginColumn
+	}
+	for _, row := range rows {
+		if userIndex >= len(row) || hostIndex >= len(row) || pluginIndex >= len(row) {
+			return false, "", errMysqlUserPluginColumn
+		}
+		if row[userIndex].null || row[hostIndex].null || row[userIndex].value != user || row[hostIndex].value != host {
+			continue
+		}
+		if row[pluginIndex].null {
+			return true, "", nil
+		}
+		return true, row[pluginIndex].value, nil
+	}
+	return false, "", nil
+}
+
+// userExistsAfterCreate keeps the pinned post-create credential checks while
+// remaining CLI-safe. The SQL shape is fixed; only the account literals and
+// the source-approved password comparison value are added, and all of those
+// values are redacted from command/error surfaces.
+func userExistsAfterCreate(ctx context.Context, rt *runtime.Runtime, conn *myConnection, user, host, serverVersion, passwordColumn string, password, passwordHash *string, authPlugin string, secrets ...string) (bool, error) {
+	exists, actualPlugin, err := mysqlAccountPluginCatalog(ctx, rt, conn, user, host, secrets...)
+	if err != nil {
+		return false, err
+	}
+	if !exists {
+		return false, nil
+	}
+	// The native verifier is only meaningful for the actual plugin returned by
+	// mysql.user. auth_socket, caching_sha2_password, and unknown/default
+	// plugins are source-compatible existence/plugin successes; comparing a
+	// mysql_native_password hash for them would fabricate a verification.
+	if (!pointerTruthy(password) && !pointerTruthy(passwordHash)) || !strings.EqualFold(actualPlugin, "mysql_native_password") {
+		return true, nil
+	}
+	statement := "SELECT 1 AS Verified FROM mysql.user WHERE User = " + mysqlStringLiteral(user) + " AND Host = " + mysqlStringLiteral(host)
+	verificationSecrets := append([]string(nil), secrets...)
+	if pointerTruthy(password) {
+		literalPassword := mysqlStringLiteral(*password)
+		verificationSecrets = append(verificationSecrets, mysqlLiteralSecretForms(*password)...)
+		if strings.Contains(serverVersion, "MariaDB") || !versionAtLeast(serverVersion, 8, 0, 11) {
+			statement += " AND " + passwordColumn + " = PASSWORD(" + literalPassword + ")"
+		} else {
+			hash := mysqlNativePasswordHash(*password)
+			statement += " AND " + passwordColumn + " = " + mysqlStringLiteral(hash)
+			verificationSecrets = append(verificationSecrets, mysqlLiteralSecretForms(hash)...)
+		}
+	} else {
+		literalHash := mysqlStringLiteral(*passwordHash)
+		statement += " AND " + passwordColumn + " = " + literalHash
+		verificationSecrets = append(verificationSecrets, mysqlLiteralSecretForms(*passwordHash)...)
+	}
+	result, err := runMysqlPreserveSecrets(ctx, rt, mysqlQueryArgv(conn, statement), conn, verificationSecrets...)
+	if err != nil {
+		return false, err
+	}
+	if result.ExitCode != 0 {
+		return false, nil
+	}
+	_, rows := parseBatchRows(string(result.Stdout))
+	return mysqlVerificationSucceeded(rows), nil
+}
+
+func (userCreateFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[UserCreateArgs](args, "mysql.user_create")
+	if err != nil {
+		return nil, err
+	}
+	host := defaultUserHost
+	if a.Host != nil {
+		host = *a.Host
+	}
+	if err := validateMysqlMutationInputs(a.User, host, a.Password, a.PasswordHash); err != nil {
+		return nil, err
+	}
+	if err := rejectRunas(a.Runas); err != nil {
+		return nil, err
+	}
+	plugin := "mysql_native_password"
+	if !pointerBool(a.UnixSocket) && !pointerBool(a.AllowPasswordless) && (a.Password != nil || a.PasswordHash != nil) {
+		plugin, err = mysqlAuthPlugin(a.AuthPlugin)
+		if err != nil {
+			return nil, err
+		}
+	}
+	conn := a.connection()
+	// Build this before the first version probe. The same complete inventory is
+	// passed through every preflight, the connection-password retry, CREATE,
+	// and the post-check; no credential-bearing error can escape an early call.
+	secretInventory := mysqlMutationSecretInventory(conn, a.Password, a.PasswordHash)
+	effectiveConn := conn
+	serverVersion, err := mysqlVersionPreserve(ctx, rt, effectiveConn, secretInventory...)
+	if err != nil {
+		return nil, err
+	}
+	if serverVersion == "" && pointerTruthy(a.Password) {
+		retry := *conn
+		retry.Password = a.Password
+		effectiveConn = &retry
+		serverVersion, err = mysqlVersionPreserve(ctx, rt, effectiveConn, secretInventory...)
+		if err != nil {
+			return nil, err
+		}
+		if serverVersion == "" {
+			return false, nil
+		}
+	}
+	exists, err := userExistsCatalog(ctx, rt, effectiveConn, a.User, host, secretInventory...)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		return false, nil
+	}
+	passwordColumn, err := mysqlResolvePasswordColumn(ctx, rt, effectiveConn, a.PasswordColumn, secretInventory...)
+	if err != nil {
+		return nil, err
+	}
+	if pointerBool(a.UnixSocket) {
+		pluginName := "auth_socket"
+		if strings.Contains(serverVersion, "MariaDB") {
+			pluginName = "unix_socket"
+		}
+		enabled, err := mysqlPluginEnabled(ctx, rt, effectiveConn, pluginName, secretInventory...)
+		if err != nil {
+			return nil, err
+		}
+		if !enabled {
+			return false, nil
+		}
+	}
+	statement, statementSecrets, ok := mysqlCreateStatement(
+		a.User, host, serverVersion, a.Password, a.PasswordHash,
+		pointerBool(a.AllowPasswordless), pointerBool(a.UnixSocket), plugin,
+	)
+	if !ok {
+		return false, nil
+	}
+	mutationSecrets := append(append([]string(nil), secretInventory...), statementSecrets...)
+	result, err := runMysqlSecrets(ctx, rt, mysqlQueryArgv(effectiveConn, statement), effectiveConn, mutationSecrets...)
+	if err != nil {
+		return nil, err
+	}
+	if result.ExitCode != 0 {
+		return false, nil
+	}
+	postPassword, postPasswordHash := a.Password, a.PasswordHash
+	if pointerBool(a.AllowPasswordless) || pointerBool(a.UnixSocket) {
+		// The source clause is bare/plugin-only in these modes, even when
+		// credential arguments were supplied and ignored by CREATE.
+		postPassword, postPasswordHash = nil, nil
+	}
+	exists, err = userExistsAfterCreate(ctx, rt, effectiveConn, a.User, host, serverVersion, passwordColumn, postPassword, postPasswordHash, plugin, secretInventory...)
+	if err != nil {
+		return nil, err
+	}
+	return exists, nil
+}
+
+func (userRemoveFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[UserRemoveArgs](args, "mysql.user_remove")
+	if err != nil {
+		return nil, err
+	}
+	host := defaultUserHost
+	if a.Host != nil {
+		host = *a.Host
+	}
+	if !validAccountPart(a.User) || !validAccountPart(host) {
+		return nil, accountArgumentError()
+	}
+	if err := rejectRunas(a.Runas); err != nil {
+		return nil, err
+	}
+	conn := a.connection()
+	// Build the complete account/credential inventory before the first
+	// preflight. User or Host may equal the connection password, and an
+	// apostrophe in either value is doubled in the DROP account literal. The
+	// same inventory must reach the preserved catalog reads, DROP, and
+	// post-check so no raw or escaped form can escape on an early failure.
+	secretInventory := mysqlUserRemoveSecretInventory(conn, a.User, host)
+	exists, err := userExistsCatalog(ctx, rt, conn, a.User, host, secretInventory...)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return false, nil
+	}
+	statement := "DROP USER IF EXISTS " + mysqlAccount(a.User, host)
+	result, err := runMysqlSecrets(ctx, rt, mysqlQueryArgv(conn, statement), conn, secretInventory...)
+	if err != nil {
+		return nil, err
+	}
+	if result.ExitCode != 0 {
+		return false, nil
+	}
+	exists, err = userExistsCatalog(ctx, rt, conn, a.User, host, secretInventory...)
+	if err != nil {
+		return nil, err
+	}
+	return !exists, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -1374,6 +2209,17 @@ func mysqlVersion(ctx context.Context, rt *runtime.Runtime, conn *myConnection) 
 	}
 	if len(rows) == 0 || len(rows[0]) == 0 {
 		// The pinned fetchone() IndexError: no row, no first field.
+		return "", nil
+	}
+	return rows[0][0].value, nil
+}
+
+func mysqlVersionPreserve(ctx context.Context, rt *runtime.Runtime, conn *myConnection, secrets ...string) (string, error) {
+	_, rows, err := mysqlQueryRowsPreserve(ctx, rt, conn, selectVersionQuery, secrets...)
+	if err != nil {
+		return "", err
+	}
+	if len(rows) == 0 || len(rows[0]) == 0 {
 		return "", nil
 	}
 	return rows[0][0].value, nil
@@ -1934,14 +2780,11 @@ func redactedError(err error, secrets ...string) error {
 	return errors.New(message)
 }
 
-// Register installs the mysql catalog slice: the R9.2a pure functions
-// quote_identifier and tokenize_grant, the R9.3a/R9.3d read-only catalog
-// family db_list, db_exists, user_list, user_exists, db_get, and db_tables,
-// the R9.3b read-only server facts family version, status, showvariables, and
-// showglobal, and the R9.3c maintenance family db_check, db_repair, and
-// db_optimize over the central mysql CLI transport. The remainder of the
-// mysql family needs the client protocol or mutation boundary and stays
-// pending.
+// Register installs the mysql slice: the R9.2a pure functions, the
+// R9.3a/R9.3d/R9.3e fixed-query catalog family, the R9.3b server facts, the
+// R9.3c maintenance family, and the R9.3e user account mutations over the
+// central mysql CLI transport. The remainder of the mysql family stays
+// pending behind its own source/transport boundary.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		quoteIdentifierFunc{},
@@ -1952,6 +2795,9 @@ func Register(reg *runtime.ExecRegistry) error {
 		dbTablesFunc{},
 		userListFunc{},
 		userExistsFunc{},
+		userInfoFunc{},
+		userCreateFunc{},
+		userRemoveFunc{},
 		versionFunc{},
 		statusFunc{},
 		showVariablesFunc{},

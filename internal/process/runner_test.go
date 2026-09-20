@@ -109,6 +109,30 @@ func TestRedaction(t *testing.T) {
 	}
 }
 
+func TestPreserveStdoutKeepsInternalFixedMarkerRaw(t *testing.T) {
+	res := NewRunner().Run(context.Background(), Command{
+		Name:           "printf",
+		Args:           []string{"1"},
+		Redact:         []string{"1"},
+		PreserveStdout: true,
+	})
+	if !res.OK() || string(res.Stdout) != "1" {
+		t.Fatalf("preserved stdout=%q err=%v", res.Stdout, res.Err)
+	}
+	if strings.Contains((Command{Name: "printf", Args: []string{"1"}, Redact: []string{"1"}}).RedactedString(), "1") {
+		t.Fatal("command display leaked preserved marker")
+	}
+	res = NewRunner().Run(context.Background(), Command{
+		Name:           "sh",
+		Args:           []string{"-c", "printf 1 >&2"},
+		Redact:         []string{"1"},
+		PreserveStdout: true,
+	})
+	if strings.Contains(string(res.Stderr), "1") {
+		t.Fatalf("stderr leaked preserved marker: %q", res.Stderr)
+	}
+}
+
 func TestShellRequiresExplicitOptIn(t *testing.T) {
 	res := NewRunner().Run(context.Background(), Command{
 		Name: "echo hi && echo injected",

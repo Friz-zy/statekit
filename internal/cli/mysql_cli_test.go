@@ -999,3 +999,269 @@ func TestMySQLCLIDBCheckErrors(t *testing.T) {
 		t.Fatalf("maintenance redaction command = %#v", leaking.calls[0])
 	}
 }
+
+func mysqlCLIUserInfoStdout(user, host string) []byte {
+	fields := strings.Split("User\tHost\tSelect_priv\tInsert_priv\tUpdate_priv\tDelete_priv\tCreate_priv\tDrop_priv\tReload_priv\tShutdown_priv\tProcess_priv\tFile_priv\tGrant_priv\tReferences_priv\tIndex_priv\tAlter_priv\tShow_db_priv\tSuper_priv\tCreate_tmp_table_priv\tLock_tables_priv\tExecute_priv\tRepl_slave_priv\tRepl_client_priv\tCreate_view_priv\tShow_view_priv\tCreate_routine_priv\tAlter_routine_priv\tCreate_user_priv\tEvent_priv\tTrigger_priv\tCreate_tablespace_priv", "\t")
+	values := make([]string, len(fields))
+	values[0], values[1] = user, host
+	for i := 2; i < len(values); i++ {
+		values[i] = "Y"
+	}
+	return []byte(strings.Join(fields, "\t") + "\n" + strings.Join(values, "\t") + "\n")
+}
+
+// TestMySQLCLIUserInfo drives the fixed non-secret projection through the
+// actual CLI parser and Runner, including the source null/false shapes and
+// password redaction.
+func TestMySQLCLIUserInfo(t *testing.T) {
+	connPass := "cli_info_conn_pass"
+	runner := &cliRecordingRunner{results: []process.CommandResult{{Stdout: mysqlCLIUserInfoStdout("cli_user", "localhost")}}}
+	app := mysqlCLIRunnerApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "mysql.user_info",
+		"--user", "cli_user", "--host", "localhost",
+		"--connection-user", "admin", "--connection-host", "mysql-host",
+		"--connection-port", "3307", "--connection-db", "mysql", "--connection-pass", connPass,
+		"-o", "json")
+	var result map[string]any
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &result) != nil || result["User"] != "cli_user" || result["Host"] != "localhost" {
+		t.Fatalf("user_info code=%d out=%q err=%q", code, out, errS)
+	}
+	if _, ok := result["Password"]; ok || strings.Contains(out+errS, connPass) {
+		t.Fatalf("user_info leaked secret: out=%q err=%q", out, errS)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("user_info calls=%d", len(runner.calls))
+	}
+	command := runner.calls[0]
+	argv := append([]string{command.Name}, command.Args...)
+	if len(argv) != 7 || argv[1] != "--batch" || argv[2] != "--user=admin" || argv[3] != "--host=mysql-host" || argv[4] != "--port=3307" || argv[5] != "--database=mysql" || !strings.HasPrefix(argv[6], "--execute=SELECT COALESCE(User, UNHEX('00')) AS User") {
+		t.Fatalf("user_info argv=%q", argv)
+	}
+	if strings.Contains(strings.ToLower(argv[6]), "password") || strings.Contains(argv[6], "SELECT *") {
+		t.Fatalf("user_info SQL is not fixed/non-secret: %q", argv[6])
+	}
+	if !reflect.DeepEqual(command.Env, []string{"MYSQL_PWD=" + connPass}) || !reflect.DeepEqual(command.Redact, []string{connPass}) || command.Shell || command.Timeout <= 0 || command.MaxStdoutBytes <= 0 || command.MaxStderrBytes <= 0 {
+		t.Fatalf("user_info transport=%#v", command)
+	}
+
+	runner = &cliRecordingRunner{results: []process.CommandResult{{Stdout: mysqlCLIUserInfoStdout("other", "localhost")}}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.user_info", "--user", "missing", "-o", "json")
+	if code != ExitOK || strings.TrimSpace(out) != "null" || errS != "" {
+		t.Fatalf("missing user_info code=%d out=%q err=%q", code, out, errS)
+	}
+	runner = &cliRecordingRunner{results: []process.CommandResult{{ExitCode: 1}}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.user_info", "--user", "missing", "-o", "json")
+	if code != ExitOK || strings.TrimSpace(out) != "false" || errS != "" {
+		t.Fatalf("failed user_info code=%d out=%q err=%q", code, out, errS)
+	}
+}
+
+// TestMySQLCLIUserCreateRemove pins actual CLI argument decoding, SQL argv,
+// MYSQL_PWD connection transport, bool result rendering, and secret-bearing
+// Runner/error redaction for both account mutations.
+func TestMySQLCLIUserCreateRemove(t *testing.T) {
+	createPass := "cli_create_pass"
+	connPass := "cli_conn_pass"
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{Stdout: []byte("VERSION()\n8.0.34\n")},
+		{Stdout: []byte("User\tHost\nother\tlocalhost\n")},
+		{Stdout: []byte("HasPassword\n")},
+		{ExitCode: 0, Stderr: []byte("created cli_create_pass\n")},
+		{Stdout: []byte("User\tHost\tplugin\ncli_user\tlocalhost\tmysql_native_password\n")},
+		{Stdout: []byte("Verified\n1\n")},
+	}}
+	app := mysqlCLIRunnerApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "mysql.user_create",
+		"--user", "cli_user", "--password", createPass, "--auth-plugin", "mysql_native_password",
+		"--connection-user", "admin", "--connection-host", "mysql-host", "--connection-port", "3307",
+		"--connection-db", "mysql", "--connection-pass", connPass, "-o", "json")
+	if code != ExitOK || strings.TrimSpace(out) != "true" || errS != "" {
+		t.Fatalf("user_create code=%d out=%q err=%q", code, out, errS)
+	}
+	if len(runner.calls) != 6 {
+		t.Fatalf("user_create calls=%d", len(runner.calls))
+	}
+	createCommand := runner.calls[3]
+	createArgv := append([]string{createCommand.Name}, createCommand.Args...)
+	if createArgv[len(createArgv)-1] != "--execute=CREATE USER 'cli_user'@'localhost' IDENTIFIED WITH mysql_native_password BY 'cli_create_pass'" {
+		t.Fatalf("create SQL=%q", createArgv[len(createArgv)-1])
+	}
+	if !reflect.DeepEqual(createCommand.Env, []string{"MYSQL_PWD=" + connPass}) || createCommand.Shell || len(createCommand.Redact) < 3 || strings.Contains(createCommand.RedactedString(), createPass) || strings.Contains(createCommand.RedactedString(), connPass) {
+		t.Fatalf("create redaction/transport=%#v", createCommand)
+	}
+	if strings.Contains(out+errS, createPass) || strings.Contains(out+errS, connPass) {
+		t.Fatalf("create output leaked secret: out=%q err=%q", out, errS)
+	}
+
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{Stdout: []byte("User\tHost\ncli_user\tlocalhost\n")},
+		{ExitCode: 0},
+		{Stdout: []byte("User\tHost\nother\tlocalhost\n")},
+	}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.user_remove", "--user", "cli_user", "--connection-pass", connPass, "-o", "json")
+	if code != ExitOK || strings.TrimSpace(out) != "true" || errS != "" || len(runner.calls) != 3 {
+		t.Fatalf("user_remove code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+	removeArgv := append([]string{runner.calls[1].Name}, runner.calls[1].Args...)
+	if removeArgv[len(removeArgv)-1] != "--execute=DROP USER IF EXISTS 'cli_user'@'localhost'" {
+		t.Fatalf("remove SQL=%q", removeArgv[len(removeArgv)-1])
+	}
+	for i, command := range runner.calls {
+		if !reflect.DeepEqual(command.Env, []string{"MYSQL_PWD=" + connPass}) || command.Shell || command.Timeout <= 0 || command.MaxStdoutBytes <= 0 || command.MaxStderrBytes <= 0 {
+			t.Fatalf("remove call %d transport=%#v", i, command)
+		}
+		for _, secret := range []string{connPass, "cli_user", "localhost", "'cli_user'@'localhost'"} {
+			found := false
+			for _, configured := range command.Redact {
+				if configured == secret {
+					found = true
+					break
+				}
+			}
+			if !found || strings.Contains(command.RedactedString(), secret) {
+				t.Fatalf("remove call %d redaction missing/leaking %q: %#v", i, secret, command)
+			}
+		}
+	}
+
+	// A hostile account is quoted as a literal and cannot add a second SQL
+	// statement; the value is never copied into an error on invalid input.
+	hostile := "u' OR '1'='1"
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{Stdout: []byte("User\tHost\n" + hostile + "\tlocalhost\n")},
+		{ExitCode: 0},
+		{Stdout: []byte("User\tHost\nother\tlocalhost\n")},
+	}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.user_remove", "--user", hostile, "-o", "json")
+	if code != ExitOK || strings.TrimSpace(out) != "true" || errS != "" || !strings.Contains(runner.calls[1].Args[len(runner.calls[1].Args)-1], "DROP USER IF EXISTS 'u'' OR ''1''=''1'@'localhost'") {
+		t.Fatalf("hostile remove code=%d out=%q err=%q argv=%q", code, out, errS, runner.calls[1].Args)
+	}
+}
+
+func TestMySQLCLIUserRemoveCompleteRedactionInventory(t *testing.T) {
+	marker := "cli'remove"
+	doubled := strings.ReplaceAll(marker, "'", "''")
+	literal := "'" + doubled + "'"
+	forms := []string{literal + "@" + literal, literal, doubled, marker}
+	leak := "runner failure " + strings.Join(forms, " ") + " DROP USER IF EXISTS " + forms[0]
+
+	for failAt := 0; failAt < 3; failAt++ {
+		results := make([]process.CommandResult, 0, failAt+1)
+		for call := 0; call < failAt; call++ {
+			if call == 1 {
+				results = append(results, process.CommandResult{ExitCode: 0})
+				continue
+			}
+			results = append(results, process.CommandResult{Stdout: []byte("User\tHost\n" + marker + "\t" + marker + "\n")})
+		}
+		results = append(results, process.CommandResult{
+			Err:    errors.New(leak),
+			Stdout: []byte("stdout " + leak),
+			Stderr: []byte("stderr " + leak),
+		})
+		runner := &cliRecordingRunner{results: results}
+		app := mysqlCLIRunnerApp(t, runner)
+		code, out, errS := captureCode(t, app, "exec", "mysql.user_remove",
+			"--user", marker, "--host", marker, "--connection-pass", marker, "-o", "json")
+		if code != ExitFailed || len(runner.calls) != failAt+1 || !strings.Contains(errS, process.RedactedPlaceholder) {
+			t.Fatalf("failAt=%d code=%d out=%q err=%q calls=%d", failAt, code, out, errS, len(runner.calls))
+		}
+		for _, form := range forms {
+			if strings.Contains(out+errS, form) {
+				t.Fatalf("failAt=%d CLI output leaked %q: out=%q err=%q", failAt, form, out, errS)
+			}
+		}
+		for index, command := range runner.calls {
+			if command.Shell || !reflect.DeepEqual(command.Env, []string{"MYSQL_PWD=" + marker}) {
+				t.Fatalf("failAt=%d call=%d transport=%#v", failAt, index, command)
+			}
+			for _, form := range forms {
+				if strings.Contains(command.RedactedString(), form) {
+					t.Fatalf("failAt=%d call=%d rendered command leaked %q: %q", failAt, index, form, command.RedactedString())
+				}
+				found := false
+				for _, secret := range command.Redact {
+					if secret == form {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Fatalf("failAt=%d call=%d inventory missing %q: %#v", failAt, index, form, command.Redact)
+				}
+			}
+			for secretIndex := 1; secretIndex < len(command.Redact); secretIndex++ {
+				if len(command.Redact[secretIndex-1]) < len(command.Redact[secretIndex]) {
+					t.Fatalf("failAt=%d call=%d inventory is not longest-first: %#v", failAt, index, command.Redact)
+				}
+			}
+			if failAt == 0 && strings.Contains(strings.Join(command.Args, " "), "DROP USER") {
+				t.Fatalf("failAt=%d reached DROP before the failing preflight", failAt)
+			}
+		}
+	}
+}
+
+// TestMySQLCLIUserMutationErrors pins value-free validation, cancellation at
+// the transport boundary, nonzero bool results, and redacted Runner errors.
+func TestMySQLCLIUserMutationErrors(t *testing.T) {
+	runner := &cliRecordingRunner{}
+	app := mysqlCLIRunnerApp(t, runner)
+	marker := "synthetic-cli-mysql-account-secret"
+	code, out, errS := captureCode(t, app, "exec", "mysql.user_remove", "--user", "bad\n"+marker, "-o", "json")
+	if code != ExitFailed || out != "" || !strings.Contains(errS, "mysql: invalid account argument") || strings.Contains(errS, marker) || len(runner.calls) != 0 {
+		t.Fatalf("invalid account code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+
+	runner = &cliRecordingRunner{results: []process.CommandResult{{Stdout: []byte("VERSION()\n8.0.34\n")}, {Stdout: []byte("User\tHost\nother\tlocalhost\n")}, {Err: errors.New("runner leaked synthetic-cli-mysql-pass")}}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.user_create", "--user", "u", "--password", "synthetic-cli-mysql-pass", "--connection-pass", "conn-pass", "-o", "json")
+	if code != ExitFailed || out != "" || strings.Contains(out+errS, "synthetic-cli-mysql-pass") || !strings.Contains(errS, "runner leaked") || len(runner.calls) != 3 {
+		t.Fatalf("create Runner error code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+	if strings.Contains(runner.calls[2].RedactedString(), "synthetic-cli-mysql-pass") || len(runner.calls[2].Redact) < 3 {
+		t.Fatalf("create Runner command leaked secret: %#v", runner.calls[2])
+	}
+
+	connectionMarker := "R9_CLI_CONN_FIRST_PREFLIGHT"
+	passwordMarker := "R9_CLI_PASSWORD_FIRST_PREFLIGHT"
+	hashMarker := "*R9_CLI_HASH_FIRST_PREFLIGHT"
+	runner = &cliRecordingRunner{results: []process.CommandResult{{
+		Err:    errors.New("first preflight " + connectionMarker + " " + passwordMarker + " " + hashMarker),
+		Stdout: []byte("stdout " + connectionMarker + " " + passwordMarker + " " + hashMarker),
+		Stderr: []byte("stderr " + connectionMarker + " " + passwordMarker + " " + hashMarker),
+	}}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.user_create",
+		"--user", "u", "--password", passwordMarker, "--password-hash", hashMarker,
+		"--connection-pass", connectionMarker, "-o", "json")
+	if code != ExitFailed || len(runner.calls) != 1 {
+		t.Fatalf("first preflight CLI code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+	for _, marker := range []string{connectionMarker, passwordMarker, hashMarker} {
+		if strings.Contains(out+errS, marker) || strings.Contains(runner.calls[0].RedactedString(), marker) {
+			t.Fatalf("first preflight CLI leaked %q: out=%q err=%q command=%q", marker, out, errS, runner.calls[0].RedactedString())
+		}
+		found := false
+		for _, secret := range runner.calls[0].Redact {
+			if secret == marker {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("first preflight CLI inventory missing %q: %#v", marker, runner.calls[0].Redact)
+		}
+	}
+
+	runner = &cliRecordingRunner{results: []process.CommandResult{{Stdout: []byte("User\tHost\nu\tlocalhost\n")}, {ExitCode: 1}}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.user_remove", "--user", "u", "-o", "json")
+	if code != ExitOK || strings.TrimSpace(out) != "false" || errS != "" {
+		t.Fatalf("nonzero remove code=%d out=%q err=%q", code, out, errS)
+	}
+}
