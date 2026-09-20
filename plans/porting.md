@@ -2015,6 +2015,34 @@ force: no database driver or live MySQL server is used, and live
 database/broker integration stays excluded behind E5. The prior differential
 report hashes for R3-R8 remain unchanged, and `go.mod` is unchanged.
 
+##### 2026-09-20 current status (R9.3f MySQL grant surfaces)
+
+Actual HEAD is `d2a74dc` (R9.3f MySQL `grant_add`/`grant_exists`/
+`grant_revoke`; landed 2026-09-20). R9.3f implementation and independent-gate
+ledger:
+
+| Commit | Scope | Implementation executor role(s) | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `d2a74dc` | R9.3f MySQL `grant_add`/`grant_exists`/`grant_revoke` registered (3 public; fixed GRANT/REVOKE, VERSION, SHOW PRIVILEGES, and SHOW GRANTS CLI contracts with SQL-aware account parsing and complete redaction inventory) | `backend-engineer-senior` | `backend-engineer-lead` | passed after contract/redaction/evidence fixes; mysql 21 registered / 17 pending, R9 totals registered_public 107 of 125; post-check errors occur after one successful mutation and stop repeat mutation with no rollback; mock-only fake-Runner contract — no DB driver, no live MySQL, live database/broker integration excluded behind E5; no `go.mod`/`go.sum` change (no new dependency); the pre-existing full-tree OpenBSD baseline remains outside scope |
+
+Current R9 report (`docs/differential/R9/report.yaml` at `d2a74dc`, `round:
+R9.3f`, `repeat_stable: true`): rabbitmq 37/37 registered, mysql 21/38 (17
+pending), postgres 49/50 registered_public (1 pending); totals
+registered_public 107 of 125 public functions (18 pending) across 172 catalog
+functions. The remaining mysql names from the report, in exact report order,
+stay pending: `alter_db`, `db_create`, `db_remove`, `file_query`, `free_slave`,
+`get_master_status`, `get_slave_status`, `plugin_add`, `plugin_remove`,
+`plugin_status`, `plugins_list`, `processlist`, `query`, `slave_lag`,
+`user_chpass`, `user_grants`, `verify_login`. The remaining postgres name from
+the report, in exact report order, stays pending: `psql_query` — the
+arbitrary-SQL boundary. R9 remains open — no closure claim is made. The report
+pins the mock-only boundary — RabbitMQ is never started, MySQL is never
+connected, PostgreSQL is never contacted; no database driver is linked — and
+live database/broker integration stays excluded behind E5. The prior
+differential report hashes for R3-R8 remain unchanged, and the R9.3f commit
+touched no `go.mod`/`go.sum` entries (no new dependency). The pre-existing
+full-tree OpenBSD baseline remains outside scope.
+
 ##### 2026-09-17 current status (R9.2b PostgreSQL version probe)
 
 Actual HEAD is `23fba61` (R9.2b PostgreSQL version probe). R9.2b
