@@ -4,8 +4,9 @@
 // user_list, user_exists, user_info, db_get, and db_tables (R9.3a/R9.3d/R9.3e),
 // the read-only server facts family version, status, showvariables, and
 // showglobal (R9.3b), the maintenance family db_check, db_repair, and
-// db_optimize (R9.3c), and the fixed-query user_create/user_remove mutation
-// family (R9.3e).
+// db_optimize (R9.3c), the fixed-query user_create/user_remove mutation
+// family (R9.3e), and the fixed-query grant_add/grant_exists/grant_revoke
+// family (R9.3f).
 //
 // Boundaries (R9.2a): no MySQL client driver or protocol, no new
 // dependencies, no Runner spawns, no filesystem access, and no live MySQL
@@ -58,6 +59,15 @@
 // literals, allowlisted authentication-plugin tokens, the shared MYSQL_PWD
 // connection transport, and bounded Runner cancellation/output controls.
 // No database driver or live server is used by this package or its tests.
+//
+// Boundaries (R9.3f): grant mutations build only the pinned GRANT/REVOKE
+// forms from separately validated database/table identifiers and SQL-literal
+// account values. grant_exists reads the fixed SHOW GRANTS statement and, for
+// an expanded global ALL grant, the fixed SHOW PRIVILEGES catalog; each grant
+// is parsed with the existing source-compatible tokenizer. No caller-provided
+// SQL is accepted. All three functions use the central shell-free mysql
+// transport with bounded cancellation, output, argv, and redaction controls,
+// and remain fake-Runner-only.
 package mysql
 
 import (
@@ -88,7 +98,129 @@ var (
 	// errGrantKind rejects inputs that are neither a grant string nor a
 	// pre-executed query dict.
 	errGrantKind = errors.New("mysql: grant must be a string or a qry/args dict")
+	// errMysqlGrant is deliberately value-free: grant text is pasted into a
+	// fixed statement and must never travel through an error message.
+	errMysqlGrant = errors.New("mysql: invalid grant")
+	// errMysqlGrantIdentifier is also value-free because identifier text can
+	// overlap a connection credential or another sensitive caller value.
+	errMysqlGrantIdentifier = errors.New("mysql: invalid grant identifier")
 )
+
+// mysqlGrantPrivileges is the pinned __grants__ allow-list from mysql.py.
+// Keeping the list local avoids accepting arbitrary SQL in the GRANT clause;
+// the source list includes the MySQL and MariaDB spellings used by SHOW
+// GRANTS on the supported server families.
+var mysqlGrantPrivileges = map[string]struct{}{
+	"ALL PRIVILEGES":             {},
+	"ALTER":                      {},
+	"ALTER ROUTINE":              {},
+	"BACKUP_ADMIN":               {},
+	"BINLOG_ADMIN":               {},
+	"BINLOG ADMIN":               {},
+	"BINLOG MONITOR":             {},
+	"BINLOG REPLAY":              {},
+	"CONNECTION_ADMIN":           {},
+	"CONNECTION ADMIN":           {},
+	"CREATE":                     {},
+	"CREATE ROLE":                {},
+	"CREATE ROUTINE":             {},
+	"CREATE TABLESPACE":          {},
+	"CREATE TEMPORARY TABLES":    {},
+	"CREATE USER":                {},
+	"CREATE VIEW":                {},
+	"DELETE":                     {},
+	"DELETE HISTORY":             {},
+	"DROP":                       {},
+	"DROP ROLE":                  {},
+	"ENCRYPTION_KEY_ADMIN":       {},
+	"EVENT":                      {},
+	"EXECUTE":                    {},
+	"FEDERATED ADMIN":            {},
+	"FILE":                       {},
+	"GRANT OPTION":               {},
+	"GROUP_REPLICATION_ADMIN":    {},
+	"INDEX":                      {},
+	"INSERT":                     {},
+	"LOCK TABLES":                {},
+	"PERSIST_RO_VARIABLES_ADMIN": {},
+	"PROCESS":                    {},
+	"READ_ONLY ADMIN":            {},
+	"REFERENCES":                 {},
+	"RELOAD":                     {},
+	"REPLICA MONITOR":            {},
+	"REPLICATION CLIENT":         {},
+	"REPLICATION MASTER ADMIN":   {},
+	"REPLICATION REPLICA":        {},
+	"REPLICATION SLAVE":          {},
+	"REPLICATION_SLAVE_ADMIN":    {},
+	"REPLICATION SLAVE ADMIN":    {},
+	"RESOURCE_GROUP_ADMIN":       {},
+	"RESOURCE_GROUP_USER":        {},
+	"ROLE_ADMIN":                 {},
+	"SELECT":                     {},
+	"SET USER":                   {},
+	"SET_USER_ID":                {},
+	"SERVICE_CONNECTION_ADMIN":   {},
+	"SHOW DATABASES":             {},
+	"SHOW VIEW":                  {},
+	"SHUTDOWN":                   {},
+	"SLAVE MONITOR":              {},
+	"SUPER":                      {},
+	"SYSTEM_VARIABLES_ADMIN":     {},
+	"TRIGGER":                    {},
+	"UPDATE":                     {},
+	"USAGE":                      {},
+	"XA_RECOVER_ADMIN":           {},
+}
+
+// mysqlAllPrivileges is the pinned static fallback set used only for the
+// eligible MySQL-8 global-ALL SHOW PRIVILEGES phase. A literal ALL PRIVILEGES
+// row is never treated as a universal grant by ordinary-object matching.
+var mysqlAllPrivileges = []string{
+	"ALTER",
+	"ALTER ROUTINE",
+	"BACKUP_ADMIN",
+	"BINLOG_ADMIN",
+	"CONNECTION_ADMIN",
+	"CREATE",
+	"CREATE ROLE",
+	"CREATE ROUTINE",
+	"CREATE TABLESPACE",
+	"CREATE TEMPORARY TABLES",
+	"CREATE USER",
+	"CREATE VIEW",
+	"DELETE",
+	"DROP",
+	"DROP ROLE",
+	"ENCRYPTION_KEY_ADMIN",
+	"EVENT",
+	"EXECUTE",
+	"FILE",
+	"GROUP_REPLICATION_ADMIN",
+	"INDEX",
+	"INSERT",
+	"LOCK TABLES",
+	"PERSIST_RO_VARIABLES_ADMIN",
+	"PROCESS",
+	"REFERENCES",
+	"RELOAD",
+	"REPLICATION CLIENT",
+	"REPLICATION SLAVE",
+	"REPLICATION_SLAVE_ADMIN",
+	"RESOURCE_GROUP_ADMIN",
+	"RESOURCE_GROUP_USER",
+	"ROLE_ADMIN",
+	"SELECT",
+	"SET_USER_ID",
+	"SHOW DATABASES",
+	"SHOW VIEW",
+	"SHUTDOWN",
+	"SUPER",
+	"SYSTEM_VARIABLES_ADMIN",
+	"TRIGGER",
+	"UPDATE",
+	"XA_RECOVER_ADMIN",
+}
 
 // ---------------------------------------------------------------------------
 // quote_identifier — salt/modules/mysql.py:692-721 @ pinned revision.
@@ -168,6 +300,219 @@ func firstString(s *string) string {
 		return "undefined"
 	}
 	return *s
+}
+
+// grantAccountParts is the canonical account representation used by the
+// grant mutation surface.  The public grant functions accept one user value;
+// it may be a bare user (which keeps Salt's localhost default), user@host, or
+// a SQL-quoted user@host account.  Keeping the split here, rather than using
+// strings.Fields, is important: MySQL permits quoted host values containing
+// spaces, commas, apostrophes, and backticks.
+type grantAccountParts struct {
+	User string
+	Host string
+}
+
+// grantSQLAccount is the account plus its byte span in a SHOW GRANTS
+// statement.  The span is used only to give the legacy lexer a harmless
+// placeholder when an SQL-escaped quote would otherwise split its tokens.
+type grantSQLAccount struct {
+	grantAccountParts
+	Start int
+	End   int
+}
+
+func grantSkipWhitespace(value string, pos int) int {
+	for pos < len(value) && isGrantWhitespace(rune(value[pos])) {
+		pos++
+	}
+	return pos
+}
+
+// grantScanAccountPart reads one SQL account component.  It understands both
+// MySQL string literals and quoted identifiers, including doubled delimiters
+// (two single quotes and two backticks) and the legacy backslash escape emitted by some SHOW GRANTS
+// clients.  The returned value is unquoted and preserves all interior data.
+func grantScanAccountPart(value string, pos int, stopAtAt bool) (string, int, bool) {
+	pos = grantSkipWhitespace(value, pos)
+	if pos >= len(value) {
+		return "", pos, false
+	}
+	if value[pos] == '\'' || value[pos] == '`' {
+		quote := value[pos]
+		pos++
+		var out strings.Builder
+		for pos < len(value) {
+			char := value[pos]
+			if char == '\\' && pos+1 < len(value) {
+				out.WriteByte(value[pos+1])
+				pos += 2
+				continue
+			}
+			if char == quote {
+				if pos+1 < len(value) && value[pos+1] == quote {
+					out.WriteByte(quote)
+					pos += 2
+					continue
+				}
+				return out.String(), pos + 1, true
+			}
+			out.WriteByte(char)
+			pos++
+		}
+		return "", pos, false
+	}
+
+	start := pos
+	for pos < len(value) {
+		char := value[pos]
+		if isGrantWhitespace(rune(char)) || char == ';' || (stopAtAt && char == '@') {
+			break
+		}
+		pos++
+	}
+	if start == pos {
+		return "", pos, false
+	}
+	return value[start:pos], pos, true
+}
+
+func grantKeywordIndex(value, keyword string) int {
+	var quote byte
+	for pos := 0; pos < len(value); pos++ {
+		char := value[pos]
+		if quote != 0 {
+			if char == '\\' && pos+1 < len(value) {
+				pos++
+				continue
+			}
+			if char == quote {
+				if pos+1 < len(value) && value[pos+1] == quote {
+					pos++
+					continue
+				}
+				quote = 0
+			}
+			continue
+		}
+		if char == '\'' || char == '`' {
+			quote = char
+			continue
+		}
+		if pos+len(keyword) > len(value) || !strings.EqualFold(value[pos:pos+len(keyword)], keyword) {
+			continue
+		}
+		if pos > 0 && isGrantWordchar(rune(value[pos-1])) {
+			continue
+		}
+		end := pos + len(keyword)
+		if end < len(value) && isGrantWordchar(rune(value[end])) {
+			continue
+		}
+		return pos
+	}
+	return -1
+}
+
+func firstGrantKeyword(value string) string {
+	pos := grantSkipWhitespace(value, 0)
+	start := pos
+	for pos < len(value) && isGrantWordchar(rune(value[pos])) {
+		pos++
+	}
+	return strings.ToUpper(value[start:pos])
+}
+
+// parseGrantSQLAccount extracts the account following the ordinary GRANT
+// statement's TO keyword.  PROXY grants intentionally keep the pinned
+// tokenizer's concatenated database shape and are excluded by the caller.
+func parseGrantSQLAccount(value string) (grantSQLAccount, bool) {
+	if firstGrantKeyword(value) == "PROXY" {
+		return grantSQLAccount{}, false
+	}
+	to := grantKeywordIndex(value, "TO")
+	if to < 0 {
+		return grantSQLAccount{}, false
+	}
+	pos := grantSkipWhitespace(value, to+2)
+	start := pos
+	user, pos, ok := grantScanAccountPart(value, pos, true)
+	if !ok {
+		return grantSQLAccount{}, false
+	}
+	pos = grantSkipWhitespace(value, pos)
+	if pos >= len(value) || value[pos] != '@' {
+		return grantSQLAccount{}, false
+	}
+	pos++
+	host, end, ok := grantScanAccountPart(value, pos, false)
+	if !ok {
+		return grantSQLAccount{}, false
+	}
+	return grantSQLAccount{grantAccountParts: grantAccountParts{User: user, Host: host}, Start: start, End: end}, true
+}
+
+func grantSQLAccountNeedsCanonical(account grantSQLAccount) bool {
+	// Keep the source tokenizer's ordinary quoted/backslash shapes byte-for-
+	// byte. Switch to the SQL-aware account values only when the account data
+	// would otherwise be truncated: apostrophes, backticks, or commas in the
+	// canonical user/host component.
+	return strings.ContainsAny(account.User, "'`,") || strings.ContainsAny(account.Host, "'`,")
+}
+
+// parseGrantAccountInput parses the public user value.  A bare user keeps
+// Salt's default localhost account host; an @ outside a SQL quote selects the
+// supplied account host.  The function deliberately returns only fixed error
+// categories, never the caller value.
+func parseGrantAccountInput(value string) (grantAccountParts, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return grantAccountParts{}, errMysqlAccountArgument
+	}
+	user, pos, ok := grantScanAccountPart(trimmed, 0, true)
+	if !ok {
+		return grantAccountParts{}, errMysqlAccountArgument
+	}
+	pos = grantSkipWhitespace(trimmed, pos)
+	host := defaultUserHost
+	if pos < len(trimmed) {
+		if trimmed[pos] != '@' {
+			return grantAccountParts{}, errMysqlAccountArgument
+		}
+		pos++
+		var hostOK bool
+		host, pos, hostOK = grantScanAccountPart(trimmed, pos, false)
+		if !hostOK {
+			return grantAccountParts{}, errMysqlAccountArgument
+		}
+		if rest := strings.TrimSpace(trimmed[pos:]); rest != "" {
+			return grantAccountParts{}, errMysqlAccountArgument
+		}
+	}
+	if !validAccountPart(user) || !validAccountPart(host) {
+		return grantAccountParts{}, errMysqlAccountArgument
+	}
+	return grantAccountParts{User: user, Host: host}, nil
+}
+
+// parseGrantAccount maps the StateKit account adapter onto Salt's separate
+// user/host parameters. The existing user-first adapter remains compatible
+// with the earlier StateKit surface when host is omitted: a bare user gets
+// localhost and a user@host value is parsed as one account. Supplying host
+// explicitly selects the pinned source mapping, so an @ in user remains user
+// data instead of being interpreted as the adapter separator.
+func parseGrantAccount(user string, host *string) (grantAccountParts, error) {
+	if host == nil {
+		return parseGrantAccountInput(user)
+	}
+	if strings.TrimSpace(user) == "" || !validAccountPart(user) || !validAccountPart(*host) {
+		return grantAccountParts{}, errMysqlAccountArgument
+	}
+	return grantAccountParts{User: user, Host: *host}, nil
+}
+
+func rewriteGrantAccountForLexer(value string, account grantSQLAccount) string {
+	return value[:account.Start] + "'u'@'h'" + value[account.End:]
 }
 
 // grantLexer reproduces shlex.shlex(instream) with quotes="'`",
@@ -269,6 +614,8 @@ func grantToTokens(grant any) (grantTokens, error) {
 	out := grantTokens{Grant: []string{}}
 	dictMode := false
 	var grantSQL, user, host string
+	var sqlAccount grantSQLAccount
+	var hasSQLAccount bool
 	switch g := grant.(type) {
 	case grantDict:
 		dictMode = true
@@ -284,7 +631,17 @@ func grantToTokens(grant any) (grantTokens, error) {
 		return out, errGrantKind
 	}
 
+	if !dictMode {
+		sqlAccount, hasSQLAccount = parseGrantSQLAccount(grantSQL)
+	}
 	exploded, err := grantExplode(grantSQL)
+	if err != nil && hasSQLAccount {
+		// A doubled SQL quote is data to MySQL but two quote-delimited tokens to
+		// the source-compatible shlex port. Retry only the lexer input with a
+		// fixed account placeholder; the canonical account below still comes
+		// from the SQL-aware parser and is never returned from the placeholder.
+		exploded, err = grantExplode(rewriteGrantAccountForLexer(grantSQL, sqlAccount))
+	}
 	if err != nil {
 		return out, err
 	}
@@ -396,8 +753,13 @@ parse:
 	}
 
 	if !dictMode {
-		user = strings.Trim(user, "'")
-		host = strings.Trim(host, "'")
+		if hasSQLAccount && grantSQLAccountNeedsCanonical(sqlAccount) {
+			user = sqlAccount.User
+			host = sqlAccount.Host
+		} else {
+			user = strings.Trim(user, "'")
+			host = strings.Trim(host, "'")
+		}
 	}
 	out.User = user
 	out.Host = host
@@ -2688,6 +3050,963 @@ func (dbOptimizeFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any
 }
 
 // ---------------------------------------------------------------------------
+// grant_add, grant_exists, grant_revoke — salt/modules/mysql.py:2322-2761
+// @ pinned revision (R9.3f).
+
+// splitGrantSpecs separates comma-delimited privileges without splitting a
+// column list. The source accepts column-bearing grants such as
+// SELECT(col_a, col_b); the fixed statement boundary below accepts only that
+// grammar, never arbitrary text.
+func splitGrantSpecs(value string) ([]string, error) {
+	if strings.TrimSpace(value) == "" {
+		return nil, errMysqlGrant
+	}
+	parts := make([]string, 0, 4)
+	start, depth := 0, 0
+	for i := 0; i < len(value); i++ {
+		switch value[i] {
+		case '(':
+			depth++
+			if depth > 1 {
+				return nil, errMysqlGrant
+			}
+		case ')':
+			if depth == 0 {
+				return nil, errMysqlGrant
+			}
+			depth--
+		case ',':
+			if depth == 0 {
+				part := strings.TrimSpace(value[start:i])
+				if part == "" {
+					return nil, errMysqlGrant
+				}
+				parts = append(parts, part)
+				start = i + 1
+			}
+		}
+	}
+	if depth != 0 {
+		return nil, errMysqlGrant
+	}
+	last := strings.TrimSpace(value[start:])
+	if last == "" {
+		return nil, errMysqlGrant
+	}
+	return append(parts, last), nil
+}
+
+func validGrantColumn(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" || !utf8.ValidString(value) {
+		return false
+	}
+	if value[0] == '`' {
+		if len(value) < 2 || value[len(value)-1] != '`' {
+			return false
+		}
+		for i := 1; i < len(value)-1; i++ {
+			if value[i] == 0 || unicode.IsControl(rune(value[i])) {
+				return false
+			}
+			if value[i] == '`' {
+				if i+1 >= len(value)-1 || value[i+1] != '`' {
+					return false
+				}
+				i++
+			}
+		}
+		return true
+	}
+	for _, char := range value {
+		if !(unicode.IsLetter(char) || unicode.IsDigit(char) || char == '_' || char == '$') {
+			return false
+		}
+	}
+	return true
+}
+
+func normalizeGrantSpec(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	open := strings.IndexByte(value, '(')
+	if open < 0 {
+		name := strings.ToUpper(value)
+		if _, ok := mysqlGrantPrivileges[name]; !ok {
+			return "", errMysqlGrant
+		}
+		return name, nil
+	}
+	if !strings.HasSuffix(value, ")") || strings.Count(value[open:], "(") != 1 {
+		return "", errMysqlGrant
+	}
+	name := strings.TrimSpace(value[:open])
+	if _, ok := mysqlGrantPrivileges[strings.ToUpper(name)]; !ok {
+		return "", errMysqlGrant
+	}
+	columnsText := value[open+1 : len(value)-1]
+	columns := strings.Split(columnsText, ",")
+	for i := range columns {
+		columns[i] = strings.TrimSpace(columns[i])
+		if !validGrantColumn(columns[i]) {
+			return "", errMysqlGrant
+		}
+	}
+	return strings.ToUpper(name) + "(" + strings.ToUpper(strings.Join(columns, ", ")) + ")", nil
+}
+
+// normalizeGrantForAdd ports __grant_generate's uppercasing and comma
+// spacing. normalizeGrantForRevoke deliberately keeps the caller's spelling
+// and spacing after validation, matching __grant_normalize's REVOKE path.
+func normalizeGrantForAdd(value string) (string, error) {
+	parts, err := splitGrantSpecs(strings.TrimSpace(value))
+	if err != nil {
+		return "", err
+	}
+	if len(parts) == 1 && strings.EqualFold(strings.TrimSpace(value), "ALL") {
+		return "ALL PRIVILEGES", nil
+	}
+	normalized := make([]string, 0, len(parts))
+	for _, part := range parts {
+		one, err := normalizeGrantSpec(part)
+		if err != nil {
+			return "", err
+		}
+		normalized = append(normalized, one)
+	}
+	return strings.Join(normalized, ", "), nil
+}
+
+func normalizeGrantForRevoke(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if strings.EqualFold(trimmed, "ALL") {
+		return "ALL PRIVILEGES", nil
+	}
+	parts, err := splitGrantSpecs(value)
+	if err != nil {
+		return "", err
+	}
+	for _, part := range parts {
+		if _, err := normalizeGrantSpec(part); err != nil {
+			return "", err
+		}
+	}
+	return value, nil
+}
+
+func validGrantIdentifier(value string) bool {
+	if value == "" || !utf8.ValidString(value) {
+		return false
+	}
+	for _, char := range value {
+		if char == 0 || unicode.IsControl(char) {
+			return false
+		}
+	}
+	return true
+}
+
+func validRawGrantIdentifier(value string) bool {
+	if value == "*" {
+		return true
+	}
+	if value == "" || !utf8.ValidString(value) {
+		return false
+	}
+	for _, char := range value {
+		if !(unicode.IsLetter(char) || unicode.IsDigit(char) || char == '_' || char == '$' || char == '%') {
+			return false
+		}
+	}
+	return true
+}
+
+func renderGrantIdentifier(value string, forGrants bool) string {
+	return strings.ReplaceAll(quoteIdentifier(value, forGrants), "%%", "%")
+}
+
+func grantObject(database, table string, escape, revoke bool) (string, error) {
+	if !validGrantIdentifier(database) || !validGrantIdentifier(table) {
+		return "", errMysqlGrantIdentifier
+	}
+	if revoke {
+		// The pinned grant_revoke implementation always quotes the object
+		// positions; its escape argument is accepted but unused.
+		databasePart := database
+		if databasePart != "*" {
+			databasePart = renderGrantIdentifier(databasePart, table == "*")
+		}
+		tablePart := table
+		if tablePart != "*" {
+			tablePart = renderGrantIdentifier(tablePart, false)
+		}
+		return databasePart + "." + tablePart, nil
+	}
+	if !escape {
+		if !validRawGrantIdentifier(database) || !validRawGrantIdentifier(table) {
+			return "", errMysqlGrantIdentifier
+		}
+		return database + "." + table, nil
+	}
+	databasePart := database
+	if databasePart != "*" {
+		databasePart = renderGrantIdentifier(databasePart, table == "*")
+	}
+	tablePart := table
+	if tablePart != "*" {
+		tablePart = renderGrantIdentifier(tablePart, false)
+	}
+	return databasePart + "." + tablePart, nil
+}
+
+func grantOptionValue(value *bool) bool { return value != nil && *value }
+
+func grantHostValue(value *string) string {
+	if value == nil {
+		return defaultUserHost
+	}
+	return *value
+}
+
+func grantEscapeValue(value *bool) bool {
+	if value == nil {
+		return true
+	}
+	return *value
+}
+
+func validateGrantInputBounds(user, host, grant, database, table string, extra ...string) error {
+	total := 0
+	values := []string{user, host, grant, database, table}
+	values = append(values, extra...)
+	for _, value := range values {
+		if len(value) > runtime.MaxCommandInputBytes-total {
+			return runtime.ErrCommandInputLimit
+		}
+		total += len(value)
+	}
+	return nil
+}
+
+func grantContextError(ctx context.Context) error {
+	if ctx == nil {
+		return nil
+	}
+	return ctx.Err()
+}
+
+func splitGrantDatabase(value string) (string, string, error) {
+	separator := strings.LastIndexByte(value, '.')
+	if separator <= 0 || separator >= len(value)-1 {
+		return "", "", errMysqlGrantIdentifier
+	}
+	database, table := value[:separator], value[separator+1:]
+	if !validGrantIdentifier(database) || !validGrantIdentifier(table) {
+		return "", "", errMysqlGrantIdentifier
+	}
+	return database, table, nil
+}
+
+// normalizeGrantSSLOption ports the pinned list-of-single-entry-dicts DSL.
+// Only the fixed REQUIRE keywords reach SQL; parameter values are SQL string
+// literals, never caller-provided SQL fragments. The second return value is
+// the raw/escaped forms needed by the grant redaction inventory.
+func normalizeGrantSSLOption(value any) (string, []string, error) {
+	if value == nil {
+		return "", nil, nil
+	}
+	items := make([]any, 0)
+	switch typed := value.(type) {
+	case []any:
+		items = typed
+	case []map[string]any:
+		for _, item := range typed {
+			items = append(items, item)
+		}
+	case []map[string]string:
+		for _, item := range typed {
+			converted := make(map[string]any, len(item))
+			for key, itemValue := range item {
+				converted[key] = itemValue
+			}
+			items = append(items, converted)
+		}
+	case bool, string:
+		// The pinned function only interprets a list. Keep the accepted scalar
+		// forms as the false/no-clause compatibility path used by CLI flags.
+		return "", nil, nil
+	default:
+		return "", nil, errMysqlGrant
+	}
+	clauses := make([]string, 0, len(items))
+	secrets := make([]string, 0, len(items)*3)
+	for _, item := range items {
+		entry, ok := item.(map[string]any)
+		if !ok || len(entry) != 1 {
+			return "", nil, errMysqlGrant
+		}
+		var key string
+		var rawValue any
+		for candidate, candidateValue := range entry {
+			key, rawValue = strings.ToUpper(strings.TrimSpace(candidate)), candidateValue
+		}
+		switch key {
+		case "CIPHER", "ISSUER", "SUBJECT":
+			text, ok := rawValue.(string)
+			if !ok || !validAccountPart(text) {
+				return "", nil, errMysqlGrant
+			}
+			clauses = append(clauses, key+" "+mysqlStringLiteral(text))
+			secrets = append(secrets, mysqlLiteralSecretForms(text)...)
+		case "SSL", "X509":
+			truthy := false
+			switch typedValue := rawValue.(type) {
+			case bool:
+				truthy = typedValue
+			case string:
+				truthy = typedValue != ""
+			default:
+				truthy = rawValue != nil
+			}
+			if truthy {
+				clauses = append(clauses, key)
+			}
+		default:
+			return "", nil, errMysqlGrant
+		}
+		secrets = append(secrets, key)
+		if rawText, ok := rawValue.(string); ok {
+			secrets = append(secrets, mysqlLiteralSecretForms(rawText)...)
+		}
+	}
+	if len(clauses) == 0 {
+		return "", secrets, nil
+	}
+	return " REQUIRE " + strings.Join(clauses, " AND "), secrets, nil
+}
+
+func grantStatementSSL(grant, database, table, user, host string, grantOption bool, escape bool, sslOption any) (string, []string, error) {
+	if err := validateGrantInputBounds(user, host, grant, database, table); err != nil {
+		return "", nil, err
+	}
+	if !validAccountPart(user) || !validAccountPart(host) {
+		return "", nil, errMysqlAccountArgument
+	}
+	normalized, err := normalizeGrantForAdd(grant)
+	if err != nil {
+		return "", nil, err
+	}
+	object, err := grantObject(database, table, escape, false)
+	if err != nil {
+		return "", nil, err
+	}
+	sslClause, sslSecrets, err := normalizeGrantSSLOption(sslOption)
+	if err != nil {
+		return "", nil, err
+	}
+	if err := validateGrantInputBounds(user, host, grant, database, table, sslClause); err != nil {
+		return "", nil, err
+	}
+	statement := "GRANT " + normalized + " ON " + object + " TO " + mysqlAccount(user, host)
+	statement += sslClause
+	if grantOption {
+		statement += " WITH GRANT OPTION"
+	}
+	return statement, sslSecrets, nil
+}
+
+func revokeStatement(grant, database, table, user, host string, grantOption bool, escape bool) (string, error) {
+	if err := validateGrantInputBounds(user, host, grant, database, table); err != nil {
+		return "", err
+	}
+	if !validAccountPart(user) || !validAccountPart(host) {
+		return "", errMysqlAccountArgument
+	}
+	normalized, err := normalizeGrantForRevoke(grant)
+	if err != nil {
+		return "", err
+	}
+	if grantOption {
+		normalized += ", GRANT OPTION"
+	}
+	object, err := grantObject(database, table, escape, true)
+	if err != nil {
+		return "", err
+	}
+	return "REVOKE " + normalized + " ON " + object + " FROM " + mysqlAccount(user, host) + ";", nil
+}
+
+func grantSecretInventory(conn *myConnection, user, host, grant, database, table string, sslOptions ...any) []string {
+	values := make([]string, 0, 64)
+	add := func(value string) {
+		if value == "" {
+			return
+		}
+		values = append(values, value)
+	}
+	addLiteral := func(value string) {
+		if value == "" {
+			return
+		}
+		values = append(values, mysqlLiteralSecretForms(value)...)
+		add(mysqlStringLiteral(value))
+	}
+	addIdentifier := func(value string, forGrants bool) {
+		if value == "" {
+			return
+		}
+		add(value)
+		addLiteral(value)
+		add(renderGrantIdentifier(value, forGrants))
+		add(quoteIdentifier(value, forGrants))
+	}
+	addAccount := func(accountUser, accountHost string) {
+		add(accountUser + "@" + accountHost)
+		add(mysqlAccount(accountUser, accountHost))
+		addLiteral(accountUser)
+		addLiteral(accountHost)
+	}
+	if conn != nil && conn.Password != nil {
+		addLiteral(*conn.Password)
+		if *conn.Password != "" {
+			addLiteral(mysqlNativePasswordHash(*conn.Password))
+		}
+	}
+	addAccount(user, host)
+	add(grant)
+	add(strings.ToUpper(grant))
+	addLiteral(grant)
+	if normalized, err := normalizeGrantForAdd(grant); err == nil {
+		add(normalized)
+		addLiteral(normalized)
+	}
+	if normalized, err := normalizeGrantForRevoke(grant); err == nil {
+		add(normalized)
+		add(normalized + ", GRANT OPTION")
+	}
+	addIdentifier(database, table == "*")
+	addIdentifier(table, false)
+	addIdentifier(database+"."+table, false)
+	add(renderGrantIdentifier(database, table == "*") + "." + renderGrantIdentifier(table, false))
+	add(quoteIdentifier(database, table == "*") + "." + quoteIdentifier(table, false))
+	if validGrantIdentifier(database) {
+		add(renderGrantIdentifier(database, table == "*"))
+		add(renderGrantIdentifier(database, false))
+	}
+	if validGrantIdentifier(table) && table != "*" {
+		add(renderGrantIdentifier(table, false))
+	}
+	for _, option := range sslOptions {
+		_, optionSecrets, err := normalizeGrantSSLOption(option)
+		if err == nil {
+			values = append(values, optionSecrets...)
+		}
+	}
+	return secretList(values...)
+}
+
+func grantQuery(user, host string) string {
+	return "SHOW GRANTS FOR " + mysqlAccount(user, host)
+}
+
+func showGrantStatements(stdout string) ([]string, error) {
+	header, rows := parseBatchRows(stdout)
+	if len(header) == 0 {
+		return []string{}, nil
+	}
+	statements := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if len(row) == 0 || row[0].null {
+			return nil, errMysqlGrant
+		}
+		statements = append(statements, row[0].value)
+	}
+	return statements, nil
+}
+
+func canonicalGrantPart(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) < 2 {
+		return strings.Trim(value, "'")
+	}
+	quote := value[0]
+	if (quote != '\'' && quote != '`' && quote != '"') || value[len(value)-1] != quote {
+		return value
+	}
+	value = value[1 : len(value)-1]
+	value = strings.ReplaceAll(value, string([]byte{quote, quote}), string(quote))
+	return value
+}
+
+// canonicalGrantObject decodes the object spelling emitted by SHOW GRANTS.
+// Backticks are syntax only at the outer delimiter; doubled backticks and the
+// grant wildcard escapes are data and must survive canonical comparison.
+func canonicalGrantObject(value string) string {
+	var out strings.Builder
+	quoted := false
+	for i := 0; i < len(value); i++ {
+		char := value[i]
+		if char == '`' {
+			if quoted && i+1 < len(value) && value[i+1] == '`' {
+				out.WriteByte('`')
+				i++
+				continue
+			}
+			quoted = !quoted
+			continue
+		}
+		if quoted && char == '\\' && i+1 < len(value) && (value[i+1] == '_' || value[i+1] == '%') {
+			out.WriteByte(value[i+1])
+			i++
+			continue
+		}
+		out.WriteByte(char)
+	}
+	return strings.TrimSpace(out.String())
+}
+
+func canonicalGrantToken(value, serverVersion string) string {
+	value = strings.ToUpper(strings.TrimSpace(value))
+	if !strings.Contains(strings.ToLower(serverVersion), "mariadb") {
+		return value
+	}
+	if versionAtLeast(serverVersion, 10, 5, 1) && value == "REPLICATION REPLICA" {
+		return "REPLICATION SLAVE"
+	}
+	if versionAtLeast(serverVersion, 10, 5, 2) && value == "REPLICATION CLIENT" {
+		return "BINLOG MONITOR"
+	}
+	if versionAtLeast(serverVersion, 10, 5, 9) && value == "REPLICA MONITOR" {
+		return "SLAVE MONITOR"
+	}
+	return value
+}
+
+func canonicalGrantTokens(values []string, serverVersion string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		out = append(out, canonicalGrantToken(value, serverVersion))
+	}
+	return out
+}
+
+// grantListCovers compares concrete privilege tokens.  In particular, a
+// literal ALL PRIVILEGES row is not a universal wildcard here: the only
+// expansion allowed by the pinned control flow is the explicit global-ALL
+// target built from SHOW PRIVILEGES (or its static MySQL fallback).
+func grantListCovers(actual, target []string, serverVersion string) bool {
+	actualSet := make(map[string]struct{}, len(actual))
+	for _, value := range actual {
+		actualSet[canonicalGrantToken(value, serverVersion)] = struct{}{}
+	}
+	targetSet := make(map[string]struct{}, len(target))
+	for _, value := range target {
+		targetSet[canonicalGrantToken(value, serverVersion)] = struct{}{}
+	}
+	for value := range targetSet {
+		if _, ok := actualSet[value]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// grantHasOptionClause recognizes only an unquoted WITH GRANT OPTION token
+// sequence. A quoted account, database, table, or column name containing that
+// phrase must not manufacture grant-option state.
+func grantHasOptionClause(statement string) bool {
+	words := make([]string, 0, 8)
+	flush := func(word []byte) {
+		if len(word) > 0 {
+			words = append(words, strings.ToUpper(string(word)))
+		}
+	}
+	word := make([]byte, 0, 8)
+	var quote byte
+	for i := 0; i < len(statement); i++ {
+		char := statement[i]
+		if quote != 0 {
+			if char == '\\' && i+1 < len(statement) {
+				i++
+				continue
+			}
+			if char == quote {
+				if i+1 < len(statement) && statement[i+1] == quote {
+					i++
+					continue
+				}
+				quote = 0
+			}
+			continue
+		}
+		switch char {
+		case '\'', '"', '`':
+			flush(word)
+			word = word[:0]
+			quote = char
+		default:
+			if (char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z') || char == '_' {
+				word = append(word, char)
+				continue
+			}
+			flush(word)
+			word = word[:0]
+		}
+	}
+	flush(word)
+	for i := 0; i+2 < len(words); i++ {
+		if words[i] == "WITH" && words[i+1] == "GRANT" && words[i+2] == "OPTION" {
+			return true
+		}
+	}
+	return false
+}
+
+func grantRequestsAll(grant, database, table string) bool {
+	if database != "*" || table != "*" {
+		return false
+	}
+	// The pinned source uses ``"ALL" in grant.upper()`` rather than an
+	// equality test. Keep that source condition after the object-level gate;
+	// normalizeGrantForAdd still validates the complete privilege grammar
+	// before any query is issued.
+	return strings.Contains(strings.ToUpper(grant), "ALL")
+}
+
+func serverAllPrivileges(ctx context.Context, rt *runtime.Runtime, conn *myConnection, secrets ...string) ([]string, error) {
+	result, err := runMysqlPreserveSecrets(ctx, rt, mysqlQueryArgv(conn, "SHOW PRIVILEGES"), conn, secrets...)
+	if err != nil {
+		return nil, err
+	}
+	if result.ExitCode != 0 {
+		return nil, nil
+	}
+	header, rows := parseBatchRows(string(result.Stdout))
+	if len(header) == 0 {
+		return nil, nil
+	}
+	privileges := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if len(row) == 0 || row[0].null || strings.TrimSpace(row[0].value) == "" {
+			continue
+		}
+		name := strings.ToUpper(strings.TrimSpace(row[0].value))
+		switch name {
+		case "USAGE", "GRANT OPTION", "PROXY":
+			continue
+		default:
+			privileges = append(privileges, name)
+		}
+	}
+	if len(privileges) == 0 {
+		return nil, nil
+	}
+	return privileges, nil
+}
+
+func grantExistsQuery(ctx context.Context, rt *runtime.Runtime, conn *myConnection, grant, database, user, host string, grantOption, escape bool, extraSecrets ...string) (bool, error) {
+	if err := grantContextError(ctx); err != nil {
+		return false, err
+	}
+	databaseName, tableName, err := splitGrantDatabase(database)
+	if err != nil {
+		return false, err
+	}
+	if !validAccountPart(user) || !validAccountPart(host) {
+		return false, errMysqlAccountArgument
+	}
+	// Validate the requested privilege grammar before any server query. The
+	// global ALL branch later replaces only the concrete target grant list.
+	target, _, err := grantStatementSSL(grant, databaseName, tableName, user, host, grantOption, escape, nil)
+	if err != nil {
+		return false, err
+	}
+	targetTokens, err := grantToTokens(target)
+	if err != nil {
+		return false, err
+	}
+	query := grantQuery(user, host)
+	secrets := grantSecretInventory(conn, user, host, grant, databaseName, tableName)
+	secrets = secretList(append(secrets, extraSecrets...)...)
+	// The pinned first operation is the server version probe. An empty or
+	// nonzero version result is a false compatibility answer and must not fall
+	// through to SHOW PRIVILEGES or SHOW GRANTS.
+	serverVersion, err := mysqlVersionPreserve(ctx, rt, conn, secrets...)
+	if err != nil {
+		return false, err
+	}
+	if strings.TrimSpace(serverVersion) == "" {
+		return false, nil
+	}
+	mariaDB := strings.Contains(strings.ToLower(serverVersion), "mariadb")
+	globalAll := grantRequestsAll(grant, databaseName, tableName)
+	if globalAll && versionAtLeast(serverVersion, 8, 0, 0) && !mariaDB {
+		serverPrivileges, err := serverAllPrivileges(ctx, rt, conn, secrets...)
+		if err != nil {
+			return false, err
+		}
+		if len(serverPrivileges) == 0 {
+			serverPrivileges = append([]string(nil), mysqlAllPrivileges...)
+		}
+		targetTokens.Grant = serverPrivileges
+	}
+	result, err := runMysqlPreserveSecrets(ctx, rt, mysqlQueryArgv(conn, query), conn, secrets...)
+	if err != nil {
+		return false, err
+	}
+	if result.ExitCode != 0 {
+		return false, nil
+	}
+	statements, err := showGrantStatements(string(result.Stdout))
+	if err != nil {
+		return false, err
+	}
+
+	type observedGrant struct {
+		user        string
+		host        string
+		database    string
+		privileges  []string
+		grantOption bool
+	}
+	observed := make(map[string]*observedGrant)
+	for _, statement := range statements {
+		parsed, err := grantToTokens(statement)
+		if err != nil {
+			return false, err
+		}
+		key := canonicalGrantObject(parsed.Database)
+		entry := observed[key]
+		if entry == nil {
+			entry = &observedGrant{
+				user:     canonicalGrantPart(parsed.User),
+				host:     canonicalGrantPart(parsed.Host),
+				database: key,
+			}
+			observed[key] = entry
+		}
+		entry.privileges = append(entry.privileges, canonicalGrantTokens(parsed.Grant, serverVersion)...)
+		if grantHasOptionClause(statement) {
+			entry.grantOption = true
+		}
+	}
+	// The public values are identifier data, not pre-quoted SQL. In particular
+	// an embedded backtick is doubled by grantObject and must remain a literal
+	// backtick in the target key rather than being mistaken for a delimiter.
+	targetDatabase := databaseName + "." + tableName
+	targetUser := canonicalGrantPart(user)
+	targetHost := canonicalGrantPart(host)
+	for _, entry := range observed {
+		if entry.user != targetUser || entry.host != targetHost || entry.database != targetDatabase {
+			continue
+		}
+		if grantOption && !entry.grantOption {
+			continue
+		}
+		if grantListCovers(entry.privileges, targetTokens.Grant, serverVersion) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// grantConnection keeps account arguments separate from the connection
+// surface. The account host defaults to localhost in Execute, while nil
+// connection fields retain the shared mysql CLI omission semantics.
+func grantConnection(user, host, port, password, database, runas *string) *myConnection {
+	return &myConnection{User: user, Host: host, Port: port, Password: password, DB: database, Runas: runas}
+}
+
+// GrantAddArgs maps Salt's grant_add(grant, database, user, host="localhost",
+// grant_option=False, escape=True, ssl_option=False, **connection) surface to
+// the existing StateKit user-first adapter. A bare user keeps Salt's
+// localhost account-host default; user@host and SQL-quoted user@host values
+// remain the explicit compatibility form when host is omitted.
+type GrantAddArgs struct {
+	User        string  `statekit:"name=user,required"`
+	Database    string  `statekit:"name=database,required"`
+	Grant       string  `statekit:"name=grant,required"`
+	Host        *string `statekit:"name=host"`
+	GrantOption *bool   `statekit:"name=grant_option"`
+	Escape      *bool   `statekit:"name=escape"`
+	SSLOption   any     `statekit:"name=ssl_option"`
+	ConnUser    *string `statekit:"name=connection_user"`
+	ConnHost    *string `statekit:"name=connection_host"`
+	ConnPort    *string `statekit:"name=connection_port"`
+	ConnPass    *string `statekit:"name=connection_pass"`
+	ConnDB      *string `statekit:"name=connection_db"`
+	Runas       *string `statekit:"name=runas"`
+}
+
+func (a *GrantAddArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return grantConnection(a.ConnUser, a.ConnHost, a.ConnPort, a.ConnPass, a.ConnDB, a.Runas)
+}
+
+type grantAddFunc struct{}
+
+func (grantAddFunc) Name() string { return "mysql.grant_add" }
+func (grantAddFunc) Args() any    { return GrantAddArgs{} }
+
+func (grantAddFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[GrantAddArgs](args, "mysql.grant_add")
+	if err != nil {
+		return nil, err
+	}
+	if err := grantContextError(ctx); err != nil {
+		return false, err
+	}
+	if err := validateGrantInputBounds(a.User, grantHostValue(a.Host), a.Grant, a.Database, ""); err != nil {
+		return false, err
+	}
+	account, err := parseGrantAccount(a.User, a.Host)
+	if err != nil {
+		return nil, err
+	}
+	database, table, err := splitGrantDatabase(a.Database)
+	if err != nil {
+		return nil, err
+	}
+	grantOption := grantOptionValue(a.GrantOption)
+	escape := grantEscapeValue(a.Escape)
+	statement, sslSecrets, err := grantStatementSSL(a.Grant, database, table, account.User, account.Host, grantOption, escape, a.SSLOption)
+	if err != nil {
+		return nil, err
+	}
+	conn := a.connection()
+	secrets := grantSecretInventory(conn, account.User, account.Host, a.Grant, database, table, a.SSLOption)
+	secrets = secretList(append(secrets, sslSecrets...)...)
+	result, err := runMysqlSecrets(ctx, rt, mysqlQueryArgv(conn, statement), conn, secrets...)
+	if err != nil {
+		return false, err
+	}
+	if result.ExitCode != 0 {
+		return false, nil
+	}
+	return grantExistsQuery(ctx, rt, conn, a.Grant, a.Database, account.User, account.Host, grantOption, escape, secrets...)
+}
+
+// GrantExistsArgs maps Salt's grant_exists(grant, database, user,
+// host="localhost", grant_option=False, escape=True, **connection) surface
+// to the existing StateKit user-first adapter.
+type GrantExistsArgs struct {
+	User        string  `statekit:"name=user,required"`
+	Database    string  `statekit:"name=database,required"`
+	Grant       string  `statekit:"name=grant,required"`
+	Host        *string `statekit:"name=host"`
+	GrantOption *bool   `statekit:"name=grant_option"`
+	Escape      *bool   `statekit:"name=escape"`
+	ConnUser    *string `statekit:"name=connection_user"`
+	ConnHost    *string `statekit:"name=connection_host"`
+	ConnPort    *string `statekit:"name=connection_port"`
+	ConnPass    *string `statekit:"name=connection_pass"`
+	ConnDB      *string `statekit:"name=connection_db"`
+	Runas       *string `statekit:"name=runas"`
+}
+
+func (a *GrantExistsArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return grantConnection(a.ConnUser, a.ConnHost, a.ConnPort, a.ConnPass, a.ConnDB, a.Runas)
+}
+
+type grantExistsFunc struct{}
+
+func (grantExistsFunc) Name() string { return "mysql.grant_exists" }
+func (grantExistsFunc) Args() any    { return GrantExistsArgs{} }
+
+func (grantExistsFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[GrantExistsArgs](args, "mysql.grant_exists")
+	if err != nil {
+		return nil, err
+	}
+	if err := grantContextError(ctx); err != nil {
+		return false, err
+	}
+	if err := validateGrantInputBounds(a.User, grantHostValue(a.Host), a.Grant, a.Database, ""); err != nil {
+		return false, err
+	}
+	account, err := parseGrantAccount(a.User, a.Host)
+	if err != nil {
+		return nil, err
+	}
+	return grantExistsQuery(ctx, rt, a.connection(), a.Grant, a.Database, account.User, account.Host, grantOptionValue(a.GrantOption), grantEscapeValue(a.Escape))
+}
+
+// GrantRevokeArgs maps Salt's grant_revoke(grant, database, user,
+// host="localhost", grant_option=False, escape=True, **connection) surface
+// to the existing StateKit user-first adapter.
+type GrantRevokeArgs struct {
+	User        string  `statekit:"name=user,required"`
+	Database    string  `statekit:"name=database,required"`
+	Grant       string  `statekit:"name=grant,required"`
+	Host        *string `statekit:"name=host"`
+	GrantOption *bool   `statekit:"name=grant_option"`
+	Escape      *bool   `statekit:"name=escape"`
+	ConnUser    *string `statekit:"name=connection_user"`
+	ConnHost    *string `statekit:"name=connection_host"`
+	ConnPort    *string `statekit:"name=connection_port"`
+	ConnPass    *string `statekit:"name=connection_pass"`
+	ConnDB      *string `statekit:"name=connection_db"`
+	Runas       *string `statekit:"name=runas"`
+}
+
+func (a *GrantRevokeArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return grantConnection(a.ConnUser, a.ConnHost, a.ConnPort, a.ConnPass, a.ConnDB, a.Runas)
+}
+
+type grantRevokeFunc struct{}
+
+func (grantRevokeFunc) Name() string { return "mysql.grant_revoke" }
+func (grantRevokeFunc) Args() any    { return GrantRevokeArgs{} }
+
+func (grantRevokeFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[GrantRevokeArgs](args, "mysql.grant_revoke")
+	if err != nil {
+		return nil, err
+	}
+	if err := grantContextError(ctx); err != nil {
+		return false, err
+	}
+	if err := validateGrantInputBounds(a.User, grantHostValue(a.Host), a.Grant, a.Database, ""); err != nil {
+		return false, err
+	}
+	account, err := parseGrantAccount(a.User, a.Host)
+	if err != nil {
+		return nil, err
+	}
+	database, table, err := splitGrantDatabase(a.Database)
+	if err != nil {
+		return nil, err
+	}
+	grantOption := grantOptionValue(a.GrantOption)
+	escape := grantEscapeValue(a.Escape)
+	statement, err := revokeStatement(a.Grant, database, table, account.User, account.Host, grantOption, escape)
+	if err != nil {
+		return nil, err
+	}
+	conn := a.connection()
+	secrets := grantSecretInventory(conn, account.User, account.Host, a.Grant, database, table)
+	result, err := runMysqlSecrets(ctx, rt, mysqlQueryArgv(conn, statement), conn, secrets...)
+	if err != nil {
+		return false, err
+	}
+	if result.ExitCode != 0 {
+		return false, nil
+	}
+	exists, err := grantExistsQuery(ctx, rt, conn, a.Grant, a.Database, account.User, account.Host, grantOption, escape, secrets...)
+	if err != nil {
+		return false, err
+	}
+	return !exists, nil
+}
+
+// ---------------------------------------------------------------------------
 // shared helpers (postgres-module conventions).
 
 func typedArgs[T any](args any, name string) (*T, error) {
@@ -2782,9 +4101,9 @@ func redactedError(err error, secrets ...string) error {
 
 // Register installs the mysql slice: the R9.2a pure functions, the
 // R9.3a/R9.3d/R9.3e fixed-query catalog family, the R9.3b server facts, the
-// R9.3c maintenance family, and the R9.3e user account mutations over the
-// central mysql CLI transport. The remainder of the mysql family stays
-// pending behind its own source/transport boundary.
+// R9.3c maintenance family, the R9.3e user account mutations, and the R9.3f
+// grant family over the central mysql CLI transport. The remainder of the
+// mysql family stays pending behind its own source/transport boundary.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		quoteIdentifierFunc{},
@@ -2798,6 +4117,9 @@ func Register(reg *runtime.ExecRegistry) error {
 		userInfoFunc{},
 		userCreateFunc{},
 		userRemoveFunc{},
+		grantAddFunc{},
+		grantExistsFunc{},
+		grantRevokeFunc{},
 		versionFunc{},
 		statusFunc{},
 		showVariablesFunc{},

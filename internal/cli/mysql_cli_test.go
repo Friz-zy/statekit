@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"reflect"
@@ -1264,4 +1266,346 @@ func TestMySQLCLIUserMutationErrors(t *testing.T) {
 	if code != ExitOK || strings.TrimSpace(out) != "false" || errS != "" {
 		t.Fatalf("nonzero remove code=%d out=%q err=%q", code, out, errS)
 	}
+}
+
+func TestMySQLCLIGrantFamily(t *testing.T) {
+	connPass := "cli-grant-connection-pass"
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0},
+		{Stdout: []byte("VERSION()\n8.0.34\n")},
+		{ExitCode: 0, Stdout: []byte("Grants for cli_user@cli_host\nGRANT SELECT ON `cli_db`.`cli_table` TO 'cli_user'@'cli_host' WITH GRANT OPTION\n")},
+	}}
+	app := mysqlCLIRunnerApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "mysql.grant_add",
+		"--user", "cli_user", "--host", "cli_host", "--grant", "SELECT",
+		"--database", "cli_db.cli_table", "--grant-option=true", "--escape=false",
+		"--connection-user", "conn_user", "--connection-host", "conn_host",
+		"--connection-port", "3308", "--connection-db", "maintenance",
+		"--connection-pass", connPass, "-o", "json")
+	if code != ExitOK || strings.TrimSpace(out) != "true" || errS != "" || len(runner.calls) != 3 {
+		t.Fatalf("grant_add code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+	if got := append([]string{runner.calls[0].Name}, runner.calls[0].Args...); !reflect.DeepEqual(got, []string{
+		"mysql", "--batch", "--user=conn_user", "--host=conn_host", "--port=3308", "--database=maintenance",
+		"--execute=GRANT SELECT ON cli_db.cli_table TO 'cli_user'@'cli_host' WITH GRANT OPTION",
+	}) {
+		t.Fatalf("grant_add SQL = %q", got)
+	}
+	if got := runner.calls[2].Args[len(runner.calls[2].Args)-1]; got != "--execute=SHOW GRANTS FOR 'cli_user'@'cli_host'" {
+		t.Fatalf("grant_exists SQL = %q", got)
+	}
+	if got := runner.calls[1].Args[len(runner.calls[1].Args)-1]; got != "--execute=SELECT VERSION()" {
+		t.Fatalf("grant_exists version SQL = %q", got)
+	}
+	if got := append([]string{runner.calls[2].Name}, runner.calls[2].Args...); !reflect.DeepEqual(got, []string{
+		"mysql", "--batch", "--user=conn_user", "--host=conn_host", "--port=3308", "--database=maintenance",
+		"--execute=SHOW GRANTS FOR 'cli_user'@'cli_host'",
+	}) {
+		t.Fatalf("grant_exists SQL = %q", got)
+	}
+	for i, command := range runner.calls {
+		if command.Shell || !reflect.DeepEqual(command.Env, []string{"MYSQL_PWD=" + connPass}) || command.Timeout <= 0 || command.MaxStdoutBytes <= 0 || command.MaxStderrBytes <= 0 {
+			t.Fatalf("grant call %d transport=%#v", i, command)
+		}
+		if strings.Contains(command.RedactedString(), connPass) || strings.Contains(out+errS, connPass) {
+			t.Fatalf("grant password leaked at call %d: command=%q out=%q err=%q", i, command.RedactedString(), out, errS)
+		}
+		for _, secret := range []string{"cli_user", "cli_host", "'cli_user'@'cli_host'", connPass} {
+			found := false
+			for _, configured := range command.Redact {
+				if configured == secret {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("grant call %d redaction inventory missing %q: %#v", i, secret, command.Redact)
+			}
+		}
+	}
+
+	// grant_exists requires the option when requested; the same SHOW GRANTS
+	// row without it is a successful false result rather than an error.
+	runner = &cliRecordingRunner{results: []process.CommandResult{{
+		Stdout: []byte("VERSION()\n8.0.34\n"),
+	}, {
+		ExitCode: 0,
+		Stdout:   []byte("Grants for cli_user@cli_host\nGRANT SELECT ON `cli_db`.`cli_table` TO 'cli_user'@'cli_host'\n"),
+	}}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.grant_exists",
+		"--user", "cli_user", "--host", "cli_host", "--grant", "SELECT",
+		"--database", "cli_db.cli_table", "--grant-option=true", "-o", "json")
+	if code != ExitOK || strings.TrimSpace(out) != "false" || errS != "" || len(runner.calls) != 2 {
+		t.Fatalf("grant_exists option miss code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0},
+		{Stdout: []byte("VERSION()\n8.0.34\n")},
+		{ExitCode: 0, Stdout: []byte("Grants for cli_user@cli_host\n")},
+	}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.grant_revoke",
+		"--user", "cli_user", "--host", "cli_host", "--grant", "SELECT",
+		"--database", "cli_db.cli_table", "-o", "json")
+	if code != ExitOK || strings.TrimSpace(out) != "true" || errS != "" || len(runner.calls) != 3 {
+		t.Fatalf("grant_revoke code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+	if got := append([]string{runner.calls[0].Name}, runner.calls[0].Args...); got[len(got)-1] != "--execute=REVOKE SELECT ON `cli_db`.`cli_table` FROM 'cli_user'@'cli_host';" {
+		t.Fatalf("grant_revoke SQL=%q", got)
+	}
+
+	// Unknown grants and incomplete required fields fail before Runner use and
+	// the fixed error carries no caller value.
+	marker := "unknown-grant-secret"
+	runner = &cliRecordingRunner{}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.grant_exists",
+		"--user", "u", "--grant", marker, "--database", "db.tbl", "-o", "json")
+	if code != ExitFailed || out != "" || !strings.Contains(errS, "mysql: invalid grant") || strings.Contains(errS, marker) || len(runner.calls) != 0 {
+		t.Fatalf("unknown grant code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+	runner = &cliRecordingRunner{}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "mysql.grant_add", "--user", "u", "--grant", "SELECT", "--database", "db.tbl", "--table", "legacy", "-o", "json")
+	if code != ExitInvalidInput || !strings.Contains(errS, "table") || len(runner.calls) != 0 {
+		t.Fatalf("legacy table code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+
+	// A synthetic Runner failure is value-redacted and remains shell-free.
+	runner = &cliRecordingRunner{results: []process.CommandResult{{Err: errors.New("runner leaked " + marker)}}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.grant_add",
+		"--user", marker, "--grant", "SELECT", "--database", "db.tbl",
+		"--connection-pass", marker, "-o", "json")
+	if code != ExitFailed || out != "" || strings.Contains(out+errS, marker) || len(runner.calls) != 1 || runner.calls[0].Shell || strings.Contains(runner.calls[0].RedactedString(), marker) {
+		t.Fatalf("grant Runner redaction code=%d out=%q err=%q calls=%d command=%q", code, out, errS, len(runner.calls), runner.calls[0].RedactedString())
+	}
+
+	// runas is rejected before the central Runner, so no live command can be
+	// reached through the CLI.
+	runner = &cliRecordingRunner{}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "mysql.grant_exists",
+		"--user", "u", "--grant", "SELECT", "--database", "db.tbl", "--runas", "other", "-o", "json")
+	if code != ExitFailed || !strings.Contains(errS, "runas") || len(runner.calls) != 0 {
+		t.Fatalf("grant runas code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+}
+
+func TestMySQLCLIGrantCompleteRedactionInventory(t *testing.T) {
+	marker := "grant'overlap"
+	doubled := strings.ReplaceAll(marker, "'", "''")
+	quoted := "'" + doubled + "'"
+	account := quoted + "@" + quoted
+	object := "`" + marker + "`.`" + marker + "`"
+	forms := []string{marker, doubled, quoted, account, object}
+	leak := "runner grant overlap " + strings.Join(forms, " ")
+	config := `{"user":"grant'overlap@grant'overlap","database":"grant'overlap.grant'overlap","grant":"SELECT","ssl_option":[{"CIPHER":"grant'overlap"}],"connection_pass":"grant'overlap"}`
+
+	for failAt := 0; failAt < 3; failAt++ {
+		results := make([]process.CommandResult, 0, failAt+1)
+		if failAt > 0 {
+			results = append(results, process.CommandResult{ExitCode: 0})
+		}
+		if failAt > 1 {
+			results = append(results, process.CommandResult{Stdout: []byte("VERSION()\n8.0.34\n")})
+		}
+		results = append(results, process.CommandResult{
+			Err:    errors.New(leak),
+			Stdout: []byte("stdout " + leak),
+			Stderr: []byte("stderr " + leak),
+		})
+		runner := &cliRecordingRunner{results: results}
+		app := mysqlCLIRunnerApp(t, runner)
+		code, out, errS := captureCode(t, app, "exec", "mysql.grant_add", "--config", config, "-o", "json")
+		if code != ExitFailed || out != "" || len(runner.calls) != failAt+1 || !strings.Contains(errS, process.RedactedPlaceholder) {
+			t.Fatalf("failAt=%d code=%d out=%q err=%q calls=%d", failAt, code, out, errS, len(runner.calls))
+		}
+		for callIndex, command := range runner.calls {
+			if command.Shell || !reflect.DeepEqual(command.Env, []string{"MYSQL_PWD=" + marker}) {
+				t.Fatalf("failAt=%d call=%d transport=%#v", failAt, callIndex, command)
+			}
+			for _, form := range forms {
+				if strings.Contains(out+errS, form) || strings.Contains(command.RedactedString(), form) {
+					t.Fatalf("failAt=%d call=%d leaked %q: out=%q err=%q command=%q", failAt, callIndex, form, out, errS, command.RedactedString())
+				}
+				found := false
+				for _, configured := range command.Redact {
+					if configured == form {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Fatalf("failAt=%d call=%d inventory missing %q: %#v", failAt, callIndex, form, command.Redact)
+				}
+			}
+			for i := 1; i < len(command.Redact); i++ {
+				if len(command.Redact[i-1]) < len(command.Redact[i]) {
+					t.Fatalf("failAt=%d call=%d inventory not longest-first: %#v", failAt, callIndex, command.Redact)
+				}
+			}
+		}
+	}
+}
+
+func TestMySQLCLIGrantRevokeRedactionInventory(t *testing.T) {
+	marker := "grant'overlap"
+	host := "host'overlap"
+	doubled := strings.ReplaceAll(marker, "'", "''")
+	hostDoubled := strings.ReplaceAll(host, "'", "''")
+	quoted := "'" + doubled + "'"
+	hostQuoted := "'" + hostDoubled + "'"
+	forms := []string{
+		marker,
+		doubled,
+		quoted,
+		host,
+		hostDoubled,
+		hostQuoted,
+		marker + "@" + host,
+		quoted + "@" + hostQuoted,
+		"`" + marker + "`.`" + marker + "`",
+		marker + "." + marker,
+	}
+	leak := "runner grant revoke overlap " + strings.Join(forms, " ")
+	args := []string{
+		"exec", "mysql.grant_revoke",
+		"--user", marker, "--host", host, "--grant", "SELECT",
+		"--database", marker + "." + marker, "--grant-option=true", "--escape=true",
+		"--connection-user", "conn_user", "--connection-host", "conn_host",
+		"--connection-port", "3308", "--connection-db", "maintenance",
+		"--connection-pass", marker, "-o", "json",
+	}
+	wantQueries := []string{
+		"--execute=REVOKE SELECT, GRANT OPTION ON `" + marker + "`.`" + marker + "` FROM '" + doubled + "'@'" + hostDoubled + "';",
+		"--execute=SELECT VERSION()",
+		"--execute=SHOW GRANTS FOR '" + doubled + "'@'" + hostDoubled + "'",
+	}
+	wantPrefix := []string{"mysql", "--batch", "--user=conn_user", "--host=conn_host", "--port=3308", "--database=maintenance"}
+	argsBefore := append([]string(nil), args...)
+
+	for failAt := 0; failAt < len(wantQueries); failAt++ {
+		results := make([]process.CommandResult, 0, failAt+1)
+		if failAt > 0 {
+			results = append(results, process.CommandResult{ExitCode: 0})
+		}
+		if failAt > 1 {
+			results = append(results, process.CommandResult{ExitCode: 0, Stdout: []byte("VERSION()\n8.0.34\n")})
+		}
+		results = append(results, process.CommandResult{
+			Err:    errors.New(leak),
+			Stdout: []byte("stdout " + leak + "\n"),
+			Stderr: []byte("stderr " + leak + "\n"),
+		})
+		runner := &cliRecordingRunner{results: results}
+		code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), args...)
+		if code != ExitFailed || out != "" || len(runner.calls) != failAt+1 || !strings.Contains(errS, process.RedactedPlaceholder) {
+			t.Fatalf("failAt=%d code=%d out=%q err=%q calls=%d", failAt, code, out, errS, len(runner.calls))
+		}
+		for index, command := range runner.calls {
+			wantArgv := append(append([]string(nil), wantPrefix...), wantQueries[index])
+			if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, wantArgv) {
+				t.Fatalf("failAt=%d call %d argv=%q, want %q", failAt, index, got, wantArgv)
+			}
+			if command.Shell || !reflect.DeepEqual(command.Env, []string{"MYSQL_PWD=" + marker}) {
+				t.Fatalf("failAt=%d call %d transport=%#v", failAt, index, command)
+			}
+			for _, form := range forms {
+				if strings.Contains(out+errS, form) || strings.Contains(command.RedactedString(), form) {
+					t.Fatalf("failAt=%d call %d leaked %q: out=%q err=%q command=%q", failAt, index, form, out, errS, command.RedactedString())
+				}
+				found := false
+				for _, configured := range command.Redact {
+					if configured == form {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Fatalf("failAt=%d call %d inventory missing %q: %#v", failAt, index, form, command.Redact)
+				}
+			}
+			for i := 1; i < len(command.Redact); i++ {
+				if len(command.Redact[i-1]) < len(command.Redact[i]) {
+					t.Fatalf("failAt=%d call %d inventory not longest-first: %#v", failAt, index, command.Redact)
+				}
+			}
+			if index > 0 && (strings.Contains(wantQueries[index], "GRANT ") || strings.Contains(wantQueries[index], "REVOKE ")) {
+				t.Fatalf("failAt=%d issued a mutation after the failing read", failAt)
+			}
+		}
+		if !reflect.DeepEqual(args, argsBefore) {
+			t.Fatalf("failAt=%d mutated CLI argument vector: before=%#v after=%#v", failAt, argsBefore, args)
+		}
+	}
+}
+
+func TestMySQLCLIGrantShowPrivilegesRedactionInventory(t *testing.T) {
+	marker := "global'overlap"
+	doubled := strings.ReplaceAll(marker, "'", "''")
+	quoted := "'" + doubled + "'"
+	account := quoted + "@" + quoted
+	verifier := mysqlCLITestNativePasswordVerifier(marker)
+	forms := []string{
+		marker,
+		doubled,
+		quoted,
+		account,
+		"*.*",
+		"`*`.`*`",
+		verifier,
+		"'" + verifier + "'",
+	}
+	leak := "global grant overlap " + strings.Join(forms, " ")
+	config := `{"user":"global'overlap@global'overlap","database":"*.*","grant":"ALL","connection_pass":"global'overlap"}`
+
+	for failAt := 0; failAt < 3; failAt++ {
+		results := make([]process.CommandResult, 0, failAt+1)
+		if failAt > 0 {
+			results = append(results, process.CommandResult{Stdout: []byte("VERSION()\n8.0.34\n")})
+		}
+		if failAt > 1 {
+			results = append(results, process.CommandResult{Stdout: []byte("Privilege\tContext\tComment\nSELECT\tGlobal\t\n")})
+		}
+		results = append(results, process.CommandResult{
+			Err:    errors.New(leak),
+			Stdout: []byte("stdout " + leak),
+			Stderr: []byte("stderr " + leak),
+		})
+		runner := &cliRecordingRunner{results: results}
+		app := mysqlCLIRunnerApp(t, runner)
+		code, out, errS := captureCode(t, app, "exec", "mysql.grant_exists", "--config", config, "-o", "json")
+		if code != ExitFailed || out != "" || len(runner.calls) != failAt+1 {
+			t.Fatalf("failAt=%d code=%d out=%q err=%q calls=%d", failAt, code, out, errS, len(runner.calls))
+		}
+		for callIndex, command := range runner.calls {
+			if !strings.Contains(errS, process.RedactedPlaceholder) {
+				t.Fatalf("failAt=%d call=%d redaction output=%q command=%q", failAt, callIndex, errS, command.RedactedString())
+			}
+			for _, form := range forms {
+				if strings.Contains(out, form) || strings.Contains(errS, form) || strings.Contains(command.RedactedString(), form) {
+					t.Fatalf("failAt=%d call=%d leaked %q: out=%q err=%q command=%q", failAt, callIndex, form, out, errS, command.RedactedString())
+				}
+				found := false
+				for _, configured := range command.Redact {
+					if configured == form {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Fatalf("failAt=%d call=%d inventory missing %q: %#v", failAt, callIndex, form, command.Redact)
+				}
+			}
+		}
+	}
+}
+
+func mysqlCLITestNativePasswordVerifier(password string) string {
+	first := sha1.Sum([]byte(password))
+	second := sha1.Sum(first[:])
+	return "*" + strings.ToUpper(hex.EncodeToString(second[:]))
 }

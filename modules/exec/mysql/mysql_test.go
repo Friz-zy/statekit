@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/friz-zy/statekit/internal/config"
 	"github.com/friz-zy/statekit/internal/process"
 	"github.com/friz-zy/statekit/internal/runtime"
 )
@@ -289,6 +291,9 @@ func TestMysqlRegistryNames(t *testing.T) {
 		"mysql.db_optimize",
 		"mysql.db_repair",
 		"mysql.db_tables",
+		"mysql.grant_add",
+		"mysql.grant_exists",
+		"mysql.grant_revoke",
 		"mysql.quote_identifier",
 		"mysql.showglobal",
 		"mysql.showvariables",
@@ -311,6 +316,1004 @@ func TestMysqlRegistryNames(t *testing.T) {
 	}
 	if err := Register(reg); err == nil {
 		t.Fatal("duplicate registration must fail")
+	}
+}
+
+func grantTestShowGrants(statement string) []byte {
+	return []byte("Grants for account\n" + statement + "\n")
+}
+
+func TestMysqlGrantAddExactSQLAndPostCheck(t *testing.T) {
+	connPass := "grant-connection-pass"
+	rt, runner := newMysqlRuntime(
+		process.CommandResult{ExitCode: 0},
+		process.CommandResult{ExitCode: 0, Stdout: []byte("VERSION()\n8.0.34\n")},
+		process.CommandResult{ExitCode: 0, Stdout: grantTestShowGrants("GRANT SELECT(COL1, COL2) ON `db_%``x`.`tbl``_x` TO 'u''ser'@'h%ost'")},
+	)
+	args := &GrantAddArgs{
+		User:     "u'ser@h%ost",
+		Grant:    "select(col1, col2)",
+		Database: "db_%`x.tbl`_x",
+		ConnUser: mysqlString("conn_user"),
+		ConnHost: mysqlString("conn_host"),
+		ConnPort: mysqlString("3307"),
+		ConnPass: mysqlString(connPass),
+		ConnDB:   mysqlString("maintenance"),
+	}
+	value, err := (grantAddFunc{}).Execute(context.Background(), rt, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, isBool := value.(bool); !isBool || !ok {
+		t.Fatalf("grant_add result = %#v, want true", value)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("grant_add calls = %d, want mutation, version, SHOW GRANTS", len(runner.calls))
+	}
+	mutation := runner.calls[0]
+	if argv := append([]string{mutation.Name}, mutation.Args...); !reflect.DeepEqual(argv, []string{
+		"mysql", "--batch", "--user=conn_user", "--host=conn_host", "--port=3307", "--database=maintenance",
+		"--execute=GRANT SELECT(COL1, COL2) ON `db_%``x`.`tbl``_x` TO 'u''ser'@'h%ost'",
+	}) {
+		t.Fatalf("grant_add argv = %q", argv)
+	}
+	if got := runner.calls[1].Args[len(runner.calls[1].Args)-1]; got != "--execute=SELECT VERSION()" {
+		t.Fatalf("grant_exists version query = %q", got)
+	}
+	check := runner.calls[2]
+	if argv := append([]string{check.Name}, check.Args...); !reflect.DeepEqual(argv, []string{
+		"mysql", "--batch", "--user=conn_user", "--host=conn_host", "--port=3307", "--database=maintenance",
+		"--execute=SHOW GRANTS FOR 'u''ser'@'h%ost'",
+	}) {
+		t.Fatalf("grant_exists argv = %q", argv)
+	}
+	for i, command := range runner.calls {
+		if command.Shell || command.Timeout != commandTimeout || command.MaxStdoutBytes != outputLimit || command.MaxStderrBytes != outputLimit {
+			t.Fatalf("call %d transport = %#v", i, command)
+		}
+		if !reflect.DeepEqual(command.Env, []string{"MYSQL_PWD=" + connPass}) || !containsAll(command.Redact,
+			[]string{connPass, "u'ser", "u''ser", "'u''ser'", "'u''ser'@'h%ost'", "db_%`x", "tbl`_x"}) {
+			t.Fatalf("call %d redaction = %#v", i, command)
+		}
+		if strings.Contains(command.RedactedString(), connPass) {
+			t.Fatalf("call %d rendered password", i)
+		}
+	}
+}
+
+func TestMysqlGrantHostEscapeDefaultsAndSourceMapping(t *testing.T) {
+	// Omitted host and escape retain the pinned localhost/True defaults, while
+	// explicit host maps the source's separate user/host parameters and an
+	// explicit false escape keeps the raw database.table spelling.
+	rt, runner := newMysqlRuntime(
+		process.CommandResult{ExitCode: 0},
+		process.CommandResult{ExitCode: 0, Stdout: []byte("VERSION()\n8.0.34\n")},
+		process.CommandResult{ExitCode: 0, Stdout: grantTestShowGrants("GRANT SELECT ON db.tbl TO 'u'@'remote'")},
+	)
+	host := "remote"
+	escape := false
+	value, err := (grantAddFunc{}).Execute(context.Background(), rt, &GrantAddArgs{
+		User: "u", Database: "db.tbl", Grant: "SELECT", Host: &host, Escape: &escape,
+	})
+	if err != nil || value != true || len(runner.calls) != 3 {
+		t.Fatalf("explicit host/escape = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+	if got := runner.calls[0].Args[len(runner.calls[0].Args)-1]; got != "--execute=GRANT SELECT ON db.tbl TO 'u'@'remote'" {
+		t.Fatalf("raw grant SQL = %q", got)
+	}
+	if got := runner.calls[2].Args[len(runner.calls[2].Args)-1]; got != "--execute=SHOW GRANTS FOR 'u'@'remote'" {
+		t.Fatalf("explicit host post-check SQL = %q", got)
+	}
+
+	rt, runner = newMysqlRuntime(
+		process.CommandResult{ExitCode: 0},
+		process.CommandResult{ExitCode: 0, Stdout: []byte("VERSION()\n8.0.34\n")},
+		process.CommandResult{ExitCode: 0, Stdout: grantTestShowGrants("GRANT SELECT ON `db`.`tbl` TO 'u'@'localhost'")},
+	)
+	value, err = (grantAddFunc{}).Execute(context.Background(), rt, &GrantAddArgs{
+		User: "u", Database: "db.tbl", Grant: "SELECT",
+	})
+	if err != nil || value != true || len(runner.calls) != 3 {
+		t.Fatalf("default host/escape = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+	if got := runner.calls[0].Args[len(runner.calls[0].Args)-1]; got != "--execute=GRANT SELECT ON `db`.`tbl` TO 'u'@'localhost'" {
+		t.Fatalf("default grant SQL = %q", got)
+	}
+}
+
+func TestMysqlGrantAddSSLOption(t *testing.T) {
+	rt, runner := newMysqlRuntime(
+		process.CommandResult{ExitCode: 0},
+		process.CommandResult{ExitCode: 0, Stdout: []byte("VERSION()\n8.0.34\n")},
+		process.CommandResult{ExitCode: 0, Stdout: grantTestShowGrants("GRANT SELECT ON `db`.`tbl` TO 'u'@'localhost'")},
+	)
+	value, err := (grantAddFunc{}).Execute(context.Background(), rt, &GrantAddArgs{
+		User:     "u",
+		Database: "db.tbl",
+		Grant:    "SELECT",
+		SSLOption: []any{
+			map[string]any{"SSL": true},
+			map[string]any{"CIPHER": "AES256"},
+		},
+	})
+	if err != nil || value != true || len(runner.calls) != 3 {
+		t.Fatalf("ssl grant_add = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+	got := runner.calls[0].Args[len(runner.calls[0].Args)-1]
+	want := "--execute=GRANT SELECT ON `db`.`tbl` TO 'u'@'localhost' REQUIRE SSL AND CIPHER 'AES256'"
+	if got != want {
+		t.Fatalf("ssl grant SQL = %q, want %q", got, want)
+	}
+}
+
+func containsAll(values []string, wanted []string) bool {
+	set := make(map[string]bool, len(values))
+	for _, value := range values {
+		set[value] = true
+	}
+	for _, value := range wanted {
+		if !set[value] {
+			return false
+		}
+	}
+	return true
+}
+
+func mysqlGrantRedactionForms(marker, host, database, table string) []string {
+	doubled := strings.ReplaceAll(marker, "'", "''")
+	hostDoubled := strings.ReplaceAll(host, "'", "''")
+	quoted := "'" + doubled + "'"
+	hostQuoted := "'" + hostDoubled + "'"
+	databaseQuoted := "`" + strings.ReplaceAll(database, "`", "``") + "`"
+	tableQuoted := "`" + strings.ReplaceAll(table, "`", "``") + "`"
+	forms := []string{
+		marker,
+		doubled,
+		quoted,
+		host,
+		hostDoubled,
+		hostQuoted,
+		marker + "@" + host,
+		quoted + "@" + hostQuoted,
+		mysqlNativePasswordHash(marker),
+	}
+	if database != "" {
+		forms = append(forms,
+			database,
+			strings.ReplaceAll(database, "'", "''"),
+			"'"+strings.ReplaceAll(database, "'", "''")+"'",
+			databaseQuoted,
+		)
+	}
+	if table != "" {
+		forms = append(forms,
+			table,
+			strings.ReplaceAll(table, "'", "''"),
+			"'"+strings.ReplaceAll(table, "'", "''")+"'",
+			tableQuoted,
+		)
+	}
+	if database != "" && table != "" {
+		forms = append(forms,
+			database+"."+table,
+			databaseQuoted+"."+tableQuoted,
+		)
+	}
+	return forms
+}
+
+func mysqlGrantGlobalAllRedactionForms(marker, host string) []string {
+	forms := mysqlGrantRedactionForms(marker, host, "*", "*")
+	filtered := make([]string, 0, len(forms))
+	for _, form := range forms {
+		switch form {
+		case "*", "'*'", "`*`":
+			// A one-character wildcard is present in the command redaction
+			// inventory, but it is also part of the redaction placeholder.
+			// Keep the object-level forms below, which are unambiguous checks.
+			continue
+		default:
+			filtered = append(filtered, form)
+		}
+	}
+	return filtered
+}
+
+func mysqlGrantFailureResult(forms []string) process.CommandResult {
+	leak := "runner grant failure " + strings.Join(forms, " ")
+	return process.CommandResult{
+		Err:    errors.New(leak),
+		Stdout: []byte("stdout " + leak + "\n"),
+		Stderr: []byte("stderr " + leak + "\n"),
+	}
+}
+
+func mysqlGrantQuery(command process.Command) string {
+	if len(command.Args) == 0 {
+		return ""
+	}
+	return command.Args[len(command.Args)-1]
+}
+
+func assertMysqlGrantRedactedTransport(t *testing.T, result process.CommandResult, argv []string, conn *myConnection, secrets, forms []string, preserve bool) {
+	t.Helper()
+	rt, runner := newMysqlRuntime(result)
+	var (
+		safe process.CommandResult
+		err  error
+	)
+	if preserve {
+		safe, err = runMysqlPreserveSecrets(context.Background(), rt, argv, conn, secrets...)
+	} else {
+		safe, err = runMysqlSecrets(context.Background(), rt, argv, conn, secrets...)
+	}
+	if err == nil || safe.Err == nil {
+		t.Fatal("redacting transport must return the Runner error")
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("redacting transport made %d Runner calls, want 1", len(runner.calls))
+	}
+	command := runner.calls[0]
+	outputs := []string{err.Error(), safe.Err.Error(), string(safe.Stdout), string(safe.Stderr), command.RedactedString()}
+	for outputIndex, output := range outputs {
+		for formIndex, form := range forms {
+			if strings.Contains(output, form) {
+				t.Fatalf("redacting transport leaked marker form index %d in output %d", formIndex, outputIndex)
+			}
+		}
+	}
+	if command.Shell || !reflect.DeepEqual(command.Env, []string{"MYSQL_PWD=" + *conn.Password}) {
+		t.Fatal("redacting transport changed the shell-free password transport")
+	}
+	if !containsAll(command.Redact, forms) {
+		t.Fatal("redacting transport omitted a marker form from Redact")
+	}
+}
+
+func TestMysqlGrantProviderRunnerErrorRedaction(t *testing.T) {
+	marker := "grant'overlap"
+	host := "host'overlap"
+	database, table := marker, marker
+	forms := mysqlGrantRedactionForms(marker, host, database, table)
+	sslOption := []any{map[string]any{"CIPHER": marker}}
+
+	for _, tc := range []struct {
+		name          string
+		mutationQuery string
+		makeArgs      func() any
+		run           func(*runtime.Runtime, any) (any, error)
+		connection    func(any) *myConnection
+		secrets       func(*myConnection) []string
+	}{
+		{
+			name:          "grant_add",
+			mutationQuery: "--execute=GRANT SELECT ON `" + marker + "`.`" + marker + "` TO '" + strings.ReplaceAll(marker, "'", "''") + "'@'" + strings.ReplaceAll(host, "'", "''") + "' REQUIRE CIPHER '" + strings.ReplaceAll(marker, "'", "''") + "' WITH GRANT OPTION",
+			makeArgs: func() any {
+				grantOption := true
+				return &GrantAddArgs{
+					User:        marker,
+					Host:        mysqlString(host),
+					Grant:       "SELECT",
+					Database:    database + "." + table,
+					GrantOption: &grantOption,
+					SSLOption:   sslOption,
+					ConnPass:    mysqlString(marker),
+				}
+			},
+			run: func(rt *runtime.Runtime, args any) (any, error) {
+				return (grantAddFunc{}).Execute(context.Background(), rt, args)
+			},
+			connection: func(args any) *myConnection { return args.(*GrantAddArgs).connection() },
+			secrets: func(conn *myConnection) []string {
+				return grantSecretInventory(conn, marker, host, "SELECT", database, table, sslOption)
+			},
+		},
+		{
+			name:          "grant_revoke",
+			mutationQuery: "--execute=REVOKE SELECT, GRANT OPTION ON `" + marker + "`.`" + marker + "` FROM '" + strings.ReplaceAll(marker, "'", "''") + "'@'" + strings.ReplaceAll(host, "'", "''") + "';",
+			makeArgs: func() any {
+				grantOption := true
+				return &GrantRevokeArgs{
+					User:        marker,
+					Host:        mysqlString(host),
+					Grant:       "SELECT",
+					Database:    database + "." + table,
+					GrantOption: &grantOption,
+					ConnPass:    mysqlString(marker),
+				}
+			},
+			run: func(rt *runtime.Runtime, args any) (any, error) {
+				return (grantRevokeFunc{}).Execute(context.Background(), rt, args)
+			},
+			connection: func(args any) *myConnection { return args.(*GrantRevokeArgs).connection() },
+			secrets: func(conn *myConnection) []string {
+				return grantSecretInventory(conn, marker, host, "SELECT", database, table)
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for failAt := 0; failAt < 3; failAt++ {
+				results := make([]process.CommandResult, 0, failAt+1)
+				if failAt > 0 {
+					results = append(results, process.CommandResult{ExitCode: 0})
+				}
+				if failAt > 1 {
+					results = append(results, process.CommandResult{ExitCode: 0, Stdout: []byte("VERSION()\n8.0.34\n")})
+				}
+				results = append(results, mysqlGrantFailureResult(forms))
+				rt, runner := newMysqlRuntime(results...)
+				args := tc.makeArgs()
+				before := reflect.ValueOf(args).Elem().Interface()
+				value, err := tc.run(rt, args)
+				if err == nil || value != false || len(runner.calls) != failAt+1 {
+					t.Fatalf("failAt=%d returned %#v, %v after %d calls", failAt, value, err, len(runner.calls))
+				}
+				if !reflect.DeepEqual(reflect.ValueOf(args).Elem().Interface(), before) {
+					t.Fatalf("failAt=%d mutated provider arguments", failAt)
+				}
+				for _, form := range forms {
+					if strings.Contains(err.Error(), form) {
+						t.Fatalf("failAt=%d returned an unredacted Runner error", failAt)
+					}
+				}
+
+				for index, command := range runner.calls {
+					query := mysqlGrantQuery(command)
+					switch index {
+					case 0:
+						if query != tc.mutationQuery {
+							t.Fatalf("failAt=%d changed mutation call order", failAt)
+						}
+					case 1:
+						if query != "--execute=SELECT VERSION()" {
+							t.Fatalf("failAt=%d changed version call order", failAt)
+						}
+					case 2:
+						if query != "--execute=SHOW GRANTS FOR '"+strings.ReplaceAll(marker, "'", "''")+"'@'"+strings.ReplaceAll(host, "'", "''")+"'" {
+							t.Fatalf("failAt=%d changed SHOW GRANTS call order", failAt)
+						}
+					}
+					if index > 0 && (strings.Contains(query, "GRANT ") || strings.Contains(query, "REVOKE ")) {
+						t.Fatalf("failAt=%d issued an extra mutation after the failing read", failAt)
+					}
+				}
+
+				conn := tc.connection(args)
+				secrets := tc.secrets(conn)
+				failing := runner.calls[len(runner.calls)-1]
+				assertMysqlGrantRedactedTransport(t, mysqlGrantFailureResult(forms),
+					append([]string{failing.Name}, failing.Args...), conn, secrets, forms, failAt != 0)
+			}
+		})
+	}
+}
+
+func TestMysqlRegistryGrantRevokeRunnerErrorRedaction(t *testing.T) {
+	marker := "grant'overlap"
+	host := "host'overlap"
+	database, table := marker, marker
+	forms := mysqlGrantRedactionForms(marker, host, database, table)
+	doubled := strings.ReplaceAll(marker, "'", "''")
+	hostDoubled := strings.ReplaceAll(host, "'", "''")
+	wantQueries := []string{
+		"--execute=REVOKE SELECT, GRANT OPTION ON `" + marker + "`.`" + marker + "` FROM '" + doubled + "'@'" + hostDoubled + "';",
+		"--execute=SELECT VERSION()",
+		"--execute=SHOW GRANTS FOR '" + doubled + "'@'" + hostDoubled + "'",
+	}
+
+	for failAt := 0; failAt < len(wantQueries); failAt++ {
+		results := make([]process.CommandResult, 0, failAt+1)
+		if failAt > 0 {
+			results = append(results, process.CommandResult{ExitCode: 0})
+		}
+		if failAt > 1 {
+			results = append(results, process.CommandResult{ExitCode: 0, Stdout: []byte("VERSION()\n8.0.34\n")})
+		}
+		results = append(results, mysqlGrantFailureResult(forms))
+
+		rt, runner := newMysqlRuntime(results...)
+		rt.Exec = runtime.NewExecRegistry()
+		if err := Register(rt.Exec); err != nil {
+			t.Fatal(err)
+		}
+		args := &GrantRevokeArgs{
+			User:        marker,
+			Host:        mysqlString(host),
+			Grant:       "SELECT",
+			Database:    database + "." + table,
+			GrantOption: mysqlBool(true),
+			Escape:      mysqlBool(true),
+			ConnPass:    mysqlString(marker),
+		}
+		before := reflect.ValueOf(args).Elem().Interface()
+		value, err := rt.Exec.Call(context.Background(), rt, "mysql.grant_revoke", args)
+		if err == nil || value != false || len(runner.calls) != failAt+1 {
+			t.Fatalf("failAt=%d returned %#v, %v after %d calls", failAt, value, err, len(runner.calls))
+		}
+		if after := reflect.ValueOf(args).Elem().Interface(); !reflect.DeepEqual(after, before) {
+			t.Fatalf("failAt=%d mutated grant_revoke arguments: before=%#v after=%#v", failAt, before, after)
+		}
+		for _, form := range forms {
+			if strings.Contains(err.Error(), form) {
+				t.Fatalf("failAt=%d registry error leaked marker form %q: %v", failAt, form, err)
+			}
+		}
+
+		for index, command := range runner.calls {
+			if got := mysqlGrantQuery(command); got != wantQueries[index] {
+				t.Fatalf("failAt=%d call %d query=%q, want %q", failAt, index, got, wantQueries[index])
+			}
+			if command.Shell || command.Timeout != commandTimeout || command.MaxStdoutBytes != outputLimit || command.MaxStderrBytes != outputLimit {
+				t.Fatalf("failAt=%d call %d transport=%#v", failAt, index, command)
+			}
+			if !reflect.DeepEqual(command.Env, []string{"MYSQL_PWD=" + marker}) || !containsAll(command.Redact, forms) {
+				t.Fatalf("failAt=%d call %d redaction transport=%#v", failAt, index, command)
+			}
+			if rendered := command.RedactedString(); func() bool {
+				for _, form := range forms {
+					if strings.Contains(rendered, form) {
+						return true
+					}
+				}
+				return false
+			}() {
+				t.Fatalf("failAt=%d call %d rendered command leaked a marker: %q", failAt, index, rendered)
+			}
+			if index > 0 && (strings.Contains(wantQueries[index], "GRANT ") || strings.Contains(wantQueries[index], "REVOKE ")) {
+				t.Fatalf("failAt=%d issued a mutation after the failing read", failAt)
+			}
+		}
+
+		// The registry returns only the safe error. Re-run the exact failing
+		// transport to pin the same synthetic error's stdout/stderr sanitization.
+		failing := runner.calls[len(runner.calls)-1]
+		conn := args.connection()
+		assertMysqlGrantRedactedTransport(t, mysqlGrantFailureResult(forms),
+			append([]string{failing.Name}, failing.Args...), conn,
+			grantSecretInventory(conn, marker, host, "SELECT", database, table), forms, failAt > 0)
+	}
+}
+
+func TestMysqlGrantExistsProviderRunnerErrorRedaction(t *testing.T) {
+	marker := "grant'overlap"
+	host := "host'overlap"
+	forms := mysqlGrantRedactionForms(marker, host, "", "")
+	args := &GrantExistsArgs{
+		User:     marker,
+		Host:     mysqlString(host),
+		Grant:    "ALL",
+		Database: "*.*",
+		ConnPass: mysqlString(marker),
+	}
+
+	for failAt := 0; failAt < 3; failAt++ {
+		results := make([]process.CommandResult, 0, failAt+1)
+		if failAt > 0 {
+			results = append(results, process.CommandResult{ExitCode: 0, Stdout: []byte("VERSION()\n8.0.34\n")})
+		}
+		if failAt > 1 {
+			results = append(results, process.CommandResult{ExitCode: 0, Stdout: []byte("Privilege\tContext\tComment\nSELECT\tGlobal\t\n")})
+		}
+		results = append(results, mysqlGrantFailureResult(forms))
+		rt, runner := newMysqlRuntime(results...)
+		before := *args
+		value, err := (grantExistsFunc{}).Execute(context.Background(), rt, args)
+		if err == nil || value != false || len(runner.calls) != failAt+1 {
+			t.Fatalf("failAt=%d returned %#v, %v after %d calls", failAt, value, err, len(runner.calls))
+		}
+		if !reflect.DeepEqual(*args, before) {
+			t.Fatalf("failAt=%d mutated provider arguments", failAt)
+		}
+		for _, form := range forms {
+			if strings.Contains(err.Error(), form) {
+				t.Fatalf("failAt=%d returned an unredacted Runner error", failAt)
+			}
+		}
+
+		wantQueries := []string{
+			"--execute=SELECT VERSION()",
+			"--execute=SHOW PRIVILEGES",
+			"--execute=SHOW GRANTS FOR '" + strings.ReplaceAll(marker, "'", "''") + "'@'" + strings.ReplaceAll(host, "'", "''") + "'",
+		}
+		for index, command := range runner.calls {
+			if mysqlGrantQuery(command) != wantQueries[index] {
+				t.Fatalf("failAt=%d changed query order", failAt)
+			}
+			if strings.Contains(mysqlGrantQuery(command), "GRANT ") || strings.Contains(mysqlGrantQuery(command), "REVOKE ") {
+				t.Fatalf("failAt=%d issued a mutation query", failAt)
+			}
+			if !containsAll(command.Redact, forms) {
+				t.Fatalf("failAt=%d omitted a marker form from Redact", failAt)
+			}
+			if strings.Contains(command.RedactedString(), marker) || strings.Contains(command.RedactedString(), host) {
+				t.Fatalf("failAt=%d rendered command leaked a marker", failAt)
+			}
+		}
+
+		conn := args.connection()
+		secrets := grantSecretInventory(conn, marker, host, "ALL", "*", "*")
+		failing := runner.calls[len(runner.calls)-1]
+		assertMysqlGrantRedactedTransport(t, mysqlGrantFailureResult(forms),
+			append([]string{failing.Name}, failing.Args...), conn, secrets, forms, true)
+	}
+}
+
+// TestMysqlGrantMutationGlobalAllPostCheckErrorAfterOneMutation pins the
+// source order: a successful GRANT/REVOKE is followed by the VERSION and SHOW
+// PRIVILEGES post-checks. A post-check failure cannot undo that first
+// mutation, but it must not cause a repeat mutation; only the final error,
+// redaction, and input-preservation guarantees remain under test.
+func TestMysqlGrantMutationGlobalAllPostCheckErrorAfterOneMutation(t *testing.T) {
+	marker := "global'grant"
+	host := "host'grant"
+	database, table := "*", "*"
+	doubled := strings.ReplaceAll(marker, "'", "''")
+	hostDoubled := strings.ReplaceAll(host, "'", "''")
+	mutationQueries := map[string]string{
+		"grant_add":    "--execute=GRANT ALL PRIVILEGES ON *.* TO '" + doubled + "'@'" + hostDoubled + "'",
+		"grant_revoke": "--execute=REVOKE ALL PRIVILEGES ON *.* FROM '" + doubled + "'@'" + hostDoubled + "';",
+	}
+
+	testCases := []struct {
+		name         string
+		registryName string
+		makeArgs     func() any
+		direct       func(*runtime.Runtime, any) (any, error)
+		connection   func(any) *myConnection
+		secretArgs   func(*myConnection) []string
+	}{
+		{
+			name:         "grant_add",
+			registryName: "mysql.grant_add",
+			makeArgs: func() any {
+				return &GrantAddArgs{
+					User:     marker,
+					Host:     mysqlString(host),
+					Grant:    "ALL",
+					Database: database + "." + table,
+					ConnPass: mysqlString(marker),
+				}
+			},
+			direct: func(rt *runtime.Runtime, args any) (any, error) {
+				return (grantAddFunc{}).Execute(context.Background(), rt, args)
+			},
+			connection: func(args any) *myConnection { return args.(*GrantAddArgs).connection() },
+			secretArgs: func(conn *myConnection) []string {
+				return grantSecretInventory(conn, marker, host, "ALL", database, table)
+			},
+		},
+		{
+			name:         "grant_revoke",
+			registryName: "mysql.grant_revoke",
+			makeArgs: func() any {
+				return &GrantRevokeArgs{
+					User:     marker,
+					Host:     mysqlString(host),
+					Grant:    "ALL",
+					Database: database + "." + table,
+					ConnPass: mysqlString(marker),
+				}
+			},
+			direct: func(rt *runtime.Runtime, args any) (any, error) {
+				return (grantRevokeFunc{}).Execute(context.Background(), rt, args)
+			},
+			connection: func(args any) *myConnection { return args.(*GrantRevokeArgs).connection() },
+			secretArgs: func(conn *myConnection) []string {
+				return grantSecretInventory(conn, marker, host, "ALL", database, table)
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name+"/direct", func(t *testing.T) {
+			runMysqlGrantMutationGlobalAllPostCheckErrorAfterOneMutation(t, tc.makeArgs(), tc.direct, tc.connection, tc.secretArgs, "direct", mutationQueries[tc.name])
+		})
+		t.Run(tc.name+"/registry", func(t *testing.T) {
+			args := tc.makeArgs()
+			run := func(rt *runtime.Runtime, value any) (any, error) {
+				if rt.Exec == nil {
+					rt.Exec = runtime.NewExecRegistry()
+					if err := Register(rt.Exec); err != nil {
+						t.Fatal(err)
+					}
+				}
+				return rt.Exec.Call(context.Background(), rt, tc.registryName, value)
+			}
+			runMysqlGrantMutationGlobalAllPostCheckErrorAfterOneMutation(t, args, run, tc.connection, tc.secretArgs, "registry", mutationQueries[tc.name])
+		})
+	}
+}
+
+func runMysqlGrantMutationGlobalAllPostCheckErrorAfterOneMutation(
+	t *testing.T,
+	args any,
+	call func(*runtime.Runtime, any) (any, error),
+	connection func(any) *myConnection,
+	secretArgs func(*myConnection) []string,
+	surface, mutationQuery string,
+) {
+	t.Helper()
+	marker := "global'grant"
+	host := "host'grant"
+	forms := mysqlGrantGlobalAllRedactionForms(marker, host)
+	showPrivilegesFailure := mysqlGrantFailureResult(forms)
+	rt, runner := newMysqlRuntime(
+		process.CommandResult{ExitCode: 0},
+		process.CommandResult{ExitCode: 0, Stdout: []byte("VERSION()\n8.0.34\n")},
+		showPrivilegesFailure,
+	)
+	before := reflect.ValueOf(args).Elem().Interface()
+	value, err := call(rt, args)
+	if err == nil || value != false || len(runner.calls) != 3 {
+		t.Fatalf("%s returned %#v, %v after %d calls", surface, value, err, len(runner.calls))
+	}
+	if after := reflect.ValueOf(args).Elem().Interface(); !reflect.DeepEqual(after, before) {
+		t.Fatalf("%s mutated input: before=%#v after=%#v", surface, before, after)
+	}
+	for _, form := range forms {
+		if strings.Contains(err.Error(), form) {
+			t.Fatalf("%s error leaked marker form %q: %v", surface, form, err)
+		}
+	}
+
+	// The first call is the already-successful mutation. The remaining calls
+	// are the post-check; neither may issue a second GRANT/REVOKE.
+	wantQueries := []string{mutationQuery, "--execute=SELECT VERSION()", "--execute=SHOW PRIVILEGES"}
+	mutationCalls := 0
+	for index, command := range runner.calls {
+		if got := mysqlGrantQuery(command); got != wantQueries[index] {
+			t.Fatalf("%s call %d query=%q, want %q", surface, index, got, wantQueries[index])
+		}
+		if strings.Contains(mysqlGrantQuery(command), "GRANT ") || strings.Contains(mysqlGrantQuery(command), "REVOKE ") {
+			mutationCalls++
+			if index != 0 {
+				t.Fatalf("%s issued a repeat mutation after the initial operation: %q", surface, mysqlGrantQuery(command))
+			}
+		}
+		if command.Shell {
+			t.Fatalf("%s call %d unexpectedly used a shell", surface, index)
+		}
+		for _, form := range forms {
+			if strings.Contains(command.RedactedString(), form) {
+				t.Fatalf("%s call %d rendered command leaked marker form %q: %q", surface, index, form, command.RedactedString())
+			}
+		}
+	}
+	if mutationCalls != 1 {
+		t.Fatalf("%s issued %d mutations, want exactly one initial mutation", surface, mutationCalls)
+	}
+
+	failing := runner.calls[2]
+	conn := connection(args)
+	assertMysqlGrantRedactedTransport(t, showPrivilegesFailure,
+		append([]string{failing.Name}, failing.Args...), conn, secretArgs(conn), forms, true)
+}
+
+func TestMysqlGrantExistsAllOptionAndShapes(t *testing.T) {
+	withOption := "GRANT SELECT ON `db`.* TO 'bob'@'localhost' WITH GRANT OPTION\n"
+	withoutOption := "GRANT INSERT ON `db`.* TO 'bob'@'localhost'\n"
+	rt, runner := newMysqlRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte("VERSION()\n8.0.34\n")},
+		process.CommandResult{ExitCode: 0, Stdout: []byte("Grants for bob@localhost\n" + withOption + withoutOption)},
+	)
+	grantOption := true
+	value, err := (grantExistsFunc{}).Execute(context.Background(), rt, &GrantExistsArgs{
+		User: "bob", Grant: "SELECT, INSERT", Database: "db.*", GrantOption: &grantOption,
+	})
+	if err != nil || value != true || len(runner.calls) != 2 {
+		t.Fatalf("grant_exists combined option = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+	if runner.calls[0].Args[len(runner.calls[0].Args)-1] != "--execute=SELECT VERSION()" || runner.calls[1].Args[len(runner.calls[1].Args)-1] != "--execute=SHOW GRANTS FOR 'bob'@'localhost'" {
+		t.Fatalf("grant_exists query order = %#v", runner.calls)
+	}
+
+	// Global ALL on MySQL 8 uses SHOW PRIVILEGES before SHOW GRANTS.
+	rt, runner = newMysqlRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte("VERSION()\n8.0.34\n")},
+		process.CommandResult{ExitCode: 0, Stdout: []byte("Privilege\tContext\tComment\nALTER\tGlobal\t\nSELECT\tGlobal\t\n")},
+		process.CommandResult{ExitCode: 0, Stdout: []byte("Grants for bob@localhost\nGRANT ALTER, SELECT ON *.* TO 'bob'@'localhost'\n")},
+	)
+	value, err = (grantExistsFunc{}).Execute(context.Background(), rt, &GrantExistsArgs{
+		User: "bob", Grant: "ALL PRIVILEGES", Database: "*.*",
+	})
+	if err != nil || value != true || len(runner.calls) != 3 || !strings.HasSuffix(runner.calls[1].Args[len(runner.calls[1].Args)-1], "SHOW PRIVILEGES") {
+		t.Fatalf("grant_exists ALL = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+
+	// MariaDB has a separate path: no SHOW PRIVILEGES expansion and aliases are
+	// resolved only at the pinned version thresholds.
+	rt, runner = newMysqlRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte("VERSION()\n10.5.1-MariaDB\n")},
+		process.CommandResult{ExitCode: 0, Stdout: grantTestShowGrants("GRANT REPLICATION SLAVE ON `db`.* TO 'bob'@'localhost'")},
+	)
+	value, err = (grantExistsFunc{}).Execute(context.Background(), rt, &GrantExistsArgs{User: "bob", Grant: "REPLICATION REPLICA", Database: "db.*"})
+	if err != nil || value != true || len(runner.calls) != 2 {
+		t.Fatalf("MariaDB alias = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+
+	// A literal ALL row is not a universal grant for an ordinary object.
+	rt, runner = newMysqlRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte("VERSION()\n8.0.34\n")},
+		process.CommandResult{ExitCode: 0, Stdout: grantTestShowGrants("GRANT ALL PRIVILEGES ON `db`.* TO 'bob'@'localhost'")},
+	)
+	value, err = (grantExistsFunc{}).Execute(context.Background(), rt, &GrantExistsArgs{
+		User: "bob", Grant: "SELECT", Database: "db.*",
+	})
+	if err != nil || value != false || len(runner.calls) != 2 {
+		t.Fatalf("literal ALL ordinary grant = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+
+	// A missing version is a false answer and stops before SHOW GRANTS.
+	rt, runner = newMysqlRuntime(process.CommandResult{ExitCode: 1})
+	value, err = (grantExistsFunc{}).Execute(context.Background(), rt, &GrantExistsArgs{
+		User: "bob", Grant: "SELECT", Database: "db.*", GrantOption: &grantOption,
+	})
+	if err != nil || value != false || len(runner.calls) != 1 {
+		t.Fatalf("missing version = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+
+	rt, runner = newMysqlRuntime()
+	value, err = (grantExistsFunc{}).Execute(context.Background(), rt, &GrantExistsArgs{
+		User: "bob", Grant: "UNKNOWN_PRIVILEGE", Database: "db.*",
+	})
+	if !errors.Is(err, errMysqlGrant) || value != false || len(runner.calls) != 0 {
+		t.Fatalf("unknown grant = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+
+}
+
+func TestMysqlGrantExistsVersionThresholdsAndAliases(t *testing.T) {
+	showPrivileges := []byte("Privilege\tContext\tComment\nSELECT\tGlobal\t\n")
+	for _, version := range []string{"8.0.0", "8.0.1", "8.0.11"} {
+		t.Run("mysql-"+version, func(t *testing.T) {
+			rt, runner := newMysqlRuntime(
+				process.CommandResult{ExitCode: 0, Stdout: []byte("VERSION()\n" + version + "\n")},
+				process.CommandResult{ExitCode: 0, Stdout: showPrivileges},
+				process.CommandResult{ExitCode: 0, Stdout: grantTestShowGrants("GRANT SELECT ON *.* TO 'u'@'localhost'")},
+			)
+			value, err := (grantExistsFunc{}).Execute(context.Background(), rt, &GrantExistsArgs{
+				User: "u", Database: "*.*", Grant: "ALL",
+			})
+			if err != nil || value != true || len(runner.calls) != 3 {
+				t.Fatalf("version=%s result=%#v err=%v calls=%d", version, value, err, len(runner.calls))
+			}
+			queries := []string{
+				runner.calls[0].Args[len(runner.calls[0].Args)-1],
+				runner.calls[1].Args[len(runner.calls[1].Args)-1],
+				runner.calls[2].Args[len(runner.calls[2].Args)-1],
+			}
+			want := []string{"--execute=SELECT VERSION()", "--execute=SHOW PRIVILEGES", "--execute=SHOW GRANTS FOR 'u'@'localhost'"}
+			if !reflect.DeepEqual(queries, want) {
+				t.Fatalf("version=%s query order=%q want=%q", version, queries, want)
+			}
+		})
+	}
+	// A failed SHOW PRIVILEGES result falls back to the pinned static MySQL
+	// privilege list, but the query remains part of the exact call sequence.
+	rt, runner := newMysqlRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte("VERSION()\n8.0.11\n")},
+		process.CommandResult{ExitCode: 1, Stderr: []byte("SHOW PRIVILEGES unavailable\n")},
+		process.CommandResult{ExitCode: 0, Stdout: grantTestShowGrants("GRANT " + strings.Join(mysqlAllPrivileges, ", ") + " ON *.* TO 'u'@'localhost'")},
+	)
+	value, err := (grantExistsFunc{}).Execute(context.Background(), rt, &GrantExistsArgs{User: "u", Database: "*.*", Grant: "ALL"})
+	if err != nil || value != true || len(runner.calls) != 3 {
+		t.Fatalf("SHOW PRIVILEGES fallback result=%#v err=%v calls=%d", value, err, len(runner.calls))
+	}
+	if got := runner.calls[1].Args[len(runner.calls[1].Args)-1]; got != "--execute=SHOW PRIVILEGES" {
+		t.Fatalf("SHOW PRIVILEGES fallback query=%q", got)
+	}
+
+	// MySQL before 8.0 keeps the source's concrete ALL PRIVILEGES comparison
+	// and never probes SHOW PRIVILEGES.
+	rt, runner = newMysqlRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte("VERSION()\n5.7.44\n")},
+		process.CommandResult{ExitCode: 0, Stdout: grantTestShowGrants("GRANT ALL PRIVILEGES ON *.* TO 'u'@'localhost'")},
+	)
+	value, err = (grantExistsFunc{}).Execute(context.Background(), rt, &GrantExistsArgs{User: "u", Database: "*.*", Grant: "ALL PRIVILEGES"})
+	if err != nil || value != true || len(runner.calls) != 2 || strings.Contains(runner.calls[1].Args[len(runner.calls[1].Args)-1], "PRIVILEGES") {
+		t.Fatalf("old MySQL result=%#v err=%v calls=%d", value, err, len(runner.calls))
+	}
+
+	// A concrete global token is not the source's global ALL branch.
+	rt, runner = newMysqlRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte("VERSION()\n8.0.11\n")},
+		process.CommandResult{ExitCode: 0, Stdout: grantTestShowGrants("GRANT SELECT ON *.* TO 'u'@'localhost'")},
+	)
+	value, err = (grantExistsFunc{}).Execute(context.Background(), rt, &GrantExistsArgs{User: "u", Database: "*.*", Grant: "SELECT"})
+	if err != nil || value != true || len(runner.calls) != 2 {
+		t.Fatalf("concrete global result=%#v err=%v calls=%d", value, err, len(runner.calls))
+	}
+	if got := runner.calls[1].Args[len(runner.calls[1].Args)-1]; got != "--execute=SHOW GRANTS FOR 'u'@'localhost'" {
+		t.Fatalf("concrete global query=%q", got)
+	}
+
+	aliasCases := []struct {
+		name      string
+		version   string
+		requested string
+		observed  string
+		want      bool
+	}{
+		{"replication-replica-at-10.5.1", "10.5.1-MariaDB", "REPLICATION REPLICA", "REPLICATION SLAVE", true},
+		{"replication-replica-before", "10.5.0-MariaDB", "REPLICATION REPLICA", "REPLICATION SLAVE", false},
+		{"binlog-monitor-at-10.5.2", "10.5.2-MariaDB", "REPLICATION CLIENT", "BINLOG MONITOR", true},
+		{"binlog-monitor-before", "10.5.1-MariaDB", "REPLICATION CLIENT", "BINLOG MONITOR", false},
+		{"slave-monitor-at-10.5.9", "10.5.9-MariaDB", "REPLICA MONITOR", "SLAVE MONITOR", true},
+		{"slave-monitor-before", "10.5.8-MariaDB", "REPLICA MONITOR", "SLAVE MONITOR", false},
+	}
+	for _, tc := range aliasCases {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, runner := newMysqlRuntime(
+				process.CommandResult{ExitCode: 0, Stdout: []byte("VERSION()\n" + tc.version + "\n")},
+				process.CommandResult{ExitCode: 0, Stdout: grantTestShowGrants("GRANT " + tc.observed + " ON `db`.* TO 'u'@'localhost'")},
+			)
+			value, err := (grantExistsFunc{}).Execute(context.Background(), rt, &GrantExistsArgs{User: "u", Database: "db.*", Grant: tc.requested})
+			if err != nil || value != tc.want || len(runner.calls) != 2 {
+				t.Fatalf("version=%s result=%#v err=%v calls=%d want=%v", tc.version, value, err, len(runner.calls), tc.want)
+			}
+		})
+	}
+}
+
+func TestMysqlGrantRevokeExactSQLAndFailures(t *testing.T) {
+	grantOption := true
+	rt, runner := newMysqlRuntime(
+		process.CommandResult{ExitCode: 0},
+		process.CommandResult{ExitCode: 0, Stdout: []byte("VERSION()\n8.0.34\n")},
+		process.CommandResult{ExitCode: 0, Stdout: []byte("Grants for u@h\n")},
+	)
+	value, err := (grantRevokeFunc{}).Execute(context.Background(), rt, &GrantRevokeArgs{
+		User: "u@h", Grant: "SELECT", Database: "db.tbl",
+		GrantOption: &grantOption, ConnPass: mysqlString("revoke-pass"),
+	})
+	if err != nil || value != true {
+		t.Fatalf("grant_revoke result = %#v, %v", value, err)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("grant_revoke calls = %d, want 3", len(runner.calls))
+	}
+	if got := append([]string{runner.calls[0].Name}, runner.calls[0].Args...); !reflect.DeepEqual(got, []string{
+		"mysql", "--batch", "--execute=REVOKE SELECT, GRANT OPTION ON `db`.`tbl` FROM 'u'@'h';",
+	}) {
+		t.Fatalf("grant_revoke argv = %q", got)
+	}
+	if got := runner.calls[1].Args[len(runner.calls[1].Args)-1]; got != "--execute=SELECT VERSION()" {
+		t.Fatalf("grant_revoke version query = %q", got)
+	}
+	if got := append([]string{runner.calls[2].Name}, runner.calls[2].Args...); !reflect.DeepEqual(got, []string{
+		"mysql", "--batch", "--execute=SHOW GRANTS FOR 'u'@'h'",
+	}) {
+		t.Fatalf("grant_revoke post-check argv = %q", got)
+	}
+
+	rt, runner = newMysqlRuntime(process.CommandResult{ExitCode: 1, Stderr: []byte("permission denied")})
+	value, err = (grantRevokeFunc{}).Execute(context.Background(), rt, &GrantRevokeArgs{
+		User: "u", Grant: "SELECT", Database: "db.tbl",
+	})
+	if err != nil || value != false || len(runner.calls) != 1 {
+		t.Fatalf("grant_revoke nonzero = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	rt, runner = newMysqlRuntime()
+	_, err = (grantAddFunc{}).Execute(ctx, rt, &GrantAddArgs{
+		User: "u", Grant: "SELECT", Database: "db.tbl",
+	})
+	if !errors.Is(err, context.Canceled) || len(runner.calls) != 0 {
+		t.Fatalf("grant cancellation = %v, calls=%d", err, len(runner.calls))
+	}
+
+	rt, runner = newMysqlRuntime(process.CommandResult{ExitCode: 0, Stdout: bytes.Repeat([]byte{'x'}, outputLimit+1)})
+	_, err = (grantExistsFunc{}).Execute(context.Background(), rt, &GrantExistsArgs{
+		User: "u", Grant: "SELECT", Database: "db.tbl",
+	})
+	if !errors.Is(err, process.ErrOutputLimit) || len(runner.calls) != 1 {
+		t.Fatalf("grant output bound = %v, calls=%d", err, len(runner.calls))
+	}
+
+	longDatabase := strings.Repeat("d", runtime.MaxCommandInputBytes)
+	rt, runner = newMysqlRuntime()
+	_, err = (grantAddFunc{}).Execute(context.Background(), rt, &GrantAddArgs{
+		User: "u", Grant: "SELECT", Database: longDatabase + ".tbl",
+	})
+	if !errors.Is(err, runtime.ErrCommandInputLimit) || len(runner.calls) != 0 {
+		t.Fatalf("grant argv bound = %v, calls=%d", err, len(runner.calls))
+	}
+}
+
+func TestMysqlGrantNoRunnerAndRegistry(t *testing.T) {
+	_, err := (grantExistsFunc{}).Execute(context.Background(), &runtime.Runtime{}, &GrantExistsArgs{
+		User: "u", Grant: "SELECT", Database: "db.tbl",
+	})
+	if !errors.Is(err, errMysqlRunnerUnavailable) {
+		t.Fatalf("nil Runner error = %v", err)
+	}
+
+	rt, runner := newMysqlRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte("VERSION()\n8.0.34\n")},
+		process.CommandResult{ExitCode: 0, Stdout: grantTestShowGrants("GRANT SELECT ON `db`.`tbl` TO 'u'@'localhost'")},
+	)
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	value, err := reg.Call(context.Background(), rt, "mysql.grant_exists", &GrantExistsArgs{
+		User: "u", Grant: "SELECT", Database: "db.tbl",
+	})
+	if err != nil || value != true || len(runner.calls) != 2 {
+		t.Fatalf("registry grant_exists = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+
+	addRuntime, addRunner := newMysqlRuntime(
+		process.CommandResult{ExitCode: 0},
+		process.CommandResult{ExitCode: 0, Stdout: []byte("VERSION()\n8.0.34\n")},
+		process.CommandResult{ExitCode: 0, Stdout: grantTestShowGrants("GRANT SELECT ON `db`.`tbl` TO 'u'@'localhost'")},
+	)
+	value, err = reg.Call(context.Background(), addRuntime, "mysql.grant_add", &GrantAddArgs{
+		User: "u", Grant: "SELECT", Database: "db.tbl",
+	})
+	if err != nil || value != true || len(addRunner.calls) != 3 {
+		t.Fatalf("registry grant_add = %#v, %v, calls=%d", value, err, len(addRunner.calls))
+	}
+
+	revokeRuntime, revokeRunner := newMysqlRuntime(
+		process.CommandResult{ExitCode: 0},
+		process.CommandResult{ExitCode: 0, Stdout: []byte("VERSION()\n8.0.34\n")},
+		process.CommandResult{ExitCode: 0, Stdout: grantTestShowGrants("GRANT SELECT ON `other`.`tbl` TO 'u'@'localhost'")},
+	)
+	value, err = reg.Call(context.Background(), revokeRuntime, "mysql.grant_revoke", &GrantRevokeArgs{
+		User: "u", Grant: "SELECT", Database: "db.tbl",
+	})
+	if err != nil || value != true || len(revokeRunner.calls) != 3 {
+		t.Fatalf("registry grant_revoke = %#v, %v, calls=%d", value, err, len(revokeRunner.calls))
+	}
+}
+
+func TestMysqlGrantArgumentContract(t *testing.T) {
+	wantAdd := []string{"connection_db", "connection_host", "connection_pass", "connection_port", "connection_user", "database", "escape", "grant", "grant_option", "host", "runas", "ssl_option", "user"}
+	wantCommon := []string{"connection_db", "connection_host", "connection_pass", "connection_port", "connection_user", "database", "escape", "grant", "grant_option", "host", "runas", "user"}
+	for name, template := range map[string]struct {
+		template any
+		want     []string
+	}{
+		"add":    {GrantAddArgs{}, wantAdd},
+		"exists": {GrantExistsArgs{}, wantCommon},
+		"revoke": {GrantRevokeArgs{}, wantCommon},
+	} {
+		got, err := config.ArgumentNames(template.template)
+		if err != nil || !reflect.DeepEqual(got, template.want) {
+			t.Fatalf("%s argument names = %#v, %v; want %#v", name, got, err, template.want)
+		}
+	}
+}
+
+func TestMysqlGrantQuotedAccountRoundTrip(t *testing.T) {
+	account := "'u'@'h''ost,`tick'"
+	show := grantTestShowGrants("GRANT SELECT ON `db`.`tbl` TO " + account)
+	rt, runner := newMysqlRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte("VERSION()\n8.0.34\n")},
+		process.CommandResult{ExitCode: 0, Stdout: show},
+	)
+	value, err := (grantExistsFunc{}).Execute(context.Background(), rt, &GrantExistsArgs{User: account, Database: "db.tbl", Grant: "SELECT"})
+	if err != nil || value != true || len(runner.calls) != 2 {
+		t.Fatalf("quoted account grant_exists = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+	if !strings.Contains(runner.calls[1].Args[len(runner.calls[1].Args)-1], "h''ost,`tick") {
+		t.Fatalf("quoted account was truncated: %#v", runner.calls[1].Args)
+	}
+
+	rt, runner = newMysqlRuntime(
+		process.CommandResult{ExitCode: 0},
+		process.CommandResult{ExitCode: 0, Stdout: []byte("VERSION()\n8.0.34\n")},
+		process.CommandResult{ExitCode: 0, Stdout: []byte("Grants for account\n")},
+	)
+	value, err = (grantRevokeFunc{}).Execute(context.Background(), rt, &GrantRevokeArgs{User: account, Database: "db.tbl", Grant: "SELECT"})
+	if err != nil || value != true || len(runner.calls) != 3 {
+		t.Fatalf("quoted account grant_revoke = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+	if !strings.Contains(runner.calls[0].Args[len(runner.calls[0].Args)-1], "FROM 'u'@'h''ost,`tick';") {
+		t.Fatalf("quoted account revoke was truncated: %#v", runner.calls[0].Args)
 	}
 }
 
