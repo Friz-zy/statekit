@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -300,10 +301,12 @@ func TestMysqlRegistryNames(t *testing.T) {
 		"mysql.status",
 		"mysql.tokenize_grant",
 		"mysql.user_create",
+		"mysql.user_chpass",
 		"mysql.user_exists",
 		"mysql.user_info",
 		"mysql.user_list",
 		"mysql.user_remove",
+		"mysql.verify_login",
 		"mysql.version",
 	}
 	if reg.Len() != len(wantNames) {
@@ -4955,5 +4958,781 @@ func TestMysqlUserRemoveRegistryRedactionInventory(t *testing.T) {
 				t.Fatalf("failAt=%d registry reached DROP before the failing preflight", failAt)
 			}
 		}
+	}
+}
+
+// TestMysqlUserChpassStatementVectors pins the source MySQL/MariaDB version
+// ladder, password-over-hash precedence, empty-password handling, plugin
+// clauses, passwordless/socket branches, and the value-free unsafe boundary.
+// These are pure builders: no mysql client or database is contacted.
+func TestMysqlUserChpassStatementVectors(t *testing.T) {
+	pass := mysqlString("p'ass%✓")
+	hash := mysqlString("*HASH")
+	empty := mysqlString("")
+	cases := []struct {
+		name    string
+		version string
+		pass    *string
+		hash    *string
+		allow   bool
+		socket  bool
+		host    string
+		plugin  string
+		want    string
+		ok      bool
+	}{
+		{"mysql-modern-password", "8.0.34", pass, hash, false, false, "localhost", "caching_sha2_password", "ALTER USER 'u'@'localhost' IDENTIFIED WITH caching_sha2_password BY 'p''ass%✓';", true},
+		{"mysql-modern-hash", "8.0.34", nil, hash, false, false, "localhost", "mysql_native_password", "ALTER USER 'u'@'localhost' IDENTIFIED WITH mysql_native_password AS '*HASH';", true},
+		{"mysql-old-password", "8.0.10", pass, nil, false, false, "localhost", "mysql_native_password", "UPDATE mysql.user SET Password=PASSWORD('p''ass%✓') WHERE User='u' AND Host = 'localhost';", true},
+		{"mariadb-modern-password", "10.5.0-MariaDB", pass, nil, false, false, "localhost", "ed25519", "ALTER USER 'u'@'localhost' IDENTIFIED VIA ed25519 USING PASSWORD('p''ass%✓')", true},
+		{"mariadb-old-hash", "10.3.9-MariaDB", nil, hash, false, false, "localhost", "mysql_native_password", "UPDATE mysql.user SET Password='*HASH' WHERE User='u' AND Host = 'localhost';", true},
+		{"mysql-empty-wins", "8.0.34", empty, hash, false, false, "localhost", "mysql_native_password", "ALTER USER 'u'@'localhost' IDENTIFIED WITH mysql_native_password BY '';", true},
+		{"mysql-passwordless", "8.0.34", nil, nil, true, false, "localhost", "mysql_native_password", "ALTER USER 'u'@'localhost' IDENTIFIED WITH mysql_native_password ", true},
+		{"mysql-socket-modern", "8.0.34", pass, nil, true, true, "localhost", "mysql_native_password", "ALTER USER 'u'@'localhost' IDENTIFIED WITH auth_socket AS 'u';", true},
+		{"mariadb-socket-old", "10.3.9-MariaDB", pass, nil, true, true, "localhost", "mysql_native_password", "UPDATE mysql.user SET Password=PASSWORD('p''ass%✓'), plugin='unix_socket' WHERE User='u' AND Host = 'localhost';", true},
+		{"socket-nonlocal", "8.0.34", nil, nil, true, true, "%", "mysql_native_password", "", false},
+		{"missing-credential", "8.0.34", nil, nil, false, false, "localhost", "mysql_native_password", "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, _, ok := mysqlChangePasswordStatement("u", tc.host, tc.version, tc.pass, tc.hash, tc.allow, tc.socket, "Password", tc.plugin)
+			if got != tc.want || ok != tc.ok {
+				t.Fatalf("statement=%q ok=%v, want %q/%v", got, ok, tc.want, tc.ok)
+			}
+		})
+	}
+	if _, _, ok := mysqlChangePasswordStatement("u", "localhost", "8.0.34", pass, nil, false, false, "Password", "bad-plugin"); ok {
+		t.Fatal("unsafe plugin was accepted")
+	}
+	if _, err := mysqlPasswordColumn(mysqlString("password")); !errors.Is(err, errMysqlPasswordColumn) {
+		t.Fatalf("unsafe password column error=%v", err)
+	}
+}
+
+// TestMysqlUserChpass pins the fixed preflight/schema/plugin/mutation/flush
+// sequence, exact connection flags, hash-independent plugin handling, and
+// the complete redaction/bounds contract on a fake Runner.
+func TestMysqlUserChpass(t *testing.T) {
+	connPass := "chpass_conn_pass"
+	newPass := "new'p%ass"
+	rt, runner := newMysqlRuntime(
+		process.CommandResult{Stdout: []byte("VERSION()\n8.0.34\n")},
+		process.CommandResult{Stdout: mysqlUserListStdout("target\tremote")},
+		process.CommandResult{Stdout: []byte("HasPassword\n")},
+		process.CommandResult{Stdout: []byte("User\tHost\tplugin\ntarget\tremote\tcaching_sha2_password\n")},
+		process.CommandResult{ExitCode: 0},
+		process.CommandResult{ExitCode: 0},
+	)
+	args := &UserChpassArgs{
+		User:         "target",
+		Host:         mysqlString("remote"),
+		Password:     mysqlString(newPass),
+		PasswordHash: mysqlString("*ignored-hash"),
+		ConnUser:     mysqlString("admin"),
+		ConnHost:     mysqlString("db-host"),
+		ConnPort:     mysqlString("3308"),
+		ConnPass:     mysqlString(connPass),
+		ConnDB:       mysqlString("mysql"),
+	}
+	before := *args
+	value, err := (userChpassFunc{}).Execute(context.Background(), rt, args)
+	if err != nil || value != true {
+		t.Fatalf("user_chpass=%#v err=%v, want true", value, err)
+	}
+	if !reflect.DeepEqual(*args, before) {
+		t.Fatalf("user_chpass mutated input: before=%#v after=%#v", before, *args)
+	}
+	if len(runner.calls) != 6 {
+		t.Fatalf("user_chpass calls=%d, want 6", len(runner.calls))
+	}
+	want := []string{
+		"--execute=" + selectVersionQuery,
+		"--execute=" + userListQuery,
+		"--execute=" + passwordColumnQuery,
+		"--execute=" + userPluginQuery,
+		"ALTER USER 'target'@'remote' IDENTIFIED WITH caching_sha2_password BY 'new''p%ass';",
+		"--execute=FLUSH PRIVILEGES;",
+	}
+	for i, command := range runner.calls {
+		got := command.Args[len(command.Args)-1]
+		if i == 4 {
+			got = string(command.Stdin)
+			if !reflect.DeepEqual(command.Args, []string{"--batch", "--user=admin", "--host=db-host", "--port=3308", "--database=mysql"}) {
+				t.Fatal("mutation argv is not fixed connection-only argv")
+			}
+		}
+		if got != want[i] {
+			t.Fatalf("call %d SQL=%q want=%q", i, got, want[i])
+		}
+		if command.Shell || command.Timeout != commandTimeout || command.MaxStdoutBytes != outputLimit || command.MaxStderrBytes != outputLimit {
+			t.Fatalf("call %d unsafe transport=%#v", i, command)
+		}
+		if !reflect.DeepEqual(command.Env, []string{"MYSQL_PWD=" + connPass}) {
+			t.Fatalf("call %d environment=%#v", i, command.Env)
+		}
+	}
+	statement := runner.calls[4]
+	if strings.Contains(statement.RedactedString(), newPass) || strings.Contains(statement.RedactedString(), connPass) {
+		t.Fatalf("statement command leaked password: %q", statement.RedactedString())
+	}
+	for _, secret := range mysqlUserChpassSecretInventory(&myConnection{Password: mysqlString(connPass)}, "target", "remote", mysqlString(newPass), mysqlString("*ignored-hash")) {
+		found := false
+		for _, redacted := range statement.Redact {
+			if redacted == secret {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("mutation redaction missing %q: %#v", secret, statement.Redact)
+		}
+	}
+}
+
+// TestMysqlUserChpassSelfPasswordUsesOneSession guards the connection
+// boundary that a CLI transport cannot otherwise preserve: changing the
+// password of the account used for the connection must execute the fixed
+// mutation and FLUSH in one mysql process, with no second login using the old
+// MYSQL_PWD and no repeated mutation.
+func TestMysqlUserChpassSelfPasswordUsesOneSession(t *testing.T) {
+	connectionPassword := "old-self-pass"
+	newPassword := "new'self%pass"
+	rt, runner := newMysqlRuntime(
+		process.CommandResult{Stdout: []byte("VERSION()\n8.0.34\n")},
+		process.CommandResult{Stdout: mysqlUserListStdout("self-user\tlocalhost")},
+		process.CommandResult{Stdout: []byte("HasPassword\n")},
+		process.CommandResult{Stdout: []byte("User\tHost\tplugin\nself-user\tlocalhost\tcaching_sha2_password\n")},
+		process.CommandResult{ExitCode: 0},
+	)
+	value, err := (userChpassFunc{}).Execute(context.Background(), rt, &UserChpassArgs{
+		User:     "self-user",
+		Password: mysqlString(newPassword),
+		ConnUser: mysqlString("self-user"),
+		ConnPass: mysqlString(connectionPassword),
+	})
+	if err != nil || value != true {
+		t.Fatalf("self user_chpass=%#v err=%v, want true", value, err)
+	}
+	if len(runner.calls) != 5 {
+		t.Fatalf("self user_chpass calls=%d, want four preflights plus one same-session command", len(runner.calls))
+	}
+	command := runner.calls[4]
+	query := string(command.Stdin)
+	wantQuery := "ALTER USER 'self-user'@'localhost' IDENTIFIED WITH caching_sha2_password BY 'new''self%pass'; FLUSH PRIVILEGES;"
+	if !reflect.DeepEqual(command.Args, []string{"--batch", "--user=self-user"}) {
+		t.Fatal("self mutation argv is not connection-only")
+	}
+	if query != wantQuery || strings.Count(query, "ALTER USER") != 1 || strings.Count(query, "FLUSH PRIVILEGES;") != 1 {
+		t.Fatalf("self same-session query=%q, want ordered mutation and flush", query)
+	}
+	if !reflect.DeepEqual(command.Env, []string{"MYSQL_PWD=" + connectionPassword}) || command.Shell || command.Timeout != commandTimeout || command.MaxStdoutBytes != outputLimit || command.MaxStderrBytes != outputLimit {
+		t.Fatalf("self same-session transport=%#v", command)
+	}
+	secrets := mysqlUserChpassSecretInventory(&myConnection{User: mysqlString("self-user"), Password: mysqlString(connectionPassword)}, "self-user", "localhost", mysqlString(newPassword), nil)
+	if !containsAll(command.Redact, secrets) || strings.Contains(command.RedactedString(), connectionPassword) || strings.Contains(command.RedactedString(), newPassword) {
+		t.Fatalf("self same-session redaction=%#v rendered=%q", command.Redact, command.RedactedString())
+	}
+	if strings.Count(query, "ALTER USER") != 1 {
+		t.Fatalf("self mutation repeated in query=%q", query)
+	}
+}
+
+// TestMysqlUserChpassSelfPasswordRetryUsesNewCredential verifies the source
+// recovery path after a preceding state changed the connection account: the
+// version retry uses the new password, then the self mutation and FLUSH still
+// share one command and no mutation is repeated.
+func TestMysqlUserChpassSelfPasswordRetryUsesNewCredential(t *testing.T) {
+	oldPassword := "old-retry-pass"
+	newPassword := "new-retry'secret"
+	rt, runner := newMysqlRuntime(
+		process.CommandResult{Stdout: []byte("VERSION()\n")},
+		process.CommandResult{Stdout: []byte("VERSION()\n8.0.34\n")},
+		process.CommandResult{Stdout: mysqlUserListStdout("retry-user\tlocalhost")},
+		process.CommandResult{Stdout: []byte("HasPassword\n")},
+		process.CommandResult{Stdout: []byte("User\tHost\tplugin\nretry-user\tlocalhost\tcaching_sha2_password\n")},
+		process.CommandResult{ExitCode: 0},
+	)
+	args := &UserChpassArgs{
+		User:     "retry-user",
+		Password: mysqlString(newPassword),
+		ConnUser: mysqlString("retry-user"),
+		ConnPass: mysqlString(oldPassword),
+	}
+	before := *args
+	value, err := (userChpassFunc{}).Execute(context.Background(), rt, args)
+	if err != nil || value != true || len(runner.calls) != 6 {
+		t.Fatalf("retry self user_chpass=%#v err=%v calls=%d", value, err, len(runner.calls))
+	}
+	if !reflect.DeepEqual(*args, before) {
+		t.Fatal("retry self user_chpass mutated its input")
+	}
+	if !reflect.DeepEqual(runner.calls[0].Env, []string{"MYSQL_PWD=" + oldPassword}) {
+		t.Fatal("initial retry preflight did not use the original connection password")
+	}
+	for _, command := range runner.calls[1:] {
+		if !reflect.DeepEqual(command.Env, []string{"MYSQL_PWD=" + newPassword}) {
+			t.Fatal("retry flow did not switch to the new connection password")
+		}
+	}
+	query := string(runner.calls[5].Stdin)
+	if query != "ALTER USER 'retry-user'@'localhost' IDENTIFIED WITH caching_sha2_password BY 'new-retry''secret'; FLUSH PRIVILEGES;" || strings.Count(query, "ALTER USER") != 1 {
+		t.Fatal("retry self flow did not issue one ordered same-session command")
+	}
+}
+
+func mysqlUserChpassRedactionMatrixResults(failAt int) []process.CommandResult {
+	successes := []process.CommandResult{
+		{Stdout: []byte("VERSION()\n8.0.34\n")},
+		{Stdout: []byte("User\tHost\nmatrix'user\tmatrix'host\n")},
+		{Stdout: []byte("HasPassword\n")},
+		{Stdout: []byte("User\tHost\tplugin\nmatrix'user\tmatrix'host\ted25519\n")},
+		{ExitCode: 0},
+		{ExitCode: 0},
+	}
+	results := append([]process.CommandResult(nil), successes[:failAt]...)
+	marker := "matrix'redaction"
+	hash := "*" + marker
+	forms := mysqlUserChpassSecretInventory(
+		&myConnection{Password: mysqlString(marker)},
+		"matrix'user", "matrix'host", mysqlString(marker), mysqlString(hash),
+	)
+	leak := strings.Join(forms, " ")
+	results = append(results, process.CommandResult{
+		Err:    errors.New("phase failure " + leak),
+		Stdout: []byte("stdout " + leak),
+		Stderr: []byte("stderr " + leak),
+	})
+	return results
+}
+
+func mysqlUserChpassRedactionMatrixArgs() *UserChpassArgs {
+	marker := "matrix'redaction"
+	return &UserChpassArgs{
+		User:         "matrix'user",
+		Host:         mysqlString("matrix'host"),
+		Password:     mysqlString(marker),
+		PasswordHash: mysqlString("*" + marker),
+		ConnUser:     mysqlString("matrix-connection"),
+		ConnPass:     mysqlString(marker),
+	}
+}
+
+func assertMysqlUserChpassRedaction(t *testing.T, command process.Command, err error, forms []string) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("user_chpass phase unexpectedly succeeded")
+	}
+	for _, form := range forms {
+		if strings.Contains(strings.Join(command.Args, " "), form) {
+			t.Fatal("user_chpass argv contains a credential or SQL account form")
+		}
+		if strings.Contains(err.Error(), form) || strings.Contains(command.RedactedString(), form) {
+			t.Fatal("user_chpass phase leaked a redaction form")
+		}
+		if !containsAll(command.Redact, []string{form}) {
+			t.Fatal("user_chpass phase omitted a redaction form")
+		}
+	}
+	if command.Shell || command.Timeout != commandTimeout || command.MaxStdoutBytes != outputLimit || command.MaxStderrBytes != outputLimit {
+		t.Fatal("user_chpass phase used an unsafe transport")
+	}
+	if !reflect.DeepEqual(command.Env, []string{"MYSQL_PWD=matrix'redaction"}) {
+		t.Fatal("user_chpass phase did not keep the connection password out of argv")
+	}
+}
+
+// TestMysqlUserChpassDirectRedactionPhaseMatrix injects the same complete
+// credential/account inventory at each direct user_chpass phase. The replayed
+// transport assertion also checks sanitized stdout and stderr, which the
+// public bool/error result does not expose.
+func TestMysqlUserChpassDirectRedactionPhaseMatrix(t *testing.T) {
+	marker := "matrix'redaction"
+	hash := "*" + marker
+	forms := mysqlUserChpassSecretInventory(
+		&myConnection{Password: mysqlString(marker)},
+		"matrix'user", "matrix'host", mysqlString(marker), mysqlString(hash),
+	)
+	for failAt := 0; failAt < 6; failAt++ {
+		t.Run(strconv.Itoa(failAt), func(t *testing.T) {
+			rt, runner := newMysqlRuntime(mysqlUserChpassRedactionMatrixResults(failAt)...)
+			value, err := (userChpassFunc{}).Execute(context.Background(), rt, mysqlUserChpassRedactionMatrixArgs())
+			if err == nil || value != nil || len(runner.calls) != failAt+1 {
+				t.Fatalf("phase=%d value=%#v calls=%d", failAt, value, len(runner.calls))
+			}
+			failedCommand := runner.calls[len(runner.calls)-1]
+			assertMysqlUserChpassRedaction(t, failedCommand, err, forms)
+
+			transportRunner := &mysqlFakeRunner{results: []process.CommandResult{{
+				Err:    errors.New("transport phase failure " + strings.Join(forms, " ")),
+				Stdout: []byte("transport stdout " + strings.Join(forms, " ")),
+				Stderr: []byte("transport stderr " + strings.Join(forms, " ")),
+			}}}
+			transportRuntime := &runtime.Runtime{Runner: transportRunner}
+			argv := append([]string{failedCommand.Name}, failedCommand.Args...)
+			safeResult, transportErr := runMysqlInputResultSecrets(
+				context.Background(), transportRuntime, argv, string(failedCommand.Stdin),
+				&myConnection{User: mysqlString("matrix-connection"), Password: mysqlString(marker)}, nil, failedCommand.PreserveStdout, forms...,
+			)
+			if transportErr == nil || safeResult.Err == nil {
+				t.Fatal("direct transport did not return the injected phase failure")
+			}
+			for _, surface := range []string{transportErr.Error(), safeResult.Err.Error(), string(safeResult.Stdout), string(safeResult.Stderr), failedCommand.RedactedString()} {
+				for _, form := range forms {
+					if strings.Contains(surface, form) {
+						t.Fatal("direct phase transport leaked a redaction form")
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestMysqlUserChpassRegistryRedactionPhaseMatrix drives every preflight,
+// mutation, and separate flush failure through the registered public name.
+func TestMysqlUserChpassRegistryRedactionPhaseMatrix(t *testing.T) {
+	marker := "matrix'redaction"
+	forms := mysqlUserChpassSecretInventory(
+		&myConnection{Password: mysqlString(marker)},
+		"matrix'user", "matrix'host", mysqlString(marker), mysqlString("*"+marker),
+	)
+	for failAt := 0; failAt < 6; failAt++ {
+		t.Run(strconv.Itoa(failAt), func(t *testing.T) {
+			reg := runtime.NewExecRegistry()
+			if err := Register(reg); err != nil {
+				t.Fatal(err)
+			}
+			rt := &runtime.Runtime{Runner: &mysqlFakeRunner{results: mysqlUserChpassRedactionMatrixResults(failAt)}, Exec: reg, FS: runtime.NewMemoryFS()}
+			value, err := rt.Exec.Call(context.Background(), rt, "mysql.user_chpass", mysqlUserChpassRedactionMatrixArgs())
+			runner := rt.Runner.(*mysqlFakeRunner)
+			if err == nil || value != nil || len(runner.calls) != failAt+1 {
+				t.Fatalf("phase=%d value=%#v calls=%d", failAt, value, len(runner.calls))
+			}
+			assertMysqlUserChpassRedaction(t, runner.calls[len(runner.calls)-1], err, forms)
+		})
+	}
+}
+
+func TestMysqlUserChpassShapesAndFailClosed(t *testing.T) {
+	// An existing-account miss is a source false/no-op and never mutates.
+	rt, runner := newMysqlRuntime(
+		process.CommandResult{Stdout: []byte("VERSION()\n8.0.34\n")},
+		process.CommandResult{Stdout: mysqlUserListStdout("other\tlocalhost")},
+	)
+	value, err := (userChpassFunc{}).Execute(context.Background(), rt, &UserChpassArgs{User: "target", Password: mysqlString("secret")})
+	if err != nil || value != false || len(runner.calls) != 2 {
+		t.Fatalf("missing account=%#v err=%v calls=%d", value, err, len(runner.calls))
+	}
+
+	// Empty password is explicit and wins over password_hash.
+	rt, runner = newMysqlRuntime(
+		process.CommandResult{Stdout: []byte("VERSION()\n8.0.34\n")},
+		process.CommandResult{Stdout: mysqlUserListStdout("target\tlocalhost")},
+		process.CommandResult{Stdout: []byte("HasPassword\n")},
+		process.CommandResult{Stdout: []byte("User\tHost\tplugin\ntarget\tlocalhost\tmysql_native_password\n")},
+		process.CommandResult{ExitCode: 0},
+		process.CommandResult{ExitCode: 0},
+	)
+	value, err = (userChpassFunc{}).Execute(context.Background(), rt, &UserChpassArgs{User: "target", Password: mysqlString(""), PasswordHash: mysqlString("*HASH")})
+	if err != nil || value != true || !strings.Contains(string(runner.calls[4].Stdin), " BY '';") || strings.Contains(string(runner.calls[4].Stdin), "*HASH") {
+		t.Fatal("empty password precedence lost")
+	}
+
+	// A nonzero mutation is a source false and stops before FLUSH.
+	rt, runner = newMysqlRuntime(
+		process.CommandResult{Stdout: []byte("VERSION()\n8.0.34\n")},
+		process.CommandResult{Stdout: mysqlUserListStdout("target\tlocalhost")},
+		process.CommandResult{Stdout: []byte("HasPassword\n")},
+		process.CommandResult{Stdout: []byte("User\tHost\tplugin\ntarget\tlocalhost\tmysql_native_password\n")},
+		process.CommandResult{ExitCode: 1, Stderr: []byte("denied secret")},
+	)
+	value, err = (userChpassFunc{}).Execute(context.Background(), rt, &UserChpassArgs{User: "target", Password: mysqlString("secret")})
+	if err != nil || value != false || len(runner.calls) != 5 {
+		t.Fatalf("mutation nonzero=%#v err=%v calls=%d", value, err, len(runner.calls))
+	}
+
+	// A failed flush is an execution error after exactly one mutation.
+	rt, runner = newMysqlRuntime(
+		process.CommandResult{Stdout: []byte("VERSION()\n8.0.34\n")},
+		process.CommandResult{Stdout: mysqlUserListStdout("target\tlocalhost")},
+		process.CommandResult{Stdout: []byte("HasPassword\n")},
+		process.CommandResult{Stdout: []byte("User\tHost\tplugin\ntarget\tlocalhost\tmysql_native_password\n")},
+		process.CommandResult{ExitCode: 0},
+		process.CommandResult{ExitCode: 1, Stderr: []byte("flush secret")},
+	)
+	value, err = (userChpassFunc{}).Execute(context.Background(), rt, &UserChpassArgs{User: "target", Password: mysqlString("secret")})
+	if !errors.Is(err, errMysqlPasswordChangeExit) || value != nil || len(runner.calls) != 6 {
+		t.Fatalf("flush error=%#v err=%v calls=%d", value, err, len(runner.calls))
+	}
+
+	// Unknown but syntactically safe plugins are preserved in the fixed clause;
+	// unsafe plugin bytes from a server row fail closed before mutation.
+	rt, runner = newMysqlRuntime(
+		process.CommandResult{Stdout: []byte("VERSION()\n8.0.34\n")},
+		process.CommandResult{Stdout: mysqlUserListStdout("target\tlocalhost")},
+		process.CommandResult{Stdout: []byte("HasPassword\n")},
+		process.CommandResult{Stdout: []byte("User\tHost\tplugin\ntarget\tlocalhost\ted25519\n")},
+		process.CommandResult{ExitCode: 0},
+		process.CommandResult{ExitCode: 0},
+	)
+	value, err = (userChpassFunc{}).Execute(context.Background(), rt, &UserChpassArgs{User: "target", Password: mysqlString("secret")})
+	if err != nil || value != true || !strings.Contains(string(runner.calls[4].Stdin), "WITH ed25519") {
+		t.Fatalf("unknown plugin=%#v err=%v calls=%d", value, err, len(runner.calls))
+	}
+
+	// Passwordless socket mode performs its fixed plugin-status preflight and
+	// keeps the source mutation/flush calls separate even when the connection
+	// user is the target account.
+	rt, runner = newMysqlRuntime(
+		process.CommandResult{Stdout: []byte("VERSION()\n8.0.34\n")},
+		process.CommandResult{Stdout: mysqlUserListStdout("target\tlocalhost")},
+		process.CommandResult{Stdout: []byte("HasPassword\n")},
+		process.CommandResult{Stdout: []byte("User\tHost\tplugin\ntarget\tlocalhost\tmysql_native_password\n")},
+		process.CommandResult{Stdout: []byte("PLUGIN_NAME\tPLUGIN_STATUS\nauth_socket\tACTIVE\n")},
+		process.CommandResult{ExitCode: 0},
+		process.CommandResult{ExitCode: 0},
+	)
+	value, err = (userChpassFunc{}).Execute(context.Background(), rt, &UserChpassArgs{
+		User:              "target",
+		Password:          mysqlString("ignored-by-socket"),
+		AllowPasswordless: mysqlBool(true),
+		UnixSocket:        mysqlBool(true),
+		ConnUser:          mysqlString("target"),
+	})
+	if err != nil || value != true || len(runner.calls) != 7 {
+		t.Fatalf("socket path=%#v err=%v calls=%d", value, err, len(runner.calls))
+	}
+	if got := string(runner.calls[5].Stdin); got != "ALTER USER 'target'@'localhost' IDENTIFIED WITH auth_socket AS 'target';" {
+		t.Fatalf("socket mutation=%q", got)
+	}
+	if got := runner.calls[6].Args[len(runner.calls[6].Args)-1]; got != "--execute=FLUSH PRIVILEGES;" {
+		t.Fatalf("socket flush=%q", got)
+	}
+
+	// Bare passwordless mode also retains the source's distinct mutation and
+	// flush commands instead of taking the self-password same-session branch.
+	rt, runner = newMysqlRuntime(
+		process.CommandResult{Stdout: []byte("VERSION()\n8.0.34\n")},
+		process.CommandResult{Stdout: mysqlUserListStdout("target\tlocalhost")},
+		process.CommandResult{Stdout: []byte("HasPassword\n")},
+		process.CommandResult{Stdout: []byte("User\tHost\tplugin\ntarget\tlocalhost\tmysql_native_password\n")},
+		process.CommandResult{ExitCode: 0},
+		process.CommandResult{ExitCode: 0},
+	)
+	value, err = (userChpassFunc{}).Execute(context.Background(), rt, &UserChpassArgs{
+		User:              "target",
+		AllowPasswordless: mysqlBool(true),
+		ConnUser:          mysqlString("target"),
+	})
+	if err != nil || value != true || len(runner.calls) != 6 {
+		t.Fatalf("passwordless path=%#v err=%v calls=%d", value, err, len(runner.calls))
+	}
+	mutationSQL := string(runner.calls[4].Stdin)
+	if !strings.HasSuffix(mutationSQL, "IDENTIFIED WITH mysql_native_password ") || strings.Contains(mutationSQL, "FLUSH PRIVILEGES") {
+		t.Fatalf("passwordless mutation=%q", mutationSQL)
+	}
+	if got := runner.calls[5].Args[len(runner.calls[5].Args)-1]; got != "--execute=FLUSH PRIVILEGES;" {
+		t.Fatalf("passwordless flush=%q", got)
+	}
+
+	// The fixed transport fails closed without a database/Runner, and the
+	// caller's unsafe backslash never reaches a Runner.
+	if _, err = (userChpassFunc{}).Execute(context.Background(), &runtime.Runtime{}, &UserChpassArgs{User: "u", Password: mysqlString("secret")}); !errors.Is(err, errMysqlRunnerUnavailable) {
+		t.Fatalf("no Runner error=%v", err)
+	}
+	invalidRunner := &mysqlFakeRunner{}
+	if _, err = (userChpassFunc{}).Execute(context.Background(), &runtime.Runtime{Runner: invalidRunner}, &UserChpassArgs{User: "u", Password: mysqlString(`bad\\password`)}); !errors.Is(err, errMysqlAccountArgument) || len(invalidRunner.calls) != 0 {
+		t.Fatalf("unsafe password err=%v calls=%d", err, len(invalidRunner.calls))
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cancelRunner := &mysqlFakeRunner{}
+	if _, err = (userChpassFunc{}).Execute(ctx, &runtime.Runtime{Runner: cancelRunner}, &UserChpassArgs{User: "u", Password: mysqlString("secret")}); !errors.Is(err, context.Canceled) || len(cancelRunner.calls) != 0 {
+		t.Fatalf("cancelled chpass err=%v calls=%d", err, len(cancelRunner.calls))
+	}
+}
+
+func TestMysqlUserChpassRedactionAndRegistry(t *testing.T) {
+	marker := "same'overlap"
+	hash := "*" + marker
+	forms := append(mysqlLiteralSecretForms(marker), mysqlLiteralSecretForms(hash)...)
+	forms = append(forms, mysqlLiteralSecretForms(marker)...)
+	forms = append(forms, mysqlAccount(marker, marker))
+	leak := strings.Join(forms, " ")
+	runner := &mysqlFakeRunner{results: []process.CommandResult{{
+		Err:    errors.New("preflight " + leak),
+		Stdout: []byte("stdout " + leak),
+		Stderr: []byte("stderr " + leak),
+	}}}
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	rt := &runtime.Runtime{Runner: runner, Exec: reg, FS: runtime.NewMemoryFS()}
+	args := &UserChpassArgs{User: marker, Host: mysqlString(marker), Password: mysqlString(marker), PasswordHash: mysqlString(hash), ConnPass: mysqlString(marker)}
+	value, err := rt.Exec.Call(context.Background(), rt, "mysql.user_chpass", args)
+	if err == nil || value != nil || len(runner.calls) != 1 {
+		t.Fatalf("registry redaction value=%#v err=%v calls=%d", value, err, len(runner.calls))
+	}
+	for _, output := range []string{err.Error(), runner.calls[0].RedactedString()} {
+		for _, form := range forms {
+			if strings.Contains(output, form) {
+				t.Fatalf("redaction leaked %q in %q", form, output)
+			}
+		}
+	}
+	if runner.calls[0].Shell || runner.calls[0].Timeout != commandTimeout || runner.calls[0].MaxStdoutBytes != outputLimit || runner.calls[0].MaxStderrBytes != outputLimit {
+		t.Fatalf("unsafe redaction transport=%#v", runner.calls[0])
+	}
+}
+
+// TestMysqlVerifyLogin pins source connection override semantics: the login
+// user/password replace connection_user/connection_pass, host/port/database
+// survive, the SQL is fixed, and the password remains only MYSQL_PWD.
+func TestMysqlVerifyLogin(t *testing.T) {
+	password := "verify'p%ass"
+	rt, runner := newMysqlRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("1\n")})
+	args := &VerifyLoginArgs{
+		User:     "login_user",
+		Password: mysqlString(password),
+		ConnUser: mysqlString("ignored_user"),
+		ConnHost: mysqlString("db-host"),
+		ConnPort: mysqlString("3307"),
+		ConnPass: mysqlString("ignored_pass"),
+		ConnDB:   mysqlString("maintenance"),
+	}
+	value, err := (verifyLoginFunc{}).Execute(context.Background(), rt, args)
+	if err != nil || value != true || len(runner.calls) != 1 {
+		t.Fatalf("verify_login=%#v err=%v calls=%d", value, err, len(runner.calls))
+	}
+	command := runner.calls[0]
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, []string{
+		"mysql", "--batch", "--user=login_user", "--host=db-host", "--port=3307", "--database=maintenance", "--execute=" + verifyLoginQuery,
+	}) {
+		t.Fatalf("verify_login argv=%q", got)
+	}
+	if !reflect.DeepEqual(command.Env, []string{"MYSQL_PWD=" + password}) || command.Shell || command.Timeout != commandTimeout || command.MaxStdoutBytes != outputLimit || command.MaxStderrBytes != outputLimit {
+		t.Fatalf("verify_login transport=%#v", command)
+	}
+	if strings.Contains(command.RedactedString(), password) || !containsAll(command.Redact, mysqlLiteralSecretForms(password)) {
+		t.Fatalf("verify_login redaction=%#v rendered=%q", command.Redact, command.RedactedString())
+	}
+
+	// Login failure is the source false result, with no plugin/hash query.
+	rt, runner = newMysqlRuntime(process.CommandResult{ExitCode: 1, Stderr: []byte("access denied")})
+	value, err = (verifyLoginFunc{}).Execute(context.Background(), rt, &VerifyLoginArgs{User: "login_user", Password: mysqlString(password)})
+	if err != nil || value != false || len(runner.calls) != 1 || runner.calls[0].Args[len(runner.calls[0].Args)-1] != "--execute="+verifyLoginQuery {
+		t.Fatalf("verify_login failure=%#v err=%v calls=%d", value, err, len(runner.calls))
+	}
+
+	// Empty password stays an explicit out-of-band value; nil has no env entry.
+	for _, tc := range []struct {
+		name string
+		pass *string
+		env  []string
+	}{
+		{"empty", mysqlString(""), []string{"MYSQL_PWD="}},
+		{"nil", nil, []string{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, runner := newMysqlRuntime(process.CommandResult{ExitCode: 0})
+			value, err := (verifyLoginFunc{}).Execute(context.Background(), rt, &VerifyLoginArgs{User: "u", Password: tc.pass})
+			if err != nil || value != true || !reflect.DeepEqual(runner.calls[0].Env, tc.env) {
+				t.Fatalf("value=%#v err=%v env=%#v", value, err, runner.calls[0].Env)
+			}
+		})
+	}
+}
+
+// Both entry points exercise the actual mutation transport, including legacy
+// UPDATE and hash-only paths, not just the statement constructor.
+func TestMysqlUserChpassStdinDirectAndRegistry(t *testing.T) {
+	for _, registered := range []bool{false, true} {
+		for _, tc := range []struct {
+			name, version, plugin, sql string
+			hashOnly                   bool
+		}{
+			{"modern-password", "8.0.34", "caching_sha2_password", "ALTER USER 'target'@'localhost' IDENTIFIED WITH caching_sha2_password BY 'stdin''password'; FLUSH PRIVILEGES;", false},
+			{"modern-hash", "8.0.34", "mysql_native_password", "ALTER USER 'target'@'localhost' IDENTIFIED WITH mysql_native_password AS '*stdin''hash'; FLUSH PRIVILEGES;", true},
+			{"legacy-password", "5.6.51", "mysql_native_password", "UPDATE mysql.user SET Password=PASSWORD('stdin''password') WHERE User='target' AND Host = 'localhost'; FLUSH PRIVILEGES;", false},
+		} {
+			for _, failed := range []bool{false, true} {
+				t.Run(fmt.Sprintf("registry=%t/%s/failure=%t", registered, tc.name, failed), func(t *testing.T) {
+					password, hash, connection := "stdin'password", "*stdin'hash", "stdin'connection"
+					args := &UserChpassArgs{User: "target", ConnUser: mysqlString("target"), ConnPass: &connection, PasswordColumn: mysqlString("Password"), Password: &password, PasswordHash: &hash}
+					if tc.hashOnly {
+						args.Password = nil
+					}
+					forms := mysqlUserChpassSecretInventory(args.connection(), args.User, "localhost", args.Password, args.PasswordHash)
+					last := process.CommandResult{}
+					if failed {
+						last = process.CommandResult{Err: errors.New(strings.Join(forms, " ")), Stdout: []byte(strings.Join(forms, " ")), Stderr: []byte(strings.Join(forms, " "))}
+					}
+					rt, runner := newMysqlRuntime(
+						process.CommandResult{Stdout: []byte("VERSION()\n" + tc.version + "\n")},
+						process.CommandResult{Stdout: mysqlUserListStdout("target\tlocalhost")},
+						process.CommandResult{Stdout: []byte("User\tHost\tplugin\ntarget\tlocalhost\t" + tc.plugin + "\n")}, last,
+					)
+					var value any
+					var err error
+					if registered {
+						rt.Exec = runtime.NewExecRegistry()
+						if err := Register(rt.Exec); err != nil {
+							t.Fatal(err)
+						}
+						value, err = rt.Exec.Call(context.Background(), rt, "mysql.user_chpass", args)
+					} else {
+						value, err = (userChpassFunc{}).Execute(context.Background(), rt, args)
+					}
+					if len(runner.calls) != 4 || (failed && (err == nil || value != nil)) || (!failed && (err != nil || value != true)) {
+						t.Fatal("unexpected mutation result or repeated process")
+					}
+					command := runner.calls[3]
+					if string(command.Stdin) != tc.sql {
+						t.Fatalf("ordered stdin mismatch for %s", tc.name)
+					}
+					if !reflect.DeepEqual(command.Args, []string{"--batch", "--user=target"}) || command.Shell || len(command.Stdin) > runtime.MaxCommandInputBytes {
+						t.Fatal("unsafe stdin transport")
+					}
+					for _, c := range runner.calls {
+						for _, form := range mysqlMutationSecretInventory(args.connection(), args.Password, args.PasswordHash) {
+							if strings.Contains(strings.Join(c.Args, " "), form) {
+								t.Fatal("credential present in argv")
+							}
+						}
+						for _, form := range forms {
+							if strings.Contains(c.RedactedString(), form) || (err != nil && strings.Contains(err.Error(), form)) {
+								t.Fatal("credential leaked")
+							}
+						}
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestMysqlUserChpassStdinBounds(t *testing.T) {
+	rt, runner := newMysqlRuntime()
+	_, err := runMysqlStatement(context.Background(), rt, nil, strings.Repeat("x", runtime.MaxCommandInputBytes+1))
+	if !errors.Is(err, runtime.ErrCommandInputLimit) || len(runner.calls) != 0 {
+		t.Fatal("oversized stdin reached Runner")
+	}
+	for _, result := range []process.CommandResult{{StdoutTruncated: true}, {StderrTruncated: true}, {Stdout: make([]byte, outputLimit+1)}, {Stderr: make([]byte, outputLimit+1)}} {
+		rt, runner := newMysqlRuntime(result)
+		_, err := runMysqlStatement(context.Background(), rt, nil, "FLUSH PRIVILEGES;")
+		if !errors.Is(err, process.ErrOutputLimit) || len(runner.calls) != 1 {
+			t.Fatal("stdin transport lost output bounds")
+		}
+	}
+}
+
+// SQL account, password_hash, and native-verifier derivations are inapplicable:
+// verify_login only connects with the supplied password and runs SELECT 1.
+// Connection forms here mean the effective MYSQL_PWD, not ignored ConnPass.
+func TestMysqlVerifyLoginRedactionDirectAndRegistryMatrix(t *testing.T) {
+	marker := "verify'matrix"
+	doubled := "verify''matrix"
+	for _, registered := range []bool{false, true} {
+		for _, tc := range []struct {
+			name, form string
+			applicable bool
+		}{
+			{"raw", marker, true}, {"doubled", doubled, true}, {"quoted", "'" + doubled + "'", true},
+			{"connection", "MYSQL_PWD=" + marker, true},
+			{"account-SQL-not-generated", "'login-user'@'db-host'", false},
+			{"hash-not-accepted", "*unused-hash", false},
+			{"native-verifier-not-derived", mysqlNativePasswordHash(marker), false},
+			{"overridden-connection-password", "unused-connection-password", false},
+		} {
+			t.Run(fmt.Sprintf("registry=%t/%s/applicable=%t", registered, tc.name, tc.applicable), func(t *testing.T) {
+				result := process.CommandResult{Stdout: []byte("1\n")}
+				if tc.applicable {
+					result = process.CommandResult{Err: errors.New("failure " + tc.form), Stdout: []byte(tc.form), Stderr: []byte(tc.form)}
+				}
+				rt, runner := newMysqlRuntime(result)
+				args := &VerifyLoginArgs{User: "login-user", Password: &marker, ConnHost: mysqlString("db-host"), ConnPass: mysqlString("unused-connection-password")}
+				var value any
+				var err error
+				if registered {
+					rt.Exec = runtime.NewExecRegistry()
+					if err := Register(rt.Exec); err != nil {
+						t.Fatal(err)
+					}
+					value, err = rt.Exec.Call(context.Background(), rt, "mysql.verify_login", args)
+				} else {
+					value, err = (verifyLoginFunc{}).Execute(context.Background(), rt, args)
+				}
+				if len(runner.calls) != 1 {
+					t.Fatal("verify_login must use one process")
+				}
+				command := runner.calls[0]
+				if !reflect.DeepEqual(command.Args, []string{"--batch", "--user=login-user", "--host=db-host", "--execute=SELECT 1"}) || len(command.Stdin) != 0 || command.Shell {
+					t.Fatal("verify_login generated non-constant SQL")
+				}
+				if !reflect.DeepEqual(command.Env, []string{"MYSQL_PWD=" + marker}) {
+					t.Fatal("effective credential override lost")
+				}
+				if !tc.applicable {
+					if err != nil || value != true || strings.Contains(strings.Join(command.Redact, " ")+string(command.Stdin)+strings.Join(command.Args, " ")+strings.Join(command.Env, " "), tc.form) {
+						t.Fatal("inapplicable form unexpectedly generated")
+					}
+					return
+				}
+				if err == nil || value != nil {
+					t.Fatal("injected failure missing")
+				}
+				// Replay the same transport to inspect streams hidden by the bool API.
+				rt, _ = newMysqlRuntime(result)
+				login := &myConnection{User: &args.User, Host: args.ConnHost, Password: &marker}
+				safe, replayErr := runMysqlSecrets(context.Background(), rt, mysqlQueryArgv(login, verifyLoginQuery), login, mysqlLiteralSecretForms(marker)...)
+				if replayErr == nil || safe.Err == nil {
+					t.Fatal("transport failure missing")
+				}
+				for _, surface := range []string{err.Error(), replayErr.Error(), safe.Err.Error(), string(safe.Stdout), string(safe.Stderr), command.RedactedString(), strings.Join(command.Args, " ")} {
+					if strings.Contains(surface, tc.form) || strings.Contains(surface, marker) || strings.Contains(surface, doubled) {
+						t.Fatal("verify_login leaked applicable credential form")
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestMysqlVerifyLoginFailClosed(t *testing.T) {
+	marker := "verify'secret"
+	result := process.CommandResult{
+		Err:    errors.New("verify failed " + marker),
+		Stdout: []byte("stdout " + marker),
+		Stderr: []byte("stderr " + marker),
+	}
+	rt, runner := newMysqlRuntime(result)
+	value, err := (verifyLoginFunc{}).Execute(context.Background(), rt, &VerifyLoginArgs{User: "u", Password: mysqlString(marker)})
+	if err == nil || value != nil || strings.Contains(err.Error(), marker) || len(runner.calls) != 1 {
+		t.Fatalf("verify error value=%#v err=%v calls=%d", value, err, len(runner.calls))
+	}
+	if strings.Contains(runner.calls[0].RedactedString(), marker) {
+		t.Fatalf("verify transport leaked marker: %#v", runner.calls[0])
+	}
+	for _, tc := range []struct {
+		name string
+		args *VerifyLoginArgs
+		want error
+	}{
+		{"runas", &VerifyLoginArgs{User: "u", Password: mysqlString(marker), Runas: mysqlString("root")}, errMysqlRunas},
+		{"nul-password", &VerifyLoginArgs{User: "u", Password: mysqlString("bad\x00pass")}, errMysqlInvalidArgument},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &mysqlFakeRunner{}
+			_, err := (verifyLoginFunc{}).Execute(context.Background(), &runtime.Runtime{Runner: runner}, tc.args)
+			if !errors.Is(err, tc.want) || len(runner.calls) != 0 {
+				t.Fatalf("err=%v calls=%d", err, len(runner.calls))
+			}
+		})
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runner = &mysqlFakeRunner{}
+	if _, err := (verifyLoginFunc{}).Execute(ctx, &runtime.Runtime{Runner: runner}, &VerifyLoginArgs{User: "u", Password: mysqlString(marker)}); !errors.Is(err, context.Canceled) || len(runner.calls) != 0 {
+		t.Fatalf("cancelled verify err=%v calls=%d", err, len(runner.calls))
 	}
 }

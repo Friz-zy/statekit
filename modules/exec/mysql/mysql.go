@@ -866,6 +866,10 @@ const (
 	// SELECT VERSION() (mysql.py:1027). The pinned module has no
 	// `mysql --version` client-binary probe — the version is server-side.
 	selectVersionQuery = "SELECT VERSION()"
+	// verifyLoginQuery is deliberately constant: the pinned verify_login
+	// establishes a connection only, while batch mysql needs a non-interactive
+	// fixed statement to complete and report that connection attempt.
+	verifyLoginQuery = "SELECT 1"
 	// showStatusQuery is the reader of status: the exact pinned
 	// SHOW STATUS (mysql.py:993).
 	showStatusQuery = "SHOW STATUS"
@@ -926,12 +930,13 @@ var (
 	// an unknown failure answered as data would be partial fake success
 	// — the same strict catalog divergence the R9.2s owner_to flow
 	// made before its mutation.
-	errMysqlMaintenanceExit  = errors.New("mysql: maintenance run completed nonzero")
-	errMysqlUserInfoColumn   = errors.New("mysql.user_info: missing fixed column")
-	errMysqlUserPluginColumn = errors.New("mysql.user_create: missing plugin column")
-	errMysqlAccountArgument  = errors.New("mysql: invalid account argument")
-	errMysqlAuthPlugin       = errors.New("mysql: unsupported authentication plugin")
-	errMysqlPasswordColumn   = errors.New("mysql: unsupported password column")
+	errMysqlMaintenanceExit    = errors.New("mysql: maintenance run completed nonzero")
+	errMysqlUserInfoColumn     = errors.New("mysql.user_info: missing fixed column")
+	errMysqlUserPluginColumn   = errors.New("mysql.user_create: missing plugin column")
+	errMysqlAccountArgument    = errors.New("mysql: invalid account argument")
+	errMysqlAuthPlugin         = errors.New("mysql: unsupported authentication plugin")
+	errMysqlPasswordColumn     = errors.New("mysql: unsupported password column")
+	errMysqlPasswordChangeExit = errors.New("mysql: password change run completed nonzero")
 )
 
 // myConnection is the transport half of the pinned **connection_args
@@ -995,6 +1000,19 @@ func runMysqlResult(ctx context.Context, rt *runtime.Runtime, argv []string, con
 }
 
 func runMysqlResultSecrets(ctx context.Context, rt *runtime.Runtime, argv []string, conn *myConnection, catalogStdout *[]byte, preserveStdout bool, extraSecrets ...string) (process.CommandResult, error) {
+	return runMysqlInputResultSecrets(ctx, rt, argv, "", conn, catalogStdout, preserveStdout, extraSecrets...)
+}
+
+// runMysqlStatement keeps credential-bearing SQL out of the process argv.
+func runMysqlStatement(ctx context.Context, rt *runtime.Runtime, conn *myConnection, statement string, secrets ...string) (process.CommandResult, error) {
+	if conn == nil {
+		conn = &myConnection{}
+	}
+	argv := mysqlQueryArgv(conn, "")
+	return runMysqlInputResultSecrets(ctx, rt, argv[:len(argv)-1], statement, conn, nil, false, secrets...)
+}
+
+func runMysqlInputResultSecrets(ctx context.Context, rt *runtime.Runtime, argv []string, input string, conn *myConnection, catalogStdout *[]byte, preserveStdout bool, extraSecrets ...string) (process.CommandResult, error) {
 	if catalogStdout != nil {
 		*catalogStdout = nil
 		if len(argv) == 0 || (argv[len(argv)-1] != "--execute="+showDatabasesQuery && argv[len(argv)-1] != "--execute="+tableCatalogQuery) {
@@ -1030,15 +1048,15 @@ func runMysqlResultSecrets(ctx context.Context, rt *runtime.Runtime, argv []stri
 		secrets = append(secrets, *conn.Password)
 	}
 	secrets = secretList(append(secrets, extraSecrets...)...)
-	command := process.Command{
-		Name:           argv[0],
-		Args:           append([]string(nil), argv[1:]...),
-		Timeout:        commandTimeout,
-		MaxStdoutBytes: outputLimit,
-		MaxStderrBytes: outputLimit,
-		Env:            mysqlEnvironment(conn),
-		PreserveStdout: preserveStdout,
+	command, err := runtime.CommandWithInputBounded(argv, input)
+	if err != nil {
+		return process.CommandResult{ExitCode: -1}, err
 	}
+	command.Timeout = commandTimeout
+	command.MaxStdoutBytes = outputLimit
+	command.MaxStderrBytes = outputLimit
+	command.Env = mysqlEnvironment(conn)
+	command.PreserveStdout = preserveStdout
 	if len(secrets) > 0 && catalogStdout == nil {
 		command.Redact = secrets
 	}
@@ -2135,6 +2153,19 @@ func mysqlUserRemoveSecretInventory(conn *myConnection, user, host string) []str
 	return secretList(values...)
 }
 
+// mysqlUserChpassSecretInventory covers every caller-controlled value that can
+// cross a user_chpass transport boundary. The fixed catalog reads preserve
+// stdout for internal account/plugin matching, so the raw, doubled, quoted,
+// account, credential, hash, and connection-password forms must all be in the
+// same inventory before the first preflight and on the mutation/flush calls.
+func mysqlUserChpassSecretInventory(conn *myConnection, user, host string, password, passwordHash *string) []string {
+	values := mysqlMutationSecretInventory(conn, password, passwordHash)
+	values = append(values, mysqlLiteralSecretForms(user)...)
+	values = append(values, mysqlLiteralSecretForms(host)...)
+	values = append(values, mysqlAccount(user, host))
+	return secretList(values...)
+}
+
 func mysqlAccount(user, host string) string {
 	return mysqlStringLiteral(user) + "@" + mysqlStringLiteral(host)
 }
@@ -2230,6 +2261,89 @@ func mysqlCreateStatement(user, host, serverVersion string, password, passwordHa
 		return statement + " IDENTIFIED WITH " + authPlugin + " AS " + literal, secrets, true
 	}
 	return "", nil, false
+}
+
+// mysqlChangePasswordStatement is the fixed clause machine from the pinned
+// _mysql_user_chpass/_mariadb_user_chpass helpers. Caller values are SQL
+// literals only; plugin and legacy-column positions are allowlisted because
+// mysql's CLI has no bound-parameter API. Password takes precedence over a
+// hash even when it is explicitly empty, matching the source's `is not None`
+// branches. The source's unsafe backslash/control policy is enforced before
+// this builder is reached.
+func mysqlChangePasswordStatement(user, host, serverVersion string, password, passwordHash *string, allowPasswordless, unixSocket bool, passwordColumn, authPlugin string) (statement string, secrets []string, ok bool) {
+	if !validAccountPart(user) || !validAccountPart(host) {
+		return "", nil, false
+	}
+	for _, credential := range []*string{password, passwordHash} {
+		if credential != nil && !validAccountPart(*credential) {
+			return "", nil, false
+		}
+	}
+	column, err := mysqlPasswordColumn(&passwordColumn)
+	if err != nil || column == "" {
+		return "", nil, false
+	}
+	passwordColumn = column
+	plugin, err := mysqlAuthPlugin(&authPlugin)
+	if err != nil {
+		return "", nil, false
+	}
+
+	passwordSQL := "''"
+	if password != nil {
+		literal := mysqlStringLiteral(*password)
+		secrets = append(secrets, mysqlLiteralSecretForms(*password)...)
+		if strings.Contains(serverVersion, "MariaDB") || !versionAtLeast(serverVersion, 8, 0, 11) {
+			passwordSQL = "PASSWORD(" + literal + ")"
+		} else {
+			passwordSQL = literal
+		}
+	} else if passwordHash != nil {
+		passwordSQL = mysqlStringLiteral(*passwordHash)
+		secrets = append(secrets, mysqlLiteralSecretForms(*passwordHash)...)
+	} else if !allowPasswordless {
+		return "", nil, false
+	}
+
+	account := mysqlAccount(user, host)
+	where := " WHERE User=" + mysqlStringLiteral(user) + " AND Host = " + mysqlStringLiteral(host) + ";"
+	if allowPasswordless && unixSocket {
+		if host != defaultUserHost {
+			// A socket account is meaningful only for localhost. Unlike the
+			// pinned logger-only branch, the CLI port fails closed rather than
+			// silently applying the ordinary password clause to another host.
+			return "", nil, false
+		}
+		if strings.Contains(serverVersion, "MariaDB") {
+			return "UPDATE mysql.user SET " + passwordColumn + "=" + passwordSQL + ", plugin=" + mysqlStringLiteral("unix_socket") + where, secrets, true
+		}
+		if versionAtLeast(serverVersion, 8, 0, 11) {
+			return "ALTER USER " + account + " IDENTIFIED WITH auth_socket AS " + mysqlStringLiteral(user) + ";", secrets, true
+		}
+		return "UPDATE mysql.user SET " + passwordColumn + "=" + passwordSQL + ", plugin=" + mysqlStringLiteral("auth_socket") + where, secrets, true
+	}
+
+	if strings.Contains(serverVersion, "MariaDB") {
+		if versionAtLeast(serverVersion, 10, 4, 0) {
+			return "ALTER USER " + account + " IDENTIFIED VIA " + plugin + " USING " + passwordSQL, secrets, true
+		}
+		return "UPDATE mysql.user SET " + passwordColumn + "=" + passwordSQL + where, secrets, true
+	}
+	if versionAtLeast(serverVersion, 8, 0, 11) {
+		statement = "ALTER USER " + account + " IDENTIFIED WITH " + plugin
+		if password != nil {
+			statement += " BY " + passwordSQL
+		} else if passwordHash != nil {
+			statement += " AS " + passwordSQL
+		} else {
+			statement += " "
+		}
+		if password != nil || passwordHash != nil {
+			statement += ";"
+		}
+		return statement, secrets, true
+	}
+	return "UPDATE mysql.user SET " + passwordColumn + "=" + passwordSQL + where, secrets, true
 }
 
 func mysqlPasswordColumn(requested *string) (string, error) {
@@ -2468,6 +2582,250 @@ func (userCreateFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any
 		return nil, err
 	}
 	return exists, nil
+}
+
+// UserChpassArgs mirrors user_chpass(user, host="localhost", password=None,
+// password_hash=None, allow_passwordless=False, unix_socket=None,
+// password_column=None, **connection_args). The connection credential is
+// separate from the password being written and remains out of argv.
+type UserChpassArgs struct {
+	User              string  `statekit:"name=user,required"`
+	Host              *string `statekit:"name=host"`
+	Password          *string `statekit:"name=password"`
+	PasswordHash      *string `statekit:"name=password_hash"`
+	AllowPasswordless *bool   `statekit:"name=allow_passwordless"`
+	UnixSocket        *bool   `statekit:"name=unix_socket"`
+	PasswordColumn    *string `statekit:"name=password_column"`
+	ConnUser          *string `statekit:"name=connection_user"`
+	ConnHost          *string `statekit:"name=connection_host"`
+	ConnPort          *string `statekit:"name=connection_port"`
+	ConnPass          *string `statekit:"name=connection_pass"`
+	ConnDB            *string `statekit:"name=connection_db"`
+	Runas             *string `statekit:"name=runas"`
+}
+
+func (a *UserChpassArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return &myConnection{
+		User:     a.ConnUser,
+		Host:     a.ConnHost,
+		Port:     a.ConnPort,
+		Password: a.ConnPass,
+		DB:       a.ConnDB,
+		Runas:    a.Runas,
+	}
+}
+
+type userChpassFunc struct{}
+
+func (userChpassFunc) Name() string { return "mysql.user_chpass" }
+func (userChpassFunc) Args() any    { return UserChpassArgs{} }
+
+func (userChpassFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[UserChpassArgs](args, "mysql.user_chpass")
+	if err != nil {
+		return nil, err
+	}
+	host := defaultUserHost
+	if a.Host != nil {
+		host = *a.Host
+	}
+	if err := validateMysqlMutationInputs(a.User, host, a.Password, a.PasswordHash); err != nil {
+		return nil, err
+	}
+	if err := rejectRunas(a.Runas); err != nil {
+		return nil, err
+	}
+	if _, err := mysqlPasswordColumn(a.PasswordColumn); err != nil {
+		return nil, err
+	}
+
+	conn := a.connection()
+	secretInventory := mysqlUserChpassSecretInventory(conn, a.User, host, a.Password, a.PasswordHash)
+	effectiveConn := conn
+	serverVersion, err := mysqlVersionPreserve(ctx, rt, effectiveConn, secretInventory...)
+	if err != nil {
+		return nil, err
+	}
+	if serverVersion == "" && pointerTruthy(a.Password) {
+		// Match the source recovery path used when the account password was
+		// changed by the same state run: retry the connection with the new
+		// password, without mutating the caller's argument object.
+		retry := *conn
+		retry.Password = a.Password
+		effectiveConn = &retry
+		serverVersion, err = mysqlVersionPreserve(ctx, rt, effectiveConn, secretInventory...)
+		if err != nil {
+			return nil, err
+		}
+		if serverVersion == "" {
+			return false, nil
+		}
+	}
+
+	exists, err := userExistsCatalog(ctx, rt, effectiveConn, a.User, host, secretInventory...)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return false, nil
+	}
+
+	passwordColumn, err := mysqlResolvePasswordColumn(ctx, rt, effectiveConn, a.PasswordColumn, secretInventory...)
+	if err != nil {
+		return nil, err
+	}
+	exists, authPlugin, err := mysqlAccountPluginCatalog(ctx, rt, effectiveConn, a.User, host, secretInventory...)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return false, nil
+	}
+	if authPlugin == "" {
+		// __get_auth_plugin defaults a missing/NULL row to the native plugin.
+		authPlugin = "mysql_native_password"
+	}
+	if _, err := mysqlAuthPlugin(&authPlugin); err != nil {
+		return nil, err
+	}
+
+	allowPasswordless := pointerBool(a.AllowPasswordless)
+	unixSocket := pointerBool(a.UnixSocket)
+	if allowPasswordless && unixSocket {
+		plugin := "auth_socket"
+		if strings.Contains(serverVersion, "MariaDB") {
+			plugin = "unix_socket"
+		}
+		enabled, err := mysqlPluginEnabled(ctx, rt, effectiveConn, plugin, secretInventory...)
+		if err != nil {
+			return nil, err
+		}
+		if !enabled {
+			return false, nil
+		}
+	}
+
+	statement, statementSecrets, ok := mysqlChangePasswordStatement(
+		a.User, host, serverVersion, a.Password, a.PasswordHash,
+		allowPasswordless, unixSocket, passwordColumn, authPlugin,
+	)
+	if !ok {
+		return false, nil
+	}
+	mutationSecrets := append(append([]string(nil), secretInventory...), statementSecrets...)
+	// A password change performed through the account used by the current
+	// connection must keep ALTER/UPDATE and FLUSH on one server session. A
+	// second mysql process would authenticate with the old MYSQL_PWD after the
+	// mutation and can therefore fail after already changing the password.
+	selfPasswordChange := effectiveConn != nil && effectiveConn.User != nil &&
+		*effectiveConn.User == a.User && !allowPasswordless && !unixSocket &&
+		(a.Password != nil || a.PasswordHash != nil)
+	if selfPasswordChange {
+		if !strings.HasSuffix(statement, ";") {
+			statement += ";"
+		}
+		statement += " FLUSH PRIVILEGES;"
+		result, err := runMysqlStatement(ctx, rt, effectiveConn, statement, mutationSecrets...)
+		if err != nil {
+			return nil, err
+		}
+		if result.ExitCode != 0 {
+			return false, nil
+		}
+		return true, nil
+	}
+	result, err := runMysqlStatement(ctx, rt, effectiveConn, statement, mutationSecrets...)
+	if err != nil {
+		return nil, err
+	}
+	if result.ExitCode != 0 {
+		return false, nil
+	}
+
+	// Salt flushes privileges after a successful change. On the modern
+	// branches it treats the statement result as successful regardless of the
+	// affected-row count; the CLI can preserve that bool shape but cannot infer
+	// an UPDATE rowcount on old servers. A failed flush is an execution error,
+	// not a fabricated success.
+	compareVersion := versionAtLeast(serverVersion, 8, 0, 11)
+	if strings.Contains(serverVersion, "MariaDB") {
+		compareVersion = versionAtLeast(serverVersion, 10, 4, 0)
+	}
+	if compareVersion || result.ExitCode == 0 {
+		flush, flushErr := runMysqlSecrets(ctx, rt, mysqlQueryArgv(effectiveConn, "FLUSH PRIVILEGES;"), effectiveConn, mutationSecrets...)
+		if flushErr != nil {
+			return nil, flushErr
+		}
+		if flush.ExitCode != 0 {
+			return nil, errMysqlPasswordChangeExit
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+// VerifyLoginArgs maps verify_login's connection surface. ConnUser and
+// ConnPass are accepted for source-compatible **connection_args parsing but
+// deliberately ignored: verify_login always overrides both with User and
+// Password before connecting.
+type VerifyLoginArgs struct {
+	User     string  `statekit:"name=user,required"`
+	Password *string `statekit:"name=password"`
+	ConnUser *string `statekit:"name=connection_user"`
+	ConnHost *string `statekit:"name=connection_host"`
+	ConnPort *string `statekit:"name=connection_port"`
+	ConnPass *string `statekit:"name=connection_pass"`
+	ConnDB   *string `statekit:"name=connection_db"`
+	Runas    *string `statekit:"name=runas"`
+}
+
+func (a *VerifyLoginArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return &myConnection{
+		Host:  a.ConnHost,
+		Port:  a.ConnPort,
+		DB:    a.ConnDB,
+		Runas: a.Runas,
+	}
+}
+
+type verifyLoginFunc struct{}
+
+func (verifyLoginFunc) Name() string { return "mysql.verify_login" }
+func (verifyLoginFunc) Args() any    { return VerifyLoginArgs{} }
+
+func (verifyLoginFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[VerifyLoginArgs](args, "mysql.verify_login")
+	if err != nil {
+		return nil, err
+	}
+	if a.Password != nil && strings.IndexByte(*a.Password, 0) >= 0 {
+		return nil, errMysqlInvalidArgument
+	}
+	if err := rejectRunas(a.Runas); err != nil {
+		return nil, err
+	}
+	conn := a.connection()
+	login := *conn
+	login.User = &a.User
+	login.Password = a.Password
+	secrets := []string(nil)
+	if a.Password != nil {
+		secrets = mysqlLiteralSecretForms(*a.Password)
+	}
+	result, err := runMysqlSecrets(ctx, rt, mysqlQueryArgv(&login, verifyLoginQuery), &login, secrets...)
+	if err != nil {
+		return nil, err
+	}
+	// MySQLdb's _connect returns a boolean-compatible success/failure for
+	// connection errors. The fixed SELECT is only the non-interactive CLI
+	// completion mechanism; its exit status is the same bool surface.
+	return result.ExitCode == 0, nil
 }
 
 func (userRemoveFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
@@ -4101,9 +4459,10 @@ func redactedError(err error, secrets ...string) error {
 
 // Register installs the mysql slice: the R9.2a pure functions, the
 // R9.3a/R9.3d/R9.3e fixed-query catalog family, the R9.3b server facts, the
-// R9.3c maintenance family, the R9.3e user account mutations, and the R9.3f
-// grant family over the central mysql CLI transport. The remainder of the
-// mysql family stays pending behind its own source/transport boundary.
+// R9.3c maintenance family, the R9.3e user account mutations, the R9.3f
+// grant family, and the R9.3g password/login family over the central mysql
+// CLI transport. The remainder of the mysql family stays pending behind its
+// own source/transport boundary.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		quoteIdentifierFunc{},
@@ -4116,6 +4475,7 @@ func Register(reg *runtime.ExecRegistry) error {
 		userExistsFunc{},
 		userInfoFunc{},
 		userCreateFunc{},
+		userChpassFunc{},
 		userRemoveFunc{},
 		grantAddFunc{},
 		grantExistsFunc{},
@@ -4127,6 +4487,7 @@ func Register(reg *runtime.ExecRegistry) error {
 		dbCheckFunc{},
 		dbRepairFunc{},
 		dbOptimizeFunc{},
+		verifyLoginFunc{},
 	} {
 		if err := reg.Register(fn); err != nil {
 			return err

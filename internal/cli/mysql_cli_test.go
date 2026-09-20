@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -1608,4 +1609,277 @@ func mysqlCLITestNativePasswordVerifier(password string) string {
 	first := sha1.Sum([]byte(password))
 	second := sha1.Sum(first[:])
 	return "*" + strings.ToUpper(hex.EncodeToString(second[:]))
+}
+
+func mysqlCLIUserChpassRedactionForms(marker string) []string {
+	doubled := strings.ReplaceAll(marker, "'", "''")
+	quoted := "'" + doubled + "'"
+	hash := "*" + marker
+	hashDoubled := "*" + doubled
+	hashQuoted := "'" + hashDoubled + "'"
+	verifier := mysqlCLITestNativePasswordVerifier(marker)
+	return []string{
+		marker, doubled, quoted,
+		hash, hashDoubled, hashQuoted,
+		quoted + "@" + quoted,
+		verifier, "'" + verifier + "'",
+	}
+}
+
+func mysqlCLIUserChpassRedactionResults(failAt int, marker string) []process.CommandResult {
+	successes := []process.CommandResult{
+		{Stdout: []byte("VERSION()\n8.0.34\n")},
+		{Stdout: []byte("User\tHost\n" + marker + "\t" + marker + "\n")},
+		{Stdout: []byte("HasPassword\n")},
+		{Stdout: []byte("User\tHost\tplugin\n" + marker + "\t" + marker + "\ted25519\n")},
+		{ExitCode: 0},
+		{ExitCode: 0},
+	}
+	forms := mysqlCLIUserChpassRedactionForms(marker)
+	leak := strings.Join(forms, " ")
+	results := append([]process.CommandResult(nil), successes[:failAt]...)
+	return append(results, process.CommandResult{
+		Err:    errors.New("phase failure " + leak),
+		Stdout: []byte("stdout " + leak),
+		Stderr: []byte("stderr " + leak),
+	})
+}
+
+// TestMySQLCLIUserChpassRedactionPhaseMatrix covers the actual CLI decoder
+// and registry at every version/account/schema/plugin preflight, mutation, and
+// separate FLUSH phase. The child output streams are injected at each phase;
+// the CLI-visible error and output plus every rendered command stay redacted.
+func TestMySQLCLIUserChpassRedactionPhaseMatrix(t *testing.T) {
+	marker := "cli'matrix"
+	hash := "*" + marker
+	forms := mysqlCLIUserChpassRedactionForms(marker)
+	for failAt := 0; failAt < 6; failAt++ {
+		t.Run(fmt.Sprintf("phase-%d", failAt), func(t *testing.T) {
+			runner := &cliRecordingRunner{results: mysqlCLIUserChpassRedactionResults(failAt, marker)}
+			app := mysqlCLIRunnerApp(t, runner)
+			code, out, errS := captureCode(t, app, "exec", "mysql.user_chpass",
+				"--user", marker, "--host", marker, "--password", marker,
+				"--password-hash", hash, "--connection-user", "admin",
+				"--connection-pass", marker, "-o", "json")
+			if code != ExitFailed || out != "" || len(runner.calls) != failAt+1 {
+				t.Fatalf("phase=%d code=%d out=%q calls=%d", failAt, code, out, len(runner.calls))
+			}
+			for callIndex, command := range runner.calls {
+				if command.Shell || !reflect.DeepEqual(command.Env, []string{"MYSQL_PWD=" + marker}) || command.Timeout <= 0 || command.MaxStdoutBytes <= 0 || command.MaxStderrBytes <= 0 {
+					t.Fatalf("phase=%d call=%d unsafe transport", failAt, callIndex)
+				}
+				for _, form := range forms {
+					if strings.Contains(strings.Join(command.Args, " "), form) {
+						t.Fatal("user_chpass argv contains a credential form")
+					}
+					if strings.Contains(out+errS, form) || strings.Contains(command.RedactedString(), form) {
+						t.Fatalf("phase=%d call=%d leaked redaction form", failAt, callIndex)
+					}
+					found := false
+					for _, configured := range command.Redact {
+						if configured == form {
+							found = true
+							break
+						}
+					}
+					if !found {
+						t.Fatalf("phase=%d call=%d omitted redaction form", failAt, callIndex)
+					}
+				}
+				for index := 1; index < len(command.Redact); index++ {
+					if len(command.Redact[index-1]) < len(command.Redact[index]) {
+						t.Fatalf("phase=%d call=%d redaction inventory is not longest-first", failAt, callIndex)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestMySQLCLIUserChpassAndVerifyLogin drives the R9.3g mutation/login names
+// through the real CLI argument decoder and registry. The fake Runner is the
+// only execution provider; no mysql client or database is contacted.
+func TestMySQLCLIUserChpassAndVerifyLogin(t *testing.T) {
+	connectionPassword := "cli-connection-pass"
+	password := "cli'p%ass"
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{Stdout: []byte("VERSION()\n8.0.34\n")},
+		{Stdout: []byte("User\tHost\ncli-user\tremote\n")},
+		{Stdout: []byte("HasPassword\n")},
+		{Stdout: []byte("User\tHost\tplugin\ncli-user\tremote\tcaching_sha2_password\n")},
+		{ExitCode: 0},
+		{ExitCode: 0},
+	}}
+	app := mysqlCLIRunnerApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "mysql.user_chpass",
+		"--user", "cli-user", "--host", "remote", "--password", password,
+		"--connection-user", "admin", "--connection-host", "db-host",
+		"--connection-port", "3308", "--connection-db", "mysql",
+		"--connection-pass", connectionPassword, "-o", "json")
+	if code != ExitOK || errS != "" || strings.TrimSpace(out) != "true" || len(runner.calls) != 6 {
+		t.Fatalf("user_chpass CLI code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+	mutation := runner.calls[4]
+	if got := append([]string{mutation.Name}, mutation.Args...); !reflect.DeepEqual(got, []string{
+		"mysql", "--batch", "--user=admin", "--host=db-host", "--port=3308", "--database=mysql",
+	}) {
+		t.Fatalf("user_chpass CLI mutation argv=%q", got)
+	}
+	if string(mutation.Stdin) != "ALTER USER 'cli-user'@'remote' IDENTIFIED WITH caching_sha2_password BY 'cli''p%ass';" {
+		t.Fatal("user_chpass CLI mutation stdin mismatch")
+	}
+	if mutation.Shell || !reflect.DeepEqual(mutation.Env, []string{"MYSQL_PWD=" + connectionPassword}) || strings.Contains(mutation.RedactedString(), password) || strings.Contains(mutation.RedactedString(), connectionPassword) {
+		t.Fatalf("user_chpass CLI transport=%#v", mutation)
+	}
+	if strings.Contains(out+errS, password) || strings.Contains(out+errS, connectionPassword) {
+		t.Fatalf("user_chpass CLI leaked credential: out=%q err=%q", out, errS)
+	}
+
+	loginPassword := "login'p%ass"
+	runner = &cliRecordingRunner{results: []process.CommandResult{{ExitCode: 0, Stdout: []byte("1\n")}}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.verify_login",
+		"--user", "login-user", "--password", loginPassword,
+		"--connection-user", "ignored", "--connection-host", "db-host",
+		"--connection-port", "3307", "--connection-db", "maintenance", "-o", "json")
+	if code != ExitOK || errS != "" || strings.TrimSpace(out) != "true" || len(runner.calls) != 1 {
+		t.Fatalf("verify_login CLI code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+	command := runner.calls[0]
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, []string{
+		"mysql", "--batch", "--user=login-user", "--host=db-host", "--port=3307", "--database=maintenance", "--execute=SELECT 1",
+	}) {
+		t.Fatalf("verify_login CLI argv=%q", got)
+	}
+	if !reflect.DeepEqual(command.Env, []string{"MYSQL_PWD=" + loginPassword}) || command.Shell || strings.Contains(command.RedactedString(), loginPassword) {
+		t.Fatalf("verify_login CLI transport=%#v", command)
+	}
+	if strings.Contains(out+errS, loginPassword) {
+		t.Fatalf("verify_login CLI leaked password: out=%q err=%q", out, errS)
+	}
+}
+
+// TestMySQLCLIUserChpassSelfPasswordSingleCommand verifies the self-password
+// branch through the real argument decoder: ALTER USER and FLUSH PRIVILEGES
+// share bounded stdin and one MYSQL_PWD-bearing Runner call.
+func TestMySQLCLIUserChpassSelfPasswordSingleCommand(t *testing.T) {
+	oldPassword := "cli-old'secret"
+	newPassword := "cli-new'secret"
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{Stdout: []byte("VERSION()\n8.0.34\n")},
+		{Stdout: []byte("User\tHost\nself-user\tlocalhost\n")},
+		{Stdout: []byte("HasPassword\n")},
+		{Stdout: []byte("User\tHost\tplugin\nself-user\tlocalhost\tcaching_sha2_password\n")},
+		{ExitCode: 0},
+	}}
+	app := mysqlCLIRunnerApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "mysql.user_chpass",
+		"--user", "self-user", "--password", newPassword,
+		"--connection-user", "self-user", "--connection-pass", oldPassword, "-o", "json")
+	if code != ExitOK || errS != "" || strings.TrimSpace(out) != "true" || len(runner.calls) != 5 {
+		t.Fatalf("self user_chpass CLI code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+	command := runner.calls[4]
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, []string{
+		"mysql", "--batch", "--user=self-user",
+	}) {
+		t.Fatalf("self user_chpass CLI argv=%q", got)
+	}
+	if string(command.Stdin) != "ALTER USER 'self-user'@'localhost' IDENTIFIED WITH caching_sha2_password BY 'cli-new''secret'; FLUSH PRIVILEGES;" {
+		t.Fatal("self user_chpass CLI ordered stdin mismatch")
+	}
+	if command.Shell || !reflect.DeepEqual(command.Env, []string{"MYSQL_PWD=" + oldPassword}) || strings.Contains(command.RedactedString(), oldPassword) || strings.Contains(command.RedactedString(), newPassword) {
+		t.Fatalf("self user_chpass CLI transport=%#v", command)
+	}
+	for _, secret := range []string{oldPassword, strings.ReplaceAll(oldPassword, "'", "''"), "'" + strings.ReplaceAll(oldPassword, "'", "''") + "'", newPassword, strings.ReplaceAll(newPassword, "'", "''"), "'" + strings.ReplaceAll(newPassword, "'", "''") + "'"} {
+		found := false
+		for _, configured := range command.Redact {
+			if configured == secret {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatal("self user_chpass CLI omitted a credential redaction form")
+		}
+	}
+	if strings.Count(string(command.Stdin), "ALTER USER") != 1 || strings.Count(string(command.Stdin), "FLUSH PRIVILEGES;") != 1 {
+		t.Fatalf("self user_chpass CLI repeated a statement")
+	}
+}
+
+// Applicability follows the verify_login connection-only path; account SQL,
+// password_hash and native verifiers are not generated or compared here.
+func TestMySQLCLIVerifyLoginRedactionMatrix(t *testing.T) {
+	marker := "verify'cli-matrix"
+	doubled := "verify''cli-matrix"
+	first := sha1.Sum([]byte(marker))
+	second := sha1.Sum(first[:])
+	verifier := "*" + strings.ToUpper(hex.EncodeToString(second[:]))
+	for _, tc := range []struct {
+		name, form string
+		applicable bool
+	}{
+		{"raw", marker, true}, {"doubled", doubled, true}, {"quoted", "'" + doubled + "'", true},
+		{"connection", "MYSQL_PWD=" + marker, true},
+		{"account-SQL-not-generated", "'login-user'@'db-host'", false},
+		{"hash-not-accepted", "*unused-hash", false},
+		{"native-verifier-not-derived", verifier, false},
+		{"overridden-connection-password", "unused-connection-password", false},
+	} {
+		t.Run(fmt.Sprintf("%s/applicable=%t", tc.name, tc.applicable), func(t *testing.T) {
+			result := process.CommandResult{Stdout: []byte("1\n")}
+			if tc.applicable {
+				result = process.CommandResult{Err: errors.New("failure " + tc.form), Stdout: []byte(tc.form), Stderr: []byte(tc.form)}
+			}
+			runner := &cliRecordingRunner{results: []process.CommandResult{result}}
+			app := mysqlCLIRunnerApp(t, runner)
+			code, out, errS := captureCode(t, app, "exec", "mysql.verify_login", "--user", "login-user", "--password", marker, "--connection-host", "db-host", "--connection-pass", "unused-connection-password", "-o", "json")
+			if len(runner.calls) != 1 {
+				t.Fatal("verify_login repeated connection")
+			}
+			command := runner.calls[0]
+			if !reflect.DeepEqual(command.Args, []string{"--batch", "--user=login-user", "--host=db-host", "--execute=SELECT 1"}) || len(command.Stdin) != 0 || command.Shell {
+				t.Fatal("verify_login generated non-constant SQL")
+			}
+			if !reflect.DeepEqual(command.Env, []string{"MYSQL_PWD=" + marker}) {
+				t.Fatal("effective credential override lost")
+			}
+			if !tc.applicable {
+				if code != ExitOK || strings.TrimSpace(out) != "true" || errS != "" || strings.Contains(strings.Join(command.Redact, " ")+strings.Join(command.Args, " ")+strings.Join(command.Env, " "), tc.form) {
+					t.Fatal("inapplicable form unexpectedly generated")
+				}
+				return
+			}
+			if code != ExitFailed || out != "" {
+				t.Fatal("verify_login error contract changed")
+			}
+			for _, surface := range []string{out, errS, command.RedactedString(), strings.Join(command.Args, " ")} {
+				if strings.Contains(surface, tc.form) || strings.Contains(surface, marker) || strings.Contains(surface, doubled) {
+					t.Fatal("verify_login leaked applicable credential form")
+				}
+			}
+		})
+	}
+}
+
+func TestMySQLCLIUserChpassAndVerifyLoginErrors(t *testing.T) {
+	marker := "cli-error'secret"
+	runner := &cliRecordingRunner{results: []process.CommandResult{{
+		Err:    errors.New("mysql failed " + marker),
+		Stdout: []byte("stdout " + marker),
+		Stderr: []byte("stderr " + marker),
+	}}}
+	app := mysqlCLIRunnerApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "mysql.verify_login", "--user", "u", "--password", marker, "-o", "json")
+	if code != ExitFailed || out != "" || strings.Contains(errS, marker) || len(runner.calls) != 1 {
+		t.Fatalf("verify_login CLI error code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+
+	runner = &cliRecordingRunner{}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, _, errS = captureCode(t, app, "exec", "mysql.user_chpass", "--user", "u", "--password", `bad\\password`, "-o", "json")
+	if code != ExitFailed || strings.Contains(errS, "bad") || len(runner.calls) != 0 {
+		t.Fatalf("unsafe chpass CLI code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
 }
