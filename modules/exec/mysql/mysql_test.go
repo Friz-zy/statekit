@@ -303,6 +303,7 @@ func TestMysqlRegistryNames(t *testing.T) {
 		"mysql.user_create",
 		"mysql.user_chpass",
 		"mysql.user_exists",
+		"mysql.user_grants",
 		"mysql.user_info",
 		"mysql.user_list",
 		"mysql.user_remove",
@@ -319,6 +320,294 @@ func TestMysqlRegistryNames(t *testing.T) {
 	}
 	if err := Register(reg); err == nil {
 		t.Fatal("duplicate registration must fail")
+	}
+}
+
+func TestMysqlUserGrantsExactShapeAndTransport(t *testing.T) {
+	user := "grant'user"
+	host := "host,`name'\\suffix"
+	connectionPassword := "connection-pass"
+	stdout := "Grants for account\n" +
+		"GRANT ALL PRIVILEGES ON *.* TO 'result'@'quoted' IDENTIFIED BY 'ignored' WITH GRANT OPTION\n" +
+		"GRANT SELECT ON `db`.* TO 'result'@'quoted' WITH GRANT OPTION IDENTIFIED BY 'ignored'\n" +
+		"GRANT USAGE ON *.* TO 'result'@'quoted'\n"
+	preflight := "User\tHost\n" + strings.ReplaceAll(user, `\`, `\\`) + "\t" + strings.ReplaceAll(host, `\`, `\\`) + "\n"
+	args := &UserGrantsArgs{
+		User:     user,
+		Host:     mysqlString(host),
+		ConnUser: mysqlString("connection-user"),
+		ConnHost: mysqlString("connection-host"),
+		ConnPort: mysqlString("3307"),
+		ConnPass: mysqlString(connectionPassword),
+		ConnDB:   mysqlString("maintenance"),
+	}
+	rt, runner := newMysqlRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(preflight)},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(stdout)},
+	)
+	value, err := (userGrantsFunc{}).Execute(context.Background(), rt, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"GRANT ALL PRIVILEGES ON *.* TO 'result'@'quoted' WITH GRANT OPTION",
+		"GRANT SELECT ON `db`.* TO 'result'@'quoted' WITH GRANT OPTION",
+		"GRANT USAGE ON *.* TO 'result'@'quoted'",
+	}
+	if !reflect.DeepEqual(value, want) {
+		t.Fatalf("user_grants value = %#v, want %#v", value, want)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("user_grants calls = %d, want 2", len(runner.calls))
+	}
+	preflightCommand := runner.calls[0]
+	wantPreflightArgv := []string{
+		"mysql", "--batch", "--user=connection-user", "--host=connection-host",
+		"--port=3307", "--database=maintenance", "--execute=" + userListQuery,
+	}
+	if got := append([]string{preflightCommand.Name}, preflightCommand.Args...); !reflect.DeepEqual(got, wantPreflightArgv) {
+		t.Fatalf("user_grants preflight argv = %q, want %q", got, wantPreflightArgv)
+	}
+	command := runner.calls[1]
+	wantArgv := []string{
+		"mysql", "--batch", "--user=connection-user", "--host=connection-host",
+		"--port=3307", "--database=maintenance", "--execute=" + grantQuery(user, host),
+	}
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, wantArgv) {
+		t.Fatalf("user_grants argv = %q, want %q", got, wantArgv)
+	}
+	for index, call := range runner.calls {
+		if call.Shell || !reflect.DeepEqual(call.Env, []string{"MYSQL_PWD=" + connectionPassword}) ||
+			call.Timeout != commandTimeout || call.MaxStdoutBytes != outputLimit || call.MaxStderrBytes != outputLimit {
+			t.Fatalf("user_grants call %d transport = %#v", index, call)
+		}
+		for _, secret := range []string{
+			connectionPassword, user, strings.ReplaceAll(user, "'", "''"), "'" + strings.ReplaceAll(user, "'", "''") + "'",
+			host, strings.ReplaceAll(host, "'", "''"), "'" + strings.ReplaceAll(host, "'", "''") + "'",
+			user + "@" + host, mysqlAccount(user, host),
+		} {
+			if !containsAll(call.Redact, []string{secret}) {
+				t.Fatalf("user_grants call %d Redact missing %q: %#v", index, secret, call.Redact)
+			}
+		}
+		if strings.Contains(call.RedactedString(), connectionPassword) || strings.Contains(call.RedactedString(), user) || strings.Contains(call.RedactedString(), host) {
+			t.Fatalf("user_grants call %d rendered command leaked caller data: %q", index, call.RedactedString())
+		}
+	}
+
+	// The registered path uses the same preflight plus SHOW GRANTS contract and
+	// exact JSON value.
+	rt, runner = newMysqlRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(preflight)},
+		process.CommandResult{ExitCode: 0, Stdout: []byte(stdout)},
+	)
+	rt.Exec = runtime.NewExecRegistry()
+	if err := Register(rt.Exec); err != nil {
+		t.Fatal(err)
+	}
+	value, err = rt.Exec.Call(context.Background(), rt, "mysql.user_grants", args)
+	if err != nil || !reflect.DeepEqual(value, want) || len(runner.calls) != 2 {
+		t.Fatalf("registered user_grants = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+}
+
+func TestMysqlUserGrantsShapesAndFailClosed(t *testing.T) {
+	preflight := process.CommandResult{ExitCode: 0, Stdout: []byte("User\tHost\nu\tlocalhost\n")}
+	for _, tc := range []struct {
+		name   string
+		result process.CommandResult
+		want   any
+	}{
+		{name: "empty", result: process.CommandResult{ExitCode: 0}, want: []string{}},
+		{name: "header-only", result: process.CommandResult{ExitCode: 0, Stdout: []byte("Grants for account\n")}, want: []string{}},
+		{name: "nonzero", result: process.CommandResult{ExitCode: 1, Stderr: []byte("missing account")}, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, runner := newMysqlRuntime(preflight, tc.result)
+			value, err := (userGrantsFunc{}).Execute(context.Background(), rt, &UserGrantsArgs{User: "u"})
+			if err != nil || !reflect.DeepEqual(value, tc.want) || len(runner.calls) != 2 {
+				t.Fatalf("shape = %#v, %v, calls=%d, want %#v", value, err, len(runner.calls), tc.want)
+			}
+		})
+	}
+
+	rt, runner := newMysqlRuntime(preflight, process.CommandResult{ExitCode: 0, Stdout: []byte("Grants for account\n\\0\n")})
+	value, err := (userGrantsFunc{}).Execute(context.Background(), rt, &UserGrantsArgs{User: "u"})
+	if !errors.Is(err, errMysqlGrant) || value != nil || len(runner.calls) != 2 {
+		t.Fatalf("malformed grant = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	rt, runner = newMysqlRuntime()
+	value, err = (userGrantsFunc{}).Execute(ctx, rt, &UserGrantsArgs{User: "u"})
+	if !errors.Is(err, context.Canceled) || value != nil || len(runner.calls) != 0 {
+		t.Fatalf("cancelled user_grants = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+
+	rt, runner = newMysqlRuntime()
+	runas := "other"
+	value, err = (userGrantsFunc{}).Execute(context.Background(), rt, &UserGrantsArgs{User: "u", Runas: &runas})
+	if !errors.Is(err, errMysqlRunas) || value != nil || len(runner.calls) != 0 {
+		t.Fatalf("runas user_grants = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+
+	rt, runner = newMysqlRuntime()
+	value, err = (userGrantsFunc{}).Execute(context.Background(), rt, &UserGrantsArgs{User: "u\nsecret"})
+	if !errors.Is(err, errMysqlAccountArgument) || value != nil || len(runner.calls) != 0 {
+		t.Fatalf("unsafe account user_grants = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+
+	rt, runner = newMysqlRuntime()
+	value, err = (userGrantsFunc{}).Execute(context.Background(), rt, &UserGrantsArgs{User: strings.Repeat("x", runtime.MaxCommandInputBytes)})
+	if !errors.Is(err, runtime.ErrCommandInputLimit) || value != nil || len(runner.calls) != 0 {
+		t.Fatalf("oversized account user_grants = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+
+	// An unavailable mysql client is a pre-Runner failure, not a false query.
+	rt, runner = newMysqlRuntime()
+	runner.available = map[string]bool{mysqlCommand: false}
+	value, err = (userGrantsFunc{}).Execute(context.Background(), rt, &UserGrantsArgs{User: "u"})
+	if !errors.Is(err, errMysqlClientUnavailable) || value != nil || len(runner.calls) != 0 {
+		t.Fatalf("unavailable client user_grants = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+}
+
+func TestMysqlUserGrantsRunnerErrorRedaction(t *testing.T) {
+	marker := "grant'overlap\\suffix"
+	host := "host'overlap\\suffix"
+	formsFor := func(value string) []string {
+		doubled := strings.ReplaceAll(value, "'", "''")
+		quoted := "'" + doubled + "'"
+		literal := mysqlStringLiteral(value)
+		return []string{value, doubled, quoted, literal[1 : len(literal)-1], literal}
+	}
+	forms := append(formsFor(marker), formsFor(host)...)
+	forms = append(forms, marker+"@"+host, mysqlAccount(marker, host))
+	leak := "runner user grants failure " + strings.Join(forms, " ")
+	rt, runner := newMysqlRuntime(process.CommandResult{
+		Err:    errors.New(leak),
+		Stdout: []byte("stdout " + leak),
+		Stderr: []byte("stderr " + leak),
+	})
+	args := &UserGrantsArgs{User: marker, Host: mysqlString(host), ConnPass: mysqlString(marker)}
+	value, err := (userGrantsFunc{}).Execute(context.Background(), rt, args)
+	if err == nil || value != nil || len(runner.calls) != 1 {
+		t.Fatalf("user_grants Runner error = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+	for _, form := range forms {
+		if strings.Contains(err.Error(), form) || strings.Contains(string(runner.calls[0].RedactedString()), form) {
+			t.Fatalf("user_grants redaction leaked %q: err=%q command=%q", form, err, runner.calls[0].RedactedString())
+		}
+		if !containsAll(runner.calls[0].Redact, []string{form}) {
+			t.Fatalf("user_grants Redact missing %q: %#v", form, runner.calls[0].Redact)
+		}
+	}
+
+	// A credential overlapping the returned account is redacted after parsing,
+	// while the source cleanup and list order remain otherwise unchanged.
+	preflight := []byte("User\tHost\n" + strings.ReplaceAll(marker, `\`, `\\`) + "\tlocalhost\n")
+	stdout := []byte("Grants for account\nGRANT USAGE ON *.* TO '" + strings.ReplaceAll(marker, "'", "''") + "'@'host'\n")
+	rt, runner = newMysqlRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: preflight},
+		process.CommandResult{ExitCode: 0, Stdout: stdout},
+	)
+	value, err = (userGrantsFunc{}).Execute(context.Background(), rt, &UserGrantsArgs{User: marker, ConnPass: mysqlString(marker)})
+	got, ok := value.([]string)
+	if err != nil || !ok || len(got) != 1 || strings.Contains(got[0], marker) || len(runner.calls) != 2 {
+		t.Fatalf("user_grants successful redaction = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+
+	// A malformed or unusual server row can contain the credential as raw text
+	// rather than as a quoted SQL literal; the returned grant remains redacted.
+	preflight = []byte("User\tHost\nu\tlocalhost\n")
+	row := "GRANT " + mysqlStringLiteral(marker)[1:len(mysqlStringLiteral(marker))-1] + " ON *.* TO 'u'@'host'"
+	batchRow := strings.ReplaceAll(row, `\`, `\\`)
+	stdout = []byte("Grants for account\n" + batchRow + "\n")
+	rt, runner = newMysqlRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: preflight},
+		process.CommandResult{ExitCode: 0, Stdout: stdout},
+	)
+	value, err = (userGrantsFunc{}).Execute(context.Background(), rt, &UserGrantsArgs{User: "u", ConnPass: mysqlString(marker)})
+	got, ok = value.([]string)
+	if err != nil || !ok || len(got) != 1 || strings.Contains(got[0], marker) || len(runner.calls) != 2 {
+		t.Fatalf("user_grants escaped successful redaction = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+	for _, form := range formsFor(marker) {
+		if strings.Contains(got[0], form) {
+			t.Fatalf("user_grants escaped output leaked %q: %q", form, got[0])
+		}
+	}
+}
+
+func TestMysqlUserGrantsUserExistsPreflight(t *testing.T) {
+	connection := &UserGrantsArgs{
+		User:     "missing",
+		Host:     mysqlString("remote"),
+		ConnUser: mysqlString("conn_user"),
+		ConnHost: mysqlString("conn_host"),
+		ConnPort: mysqlString("3307"),
+		ConnPass: mysqlString("conn_pass"),
+		ConnDB:   mysqlString("maintenance"),
+	}
+
+	rt, runner := newMysqlRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("User\tHost\nother\tremote\n")})
+	value, err := (userGrantsFunc{}).Execute(context.Background(), rt, connection)
+	if err != nil || value != false || len(runner.calls) != 1 {
+		t.Fatalf("missing user preflight = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+	if got := runner.calls[0].Args[len(runner.calls[0].Args)-1]; got != "--execute="+userListQuery {
+		t.Fatalf("missing user preflight query = %q", got)
+	}
+
+	existing := *connection
+	existing.User = "existing"
+	rt, runner = newMysqlRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte("User\tHost\nexisting\tremote\n")},
+		process.CommandResult{ExitCode: 0, Stdout: []byte("Grants\nGRANT USAGE ON *.* TO 'existing'@'remote'\n")},
+	)
+	value, err = (userGrantsFunc{}).Execute(context.Background(), rt, &existing)
+	if err != nil || !reflect.DeepEqual(value, []string{"GRANT USAGE ON *.* TO 'existing'@'remote'"}) || len(runner.calls) != 2 {
+		t.Fatalf("existing user preflight = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+	if got := runner.calls[0].Args[len(runner.calls[0].Args)-1]; got != "--execute="+userListQuery {
+		t.Fatalf("existing preflight query = %q", got)
+	}
+	if got := runner.calls[1].Args[len(runner.calls[1].Args)-1]; got != "--execute=SHOW GRANTS FOR 'existing'@'remote'" {
+		t.Fatalf("existing SHOW GRANTS query = %q", got)
+	}
+	for _, call := range runner.calls {
+		if !reflect.DeepEqual(call.Env, []string{"MYSQL_PWD=conn_pass"}) || !containsAll(call.Redact, []string{"conn_pass", "existing", "remote", "'existing'@'remote'"}) {
+			t.Fatalf("preflight transport = %#v", call)
+		}
+	}
+
+	rt, runner = newMysqlRuntime(process.CommandResult{Err: errors.New("preflight error")})
+	value, err = (userGrantsFunc{}).Execute(context.Background(), rt, connection)
+	if err == nil || value != nil || len(runner.calls) != 1 {
+		t.Fatalf("preflight error = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	rt, runner = newMysqlRuntime()
+	value, err = (userGrantsFunc{}).Execute(ctx, rt, connection)
+	if !errors.Is(err, context.Canceled) || value != nil || len(runner.calls) != 0 {
+		t.Fatalf("preflight cancellation = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+}
+
+func TestMysqlUnsupportedProviderNotRegistered(t *testing.T) {
+	rt, runner := newMysqlRuntime()
+	rt.Exec = runtime.NewExecRegistry()
+	if err := Register(rt.Exec); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := rt.Exec.Get("mysql.query"); ok {
+		t.Fatal("unsupported mysql.query must remain unregistered")
+	}
+	if _, err := rt.Exec.Call(context.Background(), rt, "mysql.query", nil); err == nil || len(runner.calls) != 0 {
+		t.Fatalf("unsupported mysql.query call = %v, calls=%d", err, len(runner.calls))
 	}
 }
 

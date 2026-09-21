@@ -1269,6 +1269,95 @@ func TestMySQLCLIUserMutationErrors(t *testing.T) {
 	}
 }
 
+func TestMySQLCLIUserGrants(t *testing.T) {
+	connectionPassword := "cli-user-grants-pass"
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("User\tHost\ncli_user\tcli_host\n")},
+		{ExitCode: 0, Stdout: []byte("Grants for cli_user@cli_host\n" +
+			"GRANT ALL PRIVILEGES ON *.* TO 'cli_user'@'cli_host' IDENTIFIED BY 'ignored' WITH GRANT OPTION\n" +
+			"GRANT SELECT ON `cli_db`.* TO 'cli_user'@'cli_host'\n")},
+	}}
+	app := mysqlCLIRunnerApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "mysql.user_grants",
+		"--user", "cli_user", "--host", "cli_host",
+		"--connection-user", "conn_user", "--connection-host", "conn_host",
+		"--connection-port", "3308", "--connection-db", "maintenance",
+		"--connection-pass", connectionPassword, "-o", "json")
+	var grants []string
+	want := []string{
+		"GRANT ALL PRIVILEGES ON *.* TO 'cli_user'@'cli_host' WITH GRANT OPTION",
+		"GRANT SELECT ON `cli_db`.* TO 'cli_user'@'cli_host'",
+	}
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &grants) != nil || !reflect.DeepEqual(grants, want) {
+		t.Fatalf("user_grants code=%d out=%q err=%q grants=%#v", code, out, errS, grants)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("user_grants calls=%d, want 2", len(runner.calls))
+	}
+	if got := runner.calls[0].Args[len(runner.calls[0].Args)-1]; got != "--execute="+"SELECT COALESCE(User, UNHEX('00')) AS User, COALESCE(Host, UNHEX('00')) AS Host FROM mysql.user" {
+		t.Fatalf("user_grants preflight query=%q", got)
+	}
+	command := runner.calls[1]
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, []string{
+		"mysql", "--batch", "--user=conn_user", "--host=conn_host", "--port=3308", "--database=maintenance",
+		"--execute=SHOW GRANTS FOR 'cli_user'@'cli_host'",
+	}) {
+		t.Fatalf("user_grants argv=%q", got)
+	}
+	for index, call := range runner.calls {
+		if call.Shell || !reflect.DeepEqual(call.Env, []string{"MYSQL_PWD=" + connectionPassword}) ||
+			call.Timeout <= 0 || call.MaxStdoutBytes <= 0 || call.MaxStderrBytes <= 0 {
+			t.Fatalf("user_grants call %d transport=%#v", index, call)
+		}
+		for _, secret := range []string{"cli_user", "cli_host", "'cli_user'@'cli_host'", connectionPassword} {
+			if !containsCLISecret(call.Redact, secret) {
+				t.Fatalf("user_grants call %d Redact missing %q: %#v", index, secret, call.Redact)
+			}
+		}
+		if strings.Contains(call.RedactedString(), connectionPassword) {
+			t.Fatalf("user_grants call %d leaked connection password: %q", index, call.RedactedString())
+		}
+	}
+	if strings.Contains(out+errS, connectionPassword) {
+		t.Fatalf("user_grants leaked connection password: out=%q err=%q", out, errS)
+	}
+
+	// A missing account returns false from the preflight without issuing SHOW
+	// GRANTS, matching the pinned user_grants flow.
+	runner = &cliRecordingRunner{results: []process.CommandResult{{ExitCode: 0, Stdout: []byte("User\tHost\nother\tlocalhost\n")}}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.user_grants", "--user", "missing", "-o", "json")
+	if code != ExitOK || strings.TrimSpace(out) != "false" || errS != "" || len(runner.calls) != 1 {
+		t.Fatalf("user_grants missing preflight code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+
+	// Unsupported providers never reach the Runner through the actual CLI
+	// registry.
+	runner = &cliRecordingRunner{}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.query", "--query", "SELECT 1", "-o", "json")
+	if code != ExitUnsupported || out != "" || errS == "" || len(runner.calls) != 0 {
+		t.Fatalf("unsupported mysql.query code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+
+	// runas is rejected before the fixed user_exists preflight.
+	runner = &cliRecordingRunner{}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.user_grants", "--user", "u", "--runas", "other", "-o", "json")
+	if code != ExitFailed || out != "" || !strings.Contains(errS, "runas") || len(runner.calls) != 0 {
+		t.Fatalf("user_grants runas code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+}
+
+func containsCLISecret(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
 func TestMySQLCLIGrantFamily(t *testing.T) {
 	connPass := "cli-grant-connection-pass"
 	runner := &cliRecordingRunner{results: []process.CommandResult{

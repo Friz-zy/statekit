@@ -5,8 +5,8 @@
 // the read-only server facts family version, status, showvariables, and
 // showglobal (R9.3b), the maintenance family db_check, db_repair, and
 // db_optimize (R9.3c), the fixed-query user_create/user_remove mutation
-// family (R9.3e), and the fixed-query grant_add/grant_exists/grant_revoke
-// family (R9.3f).
+// family (R9.3e), the fixed-query grant_add/grant_exists/grant_revoke family
+// (R9.3f), and the fixed-query user_grants reader (R9.3h).
 //
 // Boundaries (R9.2a): no MySQL client driver or protocol, no new
 // dependencies, no Runner spawns, no filesystem access, and no live MySQL
@@ -68,6 +68,12 @@
 // SQL is accepted. All three functions use the central shell-free mysql
 // transport with bounded cancellation, output, argv, and redaction controls,
 // and remain fake-Runner-only.
+//
+// Boundaries (R9.3h): user_grants issues only the fixed SHOW GRANTS statement
+// with a SQL-literal account expression, decodes the bounded batch row list in
+// source order, and preserves the pinned IDENTIFIED BY/GRANT OPTION cleanup.
+// Backslashes are escaped by the fixed literal renderer for this read-only
+// path, while NUL/control and invalid UTF-8 account data fail closed.
 package mysql
 
 import (
@@ -2105,12 +2111,21 @@ func mysqlStringLiteral(value string) string {
 }
 
 // mysqlLiteralSecretForms returns every credential spelling that can occur in
-// a fixed SQL statement: the raw value, the quote-doubled inner value, and the
-// complete single-quoted literal. The forms are kept even when one contains
-// another because Runner errors may quote only part of a statement.
+// a fixed SQL statement: the raw value, the quote-doubled value, the
+// quote-doubled literal, and both forms of the actual mysqlStringLiteral
+// renderer (with and without its surrounding quotes). The unquoted renderer
+// form matters because Runner errors and server output can expose only the
+// literal body while retaining both doubled apostrophes and doubled
+// backslashes. The forms are kept even when one contains another because
+// Runner errors may quote only part of a statement.
 func mysqlLiteralSecretForms(value string) []string {
 	doubled := strings.ReplaceAll(value, "'", "''")
-	return []string{value, doubled, "'" + doubled + "'"}
+	literal := mysqlStringLiteral(value)
+	escapedInner := ""
+	if len(literal) >= 2 {
+		escapedInner = literal[1 : len(literal)-1]
+	}
+	return []string{value, doubled, "'" + doubled + "'", escapedInner, literal}
 }
 
 // mysqlMutationSecretInventory is built before the first version/existence
@@ -3881,6 +3896,83 @@ func showGrantStatements(stdout string) ([]string, error) {
 	return statements, nil
 }
 
+func validUserGrantsAccountPart(value string) bool {
+	if !utf8.ValidString(value) {
+		return false
+	}
+	for _, char := range value {
+		if char == 0 || unicode.IsControl(char) {
+			return false
+		}
+	}
+	return true
+}
+
+// userGrantsSecretInventory covers every caller-controlled spelling that can
+// occur in the fixed SHOW GRANTS account expression or in the MYSQL_PWD
+// transport. The parser receives preserved stdout, so the inventory is also
+// used to redact any credential that happens to overlap an account value in a
+// Runner error or non-success stream.
+func userGrantsSecretInventory(conn *myConnection, user, host string) []string {
+	values := make([]string, 0, 16)
+	add := func(value string) {
+		if value != "" {
+			values = append(values, value)
+		}
+	}
+	addLiteral := func(value string) {
+		if value == "" {
+			return
+		}
+		values = append(values, mysqlLiteralSecretForms(value)...)
+		add(mysqlStringLiteral(value))
+	}
+	if conn != nil && conn.Password != nil {
+		addLiteral(*conn.Password)
+	}
+	add(user + "@" + host)
+	add(mysqlAccount(user, host))
+	addLiteral(user)
+	addLiteral(host)
+	return secretList(values...)
+}
+
+// userGrantsOutputSecrets is deliberately narrower than the command
+// inventory: ordinary account names are part of the source return value and
+// must stay byte-for-byte intact. Only the connection credential is secret in
+// the returned grant list.
+func userGrantsOutputSecrets(conn *myConnection) []string {
+	if conn == nil || conn.Password == nil || *conn.Password == "" {
+		return nil
+	}
+	values := mysqlLiteralSecretForms(*conn.Password)
+	values = append(values, mysqlStringLiteral(*conn.Password))
+	return secretList(values...)
+}
+
+func redactUserGrantStatement(statement string, secrets []string) string {
+	// Preserve the source grant text, but never return a connection credential
+	// merely because SHOW GRANTS emitted it in an unexpected unquoted field.
+	// RedactBytes is bounded and is a no-op when none of the credential forms
+	// occur, so this also covers raw and quote-doubled output safely.
+	return string(process.RedactBytes(secrets, []byte(statement)))
+}
+
+// normalizeUserGrant ports the pinned user_grants cleanup exactly. SHOW
+// GRANTS may place WITH GRANT OPTION after IDENTIFIED BY; the source removes
+// the credential clause and appends that option back to the normalized grant.
+func normalizeUserGrant(statement string) string {
+	normalized := statement
+	if cut := strings.Index(statement, " IDENTIFIED BY"); cut >= 0 {
+		normalized = statement[:cut]
+	}
+	if strings.Contains(statement, "WITH GRANT OPTION") &&
+		!strings.Contains(normalized, "WITH GRANT OPTION") {
+		normalized += " WITH GRANT OPTION"
+	}
+	return normalized
+}
+
 func canonicalGrantPart(value string) string {
 	value = strings.TrimSpace(value)
 	if len(value) < 2 {
@@ -4364,6 +4456,90 @@ func (grantRevokeFunc) Execute(ctx context.Context, rt *runtime.Runtime, args an
 	return !exists, nil
 }
 
+// UserGrantsArgs mirrors user_grants(user, host="localhost", **connection).
+// Account values remain separate from the connection surface so a quoted
+// host containing apostrophes, commas, or backticks is rendered by the same
+// MySQL string-literal helper used by the grant family.
+type UserGrantsArgs struct {
+	User     string  `statekit:"name=user,required"`
+	Host     *string `statekit:"name=host"`
+	ConnUser *string `statekit:"name=connection_user"`
+	ConnHost *string `statekit:"name=connection_host"`
+	ConnPort *string `statekit:"name=connection_port"`
+	ConnPass *string `statekit:"name=connection_pass"`
+	ConnDB   *string `statekit:"name=connection_db"`
+	Runas    *string `statekit:"name=runas"`
+}
+
+func (a *UserGrantsArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return grantConnection(a.ConnUser, a.ConnHost, a.ConnPort, a.ConnPass, a.ConnDB, a.Runas)
+}
+
+type userGrantsFunc struct{}
+
+func (userGrantsFunc) Name() string { return "mysql.user_grants" }
+func (userGrantsFunc) Args() any    { return UserGrantsArgs{} }
+
+func (userGrantsFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[UserGrantsArgs](args, "mysql.user_grants")
+	if err != nil {
+		return nil, err
+	}
+	if err := grantContextError(ctx); err != nil {
+		return nil, err
+	}
+	host := defaultUserHost
+	if a.Host != nil {
+		host = *a.Host
+	}
+	// The pinned function permits anonymous users and arbitrary printable
+	// account text; only bytes that cannot be represented safely in the fixed
+	// SQL literal are rejected before Runner execution.
+	if !validUserGrantsAccountPart(a.User) || !validUserGrantsAccountPart(host) {
+		return nil, accountArgumentError()
+	}
+	if err := validateGrantInputBounds(a.User, host, "", "", ""); err != nil {
+		return nil, err
+	}
+	conn := a.connection()
+	secrets := userGrantsSecretInventory(conn, a.User, host)
+	exists, err := userExistsCatalog(ctx, rt, conn, a.User, host, secrets...)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		// The pinned user_grants flow returns False before SHOW GRANTS when
+		// mysql.user has no matching account.
+		return false, nil
+	}
+	query := grantQuery(a.User, host)
+	result, err := runMysqlPreserveSecrets(ctx, rt, mysqlQueryArgv(conn, query), conn, secrets...)
+	if err != nil {
+		return nil, err
+	}
+	// SHOW GRANTS reports a missing account and query/connection failures via a
+	// nonzero mysql exit. Salt exposes those paths as False, distinct from the
+	// successful empty list.
+	if result.ExitCode != 0 {
+		return false, nil
+	}
+	statements, err := showGrantStatements(string(result.Stdout))
+	if err != nil {
+		return nil, err
+	}
+	outputSecrets := userGrantsOutputSecrets(conn)
+	grants := make([]string, 0, len(statements))
+	for _, statement := range statements {
+		normalized := normalizeUserGrant(statement)
+		normalized = redactUserGrantStatement(normalized, outputSecrets)
+		grants = append(grants, normalized)
+	}
+	return grants, nil
+}
+
 // ---------------------------------------------------------------------------
 // shared helpers (postgres-module conventions).
 
@@ -4480,6 +4656,7 @@ func Register(reg *runtime.ExecRegistry) error {
 		grantAddFunc{},
 		grantExistsFunc{},
 		grantRevokeFunc{},
+		userGrantsFunc{},
 		versionFunc{},
 		statusFunc{},
 		showVariablesFunc{},
