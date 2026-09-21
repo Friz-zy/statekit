@@ -2067,6 +2067,37 @@ and live database/broker integration stays excluded behind E5. The prior
 differential report hashes for R3-R8 remain unchanged, and `go.mod` is
 unchanged. The pre-existing full-tree OpenBSD baseline remains outside scope.
 
+##### 2026-09-21 current status (R9.3h MySQL user grants)
+
+Actual HEAD is `5d251bf` (R9.3h MySQL `user_grants`). R9.3h
+implementation and independent-gate ledger:
+
+| Commit | Scope | Implementation executor role(s) | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `5d251bf` | R9.3h MySQL `user_grants` registered (1 public; Podman artifact review/lead handoff) | `backend-engineer-senior` | `backend-engineer-lead` | independent lead gate handoff recorded in this execution session after the Podman artifact review/lead handoff; mysql 24 registered / 14 pending, R9 totals registered_public 110 of 125; mock-only fake-Runner contract — no live DB, live database/broker integration excluded behind E5; no `go.mod`/`go.sum` change (no new dependency); redaction/preflight/`user_exists` coverage; R3-R8 report hashes unchanged |
+
+Current R9 report (`docs/differential/R9/report.yaml` at `5d251bf`, `round:
+R9.3h`, `repeat_stable: true`): rabbitmq 37/37 registered, mysql 24/38 (14
+pending), postgres 49/50 registered_public (1 pending); totals
+registered_public 110 of 125 public functions (15 pending) across 172 catalog
+functions. The remaining mysql names from the report, in exact report order,
+stay pending: `alter_db`, `db_create`, `db_remove`, `file_query`, `free_slave`,
+`get_master_status`, `get_slave_status`, `plugin_add`, `plugin_remove`,
+`plugin_status`, `plugins_list`, `processlist`, `query`, `slave_lag`. The
+remaining postgres name stays pending: `psql_query` — the arbitrary-SQL
+boundary. R9 remains open — no closure claim is made. The report pins the
+mock-only boundary: no database driver or live MySQL server is used, and live
+database/broker integration stays excluded behind E5. The prior differential
+report hashes for R3-R8 remain unchanged, and `go.mod`/`go.sum` have no new
+dependency. The pre-existing full-tree OpenBSD baseline remains outside scope.
+
+Provenance note for the R9.3g and R9.3h rows: `backend-engineer-senior` is
+the implementation role, and the independent `backend-engineer-lead` gate is
+an execution-session handoff recorded here. This provenance is execution-session
+evidence, not Git author metadata; no separate repository gate artifact is
+claimed, and the R9.3h wording does not claim that a Podman artifact is
+committed.
+
 ##### 2026-09-17 current status (R9.2b PostgreSQL version probe)
 
 Actual HEAD is `23fba61` (R9.2b PostgreSQL version probe). R9.2b
