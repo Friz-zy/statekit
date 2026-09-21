@@ -2191,6 +2191,60 @@ The committed differential report remains the mock-only R9 differential
 record; E5.1 does not rewrite it or claim live parity for the remaining R9
 families and functions.
 
+##### 2026-09-21 R9.3j MySQL database lifecycle — implementation phase; external live CI pending
+
+R9.3j is a separate backend implementation phase from E5.1. It ports only the
+pinned Salt `mysql.db_create` and `mysql.db_remove` contracts into the existing
+Go module, registry, and CLI surfaces. The port remains driver-free and uses
+the bounded central Runner with shell-free argv, finite timeout/output limits,
+MYSQL_PWD credential transport, value-free validation errors, identifier
+quoting, redaction, and the source's false-on-existing/absent lifecycle
+shapes. The pinned functions have no `force` parameter; no force surface is
+added.
+
+The exact evidence boundary is:
+
+* **Local mock/static evidence (permitted and completed for this phase):**
+  direct, registry, and CLI fake-Runner tests; generated R9.3j differential
+  report; deterministic live-harness inventory/orchestration tests; shell
+  syntax and static/workflow checks. These tests do not start MySQL and do not
+  prove database behavior.
+* **External live evidence (pending):** the GitHub E5.2 job must execute all
+  23 inventory cases with `cases_skipped: 0`, create a unique disposable
+  database, verify presence and absence independently with the native client,
+  assert StateKit create/repeat/remove contracts, exercise invalid-identifier,
+  authentication, and connection negatives, and perform cleanup on every exit
+  path. No GitHub run success is recorded here; status is exactly
+  `pending_external_ci`.
+* The official MySQL 8.4 digest and existing full-commit action SHAs remain
+  unchanged. SQLite is outside this phase. The committed R9 report is still a
+  mock-only differential record, not live Salt parity.
+
+Backend F2-F4 remediation by `backend-engineer-senior` records three explicit
+compatibility ceilings without weakening the shared security boundary:
+
+* A nonzero `db_exists` preflight is an unknown absence. StateKit fails closed
+  before `db_create`/`CREATE`, whereas the pinned Salt `db_create` can receive
+  `False`, reconnect, and attempt `CREATE` after an `OperationalError`.
+* The fixed catalog uses exact client-side membership. The pinned unescaped
+  `SHOW DATABASES LIKE` treats `%` and `_` as wildcard-shaped input; direct and
+  CLI regression vectors preserve that difference. Mutation statements still
+  use the validated quoted-identifier path rather than interpolating raw SQL.
+* After a successful `DROP`, a failed/nonzero post-check is `db_exists ==
+  False` compatibility data and therefore the public `db_remove` result is
+  `true`; it is distinct from a failed `DROP`, which returns `false`.
+
+The remediation adds focused direct and CLI vectors for timeout, output limits,
+cancellation after preflight, phase-specific redaction, identifier/option
+quoting and validation, plus the corrected public post-check result. Report
+counts remain unchanged and `external_ci_status` remains
+`pending_external_ci`; no live database or commit is part of this phase.
+
+| Phase | Scope | Implementation executor role | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `R9.3j` | `mysql.db_create`/`mysql.db_remove`, source-parity tests, registry/CLI registration, and differential report update | `backend-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | local fake-Runner/static evidence is recorded; no database driver, no local live MySQL, no commit; external live behavior remains behind E5.2 and `pending_external_ci` |
+| `E5.2` | E5.1's 14 read-only/catalog/plugin cases plus 9 R9.3j lifecycle cases in the existing rootless Podman harness; value-free report and always-cleanup boundary | `devops-platform-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | implementation/workflow is prepared; exact case inventory is 23 with zero skips required; GitHub execution and live 23/23 evidence are pending and not claimed |
+
 ##### 2026-09-17 current status (R9.2b PostgreSQL version probe)
 
 Actual HEAD is `23fba61` (R9.2b PostgreSQL version probe). R9.2b

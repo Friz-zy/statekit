@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# E5.1 live MySQL gate for the already-ported R9 read-only/catalog/plugin
-# surface. The gate deliberately runs the production statekit binary and the
-# official image's native mysql client; it does not use the Go fake Runner.
+# E5.2 live MySQL gate extending the E5.1 read-only/catalog/plugin surface
+# with the already-ported R9.3j database lifecycle. The gate deliberately runs
+# the production statekit binary and the official image's native mysql client;
+# it does not use the Go fake Runner. Every E5.1 case remains in the inventory.
 #
 # Runtime-generated credentials are created from stdin as Podman-managed
 # ephemeral secrets.  MySQL consumes *_FILE paths and client processes copy a
@@ -27,11 +28,14 @@ readonly CLEANUP_TIMEOUT_SECONDS=20
 readonly PREFLIGHT_TIMEOUT_SECONDS=30
 readonly MYSQL_SERVICE_USER='999:999'
 readonly CLIENT_USER='65532:65532'
+NATIVE_CLIENT_USER="$TEST_USER"
 readonly SERVER_ROOT_SECRET_TARGET='/run/secrets/mysql-root-password'
 readonly SERVER_USER_SECRET_TARGET='/run/secrets/mysql-user-password'
 readonly CLIENT_SECRET_TARGET='/run/secrets/mysql-client.cnf'
 readonly NATIVE_AUTH_FAILURE_MARKER='ERROR 1045 (28000): Access denied for user'
 readonly NATIVE_CONNECTION_FAILURE_MARKER="ERROR 2003 (HY000): Can't connect to MySQL server"
+readonly STATEKIT_INVALID_IDENTIFIER_CATEGORY='mysql: invalid argument'
+readonly STATEKIT_INVALID_IDENTIFIER_DIAGNOSTIC='statekit: mysql: invalid argument: unsupported identifier in name'
 readonly CASE_IDS=(
   'mysql-readiness-authenticated-select-1'
   'mysql-version-live'
@@ -47,6 +51,15 @@ readonly CASE_IDS=(
   'mysql-connection-negative-statekit'
   'mysql-db-native-postcondition'
   'mysql-plugin-native-postcondition'
+  'mysql-db-lifecycle-native-absent-before-create'
+  'mysql-db-create-success'
+  'mysql-db-create-repeat-false'
+  'mysql-db-native-created-postcondition'
+  'mysql-db-remove-success'
+  'mysql-db-native-removed-postcondition'
+  'mysql-db-negative-invalid-identifier'
+  'mysql-db-negative-auth'
+  'mysql-db-negative-connection'
 )
 
 if [[ "${1:-}" == '--list-cases' ]]; then
@@ -73,6 +86,9 @@ DB_CONTAINER=''
 DB_CONTAINER_ID=''
 DB_HOST=''
 DB_RESERVED=0
+LIFECYCLE_DB=''
+LIFECYCLE_DB_RESERVED=0
+LIFECYCLE_DB_OWNED=0
 NETWORK_RESERVED=0
 CLIENT_IMAGE_RESERVED=0
 SECRET_RESOURCE_RESERVED=0
@@ -103,10 +119,12 @@ SERVER_ROOT_SECRET=''
 SERVER_USER_SECRET=''
 CLIENT_SECRET=''
 BAD_CLIENT_SECRET=''
+ROOT_CLIENT_SECRET=''
 declare -a CASE_RESULTS=()
 declare -a OWNED_CLIENT_NAMES=()
 declare -a OWNED_CLIENT_IDS=()
 declare -a OWNED_SECRET_NAMES=()
+CASE_RESULT_INTEGRITY_FAILED=0
 
 set_note() {
   if [[ "$SETUP_NOTE" == 'none' ]]; then
@@ -114,15 +132,58 @@ set_note() {
   fi
 }
 
+set_cleanup_note() {
+  if [[ "$CLEANUP_NOTE" == 'none' ]]; then
+    CLEANUP_NOTE="$1"
+  fi
+}
+
+case_id_is_known() {
+  local case_id="$1" expected
+  for expected in "${CASE_IDS[@]}"; do
+    if [[ "$case_id" == "$expected" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+case_id_is_recorded() {
+  local case_id="$1" entry
+  for entry in "${CASE_RESULTS[@]}"; do
+    if [[ "${entry%%=*}" == "$case_id" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 record_case() {
   local case_id="$1"
   local result="$2"
+  if ! case_id_is_known "$case_id"; then
+    CASE_RESULT_INTEGRITY_FAILED=1
+    set_note 'unknown-case-id-rejected'
+    return 1
+  fi
+  if case_id_is_recorded "$case_id"; then
+    CASE_RESULT_INTEGRITY_FAILED=1
+    set_note 'duplicate-case-id-rejected'
+    return 1
+  fi
+  case "$result" in
+    pass|fail|skipped) ;;
+    *)
+      CASE_RESULT_INTEGRITY_FAILED=1
+      set_note 'invalid-case-result-rejected'
+      return 1
+      ;;
+  esac
   CASE_RESULTS+=("$case_id=$result")
   case "$result" in
     pass) PASSED=$((PASSED + 1)) ;;
     fail) FAILED=$((FAILED + 1)) ;;
     skipped) SKIPPED=$((SKIPPED + 1)) ;;
-    *) FAILED=$((FAILED + 1)) ;;
   esac
 }
 
@@ -138,9 +199,31 @@ run_case() {
 
 mark_remaining_skipped() {
   local case_id
-  for case_id in "${CASE_IDS[@]:1}"; do
-    record_case "$case_id" skipped
+  for case_id in "${CASE_IDS[@]}"; do
+    if ! case_id_is_recorded "$case_id"; then
+      record_case "$case_id" skipped || return 1
+    fi
   done
+}
+
+case_results_are_exact() {
+  local index entry case_id result
+  if (( ${#CASE_RESULTS[@]} != ${#CASE_IDS[@]} )); then
+    return 1
+  fi
+  for index in "${!CASE_IDS[@]}"; do
+    entry="${CASE_RESULTS[index]:-}"
+    case_id="${entry%%=*}"
+    result="${entry#*=}"
+    if [[ "$case_id" != "${CASE_IDS[index]}" ]]; then
+      return 1
+    fi
+    case "$result" in
+      pass|fail|skipped) ;;
+      *) return 1 ;;
+    esac
+  done
+  return 0
 }
 
 write_report() {
@@ -151,17 +234,21 @@ write_report() {
     return 1
   fi
   local report_tmp
+  local exact_results=0
+  if case_results_are_exact; then
+    exact_results=1
+  fi
   if ! report_tmp=$(mktemp "$REPORT_DIR/.report.tmp.XXXXXX"); then
     return 1
   fi
   if ! {
-    printf '%s\n' 'schema: e5.1-mysql-live-v1'
+    printf '%s\n' 'schema: e5.2-mysql-live-v1'
     printf 'image: %s\n' "$MYSQL_IMAGE"
     printf 'cases_total: %d\n' "${#CASE_IDS[@]}"
     printf 'cases_passed: %d\n' "$PASSED"
     printf 'cases_failed: %d\n' "$FAILED"
     printf 'cases_skipped: %d\n' "$SKIPPED"
-    if (( EXECUTION_COMPLETE == 1 && EXECUTION_RC == 0 && FINAL_RC == 0 && CANCELLED == 0 && ${#CASE_RESULTS[@]} == ${#CASE_IDS[@]} && PASSED == ${#CASE_IDS[@]} && FAILED == 0 && SKIPPED == 0 && CLEANUP_FAILED == 0 )); then
+    if (( EXECUTION_COMPLETE == 1 && EXECUTION_RC == 0 && FINAL_RC == 0 && CANCELLED == 0 && exact_results == 1 && CASE_RESULT_INTEGRITY_FAILED == 0 && PASSED == ${#CASE_IDS[@]} && FAILED == 0 && SKIPPED == 0 && CLEANUP_FAILED == 0 )); then
       printf '%s\n' 'status: pass'
     else
       printf '%s\n' 'status: fail'
@@ -182,9 +269,10 @@ write_report() {
       printf '%s\n' 'cleanup: pass'
     fi
     printf 'cleanup_note: %s\n' "$CLEANUP_NOTE"
-    printf '%s\n' 'scope: mysql.version, mysql.db_list, mysql.db_exists, mysql.plugins_list, mysql.plugin_status'
-    printf '%s\n' 'independent_checks: native mysql client database and plugin postconditions'
-    printf '%s\n' 'limitations: no full R9 live coverage, no mutation coverage, no broker/PostgreSQL/SQLite coverage, no live Salt differential parity; SIGKILL or runner loss can prevent cleanup/reporting'
+    printf '%s\n' 'scope: E5.1 mysql.version/db_list/db_exists/plugins_list/plugin_status plus R9.3j mysql.db_create/mysql.db_remove lifecycle'
+    printf '%s\n' 'independent_checks: native mysql client database and plugin postconditions, including lifecycle presence and absence'
+    printf '%s\n' 'external_ci: pending'
+    printf '%s\n' 'limitations: no full R9 live coverage, no broker/PostgreSQL/SQLite coverage, no live Salt differential parity; GitHub live execution is not claimed here; SIGKILL or runner loss can prevent cleanup/reporting'
     printf '%s\n' 'credentials: runtime-generated disposable values are delivered through ephemeral secret mounts only; not included in this report'
     local result
     for result in "${CASE_RESULTS[@]}"; do
@@ -465,6 +553,7 @@ cleanup() {
   # traps would let a second TERM interrupt the bounded cleanup sequence.
   trap '' INT TERM
   set +e
+  cleanup_lifecycle_database || true
   while (( index < ${#OWNED_CLIENT_NAMES[@]} )); do
     cleanup_container "${OWNED_CLIENT_NAMES[index]}" "${OWNED_CLIENT_IDS[index]}" || true
     index=$((index + 1))
@@ -493,7 +582,7 @@ cleanup() {
   if ! write_report >/dev/null 2>/dev/null; then
     final_rc=1
     FINAL_RC=1
-    printf '%s\n' 'e5.1: report write failed' >&2
+    printf '%s\n' 'e5.2: report write failed' >&2
   fi
   trap - EXIT
   exit "$final_rc"
@@ -668,7 +757,8 @@ verify_secret_policy() {
   secret_lines=$(printf '%s' "$secret_lines" | LC_ALL=C sort)
   if [[ "$kind" == client ]]; then
     [[ "$secret_lines" == "$CLIENT_SECRET|65532|65532|400" ||
-      "$secret_lines" == "$BAD_CLIENT_SECRET|65532|65532|400" ]]
+      "$secret_lines" == "$BAD_CLIENT_SECRET|65532|65532|400" ||
+      "$secret_lines" == "$ROOT_CLIENT_SECRET|65532|65532|400" ]]
   else
     [[ "$secret_lines" == "$expected" ]]
   fi
@@ -785,6 +875,7 @@ create_runtime_secrets() {
   SERVER_USER_SECRET="statekit-e51-user-$$"
   CLIENT_SECRET="statekit-e51-client-$$"
   BAD_CLIENT_SECRET="statekit-e51-bad-client-$$"
+  ROOT_CLIENT_SECRET="statekit-e51-root-client-$$"
   reserve_secret_name "$SERVER_ROOT_SECRET" || return 1
   printf '%s' "$ROOT_PASSWORD" | create_secret_from_stdin "$SERVER_ROOT_SECRET" || return 1
   reserve_secret_name "$SERVER_USER_SECRET" || return 1
@@ -795,6 +886,9 @@ create_runtime_secrets() {
   reserve_secret_name "$BAD_CLIENT_SECRET" || return 1
   printf '[client]\nuser=%s\npassword=%s\n' "$TEST_USER" "$BAD_PASSWORD" |
     create_secret_from_stdin "$BAD_CLIENT_SECRET" || return 1
+  reserve_secret_name "$ROOT_CLIENT_SECRET" || return 1
+  printf '[client]\nuser=root\npassword=%s\n' "$ROOT_PASSWORD" |
+    create_secret_from_stdin "$ROOT_CLIENT_SECRET" || return 1
 }
 
 verify_private_network_policy() {
@@ -1052,11 +1146,148 @@ native_mysql() {
     --connect-timeout="$NATIVE_CONNECT_TIMEOUT_SECONDS" \
     --host="$host" \
     --port="$port" \
-    --user="$TEST_USER" \
+    --user="$NATIVE_CLIENT_USER" \
     --database="$SEED_DB" \
     --batch \
     --skip-column-names \
     --execute="$sql"
+}
+
+native_mysql_as_user() {
+  local user="$1" previous_user="$NATIVE_CLIENT_USER" rc=0
+  shift
+  NATIVE_CLIENT_USER="$user"
+  if native_mysql "$@"; then
+    rc=0
+  else
+    rc=$?
+  fi
+  NATIVE_CLIENT_USER="$previous_user"
+  return "$rc"
+}
+
+lifecycle_mutation_precheck() {
+  if (( LIFECYCLE_DB_RESERVED != 1 )); then
+    set_note 'lifecycle-absence-reservation-required'
+    return 1
+  fi
+  if [[ -z "$WORK_DIR" || -z "$ROOT_CLIENT_SECRET" || -z "$DB_HOST" ||
+    ! "$LIFECYCLE_DB" =~ ^statekit_r93j_[0-9]+_[0-9]+$ ]]; then
+    set_note 'lifecycle-mutation-precheck-failed'
+    return 1
+  fi
+  return 0
+}
+
+lifecycle_database_presence() {
+  local stdout_path="$1" stderr_path="$2" rc=0 value
+  : >"$stdout_path"
+  : >"$stderr_path"
+  native_mysql_as_user root "$ROOT_CLIENT_SECRET" "$DB_HOST" "$DB_PORT" \
+    "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '$LIFECYCLE_DB'" \
+    "$stdout_path" "$stderr_path" || rc=$?
+  if (( rc != 0 )) || ! value_free_files "$stdout_path" "$stderr_path"; then
+    return 2
+  fi
+  value=$(<"$stdout_path")
+  if [[ "$value" == "$LIFECYCLE_DB" ]]; then
+    return 0
+  fi
+  if [[ -z "$value" ]]; then
+    return 1
+  fi
+  return 2
+}
+
+reconcile_ambiguous_lifecycle_create() {
+  local stdout_path="$WORK_DIR/lifecycle-create-reconcile.out"
+  local stderr_path="$WORK_DIR/lifecycle-create-reconcile.err"
+  local presence=2
+  if (( LIFECYCLE_DB_RESERVED != 1 )); then
+    set_note 'lifecycle-create-reconciliation-without-reservation'
+    return 1
+  fi
+  if lifecycle_database_presence "$stdout_path" "$stderr_path"; then
+    presence=0
+  else
+    presence=$?
+  fi
+  rm -f -- "$stdout_path" "$stderr_path"
+  case "$presence" in
+    0)
+      # The CREATE may have completed before its client was interrupted.  The
+      # reservation makes this database ours even when no result was returned.
+      LIFECYCLE_DB_OWNED=1
+      return 0
+      ;;
+    1)
+      # Keep the cleanup obligation until the final DROP/absence check.  A
+      # missing readback is not permission to dispatch another mutation.
+      set_note 'lifecycle-create-reconciled-absent'
+      return 1
+      ;;
+    *)
+      set_note 'lifecycle-create-reconciliation-uncertain'
+      return 1
+      ;;
+  esac
+}
+
+cleanup_lifecycle_database() {
+  local stdout_path stderr_path verify_stdout verify_stderr
+  local rc=0 value presence=2
+  if (( LIFECYCLE_DB_RESERVED != 1 )); then
+    if (( LIFECYCLE_DB_OWNED == 1 )); then
+      set_cleanup_note 'lifecycle-owned-without-absence-reservation'
+      mark_cleanup_failure
+      return 1
+    fi
+    return 0
+  fi
+  if [[ -z "$WORK_DIR" || -z "$ROOT_CLIENT_SECRET" || -z "$DB_HOST" ||
+    ! "$LIFECYCLE_DB" =~ ^statekit_r93j_[0-9]+_[0-9]+$ ]]; then
+    set_cleanup_note 'lifecycle-cleanup-precheck-failed'
+    mark_cleanup_failure
+    return 1
+  fi
+  stdout_path="$WORK_DIR/lifecycle-cleanup.out"
+  stderr_path="$WORK_DIR/lifecycle-cleanup.err"
+  verify_stdout="$WORK_DIR/lifecycle-cleanup-verify.out"
+  verify_stderr="$WORK_DIR/lifecycle-cleanup-verify.err"
+  native_mysql_as_user root "$ROOT_CLIENT_SECRET" "$DB_HOST" "$DB_PORT" \
+    "DROP DATABASE IF EXISTS \`$LIFECYCLE_DB\`" "$stdout_path" "$stderr_path" || rc=$?
+  value=''
+  [[ -f "$stdout_path" ]] && value=$(<"$stdout_path")
+  if (( rc != 0 )) || [[ -n "$value" ]] || ! value_free_files "$stdout_path" "$stderr_path"; then
+    set_cleanup_note 'lifecycle-cleanup-drop-failed'
+    mark_cleanup_failure
+    rm -f -- "$stdout_path" "$stderr_path" "$verify_stdout" "$verify_stderr"
+    return 1
+  fi
+  if lifecycle_database_presence "$verify_stdout" "$verify_stderr"; then
+    presence=0
+  else
+    presence=$?
+  fi
+  case "$presence" in
+    1)
+      LIFECYCLE_DB_OWNED=0
+      LIFECYCLE_DB_RESERVED=0
+      rc=0
+      ;;
+    0)
+      set_cleanup_note 'lifecycle-cleanup-residual-database'
+      mark_cleanup_failure
+      rc=1
+      ;;
+    *)
+      set_cleanup_note 'lifecycle-cleanup-absence-uncertain'
+      mark_cleanup_failure
+      rc=1
+      ;;
+  esac
+  rm -f -- "$stdout_path" "$stderr_path" "$verify_stdout" "$verify_stderr"
+  return "$rc"
 }
 
 # The single-quoted value is intentionally expanded by /bin/sh in the client.
@@ -1106,7 +1337,9 @@ value_free_files() {
   for path in "$@"; do
     [[ -f "$path" ]] || continue
     content=$(<"$path")
-    if [[ "$content" == *"$ROOT_PASSWORD"* || "$content" == *"$LIVE_PASSWORD"* || "$content" == *"$BAD_PASSWORD"* ]]; then
+    if [[ -n "$ROOT_PASSWORD" && "$content" == *"$ROOT_PASSWORD"* ]] ||
+      [[ -n "$LIVE_PASSWORD" && "$content" == *"$LIVE_PASSWORD"* ]] ||
+      [[ -n "$BAD_PASSWORD" && "$content" == *"$BAD_PASSWORD"* ]]; then
       return 1
     fi
   done
@@ -1331,6 +1564,190 @@ check_statekit_connection_negative() {
   return "$ok"
 }
 
+check_native_lifecycle_absent() {
+  local stdout_path="$WORK_DIR/lifecycle-before.out" stderr_path="$WORK_DIR/lifecycle-before.err"
+  local presence=2 ok=1
+  LIFECYCLE_DB_RESERVED=0
+  if [[ ! "$LIFECYCLE_DB" =~ ^statekit_r93j_[0-9]+_[0-9]+$ ]]; then
+    set_note 'lifecycle-database-name-invalid'
+  else
+    if lifecycle_database_presence "$stdout_path" "$stderr_path"; then
+      presence=0
+    else
+      presence=$?
+    fi
+    if (( presence == 1 )); then
+      # This is the reservation boundary.  No lifecycle mutation may be
+      # dispatched unless this exact absence read completed successfully.
+      LIFECYCLE_DB_RESERVED=1
+      ok=0
+    elif (( presence == 0 )); then
+      set_note 'lifecycle-database-not-absent'
+    else
+      set_note 'lifecycle-absence-check-uncertain'
+    fi
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_db_create() {
+  local stdout_path="$WORK_DIR/db-create.out" stderr_path="$WORK_DIR/db-create.err"
+  local rc=0 value='' ok=1
+  local extra_json=",\"name\":\"$LIFECYCLE_DB\",\"character_set\":\"utf8mb4\",\"collate\":\"utf8mb4_0900_ai_ci\""
+  lifecycle_mutation_precheck || return 1
+  # Take ownership before dispatch.  A timeout or interrupted client can
+  # leave CREATE applied even when no successful result reaches this shell.
+  LIFECYCLE_DB_OWNED=1
+  statekit_call "$ROOT_CLIENT_SECRET" 'mysql.db_create' "$extra_json" "$DB_HOST" "$DB_PORT" "$stdout_path" "$stderr_path" || rc=$?
+  [[ -f "$stdout_path" ]] && value=$(<"$stdout_path")
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' && "$value" == 'true' ]] && value_free_files "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    reconcile_ambiguous_lifecycle_create || true
+    case "$LAST_CLIENT_CLASS" in
+      setup) set_note 'lifecycle-create-setup-failed' ;;
+      timeout) set_note 'lifecycle-create-timeout' ;;
+      cleanup) set_note 'lifecycle-create-cleanup-failed' ;;
+      runtime) set_note 'lifecycle-create-runtime-failed' ;;
+      exited) set_note 'lifecycle-create-rejected-or-unexpected-result' ;;
+      *) set_note 'lifecycle-create-execution-incomplete' ;;
+    esac
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_db_create_repeat() {
+  local stdout_path="$WORK_DIR/db-create-repeat.out" stderr_path="$WORK_DIR/db-create-repeat.err"
+  local rc=0 value='' ok=1
+  local extra_json=",\"name\":\"$LIFECYCLE_DB\",\"character_set\":\"utf8mb4\",\"collate\":\"utf8mb4_0900_ai_ci\""
+  lifecycle_mutation_precheck || return 1
+  LIFECYCLE_DB_OWNED=1
+  statekit_call "$ROOT_CLIENT_SECRET" 'mysql.db_create' "$extra_json" "$DB_HOST" "$DB_PORT" "$stdout_path" "$stderr_path" || rc=$?
+  [[ -f "$stdout_path" ]] && value=$(<"$stdout_path")
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' && "$value" == 'false' ]] && value_free_files "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    reconcile_ambiguous_lifecycle_create || true
+    set_note 'lifecycle-create-repeat-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_native_lifecycle_present() {
+  local stdout_path="$WORK_DIR/lifecycle-present.out" stderr_path="$WORK_DIR/lifecycle-present.err"
+  local presence=2 ok=1
+  if lifecycle_database_presence "$stdout_path" "$stderr_path"; then
+    presence=0
+  else
+    presence=$?
+  fi
+  if (( presence == 0 )); then
+    ok=0
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_db_remove() {
+  local stdout_path="$WORK_DIR/db-remove.out" stderr_path="$WORK_DIR/db-remove.err"
+  local rc=0 value='' ok=1
+  lifecycle_mutation_precheck || return 1
+  if (( LIFECYCLE_DB_OWNED != 1 )); then
+    set_note 'lifecycle-remove-requires-owned-database'
+    return 1
+  fi
+  statekit_call "$ROOT_CLIENT_SECRET" 'mysql.db_remove' \
+    ",\"name\":\"$LIFECYCLE_DB\"" "$DB_HOST" "$DB_PORT" "$stdout_path" "$stderr_path" || rc=$?
+  [[ -f "$stdout_path" ]] && value=$(<"$stdout_path")
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' && "$value" == 'true' ]] && value_free_files "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'lifecycle-remove-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_native_lifecycle_removed() {
+  local stdout_path="$WORK_DIR/lifecycle-removed.out" stderr_path="$WORK_DIR/lifecycle-removed.err"
+  local presence=2 ok=1
+  if lifecycle_database_presence "$stdout_path" "$stderr_path"; then
+    presence=0
+  else
+    presence=$?
+  fi
+  if (( presence == 1 )); then
+    ok=0
+    # Keep ownership until cleanup has issued and verified its final DROP.
+    # This also gates the later negative remove call without losing cleanup
+    # responsibility after an ambiguous earlier mutation.
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_invalid_identifier_negative() {
+  local stdout_path="$WORK_DIR/db-invalid-identifier.out" stderr_path="$WORK_DIR/db-invalid-identifier.err"
+  local rc=0 ok=1
+  lifecycle_mutation_precheck || return 1
+  statekit_call "$ROOT_CLIENT_SECRET" 'mysql.db_create' ',"name":"bad\nname"' \
+    "$DB_HOST" "$DB_PORT" "$stdout_path" "$stderr_path" || rc=$?
+  if (( rc == 1 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '1' ]] &&
+    [[ ! -s "$stdout_path" ]] &&
+    grep -F -q -- "$STATEKIT_INVALID_IDENTIFIER_CATEGORY" "$stderr_path" 2>/dev/null &&
+    grep -F -q -- "$STATEKIT_INVALID_IDENTIFIER_DIAGNOSTIC" "$stderr_path" 2>/dev/null &&
+    value_free_files "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    case "$LAST_CLIENT_CLASS" in
+      setup) set_note 'invalid-identifier-setup-failed' ;;
+      timeout) set_note 'invalid-identifier-timeout' ;;
+      cleanup) set_note 'invalid-identifier-cleanup-failed' ;;
+      runtime) set_note 'invalid-identifier-runtime-failed' ;;
+      exited) set_note 'invalid-identifier-unexpected-rejection' ;;
+      *) set_note 'invalid-identifier-execution-incomplete' ;;
+    esac
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_lifecycle_auth_negative() {
+  local stdout_path="$WORK_DIR/db-auth-negative.out" stderr_path="$WORK_DIR/db-auth-negative.err"
+  local rc=0 value='' ok=1
+  lifecycle_mutation_precheck || return 1
+  LIFECYCLE_DB_OWNED=1
+  statekit_call "$BAD_CLIENT_SECRET" 'mysql.db_create' \
+    ",\"name\":\"$LIFECYCLE_DB\"" "$DB_HOST" "$DB_PORT" "$stdout_path" "$stderr_path" || rc=$?
+  [[ -f "$stdout_path" ]] && value=$(<"$stdout_path")
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' && "$value" == 'false' ]] && value_free_files "$stdout_path" "$stderr_path"; then
+    ok=0
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_lifecycle_connection_negative() {
+  local stdout_path="$WORK_DIR/db-connection-negative.out" stderr_path="$WORK_DIR/db-connection-negative.err"
+  local rc=0 value='' ok=1
+  lifecycle_mutation_precheck || return 1
+  if (( LIFECYCLE_DB_OWNED != 1 )); then
+    set_note 'lifecycle-negative-remove-requires-owned-database'
+    return 1
+  fi
+  statekit_call "$ROOT_CLIENT_SECRET" 'mysql.db_remove' \
+    ",\"name\":\"$LIFECYCLE_DB\"" "$DB_HOST" '1' "$stdout_path" "$stderr_path" || rc=$?
+  [[ -f "$stdout_path" ]] && value=$(<"$stdout_path")
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' && "$value" == 'false' ]] && value_free_files "$stdout_path" "$stderr_path"; then
+    ok=0
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
 main() {
   if ! prepare_report; then
     return 1
@@ -1363,6 +1780,7 @@ main() {
   fi
   DB_CONTAINER="statekit-e51-mysql-$$"
   DB_HOST="$DB_CONTAINER"
+  LIFECYCLE_DB="statekit_r93j_${BASHPID}_${RANDOM}"
   if ! pull_and_verify_image || ! build_client_image || ! create_private_network ||
     ! generate_credentials || ! create_runtime_secrets; then
     set_note 'runtime-or-resource-setup-failed'
@@ -1400,9 +1818,18 @@ main() {
   run_case 'mysql-connection-negative-statekit' check_statekit_connection_negative
   run_case 'mysql-db-native-postcondition' check_native_positive
   run_case 'mysql-plugin-native-postcondition' check_native_plugin
+  run_case 'mysql-db-lifecycle-native-absent-before-create' check_native_lifecycle_absent
+  run_case 'mysql-db-create-success' check_statekit_db_create
+  run_case 'mysql-db-create-repeat-false' check_statekit_db_create_repeat
+  run_case 'mysql-db-native-created-postcondition' check_native_lifecycle_present
+  run_case 'mysql-db-remove-success' check_statekit_db_remove
+  run_case 'mysql-db-native-removed-postcondition' check_native_lifecycle_removed
+  run_case 'mysql-db-negative-invalid-identifier' check_statekit_invalid_identifier_negative
+  run_case 'mysql-db-negative-auth' check_statekit_lifecycle_auth_negative
+  run_case 'mysql-db-negative-connection' check_statekit_lifecycle_connection_negative
 
   EXECUTION_COMPLETE=1
-  if (( ${#CASE_RESULTS[@]} != ${#CASE_IDS[@]} || PASSED != ${#CASE_IDS[@]} || FAILED != 0 || SKIPPED != 0 )); then
+  if ! case_results_are_exact || (( CASE_RESULT_INTEGRITY_FAILED != 0 || PASSED != ${#CASE_IDS[@]} || FAILED != 0 || SKIPPED != 0 )); then
     set_note 'one-or-more-live-cases-failed-or-were-skipped'
     return 1
   fi

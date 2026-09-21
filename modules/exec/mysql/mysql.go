@@ -7,7 +7,8 @@
 // db_optimize (R9.3c), the fixed-query user_create/user_remove mutation
 // family (R9.3e), the fixed-query grant_add/grant_exists/grant_revoke family
 // (R9.3f), the fixed-query user_grants reader (R9.3h), and the fixed-query
-// plugin_status/plugins_list readers (R9.3i).
+// plugin_status/plugins_list readers (R9.3i), and the database lifecycle
+// mutations db_create/db_remove (R9.3j).
 //
 // Boundaries (R9.2a): no MySQL client driver or protocol, no new
 // dependencies, no Runner spawns, no filesystem access, and no live MySQL
@@ -81,6 +82,21 @@
 // catalog and matches the requested plugin name client-side. Both preserve
 // source order and compatibility data on connection/nonzero-exit failures,
 // use the central bounded shell-free transport, and never accept caller SQL.
+//
+// Boundaries (R9.3j): db_create and db_remove preserve the pinned existence,
+// protected-name, mutation, and post-check order over the same native mysql
+// CLI transport. Database identifiers are validated before a Runner call and
+// quoted with the pinned backtick-doubling helper; optional character-set and
+// collation values are carried as escaped SQL string literals. No force
+// argument is added because the pinned functions have no force surface:
+// create/remove of an existing or absent database return False as Salt does.
+// The CLI cannot distinguish the pinned db_exists connection/query failure
+// classes. StateKit therefore treats a nonzero existence preflight as
+// unknown and fails closed before either lifecycle mutation. This is a
+// deliberate compatibility ceiling for db_create: pinned Salt receives False
+// from db_exists and may reconnect and attempt CREATE; StateKit never creates
+// on an uncertain absence. db_remove already returns False on that source
+// path. The ceiling is pinned by regression tests and the R9 report.
 package mysql
 
 import (
@@ -956,6 +972,11 @@ var (
 	errMysqlPasswordChangeExit = errors.New("mysql: password change run completed nonzero")
 )
 
+var mysqlProtectedDatabaseNames = map[string]struct{}{
+	"mysql":              {},
+	"information_scheme": {},
+}
+
 // myConnection is the transport half of the pinned **connection_args
 // surface (salt/modules/mysql.py:362-457, _connect): salt reads
 // connection_user, connection_host, connection_port, connection_pass,
@@ -1719,6 +1740,247 @@ func (dbExistsFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) 
 		}
 	}
 	return false, nil
+}
+
+// ---------------------------------------------------------------------------
+// db_create / db_remove — salt/modules/mysql.py:1300-1393 @ pinned revision.
+
+// DbCreateArgs mirrors db_create(name, character_set=None, collate=None,
+// **connection_args). Pointer option fields preserve Salt's distinction
+// between None (omit the clause) and an explicitly supplied empty string.
+type DbCreateArgs struct {
+	Name         string  `statekit:"name=name,required"`
+	CharacterSet *string `statekit:"name=character_set"`
+	Collate      *string `statekit:"name=collate"`
+	User         *string `statekit:"name=connection_user"`
+	Host         *string `statekit:"name=connection_host"`
+	Port         *string `statekit:"name=connection_port"`
+	Password     *string `statekit:"name=connection_pass"`
+	DB           *string `statekit:"name=connection_db"`
+	Runas        *string `statekit:"name=runas"`
+}
+
+func (a *DbCreateArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return &myConnection{
+		User:     a.User,
+		Host:     a.Host,
+		Port:     a.Port,
+		Password: a.Password,
+		DB:       a.DB,
+		Runas:    a.Runas,
+	}
+}
+
+// DbRemoveArgs mirrors db_remove(name, **connection_args). Salt's pinned
+// function has no force argument; absence and protected names are false
+// results rather than idempotent true results.
+type DbRemoveArgs struct {
+	Name     string  `statekit:"name=name,required"`
+	User     *string `statekit:"name=connection_user"`
+	Host     *string `statekit:"name=connection_host"`
+	Port     *string `statekit:"name=connection_port"`
+	Password *string `statekit:"name=connection_pass"`
+	DB       *string `statekit:"name=connection_db"`
+	Runas    *string `statekit:"name=runas"`
+}
+
+func (a *DbRemoveArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return &myConnection{
+		User:     a.User,
+		Host:     a.Host,
+		Port:     a.Port,
+		Password: a.Password,
+		DB:       a.DB,
+		Runas:    a.Runas,
+	}
+}
+
+// validDatabaseMutationOption keeps the parameterized-value boundary safe
+// when a MySQLdb string parameter is represented by a native CLI literal.
+// Quotes and backslashes are data and are escaped by mysqlStringLiteral;
+// NUL/control values are rejected before a command is built so they cannot
+// affect argv or diagnostic redaction.
+func validDatabaseMutationOption(value string) bool {
+	if !utf8.ValidString(value) {
+		return false
+	}
+	for _, char := range value {
+		if char == 0 || unicode.IsControl(char) {
+			return false
+		}
+	}
+	return true
+}
+
+func databaseMutationArgumentError(key string) error {
+	return fmt.Errorf("%w: unsupported value in %s", errMysqlInvalidArgument, key)
+}
+
+// databaseMutationIdentifierError is value-free because a rejected database
+// name may overlap a connection password or another sensitive input.
+func databaseMutationIdentifierError() error {
+	return fmt.Errorf("%w: unsupported identifier in name", errMysqlInvalidArgument)
+}
+
+func mysqlDatabaseCreateStatement(name string, characterSet, collate *string) (string, error) {
+	if !validMaintenanceIdentifier(name) {
+		return "", databaseMutationIdentifierError()
+	}
+	if characterSet != nil && !validDatabaseMutationOption(*characterSet) {
+		return "", databaseMutationArgumentError("character_set")
+	}
+	if collate != nil && !validDatabaseMutationOption(*collate) {
+		return "", databaseMutationArgumentError("collate")
+	}
+	statement := "CREATE DATABASE IF NOT EXISTS " + strings.ReplaceAll(quoteIdentifier(name, false), "%%", "%")
+	if characterSet != nil {
+		statement += " CHARACTER SET " + mysqlStringLiteral(*characterSet)
+	}
+	if collate != nil {
+		statement += " COLLATE " + mysqlStringLiteral(*collate)
+	}
+	return statement + ";", nil
+}
+
+func mysqlDatabaseDropStatement(name string) (string, error) {
+	if !validMaintenanceIdentifier(name) {
+		return "", databaseMutationIdentifierError()
+	}
+	return "DROP DATABASE " + strings.ReplaceAll(quoteIdentifier(name, false), "%%", "%") + ";", nil
+}
+
+// mysqlDatabaseMutationSecretInventory covers both connection credentials and
+// caller-controlled values that can appear in a statement or a server error.
+// The command itself remains a fixed SQL shape; this inventory only extends
+// the central Runner's redaction boundary.
+func mysqlDatabaseMutationSecretInventory(conn *myConnection, name string, characterSet, collate *string) []string {
+	values := make([]string, 0, 16)
+	if conn != nil && conn.Password != nil {
+		values = append(values, *conn.Password)
+		values = append(values, mysqlLiteralSecretForms(*conn.Password)...)
+	}
+	values = append(values, name, quoteIdentifier(name, false), strings.ReplaceAll(quoteIdentifier(name, false), "%%", "%"))
+	for _, option := range []*string{characterSet, collate} {
+		if option == nil {
+			continue
+		}
+		values = append(values, *option)
+		values = append(values, mysqlLiteralSecretForms(*option)...)
+	}
+	return secretList(values...)
+}
+
+// databaseExistsInRows performs the client-side exact match used by the
+// fixed catalog. The pinned SHOW DATABASES LIKE query treats unescaped '%' and
+// '_' in the caller name as LIKE wildcards; this fixed-catalog path deliberately
+// treats them as literal database-name bytes so caller input never reaches a
+// catalog predicate. Mutation statements still carry the name only through
+// the validated, quoted identifier path. Keeping the name separate from the
+// redaction inventory avoids any accidental dependence on secret ordering.
+func databaseExistsInRows(stdout, name string) bool {
+	_, rows := parseBatchRows(stdout)
+	for _, row := range rows {
+		if len(row) > 0 && !row[0].null && row[0].value == name {
+			return true
+		}
+	}
+	return false
+}
+
+func mysqlDatabaseExists(ctx context.Context, rt *runtime.Runtime, conn *myConnection, name string, secrets ...string) (exists, queryOK bool, err error) {
+	// queryOK distinguishes a successful empty catalog from the pinned
+	// db_exists False compatibility result produced by a nonzero mysql exit.
+	// Lifecycle mutations use that distinction to retain their fail-closed
+	// unknown-absence ceiling rather than creating or dropping after a failed
+	// existence read.
+	result, err := runMysqlPreserve(ctx, rt, mysqlQueryArgv(conn, showDatabasesQuery), conn, secrets...)
+	if err != nil {
+		return false, false, err
+	}
+	if result.ExitCode != 0 {
+		return false, false, nil
+	}
+	return databaseExistsInRows(string(result.Stdout), name), true, nil
+}
+
+type dbCreateFunc struct{}
+
+func (dbCreateFunc) Name() string { return "mysql.db_create" }
+func (dbCreateFunc) Args() any    { return DbCreateArgs{} }
+
+func (dbCreateFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[DbCreateArgs](args, "mysql.db_create")
+	if err != nil {
+		return nil, err
+	}
+	statement, err := mysqlDatabaseCreateStatement(a.Name, a.CharacterSet, a.Collate)
+	if err != nil {
+		return nil, err
+	}
+	conn := a.connection()
+	secrets := mysqlDatabaseMutationSecretInventory(conn, a.Name, a.CharacterSet, a.Collate)
+	exists, queryOK, err := mysqlDatabaseExists(ctx, rt, conn, a.Name, secrets...)
+	if err != nil {
+		return nil, err
+	}
+	// Salt's db_create proceeds after db_exists returns False, including when
+	// that False came from an OperationalError. The CLI transport exposes only
+	// a nonzero exit for that class, so StateKit deliberately refuses CREATE on
+	// an unknown preflight result; see the R9.3j compatibility ceiling above.
+	if exists || !queryOK {
+		return false, nil
+	}
+	result, err := runMysqlSecrets(ctx, rt, mysqlQueryArgv(conn, statement), conn, secrets...)
+	if err != nil {
+		return nil, err
+	}
+	return result.ExitCode == 0, nil
+}
+
+type dbRemoveFunc struct{}
+
+func (dbRemoveFunc) Name() string { return "mysql.db_remove" }
+func (dbRemoveFunc) Args() any    { return DbRemoveArgs{} }
+
+func (dbRemoveFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[DbRemoveArgs](args, "mysql.db_remove")
+	if err != nil {
+		return nil, err
+	}
+	statement, err := mysqlDatabaseDropStatement(a.Name)
+	if err != nil {
+		return nil, err
+	}
+	conn := a.connection()
+	secrets := mysqlDatabaseMutationSecretInventory(conn, a.Name, nil, nil)
+	exists, queryOK, err := mysqlDatabaseExists(ctx, rt, conn, a.Name, secrets...)
+	if err != nil {
+		return nil, err
+	}
+	if !exists || !queryOK {
+		return false, nil
+	}
+	if _, protected := mysqlProtectedDatabaseNames[a.Name]; protected {
+		return false, nil
+	}
+	result, err := runMysqlSecrets(ctx, rt, mysqlQueryArgv(conn, statement), conn, secrets...)
+	if err != nil {
+		return nil, err
+	}
+	if result.ExitCode != 0 {
+		return false, nil
+	}
+	exists, _, err = mysqlDatabaseExists(ctx, rt, conn, a.Name, secrets...)
+	if err != nil {
+		return nil, err
+	}
+	return !exists, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -4889,15 +5151,18 @@ func redactedError(err error, secrets ...string) error {
 // Register installs the mysql slice: the R9.2a pure functions, the
 // R9.3a/R9.3d/R9.3e fixed-query catalog family, the R9.3b server facts, the
 // R9.3c maintenance family, the R9.3e user account mutations, the R9.3f
-// grant family, the R9.3g password/login family, and the R9.3i plugin readers
-// over the central mysql CLI transport. The remainder of the mysql family
-// stays pending behind its own source/transport boundary.
+// grant family, the R9.3g password/login family, the R9.3i plugin readers,
+// and the R9.3j database lifecycle mutations over the central mysql CLI
+// transport. The remainder of the mysql family stays pending behind its own
+// source/transport boundary.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		quoteIdentifierFunc{},
 		tokenizeGrantFunc{},
 		dbListFunc{},
 		dbExistsFunc{},
+		dbCreateFunc{},
+		dbRemoveFunc{},
 		dbGetFunc{},
 		dbTablesFunc{},
 		userListFunc{},

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic, non-live checks for the E5.1 orchestration boundary."""
+"""Deterministic, non-live checks for the E5.2 orchestration boundary."""
 
 from __future__ import annotations
 
@@ -32,10 +32,19 @@ EXPECTED_CASES = (
     "mysql-connection-negative-statekit",
     "mysql-db-native-postcondition",
     "mysql-plugin-native-postcondition",
+    "mysql-db-lifecycle-native-absent-before-create",
+    "mysql-db-create-success",
+    "mysql-db-create-repeat-false",
+    "mysql-db-native-created-postcondition",
+    "mysql-db-remove-success",
+    "mysql-db-native-removed-postcondition",
+    "mysql-db-negative-invalid-identifier",
+    "mysql-db-negative-auth",
+    "mysql-db-negative-connection",
 )
 
 
-class E51OrchestrationTests(unittest.TestCase):
+class E52OrchestrationTests(unittest.TestCase):
     def _classify_native_result(
         self,
         kind: str,
@@ -124,6 +133,11 @@ native_failure_classification "$kind" "$execution_class" "$return_code" "$stdout
         self.assertIn("trap '' INT TERM", source)
         self.assertIn("execution_rc:", source)
         self.assertIn("final_rc:", source)
+        self.assertIn("LIFECYCLE_DB=", source)
+        self.assertIn("DROP DATABASE IF EXISTS", source)
+        self.assertIn("mysql.db_create", source)
+        self.assertIn("mysql.db_remove", source)
+        self.assertIn("external_ci: pending", source)
         self.assertNotIn("--privileged", source)
         self.assertNotIn("--device", source)
         self.assertNotIn("--volume ", source)
@@ -194,6 +208,8 @@ write_report
 
     def test_workflow_keeps_build_and_python_checks_inside_pinned_sandboxes(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("e5.2 live mysql read-only/catalog/plugin/database-lifecycle", workflow)
+        self.assertIn("e5-2-mysql-live-report", workflow)
         self.assertIn("run.sh --preflight-only", workflow)
         self.assertIn("golang:1.26.6@sha256:", workflow)
         self.assertIn("python:3.14.7@sha256:", workflow)
@@ -249,6 +265,293 @@ write_report
                 "expected",
             )
 
+    def test_lifecycle_mutations_fail_closed_on_precheck_and_ownership(self) -> None:
+        command = r'''
+script_path="$1"
+work_dir="$2"
+set --
+source "$script_path"
+set +e
+WORK_DIR="$work_dir"
+ROOT_CLIENT_SECRET=root-secret
+DB_HOST=mysql-host
+LIFECYCLE_DB=statekit_r93j_1_2
+ROOT_PASSWORD=root-marker
+LIVE_PASSWORD=live-marker
+BAD_PASSWORD=bad-marker
+CALLS="$work_dir/calls"
+statekit_call() {
+  printf 'dispatched\n' >> "$CALLS"
+  return 0
+}
+LIFECYCLE_DB_RESERVED=0
+if check_statekit_db_create; then
+  create_rc=0
+else
+  create_rc=$?
+fi
+LIFECYCLE_DB_RESERVED=1
+LIFECYCLE_DB_OWNED=0
+if check_statekit_db_remove; then
+  remove_rc=0
+else
+  remove_rc=$?
+fi
+call_count=0
+[[ -f "$CALLS" ]] && call_count=$(wc -l < "$CALLS")
+printf 'create_rc=%s remove_rc=%s call_count=%s\n' "$create_rc" "$remove_rc" "$call_count"
+'''
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            result = subprocess.run(
+                ["bash", "-c", command, "lifecycle-prechecks", str(SCRIPT), str(Path(temporary_directory))],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("create_rc=1 remove_rc=1 call_count=0", result.stdout)
+
+    def test_interrupted_create_is_reconciled_inside_the_reservation(self) -> None:
+        command = r'''
+script_path="$1"
+work_dir="$2"
+set --
+source "$script_path"
+set +e
+WORK_DIR="$work_dir"
+ROOT_CLIENT_SECRET=root-secret
+DB_HOST=mysql-host
+LIFECYCLE_DB=statekit_r93j_1_2
+LIFECYCLE_DB_RESERVED=1
+LIFECYCLE_DB_OWNED=0
+ROOT_PASSWORD=root-marker
+LIVE_PASSWORD=live-marker
+BAD_PASSWORD=bad-marker
+STATEKIT_CALLS="$work_dir/statekit-calls"
+NATIVE_CALLS="$work_dir/native-calls"
+statekit_call() {
+  : > "$6"
+  : > "$7"
+  printf 'statekit\n' >> "$STATEKIT_CALLS"
+  LAST_CLIENT_CLASS=timeout
+  LAST_CLIENT_EXIT_RC=124
+  return 124
+}
+native_mysql_as_user() {
+  printf 'native\n' >> "$NATIVE_CALLS"
+  printf '%s\n' "$LIFECYCLE_DB" > "$6"
+  : > "$7"
+  return 0
+}
+if check_statekit_db_create; then
+  create_rc=0
+else
+  create_rc=$?
+fi
+statekit_count=$(wc -l < "$STATEKIT_CALLS")
+native_count=$(wc -l < "$NATIVE_CALLS")
+printf 'create_rc=%s owned=%s reserved=%s statekit_count=%s native_count=%s\n' \
+  "$create_rc" "$LIFECYCLE_DB_OWNED" "$LIFECYCLE_DB_RESERVED" "$statekit_count" "$native_count"
+'''
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            result = subprocess.run(
+                ["bash", "-c", command, "interrupted-create", str(SCRIPT), str(Path(temporary_directory))],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "create_rc=1 owned=1 reserved=1 statekit_count=1 native_count=1",
+            result.stdout,
+        )
+
+    def test_invalid_identifier_requires_completed_expected_validation_rejection(self) -> None:
+        command = r'''
+script_path="$1"
+work_dir="$2"
+set --
+source "$script_path"
+set +e
+WORK_DIR="$work_dir"
+ROOT_CLIENT_SECRET=root-secret
+DB_HOST=mysql-host
+LIFECYCLE_DB=statekit_r93j_1_2
+LIFECYCLE_DB_RESERVED=1
+ROOT_PASSWORD=root-marker
+LIVE_PASSWORD=live-marker
+BAD_PASSWORD=bad-marker
+statekit_call() {
+  : > "$6"
+  : > "$7"
+  case "$FAULT_MODE" in
+    expected)
+      printf '%s\n' "$STATEKIT_INVALID_IDENTIFIER_DIAGNOSTIC" > "$7"
+      LAST_CLIENT_CLASS=exited
+      LAST_CLIENT_EXIT_RC=1
+      return 1
+      ;;
+    setup)
+      LAST_CLIENT_CLASS=setup
+      LAST_CLIENT_EXIT_RC=125
+      return 125
+      ;;
+    runtime)
+      LAST_CLIENT_CLASS=runtime
+      LAST_CLIENT_EXIT_RC=125
+      return 125
+      ;;
+    timeout)
+      LAST_CLIENT_CLASS=timeout
+      LAST_CLIENT_EXIT_RC=124
+      return 124
+      ;;
+    cleanup)
+      LAST_CLIENT_CLASS=cleanup
+      LAST_CLIENT_EXIT_RC=125
+      return 125
+      ;;
+    unrelated)
+      printf '%s\n' 'statekit: mysql: invalid argument: unsupported value in collate' > "$7"
+      LAST_CLIENT_CLASS=exited
+      LAST_CLIENT_EXIT_RC=1
+      return 1
+      ;;
+  esac
+}
+if check_statekit_invalid_identifier_negative; then
+  printf 'rc=0\n'
+else
+  printf 'rc=%s\n' "$?"
+fi
+'''
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            for mode in ("expected", "setup", "runtime", "timeout", "cleanup", "unrelated"):
+                environment = os.environ.copy()
+                environment["FAULT_MODE"] = mode
+                result = subprocess.run(
+                    ["bash", "-c", command, "invalid-identifier", str(SCRIPT), str(Path(temporary_directory))],
+                    cwd=ROOT,
+                    env=environment,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 0, (mode, result.stderr))
+                if mode == "expected":
+                    self.assertEqual(result.stdout.strip(), "rc=0")
+                else:
+                    self.assertRegex(result.stdout, r"^rc=[1-9][0-9]*$")
+
+    def test_cleanup_uncertainty_fails_closed(self) -> None:
+        command = r'''
+script_path="$1"
+work_dir="$2"
+set --
+source "$script_path"
+set +e
+WORK_DIR="$work_dir"
+ROOT_CLIENT_SECRET=root-secret
+DB_HOST=mysql-host
+LIFECYCLE_DB=statekit_r93j_1_2
+LIFECYCLE_DB_RESERVED=1
+LIFECYCLE_DB_OWNED=1
+ROOT_PASSWORD=root-marker
+LIVE_PASSWORD=live-marker
+BAD_PASSWORD=bad-marker
+native_mysql_as_user() {
+  if [[ "$5" == DROP* ]]; then
+    : > "$6"
+  else
+    printf 'unexpected-output\n' > "$6"
+  fi
+  : > "$7"
+  return 0
+}
+if cleanup_lifecycle_database; then
+  cleanup_rc=0
+else
+  cleanup_rc=$?
+fi
+printf 'cleanup_rc=%s cleanup_failed=%s note=%s\n' "$cleanup_rc" "$CLEANUP_FAILED" "$CLEANUP_NOTE"
+'''
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            result = subprocess.run(
+                ["bash", "-c", command, "cleanup-uncertainty", str(SCRIPT), str(Path(temporary_directory))],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("cleanup_rc=1 cleanup_failed=1", result.stdout)
+        self.assertIn("lifecycle-cleanup-absence-uncertain", result.stdout)
+
+    def test_case_result_integrity_rejects_duplicate_unknown_missing_and_substituted(self) -> None:
+        command = r'''
+script_path="$1"
+report_root="$2"
+set --
+source "$script_path"
+set +e
+setup_report() {
+  REPORT_DIR="$1"
+  REPORT_PATH="$REPORT_DIR/report.txt"
+  mkdir -p "$REPORT_DIR"
+  REPORT_PREPARED=1
+  REPORT_WRITTEN=0
+  EXECUTION_COMPLETE=1
+  EXECUTION_RC=0
+  FINAL_RC=0
+  CANCELLED=0
+  CLEANUP_FAILED=0
+  PASSED=0
+  FAILED=0
+  SKIPPED=0
+  CASE_RESULT_INTEGRITY_FAILED=0
+  SETUP_NOTE=none
+  CLEANUP_NOTE=none
+  CASE_RESULTS=()
+}
+setup_report "$report_root/duplicate"
+record_case "${CASE_IDS[0]}" pass
+if record_case "${CASE_IDS[0]}" pass; then duplicate_rc=0; else duplicate_rc=$?; fi
+if record_case unknown-case pass; then unknown_rc=0; else unknown_rc=$?; fi
+write_report
+duplicate_status=$(awk -F': ' '$1 == "status" {print $2}' "$REPORT_PATH")
+setup_report "$report_root/missing"
+for ((index=0; index<${#CASE_IDS[@]}-1; index++)); do
+  record_case "${CASE_IDS[index]}" pass
+done
+write_report
+missing_status=$(awk -F': ' '$1 == "status" {print $2}' "$REPORT_PATH")
+setup_report "$report_root/substituted"
+for case_id in "${CASE_IDS[@]}"; do
+  CASE_RESULTS+=("$case_id=pass")
+done
+CASE_RESULTS[0]='substituted-case=pass'
+PASSED=${#CASE_IDS[@]}
+write_report
+substituted_status=$(awk -F': ' '$1 == "status" {print $2}' "$REPORT_PATH")
+printf 'duplicate_rc=%s unknown_rc=%s duplicate_status=%s missing_status=%s substituted_status=%s\n' \
+  "$duplicate_rc" "$unknown_rc" "$duplicate_status" "$missing_status" "$substituted_status"
+'''
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            result = subprocess.run(
+                ["bash", "-c", command, "case-integrity", str(SCRIPT), str(Path(temporary_directory))],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "duplicate_rc=1 unknown_rc=1 duplicate_status=fail missing_status=fail substituted_status=fail",
+            result.stdout,
+        )
+
     def test_incomplete_execution_is_reported_as_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary = Path(temporary_directory)
@@ -273,8 +576,8 @@ write_report
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("status: fail", report)
             self.assertIn("execution: incomplete", report)
-            self.assertIn("cases_total: 14", report)
-            self.assertIn("cases_skipped: 13", report)
+            self.assertIn("cases_total: 23", report)
+            self.assertIn("cases_skipped: 22", report)
 
     def test_stale_or_unwritable_report_is_not_accepted(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -321,7 +624,8 @@ write_report
                 text=True,
             )
             self.assertNotEqual(blocked.returncode, 0)
-            self.assertIn("e5.1: report write failed", blocked.stderr)
+            self.assertIn("e5.2: report write failed", blocked.stderr)
+
     def test_workflow_is_fork_safe_and_uses_immutable_actions(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("types: [opened, synchronize, reopened, ready_for_review]", workflow)

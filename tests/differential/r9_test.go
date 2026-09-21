@@ -286,9 +286,12 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"mysql.user-chpass-verify-login",
 			"mysql.user-grants",
 			"mysql.plugin-status-list-fixed-query",
+			"mysql.database-create-remove-lifecycle",
 		},
 		Evidence: []string{
 			"R9.3i direct, registry, and CLI tests pin fixed SHOW PLUGINS/plugin-catalog argv, exact name/status shapes, source order and first-match filtering, empty/nonzero/cancel/boundary behavior, password redaction, and SQL-injection-shaped names without a live database",
+			"R9.3j direct, registry, and CLI fake-Runner tests pin db_create/db_remove fixed-catalog preflight, quoted CREATE/DROP statements, optional character_set/collate literal escaping and rejection, MYSQL_PWD transport, finite timeout/output bounds, cancellation before and after preflight, phase-specific timeout/output/redaction failures, protected-name no-op, false-on-existing/absent idempotence shapes, and the public true result after a successful DROP whose db_exists post-check returns false; no live database or driver is used",
+			"F2-F4 remediation pins the deliberate ceilings explicitly: a nonzero db_exists preflight is treated as unknown and db_create fails closed without CREATE, '%'/'_' names use exact fixed-catalog membership instead of the pinned unescaped LIKE wildcard behavior, and post-check false is distinguished from the public db_remove result after a successful DROP; the differential artifact remains mock-only with external live CI pending",
 			"R9.3i blocker remediation adds TestMysqlPluginRowsRedactAfterDecode, TestMysqlPluginRowsRedactAfterDecodeThroughRegistry, and TestMySQLCLIPluginRowsRedactAfterDecode: bounded raw rows are matched after batch decoding, while decoded public Name/Status values are redacted; synthetic backslash-escaped credentials and password/name overlaps never appear in returned output, command displays, errors, or streams",
 			"F1 remediation adds direct, registry, and CLI coverage for user_list, showvariables/showglobal, and maintenance header-derived map keys: exact, escaped, and overlapping synthetic passwords are redacted after raw-header preservation, decoded NULL values remain present under safe keys, and direct collision vectors return a value-free explicit error instead of overwriting a column; fixed SQL, internal raw matching, decode-before-match, transport bounds, and data redaction remain unchanged",
 			"SR-01 remediation replaces substring-based JSON security assertions with recursive decoded key/string inspection and exact map/key-count checks, including explicit null-key presence; direct, registry, and CLI coverage spans user_list, both SHOW surfaces, and all shared maintenance renderers with raw and batch-escaped headers, decoded marker values, short rows, JSON/YAML/text serialization, and registry/CLI collision failures including an existing redaction-placeholder key; synthetic markers are benign and collision errors are value-free",
@@ -322,6 +325,8 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 		},
 		CompatibilityNotes: []string{
 			"R9.3i keeps plugin_status' empty-name False and missing/nonzero empty-string shapes, plugins_list' ordered list-of-name/status maps, and the shared Runner/cancellation/boundary/redaction controls; caller names are never interpolated into SQL",
+			"R9.3j keeps db_create's db_exists preflight and false-on-existing/mutation-failure return shape, including optional character_set/collate values as MySQLdb-equivalent escaped literals; StateKit deliberately fails closed before CREATE when the CLI existence preflight is nonzero, whereas pinned Salt can reconnect and attempt CREATE after db_exists returns False from an OperationalError. db_remove keeps the db_exists preflight, the pinned mysql/information_scheme protected-name false branch, DROP false-on-error behavior, and the final not-db_exists boolean post-check: after a successful DROP, a nonzero post-check is db_exists false compatibility data and therefore the public db_remove result is true, not false. The native CLI has no force parameter, so no force surface is added; both lifecycle functions remain driver-free and mock-only in the differential contract",
+			"The pinned db_exists uses unescaped SHOW DATABASES LIKE, so '%' and '_' in a requested name are wildcard-shaped source inputs. StateKit intentionally uses exact client-side membership over the fixed catalog to keep wildcard bytes out of the catalog predicate; mutation statements still use the validated quoted-identifier path. Wildcard-shaped names are therefore a documented compatibility ceiling and have direct and CLI regression vectors",
 			"F1 public renderers sanitize every result header key with the connection redaction inventory; internal user_exists header matching remains raw, and a post-redaction key collision fails safely with the stable value-free mysql: redacted result header collision error",
 			"R9.3h keeps user_grants' one-call SHOW GRANTS contract: a successful header-only/empty result is [], a nonzero mysql exit is false, and Runner/cancellation/boundary failures remain errors; IDENTIFIED BY is removed exactly as the source does and WITH GRANT OPTION is restored after that removal",
 			"R9.2a registers the driver-free pure functions quote_identifier and tokenize_grant; R9.3a adds the read-only catalog family db_list, db_exists, user_list, and user_exists over the mysql CLI transport; R9.3b adds the read-only server facts family version, status, showvariables, and showglobal on the same transport; R9.3c adds the maintenance family db_check, db_repair, and db_optimize — REPAIR and OPTIMIZE are mutations, executed only through the (fake) Runner, never a live server; R9.3d adds the read-only db_get and db_tables catalog surfaces on the same fixed-query transport; R9.3e adds user_info plus fixed-query user_create/user_remove over the same fake-only CLI transport; R9.3f adds the exact grant_add, grant_exists, and grant_revoke surfaces over fixed GRANT/REVOKE, VERSION, SHOW PRIVILEGES, and SHOW GRANTS statements with SQL-aware account parsing and full redaction inventory; the remaining public surface stays pending behind its own MySQL protocol/arbitrary-query boundaries",
@@ -346,7 +351,7 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"StateKit defensive prefix-zip divergence: ordinary complete rows exact; malformed short rows do not panic. The pinned __do_query_into_hash indexes every described column and raises Python IndexError on a short row; StateKit retains only available columns, intentionally not pinned malformed-row parity. The existing user catalog defensive prefix behavior is unchanged",
 			"the pinned module speaks MySQLdb; StateKit links no database driver — the fixed source queries travel through the mysql CLI client (batch mode, joined connection flags, clean environment) on the central shell-free Runner with a finite 30s timeout and 4 MiB output caps the pinned module does not carry",
 			"the connection surface keeps the pinned connection_user/connection_host/connection_port/connection_pass/connection_db kwargs with nil keeping Salt's None meaning (the pinned config.option defaults have no StateKit surface, and _connect's falsy-connarg drop maps to flag omission); the password travels through mysql's native MYSQL_PWD in an otherwise clean environment as a Redact secret, never argv, and runas is rejected before any Runner invocation by the single-user runtime",
-			"the pinned db_exists interpolates the caller's name into SHOW DATABASES LIKE %(dbname)s; StateKit runs the same fixed database catalog of db_list — the COALESCE(SCHEMA_NAME, UNHEX('00')) query over information_schema.SCHEMATA, the table SHOW DATABASES itself reads with the same privilege filtering — and matches the name client-side (exact match — the catalog lists each database once, so membership is the pinned cur.rowcount == 1), deliberately refusing the LIKE wildcard semantics so no caller string reaches SQL",
+			"the pinned db_exists interpolates the caller's name into SHOW DATABASES LIKE %(dbname)s; StateKit runs the same fixed database catalog of db_list — the COALESCE(SCHEMA_NAME, UNHEX('00')) query over information_schema.SCHEMATA, the table SHOW DATABASES itself reads with the same privilege filtering — and matches the name client-side (exact match — the catalog lists each database once, so membership is the pinned cur.rowcount == 1), deliberately refusing the LIKE wildcard semantics so wildcard bytes never enter the catalog predicate; lifecycle mutation statements use the validated quoted-identifier path",
 			"the pinned user_list runs a DictCursor over SELECT User,Host; the sentinel-mapped catalog keeps the pinned column pair behind the User and Host aliases, so the batch rows are keyed by the header exactly like the DictRow, the catalog never selects or returns a password column, and StateKit modules have no logging surface so nothing is ever logged, unlike the pinned log.debug(results)",
 			"the pinned module reads rows through MySQLdb, where SQL NULL arrives as Python None and no escaping exists; mysql --batch instead prints SQL NULL as a bare NULL marker byte-identical to a value spelled NULL, so the fixed catalog queries substitute COALESCE(column, UNHEX('00')) — a fixed sql_mode-independent one-NUL-byte sentinel no MySQL or MariaDB identifier can carry — and only that sentinel maps back to null: the sentinel batch-prints as \\0, decodes to the single NUL byte, renders as the DictRow None (nil) that never matches a caller string, and a sentinel database row is skipped because the []string catalog has no null shape, while a database, user, or host literally spelled NULL stays the ordinary string NULL with no false negatives; the remaining batch decoding keeps the client's documented escaping in one bounded left-to-right pass — the encoder emits only \\0 \\t \\n \\\\ so a carriage return stays raw exactly like the client prints it while the shared \\b/\\r/\\Z LOAD DATA escape family decodes, unknown escapes and a trailing lone backslash are preserved verbatim rather than dropped, an encoded \\\\n is the literal backslash before n and never a newline, and the header stays byte-raw like the client prints it; row framing recognizes \\n and \\r\\n as delimiters (the delimiter CR removed) and keeps a raw non-delimiter CR inside its field, a lone trailing CR included",
 			"a nonzero mysql exit stays compatibility data (the empty list or false, like the pinned logged error paths); only Runner failures, cancellation, and output-limit violations are errors",
@@ -364,11 +369,13 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 		},
 		RegisteredSubset: []string{
 			"mysql.db_check",
+			"mysql.db_create",
 			"mysql.db_exists",
 			"mysql.db_get",
 			"mysql.db_list",
 			"mysql.db_optimize",
 			"mysql.db_repair",
+			"mysql.db_remove",
 			"mysql.db_tables",
 			"mysql.grant_add",
 			"mysql.grant_exists",
@@ -617,6 +624,7 @@ type r9Report struct {
 	Platform         string                    `yaml:"platform"`
 	RuntimeStatus    string                    `yaml:"runtime_status"`
 	BehavioralParity string                    `yaml:"behavioral_parity"`
+	ExternalCI       string                    `yaml:"external_ci_status"`
 	Families         map[string]r9FamilyReport `yaml:"families"`
 	Totals           r9ReportTotals            `yaml:"totals"`
 	PriorReports     map[string]string         `yaml:"prior_report_sha256"`
@@ -644,11 +652,12 @@ func TestR9DifferentialScopeReport(t *testing.T) {
 	registered := registeredNames(first)
 
 	report := r9Report{
-		Round:    "R9.3i",
+		Round:    "R9.3j",
 		Platform: "cross-platform",
 		RuntimeStatus: "mock-only: RabbitMQ is never started, MySQL is never connected, and PostgreSQL is never contacted; " +
 			"shell-free fake Runner tests and pure-function vectors provide the executable contract",
 		BehavioralParity: "not claimed: live Salt/broker/database differential execution is prohibited for R9",
+		ExternalCI:       "pending_external_ci",
 		Families:         map[string]r9FamilyReport{},
 		PriorReports:     priorR3R8ReportHashes(t),
 		RepeatStable:     repeatStable,

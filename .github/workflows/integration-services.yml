@@ -1,8 +1,10 @@
 name: integration-services
 
-# E5.1 required live gate. This job is intentionally separate from the
-# existing mock/fake-Runner integration workflows and runs on the exact PR
-# merge candidate or pushed commit with read-only token permissions.
+# E5.2 required live MySQL gate, preserving every E5.1 read-only/catalog/plugin
+# case and adding the R9.3j database lifecycle cases. This job is intentionally
+# separate from the existing mock/fake-Runner integration workflows and runs
+# on the exact PR merge candidate or pushed commit with read-only token
+# permissions.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -22,7 +24,7 @@ concurrency:
 
 jobs:
   mysql-live:
-    name: e5.1 live mysql read-only/catalog/plugin
+    name: e5.2 live mysql read-only/catalog/plugin/database-lifecycle
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -107,7 +109,7 @@ jobs:
         # actions/upload-artifact v5.0.0; refs/tags/v5.0.0 resolved to this full commit SHA.
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
         with:
-          name: e5-1-mysql-live-report
+          name: e5-2-mysql-live-report
           path: artifacts/mysql-live/report.txt
           if-no-files-found: error
           retention-days: 7

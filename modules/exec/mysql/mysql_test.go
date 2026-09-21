@@ -291,11 +291,13 @@ func TestMysqlRegistryNames(t *testing.T) {
 	}
 	wantNames := []string{
 		"mysql.db_check",
+		"mysql.db_create",
 		"mysql.db_exists",
 		"mysql.db_get",
 		"mysql.db_list",
 		"mysql.db_optimize",
 		"mysql.db_repair",
+		"mysql.db_remove",
 		"mysql.db_tables",
 		"mysql.grant_add",
 		"mysql.grant_exists",
@@ -1873,7 +1875,9 @@ func TestMysqlDBListFailClosed(t *testing.T) {
 
 // TestMysqlDBExists pins the exact boolean, the client-side name match,
 // and that the caller's name never reaches the argv: a hostile name runs
-// the identical catalog argv of db_list.
+// the identical catalog argv of db_list. The wildcard cases are an explicit
+// compatibility ceiling: Salt's unescaped SHOW DATABASES LIKE would match
+// these patterns, while the fixed catalog deliberately treats them literally.
 func TestMysqlDBExists(t *testing.T) {
 	rt, runner := newMysqlRuntime(process.CommandResult{
 		ExitCode: 0,
@@ -1892,9 +1896,10 @@ func TestMysqlDBExists(t *testing.T) {
 		want bool
 	}{
 		{"missing", false},
-		// LIKE wildcards stay literal under the client-side exact match.
+		// LIKE wildcards stay literal under the client-side exact match;
+		// both patterns would match "mysql" in the pinned source.
 		{"my%", false},
-		{"mysql_", false},
+		{"mysq_", false},
 		{"information_schema", true},
 	} {
 		rt, _ := newMysqlRuntime(process.CommandResult{
@@ -6521,5 +6526,424 @@ func TestMysqlPublicHeaderCollisionThroughRegistry(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestMysqlDatabaseMutations pins the source db_create/db_remove lifecycle:
+// database existence is checked through the fixed catalog, CREATE returns
+// the source boolean on the mutation exit status, and DROP performs the
+// source post-check before returning its boolean.  All calls use the central
+// shell-free mysql transport and carry the password only in MYSQL_PWD.
+func TestMysqlDatabaseMutations(t *testing.T) {
+	connectionPassword := "db-mutation-connection-pass"
+	createArgs := &DbCreateArgs{
+		Name:         "new`db%",
+		CharacterSet: mysqlString("utf8mb4"),
+		Collate:      mysqlString("utf8mb4_0900_ai_ci"),
+		User:         mysqlString("admin"),
+		Host:         mysqlString("mysql-host"),
+		Port:         mysqlString("3307"),
+		Password:     mysqlString(connectionPassword),
+		DB:           mysqlString("mysql"),
+	}
+	rt, runner := newMysqlRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\nother\n")},
+		process.CommandResult{ExitCode: 0},
+	)
+	value, err := (dbCreateFunc{}).Execute(context.Background(), rt, createArgs)
+	if err != nil || value != true || len(runner.calls) != 2 {
+		t.Fatalf("db_create = %#v, %v, calls=%d; want true and two calls", value, err, len(runner.calls))
+	}
+	wantCreate := "CREATE DATABASE IF NOT EXISTS `new``db%` CHARACTER SET 'utf8mb4' COLLATE 'utf8mb4_0900_ai_ci';"
+	if got := runner.calls[1].Args[len(runner.calls[1].Args)-1]; got != "--execute="+wantCreate {
+		t.Fatalf("db_create statement = %q, want %q", got, "--execute="+wantCreate)
+	}
+	for i, command := range runner.calls {
+		if command.Shell || !reflect.DeepEqual(command.Env, []string{"MYSQL_PWD=" + connectionPassword}) ||
+			command.Timeout != commandTimeout || command.MaxStdoutBytes != outputLimit || command.MaxStderrBytes != outputLimit {
+			t.Fatalf("db_create call %d transport = %#v", i, command)
+		}
+		if strings.Contains(command.RedactedString(), connectionPassword) {
+			t.Fatalf("db_create call %d leaks the connection password: %q", i, command.RedactedString())
+		}
+	}
+
+	// Existing databases are not idempotent success: the pinned preflight
+	// returns False without issuing CREATE DATABASE.
+	rt, runner = newMysqlRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\nnew`db%\n")})
+	value, err = (dbCreateFunc{}).Execute(context.Background(), rt, &DbCreateArgs{Name: "new`db%"})
+	if err != nil || value != false || len(runner.calls) != 1 {
+		t.Fatalf("existing db_create = %#v, %v, calls=%d; want false and one call", value, err, len(runner.calls))
+	}
+
+	// A rejected CREATE is the source's false compatibility shape and does not
+	// trigger a post-check or a retry.
+	rt, runner = newMysqlRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\n")},
+		process.CommandResult{ExitCode: 1, Stderr: []byte("access denied")},
+	)
+	value, err = (dbCreateFunc{}).Execute(context.Background(), rt, &DbCreateArgs{Name: "newdb"})
+	if err != nil || value != false || len(runner.calls) != 2 {
+		t.Fatalf("failed db_create = %#v, %v, calls=%d; want false and two calls", value, err, len(runner.calls))
+	}
+
+	// DROP follows the source's exists -> protected-name -> mutation ->
+	// exists flow.  A successful post-check miss is true.
+	rt, runner = newMysqlRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\nremove_db\n")},
+		process.CommandResult{ExitCode: 0},
+		process.CommandResult{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\n")},
+	)
+	value, err = (dbRemoveFunc{}).Execute(context.Background(), rt, &DbRemoveArgs{Name: "remove_db", Password: mysqlString(connectionPassword)})
+	if err != nil || value != true || len(runner.calls) != 3 {
+		t.Fatalf("db_remove = %#v, %v, calls=%d; want true and three calls", value, err, len(runner.calls))
+	}
+	if got := runner.calls[1].Args[len(runner.calls[1].Args)-1]; got != "--execute=DROP DATABASE `remove_db`;" {
+		t.Fatalf("db_remove statement = %q", got)
+	}
+	if !reflect.DeepEqual(runner.calls[1].Env, []string{"MYSQL_PWD=" + connectionPassword}) || runner.calls[1].Shell {
+		t.Fatalf("db_remove transport = %#v", runner.calls[1])
+	}
+
+	// Missing and protected names preserve the source false/no-op shape.  The
+	// protected check follows the existence preflight, as in mysql.py.
+	rt, runner = newMysqlRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\n")})
+	value, err = (dbRemoveFunc{}).Execute(context.Background(), rt, &DbRemoveArgs{Name: "remove_db"})
+	if err != nil || value != false || len(runner.calls) != 1 {
+		t.Fatalf("missing db_remove = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+	rt, runner = newMysqlRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\nmysql\n")})
+	value, err = (dbRemoveFunc{}).Execute(context.Background(), rt, &DbRemoveArgs{Name: "mysql"})
+	if err != nil || value != false || len(runner.calls) != 1 {
+		t.Fatalf("protected db_remove = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+
+	// A failed DROP is false without a post-check; a failed post-check is the
+	// pinned db_exists false result, so the source returns true after a
+	// successful mutation even though the follow-up connection failed.
+	rt, runner = newMysqlRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\ndb\n")},
+		process.CommandResult{ExitCode: 1},
+	)
+	value, err = (dbRemoveFunc{}).Execute(context.Background(), rt, &DbRemoveArgs{Name: "db"})
+	if err != nil || value != false || len(runner.calls) != 2 {
+		t.Fatalf("failed db_remove = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+	rt, runner = newMysqlRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\ndb\n")},
+		process.CommandResult{ExitCode: 0},
+		process.CommandResult{ExitCode: 1},
+	)
+	value, err = (dbRemoveFunc{}).Execute(context.Background(), rt, &DbRemoveArgs{Name: "db"})
+	if err != nil || value != true || len(runner.calls) != 3 {
+		t.Fatalf("post-check failure db_remove = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+}
+
+// TestMysqlDatabaseCreateFailsClosedAfterExistenceQueryFailure pins the
+// deliberate F2 compatibility ceiling. Salt treats db_exists' False result as
+// permission to reconnect and attempt CREATE; StateKit treats a nonzero
+// existence query as unknown and never mutates on that path.
+func TestMysqlDatabaseCreateFailsClosedAfterExistenceQueryFailure(t *testing.T) {
+	rt, runner := newMysqlRuntime(
+		process.CommandResult{ExitCode: 1, Stderr: []byte("catalog query failed")},
+		process.CommandResult{ExitCode: 0}, // must remain unused
+	)
+	value, err := (dbCreateFunc{}).Execute(context.Background(), rt, &DbCreateArgs{Name: "newdb"})
+	if err != nil || value != false || len(runner.calls) != 1 {
+		t.Fatalf("failed existence preflight = %#v, %v, calls=%d; want false, nil, one call", value, err, len(runner.calls))
+	}
+	if strings.Contains(runner.calls[0].Args[len(runner.calls[0].Args)-1], "CREATE DATABASE") {
+		t.Fatal("db_create issued CREATE on an uncertain existence result")
+	}
+}
+
+// TestMysqlDatabaseWildcardPreflightUsesLiteralMatch pins the deliberate F3
+// exact-match ceiling. The pinned SHOW DATABASES LIKE query would treat % and
+// _ as wildcards; the fixed catalog must not let either pattern match another
+// database, while a literal database carrying the wildcard remains a hit.
+func TestMysqlDatabaseWildcardPreflightUsesLiteralMatch(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		other string
+	}{
+		{name: "my%", other: "my_database"},
+		{name: "mysq_", other: "mysql"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, runner := newMysqlRuntime(
+				process.CommandResult{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\n" + tc.other + "\n")},
+				process.CommandResult{ExitCode: 0},
+			)
+			value, err := (dbCreateFunc{}).Execute(context.Background(), rt, &DbCreateArgs{Name: tc.name})
+			if err != nil || value != true || len(runner.calls) != 2 {
+				t.Fatalf("literal wildcard create = %#v, %v, calls=%d; want true and mutation", value, err, len(runner.calls))
+			}
+			if got := runner.calls[1].Args[len(runner.calls[1].Args)-1]; !strings.Contains(got, "CREATE DATABASE IF NOT EXISTS `"+tc.name+"`") {
+				t.Fatalf("wildcard name was not carried as a quoted literal: %q", got)
+			}
+
+			rt, runner = newMysqlRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\n" + tc.other + "\n")})
+			value, err = (dbRemoveFunc{}).Execute(context.Background(), rt, &DbRemoveArgs{Name: tc.name})
+			if err != nil || value != false || len(runner.calls) != 1 {
+				t.Fatalf("literal wildcard remove = %#v, %v, calls=%d; want false and no mutation", value, err, len(runner.calls))
+			}
+		})
+	}
+
+	rt, runner := newMysqlRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\nmy%\n")},
+	)
+	value, err := (dbCreateFunc{}).Execute(context.Background(), rt, &DbCreateArgs{Name: "my%"})
+	if err != nil || value != false || len(runner.calls) != 1 {
+		t.Fatalf("literal wildcard existing create = %#v, %v, calls=%d; want false and no mutation", value, err, len(runner.calls))
+	}
+}
+
+// TestMysqlDatabaseCreateOptionsAndQuoting pins the native-CLI rendering of
+// source parameter values: identifier backticks are doubled, % is restored to
+// one identifier byte, quote/backslash option data is SQL-literal escaped, and
+// explicit empty options are not confused with omitted options.
+func TestMysqlDatabaseCreateOptionsAndQuoting(t *testing.T) {
+	characterSet := "utf'\\%"
+	collate := "ci'\\_"
+	statement, err := mysqlDatabaseCreateStatement("db`%_", &characterSet, &collate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "CREATE DATABASE IF NOT EXISTS `db``%_` CHARACTER SET 'utf''\\\\%' COLLATE 'ci''\\\\_';"
+	if statement != want {
+		t.Fatalf("quoted create statement = %q, want %q", statement, want)
+	}
+
+	empty := ""
+	statement, err = mysqlDatabaseCreateStatement("db", &empty, &empty)
+	if err != nil || statement != "CREATE DATABASE IF NOT EXISTS `db` CHARACTER SET '' COLLATE '';" {
+		t.Fatalf("explicit empty options = %q, %v", statement, err)
+	}
+
+	for _, tc := range []struct {
+		key string
+		set func(*DbCreateArgs, *string)
+	}{
+		{key: "character_set", set: func(args *DbCreateArgs, value *string) { args.CharacterSet = value }},
+		{key: "collate", set: func(args *DbCreateArgs, value *string) { args.Collate = value }},
+	} {
+		marker := "option-secret\nmarker"
+		args := &DbCreateArgs{Name: "db"}
+		tc.set(args, &marker)
+		runner := &mysqlFakeRunner{}
+		_, err := (dbCreateFunc{}).Execute(context.Background(), &runtime.Runtime{Runner: runner}, args)
+		if !errors.Is(err, errMysqlInvalidArgument) || strings.Contains(err.Error(), marker) || len(runner.calls) != 0 {
+			t.Fatalf("invalid %s = %v, calls=%d", tc.key, err, len(runner.calls))
+		}
+	}
+}
+
+type mysqlCancelAfterRunner struct {
+	base   *mysqlFakeRunner
+	cancel context.CancelFunc
+	after  int
+}
+
+func (r *mysqlCancelAfterRunner) Run(ctx context.Context, command process.Command) process.CommandResult {
+	result := r.base.Run(ctx, command)
+	if len(r.base.calls) == r.after {
+		r.cancel()
+	}
+	return result
+}
+
+func (r *mysqlCancelAfterRunner) CommandAvailable(name string) bool {
+	return r.base.CommandAvailable(name)
+}
+
+func mysqlFailureWithSecret(forms []string) process.CommandResult {
+	leak := "lifecycle phase failure " + strings.Join(forms, " ")
+	return process.CommandResult{
+		Err:    errors.New(leak),
+		Stdout: []byte("stdout " + leak),
+		Stderr: []byte("stderr " + leak),
+	}
+}
+
+// TestMysqlDatabaseMutationPhaseFailures covers the smallest lifecycle phase
+// matrix needed by F4: timeout/output-limit failures at preflight, mutation,
+// and post-check; cancellation after a successful preflight; and redaction at
+// both mutation and post-check without changing the shared transport.
+func TestMysqlDatabaseMutationPhaseFailures(t *testing.T) {
+	type phaseCase struct {
+		name       string
+		results    []process.CommandResult
+		wantCalls  int
+		wantErr    error
+		wantResult any
+	}
+
+	createCases := []phaseCase{
+		{name: "preflight-timeout", results: []process.CommandResult{{Err: context.DeadlineExceeded}}, wantCalls: 1, wantErr: context.DeadlineExceeded},
+		{name: "mutation-timeout", results: []process.CommandResult{{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\n")}, {Err: context.DeadlineExceeded}}, wantCalls: 2, wantErr: context.DeadlineExceeded},
+		{name: "preflight-output", results: []process.CommandResult{{StdoutTruncated: true}}, wantCalls: 1, wantErr: process.ErrOutputLimit},
+		{name: "mutation-output", results: []process.CommandResult{{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\n")}, {StdoutTruncated: true}}, wantCalls: 2, wantErr: process.ErrOutputLimit},
+	}
+	for _, tc := range createCases {
+		t.Run("create/"+tc.name, func(t *testing.T) {
+			rt, runner := newMysqlRuntime(tc.results...)
+			value, err := (dbCreateFunc{}).Execute(context.Background(), rt, &DbCreateArgs{Name: "db"})
+			if tc.wantErr != nil && !errors.Is(err, tc.wantErr) {
+				t.Fatalf("error = %v, want %v", err, tc.wantErr)
+			}
+			if value != tc.wantResult || len(runner.calls) != tc.wantCalls {
+				t.Fatalf("result = %#v, %v, calls=%d; want %#v, %v, %d", value, err, len(runner.calls), tc.wantResult, tc.wantErr, tc.wantCalls)
+			}
+		})
+	}
+
+	removeCases := []phaseCase{
+		{name: "mutation-timeout", results: []process.CommandResult{{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\ndb\n")}, {Err: context.DeadlineExceeded}}, wantCalls: 2, wantErr: context.DeadlineExceeded},
+		{name: "postcheck-timeout", results: []process.CommandResult{{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\ndb\n")}, {ExitCode: 0}, {Err: context.DeadlineExceeded}}, wantCalls: 3, wantErr: context.DeadlineExceeded},
+		{name: "postcheck-output", results: []process.CommandResult{{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\ndb\n")}, {ExitCode: 0}, {StdoutTruncated: true}}, wantCalls: 3, wantErr: process.ErrOutputLimit},
+	}
+	for _, tc := range removeCases {
+		t.Run("remove/"+tc.name, func(t *testing.T) {
+			rt, runner := newMysqlRuntime(tc.results...)
+			value, err := (dbRemoveFunc{}).Execute(context.Background(), rt, &DbRemoveArgs{Name: "db"})
+			if tc.wantErr != nil && !errors.Is(err, tc.wantErr) {
+				t.Fatalf("error = %v, want %v", err, tc.wantErr)
+			}
+			if value != tc.wantResult || len(runner.calls) != tc.wantCalls {
+				t.Fatalf("result = %#v, %v, calls=%d; want %#v, %v, %d", value, err, len(runner.calls), tc.wantResult, tc.wantErr, tc.wantCalls)
+			}
+		})
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	base := &mysqlFakeRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\n")},
+		{ExitCode: 0},
+	}}
+	runner := &mysqlCancelAfterRunner{base: base, cancel: cancel, after: 1}
+	value, err := (dbCreateFunc{}).Execute(ctx, &runtime.Runtime{Runner: runner}, &DbCreateArgs{Name: "db"})
+	if !errors.Is(err, context.Canceled) || value != nil || len(base.calls) != 1 {
+		t.Fatalf("cancelled after create preflight = %#v, %v, calls=%d", value, err, len(base.calls))
+	}
+
+	marker := "phase-secret'\\suffix"
+	forms := mysqlLiteralSecretForms(marker)
+	for _, tc := range []struct {
+		name    string
+		remove  bool
+		results []process.CommandResult
+		want    int
+	}{
+		{name: "create-mutation-redaction", results: []process.CommandResult{{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\n")}, mysqlFailureWithSecret(forms)}, want: 2},
+		{name: "remove-postcheck-redaction", remove: true, results: []process.CommandResult{{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\ndb\n")}, {ExitCode: 0}, mysqlFailureWithSecret(forms)}, want: 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, runner := newMysqlRuntime(tc.results...)
+			var value any
+			var err error
+			if tc.remove {
+				value, err = (dbRemoveFunc{}).Execute(context.Background(), rt, &DbRemoveArgs{Name: "db", Password: mysqlString(marker)})
+			} else {
+				value, err = (dbCreateFunc{}).Execute(context.Background(), rt, &DbCreateArgs{Name: "db", Password: mysqlString(marker)})
+			}
+			if err == nil || value != nil || len(runner.calls) != tc.want {
+				t.Fatalf("redaction phase = %#v, %v, calls=%d", value, err, len(runner.calls))
+			}
+			if strings.Contains(err.Error(), marker) || !containsAll(runner.calls[len(runner.calls)-1].Redact, forms) || strings.Contains(runner.calls[len(runner.calls)-1].RedactedString(), marker) {
+				t.Fatalf("redaction leaked at %s: err=%q command=%q redact=%#v", tc.name, err, runner.calls[len(runner.calls)-1].RedactedString(), runner.calls[len(runner.calls)-1].Redact)
+			}
+		})
+	}
+}
+
+// TestMysqlDatabaseMutationBoundaries pins the shared fail-closed behavior:
+// invalid identifiers and runas never reach the Runner, cancellation is
+// observed before the preflight, and Runner errors redact connection data.
+func TestMysqlDatabaseMutationBoundaries(t *testing.T) {
+	for _, name := range []string{"", "bad\x00name", "bad\nname", "bad\x01name", "bad\x7fname"} {
+		runner := &mysqlFakeRunner{}
+		rt := &runtime.Runtime{Runner: runner}
+		_, err := (dbCreateFunc{}).Execute(context.Background(), rt, &DbCreateArgs{Name: name})
+		if !errors.Is(err, errMysqlInvalidArgument) || len(runner.calls) != 0 {
+			t.Fatalf("invalid db_create name %q: err=%v calls=%d", name, err, len(runner.calls))
+		}
+		runner = &mysqlFakeRunner{}
+		rt = &runtime.Runtime{Runner: runner}
+		_, err = (dbRemoveFunc{}).Execute(context.Background(), rt, &DbRemoveArgs{Name: name})
+		if !errors.Is(err, errMysqlInvalidArgument) || len(runner.calls) != 0 {
+			t.Fatalf("invalid db_remove name %q: err=%v calls=%d", name, err, len(runner.calls))
+		}
+	}
+
+	runner := &mysqlFakeRunner{}
+	rt := &runtime.Runtime{Runner: runner}
+	_, err := (dbCreateFunc{}).Execute(context.Background(), rt, &DbCreateArgs{Name: "db", Runas: mysqlString("other")})
+	if !errors.Is(err, errMysqlRunas) || len(runner.calls) != 0 {
+		t.Fatalf("runas db_create: err=%v calls=%d", err, len(runner.calls))
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runner = &mysqlFakeRunner{}
+	rt = &runtime.Runtime{Runner: runner}
+	_, err = (dbRemoveFunc{}).Execute(ctx, rt, &DbRemoveArgs{Name: "db"})
+	if !errors.Is(err, context.Canceled) || len(runner.calls) != 0 {
+		t.Fatalf("cancelled db_remove: err=%v calls=%d", err, len(runner.calls))
+	}
+
+	marker := "db-mutation-secret"
+	rt, runner = newMysqlRuntime(process.CommandResult{Err: errors.New("runner failed with " + marker)})
+	_, err = (dbCreateFunc{}).Execute(context.Background(), rt, &DbCreateArgs{Name: "db", Password: mysqlString(marker)})
+	if err == nil || strings.Contains(err.Error(), marker) || len(runner.calls) != 1 {
+		t.Fatalf("db_create Runner error leaks marker: err=%v calls=%d", err, len(runner.calls))
+	}
+
+	for _, fn := range []struct {
+		name string
+		call func(context.Context, *runtime.Runtime) (any, error)
+	}{
+		{name: "create", call: func(ctx context.Context, rt *runtime.Runtime) (any, error) {
+			return (dbCreateFunc{}).Execute(ctx, rt, &DbCreateArgs{Name: "db"})
+		}},
+		{name: "remove", call: func(ctx context.Context, rt *runtime.Runtime) (any, error) {
+			return (dbRemoveFunc{}).Execute(ctx, rt, &DbRemoveArgs{Name: "db"})
+		}},
+	} {
+		rt, runner = newMysqlRuntime(process.CommandResult{ExitCode: 1, Stderr: []byte("connection refused")})
+		value, err := fn.call(context.Background(), rt)
+		if err != nil || value != false || len(runner.calls) != 1 {
+			t.Fatalf("preflight %s failure = %#v, %v, calls=%d", fn.name, value, err, len(runner.calls))
+		}
+	}
+}
+
+// TestMysqlDatabaseMutationsThroughRegistry drives both canonical names
+// through the same registry used by the CLI and differential inventory.
+func TestMysqlDatabaseMutationsThroughRegistry(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	runner := &mysqlFakeRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\n")},
+		{ExitCode: 0},
+	}}
+	rt := &runtime.Runtime{Runner: runner, Exec: reg, FS: runtime.NewMemoryFS()}
+	value, err := reg.Call(context.Background(), rt, "mysql.db_create", &DbCreateArgs{Name: "registry_db"})
+	if err != nil || value != true || len(runner.calls) != 2 {
+		t.Fatalf("registry db_create = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+
+	runner.calls = nil
+	runner.results = []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\nregistry_db\n")},
+		{ExitCode: 0},
+		{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\n")},
+	}
+	value, err = reg.Call(context.Background(), rt, "mysql.db_remove", &DbRemoveArgs{Name: "registry_db"})
+	if err != nil || value != true || len(runner.calls) != 3 {
+		t.Fatalf("registry db_remove existing = %#v, %v, calls=%d", value, err, len(runner.calls))
 	}
 }

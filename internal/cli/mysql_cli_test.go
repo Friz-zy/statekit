@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
@@ -224,6 +225,20 @@ func TestMySQLCLIDBExists(t *testing.T) {
 	code, out, errS = captureCode(t, app, "exec", "mysql.db_exists", "--name", "missing", "-o", "json")
 	if code != ExitOK || errS != "" || strings.TrimSpace(out) != "false" {
 		t.Fatalf("db_exists miss code=%d out=%q err=%q", code, out, errS)
+	}
+
+	// The pinned SHOW DATABASES LIKE query would treat these as wildcard
+	// patterns. The fixed catalog deliberately matches them literally, so a
+	// different database never produces a false positive.
+	for _, name := range []string{"my%", "mysq_"} {
+		runner = &cliRecordingRunner{results: []process.CommandResult{
+			{ExitCode: 0, Stdout: []byte("Database\nmysql\n")},
+		}}
+		app = mysqlCLIRunnerApp(t, runner)
+		code, out, errS = captureCode(t, app, "exec", "mysql.db_exists", "--name", name, "-o", "json")
+		if code != ExitOK || errS != "" || strings.TrimSpace(out) != "false" || len(runner.calls) != 1 {
+			t.Fatalf("literal wildcard db_exists(%q) code=%d out=%q err=%q calls=%d", name, code, out, errS, len(runner.calls))
+		}
 	}
 
 	runner = &cliRecordingRunner{results: []process.CommandResult{
@@ -2260,5 +2275,222 @@ func TestMySQLCLIHeaderCollisionIsSafe(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+// TestMySQLCLIDatabaseMutations drives mysql.db_create and mysql.db_remove
+// through argument decoding, registry dispatch, and the value-free output
+// boundary using only a fake Runner.
+func TestMySQLCLIDatabaseMutations(t *testing.T) {
+	connectionPassword := "cli-db-connection-pass"
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\n")},
+		{ExitCode: 0},
+	}}
+	app := mysqlCLIRunnerApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "mysql.db_create",
+		"--name", "cli_db", "--character-set", "utf8mb4", "--collate", "utf8mb4_0900_ai_ci",
+		"--connection-user", "admin", "--connection-host", "mysql-host", "--connection-port", "3307",
+		"--connection-db", "mysql", "--connection-pass", connectionPassword, "-o", "json")
+	if code != ExitOK || errS != "" || strings.TrimSpace(out) != "true" || len(runner.calls) != 2 {
+		t.Fatalf("db_create code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+	if got := append([]string{runner.calls[1].Name}, runner.calls[1].Args...); !reflect.DeepEqual(got, []string{
+		"mysql", "--batch", "--user=admin", "--host=mysql-host", "--port=3307", "--database=mysql",
+		"--execute=CREATE DATABASE IF NOT EXISTS `cli_db` CHARACTER SET 'utf8mb4' COLLATE 'utf8mb4_0900_ai_ci';",
+	}) {
+		t.Fatalf("db_create argv=%q", got)
+	}
+	if !reflect.DeepEqual(runner.calls[1].Env, []string{"MYSQL_PWD=" + connectionPassword}) ||
+		runner.calls[1].Shell || strings.Contains(runner.calls[1].RedactedString(), connectionPassword) {
+		t.Fatalf("db_create unsafe transport=%#v", runner.calls[1])
+	}
+
+	// Identifier wildcard bytes stay literal and optional values use the same
+	// SQL-literal escaping as the pinned MySQLdb parameter path.
+	characterSet := "utf'\\%"
+	collate := "ci'\\_"
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\nother\n")},
+		{ExitCode: 0},
+	}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.db_create",
+		"--name", "db`%_", "--character-set", characterSet, "--collate", collate, "-o", "json")
+	if code != ExitOK || errS != "" || strings.TrimSpace(out) != "true" || len(runner.calls) != 2 {
+		t.Fatalf("quoted db_create code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+	if got := runner.calls[1].Args[len(runner.calls[1].Args)-1]; got != "--execute=CREATE DATABASE IF NOT EXISTS `db``%_` CHARACTER SET 'utf''\\\\%' COLLATE 'ci''\\\\_';" {
+		t.Fatalf("quoted db_create SQL=%q", got)
+	}
+
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\ncli_db\n")},
+		{ExitCode: 0},
+		{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\n")},
+	}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.db_remove", "--name", "cli_db",
+		"--connection-user", "admin", "--connection-host", "mysql-host", "--connection-port", "3307",
+		"--connection-db", "mysql", "--connection-pass", connectionPassword, "-o", "json")
+	if code != ExitOK || errS != "" || strings.TrimSpace(out) != "true" || len(runner.calls) != 3 {
+		t.Fatalf("db_remove code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+	if got := append([]string{runner.calls[1].Name}, runner.calls[1].Args...); !reflect.DeepEqual(got, []string{
+		"mysql", "--batch", "--user=admin", "--host=mysql-host", "--port=3307", "--database=mysql",
+		"--execute=DROP DATABASE `cli_db`;",
+	}) {
+		t.Fatalf("db_remove argv=%q", got)
+	}
+
+	// A successful DROP followed by a nonzero compatibility post-check is the
+	// source public true result: db_exists is false, but db_remove has already
+	// completed the mutation and returns not db_exists.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\ncli_db\n")},
+		{ExitCode: 0},
+		{ExitCode: 1, Stderr: []byte("post-check unavailable")},
+	}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.db_remove", "--name", "cli_db", "-o", "json")
+	if code != ExitOK || errS != "" || strings.TrimSpace(out) != "true" || len(runner.calls) != 3 {
+		t.Fatalf("post-check failure db_remove code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+
+	// Existing create and missing remove are source false/no-op results, not
+	// errors, and never issue the mutation statement.
+	runner = &cliRecordingRunner{results: []process.CommandResult{{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\ncli_db\n")}}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.db_create", "--name", "cli_db", "-o", "json")
+	if code != ExitOK || strings.TrimSpace(out) != "false" || errS != "" || len(runner.calls) != 1 {
+		t.Fatalf("existing db_create code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+	runner = &cliRecordingRunner{results: []process.CommandResult{{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\n")}}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.db_remove", "--name", "cli_db", "-o", "json")
+	if code != ExitOK || strings.TrimSpace(out) != "false" || errS != "" || len(runner.calls) != 1 {
+		t.Fatalf("missing db_remove code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+
+	// A failed existence preflight is an unknown absence and must not fall
+	// through to CREATE, even when a queued second result would succeed.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 1, Stderr: []byte("catalog unavailable")},
+		{ExitCode: 0},
+	}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.db_create", "--name", "uncertain_db", "-o", "json")
+	if code != ExitOK || strings.TrimSpace(out) != "false" || errS != "" || len(runner.calls) != 1 {
+		t.Fatalf("failed preflight db_create code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+}
+
+func TestMySQLCLIDatabaseMutationValidation(t *testing.T) {
+	for _, name := range []string{"", "bad\x00name", "bad\nname", "bad\x01name", "bad\x7fname"} {
+		runner := &cliRecordingRunner{}
+		code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.db_create",
+			"--name", name, "-o", "json")
+		if (code != ExitFailed && code != ExitInvalidInput) || out != "" || len(runner.calls) != 0 {
+			t.Fatalf("invalid create name %q code=%d out=%q err=%q calls=%d", name, code, out, errS, len(runner.calls))
+		}
+		if name != "" && !strings.Contains(errS, "mysql: invalid argument") {
+			t.Fatalf("invalid create name %q error=%q", name, errS)
+		}
+	}
+	runner := &cliRecordingRunner{}
+	code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.db_remove",
+		"--name", "db", "--runas", "other", "-o", "json")
+	if code != ExitFailed || out != "" || !strings.Contains(errS, "runas") || len(runner.calls) != 0 {
+		t.Fatalf("runas db_remove code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+	code, out, errS = captureCode(t, mysqlCLIRunnerApp(t, &cliRecordingRunner{}), "exec", "mysql.db_create", "-o", "json")
+	if code != ExitInvalidInput || out != "" || !strings.Contains(errS, "missing required argument") {
+		t.Fatalf("missing db_create name code=%d out=%q err=%q", code, out, errS)
+	}
+	code, out, errS = captureCode(t, mysqlCLIRunnerApp(t, &cliRecordingRunner{}), "exec", "mysql.db_remove", "-o", "json")
+	if code != ExitInvalidInput || out != "" || !strings.Contains(errS, "missing required argument") {
+		t.Fatalf("missing db_remove name code=%d out=%q err=%q", code, out, errS)
+	}
+
+	for _, flag := range []string{"--character-set", "--collate"} {
+		runner = &cliRecordingRunner{}
+		code, out, errS = captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.db_create",
+			"--name", "db", flag, "bad\noption", "-o", "json")
+		if code != ExitFailed || out != "" || !strings.Contains(errS, "mysql: invalid argument") || strings.Contains(errS, "bad") || len(runner.calls) != 0 {
+			t.Fatalf("invalid %s code=%d out=%q err=%q calls=%d", flag, code, out, errS, len(runner.calls))
+		}
+	}
+}
+
+// TestMySQLCLIDatabaseMutationPhaseFailures covers lifecycle timeout and
+// output-limit failures at the mutation/post-check boundaries and checks the
+// shared finite timeout/output transport on every attempted command.
+func TestMySQLCLIDatabaseMutationPhaseFailures(t *testing.T) {
+	cases := []struct {
+		name    string
+		command string
+		results []process.CommandResult
+		calls   int
+	}{
+		{
+			name:    "create-mutation-timeout",
+			command: "mysql.db_create",
+			results: []process.CommandResult{{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\n")}, {Err: context.DeadlineExceeded}},
+			calls:   2,
+		},
+		{
+			name:    "remove-mutation-output",
+			command: "mysql.db_remove",
+			results: []process.CommandResult{{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\ndb\n")}, {StdoutTruncated: true}},
+			calls:   2,
+		},
+		{
+			name:    "remove-postcheck-timeout",
+			command: "mysql.db_remove",
+			results: []process.CommandResult{{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\ndb\n")}, {ExitCode: 0}, {Err: context.DeadlineExceeded}},
+			calls:   3,
+		},
+		{
+			name:    "remove-postcheck-output",
+			command: "mysql.db_remove",
+			results: []process.CommandResult{{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\ndb\n")}, {ExitCode: 0}, {StderrTruncated: true}},
+			calls:   3,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &cliRecordingRunner{results: tc.results}
+			args := []string{"exec", tc.command, "--name", "db", "-o", "json"}
+			code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), args...)
+			if code != ExitFailed || out != "" || errS == "" || len(runner.calls) != tc.calls {
+				t.Fatalf("code=%d out=%q err=%q calls=%d; want failure and %d calls", code, out, errS, len(runner.calls), tc.calls)
+			}
+			for i, command := range runner.calls {
+				if command.Shell || command.Timeout != 30*time.Second || command.MaxStdoutBytes != 4<<20 || command.MaxStderrBytes != 4<<20 {
+					t.Fatalf("call %d transport=%#v", i, command)
+				}
+			}
+		})
+	}
+
+	marker := "cli-db-phase-secret"
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("SCHEMA_NAME\ndb\n")},
+		{ExitCode: 0},
+		{Err: errors.New("post-check failed with " + marker), Stdout: []byte(marker), Stderr: []byte(marker)},
+	}}
+	code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.db_remove", "--name", "db", "--connection-pass", marker, "-o", "json")
+	if code != ExitFailed || out != "" || strings.Contains(out+errS, marker) || len(runner.calls) != 3 {
+		t.Fatalf("post-check redaction code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+	redacted := false
+	for _, secret := range runner.calls[2].Redact {
+		if secret == marker {
+			redacted = true
+			break
+		}
+	}
+	if !redacted || strings.Contains(runner.calls[2].RedactedString(), marker) {
+		t.Fatalf("post-check redaction transport=%#v", runner.calls[2])
 	}
 }

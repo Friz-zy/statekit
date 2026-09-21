@@ -17,7 +17,7 @@ Companion to `plans/init.md` (§24–§28). Defines the concrete CI/CD implement
 | Unit (Go) | parsers, precedence, outputters, exit codes, provider resolution, file algorithms, fixture loader | GH runner | every push/PR |
 | Smoke integration | binary boots; `version`, `--list`, `facts`, `test.echo`, `test.nop` | Docker (2 distros) | every push/PR |
 | Integration matrix | real-case fixtures per module family on each target distro | Docker matrix | push to `main`, path-filtered PRs |
-| E5.1 live service gate | workflow-ready authenticated disposable MySQL 8.4; StateKit read-only/catalog/plugin calls plus native-client postconditions | private rootless Podman network | every PR event, `main`, manual, nightly; live execution `pending_external_ci` |
+| E5.2 live service gate | workflow-ready authenticated disposable MySQL 8.4; StateKit E5.1 read-only/catalog/plugin calls plus lifecycle mutations and native-client postconditions | private rootless Podman network | every PR event, `main`, manual, nightly; live execution `pending_external_ci` |
 | Differential vs Salt | identical scenarios via `salt-call --local` vs `statekit`, normalized comparison | Docker twins | nightly + label `differential` |
 | VM suite | systemd units, mounts, firewall, kernel-level cases containers cannot cover faithfully | QEMU on GH runner | nightly after Phase 3 |
 
@@ -105,7 +105,7 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
 .github/workflows/
 ├── ci.yml              # PR gate
 ├── integration.yml     # reusable full matrix (workflow_call + main pushes)
-├── integration-services.yml # E5.1 live MySQL service gate
+├── integration-services.yml # E5.2 live MySQL service gate
 ├── differential.yml    # nightly + workflow_dispatch + label:differential
 └── vm-nightly.yml      # QEMU suite (Phase 4+, allow-fail initially)
 
@@ -131,19 +131,20 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
 - Gate rule: a module family's DoD is accepted only when its suite is green across the whole Tier 1 matrix (+ Tier 2 for service states)
 - Summary: markdown matrix table posted to the run summary
 
-### `integration-services.yml` — E5.1 live MySQL gate (workflow-ready; external execution pending)
+### `integration-services.yml` — E5.2 live MySQL gate (workflow-ready; external execution pending)
 
 - **Current state:** implementation files and workflow are ready. The local
-  mock/static gate passed 13 orchestration tests, relevant Go tests, `go vet`,
-  shell syntax, and workflow YAML validation. No live MySQL GitHub execution
-  has run; status is `pending_external_ci`, and no live 14/14 result is claimed
-  in this ledger. The user will validate the external run after synchronization.
+  mock/static gate covers the 23-case inventory and deterministic lifecycle,
+  validation, cleanup, and report-integrity fault injections. No live MySQL
+  GitHub execution has run; status is `pending_external_ci`, and no live 23/23
+  result is claimed in this ledger. The user will validate the external run
+  after synchronization.
   The independent backend and security gates requested changes on the local
   sandbox/trust boundary; they are not approvals.
 
 - **Triggers:** `pull_request` opened/synchronize/reopened/ready_for_review,
   push to `main`, `workflow_dispatch`, and a nightly schedule are the intended
-  external CI triggers. The workflow is intended to supply the E5.1 live check;
+  external CI triggers. The workflow is intended to supply the E5.2 live check;
   making that check required is repository branch-protection administration, not
   asserted by this plan. It never uses `pull_request_target`.
 - **Runtime intent / CI-enforced checks:** the official Docker Hub image manifest reference
@@ -173,14 +174,22 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
   images with explicit OCI isolation and `--network=none`, read-only roots, tmpfs-only scratch space,
   bounded resources, and no secrets. A hosted runner that cannot prove this
   preflight must not run a direct host build or test.
-- **External cases:** 14 exact cases are required: authenticated native `SELECT 1`
-  readiness, StateKit `mysql.version`, seeded `db_list`, seeded and absent
-  `db_exists`, installed and absent plugin status, installed plugin listing,
-  native and StateKit negative authentication, native and StateKit negative
-  connection, and independent native database/plugin postconditions. Zero
-  cases or any skipped case must fail the external gate. Native negative cases require the
-  expected MySQL error marker and must reject timeout, runtime, setup, and
-  unrelated exit paths. Polling and client calls must be bounded; every owned
+- **External cases:** 23 exact cases are required: all 14 E5.1 cases plus the
+  9 lifecycle cases for reserved absence, StateKit create, repeat-create false,
+  native created postcondition, StateKit remove, native removed postcondition,
+  invalid identifier, authentication negative, and connection negative. Zero
+  cases or any skipped case must fail the external gate. Native negative cases
+  require the expected MySQL error marker and must reject timeout, runtime,
+  setup, and unrelated exit paths. Lifecycle CREATE/REMOVE dispatch is gated
+  by the successful absence reservation; ownership is established before each
+  CREATE dispatch, ambiguous CREATE is reconciled within that reservation, and
+  normal REMOVE requires ownership. The disposable database is always dropped
+  and independently checked absent; cleanup uncertainty fails the report.
+  The invalid-identifier case requires a completed StateKit execution with the
+  expected validation category and diagnostic; setup, runtime, timeout, cleanup,
+  and unrelated validation failures fail. `record_case` rejects unknown and
+  duplicate IDs, and report success requires exactly one ordered result for
+  every inventory ID. Polling and client calls must be bounded; every owned
   client must be tracked by name and ID, and server/network cleanup must run on
   success, failure, and cancellation. Cleanup failures must fail the gate.
 - **External evidence requirement:** a stale report must be removed or rejected
@@ -196,7 +205,7 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
   or incomplete evidence cannot claim a pass. Existing fake-Runner unit,
   registry, and CLI contract tests remain necessary for parser, redaction,
   mutation, unsupported, and cross-platform behavior. No SQLite dependency is
-  introduced in E5.1.
+  introduced in E5.2.
 
 ### `differential.yml` — Salt comparison (init.md §26)
 
@@ -233,7 +242,7 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
 | 2 | `integration.yml` grows per module family (Tier 1 first); coverage gates for new code |
 | 3 | Tier 2 systemd images; service/user/file/pkg suites complete matrix; `differential.yml` first run for core families |
 | 4 | broader module suites join matrix; `vm-nightly.yml` bootstrap |
-| E5.1 | `integration-services.yml` live MySQL 8.4 gate for the already-ported read-only/catalog/plugin surface; future service phases extend the same bounded harness |
+| E5.2 | `integration-services.yml` live MySQL 8.4 gate for the E5.1 read-only/catalog/plugin surface plus R9.3j lifecycle cases; future service phases extend the same bounded harness |
 | 5+ | differential scope expansion driven by generated catalog; flake budget review |
 
 ## Acceptance criteria for the test system itself
@@ -243,4 +252,4 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
 - [ ] Every fixture references its Salt origin (source path/symbol/test)
 - [ ] Differential report artifacts retained 90 days; failures traceable to fixture IDs
 - [ ] No test requires network beyond package mirrors inside containers; mirror endpoints documented
-- [ ] E5.1 live reports, when produced by external CI, contain exact case counts, zero skipped cases, and no credential-bearing output
+- [ ] E5.2 live reports, when produced by external CI, contain exact 23-case counts, zero skipped cases, and no credential-bearing output
