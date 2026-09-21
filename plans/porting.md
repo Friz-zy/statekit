@@ -2101,12 +2101,12 @@ committed.
 ##### 2026-09-21 current status (R9.3i MySQL plugin status/list)
 
 R9.3i is the approved artifact-only overlay applied to clean host HEAD
-`037b6ec`; no commit was made. R9.3i implementation and independent-gate
+`037b6ec`; commit `5a81e7f` was made. R9.3i implementation and independent-gate
 ledger:
 
 | Commit | Scope | Implementation executor role(s) | Independent gate(s) | Result / boundary |
 |---|---|---|---|---|
-| `approved artifact` | R9.3i MySQL `plugin_status`/`plugins_list` registered (2 public; fixed `information_schema.PLUGINS` and `SHOW PLUGINS` queries, client-side plugin-name matching, and source-order list results) | `backend-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | passed after fresh independent backend and security gates; mysql 26 registered / 12 pending, R9 totals registered_public 112 of 125; mock-only fake-Runner contract — RabbitMQ is never started, MySQL is never connected, PostgreSQL is never contacted, and live database/broker integration remains excluded behind E5; the pre-existing complete-app OpenBSD cross-build limitation remains outside scope |
+| `5a81e7f` | R9.3i MySQL `plugin_status`/`plugins_list` registered (2 public; fixed `information_schema.PLUGINS` and `SHOW PLUGINS` queries, client-side plugin-name matching, and source-order list results) | `backend-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | passed after fresh independent backend and security gates; mysql 26 registered / 12 pending, R9 totals registered_public 112 of 125; mock-only fake-Runner contract — RabbitMQ is never started, MySQL is never connected, PostgreSQL is never contacted, and live database/broker integration remains excluded behind E5; the pre-existing complete-app OpenBSD cross-build limitation remains outside scope |
 
 Approved overlay SHA-256s recorded by the manifest: `modules/exec/mysql/mysql.go`
 `d7408a3c481cc7609f503a3ae1a92aec4e9877dfd67ffb2a6648209858fca00f`,
