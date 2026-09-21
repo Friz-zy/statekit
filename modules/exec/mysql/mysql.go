@@ -6,7 +6,8 @@
 // showglobal (R9.3b), the maintenance family db_check, db_repair, and
 // db_optimize (R9.3c), the fixed-query user_create/user_remove mutation
 // family (R9.3e), the fixed-query grant_add/grant_exists/grant_revoke family
-// (R9.3f), and the fixed-query user_grants reader (R9.3h).
+// (R9.3f), the fixed-query user_grants reader (R9.3h), and the fixed-query
+// plugin_status/plugins_list readers (R9.3i).
 //
 // Boundaries (R9.2a): no MySQL client driver or protocol, no new
 // dependencies, no Runner spawns, no filesystem access, and no live MySQL
@@ -74,6 +75,12 @@
 // source order, and preserves the pinned IDENTIFIED BY/GRANT OPTION cleanup.
 // Backslashes are escaped by the fixed literal renderer for this read-only
 // path, while NUL/control and invalid UTF-8 account data fail closed.
+//
+// Boundaries (R9.3i): plugins_list issues only the fixed SHOW PLUGINS
+// statement, while plugin_status reads the fixed information_schema.PLUGINS
+// catalog and matches the requested plugin name client-side. Both preserve
+// source order and compatibility data on connection/nonzero-exit failures,
+// use the central bounded shell-free transport, and never accept caller SQL.
 package mysql
 
 import (
@@ -879,6 +886,9 @@ const (
 	// showStatusQuery is the reader of status: the exact pinned
 	// SHOW STATUS (mysql.py:993).
 	showStatusQuery = "SHOW STATUS"
+	// showPluginsQuery is the exact pinned plugins_list statement
+	// (mysql.py:3058). plugin_status uses the fixed pluginStatusQuery above.
+	showPluginsQuery = "SHOW PLUGINS"
 	// showVariablesQuery is the reader of showvariables: the exact pinned
 	// SHOW VARIABLES (mysql.py:2981).
 	showVariablesQuery = "SHOW VARIABLES"
@@ -937,6 +947,7 @@ var (
 	// — the same strict catalog divergence the R9.2s owner_to flow
 	// made before its mutation.
 	errMysqlMaintenanceExit    = errors.New("mysql: maintenance run completed nonzero")
+	errMysqlHeaderCollision    = errors.New("mysql: redacted result header collision")
 	errMysqlUserInfoColumn     = errors.New("mysql.user_info: missing fixed column")
 	errMysqlUserPluginColumn   = errors.New("mysql.user_create: missing plugin column")
 	errMysqlAccountArgument    = errors.New("mysql: invalid account argument")
@@ -1162,23 +1173,26 @@ func mysqlEnvironment(conn *myConnection) []string {
 // mysqlQueryRows runs one fixed read-only query through the transport and
 // decodes the --batch tab-separated stdout: the first non-empty line is
 // the column header, every later line one row, and every data field is
-// batch-decoded after the tab split. A positive mysql exit keeps the
-// pinned compatibility data — the pinned _connect failure and
-// OperationalError paths log an error and answer the empty result ([]) or
-// False, never an exception — so only Runner failures, cancellation, and
-// output-limit violations are errors here.
+// batch-decoded after the tab split. Raw stdout is retained only through the
+// bounded parser so redaction sees decoded field values; callers receive
+// public rows with the connection/statement secrets redacted. A positive
+// mysql exit keeps the pinned compatibility data — the pinned _connect
+// failure and OperationalError paths log an error and answer the empty result
+// ([]) or False, never an exception — so only Runner failures, cancellation,
+// and output-limit violations are errors here.
 func mysqlQueryRows(ctx context.Context, rt *runtime.Runtime, conn *myConnection, query string, secrets ...string) ([]string, [][]batchField, error) {
-	result, err := runMysql(ctx, rt, mysqlQueryArgv(conn, query), conn, secrets...)
-	if err != nil {
-		return nil, nil, err
+	header, rows, err := mysqlQueryRowsPreserve(ctx, rt, conn, query, secrets...)
+	if err != nil || len(rows) == 0 {
+		return header, rows, err
 	}
-	if result.ExitCode > 0 {
-		return []string{}, [][]batchField{}, nil
-	}
-	header, rows := parseBatchRows(string(result.Stdout))
-	return header, rows, nil
+	return header, redactBatchRows(rows, mysqlRowSecrets(conn, secrets...)), nil
 }
 
+// mysqlQueryRowsPreserve is restricted to internal callers that must compare
+// decoded identifiers before public redaction (for example plugin_status).
+// The transport still redacts command displays, stderr, errors, non-success
+// results, and output-limit failures; only a bounded successful stdout is
+// handed to parseBatchRows.
 func mysqlQueryRowsPreserve(ctx context.Context, rt *runtime.Runtime, conn *myConnection, query string, secrets ...string) ([]string, [][]batchField, error) {
 	result, err := runMysqlPreserve(ctx, rt, mysqlQueryArgv(conn, query), conn, secrets...)
 	if err != nil {
@@ -1189,6 +1203,79 @@ func mysqlQueryRowsPreserve(ctx context.Context, rt *runtime.Runtime, conn *myCo
 	}
 	header, rows := parseBatchRows(string(result.Stdout))
 	return header, rows, nil
+}
+
+func mysqlRowSecrets(conn *myConnection, extra ...string) []string {
+	values := make([]string, 0, len(extra)+1)
+	if conn != nil && conn.Password != nil {
+		values = append(values, *conn.Password)
+	}
+	return secretList(append(values, extra...)...)
+}
+
+// mysqlHeaderSecrets covers both the decoded connection secret and its raw
+// mysql --batch spelling. Headers are intentionally kept byte-raw for
+// internal matching, so a public key may contain the doubled-backslash (or
+// escaped-control) form that the value decoder would otherwise collapse.
+func mysqlHeaderSecrets(conn *myConnection) []string {
+	values := mysqlRowSecrets(conn)
+	all := append([]string(nil), values...)
+	for _, value := range values {
+		escaped := mysqlBatchEscape(value)
+		if escaped != value {
+			all = append(all, escaped)
+		}
+	}
+	return secretList(all...)
+}
+
+func mysqlBatchEscape(value string) string {
+	return strings.NewReplacer(
+		"\\", `\\`,
+		"\x00", `\0`,
+		"\t", `\t`,
+		"\n", `\n`,
+		"\r", `\r`,
+		"\b", `\b`,
+		"\x1a", `\Z`,
+	).Replace(value)
+}
+
+// redactMysqlHeaderKeys is the public rendering boundary for result headers.
+// Internal callers keep the raw header for exact column matching; only the
+// map key that can leave this package is redacted with the same secret list as
+// decoded result values. A collision is an explicit safe error rather than a
+// map assignment that silently discards one column.
+func redactMysqlHeaderKeys(header []string, secrets []string) ([]string, error) {
+	keys := make([]string, len(header))
+	seen := make(map[string]struct{}, len(header))
+	for i, column := range header {
+		key := string(process.RedactBytes(secrets, []byte(column)))
+		if _, ok := seen[key]; ok {
+			return nil, errMysqlHeaderCollision
+		}
+		seen[key] = struct{}{}
+		keys[i] = key
+	}
+	return keys, nil
+}
+
+func redactBatchRows(rows [][]batchField, secrets []string) [][]batchField {
+	if len(secrets) == 0 {
+		return rows
+	}
+	redacted := make([][]batchField, len(rows))
+	for i, row := range rows {
+		redacted[i] = make([]batchField, len(row))
+		copy(redacted[i], row)
+		for j, field := range redacted[i] {
+			if field.null {
+				continue
+			}
+			redacted[i][j].value = string(process.RedactBytes(secrets, []byte(field.value)))
+		}
+	}
+	return redacted
 }
 
 // splitBatchRows frames mysql --batch stdout into raw row lines in one
@@ -1383,7 +1470,7 @@ func (dbGetFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (an
 // interpolation. Short matching rows fail closed instead of panicking or
 // fabricating a missing value.
 func dbGetCatalog(ctx context.Context, rt *runtime.Runtime, conn *myConnection, name string) (any, error) {
-	result, err := runMysql(ctx, rt, mysqlQueryArgv(conn, dbGetQuery), conn)
+	result, err := runMysqlPreserve(ctx, rt, mysqlQueryArgv(conn, dbGetQuery), conn)
 	if err != nil {
 		return nil, err
 	}
@@ -1399,20 +1486,20 @@ func dbGetCatalog(ctx context.Context, rt *runtime.Runtime, conn *myConnection, 
 			return nil, errors.New("mysql.db_get: missing catalog column")
 		}
 		return map[string]any{
-			"character_set": catalogValue(row[1]),
-			"collate":       catalogValue(row[2]),
+			"character_set": catalogValue(conn, row[1]),
+			"collate":       catalogValue(conn, row[2]),
 		}, nil
 	}
 	return map[string]any{}, nil
 }
 
 // catalogValue converts the fixed SQL NULL sentinel back to the None/nil
-// value carried by MySQLdb rows while leaving literal strings untouched.
-func catalogValue(field batchField) any {
+// value carried by MySQLdb rows while redacting decoded public values.
+func catalogValue(conn *myConnection, field batchField) any {
 	if field.null {
 		return nil
 	}
-	return field.value
+	return redactMysqlCatalogValue(conn, field.value)
 }
 
 // ---------------------------------------------------------------------------
@@ -1468,7 +1555,7 @@ func (dbTablesFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) 
 // that list by exact client-side equality. SQL NULL sentinels and malformed
 // short rows are skipped; a literal string NULL remains a table name.
 func dbTablesCatalog(ctx context.Context, rt *runtime.Runtime, conn *myConnection, name string, table *string) (any, error) {
-	databases, err := dbCatalog(ctx, rt, conn)
+	databases, err := dbCatalogRaw(ctx, rt, conn)
 	if err != nil {
 		return nil, err
 	}
@@ -1483,7 +1570,7 @@ func dbTablesCatalog(ctx context.Context, rt *runtime.Runtime, conn *myConnectio
 		return false, nil
 	}
 
-	_, rows, err := mysqlQueryRows(ctx, rt, conn, tableCatalogQuery)
+	_, rows, err := mysqlQueryRowsPreserve(ctx, rt, conn, tableCatalogQuery)
 	if err != nil {
 		return nil, err
 	}
@@ -1495,7 +1582,7 @@ func dbTablesCatalog(ctx context.Context, rt *runtime.Runtime, conn *myConnectio
 		if table != nil && row[1].value != *table {
 			continue
 		}
-		tables = append(tables, row[1].value)
+		tables = append(tables, redactMysqlCatalogValue(conn, row[1].value))
 	}
 	return tables, nil
 }
@@ -1552,6 +1639,15 @@ func (dbListFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (a
 // and answers []; the transport maps those to the same empty list.
 func dbCatalog(ctx context.Context, rt *runtime.Runtime, conn *myConnection) ([]string, error) {
 	_, rows, err := mysqlQueryRows(ctx, rt, conn, showDatabasesQuery)
+	return renderDatabaseCatalog(rows, err)
+}
+
+func dbCatalogRaw(ctx context.Context, rt *runtime.Runtime, conn *myConnection, secrets ...string) ([]string, error) {
+	_, rows, err := mysqlQueryRowsPreserve(ctx, rt, conn, showDatabasesQuery, secrets...)
+	return renderDatabaseCatalog(rows, err)
+}
+
+func renderDatabaseCatalog(rows [][]batchField, err error) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
@@ -1613,7 +1709,7 @@ func (dbExistsFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) 
 	// pinned single row. The LIKE wildcard semantics (% and _) are
 	// deliberately not reproduced — a pattern is matched literally, never
 	// sent to the server.
-	databases, err := dbCatalog(ctx, rt, a.connection())
+	databases, err := dbCatalogRaw(ctx, rt, a.connection())
 	if err != nil {
 		return nil, err
 	}
@@ -1681,31 +1777,40 @@ func (userListFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) 
 // string NULL.
 func userCatalog(ctx context.Context, rt *runtime.Runtime, conn *myConnection) ([]map[string]any, error) {
 	header, rows, err := mysqlQueryRows(ctx, rt, conn, userListQuery)
-	return renderUserCatalog(header, rows, err)
+	return renderUserCatalog(header, rows, err, mysqlHeaderSecrets(conn)...)
 }
 
+// userCatalogRaw retains the pre-redaction map shape for package-internal
+// callers that need the raw header; public paths use userCatalog instead.
 func userCatalogRaw(ctx context.Context, rt *runtime.Runtime, conn *myConnection, secrets ...string) ([]map[string]any, error) {
 	header, rows, err := mysqlQueryRowsPreserve(ctx, rt, conn, userListQuery, secrets...)
 	return renderUserCatalog(header, rows, err)
 }
 
-func renderUserCatalog(header []string, rows [][]batchField, err error) ([]map[string]any, error) {
+func renderUserCatalog(header []string, rows [][]batchField, err error, secrets ...string) ([]map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
 	out := make([]map[string]any, 0, len(rows))
+	if len(rows) == 0 {
+		return out, nil
+	}
 	for _, row := range rows {
 		shared := len(header)
 		if len(row) < shared {
 			shared = len(row)
 		}
+		publicHeader, err := redactMysqlHeaderKeys(header[:shared], secrets)
+		if err != nil {
+			return nil, err
+		}
 		entry := make(map[string]any, shared)
 		for i := 0; i < shared; i++ {
 			if row[i].null {
-				entry[header[i]] = nil
+				entry[publicHeader[i]] = nil
 				continue
 			}
-			entry[header[i]] = row[i].value
+			entry[publicHeader[i]] = row[i].value
 		}
 		out = append(out, entry)
 	}
@@ -1716,17 +1821,33 @@ func renderUserCatalog(header []string, rows [][]batchField, err error) ([]map[s
 // the fixed user catalog. It intentionally accepts the requested pair only
 // as Go values: the SQL sent to mysql is byte-identical for every caller.
 func userExistsCatalog(ctx context.Context, rt *runtime.Runtime, conn *myConnection, user, host string, secrets ...string) (bool, error) {
-	rows, err := userCatalogRaw(ctx, rt, conn, secrets...)
+	header, rows, err := mysqlQueryRowsPreserve(ctx, rt, conn, userListQuery, secrets...)
 	if err != nil {
 		return false, err
 	}
+	userIndex, hostIndex := -1, -1
+	for i, column := range header {
+		switch column {
+		case "User":
+			userIndex = i
+		case "Host":
+			hostIndex = i
+		}
+	}
+	if userIndex < 0 || hostIndex < 0 {
+		if len(rows) == 0 {
+			return false, nil
+		}
+		return false, fmt.Errorf("mysql.user_exists: missing column %q or %q", "User", "Host")
+	}
 	for _, row := range rows {
-		userValue, hasUser := row["User"]
-		hostValue, hasHost := row["Host"]
-		if !hasUser || !hasHost {
+		if userIndex >= len(row) || hostIndex >= len(row) {
 			return false, fmt.Errorf("mysql.user_exists: missing column %q or %q", "User", "Host")
 		}
-		if userValue == user && hostValue == host {
+		if row[userIndex].null || row[hostIndex].null {
+			continue
+		}
+		if row[userIndex].value == user && row[hostIndex].value == host {
 			return true, nil
 		}
 	}
@@ -1825,10 +1946,7 @@ func userInfoCatalog(ctx context.Context, rt *runtime.Runtime, conn *myConnectio
 }
 
 func redactMysqlCatalogValue(conn *myConnection, value string) string {
-	if conn == nil || conn.Password == nil || *conn.Password == "" {
-		return value
-	}
-	return process.RedactString([]string{*conn.Password}, value)
+	return string(process.RedactBytes(mysqlRowSecrets(conn), []byte(value)))
 }
 
 func mysqlSensitiveUserField(column string) bool {
@@ -1881,6 +1999,130 @@ func mysqlPluginEnabled(ctx context.Context, rt *runtime.Runtime, conn *myConnec
 		}
 	}
 	return false, nil
+}
+
+// ---------------------------------------------------------------------------
+// plugin_status/plugins_list — salt/modules/mysql.py:3020-3073 @ pinned
+// revision.
+
+// PluginStatusArgs mirrors plugin_status(name, **connection_args). Name is
+// never interpolated into SQL: the fixed catalog is read once and filtered in
+// Go, which keeps the CLI query constant and preserves the source fetchone
+// first-match behavior.
+type PluginStatusArgs struct {
+	Name     string  `statekit:"name=name,required"`
+	User     *string `statekit:"name=connection_user"`
+	Host     *string `statekit:"name=connection_host"`
+	Port     *string `statekit:"name=connection_port"`
+	Password *string `statekit:"name=connection_pass"`
+	DB       *string `statekit:"name=connection_db"`
+	Runas    *string `statekit:"name=runas"`
+}
+
+func (a *PluginStatusArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return &myConnection{
+		User:     a.User,
+		Host:     a.Host,
+		Port:     a.Port,
+		Password: a.Password,
+		DB:       a.DB,
+		Runas:    a.Runas,
+	}
+}
+
+type pluginStatusFunc struct{}
+
+func (pluginStatusFunc) Name() string { return "mysql.plugin_status" }
+func (pluginStatusFunc) Args() any    { return PluginStatusArgs{} }
+
+func (pluginStatusFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[PluginStatusArgs](args, "mysql.plugin_status")
+	if err != nil {
+		return nil, err
+	}
+	// The pinned source returns False without connecting for an empty name.
+	if a.Name == "" {
+		return false, nil
+	}
+	return mysqlPluginStatus(ctx, rt, a.connection(), a.Name)
+}
+
+// mysqlPluginStatus preserves the source's first matching fetchone result.
+// The fixed query returns plugin name and status columns in that order; short
+// or sentinel rows are ignored rather than being allowed to panic the
+// compatibility reader.
+func mysqlPluginStatus(ctx context.Context, rt *runtime.Runtime, conn *myConnection, name string) (string, error) {
+	_, rows, err := mysqlQueryRowsPreserve(ctx, rt, conn, pluginStatusQuery)
+	if err != nil {
+		return "", err
+	}
+	for _, row := range rows {
+		if len(row) < 2 || row[0].null || row[1].null {
+			continue
+		}
+		if row[0].value == name {
+			return redactMysqlCatalogValue(conn, row[1].value), nil
+		}
+	}
+	return "", nil
+}
+
+// PluginsListArgs mirrors plugins_list(**connection_args).
+type PluginsListArgs struct {
+	User     *string `statekit:"name=connection_user"`
+	Host     *string `statekit:"name=connection_host"`
+	Port     *string `statekit:"name=connection_port"`
+	Password *string `statekit:"name=connection_pass"`
+	DB       *string `statekit:"name=connection_db"`
+	Runas    *string `statekit:"name=runas"`
+}
+
+func (a *PluginsListArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return &myConnection{
+		User:     a.User,
+		Host:     a.Host,
+		Port:     a.Port,
+		Password: a.Password,
+		DB:       a.DB,
+		Runas:    a.Runas,
+	}
+}
+
+type pluginsListFunc struct{}
+
+func (pluginsListFunc) Name() string { return "mysql.plugins_list" }
+func (pluginsListFunc) Args() any    { return PluginsListArgs{} }
+
+func (pluginsListFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[PluginsListArgs](args, "mysql.plugins_list")
+	if err != nil {
+		return nil, err
+	}
+	return mysqlPluginsList(ctx, rt, a.connection())
+}
+
+func mysqlPluginsList(ctx context.Context, rt *runtime.Runtime, conn *myConnection) ([]map[string]string, error) {
+	_, rows, err := mysqlQueryRowsPreserve(ctx, rt, conn, showPluginsQuery)
+	if err != nil {
+		return nil, err
+	}
+	plugins := make([]map[string]string, 0, len(rows))
+	for _, row := range rows {
+		if len(row) < 2 || row[0].null || row[1].null {
+			continue
+		}
+		plugins = append(plugins, map[string]string{
+			"name":   redactMysqlCatalogValue(conn, row[0].value),
+			"status": redactMysqlCatalogValue(conn, row[1].value),
+		})
+	}
+	return plugins, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -3132,7 +3374,7 @@ func (showGlobalFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any
 // boundary of mysqlStatus applies to every value: system variable values
 // are never SQL NULL, so a field spelled NULL stays the ordinary string.
 func showCatalog(ctx context.Context, rt *runtime.Runtime, conn *myConnection, query string) ([]any, error) {
-	result, err := runMysql(ctx, rt, mysqlQueryArgv(conn, query), conn)
+	result, err := runMysqlPreserve(ctx, rt, mysqlQueryArgv(conn, query), conn)
 	if err != nil {
 		return nil, err
 	}
@@ -3151,9 +3393,13 @@ func showCatalog(ctx context.Context, rt *runtime.Runtime, conn *myConnection, q
 		if len(row) < shared {
 			shared = len(row)
 		}
+		publicHeader, err := redactMysqlHeaderKeys(header[:shared], mysqlHeaderSecrets(conn))
+		if err != nil {
+			return nil, err
+		}
 		entry := make(map[string]string, shared)
 		for i := 0; i < shared; i++ {
-			entry[header[i]] = row[i].value
+			entry[publicHeader[i]] = redactMysqlCatalogValue(conn, row[i].value)
 		}
 		out = append(out, entry)
 	}
@@ -3290,7 +3536,7 @@ func maintenanceTables(ctx context.Context, rt *runtime.Runtime, conn *myConnect
 // strict maintenance error, never data.
 func maintenanceOne(ctx context.Context, rt *runtime.Runtime, conn *myConnection, verb, name, table string) ([]map[string]any, error) {
 	statement := maintenanceStatement(verb, name, table)
-	result, err := runMysql(ctx, rt, mysqlQueryArgv(conn, statement), conn)
+	result, err := runMysqlPreserve(ctx, rt, mysqlQueryArgv(conn, statement), conn)
 	if err != nil {
 		return nil, err
 	}
@@ -3298,19 +3544,26 @@ func maintenanceOne(ctx context.Context, rt *runtime.Runtime, conn *myConnection
 		return nil, errMysqlMaintenanceExit
 	}
 	header, rows := parseBatchRows(string(result.Stdout))
+	if len(rows) == 0 {
+		return []map[string]any{}, nil
+	}
 	out := make([]map[string]any, 0, len(rows))
 	for _, row := range rows {
 		shared := len(header)
 		if len(row) < shared {
 			shared = len(row)
 		}
+		publicHeader, err := redactMysqlHeaderKeys(header[:shared], mysqlHeaderSecrets(conn))
+		if err != nil {
+			return nil, err
+		}
 		entry := make(map[string]any, shared)
 		for i := 0; i < shared; i++ {
 			if row[i].null {
-				entry[header[i]] = nil
+				entry[publicHeader[i]] = nil
 				continue
 			}
-			entry[header[i]] = row[i].value
+			entry[publicHeader[i]] = redactMysqlCatalogValue(conn, row[i].value)
 		}
 		out = append(out, entry)
 	}
@@ -4636,9 +4889,9 @@ func redactedError(err error, secrets ...string) error {
 // Register installs the mysql slice: the R9.2a pure functions, the
 // R9.3a/R9.3d/R9.3e fixed-query catalog family, the R9.3b server facts, the
 // R9.3c maintenance family, the R9.3e user account mutations, the R9.3f
-// grant family, and the R9.3g password/login family over the central mysql
-// CLI transport. The remainder of the mysql family stays pending behind its
-// own source/transport boundary.
+// grant family, the R9.3g password/login family, and the R9.3i plugin readers
+// over the central mysql CLI transport. The remainder of the mysql family
+// stays pending behind its own source/transport boundary.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		quoteIdentifierFunc{},
@@ -4657,6 +4910,8 @@ func Register(reg *runtime.ExecRegistry) error {
 		grantExistsFunc{},
 		grantRevokeFunc{},
 		userGrantsFunc{},
+		pluginStatusFunc{},
+		pluginsListFunc{},
 		versionFunc{},
 		statusFunc{},
 		showVariablesFunc{},

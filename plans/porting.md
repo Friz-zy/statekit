@@ -2098,6 +2098,42 @@ evidence, not Git author metadata; no separate repository gate artifact is
 claimed, and the R9.3h wording does not claim that a Podman artifact is
 committed.
 
+##### 2026-09-21 current status (R9.3i MySQL plugin status/list)
+
+R9.3i is the approved artifact-only overlay applied to clean host HEAD
+`037b6ec`; no commit was made. R9.3i implementation and independent-gate
+ledger:
+
+| Commit | Scope | Implementation executor role(s) | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `approved artifact` | R9.3i MySQL `plugin_status`/`plugins_list` registered (2 public; fixed `information_schema.PLUGINS` and `SHOW PLUGINS` queries, client-side plugin-name matching, and source-order list results) | `backend-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | passed after fresh independent backend and security gates; mysql 26 registered / 12 pending, R9 totals registered_public 112 of 125; mock-only fake-Runner contract — RabbitMQ is never started, MySQL is never connected, PostgreSQL is never contacted, and live database/broker integration remains excluded behind E5; the pre-existing complete-app OpenBSD cross-build limitation remains outside scope |
+
+Approved overlay SHA-256s recorded by the manifest: `modules/exec/mysql/mysql.go`
+`d7408a3c481cc7609f503a3ae1a92aec4e9877dfd67ffb2a6648209858fca00f`,
+`modules/exec/mysql/mysql_test.go`
+`d4eec2589b7a2202f4995f1b01d4265c28ced5d7deebabe4575b816101e3eb38`,
+`internal/cli/mysql_cli_test.go`
+`58605049b85531576e0e842a3a0403370377db52d96f5d12b28a813e861a9afa`,
+`tests/differential/r9_test.go`
+`fc4d4b97e3ccbba351884b66ca25dd76a1e1ec66dce6ab19dcd169063b7f409e`, and
+`docs/differential/R9/report.yaml`
+`d89913c609ac278efc9d0ca30e7e1269c0307300cf0c3e1bc8d1f694306be77c`;
+the non-copied `manifest.yaml` SHA-256 is
+`47c13e9a2c77f905ce4fcb1122e776cc2adab8f3f05c968d22589696078765b3`.
+
+Current R9 report (approved R9.3i artifact, `round: R9.3i`): rabbitmq 37/37
+registered, mysql 26/38 (12 pending), postgres 49/50 registered_public (1
+pending); totals registered_public 112 of 125 public functions (13 pending)
+across 172 catalog functions. The remaining mysql names from the report, in
+exact report order, stay pending: `alter_db`, `db_create`, `db_remove`,
+`file_query`, `free_slave`, `get_master_status`, `get_slave_status`,
+`plugin_add`, `plugin_remove`, `processlist`, `query`, `slave_lag`. The
+remaining postgres name stays pending: `psql_query` — the arbitrary-SQL
+boundary. R9 remains open — no closure claim is made. The approved report
+retains the mock-only/live-database limitation, and the pre-existing
+complete-app OpenBSD cross-build limitation remains outside scope; the
+manifest and fixtures were not copied.
+
 ##### 2026-09-17 current status (R9.2b PostgreSQL version probe)
 
 Actual HEAD is `23fba61` (R9.2b PostgreSQL version probe). R9.2b

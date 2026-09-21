@@ -9,11 +9,13 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/friz-zy/statekit/internal/facts"
 	"github.com/friz-zy/statekit/internal/process"
 	"github.com/friz-zy/statekit/internal/runtime"
 	execmysql "github.com/friz-zy/statekit/modules/exec/mysql"
+	"gopkg.in/yaml.v3"
 )
 
 // mysqlCLIApp builds a CLI app whose runtime has NO Runner attached: the
@@ -765,10 +767,15 @@ func TestMySQLCLIShowVariables(t *testing.T) {
 // errors, rather than inferring error redaction from successful calls.
 func TestMySQLCLIRunnerErrorRedaction(t *testing.T) {
 	marker := "synthetic-cli-runner-password"
-	for _, name := range []string{"mysql.version", "mysql.status", "mysql.showvariables", "mysql.showglobal", "mysql.user_list", "mysql.db_list"} {
+	for _, name := range []string{"mysql.version", "mysql.status", "mysql.showvariables", "mysql.showglobal", "mysql.user_list", "mysql.db_list", "mysql.plugin_status", "mysql.plugins_list"} {
 		t.Run(name, func(t *testing.T) {
 			runner := &cliRecordingRunner{results: []process.CommandResult{{Err: errors.New("runner failed: " + marker)}}}
-			code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", name, "--connection-pass", marker, "-o", "json")
+			args := []string{"exec", name}
+			if name == "mysql.plugin_status" {
+				args = append(args, "--name", "synthetic-plugin")
+			}
+			args = append(args, "--connection-pass", marker, "-o", "json")
+			code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), args...)
 			if code != ExitFailed || strings.Contains(out+errS, marker) || !strings.Contains(errS, "runner failed:") || len(runner.calls) != 1 {
 				t.Fatal("CLI must expose a redacted Runner failure after one call")
 			}
@@ -1970,5 +1977,288 @@ func TestMySQLCLIUserChpassAndVerifyLoginErrors(t *testing.T) {
 	code, _, errS = captureCode(t, app, "exec", "mysql.user_chpass", "--user", "u", "--password", `bad\\password`, "-o", "json")
 	if code != ExitFailed || strings.Contains(errS, "bad") || len(runner.calls) != 0 {
 		t.Fatalf("unsafe chpass CLI code=%d err=%q calls=%d", code, errS, len(runner.calls))
+	}
+}
+
+func TestMySQLCLIPluginStatusAndPluginsList(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{{
+		ExitCode: 0,
+		Stdout: []byte("Name\tStatus\tType\tLibrary\tLicense\tLoad_option\r\n" +
+			"auth_socket\tACTIVE\tAUTHENTICATION\tauth.so\tGPL\tON\r\n" +
+			"daemon_example\tDISABLED\tDAEMON\tdaemon.so\tGPL\tON\r\n"),
+	}}}
+	app := mysqlCLIRunnerApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "mysql.plugins_list",
+		"--connection-user", "cli-user", "--connection-host", "cli-host",
+		"--connection-port", "3307", "--connection-pass", "cli-pass",
+		"--connection-db", "maintenance", "-o", "json")
+	var plugins []map[string]string
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &plugins) != nil || !reflect.DeepEqual(plugins, []map[string]string{
+		{"name": "auth_socket", "status": "ACTIVE"},
+		{"name": "daemon_example", "status": "DISABLED"},
+	}) {
+		t.Fatalf("plugins_list code=%d out=%q err=%q", code, out, errS)
+	}
+	if argv := append([]string{runner.calls[0].Name}, runner.calls[0].Args...); !reflect.DeepEqual(argv, []string{
+		"mysql", "--batch", "--user=cli-user", "--host=cli-host", "--port=3307",
+		"--database=maintenance", "--execute=SHOW PLUGINS",
+	}) || runner.calls[0].Shell || !reflect.DeepEqual(runner.calls[0].Env, []string{"MYSQL_PWD=cli-pass"}) {
+		t.Fatalf("plugins_list transport=%#v argv=%q", runner.calls[0], argv)
+	}
+
+	runner = &cliRecordingRunner{results: []process.CommandResult{{
+		ExitCode: 0,
+		Stdout:   []byte("PLUGIN_NAME\tPLUGIN_STATUS\nauth_socket\tACTIVE\ndaemon_example\tDISABLED\n"),
+	}}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.plugin_status", "--name", "daemon_example",
+		"--connection-pass", "cli-pass", "-o", "json")
+	var status string
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &status) != nil || status != "DISABLED" {
+		t.Fatalf("plugin_status code=%d out=%q err=%q", code, out, errS)
+	}
+	if argv := append([]string{runner.calls[0].Name}, runner.calls[0].Args...); !reflect.DeepEqual(argv, []string{
+		"mysql", "--batch", "--execute=" + "SELECT COALESCE(PLUGIN_NAME, UNHEX('00')) AS PLUGIN_NAME, COALESCE(PLUGIN_STATUS, UNHEX('00')) AS PLUGIN_STATUS FROM information_schema.PLUGINS",
+	}) || runner.calls[0].Shell {
+		t.Fatalf("plugin_status transport=%#v argv=%q", runner.calls[0], argv)
+	}
+
+	// The source compatibility shapes remain [] and "" after a nonzero
+	// mysql exit; the CLI itself still exits successfully.
+	runner = &cliRecordingRunner{results: []process.CommandResult{{ExitCode: 1, Stderr: []byte("access denied")}}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.plugins_list", "-o", "json")
+	if code != ExitOK || errS != "" || strings.TrimSpace(out) != "[]" {
+		t.Fatalf("plugins_list nonzero code=%d out=%q err=%q", code, out, errS)
+	}
+	runner = &cliRecordingRunner{results: []process.CommandResult{{ExitCode: 1, Stderr: []byte("access denied")}}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.plugin_status", "--name", "missing", "-o", "json")
+	if code != ExitOK || errS != "" || strings.TrimSpace(out) != `""` {
+		t.Fatalf("plugin_status nonzero code=%d out=%q err=%q", code, out, errS)
+	}
+}
+
+// TestMySQLCLIPluginRowsRedactAfterDecode covers both R9.3i regressions at
+// the public CLI boundary: a backslash-escaped plugin name is redacted only
+// after batch decoding, and a name equal to the connection password still
+// matches plugin_status. The marker is synthetic test data, never a real
+// credential.
+func TestMySQLCLIPluginRowsRedactAfterDecode(t *testing.T) {
+	escapedSecret := "r93i\\cli-plugin"
+	wireName := strings.ReplaceAll(escapedSecret, `\`, `\\`)
+	runner := &cliRecordingRunner{results: []process.CommandResult{{
+		ExitCode: 0,
+		Stdout: []byte("Name\tStatus\tType\tLibrary\tLicense\tLoad_option\n" +
+			wireName + "\tACTIVE\tDAEMON\tplugin.so\tGPL\tON\n"),
+	}}}
+	code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.plugins_list",
+		"--connection-pass", escapedSecret, "-o", "json")
+	decodedPlugins := decodeMySQLCLIValue(t, "json", out, escapedSecret)
+	if code != ExitOK || errS != "" ||
+		!reflect.DeepEqual(decodedPlugins, []any{map[string]any{"name": process.RedactedPlaceholder, "status": "ACTIVE"}}) ||
+		len(runner.calls) != 1 {
+		t.Error("CLI plugins_list did not safely redact the decoded name")
+	}
+	command := runner.calls[0]
+	if command.Shell || !reflect.DeepEqual(command.Env, []string{"MYSQL_PWD=" + escapedSecret}) ||
+		!reflect.DeepEqual(command.Redact, []string{escapedSecret}) || strings.Contains(command.RedactedString(), escapedSecret) ||
+		command.Timeout != 30*time.Second || command.MaxStdoutBytes != 4<<20 || command.MaxStderrBytes != 4<<20 {
+		t.Fatal("CLI plugins_list transport changed its redaction or bounds")
+	}
+
+	overlap := "r93i-cli-overlap"
+	runner = &cliRecordingRunner{results: []process.CommandResult{{
+		ExitCode: 0,
+		Stdout:   []byte("PLUGIN_NAME\tPLUGIN_STATUS\n" + overlap + "\tACTIVE\n"),
+	}}}
+	code, out, errS = captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.plugin_status",
+		"--name", overlap, "--connection-pass", overlap, "-o", "json")
+	decodedStatus := decodeMySQLCLIValue(t, "json", out, overlap)
+	if code != ExitOK || errS != "" || decodedStatus != "ACTIVE" ||
+		len(runner.calls) != 1 || strings.Contains(runner.calls[0].RedactedString(), overlap) {
+		t.Fatal("CLI plugin_status lost a raw name match or leaked the marker")
+	}
+}
+
+func assertMySQLCLIValueHasNoMarker(t *testing.T, value any, marker string) {
+	t.Helper()
+	var walk func(reflect.Value)
+	walk = func(v reflect.Value) {
+		if !v.IsValid() {
+			return
+		}
+		switch v.Kind() {
+		case reflect.Interface, reflect.Pointer:
+			if !v.IsNil() {
+				walk(v.Elem())
+			}
+		case reflect.String:
+			if strings.Contains(v.String(), marker) {
+				t.Fatal("serialized CLI value contains an unredacted marker")
+			}
+		case reflect.Map:
+			if v.IsNil() {
+				return
+			}
+			iter := v.MapRange()
+			for iter.Next() {
+				walk(iter.Key())
+				walk(iter.Value())
+			}
+		case reflect.Slice, reflect.Array:
+			for i := 0; i < v.Len(); i++ {
+				walk(v.Index(i))
+			}
+		}
+	}
+	walk(reflect.ValueOf(value))
+}
+
+func decodeMySQLCLIValue(t *testing.T, format, serialized, marker string) any {
+	t.Helper()
+	var value any
+	var err error
+	if format == "json" {
+		err = json.Unmarshal([]byte(serialized), &value)
+	} else {
+		err = yaml.Unmarshal([]byte(serialized), &value)
+	}
+	if err != nil {
+		t.Fatalf("CLI %s output could not be decoded", format)
+	}
+	assertMySQLCLIValueHasNoMarker(t, value, marker)
+	return value
+}
+
+func assertMySQLCLIExplicitNull(t *testing.T, value any, key string) {
+	t.Helper()
+	rows, ok := value.([]any)
+	if !ok || len(rows) != 1 {
+		t.Fatal("serialized null result has an unexpected row shape")
+	}
+	row, ok := rows[0].(map[string]any)
+	if !ok {
+		t.Fatal("serialized null result is not a map")
+	}
+	nullValue, present := row[key]
+	if !present || nullValue != nil {
+		t.Fatal("serialized redacted null key is absent or non-null")
+	}
+}
+
+// TestMySQLCLIHeaderRedactionSerialization covers raw and batch-escaped
+// headers, decoded secret values, explicit nulls, short rows, and exact
+// JSON/YAML/text result shapes at every affected CLI boundary.
+func TestMySQLCLIHeaderRedactionSerialization(t *testing.T) {
+	marker := `fixture-marker-r93i\cli-header`
+	wireMarker := strings.ReplaceAll(marker, `\`, `\\`)
+	header := strings.Join([]string{marker, "wire-" + wireMarker, "stable-column"}, "\t")
+	redacted := process.RedactedPlaceholder
+	cases := []struct {
+		name   string
+		extra  []string
+		stdout string
+		want   any
+		null   bool
+	}{
+		{
+			name:   "mysql.user_list",
+			stdout: header + "\n\\0\t" + wireMarker + "\n",
+			want:   []any{map[string]any{redacted: nil, "wire-" + redacted: redacted}},
+			null:   true,
+		},
+		{
+			name:   "mysql.showvariables",
+			stdout: header + "\n" + wireMarker + "\t" + wireMarker + "\n",
+			want:   []any{map[string]any{redacted: redacted, "wire-" + redacted: redacted}},
+		},
+		{
+			name:   "mysql.showglobal",
+			stdout: header + "\n" + wireMarker + "\t" + wireMarker + "\n",
+			want:   []any{map[string]any{redacted: redacted, "wire-" + redacted: redacted}},
+		},
+		{
+			name:   "mysql.db_check",
+			extra:  []string{"--name", "db", "--table", "table"},
+			stdout: header + "\n\\0\t" + wireMarker + "\n",
+			want:   []any{map[string]any{redacted: nil, "wire-" + redacted: redacted}},
+			null:   true,
+		},
+		{
+			name:   "mysql.db_repair",
+			extra:  []string{"--name", "db", "--table", "table"},
+			stdout: header + "\n\\0\t" + wireMarker + "\n",
+			want:   []any{map[string]any{redacted: nil, "wire-" + redacted: redacted}},
+			null:   true,
+		},
+		{
+			name:   "mysql.db_optimize",
+			extra:  []string{"--name", "db", "--table", "table"},
+			stdout: header + "\n\\0\t" + wireMarker + "\n",
+			want:   []any{map[string]any{redacted: nil, "wire-" + redacted: redacted}},
+			null:   true,
+		},
+	}
+	for _, tc := range cases {
+		for _, format := range []string{"json", "yaml", "text"} {
+			t.Run(tc.name+"/"+format, func(t *testing.T) {
+				runner := &cliRecordingRunner{results: []process.CommandResult{{
+					ExitCode: 0,
+					Stdout:   []byte(tc.stdout),
+				}}}
+				argv := []string{"exec", tc.name}
+				argv = append(argv, tc.extra...)
+				argv = append(argv, "--connection-pass", marker, "-o", format)
+				code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), argv...)
+				if code != ExitOK || errS != "" || len(runner.calls) != 1 {
+					t.Fatal("CLI serialization call failed")
+				}
+				decoded := decodeMySQLCLIValue(t, format, out, marker)
+				if !reflect.DeepEqual(decoded, tc.want) {
+					t.Fatal("CLI serialization shape differs from the expected shape")
+				}
+				if tc.null {
+					assertMySQLCLIExplicitNull(t, decoded, redacted)
+				}
+				if !reflect.DeepEqual(runner.calls[0].Redact, []string{marker}) ||
+					strings.Contains(runner.calls[0].RedactedString(), marker) {
+					t.Fatal("CLI serialization transport contains an unredacted marker")
+				}
+			})
+		}
+	}
+}
+
+func TestMySQLCLIHeaderCollisionIsSafe(t *testing.T) {
+	marker := `fixture-marker-r93i\cli-collision`
+	wireMarker := strings.ReplaceAll(marker, `\`, `\\`)
+	for _, header := range []string{marker + "\t" + wireMarker, marker + "\t" + process.RedactedPlaceholder} {
+		for _, tc := range []struct {
+			name  string
+			extra []string
+		}{
+			{"mysql.user_list", nil},
+			{"mysql.showvariables", nil},
+			{"mysql.showglobal", nil},
+			{"mysql.db_check", []string{"--name", "db", "--table", "table"}},
+			{"mysql.db_repair", []string{"--name", "db", "--table", "table"}},
+			{"mysql.db_optimize", []string{"--name", "db", "--table", "table"}},
+		} {
+			for _, format := range []string{"json", "yaml", "text"} {
+				t.Run(tc.name+"/"+format, func(t *testing.T) {
+					runner := &cliRecordingRunner{results: []process.CommandResult{{
+						Stdout: []byte(header + "\nfirst\tsecond\n"),
+					}}}
+					argv := []string{"exec", tc.name}
+					argv = append(argv, tc.extra...)
+					argv = append(argv, "--connection-pass", marker, "-o", format)
+					code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), argv...)
+					if code != ExitFailed || out != "" || strings.TrimSpace(errS) != "statekit: mysql: redacted result header collision" || len(runner.calls) != 1 {
+						t.Fatal("CLI header collision did not fail with the stable value-free error")
+					}
+				})
+			}
+		}
 	}
 }

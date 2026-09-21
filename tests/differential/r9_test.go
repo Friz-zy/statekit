@@ -222,6 +222,9 @@ import (
 // account literals are quoted through the existing grant helper, rows are
 // decoded in server order, and the source IDENTIFIED BY/GRANT OPTION cleanup
 // is retained without adding arbitrary SQL or a database dependency.
+// R9.3i registers mysql.plugin_status and mysql.plugins_list over fixed
+// plugin catalog/SHOW PLUGINS statements, preserving the source status string
+// and ordered name/status list without arbitrary SQL or a database dependency.
 type r9FamilySpec struct {
 	Source             string
 	SourceTests        string
@@ -282,8 +285,13 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"mysql.user-info-create-remove",
 			"mysql.user-chpass-verify-login",
 			"mysql.user-grants",
+			"mysql.plugin-status-list-fixed-query",
 		},
 		Evidence: []string{
+			"R9.3i direct, registry, and CLI tests pin fixed SHOW PLUGINS/plugin-catalog argv, exact name/status shapes, source order and first-match filtering, empty/nonzero/cancel/boundary behavior, password redaction, and SQL-injection-shaped names without a live database",
+			"R9.3i blocker remediation adds TestMysqlPluginRowsRedactAfterDecode, TestMysqlPluginRowsRedactAfterDecodeThroughRegistry, and TestMySQLCLIPluginRowsRedactAfterDecode: bounded raw rows are matched after batch decoding, while decoded public Name/Status values are redacted; synthetic backslash-escaped credentials and password/name overlaps never appear in returned output, command displays, errors, or streams",
+			"F1 remediation adds direct, registry, and CLI coverage for user_list, showvariables/showglobal, and maintenance header-derived map keys: exact, escaped, and overlapping synthetic passwords are redacted after raw-header preservation, decoded NULL values remain present under safe keys, and direct collision vectors return a value-free explicit error instead of overwriting a column; fixed SQL, internal raw matching, decode-before-match, transport bounds, and data redaction remain unchanged",
+			"SR-01 remediation replaces substring-based JSON security assertions with recursive decoded key/string inspection and exact map/key-count checks, including explicit null-key presence; direct, registry, and CLI coverage spans user_list, both SHOW surfaces, and all shared maintenance renderers with raw and batch-escaped headers, decoded marker values, short rows, JSON/YAML/text serialization, and registry/CLI collision failures including an existing redaction-placeholder key; synthetic markers are benign and collision errors are value-free",
 			"R9.3h direct, registry, and CLI tests pin one fixed SHOW GRANTS argv/env, quoted account hosts, row order, source normalization, [] versus false/error shapes, cancellation, input/output bounds, password redaction, and no-call unsupported mysql.query paths; all observations use fake Runners and no live database",
 			"source-derived quoting and lexer vectors from the pinned mysql.py, including the three _grant_to_tokens docstring split examples run verbatim",
 			"R9.3g security follow-up: every user_chpass mutation uses connection-only argv and CommandWithInputBounded stdin (1 MiB ceiling), never credential SQL in --execute. Self-password mutation and FLUSH remain ordered in the same stdin/process; non-self and passwordless/socket paths retain their source separate flush. TestMysqlUserChpassStdinDirectAndRegistry exercises modern password/hash and legacy UPDATE self flows, success and mutation failure, exact stdin and process counts, credential-free argv and redacted errors/rendering. Direct and CLI phase matrices assert credential forms absent from actual Args, not just command rendering; the direct replay includes original stdin and checks safe stdout/stderr/errors. TestMysqlUserChpassStdinBounds rejects oversized stdin before Runner and preserves output-limit failures. Existing direct and CLI self/retry vectors now assert stdin rather than --execute SQL",
@@ -313,6 +321,8 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"R9.3g TestMysqlUserChpassStatementVectors pins password-over-hash precedence including an explicit empty password, old MySQL and modern MySQL/MariaDB password/hash clauses, passwordless/socket clauses, and unsafe plugin/column rejection; TestMysqlUserChpass pins the non-self six-call version/account/schema/plugin/mutation/flush sequence, exact connection flags, bounds, MYSQL_PWD transport, complete mutation inventory, and input nonmutation; TestMysqlUserChpassSelfPasswordUsesOneSession pins four preflights followed by exactly one fixed ALTER USER plus FLUSH command for matching connection and target users, ordered statements, old MYSQL_PWD, complete redaction, and no repeated mutation; TestMysqlUserChpassSelfPasswordRetryUsesNewCredential pins the rowless version retry, original/new MYSQL_PWD transition, unchanged input, one same-session command, and no repeated mutation; TestMysqlUserChpassShapesAndFailClosed executes unknown-plugin, passwordless, socket-status, nonzero mutation/flush, no-Runner, unsafe-input, and cancellation branches; TestMysqlUserChpassDirectRedactionPhaseMatrix fails every version/account/schema/plugin/mutation/flush phase, asserts raw/doubled/quoted/account/hash/native-verifier/connection forms are absent from the returned error and rendered command, and replays each failed command through the transport to assert redacted error/stdout/stderr; TestMysqlUserChpassRegistryRedactionPhaseMatrix repeats all six phases through the registered name; TestMySQLCLIUserChpassRedactionPhaseMatrix repeats all six phases through argument decoding and asserts CLI output/error/rendered-command redaction plus longest-first inventories; TestMySQLCLIUserChpassSelfPasswordSingleCommand asserts the same-session CLI argv and no second call; TestMysqlVerifyLogin and TestMysqlVerifyLoginFailClosed pin connection-user/password overrides, host/port/database preservation, fixed SELECT 1 with no password in SQL, bool/nonzero/error shapes, empty/nil MYSQL_PWD transport, cancellation, and value-free error/rendered-command redaction",
 		},
 		CompatibilityNotes: []string{
+			"R9.3i keeps plugin_status' empty-name False and missing/nonzero empty-string shapes, plugins_list' ordered list-of-name/status maps, and the shared Runner/cancellation/boundary/redaction controls; caller names are never interpolated into SQL",
+			"F1 public renderers sanitize every result header key with the connection redaction inventory; internal user_exists header matching remains raw, and a post-redaction key collision fails safely with the stable value-free mysql: redacted result header collision error",
 			"R9.3h keeps user_grants' one-call SHOW GRANTS contract: a successful header-only/empty result is [], a nonzero mysql exit is false, and Runner/cancellation/boundary failures remain errors; IDENTIFIED BY is removed exactly as the source does and WITH GRANT OPTION is restored after that removal",
 			"R9.2a registers the driver-free pure functions quote_identifier and tokenize_grant; R9.3a adds the read-only catalog family db_list, db_exists, user_list, and user_exists over the mysql CLI transport; R9.3b adds the read-only server facts family version, status, showvariables, and showglobal on the same transport; R9.3c adds the maintenance family db_check, db_repair, and db_optimize — REPAIR and OPTIMIZE are mutations, executed only through the (fake) Runner, never a live server; R9.3d adds the read-only db_get and db_tables catalog surfaces on the same fixed-query transport; R9.3e adds user_info plus fixed-query user_create/user_remove over the same fake-only CLI transport; R9.3f adds the exact grant_add, grant_exists, and grant_revoke surfaces over fixed GRANT/REVOKE, VERSION, SHOW PRIVILEGES, and SHOW GRANTS statements with SQL-aware account parsing and full redaction inventory; the remaining public surface stays pending behind its own MySQL protocol/arbitrary-query boundaries",
 			"R9.3c keeps the pinned statement construction exactly: the committed quote_identifier quotes both identifiers (backtick doubling plus MySQLdb's doubled percent), and the pinned _execute no-args unescape (qry.replace(\"%%\", \"%\")) restores single percent signs, so the --execute SQL is byte-identical to what the pinned __check_table/__repair_table/__optimize_table send through MySQLdb; for_grants stays false because these are not grant positions, and the underscore stays raw exactly like the pinned source",
@@ -363,6 +373,8 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"mysql.grant_add",
 			"mysql.grant_exists",
 			"mysql.grant_revoke",
+			"mysql.plugin_status",
+			"mysql.plugins_list",
 			"mysql.quote_identifier",
 			"mysql.showglobal",
 			"mysql.showvariables",
@@ -632,7 +644,7 @@ func TestR9DifferentialScopeReport(t *testing.T) {
 	registered := registeredNames(first)
 
 	report := r9Report{
-		Round:    "R9.3h",
+		Round:    "R9.3i",
 		Platform: "cross-platform",
 		RuntimeStatus: "mock-only: RabbitMQ is never started, MySQL is never connected, and PostgreSQL is never contacted; " +
 			"shell-free fake Runner tests and pure-function vectors provide the executable contract",

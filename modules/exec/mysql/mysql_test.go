@@ -272,8 +272,13 @@ func TestGrantListRendersEmptyJSONArray(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(encoded), `"grant":[]`) {
-		t.Fatalf("empty grant list must render as []: %s", encoded)
+	var decoded map[string]any
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	grants, ok := decoded["grant"].([]any)
+	if !ok || len(grants) != 0 {
+		t.Fatal("empty grant list did not decode as an empty array")
 	}
 }
 
@@ -295,6 +300,8 @@ func TestMysqlRegistryNames(t *testing.T) {
 		"mysql.grant_add",
 		"mysql.grant_exists",
 		"mysql.grant_revoke",
+		"mysql.plugin_status",
+		"mysql.plugins_list",
 		"mysql.quote_identifier",
 		"mysql.showglobal",
 		"mysql.showvariables",
@@ -3176,6 +3183,223 @@ func TestMysqlStatus(t *testing.T) {
 	}
 }
 
+func TestMysqlPluginStatusAndPluginsList(t *testing.T) {
+	password := "plugin-connection-pass"
+	listStdout := "Name\tStatus\tType\tLibrary\tLicense\tLoad_option\r\n" +
+		"first\\\\plugin\tACTIVE\tAUTHENTICATION\tfirst.so\tGPL\tON\r\n" +
+		"target\tDISABLED\tSTORAGE ENGINE\tsecond.so\tGPL\tON\r\n" +
+		"target\tACTIVE\tSTORAGE ENGINE\tthird.so\tGPL\tON\r\n"
+	rt, runner := newMysqlRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte(listStdout),
+	})
+	listArgs := &PluginsListArgs{
+		User: mysqlString("plugin-user"), Host: mysqlString("plugin-host"),
+		Port: mysqlString("3307"), Password: mysqlString(password),
+		DB: mysqlString("maintenance"),
+	}
+	value, err := (pluginsListFunc{}).Execute(context.Background(), rt, listArgs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantList := []map[string]string{
+		{"name": `first\plugin`, "status": "ACTIVE"},
+		{"name": "target", "status": "DISABLED"},
+		{"name": "target", "status": "ACTIVE"},
+	}
+	if got, ok := value.([]map[string]string); !ok || !reflect.DeepEqual(got, wantList) {
+		t.Fatalf("plugins_list = %#v, want %#v", value, wantList)
+	}
+	if argv := append([]string{runner.calls[0].Name}, runner.calls[0].Args...); !reflect.DeepEqual(argv, []string{
+		"mysql", "--batch", "--user=plugin-user", "--host=plugin-host", "--port=3307",
+		"--database=maintenance", "--execute=" + showPluginsQuery,
+	}) {
+		t.Fatalf("plugins_list argv = %q", argv)
+	}
+	if runner.calls[0].Shell || !reflect.DeepEqual(runner.calls[0].Env, []string{"MYSQL_PWD=" + password}) ||
+		!reflect.DeepEqual(runner.calls[0].Redact, []string{password}) || strings.Contains(runner.calls[0].RedactedString(), password) {
+		t.Fatalf("plugins_list transport = %#v", runner.calls[0])
+	}
+
+	statusStdout := "PLUGIN_NAME\tPLUGIN_STATUS\n" +
+		"other\tACTIVE\n" +
+		"target\tDISABLED\n" +
+		"target\tACTIVE\n"
+	rt, runner = newMysqlRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(statusStdout)})
+	statusArgs := &PluginStatusArgs{
+		Name: "target", User: mysqlString("plugin-user"), Host: mysqlString("plugin-host"),
+		Port: mysqlString("3307"), Password: mysqlString(password), DB: mysqlString("maintenance"),
+	}
+	value, err = (pluginStatusFunc{}).Execute(context.Background(), rt, statusArgs)
+	if err != nil || value != "DISABLED" {
+		t.Fatalf("plugin_status = %#v, err=%v", value, err)
+	}
+	if argv := append([]string{runner.calls[0].Name}, runner.calls[0].Args...); !reflect.DeepEqual(argv, []string{
+		"mysql", "--batch", "--user=plugin-user", "--host=plugin-host", "--port=3307",
+		"--database=maintenance", "--execute=" + pluginStatusQuery,
+	}) {
+		t.Fatalf("plugin_status argv = %q", argv)
+	}
+
+	// Filtering is exact and client-side; a SQL-looking name remains a miss
+	// and cannot alter the fixed query.
+	rt, runner = newMysqlRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(statusStdout)})
+	value, err = (pluginStatusFunc{}).Execute(context.Background(), rt, &PluginStatusArgs{Name: "target' OR 1=1 --"})
+	if err != nil || value != "" || len(runner.calls) != 1 || strings.Contains(runner.calls[0].Args[len(runner.calls[0].Args)-1], "target") {
+		t.Fatalf("plugin_status filtering = %#v, err=%v, calls=%#v", value, err, runner.calls)
+	}
+}
+
+// TestMysqlPluginRowsRedactAfterDecode keeps the parser's matching view raw
+// while redacting values only after mysql --batch escaping has been decoded.
+// The synthetic password contains a backslash so its wire spelling cannot be
+// redacted before decoding; a plain name overlap also must not turn
+// plugin_status into a false empty result.
+func TestMysqlPluginRowsRedactAfterDecode(t *testing.T) {
+	escapedSecret := "r93i\\escaped-plugin"
+	wireName := strings.ReplaceAll(escapedSecret, `\`, `\\`)
+	rt, runner := newMysqlRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout: []byte("Name\tStatus\tType\tLibrary\tLicense\tLoad_option\n" +
+			wireName + "\tACTIVE\tDAEMON\tplugin.so\tGPL\tON\n"),
+	})
+	value, err := (pluginsListFunc{}).Execute(context.Background(), rt, &PluginsListArgs{Password: mysqlString(escapedSecret)})
+	if err != nil {
+		t.Fatal("plugins_list returned an error")
+	}
+	plugins, ok := value.([]map[string]string)
+	if !ok || !reflect.DeepEqual(plugins, []map[string]string{{
+		"name": process.RedactedPlaceholder, "status": "ACTIVE",
+	}}) {
+		t.Error("plugins_list did not redact the decoded name")
+	}
+	if len(runner.calls) != 1 || !reflect.DeepEqual(runner.calls[0].Redact, []string{escapedSecret}) ||
+		!runner.calls[0].PreserveStdout || runner.calls[0].MaxStdoutBytes != outputLimit || runner.calls[0].MaxStderrBytes != outputLimit {
+		t.Fatal("plugins_list transport changed its redaction or bounds")
+	}
+
+	overlap := "r93i-plugin-overlap"
+	rt, runner = newMysqlRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte("PLUGIN_NAME\tPLUGIN_STATUS\n" + overlap + "\tACTIVE\n"),
+	})
+	value, err = (pluginStatusFunc{}).Execute(context.Background(), rt, &PluginStatusArgs{
+		Name: overlap, Password: mysqlString(overlap),
+	})
+	if err != nil || value != "ACTIVE" || len(runner.calls) != 1 || !reflect.DeepEqual(runner.calls[0].Redact, []string{overlap}) {
+		t.Fatal("plugin_status lost a raw name match after redaction")
+	}
+}
+
+// TestMysqlPluginRowsRedactAfterDecodeThroughRegistry keeps the same
+// decoded-secret and password/name-overlap regressions on the registered
+// execution path.
+func TestMysqlPluginRowsRedactAfterDecodeThroughRegistry(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	escapedSecret := "r93i\\registry-plugin"
+	wireName := strings.ReplaceAll(escapedSecret, `\`, `\\`)
+	runner := &mysqlFakeRunner{results: []process.CommandResult{{
+		ExitCode: 0,
+		Stdout:   []byte("Name\tStatus\tType\tLibrary\tLicense\tLoad_option\n" + wireName + "\tACTIVE\tDAEMON\tplugin.so\tGPL\tON\n"),
+	}}}
+	rt := &runtime.Runtime{Runner: runner, Exec: reg, FS: runtime.NewMemoryFS()}
+	value, err := reg.Call(context.Background(), rt, "mysql.plugins_list", &PluginsListArgs{Password: mysqlString(escapedSecret)})
+	if err != nil {
+		t.Fatal("registry plugins_list returned an error")
+	}
+	plugins, ok := value.([]map[string]string)
+	if !ok || !reflect.DeepEqual(plugins, []map[string]string{{
+		"name": process.RedactedPlaceholder, "status": "ACTIVE",
+	}}) {
+		t.Error("registry plugins_list did not redact the decoded name")
+	}
+
+	overlap := "r93i-registry-overlap"
+	runner.results = []process.CommandResult{{
+		ExitCode: 0,
+		Stdout:   []byte("PLUGIN_NAME\tPLUGIN_STATUS\n" + overlap + "\tACTIVE\n"),
+	}}
+	value, err = reg.Call(context.Background(), rt, "mysql.plugin_status", &PluginStatusArgs{
+		Name: overlap, Password: mysqlString(overlap),
+	})
+	if err != nil || value != "ACTIVE" || len(runner.calls) != 2 {
+		t.Fatal("registry plugin_status lost a raw name match")
+	}
+}
+
+func TestMysqlPluginCompatibilityAndBoundaries(t *testing.T) {
+	// Empty name returns the pinned False before connection, while an empty
+	// successful catalog returns the pinned empty string/list shapes.
+	rt, runner := newMysqlRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Name\tStatus\n")})
+	value, err := (pluginStatusFunc{}).Execute(context.Background(), rt, &PluginStatusArgs{})
+	if err != nil || value != false || len(runner.calls) != 0 {
+		t.Fatalf("empty plugin name = %#v, err=%v, calls=%d", value, err, len(runner.calls))
+	}
+	value, err = (pluginStatusFunc{}).Execute(context.Background(), rt, &PluginStatusArgs{Name: "missing"})
+	if err != nil || value != "" {
+		t.Fatalf("missing plugin status = %#v, err=%v", value, err)
+	}
+	value, err = (pluginsListFunc{}).Execute(context.Background(), rt, &PluginsListArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := value.([]map[string]string); !ok || got == nil || len(got) != 0 {
+		t.Fatalf("empty plugins_list = %#v, want non-nil empty list", value)
+	}
+
+	for _, tc := range []struct {
+		name string
+		res  process.CommandResult
+		want any
+	}{
+		{"status-nonzero", process.CommandResult{ExitCode: 1, Stderr: []byte("access denied")}, ""},
+		{"list-nonzero", process.CommandResult{ExitCode: 1, Stderr: []byte("access denied")}, []map[string]string{}},
+	} {
+		rt, _ = newMysqlRuntime(tc.res)
+		if tc.name == "status-nonzero" {
+			value, err = (pluginStatusFunc{}).Execute(context.Background(), rt, &PluginStatusArgs{Name: "x"})
+		} else {
+			value, err = (pluginsListFunc{}).Execute(context.Background(), rt, &PluginsListArgs{})
+		}
+		if err != nil || !reflect.DeepEqual(value, tc.want) {
+			t.Fatalf("%s = %#v, err=%v, want %#v", tc.name, value, err, tc.want)
+		}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	rt, runner = newMysqlRuntime(process.CommandResult{})
+	if _, err = (pluginsListFunc{}).Execute(ctx, rt, &PluginsListArgs{}); !errors.Is(err, context.Canceled) || len(runner.calls) != 0 {
+		t.Fatalf("cancelled plugins_list err=%v calls=%d", err, len(runner.calls))
+	}
+	rt, runner = newMysqlRuntime(process.CommandResult{})
+	if _, err = (pluginsListFunc{}).Execute(context.Background(), rt, &PluginsListArgs{Runas: mysqlString("other")}); !errors.Is(err, errMysqlRunas) || len(runner.calls) != 0 {
+		t.Fatalf("runas plugins_list err=%v calls=%d", err, len(runner.calls))
+	}
+	unavailable := &mysqlFakeRunner{available: map[string]bool{"mysql": false}}
+	if _, err = (pluginsListFunc{}).Execute(context.Background(), &runtime.Runtime{Runner: unavailable}, &PluginsListArgs{}); !errors.Is(err, errMysqlClientUnavailable) {
+		t.Fatalf("unavailable plugins_list err=%v", err)
+	}
+	rt, _ = newMysqlRuntime(process.CommandResult{ExitCode: 0, StdoutTruncated: true})
+	if _, err = (pluginStatusFunc{}).Execute(context.Background(), rt, &PluginStatusArgs{Name: "x"}); !errors.Is(err, process.ErrOutputLimit) {
+		t.Fatalf("plugin_status output limit err=%v", err)
+	}
+
+	marker := "S3CRET-plugin-pass"
+	rt, runner = newMysqlRuntime(process.CommandResult{
+		Err:    errors.New("mysql failed with " + marker),
+		Stdout: []byte("stdout " + marker),
+		Stderr: []byte("stderr " + marker),
+	})
+	_, err = (pluginsListFunc{}).Execute(context.Background(), rt, &PluginsListArgs{Password: mysqlString(marker)})
+	if err == nil || strings.Contains(err.Error(), marker) || len(runner.calls) != 1 || strings.Contains(runner.calls[0].RedactedString(), marker) {
+		t.Fatalf("plugins_list password redaction err=%v calls=%#v", err, runner.calls)
+	}
+}
+
 // fullStatusArgs carries every connection argument at once.
 func fullStatusArgs() *StatusArgs {
 	return &StatusArgs{
@@ -3523,7 +3747,7 @@ func TestMysqlRegistryEmptyShapes(t *testing.T) {
 // These source-derived vectors deliberately assert a different Go outcome,
 // not Python execution or pinned malformed-row parity.
 func TestMysqlShowShortRowDefensiveDivergence(t *testing.T) {
-	marker := "synthetic-short-row-password"
+	marker := "fixture-marker-r93i-short-row"
 	for _, query := range []string{showVariablesQuery, showGlobalVariablesQuery} {
 		t.Run(query, func(t *testing.T) {
 			rt, runner := newMysqlRuntime(process.CommandResult{Stdout: []byte("Variable_name\tValue\nonlyname\n")})
@@ -3532,8 +3756,12 @@ func TestMysqlShowShortRowDefensiveDivergence(t *testing.T) {
 				t.Fatal("short row must return only its prefix, not IndexError or a fabricated Value")
 			}
 			encoded, err := json.Marshal(got)
-			if err != nil || strings.Contains(string(encoded), marker) || len(runner.calls) != 1 || strings.Contains(runner.calls[0].RedactedString(), marker) {
-				t.Fatal("short-row result or rendered command failed synthetic secret guard")
+			if err != nil {
+				t.Fatal("short-row result could not be serialized")
+			}
+			_ = decodeMysqlJSONValue(t, encoded, marker)
+			if len(runner.calls) != 1 || strings.Contains(runner.calls[0].RedactedString(), marker) {
+				t.Fatal("short-row result or rendered command failed marker guard")
 			}
 		})
 	}
@@ -6023,5 +6251,275 @@ func TestMysqlVerifyLoginFailClosed(t *testing.T) {
 	runner = &mysqlFakeRunner{}
 	if _, err := (verifyLoginFunc{}).Execute(ctx, &runtime.Runtime{Runner: runner}, &VerifyLoginArgs{User: "u", Password: mysqlString(marker)}); !errors.Is(err, context.Canceled) || len(runner.calls) != 0 {
 		t.Fatalf("cancelled verify err=%v calls=%d", err, len(runner.calls))
+	}
+}
+
+func assertMysqlValueHasNoMarker(t *testing.T, value any, marker string) {
+	t.Helper()
+	var walk func(reflect.Value)
+	walk = func(v reflect.Value) {
+		if !v.IsValid() {
+			return
+		}
+		switch v.Kind() {
+		case reflect.Interface, reflect.Pointer:
+			if !v.IsNil() {
+				walk(v.Elem())
+			}
+		case reflect.String:
+			if strings.Contains(v.String(), marker) {
+				t.Fatal("serialized value contains an unredacted marker")
+			}
+		case reflect.Map:
+			if v.IsNil() {
+				return
+			}
+			iter := v.MapRange()
+			for iter.Next() {
+				walk(iter.Key())
+				walk(iter.Value())
+			}
+		case reflect.Slice, reflect.Array:
+			for i := 0; i < v.Len(); i++ {
+				walk(v.Index(i))
+			}
+		}
+	}
+	walk(reflect.ValueOf(value))
+}
+
+func decodeMysqlJSONValue(t *testing.T, encoded []byte, marker string) any {
+	t.Helper()
+	var value any
+	if err := json.Unmarshal(encoded, &value); err != nil {
+		t.Fatalf("serialized JSON could not be decoded")
+	}
+	assertMysqlValueHasNoMarker(t, value, marker)
+	return value
+}
+
+func assertMysqlExactValue(t *testing.T, got, want any) {
+	t.Helper()
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("serialized value shape differs from the expected shape")
+	}
+}
+
+func mysqlValueIsNil(value any) bool {
+	if value == nil {
+		return true
+	}
+	v := reflect.ValueOf(value)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return v.IsNil()
+	default:
+		return false
+	}
+}
+
+// TestMysqlPublicHeaderRedaction covers raw and batch-escaped headers,
+// decoded secret values, explicit null presence, and prefix-zipped short rows
+// at every public direct renderer.
+func TestMysqlPublicHeaderRedaction(t *testing.T) {
+	marker := `fixture-marker-r93i\header`
+	wireMarker := strings.ReplaceAll(marker, `\`, `\\`)
+	header := strings.Join([]string{marker, "wire-" + wireMarker, "stable-column"}, "\t")
+	redacted := process.RedactedPlaceholder
+	userWant := []map[string]any{{
+		redacted:           nil,
+		"wire-" + redacted: redacted,
+	}}
+	maintenanceWant := []map[string]any{{
+		redacted:           nil,
+		"wire-" + redacted: redacted,
+	}}
+	showWant := []any{map[string]string{
+		redacted:           redacted,
+		"wire-" + redacted: redacted,
+	}}
+	conn := &myConnection{Password: mysqlString(marker)}
+
+	rt, _ := newMysqlRuntime(process.CommandResult{Stdout: []byte(header + "\n\\0\t" + wireMarker + "\n")})
+	value, err := userCatalog(context.Background(), rt, conn)
+	if err != nil {
+		t.Fatal("user_list returned an unexpected error")
+	}
+	assertMysqlExactValue(t, value, userWant)
+	assertMysqlValueHasNoMarker(t, value, marker)
+	if row := value[0]; len(row) != 2 {
+		t.Fatalf("user_list short-row key count = %d", len(row))
+	}
+	if nullValue, present := value[0][redacted]; !present || nullValue != nil {
+		t.Fatal("user_list redacted null key is absent or non-null")
+	}
+
+	for _, query := range []string{showVariablesQuery, showGlobalVariablesQuery} {
+		rt, _ = newMysqlRuntime(process.CommandResult{Stdout: []byte(header + "\n" + wireMarker + "\t" + wireMarker + "\n")})
+		value, err := showCatalog(context.Background(), rt, conn, query)
+		if err != nil {
+			t.Fatal("SHOW renderer returned an unexpected error")
+		}
+		assertMysqlExactValue(t, value, showWant)
+		assertMysqlValueHasNoMarker(t, value, marker)
+		if row := value[0].(map[string]string); len(row) != 2 {
+			t.Fatalf("SHOW short-row key count = %d", len(row))
+		}
+	}
+
+	rt, _ = newMysqlRuntime(process.CommandResult{Stdout: []byte(header + "\n\\0\t" + wireMarker + "\n")})
+	value, err = maintenanceOne(context.Background(), rt, conn, "CHECK", "db", "table")
+	if err != nil {
+		t.Fatal("maintenance renderer returned an unexpected error")
+	}
+	assertMysqlExactValue(t, value, maintenanceWant)
+	assertMysqlValueHasNoMarker(t, value, marker)
+	if row := value[0]; len(row) != 2 {
+		t.Fatalf("maintenance short-row key count = %d", len(row))
+	}
+	if nullValue, present := value[0][redacted]; !present || nullValue != nil {
+		t.Fatal("maintenance redacted null key is absent or non-null")
+	}
+}
+
+// TestMysqlPublicHeaderCollisionIsSafe ensures both a batch-escaped header
+// and an existing redaction-placeholder header fail closed without a map
+// overwrite.
+func TestMysqlPublicHeaderCollisionIsSafe(t *testing.T) {
+	marker := `fixture-marker-r93i\header-collision`
+	wireMarker := strings.ReplaceAll(marker, `\`, `\\`)
+	conn := &myConnection{Password: mysqlString(marker)}
+	for _, collisionHeader := range []struct {
+		name   string
+		header string
+	}{
+		{"batch-escaped-header", marker + "\t" + wireMarker},
+		{"existing-redaction-placeholder", marker + "\t" + process.RedactedPlaceholder},
+	} {
+		for _, surface := range []struct {
+			name string
+			run  func(*runtime.Runtime) (any, error)
+		}{
+			{"user_list", func(rt *runtime.Runtime) (any, error) {
+				return userCatalog(context.Background(), rt, conn)
+			}},
+			{"showvariables", func(rt *runtime.Runtime) (any, error) {
+				return showCatalog(context.Background(), rt, conn, showVariablesQuery)
+			}},
+			{"showglobal", func(rt *runtime.Runtime) (any, error) {
+				return showCatalog(context.Background(), rt, conn, showGlobalVariablesQuery)
+			}},
+			{"maintenance", func(rt *runtime.Runtime) (any, error) {
+				return maintenanceOne(context.Background(), rt, conn, "CHECK", "db", "table")
+			}},
+		} {
+			t.Run(collisionHeader.name+"/"+surface.name, func(t *testing.T) {
+				rt, runner := newMysqlRuntime(process.CommandResult{
+					Stdout: []byte(collisionHeader.header + "\nfirst\tsecond\n"),
+				})
+				value, err := surface.run(rt)
+				if !mysqlValueIsNil(value) || err == nil || err.Error() != errMysqlHeaderCollision.Error() || len(runner.calls) != 1 {
+					t.Fatal("header collision did not fail with the stable value-free error")
+				}
+				if strings.Contains(err.Error(), marker) {
+					t.Fatal("header collision error contains a synthetic marker")
+				}
+			})
+		}
+	}
+}
+
+// TestMysqlPublicHeaderRedactionThroughRegistry pins exact decoded JSON
+// shapes after the execution registry crosses each affected renderer.
+func TestMysqlPublicHeaderRedactionThroughRegistry(t *testing.T) {
+	marker := `fixture-marker-r93i\registry-header`
+	wireMarker := strings.ReplaceAll(marker, `\`, `\\`)
+	header := strings.Join([]string{marker, "wire-" + wireMarker, "stable-column"}, "\t")
+	redacted := process.RedactedPlaceholder
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	runner := &mysqlFakeRunner{}
+	rt := &runtime.Runtime{Runner: runner, Exec: reg, FS: runtime.NewMemoryFS()}
+	cases := []struct {
+		name   string
+		args   any
+		stdout string
+		want   any
+		null   bool
+	}{
+		{"mysql.user_list", &UserListArgs{Password: mysqlString(marker)}, header + "\n\\0\t" + wireMarker + "\n", []any{map[string]any{redacted: nil, "wire-" + redacted: redacted}}, true},
+		{"mysql.showvariables", &ShowVariablesArgs{Password: mysqlString(marker)}, header + "\n" + wireMarker + "\t" + wireMarker + "\n", []any{map[string]any{redacted: redacted, "wire-" + redacted: redacted}}, false},
+		{"mysql.showglobal", &ShowGlobalArgs{Password: mysqlString(marker)}, header + "\n" + wireMarker + "\t" + wireMarker + "\n", []any{map[string]any{redacted: redacted, "wire-" + redacted: redacted}}, false},
+		{"mysql.db_check", &DbMaintenanceArgs{Name: "db", Table: mysqlString("table"), Password: mysqlString(marker)}, header + "\n\\0\t" + wireMarker + "\n", []any{map[string]any{redacted: nil, "wire-" + redacted: redacted}}, true},
+		{"mysql.db_repair", &DbMaintenanceArgs{Name: "db", Table: mysqlString("table"), Password: mysqlString(marker)}, header + "\n\\0\t" + wireMarker + "\n", []any{map[string]any{redacted: nil, "wire-" + redacted: redacted}}, true},
+		{"mysql.db_optimize", &DbMaintenanceArgs{Name: "db", Table: mysqlString("table"), Password: mysqlString(marker)}, header + "\n\\0\t" + wireMarker + "\n", []any{map[string]any{redacted: nil, "wire-" + redacted: redacted}}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			runner.calls = nil
+			runner.results = []process.CommandResult{{Stdout: []byte(tc.stdout)}}
+			value, err := reg.Call(context.Background(), rt, tc.name, tc.args)
+			if err != nil {
+				t.Fatal("registry renderer returned an unexpected error")
+			}
+			encoded, err := json.Marshal(value)
+			if err != nil {
+				t.Fatal("registry renderer result could not be serialized")
+			}
+			got := decodeMysqlJSONValue(t, encoded, marker)
+			assertMysqlExactValue(t, got, tc.want)
+			if tc.null {
+				rows, ok := got.([]any)
+				if !ok || len(rows) != 1 {
+					t.Fatal("registry null result has an unexpected row shape")
+				}
+				row, ok := rows[0].(map[string]any)
+				if !ok {
+					t.Fatal("registry null result is not a map")
+				}
+				if nullValue, present := row[redacted]; !present || nullValue != nil {
+					t.Fatal("registry redacted null key is absent or non-null")
+				}
+			}
+		})
+	}
+}
+
+func TestMysqlPublicHeaderCollisionThroughRegistry(t *testing.T) {
+	marker := `fixture-marker-r93i\registry-collision`
+	connArgs := mysqlString(marker)
+	wireMarker := strings.ReplaceAll(marker, `\`, `\\`)
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	runner := &mysqlFakeRunner{}
+	rt := &runtime.Runtime{Runner: runner, Exec: reg, FS: runtime.NewMemoryFS()}
+	for _, header := range []string{marker + "\t" + wireMarker, marker + "\t" + process.RedactedPlaceholder} {
+		for _, tc := range []struct {
+			name string
+			args any
+		}{
+			{"mysql.user_list", &UserListArgs{Password: connArgs}},
+			{"mysql.showvariables", &ShowVariablesArgs{Password: connArgs}},
+			{"mysql.showglobal", &ShowGlobalArgs{Password: connArgs}},
+			{"mysql.db_check", &DbMaintenanceArgs{Name: "db", Table: mysqlString("table"), Password: connArgs}},
+			{"mysql.db_repair", &DbMaintenanceArgs{Name: "db", Table: mysqlString("table"), Password: connArgs}},
+			{"mysql.db_optimize", &DbMaintenanceArgs{Name: "db", Table: mysqlString("table"), Password: connArgs}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				runner.calls = nil
+				runner.results = []process.CommandResult{{Stdout: []byte(header + "\nfirst\tsecond\n")}}
+				value, err := reg.Call(context.Background(), rt, tc.name, tc.args)
+				if !mysqlValueIsNil(value) || err == nil || err.Error() != errMysqlHeaderCollision.Error() || len(runner.calls) != 1 {
+					t.Fatal("registry header collision did not fail safely")
+				}
+				if strings.Contains(err.Error(), marker) {
+					t.Fatal("registry header collision error contains a synthetic marker")
+				}
+			})
+		}
 	}
 }
