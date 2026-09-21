@@ -2134,6 +2134,63 @@ retains the mock-only/live-database limitation, and the pre-existing
 complete-app OpenBSD cross-build limitation remains outside scope; the
 manifest and fixtures were not copied.
 
+##### 2026-09-21 E5.1 live MySQL service gate — implementation ready, external CI pending
+
+E5.1 is a test-system phase, not an additional R9 port. The implementation
+files and workflow are ready for the required live gate for the already-ported
+MySQL read-only/catalog/plugin subset, while preserving the existing fake-Runner
+contract boundary for unit, registry, and CLI tests. The local mock/static gate
+passed 13 orchestration tests, relevant Go tests, `go vet`, shell syntax, and
+workflow YAML validation. Live MySQL GitHub execution remains
+`pending_external_ci`; no live 14/14 result is recorded here. The user will
+validate the external run after synchronization.
+
+| Phase | Scope | Implementation executor role | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `E5.1` | Disposable official MySQL 8.4 service, production `statekit` binary, native `mysql` client, 14 bounded live cases, value-free report, and reusable orchestration under `tests/live/mysql/` | `devops-platform-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` — both requested changes on the local sandbox/trust boundary; neither is an approval | implementation files/workflow ready; local mock/static gate passed; status `pending_external_ci`; live evidence is limited to `mysql.version`, `db_list`, `db_exists`, `plugins_list`, and `plugin_status` plus authenticated readiness, negative auth/connection checks, and native postconditions; no live 14/14, full R9 live coverage, or differential parity is claimed |
+
+The E5.1 workflow is intended to use the Docker Hub manifest reference pinned by digest
+`mysql:8.4@sha256:85b9bf2e29cf836ecb8c2a15a935d4ba0c606631dff1dd79531a11983c638f2a`;
+the external CI run must check that digest after pull. The workflow is also
+intended to use
+immutable full-commit action references, `contents: read` only, and
+`persist-credentials: false`. Its first runtime action must be a fail-closed
+host/rootless/remote/isolation preflight; it must use `pull_request` rather than
+`pull_request_target`, an internal private service network, an ephemeral client
+image instead of a host-path mount, no host socket, device, host port, or
+privileged mode, and explicit cleanup on success, failure, and cancellation.
+These are workflow intent and CI-enforced checks pending the external run. The
+only accepted runtime is local rootless Podman. The server is intended to run
+with the pinned image's explicit `999:999` non-root identity and no added
+capabilities; client containers must use explicit `65532:65532` identity with all
+capabilities dropped. The created-container policy must be inspected before start
+using only allowlisted direct format fields; exact no-new-privileges,
+exclusive-network, user, capability, device, bind, socket, secret, and tmpfs
+conditions must fail closed rather than gaining a capability exception.
+On external CI, credentials must be generated at runtime and created from stdin
+as Podman secrets.
+MySQL must receive only `_FILE` paths; each client must copy a defaults file to
+tmpfs for one process. Credential values must not be written to repository files,
+container Config.Env, argv, layers, inspect output, fixtures, reports,
+artifacts, or diagnostics. Dependency fetch must be separate from the
+network-denied pinned-image production build and Python checks with explicit OCI
+isolation; an unverifiable hosted runner must not fall back to direct execution.
+Cleanup must verify removal of owned containers, the private network, secrets,
+and client image. Native negative cases must require their fixed MySQL
+authentication/connection error marker; timeout, runtime, setup, cleanup, and
+unrelated exits must be failures.
+On external CI, the report must be fresh and successfully written, with execution and final
+return codes, and incomplete, cancelled, skipped, or nonzero execution fails.
+Repeated INT/TERM must be shielded during bounded TERM-then-KILL cleanup;
+SIGKILL, runner loss, or host loss can prevent cleanup/report publication and
+therefore cannot produce pass evidence. The native client must check the seeded database
+and installed plugin independently after StateKit calls. SQLite is outside this
+phase.
+
+The committed differential report remains the mock-only R9 differential
+record; E5.1 does not rewrite it or claim live parity for the remaining R9
+families and functions.
+
 ##### 2026-09-17 current status (R9.2b PostgreSQL version probe)
 
 Actual HEAD is `23fba61` (R9.2b PostgreSQL version probe). R9.2b

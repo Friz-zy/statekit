@@ -1,0 +1,13 @@
+FROM docker.io/library/python:3.14.7@sha256:be8ccd085666c34273c9dc5607c9842f8b2e3116128aae45148ce164c07ce09d
+
+ENV PYTHONDONTWRITEBYTECODE=1
+WORKDIR /workspace
+COPY tests/live/mysql/run.sh tests/live/mysql/test_orchestration.py tests/live/mysql/Containerfile /workspace/tests/live/mysql/
+COPY .github/workflows/integration-services.yml /workspace/.github/workflows/integration-services.yml
+
+# These are syntax/compile checks only; the workflow builds this image with
+# network denied and runs the tests as a non-root user with a read-only root.
+RUN python3 -m py_compile tests/live/mysql/test_orchestration.py && \
+    bash -n tests/live/mysql/run.sh
+USER 65532:65532
+CMD ["python3", "-m", "unittest", "discover", "-s", "tests/live/mysql", "-p", "test_orchestration.py", "-v"]

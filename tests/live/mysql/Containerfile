@@ -1,0 +1,10 @@
+FROM mysql:8.4@sha256:85b9bf2e29cf836ecb8c2a15a935d4ba0c606631dff1dd79531a11983c638f2a
+
+# The production binary is copied into an ephemeral client image so the live
+# containers need no host-path or socket mount. The base image supplies the
+# real mysql client used by both the StateKit and native postcondition calls.
+COPY statekit /usr/local/bin/statekit
+
+# Client execution is explicitly non-root; run.sh also verifies this policy
+# on the created container before it is started.
+USER 65532:65532

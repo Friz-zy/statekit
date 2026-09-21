@@ -1,6 +1,6 @@
 # StateKit Test System — GitHub Actions + Docker
 
-Companion to `plans/init.md` (§24–§28). Defines the concrete CI/CD implementation of the four test layers (unit / integration / VM / differential) using GitHub Actions and Docker containers.
+Companion to `plans/init.md` (§24–§28). Defines the concrete CI/CD implementation of the five test layers (unit / integration / live service / VM / differential) using GitHub Actions and Docker containers.
 
 ## Goals
 
@@ -17,6 +17,7 @@ Companion to `plans/init.md` (§24–§28). Defines the concrete CI/CD implement
 | Unit (Go) | parsers, precedence, outputters, exit codes, provider resolution, file algorithms, fixture loader | GH runner | every push/PR |
 | Smoke integration | binary boots; `version`, `--list`, `facts`, `test.echo`, `test.nop` | Docker (2 distros) | every push/PR |
 | Integration matrix | real-case fixtures per module family on each target distro | Docker matrix | push to `main`, path-filtered PRs |
+| E5.1 live service gate | workflow-ready authenticated disposable MySQL 8.4; StateKit read-only/catalog/plugin calls plus native-client postconditions | private rootless Podman network | every PR event, `main`, manual, nightly; live execution `pending_external_ci` |
 | Differential vs Salt | identical scenarios via `salt-call --local` vs `statekit`, normalized comparison | Docker twins | nightly + label `differential` |
 | VM suite | systemd units, mounts, firewall, kernel-level cases containers cannot cover faithfully | QEMU on GH runner | nightly after Phase 3 |
 
@@ -104,6 +105,7 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
 .github/workflows/
 ├── ci.yml              # PR gate
 ├── integration.yml     # reusable full matrix (workflow_call + main pushes)
+├── integration-services.yml # E5.1 live MySQL service gate
 ├── differential.yml    # nightly + workflow_dispatch + label:differential
 └── vm-nightly.yml      # QEMU suite (Phase 4+, allow-fail initially)
 
@@ -128,6 +130,73 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
 - Each job: download binary artifact → `docker run --rm -v ...` distro image → `/tests/run-fixtures.sh <suite>` → JUnit XML published via `dorny/test-reporter`
 - Gate rule: a module family's DoD is accepted only when its suite is green across the whole Tier 1 matrix (+ Tier 2 for service states)
 - Summary: markdown matrix table posted to the run summary
+
+### `integration-services.yml` — E5.1 live MySQL gate (workflow-ready; external execution pending)
+
+- **Current state:** implementation files and workflow are ready. The local
+  mock/static gate passed 13 orchestration tests, relevant Go tests, `go vet`,
+  shell syntax, and workflow YAML validation. No live MySQL GitHub execution
+  has run; status is `pending_external_ci`, and no live 14/14 result is claimed
+  in this ledger. The user will validate the external run after synchronization.
+  The independent backend and security gates requested changes on the local
+  sandbox/trust boundary; they are not approvals.
+
+- **Triggers:** `pull_request` opened/synchronize/reopened/ready_for_review,
+  push to `main`, `workflow_dispatch`, and a nightly schedule are the intended
+  external CI triggers. The workflow is intended to supply the E5.1 live check;
+  making that check required is repository branch-protection administration, not
+  asserted by this plan. It never uses `pull_request_target`.
+- **Runtime intent / CI-enforced checks:** the official Docker Hub image manifest reference
+  `mysql:8.4@sha256:85b9bf2e29cf836ecb8c2a15a935d4ba0c606631dff1dd79531a11983c638f2a`
+  is intended to be pinned and checked after pull. The only accepted runtime
+  is local rootless Podman. External CI must run host/runtime preflight before
+  any image pull, client build, network, secret, or container creation and reject
+  root, remote, Docker, malformed, or isolation-incomplete runtimes. A
+  disposable server and an ephemeral client image copied from that digest must
+  share an internal private container network; no host path, port, socket,
+  device, privileged mode, or host credential is exposed. Runtime-generated
+  passwords must be created from stdin as Podman secrets: the server must receive
+  only `_FILE` paths and client processes must copy a defaults file onto tmpfs for one
+  invocation. No env-file, credential-bearing Config.Env value, argv value,
+  image layer, inspect output, log, or artifact may be used. The server must be
+  requested with explicit `999:999` non-root identity and no added
+  capabilities; client containers must run as explicit `65532:65532` with all
+  capabilities dropped. Created-container policy must be inspected before start
+  through allowlisted direct format fields only; exact no-new-privileges,
+  network, user, capability, device, bind, socket, secret, and tmpfs policy
+  mismatches must fail closed.
+- **Workflow execution intent / CI-enforced checks:** the first workflow
+  operation after checkout must be the same fail-closed rootless Podman
+  preflight. Go dependency resolution must run in a pinned immutable toolchain
+  image on a disposable egress-only fetch network; the production Go build and
+  Python compile/orchestration checks must run as non-root in pinned
+  images with explicit OCI isolation and `--network=none`, read-only roots, tmpfs-only scratch space,
+  bounded resources, and no secrets. A hosted runner that cannot prove this
+  preflight must not run a direct host build or test.
+- **External cases:** 14 exact cases are required: authenticated native `SELECT 1`
+  readiness, StateKit `mysql.version`, seeded `db_list`, seeded and absent
+  `db_exists`, installed and absent plugin status, installed plugin listing,
+  native and StateKit negative authentication, native and StateKit negative
+  connection, and independent native database/plugin postconditions. Zero
+  cases or any skipped case must fail the external gate. Native negative cases require the
+  expected MySQL error marker and must reject timeout, runtime, setup, and
+  unrelated exit paths. Polling and client calls must be bounded; every owned
+  client must be tracked by name and ID, and server/network cleanup must run on
+  success, failure, and cancellation. Cleanup failures must fail the gate.
+- **External evidence requirement:** a stale report must be removed or rejected
+  before execution, and a fresh value-free text report must be written before a
+  successful exit. It must contain exact pass/fail/skipped counts and fixed
+  limitations. The live gate is not a JUnit fixture and must not upload command output, credentials, SQL
+  results, or container logs.
+- **Boundary:** once externally executed, this is live evidence only for the
+  listed MySQL subset, not full R9 coverage or Salt differential parity.
+  Repeated INT/TERM must be shielded during bounded TERM-then-KILL cleanup;
+  SIGKILL, host power loss,
+  and runner loss can still prevent cleanup and report publication, so missing
+  or incomplete evidence cannot claim a pass. Existing fake-Runner unit,
+  registry, and CLI contract tests remain necessary for parser, redaction,
+  mutation, unsupported, and cross-platform behavior. No SQLite dependency is
+  introduced in E5.1.
 
 ### `differential.yml` — Salt comparison (init.md §26)
 
@@ -164,6 +233,7 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
 | 2 | `integration.yml` grows per module family (Tier 1 first); coverage gates for new code |
 | 3 | Tier 2 systemd images; service/user/file/pkg suites complete matrix; `differential.yml` first run for core families |
 | 4 | broader module suites join matrix; `vm-nightly.yml` bootstrap |
+| E5.1 | `integration-services.yml` live MySQL 8.4 gate for the already-ported read-only/catalog/plugin surface; future service phases extend the same bounded harness |
 | 5+ | differential scope expansion driven by generated catalog; flake budget review |
 
 ## Acceptance criteria for the test system itself
@@ -173,3 +243,4 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
 - [ ] Every fixture references its Salt origin (source path/symbol/test)
 - [ ] Differential report artifacts retained 90 days; failures traceable to fixture IDs
 - [ ] No test requires network beyond package mirrors inside containers; mirror endpoints documented
+- [ ] E5.1 live reports, when produced by external CI, contain exact case counts, zero skipped cases, and no credential-bearing output

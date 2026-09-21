@@ -1,0 +1,12 @@
+.git
+.gotmp
+.build
+.kilo
+.statekit
+dist
+artifacts
+__pycache__
+*.pyc
+*.pyo
+.venv
+worktrees

@@ -1,0 +1,113 @@
+name: integration-services
+
+# E5.1 required live gate. This job is intentionally separate from the
+# existing mock/fake-Runner integration workflows and runs on the exact PR
+# merge candidate or pushed commit with read-only token permissions.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-services-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mysql-live:
+    name: e5.1 live mysql read-only/catalog/plugin
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      # actions/checkout v5.1.0; refs/tags/v5.1.0 resolved to this full commit SHA.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      - name: fail-closed local rootless Podman preflight
+        env:
+          CONTAINER_RUNTIME: podman
+        run: tests/live/mysql/run.sh --preflight-only
+
+      - name: isolated dependency fetch, build, and Python checks
+        env:
+          GO_TOOLCHAIN_IMAGE: docker.io/library/golang:1.26.6@sha256:0d1d3a794be25f809dd2cb3160d8c73276c4056a9f8242a138e908ddeee7b6b6
+          PYTHON_CHECK_IMAGE: docker.io/library/python:3.14.7@sha256:be8ccd085666c34273c9dc5607c9842f8b2e3116128aae45148ce164c07ce09d
+        run: |
+          set -euo pipefail
+          deps_image='statekit-e51-go-deps:ci'
+          build_image='statekit-e51-go-build:ci'
+          python_image='statekit-e51-python-check:ci'
+          fetch_network='statekit-e51-fetch-net'
+          extract_container='statekit-e51-build-extract'
+          python_container='statekit-e51-python-run'
+          cleanup_isolated_resources() {
+            local rc=$?
+            trap '' INT TERM
+            podman rm --force "$extract_container" "$python_container" >/dev/null 2>&1 || true
+            podman network rm "$fetch_network" >/dev/null 2>&1 || true
+            podman rmi --force "$build_image" "$deps_image" "$python_image" >/dev/null 2>&1 || true
+            trap - EXIT
+            exit "$rc"
+          }
+          trap cleanup_isolated_resources EXIT INT TERM
+
+          # The preflight above is the gate for every subsequent pull/build
+          # and resource creation. Dependency resolution is the only network-
+          # enabled phase; all compile and test execution is network-denied.
+          podman pull --quiet "$GO_TOOLCHAIN_IMAGE"
+          podman pull --quiet "$PYTHON_CHECK_IMAGE"
+          podman network create "$fetch_network" >/dev/null
+          podman build --pull=never --isolation=oci --network="$fetch_network" \
+            --file tests/live/mysql/Containerfile.go-deps \
+            --tag "$deps_image" .
+          podman build --pull=never --isolation=oci --network=none \
+            --file tests/live/mysql/Containerfile.go-build \
+            --build-arg GO_DEPS_IMAGE="$deps_image" \
+            --tag "$build_image" .
+
+          mkdir -p dist
+          podman create --name "$extract_container" "$build_image" >/dev/null
+          podman cp "$extract_container:/out/statekit" dist/statekit
+          chmod 755 dist/statekit
+
+          podman build --pull=never --isolation=oci --network=none \
+            --file tests/live/mysql/Containerfile.python-check \
+            --tag "$python_image" .
+          podman create --name "$python_container" \
+            --network=none \
+            --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777 \
+            --memory 256m --cpus 1 --pids-limit 128 \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --ipc private --pid private --uts private \
+            --user 65532:65532 "$python_image" >/dev/null
+          podman start --attach "$python_container"
+
+      - name: create value-free live report directory
+        run: |
+          mkdir -p artifacts/mysql-live
+
+      - name: run live MySQL 8.4 gate
+        env:
+          STATEKIT_BIN: ${{ github.workspace }}/dist/statekit
+        run: tests/live/mysql/run.sh
+
+      - name: upload value-free live report
+        if: always()
+        # actions/upload-artifact v5.0.0; refs/tags/v5.0.0 resolved to this full commit SHA.
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
+        with:
+          name: e5-1-mysql-live-report
+          path: artifacts/mysql-live/report.txt
+          if-no-files-found: error
+          retention-days: 7

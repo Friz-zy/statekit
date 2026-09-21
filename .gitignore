@@ -43,6 +43,7 @@ go.work.sum
 
 # CI local run artifacts
 dist/
+artifacts/mysql-live/
 .junit/
 __pycache__/
 *.pyc
