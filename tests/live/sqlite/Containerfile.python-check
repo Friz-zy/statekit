@@ -1,0 +1,12 @@
+FROM docker.io/library/python:3.14.7@sha256:be8ccd085666c34273c9dc5607c9842f8b2e3116128aae45148ce164c07ce09d
+
+ENV PYTHONDONTWRITEBYTECODE=1
+WORKDIR /workspace
+COPY tests/live/sqlite/run.sh tests/live/sqlite/test_orchestration.py /workspace/tests/live/sqlite/
+COPY .github/workflows/integration-services.yml /workspace/.github/workflows/integration-services.yml
+
+RUN python3 -m py_compile tests/live/sqlite/test_orchestration.py && \
+    bash -n tests/live/sqlite/run.sh && \
+    python3 -c 'import sqlite3; assert sqlite3.sqlite_version_info'
+USER 65532:65532
+CMD ["python3", "-m", "unittest", "discover", "-s", "tests/live/sqlite", "-p", "test_orchestration.py", "-v"]

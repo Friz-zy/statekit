@@ -6,9 +6,9 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    source_inventory_count: 1193
-    catalog_intersection_count: 1171
-    implemented: 1171
+    source_inventory_count: 1207
+    catalog_intersection_count: 1185
+    implemented: 1185
 state:
     salt_modules: 132
     salt_functions: 669
@@ -439,25 +439,32 @@ implemented:
         - mount.mount
         - mount.umount
         - mysql.db_check
+        - mysql.db_create
         - mysql.db_exists
         - mysql.db_get
         - mysql.db_list
         - mysql.db_optimize
+        - mysql.db_remove
         - mysql.db_repair
         - mysql.db_tables
         - mysql.grant_add
         - mysql.grant_exists
         - mysql.grant_revoke
+        - mysql.plugin_status
+        - mysql.plugins_list
         - mysql.quote_identifier
         - mysql.showglobal
         - mysql.showvariables
         - mysql.status
         - mysql.tokenize_grant
+        - mysql.user_chpass
         - mysql.user_create
         - mysql.user_exists
+        - mysql.user_grants
         - mysql.user_info
         - mysql.user_list
         - mysql.user_remove
+        - mysql.verify_login
         - mysql.version
         - nacl.dec
         - nacl.dec_file
@@ -916,6 +923,13 @@ implemented:
         - softwareupdate.update
         - softwareupdate.update_all
         - softwareupdate.update_available
+        - sqlite3.fetch
+        - sqlite3.indexes
+        - sqlite3.indices
+        - sqlite3.modify
+        - sqlite3.sqlite_version
+        - sqlite3.tables
+        - sqlite3.version
         - ssh.auth_keys
         - ssh.check_key
         - ssh.check_key_file

@@ -18,6 +18,7 @@ Companion to `plans/init.md` (§24–§28). Defines the concrete CI/CD implement
 | Smoke integration | binary boots; `version`, `--list`, `facts`, `test.echo`, `test.nop` | Docker (2 distros) | every push/PR |
 | Integration matrix | real-case fixtures per module family on each target distro | Docker matrix | push to `main`, path-filtered PRs |
 | E5.2 live service gate | workflow-ready authenticated disposable MySQL 8.4; StateKit E5.1 read-only/catalog/plugin calls plus lifecycle mutations and native-client postconditions | private rootless Podman network | every PR event, `main`, manual, nightly; live execution `pending_external_ci` |
+| E5.3 live SQLite file gate | intended production `statekit`/native-observer workflow controls for a disposable actual SQLite file; exact value-free inventory | protected workflow with an inspected isolated Podman runner and owned temporary file | every PR event, `main`, manual, nightly; live execution `pending_external_ci` |
 | Differential vs Salt | identical scenarios via `salt-call --local` vs `statekit`, normalized comparison | Docker twins | nightly + label `differential` |
 | VM suite | systemd units, mounts, firewall, kernel-level cases containers cannot cover faithfully | QEMU on GH runner | nightly after Phase 3 |
 
@@ -105,7 +106,7 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
 .github/workflows/
 ├── ci.yml              # PR gate
 ├── integration.yml     # reusable full matrix (workflow_call + main pushes)
-├── integration-services.yml # E5.2 live MySQL service gate
+├── integration-services.yml # E5.2 MySQL + E5.3 SQLite live gates
 ├── differential.yml    # nightly + workflow_dispatch + label:differential
 └── vm-nightly.yml      # QEMU suite (Phase 4+, allow-fail initially)
 
@@ -207,6 +208,48 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
   mutation, unsupported, and cross-platform behavior. No SQLite dependency is
   introduced in E5.2.
 
+### `integration-services.yml` — E5.3 live SQLite file gate (workflow controls defined; external execution pending)
+
+- **Current state:** `sqlite-live` is a separate job from the unchanged E5.2
+  MySQL job. Repository checks cover deterministic orchestration and fault paths,
+  shell syntax, and other non-live project behavior; no local sandbox, container,
+  Podman, or live-harness execution is claimed. No GitHub SQLite execution has
+  run; status is `pending_external_ci` (`external_ci: pending_external_ci`), and
+  no live result is claimed.
+- **Workflow controls (not executed evidence):** the intended external job first
+  requires a native SQLite observer (`sqlite3` CLI or the image's native Python
+  SQLite extension) and the bounded `timeout` command. It builds the production
+  binary in the pinned Go dependency-fetch/network-denied build split, then
+  invokes the binary and native observer together inside an inspected, non-root,
+  network-denied runner container against an owned temporary file. The workflow
+  reserves and creates a uniquely named, credential-free Podman output volume
+  containing only the value-free report; it mounts that volume with non-root
+  writable ownership, copies the report from the still-owned container after the
+  run exits, and verifies a regular, non-symlink, non-empty destination. Stale
+  host reports, missing or failed copies, and report cleanup failures fail the
+  job. No fake Runner, service, repository secret, host database, or system
+  SQLite library is used by the intended production build. Native observation is
+  independent of StateKit's Go connection and reads the same file after each
+  mutation. These are workflow controls, not local execution evidence.
+- **Dependency verification boundary:** the workflow configuration contains
+  pinned image references and the repository's declared Go module/checksum state,
+  but authoritative dependency provenance, maintainer/license review, and
+  quarantine-age verification remain pending. This plan claims no dependency
+  provenance evidence.
+- **External cases:** 14 exact IDs cover both version probes, create/insert,
+  fetch, tables, indices, indexes alias, three native row/schema/index
+  postconditions, invalid path, invalid SQL, and missing-db compatibility.
+  The report requires one ordered result for every ID; zero cases or any
+  skipped case fails the gate. Native observer unavailability is a failed
+  preflight, not a skip. SQL/path values and command output are never written
+  to the report or artifact. Owned temporary-file cleanup is verified on every
+  exit path; cleanup uncertainty fails the gate.
+- **Boundary:** this job proves only live production-binary/file behavior for
+  the listed SQLite family once an external GitHub run produces evidence. The
+  checked-in controls do not themselves prove live behavior. It does not claim
+  Salt live differential parity, GitHub success, MySQL behavior, or any external
+  database service result.
+
 ### `differential.yml` — Salt comparison (init.md §26)
 
 - Nightly cron + manual dispatch + `label:differential` on PRs touching core modules
@@ -242,7 +285,8 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
 | 2 | `integration.yml` grows per module family (Tier 1 first); coverage gates for new code |
 | 3 | Tier 2 systemd images; service/user/file/pkg suites complete matrix; `differential.yml` first run for core families |
 | 4 | broader module suites join matrix; `vm-nightly.yml` bootstrap |
-| E5.2 | `integration-services.yml` live MySQL 8.4 gate for the E5.1 read-only/catalog/plugin surface plus R9.3j lifecycle cases; future service phases extend the same bounded harness |
+| E5.2 | `integration-services.yml` live MySQL 8.4 gate for the E5.1 read-only/catalog/plugin surface plus R9.3j lifecycle cases; unchanged by E5.3 |
+| E5.3 | separate `sqlite-live` production-binary/file/native-observer gate for R9.3k; exact inventory, value-free report, cleanup, and zero-skip enforcement; external execution `pending_external_ci` |
 | 5+ | differential scope expansion driven by generated catalog; flake budget review |
 
 ## Acceptance criteria for the test system itself
@@ -253,3 +297,4 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
 - [ ] Differential report artifacts retained 90 days; failures traceable to fixture IDs
 - [ ] No test requires network beyond package mirrors inside containers; mirror endpoints documented
 - [ ] E5.2 live reports, when produced by external CI, contain exact 23-case counts, zero skipped cases, and no credential-bearing output
+- [ ] E5.3 live reports, when produced by external CI, contain exact 14-case counts, zero skipped cases, native postconditions, cleanup success, and no value-bearing output; status remains `pending_external_ci` until an external run exists

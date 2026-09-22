@@ -4,9 +4,9 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 114
+    implemented: 115
     partial: 0
-    excluded: 52
+    excluded: 51
     planned: 80
 implemented_families:
     - acl
@@ -91,6 +91,7 @@ implemented_families:
     - shadow
     - smbios
     - softwareupdate
+    - sqlite3
     - ssh
     - ssh_pki
     - status
@@ -174,7 +175,6 @@ excluded:
     - 'sdb (excluded: master-minion architecture (StateKit is local-only by design))'
     - 'slsutil (excluded: master-minion architecture (StateKit is local-only by design))'
     - 'snmp (planned: requires database/message-broker client protocol (round R9, services tier))'
-    - 'sqlite3 (planned: requires database/message-broker client protocol (round R9, services tier))'
     - 'vsphere (planned: cloud provider API (round R10))'
 planned:
     - 'alias (planned: needs a dedicated porting round)'

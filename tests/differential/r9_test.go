@@ -225,6 +225,13 @@ import (
 // R9.3i registers mysql.plugin_status and mysql.plugins_list over fixed
 // plugin catalog/SHOW PLUGINS statements, preserving the source status string
 // and ordered name/status list without arbitrary SQL or a database dependency.
+// R9.3k registers the sqlite3 catalog family (sqlite3.py:33-149) over the
+// pinned CGO-free modernc.org/sqlite database/sql driver: version probes use
+// the pinned driver/engine constants, modify/fetch accept the source's raw SQL
+// boundary while preserving cursor.execute's one-statement rule, and
+// tables/indices/indexes use the exact fixed sqlite_master queries. Differential
+// coverage remains mock-only; disposable real-file execution is a separate
+// pending external CI gate.
 type r9FamilySpec struct {
 	Source             string
 	SourceTests        string
@@ -396,6 +403,44 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"mysql.user_chpass",
 			"mysql.verify_login",
 			"mysql.version",
+		},
+	},
+	"sqlite3": {
+		Source:      "salt/modules/sqlite3.py @ 8b63e700637e40d76f80a00d95c60471797c73b9",
+		SourceTests: "tests/unit/modules/test_sqlite3.py @ 8b63e700637e40d76f80a00d95c60471797c73b9",
+		Platform:    "cross-platform embedded pure-Go SQLite",
+		Scenarios: []string{
+			"sqlite3.version-probes",
+			"sqlite3.modify-fetch-explicit-sql",
+			"sqlite3.single-statement-and-result-bounds",
+			"sqlite3.table-index-catalogs",
+			"sqlite3.path-safety-and-redaction",
+			"sqlite3.registry-cli-surfaces",
+		},
+		Evidence: []string{
+			"direct, registry, CLI, and differential mock tests cover all seven public functions, the Salt false-on-missing-db shape, fixed catalog ordering, and value-free invalid path/SQL boundaries",
+			"F3/F4/F6 remediation is covered by single-statement side-effect regressions, post-normalization path vectors, and bounded fetch/catalog cancellation/lock/large-result vectors",
+			"SQLite-aware lexical validation rejects multiple executable statements before opening the database while allowing literals/comments and trigger bodies; direct mutation/fetch regressions prove no partial side effects",
+			"direct regressions validate the final cleaned driver path, exact :memory: sentinel, ordinary relative/symlink/path-boundary compatibility, bounded fetch/catalog rows and raw/encoded value budgets, cancellation, locked mutation, and nil-on-limit no-partial-result behavior",
+			"tests/integration/sqlite3_test.go drives the production binary against a disposable real SQLite file and observes the resulting rows through a separate database/sql connection; it is not Salt differential execution",
+			"the internal _connect helper remains unregistered; raw SQL is passed only to database/sql for modify/fetch and is never interpolated into StateKit-generated SQL",
+			"CGO_ENABLED=0 build/test uses modernc.org/sqlite v1.58.0 with proxy checksum and GitLab tag provenance recorded in the dependency validation ledger",
+		},
+		CompatibilityNotes: []string{
+			"sqlite3.version returns the pinned modernc.org/sqlite module version (1.58.0), not CPython's pysqlite wrapper version; sqlite3.sqlite_version returns the bundled SQLite engine version (3.53.4 for that dependency)",
+			"db is restricted to a local filename or the exact raw :memory: sentinel and rejects URI/query DSNs, including forms created by filepath.Clean, NUL/control bytes, invalid UTF-8, and empty paths; ordinary relative paths, symlinks, and file: names outside the normalized URI prefix remain compatible",
+			"modify and fetch retain the source's arbitrary explicit SQL contract within a deliberate one-executable-statement ceiling: SQLite literals/comments and trigger bodies are accepted, multiple executable statements are rejected before opening the database, the SQL input ceiling is 1 MiB, and contexts are bounded to 30 seconds",
+			"fetch and fixed catalog results are deliberately bounded at 10,000 rows, 1 MiB per raw or compact-JSON-encoded value, and 8 MiB aggregate raw/encoded value bytes; limit, cancellation, lock, and driver failures return value-free errors and never a partial result",
+			"live independent native-sqlite observation is a separate sqlite-live CI boundary and remains pending_external_ci; no GitHub live result or full Salt differential parity is claimed",
+		},
+		RegisteredSubset: []string{
+			"sqlite3.fetch",
+			"sqlite3.indices",
+			"sqlite3.indexes",
+			"sqlite3.modify",
+			"sqlite3.sqlite_version",
+			"sqlite3.tables",
+			"sqlite3.version",
 		},
 	},
 	"postgres": {
@@ -603,7 +648,7 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 }
 
 // r9FamilyOrder keeps generated map emission deterministic.
-var r9FamilyOrder = []string{"mysql", "postgres", "rabbitmq"}
+var r9FamilyOrder = []string{"mysql", "postgres", "rabbitmq", "sqlite3"}
 
 type r9FamilyReport struct {
 	Catalog            int      `yaml:"catalog_functions"`
@@ -652,10 +697,10 @@ func TestR9DifferentialScopeReport(t *testing.T) {
 	registered := registeredNames(first)
 
 	report := r9Report{
-		Round:    "R9.3j",
+		Round:    "R9.3k",
 		Platform: "cross-platform",
-		RuntimeStatus: "mock-only: RabbitMQ is never started, MySQL is never connected, and PostgreSQL is never contacted; " +
-			"shell-free fake Runner tests and pure-function vectors provide the executable contract",
+		RuntimeStatus: "mock-only differential contract: RabbitMQ is never started, MySQL is never connected, PostgreSQL is never contacted, and SQLite differential tests do not use live Salt; " +
+			"shell-free fake Runner tests, pure-function vectors, and SQLite boundary vectors provide the executable contract",
 		BehavioralParity: "not claimed: live Salt/broker/database differential execution is prohibited for R9",
 		ExternalCI:       "pending_external_ci",
 		Families:         map[string]r9FamilyReport{},

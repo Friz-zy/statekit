@@ -1,0 +1,14 @@
+ARG GO_DEPS_IMAGE=statekit-e53-go-deps:ci
+FROM ${GO_DEPS_IMAGE}
+
+WORKDIR /workspace
+USER 0:0
+COPY . .
+RUN mkdir -p /out /tmp/home /tmp/go /tmp/go-cache && \
+    chown -R 65532:65532 /out /tmp/home /tmp/go /tmp/go-cache
+USER 65532:65532
+
+# The dependency cache was populated in the separate egress-only image.
+RUN CGO_ENABLED=0 GOTOOLCHAIN=local go build -trimpath \
+    -ldflags "-s -w -X main.version=live-e5.3" \
+    -o /out/statekit ./cmd/statekit

@@ -113,3 +113,356 @@ jobs:
           path: artifacts/mysql-live/report.txt
           if-no-files-found: error
           retention-days: 7
+
+  sqlite-live:
+    name: e5.3 live sqlite catalog
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      # The SQLite gate is a separate job so its actual-file/native-observer
+      # boundary cannot be confused with E5.2's MySQL service contract.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      - name: fail-closed protected runtime and native SQLite preflight
+        env:
+          CONTAINER_RUNTIME: podman
+        run: |
+          tests/live/mysql/run.sh --preflight-only
+          tests/live/sqlite/run.sh --preflight-only
+
+      - name: create fresh value-free live report directory
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/sqlite-live
+          rm -f -- artifacts/sqlite-live/report.txt
+          if [[ -e artifacts/sqlite-live/report.txt || -L artifacts/sqlite-live/report.txt ]]; then
+            printf '%s\n' 'stale SQLite live report remains after reset' >&2
+            exit 1
+          fi
+
+      - name: isolated dependency fetch, build, checks, and live file gate
+        env:
+          GO_TOOLCHAIN_IMAGE: docker.io/library/golang:1.26.6@sha256:0d1d3a794be25f809dd2cb3160d8c73276c4056a9f8242a138e908ddeee7b6b6
+          PYTHON_CHECK_IMAGE: docker.io/library/python:3.14.7@sha256:be8ccd085666c34273c9dc5607c9842f8b2e3116128aae45148ce164c07ce09d
+        run: |
+          set -euo pipefail
+          run_suffix="${GITHUB_RUN_ID:-manual}-${GITHUB_RUN_ATTEMPT:-0}"
+          if [[ ! "$run_suffix" =~ ^[[:alnum:]_.-]+$ ]]; then
+            printf '%s\n' 'invalid workflow resource suffix' >&2
+            exit 2
+          fi
+          deps_image="statekit-e53-go-deps-${run_suffix}:ci"
+          build_image="statekit-e53-go-build-${run_suffix}:ci"
+          python_image="statekit-e53-python-check-${run_suffix}:ci"
+          fetch_network="statekit-e53-fetch-net-${run_suffix}"
+          extract_container="statekit-e53-build-extract-${run_suffix}"
+          python_container="statekit-e53-python-run-${run_suffix}"
+          live_container="statekit-e53-live-run-${run_suffix}"
+          report_volume="statekit-e53-sqlite-report-${run_suffix}"
+          report_path="$GITHUB_WORKSPACE/artifacts/sqlite-live/report.txt"
+          static_timeout_seconds=180
+          live_timeout_seconds=600
+          cleanup_timeout_seconds=30
+          termination_grace_seconds=5
+          fetch_network_reserved=0
+          deps_image_reserved=0
+          build_image_reserved=0
+          python_image_reserved=0
+          extract_container_reserved=0
+          python_container_reserved=0
+          live_container_reserved=0
+          report_volume_reserved=0
+          cleanup_failed=0
+
+          bounded_timeout() {
+            timeout --signal=TERM --kill-after="${termination_grace_seconds}s" "$@"
+          }
+
+          resource_exists() {
+            local kind="$1" reference="$2"
+            case "$kind" in
+              container) bounded_timeout "$cleanup_timeout_seconds" podman container exists "$reference" ;;
+              network) bounded_timeout "$cleanup_timeout_seconds" podman network exists "$reference" ;;
+              image) bounded_timeout "$cleanup_timeout_seconds" podman image exists "$reference" ;;
+              volume) bounded_timeout "$cleanup_timeout_seconds" podman volume exists "$reference" ;;
+              *) return 2 ;;
+            esac
+          }
+
+          resource_is_absent() {
+            local kind="$1" reference="$2" rc=0
+            if resource_exists "$kind" "$reference" >/dev/null 2>&1; then
+              return 1
+            else
+              rc=$?
+            fi
+            [[ "$rc" == 1 ]]
+          }
+
+          reserve_resource_name() {
+            local kind="$1" reference="$2"
+            if ! resource_is_absent "$kind" "$reference"; then
+              printf 'resource name unavailable: %s\n' "$kind" >&2
+              return 1
+            fi
+          }
+
+          policy_field() {
+            local container_id="$1" format="$2"
+            bounded_timeout "$cleanup_timeout_seconds" podman inspect \
+              --format "$format" "$container_id" 2>/dev/null
+          }
+
+          verify_sandbox_policy() {
+            local container_id="$1" expected_mounts="${2:-none}"
+            local user privileged readonly nnp effective bounding mount_layout
+            local network ipc pid uts mounts binds devices ports volumes_from
+            user=$(policy_field "$container_id" '{{.Config.User}}') || return 1
+            privileged=$(policy_field "$container_id" '{{.HostConfig.Privileged}}') || return 1
+            readonly=$(policy_field "$container_id" '{{.HostConfig.ReadonlyRootfs}}') || return 1
+            nnp=$(policy_field "$container_id" '{{range .HostConfig.SecurityOpt}}{{if or (eq . "no-new-privileges") (eq . "no-new-privileges=true")}}no-new-privileges=true{{end}}{{end}}') || return 1
+            effective=$(policy_field "$container_id" '{{range .EffectiveCaps}}{{println .}}{{end}}') || return 1
+            bounding=$(policy_field "$container_id" '{{range .BoundingCaps}}{{println .}}{{end}}') || return 1
+            network=$(policy_field "$container_id" '{{.HostConfig.NetworkMode}}') || return 1
+            ipc=$(policy_field "$container_id" '{{.HostConfig.IpcMode}}') || return 1
+            pid=$(policy_field "$container_id" '{{.HostConfig.PidMode}}') || return 1
+            uts=$(policy_field "$container_id" '{{.HostConfig.UTSMode}}') || return 1
+            mount_layout=$(policy_field "$container_id" '{{range .Mounts}}{{println .Type .Destination}}{{end}}') || return 1
+            mounts=$(policy_field "$container_id" '{{len .Mounts}}') || return 1
+            binds=$(policy_field "$container_id" '{{len .HostConfig.Binds}}') || return 1
+            devices=$(policy_field "$container_id" '{{len .HostConfig.Devices}}') || return 1
+            ports=$(policy_field "$container_id" '{{len .HostConfig.PortBindings}}') || return 1
+            volumes_from=$(policy_field "$container_id" '{{len .HostConfig.VolumesFrom}}') || return 1
+            [[ "$user" == '65532:65532' && "$privileged" == 'false' &&
+              "$readonly" == 'true' && "$nnp" == 'no-new-privileges=true' &&
+              -z "$effective" && -z "$bounding" && "$network" == 'none' &&
+              "$ipc" == 'private' && "$pid" == 'private' && "$uts" == 'private' &&
+              "$devices" == '0' && "$ports" == '0' && "$volumes_from" == '0' ]] || return 1
+            case "$expected_mounts" in
+              none)
+                [[ "$mounts" == '0' && -z "$mount_layout" ]]
+                ;;
+              report-volume)
+                [[ "$mounts" == '1' && "$mount_layout" == 'volume /tmp/sqlite-live-report' && "$binds" == '0' ]]
+                ;;
+              *)
+                return 1
+                ;;
+            esac
+          }
+
+          mark_cleanup_failure() {
+            cleanup_failed=1
+          }
+
+          cleanup_container() {
+            local name="$1" reserved="$2" state=0 stop_rc=0 rm_rc=0
+            (( reserved == 1 )) || return 0
+            if resource_exists container "$name" >/dev/null 2>&1; then
+              bounded_timeout "$cleanup_timeout_seconds" podman stop --time 5 "$name" >/dev/null 2>&1 || stop_rc=$?
+              if (( stop_rc != 0 )); then
+                bounded_timeout "$cleanup_timeout_seconds" podman kill "$name" >/dev/null 2>&1 || true
+              fi
+              bounded_timeout "$cleanup_timeout_seconds" podman rm --force "$name" >/dev/null 2>&1 || rm_rc=$?
+              (( rm_rc == 0 )) || mark_cleanup_failure
+            else
+              state=$?
+              (( state == 1 )) || mark_cleanup_failure
+            fi
+            if resource_exists container "$name" >/dev/null 2>&1; then
+              mark_cleanup_failure
+            else
+              state=$?
+              (( state == 1 )) || mark_cleanup_failure
+            fi
+          }
+
+          cleanup_network() {
+            local state=0 rm_rc=0
+            (( fetch_network_reserved == 1 )) || return 0
+            if resource_exists network "$fetch_network" >/dev/null 2>&1; then
+              bounded_timeout "$cleanup_timeout_seconds" podman network rm "$fetch_network" >/dev/null 2>&1 || rm_rc=$?
+              (( rm_rc == 0 )) || mark_cleanup_failure
+            else
+              state=$?
+              (( state == 1 )) || mark_cleanup_failure
+            fi
+            if resource_exists network "$fetch_network" >/dev/null 2>&1; then
+              mark_cleanup_failure
+            else
+              state=$?
+              (( state == 1 )) || mark_cleanup_failure
+            fi
+          }
+
+          cleanup_image() {
+            local image="$1" reserved="$2" state=0 rm_rc=0
+            (( reserved == 1 )) || return 0
+            if resource_exists image "$image" >/dev/null 2>&1; then
+              bounded_timeout "$cleanup_timeout_seconds" podman rmi --force "$image" >/dev/null 2>&1 || rm_rc=$?
+              (( rm_rc == 0 )) || mark_cleanup_failure
+            else
+              state=$?
+              (( state == 1 )) || mark_cleanup_failure
+            fi
+            if resource_exists image "$image" >/dev/null 2>&1; then
+              mark_cleanup_failure
+            else
+              state=$?
+              (( state == 1 )) || mark_cleanup_failure
+            fi
+          }
+
+          cleanup_volume() {
+            local state=0 rm_rc=0
+            (( report_volume_reserved == 1 )) || return 0
+            if resource_exists volume "$report_volume" >/dev/null 2>&1; then
+              bounded_timeout "$cleanup_timeout_seconds" podman volume rm "$report_volume" >/dev/null 2>&1 || rm_rc=$?
+              (( rm_rc == 0 )) || mark_cleanup_failure
+            else
+              state=$?
+              (( state == 1 )) || mark_cleanup_failure
+            fi
+            if resource_exists volume "$report_volume" >/dev/null 2>&1; then
+              mark_cleanup_failure
+            else
+              state=$?
+              (( state == 1 )) || mark_cleanup_failure
+            fi
+          }
+
+          cleanup_isolated_resources() {
+            local rc=$?
+            trap '' INT TERM
+            set +e
+            cleanup_container "$live_container" "$live_container_reserved"
+            cleanup_container "$python_container" "$python_container_reserved"
+            cleanup_container "$extract_container" "$extract_container_reserved"
+            cleanup_volume
+            cleanup_network
+            cleanup_image "$build_image" "$build_image_reserved"
+            cleanup_image "$deps_image" "$deps_image_reserved"
+            cleanup_image "$python_image" "$python_image_reserved"
+            if (( cleanup_failed == 1 )) && [[ -f "$report_path" ]]; then
+              if ! bounded_timeout "$cleanup_timeout_seconds" sed -i \
+                -e 's/^status: pass$/status: fail/' \
+                -e 's/^cleanup: pass$/cleanup: fail/' \
+                -e 's/^cleanup_note: .*/cleanup_note: workflow-resource-cleanup-failed/' \
+                -e 's/^final_rc: 0$/final_rc: 1/' "$report_path"; then
+                bounded_timeout "$cleanup_timeout_seconds" rm -f -- "$report_path" || true
+              fi
+            fi
+            if (( cleanup_failed == 1 )); then
+              rc=1
+            fi
+            trap - EXIT
+            exit "$rc"
+          }
+          trap cleanup_isolated_resources EXIT INT TERM
+
+          # Dependency resolution is the only network-enabled phase. Build,
+          # static checks, the production binary, and the native observer are
+          # all executed in inspected, non-root, network-denied containers.
+          podman pull --quiet "$GO_TOOLCHAIN_IMAGE"
+          podman pull --quiet "$PYTHON_CHECK_IMAGE"
+          reserve_resource_name network "$fetch_network"
+          fetch_network_reserved=1
+          podman network create "$fetch_network" >/dev/null
+          reserve_resource_name image "$deps_image"
+          deps_image_reserved=1
+          podman build --pull=never --isolation=oci --network="$fetch_network" \
+            --file tests/live/sqlite/Containerfile.go-deps \
+            --tag "$deps_image" .
+          reserve_resource_name image "$build_image"
+          build_image_reserved=1
+          podman build --pull=never --isolation=oci --network=none \
+            --file tests/live/sqlite/Containerfile.go-build \
+            --build-arg GO_DEPS_IMAGE="$deps_image" \
+            --tag "$build_image" .
+
+          reserve_resource_name container "$extract_container"
+          extract_container_reserved=1
+          podman create --name "$extract_container" "$build_image" >/dev/null
+
+          reserve_resource_name image "$python_image"
+          python_image_reserved=1
+          podman build --pull=never --isolation=oci --network=none \
+            --file tests/live/sqlite/Containerfile.python-check \
+            --tag "$python_image" .
+          reserve_resource_name container "$python_container"
+          python_container_reserved=1
+          podman create --name "$python_container" \
+            --network=none \
+            --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777 \
+            --memory 256m --cpus 1 --pids-limit 128 \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --ipc private --pid private --uts private \
+            --user 65532:65532 "$python_image" >/dev/null
+          verify_sandbox_policy "$python_container"
+          if ! bounded_timeout "$static_timeout_seconds" podman start --attach "$python_container"; then
+            exit 1
+          fi
+
+          reserve_resource_name volume "$report_volume"
+          report_volume_reserved=1
+          podman volume create "$report_volume" >/dev/null
+          if ! resource_exists volume "$report_volume" >/dev/null 2>&1; then
+            printf '%s\n' 'owned SQLite live report volume was not created' >&2
+            exit 1
+          fi
+
+          reserve_resource_name container "$live_container"
+          live_container_reserved=1
+          # This explicitly owned volume is the only writable output boundary;
+          # the harness writes only its value-free report into it.
+          podman create --name "$live_container" \
+            --network=none \
+            --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777 \
+            --memory 256m --cpus 1 --pids-limit 128 \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --ipc private --pid private --uts private \
+            --user 65532:65532 \
+            --env STATEKIT_BIN=/workspace/statekit \
+            --env REPORT_DIR=/tmp/sqlite-live-report \
+            --volume "${report_volume}:/tmp/sqlite-live-report:rw,U,nocreate" \
+            "$python_image" /bin/bash -c 'exec tests/live/sqlite/run.sh' >/dev/null
+          podman cp "$extract_container:/out/statekit" "$live_container:/workspace/statekit"
+          verify_sandbox_policy "$live_container" report-volume
+
+          run_rc=0
+          if bounded_timeout "$live_timeout_seconds" podman start --attach "$live_container"; then
+            run_rc=0
+          else
+            run_rc=$?
+          fi
+          report_copy_rc=0
+          if bounded_timeout "$cleanup_timeout_seconds" podman cp \
+            "$live_container:/tmp/sqlite-live-report/report.txt" "$report_path" >/dev/null 2>&1; then
+            report_copy_rc=0
+          else
+            report_copy_rc=$?
+          fi
+          if (( report_copy_rc == 0 )) &&
+            [[ -f "$report_path" && ! -L "$report_path" && -s "$report_path" ]]; then
+            report_copy_rc=0
+          else
+            report_copy_rc=1
+          fi
+          if (( run_rc != 0 || report_copy_rc != 0 )); then
+            exit 1
+          fi
+
+      - name: upload value-free live report
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
+        with:
+          name: e5-3-sqlite-live-report
+          path: artifacts/sqlite-live/report.txt
+          if-no-files-found: error
+          retention-days: 7

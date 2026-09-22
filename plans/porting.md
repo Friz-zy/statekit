@@ -130,9 +130,10 @@ install-constrained — record coverage caveats).
 ### R9 — Databases & brokers via native CLIs (~120 funcs)
 `mysql`, `postgres*`(10 families), redis-cli, mongosh, influx, elasticsearch
 (REST via http.query core), kafka, rabbitmqctl family, cassandra cqlsh,
-couchbase, zk_concurrency, sqlite3 (sqlite3 binary).
-Enabler: E5. Credentials passed per-fixture; secrets never logged (Runner
-redaction).
+couchbase, zk_concurrency. SQLite-backed execution uses the declared,
+CGO-free `modernc.org/sqlite` database/sql driver rather than a sqlite3 CLI;
+dependency provenance and quarantine verification remain pending. Enabler: E5.
+Credentials passed per-fixture; secrets never logged (Runner redaction).
 Verify: services tier integration + differential for list/create/drop cycles
 on disposable databases.
 
@@ -2245,6 +2246,62 @@ counts remain unchanged and `external_ci_status` remains
 | `R9.3j` | `mysql.db_create`/`mysql.db_remove`, source-parity tests, registry/CLI registration, and differential report update | `backend-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | local fake-Runner/static evidence is recorded; no database driver, no local live MySQL, no commit; external live behavior remains behind E5.2 and `pending_external_ci` |
 | `E5.2` | E5.1's 14 read-only/catalog/plugin cases plus 9 R9.3j lifecycle cases in the existing rootless Podman harness; value-free report and always-cleanup boundary | `devops-platform-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | implementation/workflow is prepared; exact case inventory is 23 with zero skips required; GitHub execution and live 23/23 evidence are pending and not claimed |
 
+##### 2026-09-21 R9.3k SQLite catalog family — implementation ready; live CI pending
+
+R9.3k ports the public Salt `sqlite3` functions `version`, `sqlite_version`,
+`modify`, `fetch`, `tables`, `indices`, and `indexes`. The private `_connect`
+helper is intentionally not registered. `modify` and `fetch` retain Salt's
+explicit raw-SQL contract, but StateKit preserves Python cursor.execute's
+single-executable-statement boundary with SQLite-aware lexical validation:
+literals, comments, and trigger bodies are not split on their semicolons, while
+multiple executable statements are rejected before opening the database. StateKit
+never interpolates caller SQL into generated statements; the SQL value remains a
+documented user-input boundary with a 1 MiB ceiling, value-free errors, and
+bounded 30-second contexts. Fixed `sqlite_master` catalog queries remain
+source-identical. Database paths are validated after `filepath.Clean`; only the
+exact raw `:memory:` sentinel is special, normalization-created `file:` URI
+forms and `:memory:` variants are rejected before opening, and ordinary relative
+paths, symlinks, and path-boundary names remain compatible.
+
+Fetch and catalog results keep the source `[][]any` shape but have intentional
+finite ceilings: at most 10,000 rows, at most 1 MiB for each raw or compact
+JSON-encoded value, and at most 8 MiB aggregate raw and encoded value bytes.
+The collector checks these budgets incrementally, returns no partial result on
+overflow, cancellation, locking, or driver failure, and uses deterministic
+value-free errors. These are StateKit safety ceilings rather than Salt's
+unbounded `fetchall` behavior; callers needing larger data must use a separately
+bounded database/export path.
+
+The declared dependency is `modernc.org/sqlite v1.58.0`, with repository
+entries in `go.mod` and `go.sum`. Authoritative upstream provenance, source and
+maintainer review, license review, and the seven-day dependency quarantine check
+remain pending; no checksum or download record in this plan is treated as
+provenance evidence. The production and intended CI builds use `CGO_ENABLED=0`.
+
+The exact evidence boundary is:
+
+* **Repository-level non-live checks:** direct module/registry/CLI contracts,
+  differential mock vectors, and deterministic orchestration/fault-path source
+  checks are separate from runtime evidence. No local sandbox, container,
+  Podman, or execution of `tests/live/sqlite/run.sh` is claimed here; these
+  checks do not run Salt or establish live differential parity.
+* **Workflow controls (defined, not executed evidence):** the protected
+  workflow's separate `sqlite-live` job is specified to run the production
+  binary against a disposable actual SQLite file, verify rows, schema, and
+  indices with an independent native SQLite observer (`sqlite3` CLI or the
+  image's native Python SQLite extension), persist the value-free report in an
+  owned credential-free output volume, verify its copy and cleanup, and fail on
+  stale, missing, copy-failure, skipped, or zero-case results.
+* **External live evidence (pending):** no GitHub run success is recorded here;
+  `external_ci: pending_external_ci` remains the boundary.
+* MySQL E5.1/E5.2 remains unchanged and external MySQL behavior remains
+  pending; no live MySQL is used by local validation.
+
+| Phase | Scope | Implementation executor role | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `R9.3k` | Salt `sqlite3` public catalog family, pure-Go pinned dependency, source-parity tests, registry/CLI wiring, and differential report update | `backend-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | local non-live/mock/static evidence is recorded; no GitHub success or Salt live parity is claimed; dependency and SQL/path boundaries are documented |
+| `E5.3` | Separate protected `sqlite-live` production-binary/file/native-observer job with exact inventory, value-free report, durable report extraction, cleanup, and zero-skip enforcement | `devops-platform-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | workflow controls are defined; no local sandbox/live or GitHub execution evidence is claimed; external execution remains `pending_external_ci` |
+
 ##### 2026-09-17 current status (R9.2b PostgreSQL version probe)
 
 Actual HEAD is `23fba61` (R9.2b PostgreSQL version probe). R9.2b
@@ -4214,13 +4271,13 @@ R8.1 update: after `e6e1ccd` every GOOS in {linux, darwin, windows, freebsd} car
 | [ ] | PTD-EXEC-1411 | `softwareupdate.update` | registered-but-runtime-unproven | software-engineer-senior | catalog `docs/catalog/exec/mac_softwareupdate.yaml#update`; Salt `saltstack/salt/modules/mac_softwareupdate.py#update`; tests saltstack/tests/pytests/unit/modules/test_mac_softwareupdate.py | `modules/exec/softwareupdate/softwareupdate.go#Name`; R6 / native Darwin gate; dependencies: none catalogued | `docs/differential/R6/report.yaml:4` records cross-build/source evidence without a native runner |
 | [ ] | PTD-EXEC-1412 | `softwareupdate.update_all` | registered-but-runtime-unproven | software-engineer-senior | catalog `docs/catalog/exec/mac_softwareupdate.yaml#update_all`; Salt `saltstack/salt/modules/mac_softwareupdate.py#update_all`; tests saltstack/tests/pytests/unit/modules/test_mac_softwareupdate.py | `modules/exec/softwareupdate/softwareupdate.go#Name`; R6 / native Darwin gate; dependencies: none catalogued | `docs/differential/R6/report.yaml:4` records cross-build/source evidence without a native runner |
 | [ ] | PTD-EXEC-1413 | `softwareupdate.update_available` | registered-but-runtime-unproven | software-engineer-senior | catalog `docs/catalog/exec/mac_softwareupdate.yaml#update_available`; Salt `saltstack/salt/modules/mac_softwareupdate.py#update_available`; tests saltstack/tests/pytests/unit/modules/test_mac_softwareupdate.py | `modules/exec/softwareupdate/softwareupdate.go#Name`; R6 / native Darwin gate; dependencies: none catalogued | `docs/differential/R6/report.yaml:4` records cross-build/source evidence without a native runner |
-| [ ] | PTD-EXEC-1414 | `sqlite3.fetch` | actionable | software-engineer-senior | catalog `docs/catalog/exec/sqlite3.yaml#fetch`; Salt `saltstack/salt/modules/sqlite3.py#fetch`; tests saltstack/tests/unit/modules/test_sqlite3.py | `modules/exec/sqlite3` (planned); R9 / E5 services dependency; dependencies: none catalogued | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
-| [ ] | PTD-EXEC-1415 | `sqlite3.indexes` | actionable | software-engineer-senior | catalog `docs/catalog/exec/sqlite3.yaml#indexes`; Salt `saltstack/salt/modules/sqlite3.py#indexes`; tests saltstack/tests/unit/modules/test_sqlite3.py | `modules/exec/sqlite3` (planned); R9 / E5 services dependency; dependencies: none catalogued | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
-| [ ] | PTD-EXEC-1416 | `sqlite3.indices` | actionable | software-engineer-senior | catalog `docs/catalog/exec/sqlite3.yaml#indices`; Salt `saltstack/salt/modules/sqlite3.py#indices`; tests saltstack/tests/unit/modules/test_sqlite3.py | `modules/exec/sqlite3` (planned); R9 / E5 services dependency; dependencies: none catalogued | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
-| [ ] | PTD-EXEC-1417 | `sqlite3.modify` | actionable | software-engineer-senior | catalog `docs/catalog/exec/sqlite3.yaml#modify`; Salt `saltstack/salt/modules/sqlite3.py#modify`; tests saltstack/tests/unit/modules/test_sqlite3.py | `modules/exec/sqlite3` (planned); R9 / E5 services dependency; dependencies: none catalogued | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
-| [ ] | PTD-EXEC-1418 | `sqlite3.sqlite_version` | actionable | software-engineer-senior | catalog `docs/catalog/exec/sqlite3.yaml#sqlite_version`; Salt `saltstack/salt/modules/sqlite3.py#sqlite_version`; tests saltstack/tests/unit/modules/test_sqlite3.py | `modules/exec/sqlite3` (planned); R9 / E5 services dependency; dependencies: none catalogued | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
-| [ ] | PTD-EXEC-1419 | `sqlite3.tables` | actionable | software-engineer-senior | catalog `docs/catalog/exec/sqlite3.yaml#tables`; Salt `saltstack/salt/modules/sqlite3.py#tables`; tests saltstack/tests/unit/modules/test_sqlite3.py | `modules/exec/sqlite3` (planned); R9 / E5 services dependency; dependencies: none catalogued | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
-| [ ] | PTD-EXEC-1420 | `sqlite3.version` | actionable | software-engineer-senior | catalog `docs/catalog/exec/sqlite3.yaml#version`; Salt `saltstack/salt/modules/sqlite3.py#version`; tests saltstack/tests/unit/modules/test_sqlite3.py | `modules/exec/sqlite3` (planned); R9 / E5 services dependency; dependencies: none catalogued | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
+| [x] | PTD-EXEC-1414 | `sqlite3.fetch` | implemented | software-engineer-senior | catalog `docs/catalog/exec/sqlite3.yaml#fetch`; Salt `saltstack/salt/modules/sqlite3.py#fetch`; tests `modules/exec/sqlite3/sqlite3_test.go`, `internal/cli/sqlite3_cli_test.go`, `tests/differential/sqlite3_test.go`, `tests/integration/sqlite3_test.go` | `modules/exec/sqlite3/sqlite3.go#fetchFunc`; R9.3k; dependency: modernc.org/sqlite v1.58.0 | direct/registry/CLI/differential mock and non-live project-test evidence; external native-sqlite CI remains `pending_external_ci` |
+| [x] | PTD-EXEC-1415 | `sqlite3.indexes` | implemented | software-engineer-senior | catalog `docs/catalog/exec/sqlite3.yaml#indexes`; Salt `saltstack/salt/modules/sqlite3.py#indexes`; tests `modules/exec/sqlite3/sqlite3_test.go`, `internal/cli/sqlite3_cli_test.go`, `tests/differential/sqlite3_test.go`, `tests/integration/sqlite3_test.go` | `modules/exec/sqlite3/sqlite3.go#indexesFunc`; R9.3k; dependency: modernc.org/sqlite v1.58.0 | canonical alias is registered; external native-sqlite CI remains `pending_external_ci` |
+| [x] | PTD-EXEC-1416 | `sqlite3.indices` | implemented | software-engineer-senior | catalog `docs/catalog/exec/sqlite3.yaml#indices`; Salt `saltstack/salt/modules/sqlite3.py#indices`; tests `modules/exec/sqlite3/sqlite3_test.go`, `internal/cli/sqlite3_cli_test.go`, `tests/differential/sqlite3_test.go`, `tests/integration/sqlite3_test.go` | `modules/exec/sqlite3/sqlite3.go#indicesFunc`; R9.3k; dependency: modernc.org/sqlite v1.58.0 | fixed sqlite_master query and source ordering covered; external native-sqlite CI remains `pending_external_ci` |
+| [x] | PTD-EXEC-1417 | `sqlite3.modify` | implemented | software-engineer-senior | catalog `docs/catalog/exec/sqlite3.yaml#modify`; Salt `saltstack/salt/modules/sqlite3.py#modify`; tests `modules/exec/sqlite3/sqlite3_test.go`, `internal/cli/sqlite3_cli_test.go`, `tests/differential/sqlite3_test.go`, `tests/integration/sqlite3_test.go` | `modules/exec/sqlite3/sqlite3.go#modifyFunc`; R9.3k; dependency: modernc.org/sqlite v1.58.0 | explicit raw SQL boundary, bounded context, redaction, and file mutation covered; external live CI remains `pending_external_ci` |
+| [x] | PTD-EXEC-1418 | `sqlite3.sqlite_version` | implemented | software-engineer-senior | catalog `docs/catalog/exec/sqlite3.yaml#sqlite_version`; Salt `saltstack/salt/modules/sqlite3.py#sqlite_version`; tests `modules/exec/sqlite3/sqlite3_test.go`, `internal/cli/sqlite3_cli_test.go`, `tests/differential/sqlite3_test.go` | `modules/exec/sqlite3/sqlite3.go#sqliteVersionFunc`; R9.3k; dependency: modernc.org/sqlite v1.58.0 | bundled engine version is reported; no GitHub live success is claimed |
+| [x] | PTD-EXEC-1419 | `sqlite3.tables` | implemented | software-engineer-senior | catalog `docs/catalog/exec/sqlite3.yaml#tables`; Salt `saltstack/salt/modules/sqlite3.py#tables`; tests `modules/exec/sqlite3/sqlite3_test.go`, `internal/cli/sqlite3_cli_test.go`, `tests/differential/sqlite3_test.go`, `tests/integration/sqlite3_test.go` | `modules/exec/sqlite3/sqlite3.go#tablesFunc`; R9.3k; dependency: modernc.org/sqlite v1.58.0 | fixed sqlite_master query and source ordering covered; external native-sqlite CI remains `pending_external_ci` |
+| [x] | PTD-EXEC-1420 | `sqlite3.version` | implemented | software-engineer-senior | catalog `docs/catalog/exec/sqlite3.yaml#version`; Salt `saltstack/salt/modules/sqlite3.py#version`; tests `modules/exec/sqlite3/sqlite3_test.go`, `internal/cli/sqlite3_cli_test.go`, `tests/differential/sqlite3_test.go` | `modules/exec/sqlite3/sqlite3.go#versionFunc`; R9.3k; dependency: modernc.org/sqlite v1.58.0 | pinned driver version is reported; external native-sqlite CI remains `pending_external_ci` |
 | [ ] | PTD-EXEC-1421 | `state.apply` | actionable | software-engineer-senior | catalog `docs/catalog/exec/state.yaml#apply_`; Salt `saltstack/salt/modules/state.py#apply_`; tests saltstack/tests/pytests/unit/modules/test_state.py | `modules/exec/state` (planned); unassigned-next-round; round assignment required before implementation; dependencies: config.get, config.option, saltutil.is_running, snapper.create_snapshot, util:state.check_result | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
 | [ ] | PTD-EXEC-1422 | `state.check_request` | actionable | software-engineer-senior | catalog `docs/catalog/exec/state.yaml#check_request`; Salt `saltstack/salt/modules/state.py#check_request`; tests saltstack/tests/pytests/unit/modules/test_state.py | `modules/exec/state` (planned); unassigned-next-round; round assignment required before implementation; dependencies: cmd.run, config.get, config.option, saltutil.is_running, snapper.create_snapshot, util:state.check_result | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
 | [ ] | PTD-EXEC-1423 | `state.clear_cache` | actionable | software-engineer-senior | catalog `docs/catalog/exec/state.yaml#clear_cache`; Salt `saltstack/salt/modules/state.py#clear_cache`; tests saltstack/tests/pytests/unit/modules/test_state.py | `modules/exec/state` (planned); unassigned-next-round; round assignment required before implementation; dependencies: cmd.run, config.get, config.option, saltutil.is_running, snapper.create_snapshot, util:state.check_result | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |

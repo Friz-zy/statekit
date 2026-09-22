@@ -91,6 +91,7 @@ import (
 	execshadow "github.com/friz-zy/statekit/modules/exec/shadow"
 	execsmbios "github.com/friz-zy/statekit/modules/exec/smbios"
 	execsoftwareupdate "github.com/friz-zy/statekit/modules/exec/softwareupdate"
+	execsqlite3 "github.com/friz-zy/statekit/modules/exec/sqlite3"
 	execssh "github.com/friz-zy/statekit/modules/exec/ssh"
 	execsshpki "github.com/friz-zy/statekit/modules/exec/ssh_pki"
 	execstatus "github.com/friz-zy/statekit/modules/exec/status"
@@ -289,6 +290,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execrabbitmq.Register,
 		execmysql.Register,
 		execpostgres.Register,
+		execsqlite3.Register,
 		execxfs.Register,
 		execsysctl.Register,
 		execsysfs.Register,
