@@ -300,11 +300,14 @@ func TestMysqlRegistryNames(t *testing.T) {
 		"mysql.db_repair",
 		"mysql.db_remove",
 		"mysql.db_tables",
+		"mysql.get_master_status",
+		"mysql.get_slave_status",
 		"mysql.grant_add",
 		"mysql.grant_exists",
 		"mysql.grant_revoke",
 		"mysql.plugin_status",
 		"mysql.plugins_list",
+		"mysql.processlist",
 		"mysql.quote_identifier",
 		"mysql.showglobal",
 		"mysql.showvariables",
@@ -7449,5 +7452,249 @@ func TestMysqlAlterDatabaseThroughRegistry(t *testing.T) {
 	if !strings.Contains(runner.calls[0].Args[len(runner.calls[0].Args)-1], dbGetQuery) ||
 		!strings.Contains(runner.calls[1].Args[len(runner.calls[1].Args)-1], "ALTER DATABASE `registry_db`") {
 		t.Fatalf("registry alter_db order = %#v", runner.calls)
+	}
+}
+
+// R9.3m source vectors pin the three exact SHOW statements and the DB-API
+// DictRow/value shapes. The Runner is fake: no mysql client or server is
+// contacted by the direct suite. A nonzero CLI exit is only a transport
+// failure here: it cannot distinguish Salt's processlist connection failure
+// from the connected processlist query-error branch.
+func TestMysqlProcessAndReplicationStatusSourceVectors(t *testing.T) {
+	processStdout := "Id\tUser\tHost\tdb\tCommand\tTime\tState\tInfo\tRows_sent\tRows_examined\tRows_read\n" +
+		"39\troot\tlocalhost\tmysql\tQuery\t0\tNULL\tSHOW FULL PROCESSLIST\t0\t0\t1\n"
+	rt, runner := newMysqlRuntime(process.CommandResult{Stdout: []byte(processStdout)})
+	password := "process-status-secret"
+	value, err := (processlistFunc{}).Execute(context.Background(), rt, &ProcesslistArgs{
+		User: mysqlString("test_user"), Host: mysqlString("test_host"),
+		Port: mysqlString("3306"), Password: &password, DB: mysqlString("test_db"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantProcess := []map[string]any{{
+		"Id": int64(39), "User": "root", "Host": "localhost", "db": "mysql",
+		"Command": "Query", "Time": int64(0), "State": nil,
+		"Info": "SHOW FULL PROCESSLIST", "Rows_sent": int64(0),
+		"Rows_examined": int64(0), "Rows_read": int64(1),
+	}}
+	if !reflect.DeepEqual(value, wantProcess) {
+		t.Fatalf("processlist = %#v, want %#v", value, wantProcess)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("processlist calls = %d, want 1", len(runner.calls))
+	}
+	command := runner.calls[0]
+	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, []string{
+		"mysql", "--batch", "--user=test_user", "--host=test_host", "--port=3306",
+		"--database=test_db", "--execute=SHOW FULL PROCESSLIST",
+	}) {
+		t.Fatalf("processlist argv = %#v", got)
+	}
+	if command.Timeout != commandTimeout || command.MaxStdoutBytes != outputLimit ||
+		command.MaxStderrBytes != outputLimit || command.Shell ||
+		!reflect.DeepEqual(command.Env, []string{"MYSQL_PWD=" + password}) ||
+		!reflect.DeepEqual(command.Redact, []string{password}) {
+		t.Fatalf("processlist transport = %#v", command)
+	}
+	if strings.Contains(command.RedactedString(), password) {
+		t.Fatalf("processlist command leaked password: %q", command.RedactedString())
+	}
+
+	masterStdout := "File\tPosition\tBinlog_Do_DB\tBinlog_Ignore_DB\tExecuted_Gtid_Set\n" +
+		"mysql-bin.000021\t107\t\t\tNULL\n"
+	rt, runner = newMysqlRuntime(process.CommandResult{Stdout: []byte(masterStdout)})
+	value, err = (getMasterStatusFunc{}).Execute(context.Background(), rt, &GetMasterStatusArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantMaster := map[string]any{
+		"File": "mysql-bin.000021", "Position": int64(107),
+		"Binlog_Do_DB": "", "Binlog_Ignore_DB": "", "Executed_Gtid_Set": nil,
+	}
+	if !reflect.DeepEqual(value, wantMaster) {
+		t.Fatalf("get_master_status = %#v, want %#v", value, wantMaster)
+	}
+	if len(runner.calls) != 1 || runner.calls[0].Args[len(runner.calls[0].Args)-1] != "--execute=SHOW MASTER STATUS" {
+		t.Fatalf("master status transport = %#v", runner.calls)
+	}
+
+	slaveStdout := "Master_Port\tSeconds_Behind_Master\tLast_Error\tSlave_IO_Running\n" +
+		"3306\tNULL\t\tYes\n"
+	rt, _ = newMysqlRuntime(process.CommandResult{Stdout: []byte(slaveStdout)})
+	value, err = (getSlaveStatusFunc{}).Execute(context.Background(), rt, &GetSlaveStatusArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSlave := map[string]any{
+		"Master_Port": int64(3306), "Seconds_Behind_Master": nil,
+		"Last_Error": "", "Slave_IO_Running": "Yes",
+	}
+	if !reflect.DeepEqual(value, wantSlave) {
+		t.Fatalf("get_slave_status = %#v, want %#v", value, wantSlave)
+	}
+
+	// The source appends an empty list for a successful status query with no
+	// row. The CLI transport also maps every nonzero exit to an empty list,
+	// which is source-compatible for connection failures and replication query
+	// failures, but is an intentional defensive divergence for the connected
+	// processlist query-error branch that Salt lets escape.
+	for _, tc := range []struct {
+		name string
+		fn   runtime.ExecFunction
+		args any
+	}{
+		{name: "master-empty", fn: getMasterStatusFunc{}, args: &GetMasterStatusArgs{}},
+		{name: "slave-empty", fn: getSlaveStatusFunc{}, args: &GetSlaveStatusArgs{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, _ := newMysqlRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("header\n")})
+			got, err := tc.fn.Execute(context.Background(), rt, tc.args)
+			if err != nil || !reflect.DeepEqual(got, []any{}) {
+				t.Fatalf("empty status = %#v, %v", got, err)
+			}
+		})
+	}
+	rt, _ = newMysqlRuntime(process.CommandResult{ExitCode: 1, Stderr: []byte("access denied")})
+	value, err = (getSlaveStatusFunc{}).Execute(context.Background(), rt, &GetSlaveStatusArgs{})
+	if err != nil || !reflect.DeepEqual(value, []any{}) {
+		t.Fatalf("nonzero slave status = %#v, %v", value, err)
+	}
+	rt, _ = newMysqlRuntime(process.CommandResult{ExitCode: 1, Stderr: []byte("access denied")})
+	value, err = (processlistFunc{}).Execute(context.Background(), rt, &ProcesslistArgs{})
+	if err != nil || !reflect.DeepEqual(value, []map[string]any{}) {
+		t.Fatalf("nonzero processlist = %#v, %v", value, err)
+	}
+}
+
+// TestMysqlProcessAndReplicationStatusShortRows documents the defensive
+// malformed-output boundary. Salt indexes every described column and raises
+// IndexError for a short row; StateKit keeps the available prefix instead of
+// panicking or fabricating a missing field.
+func TestMysqlProcessAndReplicationStatusShortRows(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		fn     runtime.ExecFunction
+		args   any
+		stdout string
+		want   any
+	}{
+		{
+			name:   "processlist",
+			fn:     processlistFunc{},
+			args:   &ProcesslistArgs{},
+			stdout: "Id\tInfo\n39\n",
+			want:   []map[string]any{{"Id": int64(39)}},
+		},
+		{
+			name:   "master",
+			fn:     getMasterStatusFunc{},
+			args:   &GetMasterStatusArgs{},
+			stdout: "File\tPosition\nmysql-bin.000021\n",
+			want:   map[string]any{"File": "mysql-bin.000021"},
+		},
+		{
+			name:   "slave",
+			fn:     getSlaveStatusFunc{},
+			args:   &GetSlaveStatusArgs{},
+			stdout: "Master_Port\tLast_Error\n3306\n",
+			want:   map[string]any{"Master_Port": int64(3306)},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, _ := newMysqlRuntime(process.CommandResult{Stdout: []byte(tc.stdout)})
+			got, err := tc.fn.Execute(context.Background(), rt, tc.args)
+			if err != nil || !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("short row = %#v, %v; want %#v", got, err, tc.want)
+			}
+		})
+	}
+}
+
+// TestMysqlProcessAndReplicationStatusNullRedactionOverlap verifies that raw
+// native SHOW NULL classification precedes public redaction. A password equal
+// to the client's NULL marker must preserve SQL NULL as nil, while an ordinary
+// value containing the same marker remains redacted.
+func TestMysqlProcessAndReplicationStatusNullRedactionOverlap(t *testing.T) {
+	marker := "NULL"
+	rt, runner := newMysqlRuntime(process.CommandResult{Stdout: []byte(
+		"Id\tState\tInfo\n1\tNULL\tquery-NULL-tail\n",
+	)})
+	value, err := (processlistFunc{}).Execute(context.Background(), rt, &ProcesslistArgs{
+		Password: &marker,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []map[string]any{{
+		"Id": int64(1), "State": nil, "Info": "query-***REDACTED***-tail",
+	}}
+	if !reflect.DeepEqual(value, want) {
+		t.Fatalf("NULL-overlap processlist = %#v, want %#v", value, want)
+	}
+	if len(runner.calls) != 1 || !containsAll(runner.calls[0].Redact, []string{marker}) ||
+		strings.Contains(runner.calls[0].RedactedString(), marker) {
+		t.Fatalf("NULL-overlap transport = %#v", runner.calls)
+	}
+}
+
+// TestMysqlProcessAndReplicationStatusTransport pins the shared cancellation,
+// output-limit, and error-redaction controls on a newly registered SHOW path.
+func TestMysqlProcessAndReplicationStatusTransport(t *testing.T) {
+	marker := "status-transport-secret"
+	rt, runner := newMysqlRuntime(process.CommandResult{
+		Err:    errors.New("mysql failed " + marker),
+		Stdout: []byte(marker), Stderr: []byte(marker),
+	})
+	value, err := (processlistFunc{}).Execute(context.Background(), rt, &ProcesslistArgs{Password: mysqlString(marker)})
+	if value != nil || err == nil || strings.Contains(err.Error(), marker) || len(runner.calls) != 1 {
+		t.Fatalf("status redaction = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+	if strings.Contains(runner.calls[0].RedactedString(), marker) || !containsAll(runner.calls[0].Redact, []string{marker}) {
+		t.Fatalf("status command leaked marker: %q redact=%q", runner.calls[0].RedactedString(), runner.calls[0].Redact)
+	}
+
+	rt, runner = newMysqlRuntime(process.CommandResult{Stdout: bytes.Repeat([]byte{'x'}, outputLimit+1)})
+	value, err = (getMasterStatusFunc{}).Execute(context.Background(), rt, &GetMasterStatusArgs{})
+	if value != nil || !errors.Is(err, process.ErrOutputLimit) || len(runner.calls) != 1 {
+		t.Fatalf("status output limit = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runner = &mysqlFakeRunner{}
+	value, err = (getSlaveStatusFunc{}).Execute(ctx, &runtime.Runtime{Runner: runner}, &GetSlaveStatusArgs{})
+	if value != nil || !errors.Is(err, context.Canceled) || len(runner.calls) != 0 {
+		t.Fatalf("status cancellation = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+}
+
+// TestMysqlProcessAndReplicationStatusThroughRegistry pins registration and
+// the single-row/empty-list public shapes at the registry boundary.
+func TestMysqlProcessAndReplicationStatusThroughRegistry(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	runner := &mysqlFakeRunner{results: []process.CommandResult{
+		{Stdout: []byte("Id\tUser\n1\troot\n")},
+		{Stdout: []byte("File\tPosition\n")},
+		{ExitCode: 1},
+	}}
+	rt := &runtime.Runtime{Runner: runner, Exec: reg, FS: runtime.NewMemoryFS()}
+	value, err := reg.Call(context.Background(), rt, "mysql.processlist", &ProcesslistArgs{})
+	if err != nil || !reflect.DeepEqual(value, []map[string]any{{"Id": int64(1), "User": "root"}}) {
+		t.Fatalf("registry processlist = %#v, %v", value, err)
+	}
+	value, err = reg.Call(context.Background(), rt, "mysql.get_master_status", &GetMasterStatusArgs{})
+	if err != nil || !reflect.DeepEqual(value, []any{}) {
+		t.Fatalf("registry master status = %#v, %v", value, err)
+	}
+	value, err = reg.Call(context.Background(), rt, "mysql.get_slave_status", &GetSlaveStatusArgs{})
+	if err != nil || !reflect.DeepEqual(value, []any{}) {
+		t.Fatalf("registry slave status = %#v, %v", value, err)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("registry status calls = %d, want 3", len(runner.calls))
 	}
 }

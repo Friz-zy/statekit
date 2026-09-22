@@ -2734,3 +2734,149 @@ func TestMySQLCLIAlterDatabasePhaseFailures(t *testing.T) {
 		t.Fatalf("preflight redaction code=%d out=%q err=%q calls=%d command=%q redact=%q", code, out, errS, len(runner.calls), runner.calls[0].RedactedString(), runner.calls[0].Redact)
 	}
 }
+
+// TestMySQLCLIProcessAndReplicationStatus drives the newly registered SHOW
+// readers through the production CLI decoder with a fake Runner only. It pins
+// the fixed SQL, JSON shapes, native numeric conversion, and value-free
+// connection transport.
+func TestMySQLCLIProcessAndReplicationStatus(t *testing.T) {
+	marker := "cli-status-secret"
+	processOutput := "Id\tUser\tHost\tCommand\tTime\tState\tInfo\n" +
+		"7\troot\tlocalhost\tQuery\t0\tNULL\t" + marker + "\n"
+	runner := &cliRecordingRunner{results: []process.CommandResult{{Stdout: []byte(processOutput)}}}
+	code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.processlist",
+		"--connection-user", "test_user", "--connection-host", "test_host",
+		"--connection-port", "3306", "--connection-pass", marker, "-o", "json")
+	var processes []map[string]any
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &processes) != nil ||
+		!reflect.DeepEqual(processes, []map[string]any{{
+			"Id": float64(7), "User": "root", "Host": "localhost", "Command": "Query",
+			"Time": float64(0), "State": nil, "Info": "***REDACTED***",
+		}}) || strings.Contains(out+errS, marker) {
+		t.Fatalf("processlist code=%d out=%q err=%q value=%#v", code, out, errS, processes)
+	}
+	if got := append([]string{runner.calls[0].Name}, runner.calls[0].Args...); !reflect.DeepEqual(got, []string{
+		"mysql", "--batch", "--user=test_user", "--host=test_host", "--port=3306",
+		"--execute=SHOW FULL PROCESSLIST",
+	}) {
+		t.Fatalf("processlist argv=%#v", got)
+	}
+	if runner.calls[0].Shell || runner.calls[0].Timeout != 30*time.Second ||
+		runner.calls[0].MaxStdoutBytes != 4<<20 || runner.calls[0].MaxStderrBytes != 4<<20 ||
+		!reflect.DeepEqual(runner.calls[0].Env, []string{"MYSQL_PWD=" + marker}) ||
+		!reflect.DeepEqual(runner.calls[0].Redact, []string{marker}) ||
+		strings.Contains(runner.calls[0].RedactedString(), marker) {
+		t.Fatalf("processlist transport=%#v", runner.calls[0])
+	}
+
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{Stdout: []byte("File\tPosition\nmysql-bin.000001\t42\n")},
+		{Stdout: []byte("Master_Port\tSeconds_Behind_Master\n")},
+	}}
+	app := mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.get_master_status", "-o", "json")
+	var master map[string]any
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &master) != nil ||
+		!reflect.DeepEqual(master, map[string]any{"File": "mysql-bin.000001", "Position": float64(42)}) {
+		t.Fatalf("master status code=%d out=%q err=%q value=%#v", code, out, errS, master)
+	}
+	code, out, errS = captureCode(t, app, "exec", "mysql.get_slave_status", "-o", "json")
+	var slave []any
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &slave) != nil || len(slave) != 0 {
+		t.Fatalf("slave status empty code=%d out=%q err=%q value=%#v", code, out, errS, slave)
+	}
+	if len(runner.calls) != 2 || runner.calls[0].Args[len(runner.calls[0].Args)-1] != "--execute=SHOW MASTER STATUS" ||
+		runner.calls[1].Args[len(runner.calls[1].Args)-1] != "--execute=SHOW SLAVE STATUS" {
+		t.Fatalf("status argv=%#v", runner.calls)
+	}
+}
+
+// TestMySQLCLIProcessAndReplicationStatusNullRedactionOverlap verifies the
+// public CLI boundary: native SHOW NULL is classified before a password equal
+// to the client's NULL marker is redacted, while an ordinary overlapping value
+// is still redacted.
+func TestMySQLCLIProcessAndReplicationStatusNullRedactionOverlap(t *testing.T) {
+	marker := "NULL"
+	runner := &cliRecordingRunner{results: []process.CommandResult{{Stdout: []byte(
+		"Id\tState\tInfo\n1\tNULL\tquery-NULL-tail\n",
+	)}}}
+	code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.processlist",
+		"--connection-pass", marker, "-o", "json")
+	var processes []map[string]any
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &processes) != nil ||
+		!reflect.DeepEqual(processes, []map[string]any{{
+			"Id": float64(1), "State": nil, "Info": "query-***REDACTED***-tail",
+		}}) || strings.Contains(out+errS, marker) {
+		t.Fatalf("NULL-overlap processlist code=%d out=%q err=%q value=%#v", code, out, errS, processes)
+	}
+	if len(runner.calls) != 1 || !reflect.DeepEqual(runner.calls[0].Redact, []string{marker}) ||
+		strings.Contains(runner.calls[0].RedactedString(), marker) {
+		t.Fatalf("NULL-overlap transport=%#v", runner.calls)
+	}
+}
+
+// TestMySQLCLIProcessAndReplicationStatusShortRow documents the intentional
+// defensive divergence from Salt's IndexError on malformed short SHOW rows.
+func TestMySQLCLIProcessAndReplicationStatusShortRow(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{{Stdout: []byte(
+		"Id\tInfo\n39\n",
+	)}}}
+	code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.processlist", "-o", "json")
+	var processes []map[string]any
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &processes) != nil ||
+		!reflect.DeepEqual(processes, []map[string]any{{"Id": float64(39)}}) {
+		t.Fatalf("short-row processlist code=%d out=%q err=%q value=%#v", code, out, errS, processes)
+	}
+}
+
+// TestMySQLCLIProcessAndReplicationStatusFailures pins the CLI transport's
+// empty shape for every nonzero exit and the shared bounded failures. A native
+// mysql exit cannot identify whether the source failed at connection or query
+// time; for processlist, mapping both to [] is an intentional defensive
+// divergence from the connected query-error exception branch.
+func TestMySQLCLIProcessAndReplicationStatusFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		function string
+		result   process.CommandResult
+		want     string
+	}{
+		{name: "process-nonzero-transport", function: "mysql.processlist", result: process.CommandResult{ExitCode: 1}, want: "[]"},
+		{name: "master-nonzero-transport", function: "mysql.get_master_status", result: process.CommandResult{ExitCode: 1}, want: "[]"},
+		{name: "slave-nonzero-transport", function: "mysql.get_slave_status", result: process.CommandResult{ExitCode: 1}, want: "[]"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &cliRecordingRunner{results: []process.CommandResult{tc.result}}
+			code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", tc.function, "-o", "json")
+			if code != ExitOK || errS != "" || strings.TrimSpace(out) != tc.want || len(runner.calls) != 1 {
+				t.Fatalf("code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+			}
+		})
+	}
+
+	for _, tc := range []struct {
+		name     string
+		function string
+	}{
+		{name: "process-limit", function: "mysql.processlist"},
+		{name: "master-limit", function: "mysql.get_master_status"},
+		{name: "slave-timeout", function: "mysql.get_slave_status"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result := process.CommandResult{}
+			if strings.Contains(tc.name, "limit") {
+				result.StdoutTruncated = true
+			} else {
+				result.Err = context.DeadlineExceeded
+			}
+			runner := &cliRecordingRunner{results: []process.CommandResult{result}}
+			code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", tc.function, "-o", "json")
+			if code != ExitFailed || out != "" || errS == "" || len(runner.calls) != 1 {
+				t.Fatalf("bounded code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+			}
+			if runner.calls[0].Timeout != 30*time.Second || runner.calls[0].MaxStdoutBytes != 4<<20 || runner.calls[0].MaxStderrBytes != 4<<20 {
+				t.Fatalf("bounded transport=%#v", runner.calls[0])
+			}
+		})
+	}
+}

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # E5.2 live MySQL gate extending the E5.1 read-only/catalog/plugin surface
-# with the already-ported R9.3j database lifecycle and R9.3l alter_db. The gate deliberately runs
+# with the already-ported R9.3j database lifecycle, R9.3l alter_db, and R9.3m
+# process/replication status readers. The gate deliberately runs
 # the production statekit binary and the official image's native mysql client;
 # it does not use the Go fake Runner. Every E5.1 case remains in the inventory.
 #
@@ -38,6 +39,9 @@ readonly SERVER_USER_SECRET_TARGET='/run/secrets/mysql-user-password'
 readonly CLIENT_SECRET_TARGET='/run/secrets/mysql-client.cnf'
 readonly NATIVE_AUTH_FAILURE_MARKER='ERROR 1045 (28000): Access denied for user'
 readonly NATIVE_CONNECTION_FAILURE_MARKER="ERROR 2003 (HY000): Can't connect to MySQL server"
+readonly NATIVE_UNSUPPORTED_STATUS_ERROR_CODE='1064'
+readonly NATIVE_UNSUPPORTED_STATUS_SQLSTATE='42000'
+readonly NATIVE_UNSUPPORTED_STATUS_SIGNATURE='You have an error in your SQL syntax;'
 readonly STATEKIT_INVALID_IDENTIFIER_CATEGORY='mysql: invalid argument'
 readonly STATEKIT_INVALID_IDENTIFIER_DIAGNOSTIC='statekit: mysql: invalid argument: unsupported identifier in name'
 readonly STATEKIT_INVALID_OPTION_DIAGNOSTIC='statekit: mysql: invalid argument: unsupported value in character_set'
@@ -78,6 +82,18 @@ readonly CASE_IDS=(
   'mysql-alter-db-negative-connection'
   'mysql-alter-db-negative-invalid-identifier'
   'mysql-alter-db-negative-invalid-option'
+  'mysql-processlist-statekit'
+  'mysql-processlist-native-observation'
+  'mysql-processlist-negative-auth'
+  'mysql-processlist-negative-connection'
+  'mysql-get-master-status-statekit'
+  'mysql-get-master-status-native-observation'
+  'mysql-get-master-status-negative-auth'
+  'mysql-get-master-status-negative-connection'
+  'mysql-get-slave-status-statekit'
+  'mysql-get-slave-status-native-observation'
+  'mysql-get-slave-status-negative-auth'
+  'mysql-get-slave-status-negative-connection'
 )
 
 if [[ "${1:-}" == '--list-cases' ]]; then
@@ -294,8 +310,9 @@ write_report() {
       printf '%s\n' 'cleanup: pass'
     fi
     printf 'cleanup_note: %s\n' "$CLEANUP_NOTE"
-    printf '%s\n' 'scope: E5.1 mysql.version/db_list/db_exists/plugins_list/plugin_status plus R9.3j lifecycle and R9.3l mysql.alter_db create/seed/alter/read-back cases'
-    printf '%s\n' 'independent_checks: native mysql client database/plugin/charset/collation/seed postconditions, plus StateKit db_get read-back'
+    printf '%s\n' 'scope: E5.1 mysql.version/db_list/db_exists/plugins_list/plugin_status plus R9.3j lifecycle, R9.3l mysql.alter_db create/seed/alter/read-back, and R9.3m mysql.processlist/get_master_status/get_slave_status cases'
+    printf '%s\n' 'independent_checks: native mysql client database/plugin/charset/collation/seed postconditions, available SHOW FULL PROCESSLIST correlation, and MySQL 8.4 unsupported SHOW MASTER STATUS/SHOW SLAVE STATUS classifications; no replication retrieval is claimed'
+    printf '%s\n' 'status_classification: StateKit [] compatibility output is accepted only when the matching native legacy SHOW statement is classified unsupported-sql; native empty output, auth failure, connection failure, unrelated error, or StateKit/native mismatch fails'
     printf '%s\n' 'external_ci: pending'
     printf '%s\n' 'limitations: no full R9 live coverage, no broker/PostgreSQL/SQLite coverage, no live Salt differential parity; GitHub live execution is not claimed here; SIGKILL or runner loss can prevent cleanup/reporting'
     printf '%s\n' 'credentials: runtime-generated disposable values are delivered through ephemeral secret mounts only; not included in this report'
@@ -1593,6 +1610,225 @@ native_failure_classification() {
   fi
 }
 
+native_status_statement_marker() {
+  case "$1" in
+    master) printf '%s\n' 'MASTER STATUS' ;;
+    slave) printf '%s\n' 'SLAVE STATUS' ;;
+    processlist) printf '%s\n' 'FULL PROCESSLIST' ;;
+    *) return 1 ;;
+  esac
+}
+
+status_sql() {
+  case "$1" in
+    processlist) printf '%s\n' 'SHOW FULL PROCESSLIST' ;;
+    master) printf '%s\n' 'SHOW MASTER STATUS' ;;
+    slave) printf '%s\n' 'SHOW SLAVE STATUS' ;;
+    *) return 1 ;;
+  esac
+}
+
+native_status_is_unsupported() {
+  local kind="$1" stdout_path="$2" stderr_path="$3" statement_marker counts
+  local error_count expected_count
+  case "$kind" in
+    master|slave) ;;
+    *) return 1 ;;
+  esac
+  statement_marker=$(native_status_statement_marker "$kind") || return 1
+  statement_marker=${statement_marker,,}
+
+  # MySQL 8.4 reports the removed legacy statements as ER_PARSE_ERROR
+  # (1064/42000), with the stable syntax-error signature and the offending
+  # statement fragment in one diagnostic line.  Count all error diagnostics so
+  # an expected line cannot hide an additional unrelated failure.
+  counts=$(awk \
+    -v error_code="$NATIVE_UNSUPPORTED_STATUS_ERROR_CODE" \
+    -v sqlstate="$NATIVE_UNSUPPORTED_STATUS_SQLSTATE" \
+    -v signature="$NATIVE_UNSUPPORTED_STATUS_SIGNATURE" \
+    -v statement_marker="$statement_marker" '
+BEGIN {
+  quote = sprintf("%c", 39)
+  split(statement_marker, marker_words, /[[:space:]]+/)
+  error_pattern = "^[[:space:]]*error[[:space:]]+[0-9]+[[:space:]]+\\([[:alnum:]]+\\)([[:space:]]+at[[:space:]]+line[[:space:]]+[0-9]+)?[[:space:]]*:"
+  expected_pattern = "^[[:space:]]*error[[:space:]]+" error_code \
+    "[[:space:]]+\\(" sqlstate "\\)([[:space:]]+at[[:space:]]+line[[:space:]]+[0-9]+)?[[:space:]]*:[[:space:]]+" \
+    tolower(signature) \
+    ".*near[[:space:]]+" quote tolower(marker_words[1]) "[[:space:]]+" \
+    tolower(marker_words[2]) quote "[[:space:]]+at[[:space:]]+line[[:space:]]+1[[:space:]]*$"
+}
+{
+  line = tolower($0)
+  if (line ~ error_pattern)
+    error_count++
+  if (line ~ expected_pattern)
+    expected_count++
+}
+END {
+  printf "%d %d\n", error_count + 0, expected_count + 0
+}' \
+    "$stdout_path" "$stderr_path" 2>/dev/null) || return 1
+  read -r error_count expected_count <<<"$counts"
+  [[ "$error_count" == '1' && "$expected_count" == '1' ]]
+}
+
+native_status_classification() {
+  local kind="$1" execution_class="$2" rc="$3" stdout_path="$4" stderr_path="$5"
+  case "$execution_class" in
+    timeout|runtime|setup|cleanup)
+      printf '%s\n' "$execution_class"
+      return 0
+      ;;
+    exited) ;;
+    *)
+      printf '%s\n' 'runtime'
+      return 0
+      ;;
+  esac
+  if [[ "$rc" == '0' ]]; then
+    if [[ -s "$stdout_path" ]]; then
+      printf '%s\n' 'available'
+    else
+      printf '%s\n' 'empty-output'
+    fi
+    return 0
+  fi
+  if grep -F -q -- "$NATIVE_AUTH_FAILURE_MARKER" "$stdout_path" 2>/dev/null ||
+    grep -F -q -- "$NATIVE_AUTH_FAILURE_MARKER" "$stderr_path" 2>/dev/null; then
+    printf '%s\n' 'auth-failure'
+    return 0
+  fi
+  if grep -F -q -- "$NATIVE_CONNECTION_FAILURE_MARKER" "$stdout_path" 2>/dev/null ||
+    grep -F -q -- "$NATIVE_CONNECTION_FAILURE_MARKER" "$stderr_path" 2>/dev/null; then
+    printf '%s\n' 'connection-failure'
+    return 0
+  fi
+  if [[ "$kind" != 'processlist' ]] && native_status_is_unsupported "$kind" "$stdout_path" "$stderr_path"; then
+    printf '%s\n' 'unsupported-sql'
+    return 0
+  fi
+  printf '%s\n' 'unexpected-error'
+}
+
+status_json_classification() {
+  local kind="$1" path="$2"
+  python3 - "$kind" "$path" <<'PY'
+import json
+import sys
+
+kind, path = sys.argv[1:]
+try:
+    with open(path, encoding="utf-8") as stream:
+        value = json.load(stream)
+except (OSError, ValueError, TypeError):
+    print("invalid-json")
+    raise SystemExit(0)
+
+if kind == "processlist":
+    if not isinstance(value, list):
+        print("unexpected-shape")
+    elif not value:
+        print("empty-output")
+    elif all(
+        isinstance(row, dict)
+        and isinstance(row.get("Id"), int)
+        and not isinstance(row.get("Id"), bool)
+        and isinstance(row.get("Time"), int)
+        and not isinstance(row.get("Time"), bool)
+        and isinstance(row.get("User"), str)
+        and isinstance(row.get("Command"), str)
+        for row in value
+    ):
+        print("available")
+    else:
+        print("invalid-type")
+    raise SystemExit(0)
+
+if value == []:
+    print("compatibility-empty-list")
+    raise SystemExit(0)
+if not isinstance(value, dict):
+    print("unexpected-shape")
+    raise SystemExit(0)
+
+if kind == "master":
+    for key in ("File", "Position"):
+        if key not in value:
+            print("missing-key")
+            raise SystemExit(0)
+    if not isinstance(value["File"], str) or (
+        not isinstance(value["Position"], int) or isinstance(value["Position"], bool)
+    ):
+        print("invalid-type")
+        raise SystemExit(0)
+    print("available")
+    raise SystemExit(0)
+
+if kind == "slave":
+    port_key = next((key for key in ("Master_Port", "Source_Port") if key in value), None)
+    lag_key = next(
+        (key for key in ("Seconds_Behind_Master", "Seconds_Behind_Source") if key in value),
+        None,
+    )
+    if port_key is None or lag_key is None:
+        print("missing-key")
+        raise SystemExit(0)
+    port = value[port_key]
+    lag = value[lag_key]
+    if not isinstance(port, int) or isinstance(port, bool):
+        print("invalid-type")
+        raise SystemExit(0)
+    # A present SQL NULL is a valid replication lag value. It is not the same
+    # shape as an omitted key, which is a malformed/mismatched observation.
+    if lag is not None and (not isinstance(lag, int) or isinstance(lag, bool)):
+        print("invalid-type")
+        raise SystemExit(0)
+    print("available")
+    raise SystemExit(0)
+
+print("invalid-kind")
+PY
+}
+
+status_observation_correlates() {
+  local kind="$1" statekit_class="$2" native_class="$3"
+  case "$kind" in
+    processlist)
+      [[ "$statekit_class" == 'available' && "$native_class" == 'available' ]]
+      ;;
+    master|slave)
+      # StateKit intentionally retains Salt's [] compatibility shape for the
+      # exact legacy SHOW query; MySQL 8.4's native client must independently
+      # prove that the statement itself is unsupported. Neither side claims a
+      # successful replication-status retrieval.
+      [[ "$statekit_class" == 'compatibility-empty-list' && "$native_class" == 'unsupported-sql' ]]
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+status_negative_correlates() {
+  local statekit_class="$1" native_class="$2" expected_native_class="$3"
+  [[ "$statekit_class" == 'compatibility-empty-list' && "$native_class" == "$expected_native_class" ]]
+}
+
+status_classification_path() {
+  printf '%s/status-%s.classification\n' "$WORK_DIR" "$1"
+}
+
+write_status_classification() {
+  local label="$1" classification="$2" path
+  path=$(status_classification_path "$label") || return 1
+  printf '%s\n' "$classification" >"$path"
+}
+
+read_status_classification() {
+  local label="$1" path
+  path=$(status_classification_path "$label") || return 1
+  [[ -s "$path" ]] || return 1
+  tr -d '\r\n' <"$path"
+}
+
 expect_native_rejection() {
   local kind="$1" rc="$2" stdout_path="$3" stderr_path="$4" classification
   classification=$(native_failure_classification "$kind" "$LAST_CLIENT_CLASS" "$rc" "$stdout_path" "$stderr_path")
@@ -2192,6 +2428,133 @@ check_statekit_alter_invalid_option() {
   return "$ok"
 }
 
+check_statekit_processlist() {
+  local stdout_path="$WORK_DIR/processlist-statekit.out" stderr_path="$WORK_DIR/processlist-statekit.err"
+  local rc=0 ok=1 classification='invalid-execution'
+  statekit_call "$ROOT_CLIENT_SECRET" 'mysql.processlist' '' "$DB_HOST" "$DB_PORT" \
+    "$stdout_path" "$stderr_path" || rc=$?
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' ]] &&
+    [[ ! -s "$stderr_path" ]] && value_free_files "$stdout_path" "$stderr_path"; then
+    classification=$(status_json_classification processlist "$stdout_path") || classification='invalid-json'
+    if [[ "$classification" == 'available' ]] && write_status_classification processlist "$classification"; then
+      ok=0
+    fi
+  fi
+  if (( ok != 0 )); then
+    write_status_classification processlist "$classification" || true
+    set_note "processlist-statekit-${classification}"
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_native_processlist() {
+  local stdout_path="$WORK_DIR/processlist-native.out" stderr_path="$WORK_DIR/processlist-native.err"
+  local rc=0 ok=1 native_classification='invalid-execution' statekit_classification='missing'
+  native_mysql_as_user root "$ROOT_CLIENT_SECRET" "$DB_HOST" "$DB_PORT" \
+    'SHOW FULL PROCESSLIST' "$stdout_path" "$stderr_path" || rc=$?
+  native_classification=$(native_status_classification processlist "$LAST_CLIENT_CLASS" "$rc" \
+    "$stdout_path" "$stderr_path") || native_classification='classification-failure'
+  statekit_classification=$(read_status_classification processlist 2>/dev/null || printf '%s' 'missing')
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' ]] &&
+    [[ "$native_classification" == 'available' ]] && [[ ! -s "$stderr_path" ]] &&
+    value_free_files "$stdout_path" "$stderr_path" &&
+    python3 -c 'import sys
+lines = [line.rstrip("\r") for line in open(sys.argv[1], encoding="utf-8") if line.rstrip("\r")]
+ok = bool(lines)
+for line in lines:
+    fields = line.split("\t")
+    if len(fields) < 8 or not fields[0].isdigit() or not fields[5].isdigit():
+        ok = False
+        break
+raise SystemExit(0 if ok else 1)' "$stdout_path" &&
+    status_observation_correlates processlist "$statekit_classification" "$native_classification"; then
+    ok=0
+  else
+    if ! status_observation_correlates processlist "$statekit_classification" "$native_classification"; then
+      set_note 'processlist-classification-mismatch'
+    else
+      set_note 'processlist-native-unexpected-result'
+    fi
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_status_unsupported() {
+  local function_name="$1" kind="$2" label="$3"
+  local stdout_path="$WORK_DIR/${label}-statekit.out" stderr_path="$WORK_DIR/${label}-statekit.err"
+  local rc=0 ok=1 classification='invalid-execution'
+  statekit_call "$ROOT_CLIENT_SECRET" "$function_name" '' "$DB_HOST" "$DB_PORT" \
+    "$stdout_path" "$stderr_path" || rc=$?
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' ]] &&
+    [[ ! -s "$stderr_path" ]] && value_free_files "$stdout_path" "$stderr_path"; then
+    classification=$(status_json_classification "$kind" "$stdout_path") || classification='invalid-json'
+    if [[ "$classification" == 'compatibility-empty-list' ]] && write_status_classification "$label" "$classification"; then
+      ok=0
+    fi
+  fi
+  if (( ok != 0 )); then
+    write_status_classification "$label" "$classification" || true
+    set_note "${label}-statekit-${classification}"
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_native_status_unsupported() {
+  local sql="$1" kind="$2" label="$3"
+  local stdout_path="$WORK_DIR/${label}-native.out" stderr_path="$WORK_DIR/${label}-native.err"
+  local rc=0 ok=1 native_classification='invalid-execution' statekit_classification='missing'
+  native_mysql_as_user root "$ROOT_CLIENT_SECRET" "$DB_HOST" "$DB_PORT" \
+    "$sql" "$stdout_path" "$stderr_path" || rc=$?
+  native_classification=$(native_status_classification "$kind" "$LAST_CLIENT_CLASS" "$rc" \
+    "$stdout_path" "$stderr_path") || native_classification='classification-failure'
+  statekit_classification=$(read_status_classification "$label" 2>/dev/null || printf '%s' 'missing')
+  if [[ "$native_classification" == 'unsupported-sql' ]] &&
+    [[ ! -s "$stdout_path" ]] && value_free_files "$stdout_path" "$stderr_path" &&
+    status_observation_correlates "$kind" "$statekit_classification" "$native_classification"; then
+    ok=0
+  else
+    if ! status_observation_correlates "$kind" "$statekit_classification" "$native_classification"; then
+      set_note "${label}-classification-mismatch"
+    else
+      set_note "${label}-native-${native_classification}"
+    fi
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_status_negative() {
+  local function_name="$1" kind="$2" expected_native_class="$3"
+  local secret_name="$4" port="$5" label="$6"
+  local stdout_path="$WORK_DIR/${label}.out" stderr_path="$WORK_DIR/${label}.err"
+  local native_stdout_path="$WORK_DIR/${label}-native.out" native_stderr_path="$WORK_DIR/${label}-native.err"
+  local rc=0 native_rc=0 value='' ok=1 statekit_classification='invalid-execution' native_classification='invalid-execution'
+  statekit_call "$secret_name" "$function_name" '' "$DB_HOST" "$port" \
+    "$stdout_path" "$stderr_path" || rc=$?
+  [[ -f "$stdout_path" ]] && value=$(<"$stdout_path")
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' ]] &&
+    [[ "$value" == '[]' ]] && [[ ! -s "$stderr_path" ]] && value_free_files "$stdout_path" "$stderr_path"; then
+    statekit_classification='compatibility-empty-list'
+    native_mysql_as_user root "$secret_name" "$DB_HOST" "$port" "$(status_sql "$kind")" \
+      "$native_stdout_path" "$native_stderr_path" || native_rc=$?
+    native_classification=$(native_status_classification "$kind" "$LAST_CLIENT_CLASS" "$native_rc" \
+      "$native_stdout_path" "$native_stderr_path") || native_classification='classification-failure'
+    if status_negative_correlates "$statekit_classification" "$native_classification" "$expected_native_class" &&
+      value_free_files "$native_stdout_path" "$native_stderr_path"; then
+      ok=0
+    else
+      set_note "${label}-classification-mismatch"
+    fi
+  else
+    set_note "${label}-unexpected-result"
+  fi
+  rm -f "$stdout_path" "$stderr_path" "$native_stdout_path" "$native_stderr_path"
+  return "$ok"
+}
+
 check_statekit_invalid_identifier_negative() {
   local stdout_path="$WORK_DIR/db-invalid-identifier.out" stderr_path="$WORK_DIR/db-invalid-identifier.err"
   local rc=0 ok=1
@@ -2349,6 +2712,18 @@ main() {
   run_case 'mysql-alter-db-negative-connection' check_statekit_alter_connection_negative
   run_case 'mysql-alter-db-negative-invalid-identifier' check_statekit_alter_invalid_identifier
   run_case 'mysql-alter-db-negative-invalid-option' check_statekit_alter_invalid_option
+  run_case 'mysql-processlist-statekit' check_statekit_processlist
+  run_case 'mysql-processlist-native-observation' check_native_processlist
+  run_case 'mysql-processlist-negative-auth' check_statekit_status_negative 'mysql.processlist' processlist auth-failure "$BAD_CLIENT_SECRET" "$DB_PORT" processlist-negative-auth
+  run_case 'mysql-processlist-negative-connection' check_statekit_status_negative 'mysql.processlist' processlist connection-failure "$ROOT_CLIENT_SECRET" '1' processlist-negative-connection
+  run_case 'mysql-get-master-status-statekit' check_statekit_status_unsupported 'mysql.get_master_status' master get-master-status
+  run_case 'mysql-get-master-status-native-observation' check_native_status_unsupported 'SHOW MASTER STATUS' master get-master-status
+  run_case 'mysql-get-master-status-negative-auth' check_statekit_status_negative 'mysql.get_master_status' master auth-failure "$BAD_CLIENT_SECRET" "$DB_PORT" get-master-status-negative-auth
+  run_case 'mysql-get-master-status-negative-connection' check_statekit_status_negative 'mysql.get_master_status' master connection-failure "$ROOT_CLIENT_SECRET" '1' get-master-status-negative-connection
+  run_case 'mysql-get-slave-status-statekit' check_statekit_status_unsupported 'mysql.get_slave_status' slave get-slave-status
+  run_case 'mysql-get-slave-status-native-observation' check_native_status_unsupported 'SHOW SLAVE STATUS' slave get-slave-status
+  run_case 'mysql-get-slave-status-negative-auth' check_statekit_status_negative 'mysql.get_slave_status' slave auth-failure "$BAD_CLIENT_SECRET" "$DB_PORT" get-slave-status-negative-auth
+  run_case 'mysql-get-slave-status-negative-connection' check_statekit_status_negative 'mysql.get_slave_status' slave connection-failure "$ROOT_CLIENT_SECRET" '1' get-slave-status-negative-connection
 
   EXECUTION_COMPLETE=1
   if ! case_results_are_exact || (( CASE_RESULT_INTEGRITY_FAILED != 0 || PASSED != ${#CASE_IDS[@]} || FAILED != 0 || SKIPPED != 0 )); then

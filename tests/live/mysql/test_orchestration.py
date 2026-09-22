@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -54,10 +55,128 @@ EXPECTED_CASES = (
     "mysql-alter-db-negative-connection",
     "mysql-alter-db-negative-invalid-identifier",
     "mysql-alter-db-negative-invalid-option",
+    "mysql-processlist-statekit",
+    "mysql-processlist-native-observation",
+    "mysql-processlist-negative-auth",
+    "mysql-processlist-negative-connection",
+    "mysql-get-master-status-statekit",
+    "mysql-get-master-status-native-observation",
+    "mysql-get-master-status-negative-auth",
+    "mysql-get-master-status-negative-connection",
+    "mysql-get-slave-status-statekit",
+    "mysql-get-slave-status-native-observation",
+    "mysql-get-slave-status-negative-auth",
+    "mysql-get-slave-status-negative-connection",
 )
 
 
 class E52OrchestrationTests(unittest.TestCase):
+    def _classify_status_result(
+        self,
+        kind: str,
+        execution_class: str,
+        return_code: int,
+        stdout: str,
+        stderr: str,
+    ) -> str:
+        command = """
+script_path="$1"
+kind="$2"
+execution_class="$3"
+return_code="$4"
+stdout_path="$5"
+stderr_path="$6"
+set --
+source "$script_path"
+native_status_classification "$kind" "$execution_class" "$return_code" "$stdout_path" "$stderr_path"
+"""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            stdout_path = temporary / "stdout"
+            stderr_path = temporary / "stderr"
+            stdout_path.write_text(stdout, encoding="utf-8")
+            stderr_path.write_text(stderr, encoding="utf-8")
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    command,
+                    "status-classifier",
+                    str(SCRIPT),
+                    kind,
+                    execution_class,
+                    str(return_code),
+                    str(stdout_path),
+                    str(stderr_path),
+                ],
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.stderr, "")
+        return result.stdout.strip()
+
+    def _status_correlates(self, kind: str, statekit_class: str, native_class: str) -> bool:
+        command = """
+script_path="$1"
+kind="$2"
+statekit_class="$3"
+native_class="$4"
+set --
+source "$script_path"
+status_observation_correlates "$kind" "$statekit_class" "$native_class"
+"""
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                command,
+                "status-correlation",
+                str(SCRIPT),
+                kind,
+                statekit_class,
+                native_class,
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr, "")
+        return result.returncode == 0
+
+    def _classify_status_json(self, kind: str, value: object) -> str:
+        command = """
+script_path="$1"
+kind="$2"
+json_path="$3"
+set --
+source "$script_path"
+status_json_classification "$kind" "$json_path"
+"""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            json_path = Path(temporary_directory) / "status.json"
+            json_path.write_text(json.dumps(value), encoding="utf-8")
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    command,
+                    "status-json-classifier",
+                    str(SCRIPT),
+                    kind,
+                    str(json_path),
+                ],
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.stderr, "")
+        return result.stdout.strip()
+
     def _classify_native_result(
         self,
         kind: str,
@@ -241,7 +360,7 @@ write_report
 
     def test_workflow_keeps_build_and_python_checks_inside_pinned_sandboxes(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("e5.2 live mysql read-only/catalog/plugin/database-lifecycle/alter-db", workflow)
+        self.assertIn("e5.2 live mysql read-only/catalog/plugin/database-lifecycle/alter-db/process-replication-status", workflow)
         self.assertIn("sqlite-live:", workflow)
         self.assertIn("e5-2-mysql-live-report", workflow)
         self.assertIn("run.sh --preflight-only", workflow)
@@ -449,6 +568,121 @@ printf 'policy_rc=%s start_rc=%s starts=%s\n' "$policy_rc" "$start_rc" "$starts"
                 ),
                 "expected",
             )
+
+    def test_status_classification_accepts_only_pinned_unsupported_diagnostics(self) -> None:
+        positive_fixtures = {
+            "master-batch": (
+                "ERROR 1064 (42000) at line 1: You have an error in your SQL syntax; "
+                "check the manual that corresponds to your MySQL server version for the "
+                "right syntax to use near 'MASTER STATUS' at line 1\n"
+            ),
+            "slave-client": (
+                "ERROR 1064 (42000): You have an error in your SQL syntax; "
+                "check the manual that corresponds to your MySQL server version for the "
+                "right syntax to use near 'slave status' at line 1\n"
+            ),
+        }
+        for fixture_name, diagnostic in positive_fixtures.items():
+            kind = "master" if fixture_name.startswith("master") else "slave"
+            with self.subTest(fixture_name=fixture_name):
+                self.assertEqual(
+                    self._classify_status_result(kind, "exited", 1, "", diagnostic),
+                    "unsupported-sql",
+                )
+
+        negative_fixtures = {
+            "generic-unknown-error": (
+                "ERROR 1105 (HY000): Unknown error while executing SHOW MASTER STATUS\n"
+            ),
+            "unrelated-diagnostic-with-separate-marker": (
+                "ERROR 1064 (42000) at line 1: You have an error in your SQL syntax; "
+                "check the manual near 'OTHER STATUS' at line 1\n"
+                "SHOW MASTER STATUS\n"
+            ),
+            "wrong-statement": (
+                "ERROR 1064 (42000) at line 1: You have an error in your SQL syntax; "
+                "check the manual near 'SLAVE STATUS' at line 1\n"
+            ),
+            "mixed-expected-and-unexpected": (
+                "ERROR 1064 (42000) at line 1: You have an error in your SQL syntax; "
+                "check the manual near 'MASTER STATUS' at line 1\n"
+                "ERROR 1105 (HY000): Unknown error\n"
+            ),
+        }
+        for fixture_name, diagnostic in negative_fixtures.items():
+            with self.subTest(fixture_name=fixture_name):
+                self.assertEqual(
+                    self._classify_status_result("master", "exited", 1, "", diagnostic),
+                    "unexpected-error",
+                )
+
+        self.assertEqual(self._classify_status_result("master", "exited", 0, "", ""), "empty-output")
+        self.assertEqual(
+            self._classify_status_result("master", "exited", 0, "mysql-bin.000001\t4\n", ""),
+            "available",
+        )
+        self.assertEqual(
+            self._classify_status_result(
+                "master",
+                "exited",
+                1,
+                "",
+                "ERROR 1045 (28000): Access denied for user while running SHOW MASTER STATUS\n",
+            ),
+            "auth-failure",
+        )
+        self.assertEqual(
+            self._classify_status_result(
+                "master",
+                "exited",
+                1,
+                "",
+                "ERROR 2003 (HY000): Can't connect to MySQL server for SHOW MASTER STATUS\n",
+            ),
+            "connection-failure",
+        )
+        self.assertEqual(
+            self._classify_status_result(
+                "master", "exited", 1, "", "ERROR 1064 (42000): syntax error near 'OTHER'\n"
+            ),
+            "unexpected-error",
+        )
+        self.assertEqual(
+            self._classify_status_result("master", "runtime", 125, "", positive_fixtures["master-batch"]),
+            "runtime",
+        )
+        self.assertEqual(self._classify_status_result("master", "timeout", 124, "", ""), "timeout")
+
+        self.assertTrue(
+            self._status_correlates("master", "compatibility-empty-list", "unsupported-sql")
+        )
+        self.assertFalse(
+            self._status_correlates("master", "compatibility-empty-list", "empty-output")
+        )
+        self.assertTrue(self._status_correlates("processlist", "available", "available"))
+        self.assertFalse(self._status_correlates("processlist", "available", "auth-failure"))
+
+    def test_status_shape_distinguishes_missing_key_from_present_null(self) -> None:
+        self.assertEqual(
+            self._classify_status_json(
+                "slave", {"Master_Port": 3306, "Seconds_Behind_Master": None}
+            ),
+            "available",
+        )
+        self.assertEqual(
+            self._classify_status_json("slave", {"Master_Port": 3306}),
+            "missing-key",
+        )
+        self.assertEqual(
+            self._classify_status_json("master", {"File": "mysql-bin.000001"}),
+            "missing-key",
+        )
+        self.assertEqual(
+            self._classify_status_json(
+                "master", {"File": "mysql-bin.000001", "Position": None}
+            ),
+            "invalid-type",
+        )
 
     def test_lifecycle_mutations_fail_closed_on_precheck_and_ownership(self) -> None:
         command = r'''
@@ -989,8 +1223,8 @@ printf 'duplicate_rc=%s unknown_rc=%s duplicate_status=%s missing_status=%s subs
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("status: fail", report)
             self.assertIn("execution: incomplete", report)
-            self.assertIn("cases_total: 36", report)
-            self.assertIn("cases_skipped: 35", report)
+            self.assertIn("cases_total: 48", report)
+            self.assertIn("cases_skipped: 47", report)
 
     def test_stale_or_unwritable_report_is_not_accepted(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

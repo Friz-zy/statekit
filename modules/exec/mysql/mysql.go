@@ -8,8 +8,9 @@
 // family (R9.3e), the fixed-query grant_add/grant_exists/grant_revoke family
 // (R9.3f), the fixed-query user_grants reader (R9.3h), and the fixed-query
 // plugin_status/plugins_list readers (R9.3i), the database lifecycle
-// mutations db_create/db_remove (R9.3j), and the database metadata mutation
-// alter_db (R9.3l).
+// mutations db_create/db_remove (R9.3j), the database metadata mutation
+// alter_db (R9.3l), and the process/replication status readers
+// processlist/get_master_status/get_slave_status (R9.3m).
 //
 // Boundaries (R9.2a): no MySQL client driver or protocol, no new
 // dependencies, no Runner spawns, no filesystem access, and no live MySQL
@@ -108,6 +109,19 @@
 // retain the shared validated backtick-quoted path. The mutation result keeps
 // Salt's true/false/[] compatibility shapes while Runner errors, cancellation,
 // and output-limit failures remain bounded transport errors.
+//
+// Boundaries (R9.3m): processlist, get_master_status, and get_slave_status use
+// only the exact SHOW FULL PROCESSLIST, SHOW MASTER STATUS, and SHOW SLAVE
+// STATUS statements. Dynamic headers remain keys, known numeric fields retain
+// integer values, and raw native SHOW NULL markers are classified before
+// public redaction so a secret overlapping "NULL" cannot turn nil into a
+// placeholder; ordinary values remain redacted. The mysql CLI cannot
+// distinguish connection failure from query failure, so nonzero exits map to
+// the source's empty-list connection/replication shape; for processlist this
+// is an intentional defensive divergence from the connected query-error
+// exception branch. Short rows keep their available prefix instead of raising
+// the source's IndexError. Fixed SQL, shared timeout/output bounds, shell-free
+// transport, and fake-Runner-only tests remain unchanged.
 package mysql
 
 import (
@@ -832,9 +846,10 @@ func (tokenizeGrantFunc) Execute(_ context.Context, _ *runtime.Runtime, args any
 // ---------------------------------------------------------------------------
 // mysql CLI transport — the R9.3a/R9.3d read-only catalog families
 // (salt/modules/mysql.py:1131-1161 db_list, 1270-1297 db_exists,
-// 1397-1421 user_list, 1502-1605 user_exists, 1198-1267 db_get/db_tables
-// @ pinned revision). R9.3l alter_db uses the same transport for its
-// fixed-query preflight and mutation statement.
+// 1397-1421 user_list, 1502-1605 user_exists, 1198-1267 db_get/db_tables,
+// 2764-2959 processlist/get_master_status/get_slave_status @ pinned
+// revision). R9.3l alter_db uses the same transport for its fixed-query
+// preflight and mutation statement.
 
 const (
 	// mysqlCommand is the canonical client binary the R9.3a family runs.
@@ -924,6 +939,13 @@ const (
 	// pinned SHOW GLOBAL VARIABLES (mysql.py:3009) — global variables,
 	// not global status, exactly like the pinned source.
 	showGlobalVariablesQuery = "SHOW GLOBAL VARIABLES"
+	// The replication/process queries are intentionally kept as the exact SHOW
+	// statements used by the pinned source. They cannot be rewritten as
+	// information_schema projections without changing server-version behavior
+	// and the source's dynamic column set.
+	processlistQuery  = "SHOW FULL PROCESSLIST"
+	masterStatusQuery = "SHOW MASTER STATUS"
+	slaveStatusQuery  = "SHOW SLAVE STATUS"
 	// tableCatalogQuery is the table reader of the R9.3c maintenance
 	// family's table=None path. The pinned db_tables runs SHOW TABLES IN
 	// `name` (mysql.py:1253) — a SHOW statement that cannot wrap its
@@ -2156,6 +2178,232 @@ func (dbRemoveFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) 
 		return nil, err
 	}
 	return !exists, nil
+}
+
+// ---------------------------------------------------------------------------
+// processlist/get_master_status/get_slave_status —
+// salt/modules/mysql.py:2764-2959 @ pinned revision.
+
+// ProcesslistArgs are the canonical processlist(**connection_args) surface.
+// The optional connection fields intentionally use the same names and pointer
+// defaults as the other mysql read-only functions; runas is a StateKit-only
+// guard rejected before the native client is invoked.
+type ProcesslistArgs struct {
+	User     *string `statekit:"name=connection_user"`
+	Host     *string `statekit:"name=connection_host"`
+	Port     *string `statekit:"name=connection_port"`
+	Password *string `statekit:"name=connection_pass"`
+	DB       *string `statekit:"name=connection_db"`
+	Runas    *string `statekit:"name=runas"`
+}
+
+func (a *ProcesslistArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return &myConnection{
+		User:     a.User,
+		Host:     a.Host,
+		Port:     a.Port,
+		Password: a.Password,
+		DB:       a.DB,
+		Runas:    a.Runas,
+	}
+}
+
+type processlistFunc struct{}
+
+func (processlistFunc) Name() string { return "mysql.processlist" }
+func (processlistFunc) Args() any    { return ProcesslistArgs{} }
+
+func (processlistFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[ProcesslistArgs](args, "mysql.processlist")
+	if err != nil {
+		return nil, err
+	}
+	rows, err := mysqlShowRows(ctx, rt, a.connection(), processlistQuery)
+	if err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
+// GetMasterStatusArgs are the canonical get_master_status(**connection_args)
+// surface.
+type GetMasterStatusArgs struct {
+	User     *string `statekit:"name=connection_user"`
+	Host     *string `statekit:"name=connection_host"`
+	Port     *string `statekit:"name=connection_port"`
+	Password *string `statekit:"name=connection_pass"`
+	DB       *string `statekit:"name=connection_db"`
+	Runas    *string `statekit:"name=runas"`
+}
+
+func (a *GetMasterStatusArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return &myConnection{
+		User:     a.User,
+		Host:     a.Host,
+		Port:     a.Port,
+		Password: a.Password,
+		DB:       a.DB,
+		Runas:    a.Runas,
+	}
+}
+
+type getMasterStatusFunc struct{}
+
+func (getMasterStatusFunc) Name() string { return "mysql.get_master_status" }
+func (getMasterStatusFunc) Args() any    { return GetMasterStatusArgs{} }
+
+func (getMasterStatusFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[GetMasterStatusArgs](args, "mysql.get_master_status")
+	if err != nil {
+		return nil, err
+	}
+	return mysqlShowStatus(ctx, rt, a.connection(), masterStatusQuery)
+}
+
+// GetSlaveStatusArgs are the canonical get_slave_status(**connection_args)
+// surface.
+type GetSlaveStatusArgs struct {
+	User     *string `statekit:"name=connection_user"`
+	Host     *string `statekit:"name=connection_host"`
+	Port     *string `statekit:"name=connection_port"`
+	Password *string `statekit:"name=connection_pass"`
+	DB       *string `statekit:"name=connection_db"`
+	Runas    *string `statekit:"name=runas"`
+}
+
+func (a *GetSlaveStatusArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return &myConnection{
+		User:     a.User,
+		Host:     a.Host,
+		Port:     a.Port,
+		Password: a.Password,
+		DB:       a.DB,
+		Runas:    a.Runas,
+	}
+}
+
+type getSlaveStatusFunc struct{}
+
+func (getSlaveStatusFunc) Name() string { return "mysql.get_slave_status" }
+func (getSlaveStatusFunc) Args() any    { return GetSlaveStatusArgs{} }
+
+func (getSlaveStatusFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[GetSlaveStatusArgs](args, "mysql.get_slave_status")
+	if err != nil {
+		return nil, err
+	}
+	return mysqlShowStatus(ctx, rt, a.connection(), slaveStatusQuery)
+}
+
+// mysqlShowIntegerColumns is the union of integer-valued columns emitted by
+// the three fixed SHOW statements. MySQLdb returns Python ints for these
+// fields; the mysql CLI is text-only, so converting only known numeric columns
+// preserves the source's mixed string/int/None map shape without guessing on
+// arbitrary user-visible text.
+var mysqlShowIntegerColumns = map[string]struct{}{
+	// SHOW FULL PROCESSLIST.
+	"Id": {}, "Time": {}, "Rows_sent": {}, "Rows_examined": {},
+	"Rows_affected": {}, "Rows_read": {},
+	// SHOW MASTER STATUS.
+	"Position": {},
+	// SHOW SLAVE STATUS (legacy names and the MySQL 8 Source aliases).
+	"Master_Port": {}, "Connect_Retry": {}, "Master_Server_Id": {},
+	"Read_Master_Log_Pos": {}, "Relay_Log_Pos": {}, "Relay_Log_Space": {},
+	"Exec_Master_Log_Pos": {}, "Until_Log_Pos": {}, "Last_Errno": {},
+	"Skip_Counter": {}, "Last_IO_Errno": {}, "Last_SQL_Errno": {},
+	"Seconds_Behind_Master": {}, "SQL_Delay": {}, "SQL_Remaining_Delay": {},
+	"Master_Retry_Count": {}, "Auto_Position": {},
+	"Source_Port": {}, "Source_Server_Id": {}, "Read_Source_Log_Pos": {},
+	"Relay_Source_Log_Pos": {}, "Exec_Source_Log_Pos": {},
+	"Seconds_Behind_Source": {},
+}
+
+// mysqlShowValue converts one fixed SHOW field to the corresponding MySQLdb
+// value shape. SHOW output has no server-side NULL sentinel because the query
+// itself is required to remain a SHOW statement; mysql's batch client prints a
+// SQL NULL as the literal NULL marker. The fixed status/process columns use
+// that marker for absent values, so it is mapped to nil here. The caller must
+// classify that marker before redacting public values: a connection secret of
+// "NULL" must not turn SQL NULL into the redaction placeholder. The native
+// batch ceiling is that a server value literally spelled NULL is
+// indistinguishable from SQL NULL on this client output format.
+func mysqlShowValue(column string, field batchField) any {
+	if field.null || field.value == "NULL" {
+		return nil
+	}
+	if _, numeric := mysqlShowIntegerColumns[column]; numeric {
+		if value, err := strconv.ParseInt(field.value, 10, 64); err == nil {
+			return value
+		}
+	}
+	return field.value
+}
+
+// mysqlShowRows renders DictCursor-shaped rows using the raw SHOW headers.
+// Native NULL classification happens before value redaction, while ordinary
+// decoded values are redacted before numeric conversion and public return.
+// Header keys are redacted before they leave the module. Short rows retain
+// only their available prefix as an intentional defensive divergence: the
+// pinned processlist loop and __do_query_into_hash index every described
+// column and raise IndexError on malformed short rows. A rowless success and
+// a nonzero mysql exit both produce an empty list at this CLI boundary; a
+// nonzero exit cannot distinguish the pinned connection failure from a query
+// failure.
+func mysqlShowRows(ctx context.Context, rt *runtime.Runtime, conn *myConnection, query string) ([]map[string]any, error) {
+	header, rows, err := mysqlQueryRowsPreserve(ctx, rt, conn, query)
+	if err != nil {
+		return nil, err
+	}
+	secrets := mysqlRowSecrets(conn)
+	out := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		shared := len(header)
+		if len(row) < shared {
+			shared = len(row)
+		}
+		publicHeader, err := redactMysqlHeaderKeys(header[:shared], mysqlHeaderSecrets(conn))
+		if err != nil {
+			return nil, err
+		}
+		entry := make(map[string]any, shared)
+		for i := 0; i < shared; i++ {
+			field := row[i]
+			if field.null || field.value == "NULL" {
+				// Classify native SHOW NULL before RedactBytes: a secret may
+				// deliberately overlap the client's bare NULL marker.
+				entry[publicHeader[i]] = nil
+				continue
+			}
+			field.value = string(process.RedactBytes(secrets, []byte(field.value)))
+			entry[publicHeader[i]] = mysqlShowValue(header[i], field)
+		}
+		out = append(out, entry)
+	}
+	return out, nil
+}
+
+// mysqlShowStatus preserves the source's slightly unusual single-row shape:
+// a successful status row is one map, while a connection/query failure or a
+// standalone server with no replication status is the bare empty list, not an
+// empty map and not a one-element list.
+func mysqlShowStatus(ctx context.Context, rt *runtime.Runtime, conn *myConnection, query string) (any, error) {
+	rows, err := mysqlShowRows(ctx, rt, conn, query)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return []any{}, nil
+	}
+	return rows[0], nil
 }
 
 // ---------------------------------------------------------------------------
@@ -5327,9 +5575,10 @@ func redactedError(err error, secrets ...string) error {
 // R9.3a/R9.3d/R9.3e fixed-query catalog family, the R9.3b server facts, the
 // R9.3c maintenance family, the R9.3e user account mutations, the R9.3f
 // grant family, the R9.3g password/login family, the R9.3i plugin readers,
-// the R9.3j database lifecycle mutations, and the R9.3l database metadata
-// mutation over the central mysql CLI transport. The remainder of the mysql
-// family stays pending behind its own source/transport boundary.
+// the R9.3j database lifecycle mutations, the R9.3l database metadata
+// mutation, and the R9.3m process/replication status readers over the central
+// mysql CLI transport. The remainder of the mysql family stays pending behind
+// its own source/transport boundary.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		quoteIdentifierFunc{},
@@ -5341,6 +5590,9 @@ func Register(reg *runtime.ExecRegistry) error {
 		dbRemoveFunc{},
 		dbGetFunc{},
 		dbTablesFunc{},
+		processlistFunc{},
+		getMasterStatusFunc{},
+		getSlaveStatusFunc{},
 		userListFunc{},
 		userExistsFunc{},
 		userInfoFunc{},

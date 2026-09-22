@@ -2305,6 +2305,63 @@ The exact evidence boundary is:
 | `R9.3l` | `mysql.alter_db`, source-result/CLI-limit vectors, missing/failed-catalog and explicit/partial-option tests, stateful post-alter/readback/seed-preservation mock, direct/registry/CLI bounds/redaction tests, registration, coverage, and differential report update | `backend-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | current worktree contains the implementation and local Podman mock/static evidence; no database driver, no local live MySQL, no commit; external live behavior remains `pending_external_ci` |
 | `E5.2` | Preserve the prior 23 MySQL cases and add 13 R9.3l create/seed/observe/alter/read-back/negative cases; exact 36-case inventory, value-free report, bounded rootless Podman cleanup | `devops-platform-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | harness extension is prepared, but native execution and exact cursor-result observation remain external; zero skips and live 36/36 evidence remain pending in GitHub; no local live MySQL is claimed |
 
+##### 2026-09-22 R9.3m MySQL process and replication status — implementation complete; external live CI pending
+
+R9.3m ports the pinned Salt `mysql.processlist`,
+`mysql.get_master_status`, and `mysql.get_slave_status` contracts from the
+locked `mysql.py`, catalog, and source-test revision. All three public names are
+registered in the existing direct runtime, exec registry, and CLI argument
+decoder. StateKit preserves the exact source SHOW statements through the native
+shell-free mysql Runner: `SHOW FULL PROCESSLIST`, `SHOW MASTER STATUS`, or
+`SHOW SLAVE STATUS`; no arbitrary SQL, replacement replication query, or MySQL
+driver is introduced.
+
+The dynamic DictCursor shape remains covered by local mock vectors: result
+headers become map keys in server order, known integer columns retain Python-int
+JSON values, and a present SQL NULL remains distinct from a missing key. The
+processlist live case must be available and structurally typed. MySQL 8.4
+removed `SHOW MASTER STATUS` and `SHOW SLAVE STATUS`, so the live replication
+cases deliberately do not claim a status map: StateKit's source-compatible
+nonzero-exit result is the bare `[]`, and the independent native mysql call must
+classify the exact legacy statement as `unsupported-sql`. A native empty result,
+successful status map, auth failure, connection failure, unrelated error, or
+StateKit/native classification mismatch fails the case. No successful
+replication retrieval is claimed.
+
+Runner errors, cancellation, timeout, output bounds, and redaction remain
+fail-closed and value-free. The fixed batch protocol has one explicit ceiling:
+mysql prints SQL NULL as the same marker as a literal value spelled `NULL`, so
+this boundary maps that marker to nil and records the ambiguity rather than
+silently claiming a distinction the native client does not expose.
+
+The exact evidence boundary is:
+
+* **Local mock/static evidence (completed by the `backend-engineer-senior`):**
+  direct source vectors, registry tests, CLI mock tests, generated coverage and
+  R9 report, Go focused/race/vet/report checks, shell/Python/YAML checks, and
+  deterministic live-harness orchestration checks. These checks do not start
+  MySQL and do not claim live Salt parity.
+* **External live evidence (pending; executor `devops-platform-engineer-senior`):**
+  the existing E5.2 workflow must preserve the prior 36 ordered cases and add
+  twelve R9.3m cases: for each function, one production StateKit call, one
+  independent native mysql observation, one negative-auth call, and one
+  negative-connection call. Processlist must be a nonempty structurally typed
+  list and correlate as available on both clients. For master/slave, StateKit
+  must return `[]` for the exact legacy SQL while the native client reports
+  `unsupported-sql` for that SQL on pinned MySQL 8.4; an empty native result or
+  successful status map is not an accepted fallback. Negative auth and
+  connection observations must remain distinct from unsupported SQL. Every case
+  must be value-free, the inventory must be exact with zero skips, and all
+  resources must be cleaned and independently verified.
+* The SQLite job and SQLite tests remain separate and unchanged. No local live
+  MySQL execution is used; `external_ci_status` remains
+  `pending_external_ci` until a fresh value-free GitHub report exists.
+
+| Phase | Scope | Implementation executor role | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `R9.3m` | `mysql.processlist`, `mysql.get_master_status`, `mysql.get_slave_status`, exact legacy SHOW queries, dynamic/numeric/nil source vectors, mismatch and missing-vs-null-key negatives, direct/registry/CLI bounds/redaction tests, registration, coverage, and differential report update | `backend-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | implementation is in the clean requested worktree; local mock/static evidence is non-live and no commit is made; external live behavior remains `pending_external_ci` |
+| `E5.2` | Preserve the prior 36 MySQL cases and append 12 R9.3m production/native/negative processlist and MySQL 8.4 unsupported-replication classifications; exact 48-case inventory, value-free report, bounded rootless Podman cleanup | `devops-platform-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | harness/workflow is prepared; native execution, cleanup evidence, and live 48/48 remain pending in GitHub; no successful replication retrieval or local live MySQL is claimed; SQLite job is preserved |
+
 ##### 2026-09-21 R9.3k SQLite catalog family — implementation ready; live CI pending
 
 R9.3k ports the public Salt `sqlite3` functions `version`, `sqlite_version`,
