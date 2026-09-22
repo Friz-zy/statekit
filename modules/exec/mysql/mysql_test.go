@@ -311,6 +311,7 @@ func TestMysqlRegistryNames(t *testing.T) {
 		"mysql.quote_identifier",
 		"mysql.showglobal",
 		"mysql.showvariables",
+		"mysql.slave_lag",
 		"mysql.status",
 		"mysql.tokenize_grant",
 		"mysql.user_create",
@@ -7696,5 +7697,168 @@ func TestMysqlProcessAndReplicationStatusThroughRegistry(t *testing.T) {
 	}
 	if len(runner.calls) != 3 {
 		t.Fatalf("registry status calls = %d, want 3", len(runner.calls))
+	}
+}
+
+// TestMysqlSlaveLagSourceVectors pins the scalar source decision ladder from
+// salt/modules/mysql.py: a query/connection exit is -3, an empty status row is
+// -1, a non-running IO thread is -2, and a running IO thread returns the
+// Seconds_Behind_Master value including the native NULL shape. Malformed rows
+// fail closed without indexing past the bounded batch row.
+func TestMysqlSlaveLagSourceVectors(t *testing.T) {
+	const header = "Slave_IO_Running\tSeconds_Behind_Master\n"
+	for _, tc := range []struct {
+		name    string
+		result  process.CommandResult
+		want    any
+		wantErr error
+	}{
+		{name: "no-row", result: process.CommandResult{Stdout: []byte(header)}, want: int64(-1)},
+		{name: "numeric", result: process.CommandResult{Stdout: []byte(header + "Yes\t37\n")}, want: int64(37)},
+		{name: "null", result: process.CommandResult{Stdout: []byte(header + "Yes\tNULL\n")}, want: nil},
+		{name: "broken-io", result: process.CommandResult{Stdout: []byte(header + "No\t37\n")}, want: int64(-2)},
+		{name: "broken-io-short-row", result: process.CommandResult{Stdout: []byte(header + "No\n")}, want: int64(-2)},
+		{name: "short-row", result: process.CommandResult{Stdout: []byte(header + "Yes\n")}, wantErr: errMysqlSlaveLagMalformed},
+		{name: "missing-io-column", result: process.CommandResult{Stdout: []byte("Seconds_Behind_Master\n37\n")}, wantErr: errMysqlSlaveLagMalformed},
+		{name: "malformed-numeric", result: process.CommandResult{Stdout: []byte(header + "Yes\tnot-a-number\n")}, wantErr: errMysqlSlaveLagMalformed},
+		{name: "query-failure", result: process.CommandResult{ExitCode: 1, Stderr: []byte("ERROR 1064 (42000): removed SHOW SLAVE STATUS\n")}, want: int64(-3)},
+		{name: "mysql-84-unsupported", result: process.CommandResult{ExitCode: 1, Stderr: []byte("ERROR 1064 (42000) at line 1: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'SLAVE STATUS' at line 1\n")}, want: int64(-3)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, runner := newMysqlRuntime(tc.result)
+			value, err := (slaveLagFunc{}).Execute(context.Background(), rt, &SlaveLagArgs{})
+			if tc.wantErr != nil {
+				if !errors.Is(err, tc.wantErr) || value != nil {
+					t.Fatalf("slave_lag = %#v, %v; want value-free %v", value, err, tc.wantErr)
+				}
+			} else if err != nil || !reflect.DeepEqual(value, tc.want) {
+				t.Fatalf("slave_lag = %#v, %v; want %#v", value, err, tc.want)
+			}
+			if len(runner.calls) != 1 || runner.calls[0].Args[len(runner.calls[0].Args)-1] != "--execute=SHOW SLAVE STATUS" {
+				t.Fatalf("slave_lag query = %#v", runner.calls)
+			}
+		})
+	}
+}
+
+// TestMysqlSlaveLagRedaction pins the scalar public boundary. A successful
+// preserved batch row is raw until the parser has classified NULL; a numeric
+// lag that overlaps the connection password is rendered as a redaction
+// placeholder rather than leaking the credential through an int64 result.
+func TestMysqlSlaveLagRedaction(t *testing.T) {
+	marker := "42"
+	rt, runner := newMysqlRuntime(process.CommandResult{Stdout: []byte(
+		"Slave_IO_Running\tSeconds_Behind_Master\nYes\t" + marker + "\n",
+	)})
+	value, err := (slaveLagFunc{}).Execute(context.Background(), rt, &SlaveLagArgs{Password: &marker})
+	if err != nil || value != "***REDACTED***" || strings.Contains(fmt.Sprint(value), marker) {
+		t.Fatalf("redacted slave_lag = %#v, %v", value, err)
+	}
+	if len(runner.calls) != 1 || !containsAll(runner.calls[0].Redact, []string{marker}) || strings.Contains(runner.calls[0].RedactedString(), marker) {
+		t.Fatalf("slave_lag redaction transport = %#v", runner.calls)
+	}
+
+	// A connection password equal to the native NULL marker must not change a
+	// present SQL NULL into the redaction placeholder.
+	rt, runner = newMysqlRuntime(process.CommandResult{Stdout: []byte(
+		"Slave_IO_Running\tSeconds_Behind_Master\nYes\tNULL\n",
+	)})
+	value, err = (slaveLagFunc{}).Execute(context.Background(), rt, &SlaveLagArgs{Password: mysqlString("NULL")})
+	if err != nil || value != nil || len(runner.calls) != 1 {
+		t.Fatalf("NULL-overlap slave_lag = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+}
+
+func TestMysqlSlaveLagInvalidSecretOverlap(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		lag  string
+	}{
+		{name: "malformed", lag: "not-a-number"},
+		{name: "overflow", lag: "9223372036854775808"},
+		{name: "underflow", lag: "-9223372036854775809"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, runner := newMysqlRuntime(process.CommandResult{Stdout: []byte(
+				"Slave_IO_Running\tSeconds_Behind_Master\nYes\t" + tc.lag + "\n",
+			)})
+			value, err := (slaveLagFunc{}).Execute(context.Background(), rt, &SlaveLagArgs{Password: &tc.lag})
+			if value != nil || !errors.Is(err, errMysqlSlaveLagMalformed) || strings.Contains(err.Error(), tc.lag) {
+				t.Fatalf("secret-overlap slave_lag = %#v, %v; want value-free %v", value, err, errMysqlSlaveLagMalformed)
+			}
+			if len(runner.calls) != 1 || !containsAll(runner.calls[0].Redact, []string{tc.lag}) || strings.Contains(runner.calls[0].RedactedString(), tc.lag) {
+				t.Fatalf("secret-overlap transport = %#v", runner.calls)
+			}
+		})
+	}
+}
+
+// TestMysqlSlaveLagTransport pins the shared fail-closed Runner boundaries on
+// the scalar path: errors are value-free, output is bounded, cancellation
+// happens before a child process, and the command remains shell-free with the
+// fixed timeout.
+func TestMysqlSlaveLagTransport(t *testing.T) {
+	marker := "slave-lag-transport-secret"
+	rt, runner := newMysqlRuntime(process.CommandResult{
+		Err:    errors.New("mysql failed " + marker),
+		Stdout: []byte(marker), Stderr: []byte(marker),
+	})
+	value, err := (slaveLagFunc{}).Execute(context.Background(), rt, &SlaveLagArgs{Password: &marker})
+	if value != nil || err == nil || strings.Contains(err.Error(), marker) || len(runner.calls) != 1 {
+		t.Fatalf("slave_lag transport error = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+	if strings.Contains(runner.calls[0].RedactedString(), marker) || !containsAll(runner.calls[0].Redact, []string{marker}) || runner.calls[0].Shell || runner.calls[0].Timeout != commandTimeout {
+		t.Fatalf("slave_lag transport leaked marker: %#v", runner.calls[0])
+	}
+
+	rt, runner = newMysqlRuntime(process.CommandResult{Err: context.DeadlineExceeded})
+	value, err = (slaveLagFunc{}).Execute(context.Background(), rt, &SlaveLagArgs{})
+	if value != nil || !errors.Is(err, context.DeadlineExceeded) || len(runner.calls) != 1 {
+		t.Fatalf("slave_lag timeout = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+
+	rt, runner = newMysqlRuntime(process.CommandResult{Stdout: bytes.Repeat([]byte{'x'}, outputLimit+1)})
+	value, err = (slaveLagFunc{}).Execute(context.Background(), rt, &SlaveLagArgs{})
+	if value != nil || !errors.Is(err, process.ErrOutputLimit) || len(runner.calls) != 1 {
+		t.Fatalf("slave_lag output limit = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runner = &mysqlFakeRunner{}
+	value, err = (slaveLagFunc{}).Execute(ctx, &runtime.Runtime{Runner: runner}, &SlaveLagArgs{})
+	if value != nil || !errors.Is(err, context.Canceled) || len(runner.calls) != 0 {
+		t.Fatalf("slave_lag cancellation = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+
+	runner = &mysqlFakeRunner{}
+	value, err = (slaveLagFunc{}).Execute(context.Background(), &runtime.Runtime{Runner: runner}, &SlaveLagArgs{Runas: mysqlString("mysql")})
+	if value != nil || !errors.Is(err, errMysqlRunas) || len(runner.calls) != 0 {
+		t.Fatalf("slave_lag runas = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+}
+
+// TestMysqlSlaveLagThroughRegistry pins direct registration and the CLI-sized
+// scalar JSON shapes at the registry boundary.
+func TestMysqlSlaveLagThroughRegistry(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	runner := &mysqlFakeRunner{results: []process.CommandResult{
+		{Stdout: []byte("Slave_IO_Running\tSeconds_Behind_Master\nYes\t9\n")},
+		{ExitCode: 1},
+	}}
+	rt := &runtime.Runtime{Runner: runner, Exec: reg, FS: runtime.NewMemoryFS()}
+	value, err := reg.Call(context.Background(), rt, "mysql.slave_lag", &SlaveLagArgs{})
+	if err != nil || value != int64(9) {
+		t.Fatalf("registry slave_lag numeric = %#v, %v", value, err)
+	}
+	value, err = reg.Call(context.Background(), rt, "mysql.slave_lag", &SlaveLagArgs{})
+	if err != nil || value != int64(-3) {
+		t.Fatalf("registry slave_lag failure = %#v, %v", value, err)
+	}
+	if len(runner.calls) != 2 || runner.calls[0].Args[len(runner.calls[0].Args)-1] != "--execute=SHOW SLAVE STATUS" || runner.calls[1].Args[len(runner.calls[1].Args)-1] != "--execute=SHOW SLAVE STATUS" {
+		t.Fatalf("registry slave_lag calls = %#v", runner.calls)
 	}
 }

@@ -67,6 +67,10 @@ EXPECTED_CASES = (
     "mysql-get-slave-status-native-observation",
     "mysql-get-slave-status-negative-auth",
     "mysql-get-slave-status-negative-connection",
+    "mysql-slave-lag-statekit",
+    "mysql-slave-lag-native-observation",
+    "mysql-slave-lag-negative-auth",
+    "mysql-slave-lag-negative-connection",
 )
 
 
@@ -590,6 +594,13 @@ printf 'policy_rc=%s start_rc=%s starts=%s\n' "$policy_rc" "$start_rc" "$starts"
                     "unsupported-sql",
                 )
 
+        self.assertEqual(
+            self._classify_status_result(
+                "slave_lag", "exited", 1, "", positive_fixtures["slave-client"]
+            ),
+            "unsupported-sql",
+        )
+
         negative_fixtures = {
             "generic-unknown-error": (
                 "ERROR 1105 (HY000): Unknown error while executing SHOW MASTER STATUS\n"
@@ -652,12 +663,46 @@ printf 'policy_rc=%s start_rc=%s starts=%s\n' "$policy_rc" "$start_rc" "$starts"
             "runtime",
         )
         self.assertEqual(self._classify_status_result("master", "timeout", 124, "", ""), "timeout")
+        self.assertEqual(
+            self._classify_status_result("slave_lag", "runtime", 125, "", positive_fixtures["slave-client"]),
+            "runtime",
+        )
+        self.assertEqual(self._classify_status_result("slave_lag", "timeout", 124, "", ""), "timeout")
+        self.assertEqual(
+            self._classify_status_result(
+                "slave_lag",
+                "exited",
+                1,
+                "",
+                "ERROR 1045 (28000): Access denied for user while running SHOW SLAVE STATUS\n",
+            ),
+            "auth-failure",
+        )
+        self.assertEqual(
+            self._classify_status_result(
+                "slave_lag",
+                "exited",
+                1,
+                "",
+                "ERROR 2003 (HY000): Can't connect to MySQL server for SHOW SLAVE STATUS\n",
+            ),
+            "connection-failure",
+        )
 
         self.assertTrue(
             self._status_correlates("master", "compatibility-empty-list", "unsupported-sql")
         )
         self.assertFalse(
             self._status_correlates("master", "compatibility-empty-list", "empty-output")
+        )
+        self.assertTrue(
+            self._status_correlates("slave_lag", "compatibility-query-failure", "unsupported-sql")
+        )
+        self.assertFalse(
+            self._status_correlates("slave_lag", "compatibility-query-failure", "connection-failure")
+        )
+        self.assertFalse(
+            self._status_correlates("slave_lag", "compatibility-query-failure", "runtime")
         )
         self.assertTrue(self._status_correlates("processlist", "available", "available"))
         self.assertFalse(self._status_correlates("processlist", "available", "auth-failure"))
@@ -683,6 +728,12 @@ printf 'policy_rc=%s start_rc=%s starts=%s\n' "$policy_rc" "$start_rc" "$starts"
             ),
             "invalid-type",
         )
+        self.assertEqual(self._classify_status_json("slave_lag", -3), "compatibility-query-failure")
+        self.assertEqual(self._classify_status_json("slave_lag", -1), "non-slave")
+        self.assertEqual(self._classify_status_json("slave_lag", -2), "broken-io")
+        self.assertEqual(self._classify_status_json("slave_lag", 17), "available")
+        self.assertEqual(self._classify_status_json("slave_lag", None), "available-null")
+        self.assertEqual(self._classify_status_json("slave_lag", "-3"), "invalid-type")
 
     def test_lifecycle_mutations_fail_closed_on_precheck_and_ownership(self) -> None:
         command = r'''
@@ -1223,8 +1274,8 @@ printf 'duplicate_rc=%s unknown_rc=%s duplicate_status=%s missing_status=%s subs
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("status: fail", report)
             self.assertIn("execution: incomplete", report)
-            self.assertIn("cases_total: 48", report)
-            self.assertIn("cases_skipped: 47", report)
+            self.assertIn("cases_total: 52", report)
+            self.assertIn("cases_skipped: 51", report)
 
     def test_stale_or_unwritable_report_is_not_accepted(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

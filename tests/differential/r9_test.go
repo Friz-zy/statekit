@@ -239,10 +239,12 @@ import (
 // pending external CI gate.
 // R9.3m registers mysql.processlist, mysql.get_master_status, and
 // mysql.get_slave_status (mysql.py:2764-2959) over the exact SHOW FULL
-// PROCESSLIST, SHOW MASTER STATUS, and SHOW SLAVE STATUS queries. Dynamic
-// DictCursor headers remain header-derived, known numeric fields retain their
-// Python-int JSON shape, SQL NULL markers become nil, and the status helpers
-// keep Salt's bare [] no-row/connection-failure shape. The fixed native CLI
+// PROCESSLIST, SHOW MASTER STATUS, and SHOW SLAVE STATUS queries. R9.3n adds
+// mysql.slave_lag (mysql.py:1043-1082) over that same fixed SHOW SLAVE STATUS
+// statement. Dynamic DictCursor headers remain header-derived, known numeric
+// fields retain their Python-int JSON shape, SQL NULL markers become nil, and
+// the status helpers keep Salt's bare [] no-row/connection-failure shape while
+// slave_lag keeps its exact -1/-2/-3 scalar ladder. The fixed native CLI
 // transport remains bounded, shell-free, redacted, cancellable, and driver-free;
 // live standalone-MySQL observations are an E5.2 concern, not R9 differential
 // execution.
@@ -310,11 +312,14 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"mysql.plugin-status-list-fixed-query",
 			"mysql.database-create-remove-lifecycle",
 			"mysql.processlist-and-replication-status",
+			"mysql.slave-lag",
 		},
 		Evidence: []string{
 			"R9.3m direct, registry, and CLI fake-Runner tests pin the exact source SHOW FULL PROCESSLIST/SHOW MASTER STATUS/SHOW SLAVE STATUS argv, dynamic header-keyed maps, numeric and nil value shapes, rowless and nonzero transport-empty shapes, cancellation, timeout/output bounds, and password redaction; no live database or driver is used",
 			"R9.3m source vectors cover the processlist example shape, master position, slave port/lag fields, present-NULL versus missing-key classification, native NULL classification before overlapping-secret redaction, direct and CLI ordinary-value redaction, and exact registration/CLI serialization; short-row tests pin the intentional defensive prefix divergence rather than claim Salt malformed-row parity",
 			"The pinned MySQL 8.4 live harness keeps the exact legacy replication SQL, correlates StateKit's [] compatibility output with the independent native mysql unsupported-sql classification, and rejects genuine empty output, auth failure, connection failure, unrelated errors, and StateKit/native mismatches; no successful replication retrieval is claimed",
+			"R9.3n direct, registry, and CLI fake-Runner tests pin slave_lag's exact -3 query/connection exit, -1 rowless/non-slave, Seconds_Behind_Master numeric and NULL, -2 broken-IO, short/malformed value-free errors, MySQL 8.4 unsupported exit boundary, cancellation, timeout/output limits, and scalar redaction; no replacement replication query or live retrieval is used",
+			"The R9.3n live extension correlates mysql.slave_lag's StateKit -3 result with the independent native MySQL 8.4 unsupported-sql classification for SHOW SLAVE STATUS and rejects native empty/available/auth/connection/runtime/unrelated outcomes; no replication retrieval is claimed",
 			"R9.3l direct, registry, and CLI fake-Runner tests pin db_get defaults before ALTER DATABASE, explicit/partial/empty-option behavior, successful rowless and failed catalog shapes, exact quoted identifier and bare charset/collation statement vectors, and true/false/[] results; source-result vectors model representative truthy/falsy cursor.execute returns while separate native-exit vectors document that the CLI cannot observe the exact DB-API predicate; failed preflight never mutates, and stateful mock post-alter/readback checks preserve seeded data; cancellation, timeout/output bounds, and preflight/mutation redaction are asserted; no live database or driver is used",
 			"R9.3i direct, registry, and CLI tests pin fixed SHOW PLUGINS/plugin-catalog argv, exact name/status shapes, source order and first-match filtering, empty/nonzero/cancel/boundary behavior, password redaction, and SQL-injection-shaped names without a live database",
 			"R9.3j direct, registry, and CLI fake-Runner tests pin db_create/db_remove fixed-catalog preflight, quoted CREATE/DROP statements, optional character_set/collate literal escaping and rejection, MYSQL_PWD transport, finite timeout/output bounds, cancellation before and after preflight, phase-specific timeout/output/redaction failures, protected-name no-op, false-on-existing/absent idempotence shapes, and the public true result after a successful DROP whose db_exists post-check returns false; no live database or driver is used",
@@ -351,10 +356,11 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"R9.3g TestMysqlUserChpassStatementVectors pins password-over-hash precedence including an explicit empty password, old MySQL and modern MySQL/MariaDB password/hash clauses, passwordless/socket clauses, and unsafe plugin/column rejection; TestMysqlUserChpass pins the non-self six-call version/account/schema/plugin/mutation/flush sequence, exact connection flags, bounds, MYSQL_PWD transport, complete mutation inventory, and input nonmutation; TestMysqlUserChpassSelfPasswordUsesOneSession pins four preflights followed by exactly one fixed ALTER USER plus FLUSH command for matching connection and target users, ordered statements, old MYSQL_PWD, complete redaction, and no repeated mutation; TestMysqlUserChpassSelfPasswordRetryUsesNewCredential pins the rowless version retry, original/new MYSQL_PWD transition, unchanged input, one same-session command, and no repeated mutation; TestMysqlUserChpassShapesAndFailClosed executes unknown-plugin, passwordless, socket-status, nonzero mutation/flush, no-Runner, unsafe-input, and cancellation branches; TestMysqlUserChpassDirectRedactionPhaseMatrix fails every version/account/schema/plugin/mutation/flush phase, asserts raw/doubled/quoted/account/hash/native-verifier/connection forms are absent from the returned error and rendered command, and replays each failed command through the transport to assert redacted error/stdout/stderr; TestMysqlUserChpassRegistryRedactionPhaseMatrix repeats all six phases through the registered name; TestMySQLCLIUserChpassRedactionPhaseMatrix repeats all six phases through argument decoding and asserts CLI output/error/rendered-command redaction plus longest-first inventories; TestMySQLCLIUserChpassSelfPasswordSingleCommand asserts the same-session CLI argv and no second call; TestMysqlVerifyLogin and TestMysqlVerifyLoginFailClosed pin connection-user/password overrides, host/port/database preservation, fixed SELECT 1 with no password in SQL, bool/nonzero/error shapes, empty/nil MYSQL_PWD transport, cancellation, and value-free error/rendered-command redaction",
 		},
 		CompatibilityNotes: []string{
-			"The three R9.3m functions retain Salt's processlist list-of-dicts shape and get_master_status/get_slave_status single-dict-or-bare-[] source shape in mock vectors. On pinned MySQL 8.4, SHOW MASTER STATUS and SHOW SLAVE STATUS are removed; the live StateKit calls therefore retain the source-compatible [] result while the native observation must classify the exact statement as unsupported-sql. No replacement SHOW statement or successful replication retrieval is substituted or claimed",
+			"The three R9.3m functions retain Salt's processlist list-of-dicts shape and get_master_status/get_slave_status single-dict-or-bare-[] source shape in mock vectors. R9.3n slave_lag retains the source scalar ladder: -3 on connection/query failure, -1 on no row/non-slave, Seconds_Behind_Master (including nil) when Slave_IO_Running is Yes, and -2 for broken IO. On pinned MySQL 8.4, SHOW MASTER STATUS and SHOW SLAVE STATUS are removed; get_slave_status retains [] while slave_lag retains -3, and the native observation must classify the exact statement as unsupported-sql. No replacement SHOW statement or successful replication retrieval is substituted or claimed",
 			"SHOW output is dynamic and must remain the exact source SHOW statement. StateKit classifies the native mysql batch NULL marker before public redaction, so SQL NULL remains nil even when the connection secret is NULL; ordinary non-marker values are still redacted. A server value literally spelled NULL is not distinguishable at this fixed CLI boundary and remains the documented native-batch ceiling",
 			"Known integer columns are converted to int64 to preserve MySQLdb/Python integer JSON values; unknown future SHOW columns remain decoded strings, preserving forward-compatible dynamic headers without guessing on arbitrary text",
 			"The native mysql CLI exposes only a process exit, not whether StateKit's legacy SHOW call failed while connecting or while executing a query. The live harness uses the independent native stderr/error marker to distinguish unsupported SQL from genuine empty output, auth failure, connection failure, and unrelated error, then requires the StateKit [] compatibility result to correlate with the unsupported classification",
+			"For slave_lag the same CLI limitation is explicit: the StateKit -3 scalar is not itself proof of a removed statement, so the live harness requires the separate native 1064/42000 syntax diagnostic bound to SHOW SLAVE STATUS. Runtime, timeout, setup, cleanup, and unrelated native outcomes never satisfy the unsupported correlation",
 			"Short SHOW rows retain their available header/value prefix instead of raising. Salt's processlist loop and shared __do_query_into_hash index every described column and raise IndexError on a malformed short row; the defensive prefix is value-safe, tested directly and through the CLI, and is not claimed as pinned malformed-row behavior",
 			"R9.3l keeps alter_db's source default flow: db_get is read first, nil/empty explicit options use its character_set/collate values, and one ALTER DATABASE statement follows. The pinned cursor.execute predicate has explicit representative truthy/falsy source vectors (1/0), but the native mysql CLI exposes only process status; StateKit therefore maps exit zero to true and nonzero to false and documents exact cursor.execute/affected-row parity as unobservable at this boundary",
 			"A successful rowless db_get is {}, so two explicit non-empty options bypass default lookup like the pinned source; omitted/empty options or partial explicit options fail closed before ALTER when a default is absent. A nonzero db_get is [] and is returned without mutation even with both options explicit, because an uncertain catalog preflight must not authorize a mutation; Runner errors, cancellation, timeout, and output-limit failures likewise issue no later ALTER",
@@ -423,6 +429,7 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"mysql.quote_identifier",
 			"mysql.showglobal",
 			"mysql.showvariables",
+			"mysql.slave_lag",
 			"mysql.status",
 			"mysql.tokenize_grant",
 			"mysql.user_create",
@@ -730,7 +737,7 @@ func TestR9DifferentialScopeReport(t *testing.T) {
 	registered := registeredNames(first)
 
 	report := r9Report{
-		Round:    "R9.3m",
+		Round:    "R9.3n",
 		Platform: "cross-platform",
 		RuntimeStatus: "mock-only differential contract: RabbitMQ is never started, MySQL is never connected, PostgreSQL is never contacted, and SQLite differential tests do not use live Salt; " +
 			"shell-free fake Runner tests, pure-function vectors, and SQLite boundary vectors provide the executable contract",

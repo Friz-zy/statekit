@@ -2880,3 +2880,96 @@ func TestMySQLCLIProcessAndReplicationStatusFailures(t *testing.T) {
 		})
 	}
 }
+
+// TestMySQLCLISlaveLagSourceVectors drives the newly registered scalar through
+// the production argument decoder and JSON renderer. It pins the exact native
+// SHOW statement, the -1/-2/-3 Salt-compatible values, NULL, malformed-row
+// failure, and the numeric JSON shape without a live database.
+func TestMySQLCLISlaveLagSourceVectors(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		result     process.CommandResult
+		wantCode   int
+		wantOutput string
+		password   string
+	}{
+		{name: "numeric", result: process.CommandResult{Stdout: []byte("Slave_IO_Running\tSeconds_Behind_Master\nYes\t37\n")}, wantCode: ExitOK, wantOutput: "37"},
+		{name: "null", result: process.CommandResult{Stdout: []byte("Slave_IO_Running\tSeconds_Behind_Master\nYes\tNULL\n")}, wantCode: ExitOK, wantOutput: "null", password: "NULL"},
+		{name: "no-row", result: process.CommandResult{Stdout: []byte("Slave_IO_Running\tSeconds_Behind_Master\n")}, wantCode: ExitOK, wantOutput: "-1"},
+		{name: "broken-io", result: process.CommandResult{Stdout: []byte("Slave_IO_Running\tSeconds_Behind_Master\nNo\t37\n")}, wantCode: ExitOK, wantOutput: "-2"},
+		{name: "unsupported-query", result: process.CommandResult{ExitCode: 1, Stderr: []byte("ERROR 1064 (42000): SHOW SLAVE STATUS is unsupported\n")}, wantCode: ExitOK, wantOutput: "-3"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &cliRecordingRunner{results: []process.CommandResult{tc.result}}
+			args := []string{"exec", "mysql.slave_lag"}
+			if tc.password != "" {
+				args = append(args, "--connection-pass", tc.password)
+			}
+			args = append(args, "-o", "json")
+			code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), args...)
+			if code != tc.wantCode || strings.TrimSpace(out) != tc.wantOutput || errS != "" || len(runner.calls) != 1 {
+				t.Fatalf("slave_lag %s code=%d out=%q err=%q calls=%d", tc.name, code, out, errS, len(runner.calls))
+			}
+			if runner.calls[0].Args[len(runner.calls[0].Args)-1] != "--execute=SHOW SLAVE STATUS" || runner.calls[0].Shell || runner.calls[0].Timeout != 30*time.Second || runner.calls[0].MaxStdoutBytes != 4<<20 || runner.calls[0].MaxStderrBytes != 4<<20 {
+				t.Fatalf("slave_lag %s transport=%#v", tc.name, runner.calls[0])
+			}
+		})
+	}
+
+	marker := "42"
+	runner := &cliRecordingRunner{results: []process.CommandResult{{Stdout: []byte(
+		"Slave_IO_Running\tSeconds_Behind_Master\nYes\t" + marker + "\n",
+	)}}}
+	code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.slave_lag", "--connection-pass", marker, "-o", "json")
+	if code != ExitOK || strings.TrimSpace(out) != `"***REDACTED***"` || errS != "" || strings.Contains(out+errS, marker) || strings.Contains(runner.calls[0].RedactedString(), marker) {
+		t.Fatalf("slave_lag numeric redaction code=%d out=%q err=%q calls=%#v", code, out, errS, runner.calls)
+	}
+
+	for _, tc := range []struct {
+		name string
+		lag  string
+	}{
+		{name: "malformed-secret-overlap", lag: "not-a-number"},
+		{name: "overflow-secret-overlap", lag: "9223372036854775808"},
+		{name: "underflow-secret-overlap", lag: "-9223372036854775809"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &cliRecordingRunner{results: []process.CommandResult{{Stdout: []byte(
+				"Slave_IO_Running\tSeconds_Behind_Master\nYes\t" + tc.lag + "\n",
+			)}}}
+			code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.slave_lag", "--connection-pass", tc.lag, "-o", "json")
+			if code != ExitFailed || out != "" || errS == "" || strings.Contains(out+errS, tc.lag) || len(runner.calls) != 1 {
+				t.Fatalf("secret-overlap slave_lag %s code=%d out=%q err=%q calls=%d", tc.name, code, out, errS, len(runner.calls))
+			}
+			if strings.Contains(runner.calls[0].RedactedString(), tc.lag) || !reflect.DeepEqual(runner.calls[0].Redact, []string{tc.lag}) {
+				t.Fatalf("secret-overlap transport %s = %#v", tc.name, runner.calls[0])
+			}
+		})
+	}
+
+	// Required columns and the numeric field are value-free execution errors,
+	// never a fabricated lag or a panic through the CLI renderer.
+	runner = &cliRecordingRunner{results: []process.CommandResult{{Stdout: []byte("Slave_IO_Running\tSeconds_Behind_Master\nYes\n")}}}
+	code, out, errS = captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.slave_lag", "-o", "json")
+	if code != ExitFailed || out != "" || errS == "" || strings.Contains(errS, "Yes") {
+		t.Fatalf("slave_lag short row code=%d out=%q err=%q", code, out, errS)
+	}
+}
+
+// TestMySQLCLISlaveLagBoundedFailures pins timeout/output-limit behavior on
+// the direct CLI surface and keeps the return stream value-free.
+func TestMySQLCLISlaveLagBoundedFailures(t *testing.T) {
+	for _, result := range []process.CommandResult{
+		{Err: context.DeadlineExceeded},
+		{StdoutTruncated: true},
+	} {
+		runner := &cliRecordingRunner{results: []process.CommandResult{result}}
+		code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.slave_lag", "-o", "json")
+		if code != ExitFailed || out != "" || errS == "" || len(runner.calls) != 1 {
+			t.Fatalf("slave_lag bounded code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+		}
+		if runner.calls[0].Timeout != 30*time.Second || runner.calls[0].MaxStdoutBytes != 4<<20 || runner.calls[0].MaxStderrBytes != 4<<20 || runner.calls[0].Shell {
+			t.Fatalf("slave_lag bounded transport=%#v", runner.calls[0])
+		}
+	}
+}

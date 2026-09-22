@@ -2362,6 +2362,55 @@ The exact evidence boundary is:
 | `R9.3m` | `mysql.processlist`, `mysql.get_master_status`, `mysql.get_slave_status`, exact legacy SHOW queries, dynamic/numeric/nil source vectors, mismatch and missing-vs-null-key negatives, direct/registry/CLI bounds/redaction tests, registration, coverage, and differential report update | `backend-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | implementation is in the clean requested worktree; local mock/static evidence is non-live and no commit is made; external live behavior remains `pending_external_ci` |
 | `E5.2` | Preserve the prior 36 MySQL cases and append 12 R9.3m production/native/negative processlist and MySQL 8.4 unsupported-replication classifications; exact 48-case inventory, value-free report, bounded rootless Podman cleanup | `devops-platform-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | harness/workflow is prepared; native execution, cleanup evidence, and live 48/48 remain pending in GitHub; no successful replication retrieval or local live MySQL is claimed; SQLite job is preserved |
 
+##### 2026-09-22 R9.3n MySQL `slave_lag` — implementation complete; external live CI pending
+
+R9.3n ports the pinned Salt `mysql.slave_lag` contract from
+`salt/modules/mysql.py:1043-1082`, the existing MySQL catalog entry, and the
+locked source-test revision. The canonical `mysql.slave_lag` name is registered
+in the direct runtime, exec registry, and CLI decoder. It uses only the fixed
+shell-free native `SHOW SLAVE STATUS` query; it does not add arbitrary SQL,
+replacement replication retrieval, a MySQL driver, or live database behavior.
+
+The scalar result ladder is explicit and value-safe:
+
+* native connection/query exit: `-3`;
+* successful rowless or non-slave result: `-1`;
+* `Slave_IO_Running` other than exact `Yes`: `-2`;
+* exact `Yes`: `Seconds_Behind_Master`, with native `NULL` rendered as `nil`;
+* missing required columns, short rows, and malformed numeric values fail with
+  a value-free parser error rather than fabricating lag or panicking.
+
+The preserved stdout parser is bounded by the central timeout/output limits and
+redacts the scalar before public JSON rendering. A credential overlap therefore
+returns a redaction placeholder rather than converting a secret to a number.
+Cancellation, timeout, output-limit, unavailable-client, runas, and Runner
+errors remain fail-closed. MySQL 8.4 removed `SHOW SLAVE STATUS`; its native
+1064/42000 syntax diagnostic is classified separately by the live harness, and
+the StateKit `-3` value is not treated as replication retrieval without that
+independent observation.
+
+The exact evidence boundary is:
+
+* **Local mock/static evidence (completed by the `backend-engineer-senior`):**
+  source-derived NULL/numeric/short/malformed/unsupported/redaction vectors,
+  direct and registry tests, CLI serialization tests, generated coverage and R9
+  report, Podman Go tests, Podman Python/shell orchestration checks, and no live
+  MySQL connection.
+* **External live evidence (pending; executor `devops-platform-engineer-senior`):**
+  preserve the prior 48 ordered cases and append four exact `slave_lag` cases:
+  StateKit unsupported correlation, independent native unsupported observation,
+  negative authentication, and negative connection. The native observer must
+  distinguish unsupported `SHOW SLAVE STATUS` from available/empty/auth,
+  connection, runtime, timeout, setup, cleanup, and unrelated outcomes. The
+  report must remain value-free, exact, zero-skip, cleanup-verified, and must
+  not claim replication retrieval. SQLite and its permissions/workflow remain
+  unchanged; no local live MySQL is claimed.
+
+| Phase | Scope | Implementation executor role | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `R9.3n` | `mysql.slave_lag`, exact `SHOW SLAVE STATUS`, `-3/-2/-1` and lag/NULL source ladder, malformed/unsupported/redaction/cancellation/bounds vectors, direct/registry/CLI registration and tests, coverage, and R9 report update | `backend-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | implementation is in the clean requested worktree; Podman mock/static evidence is non-live and no commit is made; external live behavior remains `pending_external_ci` |
+| `E5.2` | Preserve the prior 48 MySQL cases and append four R9.3n production/native/negative `slave_lag` cases with MySQL 8.4 unsupported correlation; exact 52-case inventory, value-free report, bounded rootless Podman cleanup | `devops-platform-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | harness extension is prepared; native execution, cleanup evidence, and live 52/52 remain pending in GitHub; no successful replication retrieval or local live MySQL is claimed; SQLite job and permissions are preserved |
+
 ##### 2026-09-21 R9.3k SQLite catalog family — implementation ready; live CI pending
 
 R9.3k ports the public Salt `sqlite3` functions `version`, `sqlite_version`,

@@ -9,8 +9,9 @@
 // (R9.3f), the fixed-query user_grants reader (R9.3h), and the fixed-query
 // plugin_status/plugins_list readers (R9.3i), the database lifecycle
 // mutations db_create/db_remove (R9.3j), the database metadata mutation
-// alter_db (R9.3l), and the process/replication status readers
-// processlist/get_master_status/get_slave_status (R9.3m).
+// alter_db (R9.3l), the process/replication status readers
+// processlist/get_master_status/get_slave_status (R9.3m), and slave_lag
+// (R9.3n).
 //
 // Boundaries (R9.2a): no MySQL client driver or protocol, no new
 // dependencies, no Runner spawns, no filesystem access, and no live MySQL
@@ -122,6 +123,17 @@
 // exception branch. Short rows keep their available prefix instead of raising
 // the source's IndexError. Fixed SQL, shared timeout/output bounds, shell-free
 // transport, and fake-Runner-only tests remain unchanged.
+//
+// Boundaries (R9.3n): slave_lag uses only the exact SHOW SLAVE STATUS
+// statement. A successful rowless result returns -1, a nonzero native client
+// exit returns -3, Slave_IO_Running other than the exact Yes returns -2, and a
+// Yes row returns the Seconds_Behind_Master value (including native NULL as
+// nil). MySQL 8.4's removed statement therefore remains an explicit native
+// unsupported/query-failure observation; no replacement replication query or
+// successful retrieval is claimed. Required-column and numeric-shape
+// corruption fails closed with a value-free error. The scalar value is
+// redacted before it leaves the module, using the same bounded transport,
+// cancellation, timeout, and output limits as the other fixed SHOW readers.
 package mysql
 
 import (
@@ -158,6 +170,9 @@ var (
 	// errMysqlGrantIdentifier is also value-free because identifier text can
 	// overlap a connection credential or another sensitive caller value.
 	errMysqlGrantIdentifier = errors.New("mysql: invalid grant identifier")
+	// errMysqlSlaveLagMalformed is value-free: malformed native status output
+	// must never echo a field that can overlap the connection credential.
+	errMysqlSlaveLagMalformed = errors.New("mysql: malformed SHOW SLAVE STATUS result")
 )
 
 // mysqlGrantPrivileges is the pinned __grants__ allow-list from mysql.py.
@@ -2304,6 +2319,46 @@ func (getSlaveStatusFunc) Execute(ctx context.Context, rt *runtime.Runtime, args
 	return mysqlShowStatus(ctx, rt, a.connection(), slaveStatusQuery)
 }
 
+// slave_lag — salt/modules/mysql.py:1043-1082 @ pinned revision.
+// SlaveLagArgs are the canonical slave_lag(**connection_args) surface. The
+// connection fields retain the shared pointer defaults and runas remains a
+// StateKit-only guard rejected before the native client is invoked.
+type SlaveLagArgs struct {
+	User     *string `statekit:"name=connection_user"`
+	Host     *string `statekit:"name=connection_host"`
+	Port     *string `statekit:"name=connection_port"`
+	Password *string `statekit:"name=connection_pass"`
+	DB       *string `statekit:"name=connection_db"`
+	Runas    *string `statekit:"name=runas"`
+}
+
+func (a *SlaveLagArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return &myConnection{
+		User:     a.User,
+		Host:     a.Host,
+		Port:     a.Port,
+		Password: a.Password,
+		DB:       a.DB,
+		Runas:    a.Runas,
+	}
+}
+
+type slaveLagFunc struct{}
+
+func (slaveLagFunc) Name() string { return "mysql.slave_lag" }
+func (slaveLagFunc) Args() any    { return SlaveLagArgs{} }
+
+func (slaveLagFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[SlaveLagArgs](args, "mysql.slave_lag")
+	if err != nil {
+		return nil, err
+	}
+	return mysqlSlaveLag(ctx, rt, a.connection())
+}
+
 // mysqlShowIntegerColumns is the union of integer-valued columns emitted by
 // the three fixed SHOW statements. MySQLdb returns Python ints for these
 // fields; the mysql CLI is text-only, so converting only known numeric columns
@@ -2404,6 +2459,73 @@ func mysqlShowStatus(ctx context.Context, rt *runtime.Runtime, conn *myConnectio
 		return []any{}, nil
 	}
 	return rows[0], nil
+}
+
+// mysqlSlaveLag ports the scalar decision ladder in salt/modules/mysql.py:
+// connect/query failure is -3, a successful query without a row is -1, a
+// non-running IO thread is -2, and a running IO thread returns the lag field.
+// It deliberately keeps the query's process exit visible instead of using
+// mysqlQueryRowsPreserve, whose callers intentionally collapse nonzero exits
+// into an empty row set. That distinction lets a MySQL 8.4 removed-statement
+// exit remain an explicit unsupported/query-failure observation in the live
+// harness without fabricating a replication result.
+func mysqlSlaveLag(ctx context.Context, rt *runtime.Runtime, conn *myConnection) (any, error) {
+	if conn == nil {
+		conn = &myConnection{}
+	}
+	result, err := runMysqlPreserve(ctx, rt, mysqlQueryArgv(conn, slaveStatusQuery), conn)
+	if err != nil {
+		return nil, err
+	}
+	if result.ExitCode != 0 {
+		return int64(-3), nil
+	}
+	header, rows := parseBatchRows(string(result.Stdout))
+	if len(rows) == 0 {
+		return int64(-1), nil
+	}
+
+	ioIndex, lagIndex := -1, -1
+	for index, column := range header {
+		switch column {
+		case "Slave_IO_Running":
+			ioIndex = index
+		case "Seconds_Behind_Master":
+			lagIndex = index
+		}
+	}
+	row := rows[0]
+	if ioIndex < 0 || ioIndex >= len(row) {
+		return nil, errMysqlSlaveLagMalformed
+	}
+	ioField := row[ioIndex]
+	if ioField.null || ioField.value == "NULL" || ioField.value != "Yes" {
+		return int64(-2), nil
+	}
+	if lagIndex < 0 || lagIndex >= len(row) {
+		return nil, errMysqlSlaveLagMalformed
+	}
+
+	lagField := row[lagIndex]
+	if lagField.null || lagField.value == "NULL" {
+		return nil, nil
+	}
+	// Validate the original native field before redaction. A malformed or
+	// overflowing value that overlaps a credential must fail closed rather
+	// than being mistaken for a valid redaction placeholder.
+	lag, err := strconv.ParseInt(lagField.value, 10, 64)
+	if err != nil {
+		return nil, errMysqlSlaveLagMalformed
+	}
+	// The successful preserved stdout is raw by design, so redact the scalar
+	// before it can become a public value. As with the dynamic SHOW maps, a
+	// credential overlap intentionally yields the safe redaction string rather
+	// than leaking a numeric secret through an int64 conversion.
+	publicLag := string(process.RedactBytes(mysqlRowSecrets(conn), []byte(lagField.value)))
+	if publicLag != lagField.value {
+		return publicLag, nil
+	}
+	return lag, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -5576,9 +5698,9 @@ func redactedError(err error, secrets ...string) error {
 // R9.3c maintenance family, the R9.3e user account mutations, the R9.3f
 // grant family, the R9.3g password/login family, the R9.3i plugin readers,
 // the R9.3j database lifecycle mutations, the R9.3l database metadata
-// mutation, and the R9.3m process/replication status readers over the central
-// mysql CLI transport. The remainder of the mysql family stays pending behind
-// its own source/transport boundary.
+// mutation, the R9.3m process/replication status readers, and the R9.3n
+// slave_lag scalar reader over the central mysql CLI transport. The remainder
+// of the mysql family stays pending behind its own source/transport boundary.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		quoteIdentifierFunc{},
@@ -5593,6 +5715,7 @@ func Register(reg *runtime.ExecRegistry) error {
 		processlistFunc{},
 		getMasterStatusFunc{},
 		getSlaveStatusFunc{},
+		slaveLagFunc{},
 		userListFunc{},
 		userExistsFunc{},
 		userInfoFunc{},
