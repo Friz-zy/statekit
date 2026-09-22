@@ -10,8 +10,8 @@
 // plugin_status/plugins_list readers (R9.3i), the database lifecycle
 // mutations db_create/db_remove (R9.3j), the database metadata mutation
 // alter_db (R9.3l), the process/replication status readers
-// processlist/get_master_status/get_slave_status (R9.3m), and slave_lag
-// (R9.3n).
+// processlist/get_master_status/get_slave_status (R9.3m), slave_lag (R9.3n),
+// and the plugin lifecycle mutations (R9.3o).
 //
 // Boundaries (R9.2a): no MySQL client driver or protocol, no new
 // dependencies, no Runner spawns, no filesystem access, and no live MySQL
@@ -85,6 +85,17 @@
 // catalog and matches the requested plugin name client-side. Both preserve
 // source order and compatibility data on connection/nonzero-exit failures,
 // use the central bounded shell-free transport, and never accept caller SQL.
+//
+// Boundaries (R9.3o): plugin_add and plugin_remove reuse the fixed
+// information_schema.PLUGINS preflight, preserve Salt's empty-name and
+// already-installed/not-installed idempotence, and issue only fixed
+// INSTALL/UNINSTALL statements. Plugin names are bare identifier tokens and
+// SONAME values are restricted to safe token/path bytes before either value
+// reaches SQL. A nonzero preflight or mutation exit is false; Runner,
+// cancellation, timeout, and output-limit failures remain bounded errors.
+// The central mysql Runner carries the connection password through MYSQL_PWD
+// and redacts the plugin statement values from command/error/output surfaces.
+// No plugin shared object is bundled or installed by the mock contract.
 //
 // Boundaries (R9.3j): db_create and db_remove preserve the pinned existence,
 // protected-name, mutation, and post-check order over the same native mysql
@@ -2862,19 +2873,11 @@ func (pluginStatusFunc) Execute(ctx context.Context, rt *runtime.Runtime, args a
 // or sentinel rows are ignored rather than being allowed to panic the
 // compatibility reader.
 func mysqlPluginStatus(ctx context.Context, rt *runtime.Runtime, conn *myConnection, name string) (string, error) {
-	_, rows, err := mysqlQueryRowsPreserve(ctx, rt, conn, pluginStatusQuery)
+	status, _, err := mysqlPluginStatusResult(ctx, rt, conn, name)
 	if err != nil {
 		return "", err
 	}
-	for _, row := range rows {
-		if len(row) < 2 || row[0].null || row[1].null {
-			continue
-		}
-		if row[0].value == name {
-			return redactMysqlCatalogValue(conn, row[1].value), nil
-		}
-	}
-	return "", nil
+	return redactMysqlCatalogValue(conn, status), nil
 }
 
 // PluginsListArgs mirrors plugins_list(**connection_args).
@@ -2930,6 +2933,244 @@ func mysqlPluginsList(ctx context.Context, rt *runtime.Runtime, conn *myConnecti
 		})
 	}
 	return plugins, nil
+}
+
+// ---------------------------------------------------------------------------
+// plugin_add/plugin_remove — salt/modules/mysql.py:3076-3150 @ pinned
+// revision.
+
+// PluginAddArgs mirrors plugin_add(name, soname=None, **connection_args).
+// Soname remains a pointer so an omitted or explicitly empty value keeps the
+// pinned Python truthiness fallback to name + ".so".
+type PluginAddArgs struct {
+	Name     string  `statekit:"name=name,required"`
+	Soname   *string `statekit:"name=soname"`
+	User     *string `statekit:"name=connection_user"`
+	Host     *string `statekit:"name=connection_host"`
+	Port     *string `statekit:"name=connection_port"`
+	Password *string `statekit:"name=connection_pass"`
+	DB       *string `statekit:"name=connection_db"`
+	Runas    *string `statekit:"name=runas"`
+}
+
+func (a *PluginAddArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return &myConnection{
+		User:     a.User,
+		Host:     a.Host,
+		Port:     a.Port,
+		Password: a.Password,
+		DB:       a.DB,
+		Runas:    a.Runas,
+	}
+}
+
+// PluginRemoveArgs mirrors plugin_remove(name, **connection_args).
+type PluginRemoveArgs struct {
+	Name     string  `statekit:"name=name,required"`
+	User     *string `statekit:"name=connection_user"`
+	Host     *string `statekit:"name=connection_host"`
+	Port     *string `statekit:"name=connection_port"`
+	Password *string `statekit:"name=connection_pass"`
+	DB       *string `statekit:"name=connection_db"`
+	Runas    *string `statekit:"name=runas"`
+}
+
+func (a *PluginRemoveArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return &myConnection{
+		User:     a.User,
+		Host:     a.Host,
+		Port:     a.Port,
+		Password: a.Password,
+		DB:       a.DB,
+		Runas:    a.Runas,
+	}
+}
+
+type pluginAddFunc struct{}
+
+func (pluginAddFunc) Name() string { return "mysql.plugin_add" }
+func (pluginAddFunc) Args() any    { return PluginAddArgs{} }
+
+func (pluginAddFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[PluginAddArgs](args, "mysql.plugin_add")
+	if err != nil {
+		return nil, err
+	}
+	// Salt returns False without touching the connection for an empty name.
+	if a.Name == "" {
+		return false, nil
+	}
+	if !validMysqlPluginName(a.Name) {
+		return nil, pluginIdentifierError("name")
+	}
+	soname := a.Name + ".so"
+	if a.Soname != nil && *a.Soname != "" {
+		soname = *a.Soname
+	}
+	if !validMysqlPluginSoname(soname) {
+		return nil, pluginIdentifierError("soname")
+	}
+	return mysqlPluginAdd(ctx, rt, a.connection(), a.Name, soname)
+}
+
+type pluginRemoveFunc struct{}
+
+func (pluginRemoveFunc) Name() string { return "mysql.plugin_remove" }
+func (pluginRemoveFunc) Args() any    { return PluginRemoveArgs{} }
+
+func (pluginRemoveFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[PluginRemoveArgs](args, "mysql.plugin_remove")
+	if err != nil {
+		return nil, err
+	}
+	// Salt returns False without touching the connection for an empty name.
+	if a.Name == "" {
+		return false, nil
+	}
+	if !validMysqlPluginName(a.Name) {
+		return nil, pluginIdentifierError("name")
+	}
+	return mysqlPluginRemove(ctx, rt, a.connection(), a.Name)
+}
+
+// validMysqlPluginName is intentionally narrower than the general quoted
+// identifier boundary. The pinned INSTALL/UNINSTALL statements place the
+// plugin name as a bare token, so only an ASCII MySQL-style identifier can
+// reach that position. This rejects SQL whitespace, quotes, comments, and
+// statement separators before a Runner call.
+func validMysqlPluginName(value string) bool {
+	if value == "" || !utf8.ValidString(value) {
+		return false
+	}
+	for index, char := range value {
+		if index == 0 {
+			if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || char == '_') {
+				return false
+			}
+			continue
+		}
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
+			(char >= '0' && char <= '9') || char == '_' || char == '$' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+// validMysqlPluginSoname is the safe boundary for the source's double-
+// quoted SONAME string. The CLI transport has no parameter binding for this
+// fixed statement, so accept only basename/path token bytes and reject
+// quotes, backslashes, whitespace, controls, and SQL punctuation. The server
+// still decides whether the resulting token names a loadable shared object.
+func validMysqlPluginSoname(value string) bool {
+	if value == "" || !utf8.ValidString(value) {
+		return false
+	}
+	for _, char := range value {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
+			(char >= '0' && char <= '9') || char == '_' || char == '.' ||
+			char == '/' || char == '+' || char == '-' || char == '$' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func pluginIdentifierError(key string) error {
+	return fmt.Errorf("%w: unsupported identifier in %s", errMysqlInvalidArgument, key)
+}
+
+func mysqlPluginStatusResult(ctx context.Context, rt *runtime.Runtime, conn *myConnection, name string, extraSecrets ...string) (string, bool, error) {
+	if conn == nil {
+		conn = &myConnection{}
+	}
+	// Mutation callers add the requested name to the internal redaction
+	// inventory even though it is not interpolated into the fixed catalog
+	// query. A failed Runner must not echo a caller token that overlaps a
+	// connection or statement secret.
+	result, err := runMysqlPreserveSecrets(ctx, rt, mysqlQueryArgv(conn, pluginStatusQuery), conn, extraSecrets...)
+	if err != nil {
+		return "", false, err
+	}
+	if result.ExitCode != 0 {
+		// The read-only plugin_status surface keeps its empty-string shape, but
+		// mutation callers must distinguish an unknown preflight from a true
+		// missing row and fail closed without INSTALL/UNINSTALL.
+		return "", false, nil
+	}
+	_, rows := parseBatchRows(string(result.Stdout))
+	for _, row := range rows {
+		if len(row) < 2 || row[0].null || row[1].null {
+			continue
+		}
+		if row[0].value == name {
+			return row[1].value, true, nil
+		}
+	}
+	return "", true, nil
+}
+
+func mysqlPluginStatementSecrets(conn *myConnection, name, soname string) []string {
+	values := []string{name}
+	if soname != "" {
+		values = append(values, soname)
+	}
+	if conn != nil && conn.Password != nil {
+		values = append(values, *conn.Password)
+	}
+	return secretList(values...)
+}
+
+func mysqlPluginAdd(ctx context.Context, rt *runtime.Runtime, conn *myConnection, name, soname string) (bool, error) {
+	if conn == nil {
+		conn = &myConnection{}
+	}
+	status, queried, err := mysqlPluginStatusResult(ctx, rt, conn, name, name)
+	if err != nil {
+		return false, err
+	}
+	if !queried {
+		return false, nil
+	}
+	if status != "" {
+		return true, nil
+	}
+	statement := "INSTALL PLUGIN " + name + " SONAME \"" + soname + "\""
+	result, err := runMysqlSecrets(ctx, rt, mysqlQueryArgv(conn, statement), conn, mysqlPluginStatementSecrets(conn, name, soname)...)
+	if err != nil {
+		return false, err
+	}
+	return result.ExitCode == 0, nil
+}
+
+func mysqlPluginRemove(ctx context.Context, rt *runtime.Runtime, conn *myConnection, name string) (bool, error) {
+	if conn == nil {
+		conn = &myConnection{}
+	}
+	status, queried, err := mysqlPluginStatusResult(ctx, rt, conn, name, name)
+	if err != nil {
+		return false, err
+	}
+	if !queried {
+		return false, nil
+	}
+	if status == "" {
+		return true, nil
+	}
+	statement := "UNINSTALL PLUGIN " + name
+	result, err := runMysqlSecrets(ctx, rt, mysqlQueryArgv(conn, statement), conn, mysqlPluginStatementSecrets(conn, name, "")...)
+	if err != nil {
+		return false, err
+	}
+	return result.ExitCode == 0, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -5696,7 +5937,8 @@ func redactedError(err error, secrets ...string) error {
 // Register installs the mysql slice: the R9.2a pure functions, the
 // R9.3a/R9.3d/R9.3e fixed-query catalog family, the R9.3b server facts, the
 // R9.3c maintenance family, the R9.3e user account mutations, the R9.3f
-// grant family, the R9.3g password/login family, the R9.3i plugin readers,
+// grant family, the R9.3g password/login family, the R9.3i plugin readers and
+// R9.3o plugin mutations,
 // the R9.3j database lifecycle mutations, the R9.3l database metadata
 // mutation, the R9.3m process/replication status readers, and the R9.3n
 // slave_lag scalar reader over the central mysql CLI transport. The remainder
@@ -5726,6 +5968,8 @@ func Register(reg *runtime.ExecRegistry) error {
 		grantExistsFunc{},
 		grantRevokeFunc{},
 		userGrantsFunc{},
+		pluginAddFunc{},
+		pluginRemoveFunc{},
 		pluginStatusFunc{},
 		pluginsListFunc{},
 		versionFunc{},

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # E5.2 live MySQL gate extending the E5.1 read-only/catalog/plugin surface
 # with the already-ported R9.3j database lifecycle, R9.3l alter_db, R9.3m
-# process/replication status readers, and R9.3n slave_lag. The gate deliberately runs
+# process/replication status readers, R9.3n slave_lag, and R9.3o plugin
+# add/remove lifecycle negatives and idempotence. The gate deliberately runs
 # the production statekit binary and the official image's native mysql client;
 # it does not use the Go fake Runner. Every E5.1 case remains in the inventory.
 #
@@ -42,8 +43,11 @@ readonly NATIVE_CONNECTION_FAILURE_MARKER="ERROR 2003 (HY000): Can't connect to 
 readonly NATIVE_UNSUPPORTED_STATUS_ERROR_CODE='1064'
 readonly NATIVE_UNSUPPORTED_STATUS_SQLSTATE='42000'
 readonly NATIVE_UNSUPPORTED_STATUS_SIGNATURE='You have an error in your SQL syntax;'
+readonly NATIVE_PLUGIN_INSTALL_FAILURE_MARKER="ERROR 1126 (HY000): Can't open shared library"
+readonly NATIVE_PLUGIN_INSTALL_MISSING_SUFFIX='(errno: 2 No such file or directory)'
 readonly STATEKIT_INVALID_IDENTIFIER_CATEGORY='mysql: invalid argument'
 readonly STATEKIT_INVALID_IDENTIFIER_DIAGNOSTIC='statekit: mysql: invalid argument: unsupported identifier in name'
+readonly STATEKIT_INVALID_SONAME_DIAGNOSTIC='statekit: mysql: invalid argument: unsupported identifier in soname'
 readonly STATEKIT_INVALID_OPTION_DIAGNOSTIC='statekit: mysql: invalid argument: unsupported value in character_set'
 readonly CASE_IDS=(
   'mysql-readiness-authenticated-select-1'
@@ -98,6 +102,19 @@ readonly CASE_IDS=(
   'mysql-slave-lag-native-observation'
   'mysql-slave-lag-negative-auth'
   'mysql-slave-lag-negative-connection'
+  'mysql-plugin-add-installed-idempotent'
+  'mysql-plugin-add-installed-native-status'
+  'mysql-plugin-status-case-sensitive'
+  'mysql-plugin-remove-absent-idempotent'
+  'mysql-plugin-remove-absent-native-status'
+  'mysql-plugin-add-default-soname-failure'
+  'mysql-plugin-add-default-soname-native-failure'
+  'mysql-plugin-add-custom-soname-failure'
+  'mysql-plugin-add-custom-soname-native-failure'
+  'mysql-plugin-add-invalid-name'
+  'mysql-plugin-add-invalid-soname'
+  'mysql-plugin-add-negative-auth'
+  'mysql-plugin-remove-negative-connection'
 )
 
 if [[ "${1:-}" == '--list-cases' ]]; then
@@ -132,6 +149,8 @@ LIFECYCLE_DB_OWNED=0
 ALTER_DB=''
 ALTER_DB_RESERVED=0
 ALTER_DB_OWNED=0
+PLUGIN_DEFAULT_FAILURE=''
+PLUGIN_CUSTOM_FAILURE=''
 NETWORK_RESERVED=0
 NETWORK_OWNED=0
 CLIENT_IMAGE_RESERVED=0
@@ -314,11 +333,11 @@ write_report() {
       printf '%s\n' 'cleanup: pass'
     fi
     printf 'cleanup_note: %s\n' "$CLEANUP_NOTE"
-    printf '%s\n' 'scope: E5.1 mysql.version/db_list/db_exists/plugins_list/plugin_status plus R9.3j lifecycle, R9.3l mysql.alter_db create/seed/alter/read-back, R9.3m process/replication status, and R9.3n mysql.slave_lag cases'
-    printf '%s\n' 'independent_checks: native mysql client database/plugin/charset/collation/seed postconditions, available SHOW FULL PROCESSLIST correlation, and MySQL 8.4 unsupported SHOW MASTER STATUS/SHOW SLAVE STATUS classifications including slave_lag; no replication retrieval is claimed'
-    printf '%s\n' 'status_classification: StateKit [] compatibility output is accepted only when the matching native legacy SHOW statement is classified unsupported-sql, while mysql.slave_lag -3 is accepted only with the matching native unsupported-sql classification; native empty/available output, auth failure, connection failure, runtime/setup/cleanup/unrelated error, or StateKit/native mismatch fails'
+    printf '%s\n' 'scope: E5.1 mysql.version/db_list/db_exists/plugins_list/plugin_status plus R9.3j lifecycle, R9.3l mysql.alter_db create/seed/alter/read-back, R9.3m process/replication status, R9.3n mysql.slave_lag, and R9.3o plugin_add/plugin_remove lifecycle cases'
+    printf '%s\n' 'independent_checks: native mysql client database/plugin/charset/collation/seed postconditions, exact plugin status/case observations, missing-shared-object INSTALL failure classifications, available SHOW FULL PROCESSLIST correlation, and MySQL 8.4 unsupported SHOW MASTER STATUS/SHOW SLAVE STATUS classifications including slave_lag; no positive plugin installation or replication retrieval is claimed'
+    printf '%s\n' 'status_classification: StateKit [] compatibility output is accepted only when the matching native legacy SHOW statement is classified unsupported-sql, mysql.slave_lag -3 is accepted only with the matching native unsupported-sql classification, and missing-plugin INSTALL exits are accepted only with the exact ER_CANT_OPEN_LIBRARY errno=2 diagnostic bound to the requested basename; path, permission, loader/interface, mixed, unrelated, auth, connection, runtime/setup/cleanup, or StateKit/native mismatch fails'
     printf '%s\n' 'external_ci: pending'
-    printf '%s\n' 'limitations: no full R9 live coverage, no broker/PostgreSQL/SQLite coverage, no live Salt differential parity; GitHub live execution is not claimed here; SIGKILL or runner loss can prevent cleanup/reporting'
+    printf '%s\n' 'limitations: no full R9 live coverage, no broker/PostgreSQL/SQLite coverage, no live Salt differential parity; MySQL 8.4 positive plugin installation is not claimed because no test plugin .so is bundled, and built-in plugins are never uninstalled; GitHub live execution is not claimed here; SIGKILL or runner loss can prevent cleanup/reporting'
     printf '%s\n' 'credentials: runtime-generated disposable values are delivered through ephemeral secret mounts only; not included in this report'
     local result
     for result in "${CASE_RESULTS[@]}"; do
@@ -1614,6 +1633,81 @@ native_failure_classification() {
   fi
 }
 
+native_plugin_install_classification() {
+  local requested_soname="$1" execution_class="$2" rc="$3" stdout_path="$4" stderr_path="$5"
+  local counts nonempty_count expected_count
+  case "$execution_class" in
+    timeout|runtime|setup|cleanup)
+      printf '%s\n' "$execution_class"
+      return 0
+      ;;
+    exited) ;;
+    *)
+      printf '%s\n' 'runtime'
+      return 0
+      ;;
+  esac
+  if [[ "$rc" == '0' ]]; then
+    printf '%s\n' 'unexpected-success'
+    return 0
+  fi
+  # Only a caller-provided SONAME basename may satisfy the missing-library
+  # observation.  A path must never be turned into evidence for a missing
+  # shared object, and rejecting unsafe input here also keeps the exact-match
+  # classifier independent of plugin-directory resolution details.
+  if [[ ! "$requested_soname" =~ ^[[:alnum:]_.+$-]+$ ]]; then
+    printf '%s\n' 'unexpected-error'
+    return 0
+  fi
+
+  # MySQL uses ER_CANT_OPEN_LIBRARY (1126) for several distinct failures.  A
+  # substring marker is insufficient: require exactly one non-empty output
+  # line, and require that line to be the complete errno=2 diagnostic for the
+  # requested basename.  Any permission/loader/interface/wrong-library or
+  # mixed diagnostic therefore stays an unexpected error.
+  counts=$(awk \
+    -v expected_marker="$NATIVE_PLUGIN_INSTALL_FAILURE_MARKER" \
+    -v missing_suffix="$NATIVE_PLUGIN_INSTALL_MISSING_SUFFIX" \
+    -v requested_soname="$requested_soname" \
+    -v quote="'" '
+BEGIN {
+  expected = expected_marker " " quote requested_soname quote " " missing_suffix
+}
+{
+  if ($0 != "")
+    nonempty_count++
+  if ($0 == expected)
+    expected_count++
+}
+END {
+  printf "%d %d\n", nonempty_count + 0, expected_count + 0
+}' "$stdout_path" "$stderr_path" 2>/dev/null) || {
+    printf '%s\n' 'unexpected-error'
+    return 0
+  }
+  read -r nonempty_count expected_count <<<"$counts"
+  if [[ "$nonempty_count" == '1' && "$expected_count" == '1' ]]; then
+    printf '%s\n' 'install-failure'
+    return 0
+  fi
+
+  # Keep the existing useful labels for single, unambiguous authentication or
+  # connection failures, but never let them accept a mixed diagnostic.
+  if [[ "$nonempty_count" == '1' ]] &&
+    { grep -F -q -- "$NATIVE_AUTH_FAILURE_MARKER" "$stdout_path" 2>/dev/null ||
+      grep -F -q -- "$NATIVE_AUTH_FAILURE_MARKER" "$stderr_path" 2>/dev/null; }; then
+    printf '%s\n' 'auth-failure'
+    return 0
+  fi
+  if [[ "$nonempty_count" == '1' ]] &&
+    { grep -F -q -- "$NATIVE_CONNECTION_FAILURE_MARKER" "$stdout_path" 2>/dev/null ||
+      grep -F -q -- "$NATIVE_CONNECTION_FAILURE_MARKER" "$stderr_path" 2>/dev/null; }; then
+    printf '%s\n' 'connection-failure'
+    return 0
+  fi
+  printf '%s\n' 'unexpected-error'
+}
+
 native_status_statement_marker() {
   case "$1" in
     master) printf '%s\n' 'MASTER STATUS' ;;
@@ -1975,6 +2069,107 @@ check_statekit_plugin_status() {
   value=$(<"$stdout_path")
   if (( rc == 0 )) && [[ "$value" == "\"$expected\"" ]] && value_free_files "$stdout_path" "$stderr_path"; then
     ok=0
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_plugin_add() {
+  local plugin="$1" soname="$2" expected="$3" label="$4" secret_name="${5:-$ROOT_CLIENT_SECRET}" port="${6:-$DB_PORT}"
+  local stdout_path="$WORK_DIR/plugin-add-${label}.out" stderr_path="$WORK_DIR/plugin-add-${label}.err"
+  local extra_json=",\"name\":\"$plugin\"" rc=0 value='' ok=1
+  if [[ -n "$soname" ]]; then
+    extra_json="$extra_json,\"soname\":\"$soname\""
+  fi
+  statekit_call "$secret_name" 'mysql.plugin_add' "$extra_json" "$DB_HOST" "$port" "$stdout_path" "$stderr_path" || rc=$?
+  [[ -f "$stdout_path" ]] && value=$(<"$stdout_path")
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' && "$value" == "$expected" ]] &&
+    [[ ! -s "$stderr_path" ]] && value_free_files "$stdout_path" "$stderr_path"; then
+    ok=0
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_plugin_remove() {
+  local plugin="$1" expected="$2" label="$3" secret_name="${4:-$ROOT_CLIENT_SECRET}" port="${5:-$DB_PORT}"
+  local stdout_path="$WORK_DIR/plugin-remove-${label}.out" stderr_path="$WORK_DIR/plugin-remove-${label}.err"
+  local rc=0 value='' ok=1
+  statekit_call "$secret_name" 'mysql.plugin_remove' ",\"name\":\"$plugin\"" "$DB_HOST" "$port" "$stdout_path" "$stderr_path" || rc=$?
+  [[ -f "$stdout_path" ]] && value=$(<"$stdout_path")
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' && "$value" == "$expected" ]] &&
+    [[ ! -s "$stderr_path" ]] && value_free_files "$stdout_path" "$stderr_path"; then
+    ok=0
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_native_plugin_status() {
+  local plugin="$1" expected="$2" label="$3"
+  local stdout_path="$WORK_DIR/plugin-native-status-${label}.out" stderr_path="$WORK_DIR/plugin-native-status-${label}.err"
+  local rc=0 value='' ok=1
+  native_mysql_as_user root "$ROOT_CLIENT_SECRET" "$DB_HOST" "$DB_PORT" \
+    "SELECT PLUGIN_STATUS FROM information_schema.PLUGINS WHERE PLUGIN_NAME = '$plugin'" \
+    "$stdout_path" "$stderr_path" || rc=$?
+  [[ -f "$stdout_path" ]] && value=$(<"$stdout_path")
+  if (( rc == 0 )) && [[ "$value" == "$expected" ]] && value_free_files "$stdout_path" "$stderr_path"; then
+    ok=0
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_native_plugin_install_failure() {
+  local plugin="$1" soname="$2" label="$3"
+  local stdout_path="$WORK_DIR/plugin-native-install-${label}.out" stderr_path="$WORK_DIR/plugin-native-install-${label}.err"
+  local rc=0 classification='' ok=1
+  if [[ ! "$soname" =~ ^[[:alnum:]_.+$-]+$ ]]; then
+    set_note "plugin-${label}-native-soname-not-basename"
+    return 1
+  fi
+  native_mysql_as_user root "$ROOT_CLIENT_SECRET" "$DB_HOST" "$DB_PORT" \
+    "INSTALL PLUGIN $plugin SONAME \"$soname\"" "$stdout_path" "$stderr_path" || rc=$?
+  classification=$(native_plugin_install_classification "$soname" "$LAST_CLIENT_CLASS" "$rc" "$stdout_path" "$stderr_path") || classification='classification-failure'
+  if [[ "$classification" == 'install-failure' ]] && [[ ! -s "$stdout_path" ]] && value_free_files "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note "plugin-${label}-native-${classification}"
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_plugin_invalid_name() {
+  local stdout_path="$WORK_DIR/plugin-invalid-name.out" stderr_path="$WORK_DIR/plugin-invalid-name.err"
+  local rc=0 ok=1
+  statekit_call "$ROOT_CLIENT_SECRET" 'mysql.plugin_add' ',"name":"bad\nname"' \
+    "$DB_HOST" "$DB_PORT" "$stdout_path" "$stderr_path" || rc=$?
+  if (( rc == 1 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '1' ]] &&
+    [[ ! -s "$stdout_path" ]] && grep -F -q -- "$STATEKIT_INVALID_IDENTIFIER_CATEGORY" "$stderr_path" 2>/dev/null &&
+    grep -F -q -- "$STATEKIT_INVALID_IDENTIFIER_DIAGNOSTIC" "$stderr_path" 2>/dev/null &&
+    ! grep -F -q -- 'bad' "$stderr_path" 2>/dev/null && value_free_files "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'plugin-invalid-name-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_plugin_invalid_soname() {
+  local stdout_path="$WORK_DIR/plugin-invalid-soname.out" stderr_path="$WORK_DIR/plugin-invalid-soname.err"
+  local rc=0 ok=1
+  statekit_call "$ROOT_CLIENT_SECRET" 'mysql.plugin_add' \
+    ",\"name\":\"$PLUGIN_DEFAULT_FAILURE\",\"soname\":\"bad;DROP.so\"" \
+    "$DB_HOST" "$DB_PORT" "$stdout_path" "$stderr_path" || rc=$?
+  if (( rc == 1 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '1' ]] &&
+    [[ ! -s "$stdout_path" ]] && grep -F -q -- "$STATEKIT_INVALID_IDENTIFIER_CATEGORY" "$stderr_path" 2>/dev/null &&
+    grep -F -q -- "$STATEKIT_INVALID_SONAME_DIAGNOSTIC" "$stderr_path" 2>/dev/null &&
+    ! grep -F -q -- 'bad;DROP.so' "$stderr_path" 2>/dev/null && value_free_files "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'plugin-invalid-soname-unexpected-result'
   fi
   rm -f "$stdout_path" "$stderr_path"
   return "$ok"
@@ -2693,6 +2888,8 @@ main() {
   DB_HOST="$DB_CONTAINER"
   LIFECYCLE_DB="statekit_r93j_$RESOURCE_NONCE"
   ALTER_DB="statekit_r93l_$RESOURCE_NONCE"
+  PLUGIN_DEFAULT_FAILURE="statekit_r93o_default_$RESOURCE_NONCE"
+  PLUGIN_CUSTOM_FAILURE="statekit_r93o_custom_$RESOURCE_NONCE"
   if ! pull_and_verify_image || ! build_client_image || ! create_private_network ||
     ! generate_credentials || ! create_runtime_secrets; then
     set_note 'runtime-or-resource-setup-failed'
@@ -2768,6 +2965,19 @@ main() {
   run_case 'mysql-slave-lag-native-observation' check_native_status_unsupported 'SHOW SLAVE STATUS' slave_lag slave-lag
   run_case 'mysql-slave-lag-negative-auth' check_statekit_status_negative 'mysql.slave_lag' slave_lag auth-failure "$BAD_CLIENT_SECRET" "$DB_PORT" slave-lag-negative-auth
   run_case 'mysql-slave-lag-negative-connection' check_statekit_status_negative 'mysql.slave_lag' slave_lag connection-failure "$ROOT_CLIENT_SECRET" '1' slave-lag-negative-connection
+  run_case 'mysql-plugin-add-installed-idempotent' check_statekit_plugin_add "$INSTALLED_PLUGIN" '' true plugin-add-installed
+  run_case 'mysql-plugin-add-installed-native-status' check_native_plugin_status "$INSTALLED_PLUGIN" ACTIVE installed-after-add
+  run_case 'mysql-plugin-status-case-sensitive' check_statekit_plugin_status 'CACHING_SHA2_PASSWORD' '' case-sensitive
+  run_case 'mysql-plugin-remove-absent-idempotent' check_statekit_plugin_remove "$ABSENT_PLUGIN" true remove-absent
+  run_case 'mysql-plugin-remove-absent-native-status' check_native_plugin_status "$ABSENT_PLUGIN" '' absent-after-remove
+  run_case 'mysql-plugin-add-default-soname-failure' check_statekit_plugin_add "$PLUGIN_DEFAULT_FAILURE" '' false add-default-failure
+  run_case 'mysql-plugin-add-default-soname-native-failure' check_native_plugin_install_failure "$PLUGIN_DEFAULT_FAILURE" "$PLUGIN_DEFAULT_FAILURE.so" add-default-failure
+  run_case 'mysql-plugin-add-custom-soname-failure' check_statekit_plugin_add "$PLUGIN_CUSTOM_FAILURE" "$PLUGIN_CUSTOM_FAILURE.so" false add-custom-failure
+  run_case 'mysql-plugin-add-custom-soname-native-failure' check_native_plugin_install_failure "$PLUGIN_CUSTOM_FAILURE" "$PLUGIN_CUSTOM_FAILURE.so" add-custom-failure
+  run_case 'mysql-plugin-add-invalid-name' check_statekit_plugin_invalid_name
+  run_case 'mysql-plugin-add-invalid-soname' check_statekit_plugin_invalid_soname
+  run_case 'mysql-plugin-add-negative-auth' check_statekit_plugin_add "$PLUGIN_DEFAULT_FAILURE" '' false add-auth-failure "$BAD_CLIENT_SECRET"
+  run_case 'mysql-plugin-remove-negative-connection' check_statekit_plugin_remove "$ABSENT_PLUGIN" false remove-connection "$ROOT_CLIENT_SECRET" '1'
 
   EXECUTION_COMPLETE=1
   if ! case_results_are_exact || (( CASE_RESULT_INTEGRITY_FAILED != 0 || PASSED != ${#CASE_IDS[@]} || FAILED != 0 || SKIPPED != 0 )); then

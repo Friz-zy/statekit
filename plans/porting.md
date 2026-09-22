@@ -2411,6 +2411,78 @@ The exact evidence boundary is:
 | `R9.3n` | `mysql.slave_lag`, exact `SHOW SLAVE STATUS`, `-3/-2/-1` and lag/NULL source ladder, malformed/unsupported/redaction/cancellation/bounds vectors, direct/registry/CLI registration and tests, coverage, and R9 report update | `backend-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | implementation is in the clean requested worktree; Podman mock/static evidence is non-live and no commit is made; external live behavior remains `pending_external_ci` |
 | `E5.2` | Preserve the prior 48 MySQL cases and append four R9.3n production/native/negative `slave_lag` cases with MySQL 8.4 unsupported correlation; exact 52-case inventory, value-free report, bounded rootless Podman cleanup | `devops-platform-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | harness extension is prepared; native execution, cleanup evidence, and live 52/52 remain pending in GitHub; no successful replication retrieval or local live MySQL is claimed; SQLite job and permissions are preserved |
 
+##### 2026-09-22 R9.3o MySQL plugin lifecycle — implementation complete; external live CI pending
+
+R9.3o ports the pinned Salt `mysql.plugin_add` and `mysql.plugin_remove`
+contracts from `salt/modules/mysql.py:3076-3150`, the existing catalog entries,
+and `test_plugin_add`/`test_plugin_remove` in the locked source-test revision.
+Both public names are registered in the direct runtime, exec registry, and CLI
+argument decoder. The implementation reuses the fixed `plugin_status` catalog
+preflight over the shell-free native mysql Runner; it does not add a database
+driver, arbitrary query surface, or shell execution.
+
+The source-compatible result ladder is explicit: an empty name returns false
+without a Runner call; an already-installed plugin makes `plugin_add` true; an
+absent plugin makes `plugin_remove` true; and a successful fixed
+`INSTALL PLUGIN <name> SONAME "<soname>"` or `UNINSTALL PLUGIN <name>` maps to
+true while a native nonzero query/mutation exit maps to false. An uncertain
+catalog preflight is false and never authorizes a mutation. This is the
+fail-closed CLI boundary for Salt's separate `_connect`/query exceptions: the
+native client exposes only one process result, so StateKit does not install or
+uninstall on an unknown absence.
+
+Plugin names are validated bare ASCII identifier tokens and SONAME values are
+validated token/path strings before SQL construction. Empty `soname` keeps the
+pinned `name.so` fallback; non-empty custom paths are carried exactly in the
+fixed statement. NUL, controls, whitespace, quotes, SQL separators, and other
+structural bytes are rejected value-free before Runner invocation. Shared
+timeout, cancellation, argv/output bounds, MYSQL_PWD transport, and longest
+first redaction cover the preflight and mutation phases. No plugin shared
+object is bundled, downloaded, or installed by the local contract.
+
+Case identity is two deliberately separate contracts: StateKit matches fixed
+catalog names with exact Go string equality, including an explicit
+uppercase/mixed-case compatibility vector, and that exact identity is the
+StateKit contract. The pinned Salt `PLUGIN_NAME = %(name)s` equality is
+parameterized SQL whose result depends on the server/column collation; no
+byte-for-byte case parity with Salt is claimed. An external native check can
+correlate StateKit with one selected MySQL server and its collation only; it
+cannot establish collation-independent Salt parity.
+
+The live E5.2 extension preserves the prior 52 ordered cases and appends 13
+R9.3o cases for an exact 65-case inventory: known built-in
+`caching_sha2_password` add idempotence and native status, uppercase/mixed-case
+status identity under the StateKit exact-Go contract, absent-plugin remove
+idempotence and native absence, default and
+custom SONAME missing-library failures plus independent native
+`ERROR 1126/HY000` install-failure classification, invalid name/SONAME,
+negative authentication, and negative connection. It never uninstalls the
+built-in plugin and never claims successful positive installation. The report
+remains value-free, requires zero skips and records the StateKit exact-Go case
+identity without claiming Salt byte-for-byte parity; it verifies cleanup. The
+SQLite job, permissions, pins, and prior cases are unchanged.
+
+The evidence boundary is:
+
+* **Local mock/static evidence (executor `backend-engineer-senior`):** source
+  vectors, direct/registry/CLI tests, differential scope/report generation,
+  Podman Go race/coverage/vet checks, shell syntax, and non-live Python
+  orchestration checks. No live MySQL service is started locally.
+* **External live evidence (executor `devops-platform-engineer-senior`, with
+  independent gates `backend-engineer-lead` and `security-engineer-senior`):**
+  run the pinned MySQL 8.4 workflow and publish a fresh value-free 65/65 report
+  with independent native status, uppercase/mixed-case observation, and
+  missing-library classifications. The native observation is bounded by the
+  selected server/column collation and is not a Salt byte-for-byte oracle. A
+  positive custom plugin install requires a reviewed `.so` fixture and a
+  separate cleanup design; absent that fixture, only the documented negative
+  ceiling is accepted.
+
+| Phase | Scope | Implementation executor role | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `R9.3o` | `mysql.plugin_add`/`mysql.plugin_remove`, plugin-status preflight, default/custom SONAME, identifier validation, idempotence/failure/redaction/bounds vectors, direct/registry/CLI registration and tests, live harness extension, coverage, and R9 report update | `backend-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | implementation and local non-live evidence are prepared on the clean worktree; no commit and no local live MySQL; external behavior remains `pending_external_ci` |
+| `E5.2` | Preserve 52 cases and append 13 R9.3o built-in/negative/native-observation cases; exact 65-case inventory, value-free report, bounded rootless Podman cleanup | `devops-platform-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | workflow is extended with read-only permissions and existing pins; live 65/65, native failure diagnostics, and external cleanup evidence remain pending in GitHub |
+
 ##### 2026-09-21 R9.3k SQLite catalog family — implementation ready; live CI pending
 
 R9.3k ports the public Salt `sqlite3` functions `version`, `sqlite_version`,
@@ -3674,8 +3746,8 @@ R8.1 update: after `e6e1ccd` every GOOS in {linux, darwin, windows, freebsd} car
 | [ ] | PTD-EXEC-0649 | `mysql.grant_add` | actionable | software-engineer-senior | catalog `docs/catalog/exec/mysql.yaml#grant_add`; Salt `saltstack/salt/modules/mysql.py#grant_add`; tests saltstack/tests/pytests/unit/modules/test_mysql.py | `modules/exec/mysql` (planned); R9 / E5 services dependency; dependencies: config.option, cp.cache_file | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
 | [ ] | PTD-EXEC-0650 | `mysql.grant_exists` | actionable | software-engineer-senior | catalog `docs/catalog/exec/mysql.yaml#grant_exists`; Salt `saltstack/salt/modules/mysql.py#grant_exists`; tests saltstack/tests/pytests/unit/modules/test_mysql.py | `modules/exec/mysql` (planned); R9 / E5 services dependency; dependencies: config.option, cp.cache_file | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
 | [ ] | PTD-EXEC-0651 | `mysql.grant_revoke` | actionable | software-engineer-senior | catalog `docs/catalog/exec/mysql.yaml#grant_revoke`; Salt `saltstack/salt/modules/mysql.py#grant_revoke`; tests saltstack/tests/pytests/unit/modules/test_mysql.py | `modules/exec/mysql` (planned); R9 / E5 services dependency; dependencies: config.option, cp.cache_file | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
-| [ ] | PTD-EXEC-0652 | `mysql.plugin_add` | actionable | software-engineer-senior | catalog `docs/catalog/exec/mysql.yaml#plugin_add`; Salt `saltstack/salt/modules/mysql.py#plugin_add`; tests saltstack/tests/pytests/unit/modules/test_mysql.py | `modules/exec/mysql` (planned); R9 / E5 services dependency; dependencies: config.option, cp.cache_file | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
-| [ ] | PTD-EXEC-0653 | `mysql.plugin_remove` | actionable | software-engineer-senior | catalog `docs/catalog/exec/mysql.yaml#plugin_remove`; Salt `saltstack/salt/modules/mysql.py#plugin_remove`; tests saltstack/tests/pytests/unit/modules/test_mysql.py | `modules/exec/mysql` (planned); R9 / E5 services dependency; dependencies: config.option, cp.cache_file | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
+| [x] | PTD-EXEC-0652 | `mysql.plugin_add` | implemented | backend-engineer-senior | catalog `docs/catalog/exec/mysql.yaml#plugin_add`; Salt `saltstack/salt/modules/mysql.py#plugin_add`; tests saltstack/tests/pytests/unit/modules/test_mysql.py | `modules/exec/mysql/mysql.go#pluginAddFunc`; R9.3o; dependencies: config.option, cp.cache_file | direct/registry/CLI source-parity vectors, fixed plugin-status preflight, validated name/SONAME, bounded shell-free Runner, and mock-only differential report; positive shared-object installation and external MySQL validation remain `pending_external_ci` |
+| [x] | PTD-EXEC-0653 | `mysql.plugin_remove` | implemented | backend-engineer-senior | catalog `docs/catalog/exec/mysql.yaml#plugin_remove`; Salt `saltstack/salt/modules/mysql.py#plugin_remove`; tests saltstack/tests/pytests/unit/modules/test_mysql.py | `modules/exec/mysql/mysql.go#pluginRemoveFunc`; R9.3o; dependencies: config.option, cp.cache_file | direct/registry/CLI source-parity vectors, fixed plugin-status preflight, validated identifier, bounded shell-free Runner, and mock-only differential report; built-in uninstall and external MySQL validation remain `pending_external_ci` |
 | [ ] | PTD-EXEC-0654 | `mysql.plugin_status` | actionable | software-engineer-senior | catalog `docs/catalog/exec/mysql.yaml#plugin_status`; Salt `saltstack/salt/modules/mysql.py#plugin_status`; tests saltstack/tests/pytests/unit/modules/test_mysql.py | `modules/exec/mysql` (planned); R9 / E5 services dependency; dependencies: config.option, cp.cache_file | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
 | [ ] | PTD-EXEC-0655 | `mysql.plugins_list` | actionable | software-engineer-senior | catalog `docs/catalog/exec/mysql.yaml#plugins_list`; Salt `saltstack/salt/modules/mysql.py#plugins_list`; tests saltstack/tests/pytests/unit/modules/test_mysql.py | `modules/exec/mysql` (planned); R9 / E5 services dependency; dependencies: config.option, cp.cache_file | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
 | [ ] | PTD-EXEC-0656 | `mysql.processlist` | actionable | software-engineer-senior | catalog `docs/catalog/exec/mysql.yaml#processlist`; Salt `saltstack/salt/modules/mysql.py#processlist`; tests saltstack/tests/pytests/unit/modules/test_mysql.py | `modules/exec/mysql` (planned); R9 / E5 services dependency; dependencies: config.option, cp.cache_file | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |

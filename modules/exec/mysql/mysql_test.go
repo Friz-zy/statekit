@@ -305,6 +305,8 @@ func TestMysqlRegistryNames(t *testing.T) {
 		"mysql.grant_add",
 		"mysql.grant_exists",
 		"mysql.grant_revoke",
+		"mysql.plugin_add",
+		"mysql.plugin_remove",
 		"mysql.plugin_status",
 		"mysql.plugins_list",
 		"mysql.processlist",
@@ -3407,6 +3409,211 @@ func TestMysqlPluginCompatibilityAndBoundaries(t *testing.T) {
 	_, err = (pluginsListFunc{}).Execute(context.Background(), rt, &PluginsListArgs{Password: mysqlString(marker)})
 	if err == nil || strings.Contains(err.Error(), marker) || len(runner.calls) != 1 || strings.Contains(runner.calls[0].RedactedString(), marker) {
 		t.Fatalf("plugins_list password redaction err=%v calls=%#v", err, runner.calls)
+	}
+}
+
+// TestMysqlPluginMutationsSourceVectors pins the Salt plugin_add/plugin_remove
+// decision order: plugin_status is the fixed preflight, an installed plugin
+// or an absent plugin is idempotent, and only an uncertain/failed mutation
+// answers false. The statements stay byte-fixed and caller names never alter
+// the preflight SQL.
+func TestMysqlPluginMutationsSourceVectors(t *testing.T) {
+	status := "PLUGIN_NAME\tPLUGIN_STATUS\n"
+	connectionPassword := "plugin-connection-pass"
+	args := &PluginAddArgs{
+		Name:     "custom_plugin",
+		User:     mysqlString("plugin-user"),
+		Host:     mysqlString("plugin-host"),
+		Port:     mysqlString("3307"),
+		Password: mysqlString(connectionPassword),
+		DB:       mysqlString("maintenance"),
+	}
+
+	// An already-installed plugin returns true after only plugin_status.
+	rt, runner := newMysqlRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte("PLUGIN_NAME\tPLUGIN_STATUS\ncustom_plugin\tACTIVE\n"),
+	})
+	value, err := (pluginAddFunc{}).Execute(context.Background(), rt, args)
+	if err != nil || value != true || len(runner.calls) != 1 {
+		t.Fatalf("installed plugin_add = %#v, err=%v calls=%d", value, err, len(runner.calls))
+	}
+
+	// An absent plugin uses the default name.so SONAME and returns the native
+	// mutation exit predicate. An explicitly empty soname follows the same
+	// pinned truthiness fallback as an omitted soname.
+	args.Soname = mysqlString("")
+	rt, runner = newMysqlRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(status + "other\tACTIVE\n")},
+		process.CommandResult{ExitCode: 0},
+	)
+	value, err = (pluginAddFunc{}).Execute(context.Background(), rt, args)
+	if err != nil || value != true || len(runner.calls) != 2 {
+		t.Fatalf("default plugin_add = %#v, err=%v calls=%d", value, err, len(runner.calls))
+	}
+	wantMutation := []string{
+		"mysql", "--batch", "--user=plugin-user", "--host=plugin-host", "--port=3307",
+		"--database=maintenance", "--execute=INSTALL PLUGIN custom_plugin SONAME \"custom_plugin.so\"",
+	}
+	if got := append([]string{runner.calls[1].Name}, runner.calls[1].Args...); !reflect.DeepEqual(got, wantMutation) {
+		t.Fatalf("default plugin_add argv=%q want=%q", got, wantMutation)
+	}
+	if !reflect.DeepEqual(runner.calls[1].Env, []string{"MYSQL_PWD=" + connectionPassword}) ||
+		runner.calls[1].Shell || runner.calls[1].Timeout != commandTimeout ||
+		runner.calls[1].MaxStdoutBytes != outputLimit || runner.calls[1].MaxStderrBytes != outputLimit {
+		t.Fatalf("default plugin_add transport=%#v", runner.calls[1])
+	}
+
+	// An explicit custom path is carried byte-for-byte in the fixed statement.
+	customSoname := "/usr/lib/mysql/plugin/custom_plugin.so"
+	rt, runner = newMysqlRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(status)},
+		process.CommandResult{ExitCode: 0},
+	)
+	value, err = (pluginAddFunc{}).Execute(context.Background(), rt, &PluginAddArgs{Name: "custom_plugin", Soname: mysqlString(customSoname)})
+	if err != nil || value != true || len(runner.calls) != 2 ||
+		runner.calls[1].Args[len(runner.calls[1].Args)-1] != "--execute=INSTALL PLUGIN custom_plugin SONAME \"/usr/lib/mysql/plugin/custom_plugin.so\"" {
+		t.Fatalf("custom plugin_add = %#v, err=%v calls=%#v", value, err, runner.calls)
+	}
+
+	// An installed plugin is removed once; a missing plugin is a true no-op.
+	rt, runner = newMysqlRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(status + "custom_plugin\tACTIVE\n")},
+		process.CommandResult{ExitCode: 0},
+	)
+	value, err = (pluginRemoveFunc{}).Execute(context.Background(), rt, &PluginRemoveArgs{Name: "custom_plugin"})
+	if err != nil || value != true || len(runner.calls) != 2 ||
+		runner.calls[1].Args[len(runner.calls[1].Args)-1] != "--execute=UNINSTALL PLUGIN custom_plugin" {
+		t.Fatalf("installed plugin_remove = %#v, err=%v calls=%#v", value, err, runner.calls)
+	}
+	rt, runner = newMysqlRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(status)})
+	value, err = (pluginRemoveFunc{}).Execute(context.Background(), rt, &PluginRemoveArgs{Name: "custom_plugin"})
+	if err != nil || value != true || len(runner.calls) != 1 {
+		t.Fatalf("absent plugin_remove = %#v, err=%v calls=%d", value, err, len(runner.calls))
+	}
+
+	// A failed status query is unknown, not an absent plugin: neither mutation
+	// may be attempted, and both public functions return false.
+	for _, tc := range []struct {
+		name string
+		call func(*runtime.Runtime) (any, error)
+	}{
+		{name: "add", call: func(rt *runtime.Runtime) (any, error) {
+			return (pluginAddFunc{}).Execute(context.Background(), rt, &PluginAddArgs{Name: "custom_plugin"})
+		}},
+		{name: "remove", call: func(rt *runtime.Runtime) (any, error) {
+			return (pluginRemoveFunc{}).Execute(context.Background(), rt, &PluginRemoveArgs{Name: "custom_plugin"})
+		}},
+	} {
+		rt, runner = newMysqlRuntime(process.CommandResult{ExitCode: 1, Stderr: []byte("catalog unavailable")})
+		value, err = tc.call(rt)
+		if err != nil || value != false || len(runner.calls) != 1 {
+			t.Fatalf("%s preflight failure = %#v, err=%v calls=%d", tc.name, value, err, len(runner.calls))
+		}
+	}
+	// A completed mutation rejection is also the source false shape.
+	rt, runner = newMysqlRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte(status)},
+		process.CommandResult{ExitCode: 1, Stderr: []byte("install rejected")},
+	)
+	value, err = (pluginAddFunc{}).Execute(context.Background(), rt, &PluginAddArgs{Name: "custom_plugin"})
+	if err != nil || value != false || len(runner.calls) != 2 {
+		t.Fatalf("mutation rejection = %#v, err=%v calls=%d", value, err, len(runner.calls))
+	}
+}
+
+// TestMysqlPluginMutationBoundaries pins the fail-closed identifier, empty,
+// cancellation, timeout/output, and redaction boundaries for both lifecycle
+// functions. Rejected values never reach the Runner and synthetic markers do
+// not appear in returned errors, captured streams, or rendered commands.
+func TestMysqlPluginMutationBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		call func(*runtime.Runtime) (any, error)
+	}{
+		{name: "empty add", call: func(rt *runtime.Runtime) (any, error) {
+			return (pluginAddFunc{}).Execute(context.Background(), rt, &PluginAddArgs{})
+		}},
+		{name: "empty remove", call: func(rt *runtime.Runtime) (any, error) {
+			return (pluginRemoveFunc{}).Execute(context.Background(), rt, &PluginRemoveArgs{})
+		}},
+	} {
+		rt, runner := newMysqlRuntime(process.CommandResult{})
+		value, err := tc.call(rt)
+		if err != nil || value != false || len(runner.calls) != 0 {
+			t.Fatalf("%s = %#v, err=%v calls=%d", tc.name, value, err, len(runner.calls))
+		}
+	}
+
+	for _, name := range []string{"bad-name", "bad name", "bad;DROP", "1plugin", "bad\x00name", "bad\nname"} {
+		runner := &mysqlFakeRunner{}
+		value, err := (pluginRemoveFunc{}).Execute(context.Background(), &runtime.Runtime{Runner: runner}, &PluginRemoveArgs{Name: name})
+		if err == nil || !strings.Contains(err.Error(), "mysql: invalid argument") || strings.Contains(err.Error(), name) || value != nil || len(runner.calls) != 0 {
+			t.Fatalf("invalid plugin name %q = %#v, err=%v calls=%d", name, value, err, len(runner.calls))
+		}
+	}
+	for _, soname := range []string{"bad plugin.so", `bad"plugin.so`, `bad\\plugin.so`, "bad;DROP.so", "bad\x00.so"} {
+		runner := &mysqlFakeRunner{}
+		value, err := (pluginAddFunc{}).Execute(context.Background(), &runtime.Runtime{Runner: runner}, &PluginAddArgs{Name: "safe_plugin", Soname: mysqlString(soname)})
+		if err == nil || !strings.Contains(err.Error(), "mysql: invalid argument") || strings.Contains(err.Error(), soname) || value != nil || len(runner.calls) != 0 {
+			t.Fatalf("invalid plugin soname %q = %#v, err=%v calls=%d", soname, value, err, len(runner.calls))
+		}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runner := &mysqlFakeRunner{}
+	if value, err := (pluginAddFunc{}).Execute(ctx, &runtime.Runtime{Runner: runner}, &PluginAddArgs{Name: "safe_plugin"}); !errors.Is(err, context.Canceled) || value != false || len(runner.calls) != 0 {
+		t.Fatalf("cancelled plugin_add = %#v, err=%v calls=%d", value, err, len(runner.calls))
+	}
+
+	marker := "plugin_redaction_marker"
+	rt, runner := newMysqlRuntime(
+		process.CommandResult{ExitCode: 0, Stdout: []byte("PLUGIN_NAME\tPLUGIN_STATUS\n")},
+		process.CommandResult{Err: errors.New("plugin mutation failed " + marker), Stdout: []byte(marker), Stderr: []byte(marker)},
+	)
+	value, err := (pluginAddFunc{}).Execute(context.Background(), rt, &PluginAddArgs{
+		Name: marker, Soname: mysqlString(marker + ".so"), Password: mysqlString(marker),
+	})
+	if err == nil || value != false || strings.Contains(err.Error(), marker) || len(runner.calls) != 2 {
+		t.Fatalf("plugin redaction value=%#v err=%v calls=%d", value, err, len(runner.calls))
+	}
+	command := runner.calls[1]
+	if strings.Contains(command.RedactedString(), marker) || !containsAll(command.Redact, []string{marker, marker + ".so"}) ||
+		command.Shell || command.Timeout != commandTimeout || command.MaxStdoutBytes != outputLimit || command.MaxStderrBytes != outputLimit {
+		t.Fatalf("plugin redaction transport=%#v", command)
+	}
+
+	for _, result := range []process.CommandResult{{Err: context.DeadlineExceeded}, {StdoutTruncated: true}, {StderrTruncated: true}} {
+		rt, runner = newMysqlRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("PLUGIN_NAME\tPLUGIN_STATUS\n")}, result)
+		value, err = (pluginAddFunc{}).Execute(context.Background(), rt, &PluginAddArgs{Name: "safe_plugin"})
+		if err == nil || value != false || len(runner.calls) != 2 {
+			t.Fatalf("plugin mutation boundary = %#v, err=%v calls=%d", value, err, len(runner.calls))
+		}
+	}
+}
+
+// TestMysqlPluginMutationsThroughRegistry drives the canonical lifecycle names
+// through the same registry used by bootstrap and the CLI.
+func TestMysqlPluginMutationsThroughRegistry(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	runner := &mysqlFakeRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("PLUGIN_NAME\tPLUGIN_STATUS\n")},
+		{ExitCode: 0},
+		{ExitCode: 0, Stdout: []byte("PLUGIN_NAME\tPLUGIN_STATUS\nregistry_plugin\tACTIVE\n")},
+		{ExitCode: 1},
+	}}
+	rt := &runtime.Runtime{Runner: runner, Exec: reg, FS: runtime.NewMemoryFS()}
+	value, err := reg.Call(context.Background(), rt, "mysql.plugin_add", &PluginAddArgs{Name: "registry_plugin", Soname: mysqlString("registry_plugin.so")})
+	if err != nil || value != true || len(runner.calls) != 2 {
+		t.Fatalf("registry plugin_add = %#v, err=%v calls=%d", value, err, len(runner.calls))
+	}
+	value, err = reg.Call(context.Background(), rt, "mysql.plugin_remove", &PluginRemoveArgs{Name: "registry_plugin"})
+	if err != nil || value != false || len(runner.calls) != 4 {
+		t.Fatalf("registry plugin_remove = %#v, err=%v calls=%#v", value, err, runner.calls)
 	}
 }
 

@@ -2096,6 +2096,97 @@ func TestMySQLCLIPluginRowsRedactAfterDecode(t *testing.T) {
 	}
 }
 
+func TestMySQLCLIPluginMutations(t *testing.T) {
+	// Absent custom plugin: the CLI exposes the source true result and the
+	// exact fixed INSTALL statement without a shell or SQL interpolation path.
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("PLUGIN_NAME\tPLUGIN_STATUS\n")},
+		{ExitCode: 0},
+	}}
+	app := mysqlCLIRunnerApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "mysql.plugin_add", "--name", "cli_plugin", "--soname", "custom/cli_plugin.so",
+		"--connection-user", "cli-user", "--connection-host", "cli-host", "--connection-port", "3307", "--connection-pass", "cli-pass", "-o", "json")
+	if code != ExitOK || strings.TrimSpace(out) != "true" || errS != "" || len(runner.calls) != 2 {
+		t.Fatalf("plugin_add CLI code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+	if argv := append([]string{runner.calls[1].Name}, runner.calls[1].Args...); !reflect.DeepEqual(argv, []string{
+		"mysql", "--batch", "--user=cli-user", "--host=cli-host", "--port=3307",
+		"--execute=INSTALL PLUGIN cli_plugin SONAME \"custom/cli_plugin.so\"",
+	}) || runner.calls[1].Shell || !reflect.DeepEqual(runner.calls[1].Env, []string{"MYSQL_PWD=cli-pass"}) {
+		t.Fatalf("plugin_add CLI transport=%#v argv=%q", runner.calls[1], argv)
+	}
+
+	// Installed add and absent remove are idempotent and do not issue a
+	// mutation command after plugin_status.
+	runner = &cliRecordingRunner{results: []process.CommandResult{{
+		ExitCode: 0,
+		Stdout:   []byte("PLUGIN_NAME\tPLUGIN_STATUS\ncli_plugin\tACTIVE\n"),
+	}}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.plugin_add", "--name", "cli_plugin", "-o", "json")
+	if code != ExitOK || strings.TrimSpace(out) != "true" || errS != "" || len(runner.calls) != 1 {
+		t.Fatalf("installed plugin_add CLI code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+	runner = &cliRecordingRunner{results: []process.CommandResult{{
+		ExitCode: 0,
+		Stdout:   []byte("PLUGIN_NAME\tPLUGIN_STATUS\n"),
+	}}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.plugin_remove", "--name", "cli_plugin", "-o", "json")
+	if code != ExitOK || strings.TrimSpace(out) != "true" || errS != "" || len(runner.calls) != 1 {
+		t.Fatalf("absent plugin_remove CLI code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+
+	// A connection/query failure is false and never falls through to INSTALL.
+	runner = &cliRecordingRunner{results: []process.CommandResult{{ExitCode: 1, Stderr: []byte("catalog unavailable")}}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.plugin_add", "--name", "cli_plugin", "-o", "json")
+	if code != ExitOK || strings.TrimSpace(out) != "false" || errS != "" || len(runner.calls) != 1 {
+		t.Fatalf("query-failed plugin_add CLI code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+
+	for _, tc := range []struct {
+		name, value string
+		args        []string
+	}{
+		{name: "invalid name", value: "bad;DROP", args: []string{"--name", "bad;DROP"}},
+		{name: "invalid soname", value: `bad"plugin.so`, args: []string{"--name", "cli_plugin", "--soname", `bad"plugin.so`}},
+	} {
+		runner = &cliRecordingRunner{}
+		app = mysqlCLIRunnerApp(t, runner)
+		cliArgs := append([]string{"exec", "mysql.plugin_add"}, tc.args...)
+		cliArgs = append(cliArgs, "-o", "json")
+		code, out, errS = captureCode(t, app, cliArgs...)
+		if code != ExitFailed || out != "" || !strings.Contains(errS, "mysql: invalid argument") || strings.Contains(errS, tc.value) || len(runner.calls) != 0 {
+			t.Fatalf("%s code=%d out=%q err=%q calls=%d", tc.name, code, out, errS, len(runner.calls))
+		}
+	}
+
+	// Runner failures from the mutation are value-free at the public CLI
+	// boundary, including plugin and connection-password overlaps.
+	marker := "cli_plugin_redaction"
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("PLUGIN_NAME\tPLUGIN_STATUS\n")},
+		{Err: errors.New("mysql mutation failed " + marker), Stdout: []byte(marker), Stderr: []byte(marker)},
+	}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.plugin_add", "--name", marker, "--soname", marker+".so", "--connection-pass", marker, "-o", "json")
+	if code != ExitFailed || out != "" || strings.Contains(errS, marker) || len(runner.calls) != 2 {
+		t.Fatalf("redacted plugin_add CLI code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+	command := runner.calls[1]
+	hasPluginSecret := false
+	hasSonameSecret := false
+	for _, secret := range command.Redact {
+		hasPluginSecret = hasPluginSecret || secret == marker
+		hasSonameSecret = hasSonameSecret || secret == marker+".so"
+	}
+	if command.Shell || command.Timeout != 30*time.Second || command.MaxStdoutBytes != 4<<20 || command.MaxStderrBytes != 4<<20 ||
+		strings.Contains(command.RedactedString(), marker) || !hasPluginSecret || !hasSonameSecret {
+		t.Fatalf("redacted plugin_add CLI transport=%#v", command)
+	}
+}
+
 func assertMySQLCLIValueHasNoMarker(t *testing.T, value any, marker string) {
 	t.Helper()
 	var walk func(reflect.Value)

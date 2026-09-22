@@ -71,6 +71,19 @@ EXPECTED_CASES = (
     "mysql-slave-lag-native-observation",
     "mysql-slave-lag-negative-auth",
     "mysql-slave-lag-negative-connection",
+    "mysql-plugin-add-installed-idempotent",
+    "mysql-plugin-add-installed-native-status",
+    "mysql-plugin-status-case-sensitive",
+    "mysql-plugin-remove-absent-idempotent",
+    "mysql-plugin-remove-absent-native-status",
+    "mysql-plugin-add-default-soname-failure",
+    "mysql-plugin-add-default-soname-native-failure",
+    "mysql-plugin-add-custom-soname-failure",
+    "mysql-plugin-add-custom-soname-native-failure",
+    "mysql-plugin-add-invalid-name",
+    "mysql-plugin-add-invalid-soname",
+    "mysql-plugin-add-negative-auth",
+    "mysql-plugin-remove-negative-connection",
 )
 
 
@@ -108,6 +121,52 @@ native_status_classification "$kind" "$execution_class" "$return_code" "$stdout_
                     "status-classifier",
                     str(SCRIPT),
                     kind,
+                    execution_class,
+                    str(return_code),
+                    str(stdout_path),
+                    str(stderr_path),
+                ],
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.stderr, "")
+        return result.stdout.strip()
+
+    def _classify_plugin_install_result(
+        self,
+        requested_soname: str,
+        execution_class: str,
+        return_code: int,
+        stdout: str,
+        stderr: str,
+    ) -> str:
+        command = """
+script_path="$1"
+requested_soname="$2"
+execution_class="$3"
+return_code="$4"
+stdout_path="$5"
+stderr_path="$6"
+set --
+source "$script_path"
+native_plugin_install_classification "$requested_soname" "$execution_class" "$return_code" "$stdout_path" "$stderr_path"
+"""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            stdout_path = temporary / "stdout"
+            stderr_path = temporary / "stderr"
+            stdout_path.write_text(stdout, encoding="utf-8")
+            stderr_path.write_text(stderr, encoding="utf-8")
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    command,
+                    "plugin-install-classifier",
+                    str(SCRIPT),
+                    requested_soname,
                     execution_class,
                     str(return_code),
                     str(stdout_path),
@@ -289,6 +348,14 @@ native_failure_classification "$kind" "$execution_class" "$return_code" "$stdout
         self.assertIn("mysql.db_remove", source)
         self.assertIn("mysql.alter_db", source)
         self.assertIn("mysql.db_get", source)
+        self.assertIn("R9.3o", source)
+        self.assertIn("NATIVE_PLUGIN_INSTALL_FAILURE_MARKER", source)
+        self.assertIn("NATIVE_PLUGIN_INSTALL_MISSING_SUFFIX", source)
+        self.assertIn("mysql-plugin-add-installed-idempotent", source)
+        self.assertIn("mysql.plugin_add", source)
+        self.assertIn("mysql.plugin_remove", source)
+        self.assertIn('"$PLUGIN_CUSTOM_FAILURE.so"', source)
+        self.assertNotIn("/definitely/missing/", source)
         self.assertIn("utf8mb4_general_ci", source)
         self.assertIn("external_ci: pending", source)
         self.assertNotIn("statekit-e51-mysql-$$", source)
@@ -572,6 +639,67 @@ printf 'policy_rc=%s start_rc=%s starts=%s\n' "$policy_rc" "$start_rc" "$starts"
                 ),
                 "expected",
             )
+
+    def test_plugin_install_classification_requires_exact_missing_basename(self) -> None:
+        requested_soname = "statekit_missing_fixture_0123456789abcdef.so"
+        marker = "ERROR 1126 (HY000): Can't open shared library"
+        missing_shared_object = (
+            f"{marker} '{requested_soname}' (errno: 2 No such file or directory)\n"
+        )
+        fixtures = {
+            "path-rejection": (
+                f"/tmp/{requested_soname}",
+                f"{marker} '/tmp/{requested_soname}' (errno: 2 No such file or directory)\n",
+                "unexpected-error",
+            ),
+            "permission-failure": (
+                requested_soname,
+                f"{marker} '{requested_soname}' (errno: 13 Permission denied)\n",
+                "unexpected-error",
+            ),
+            "generic-loader-failure": (
+                requested_soname,
+                f"{marker} '{requested_soname}' (errno: 8 Exec format error)\n",
+                "unexpected-error",
+            ),
+            "interface-mismatch": (
+                requested_soname,
+                f"{marker} '{requested_soname}' (errno: 0 undefined symbol: statekit_plugin_init)\n",
+                "unexpected-error",
+            ),
+            "wrong-library": (
+                requested_soname,
+                f"{marker} 'statekit_other_fixture_0123456789abcdef.so' (errno: 2 No such file or directory)\n",
+                "unexpected-error",
+            ),
+            "mixed-diagnostics": (
+                requested_soname,
+                missing_shared_object
+                + f"{marker} '{requested_soname}' (errno: 13 Permission denied)\n",
+                "unexpected-error",
+            ),
+            "exact-positive": (requested_soname, missing_shared_object, "install-failure"),
+        }
+        for fixture_name, (soname, diagnostic, expected) in fixtures.items():
+            with self.subTest(fixture_name=fixture_name):
+                self.assertEqual(
+                    self._classify_plugin_install_result(soname, "exited", 1, "", diagnostic),
+                    expected,
+                )
+        self.assertEqual(
+            self._classify_plugin_install_result(
+                requested_soname, "exited", 1, "", "ERROR 9999 (HY000): unrelated\n"
+            ),
+            "unexpected-error",
+        )
+        self.assertEqual(
+            self._classify_plugin_install_result(requested_soname, "exited", 0, "", ""),
+            "unexpected-success",
+        )
+        self.assertEqual(
+            self._classify_plugin_install_result(requested_soname, "timeout", 124, "", ""),
+            "timeout",
+        )
 
     def test_status_classification_accepts_only_pinned_unsupported_diagnostics(self) -> None:
         positive_fixtures = {
@@ -1274,8 +1402,8 @@ printf 'duplicate_rc=%s unknown_rc=%s duplicate_status=%s missing_status=%s subs
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("status: fail", report)
             self.assertIn("execution: incomplete", report)
-            self.assertIn("cases_total: 52", report)
-            self.assertIn("cases_skipped: 51", report)
+            self.assertIn("cases_total: 65", report)
+            self.assertIn("cases_skipped: 64", report)
 
     def test_stale_or_unwritable_report_is_not_accepted(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

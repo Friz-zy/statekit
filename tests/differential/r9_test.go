@@ -1,6 +1,7 @@
 package differential
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
@@ -10,7 +11,9 @@ import (
 	"testing"
 
 	"github.com/friz-zy/statekit/internal/bootstrap"
+	"github.com/friz-zy/statekit/internal/process"
 	"github.com/friz-zy/statekit/internal/runtime"
+	execmysql "github.com/friz-zy/statekit/modules/exec/mysql"
 
 	"gopkg.in/yaml.v3"
 )
@@ -247,7 +250,14 @@ import (
 // slave_lag keeps its exact -1/-2/-3 scalar ladder. The fixed native CLI
 // transport remains bounded, shell-free, redacted, cancellable, and driver-free;
 // live standalone-MySQL observations are an E5.2 concern, not R9 differential
-// execution.
+// execution. R9.3o adds the fixed mysql.plugin_add/plugin_remove lifecycle
+// mutations: plugin_status is the bounded preflight, idempotent branches do
+// not mutate, invalid name/SONAME tokens never reach SQL, and absent plugins
+// use only the fixed INSTALL/UNINSTALL statements. StateKit plugin names use
+// exact Go equality; that is its contract, while Salt's parameterized
+// PLUGIN_NAME equality is collation-dependent and is not claimed as
+// byte-for-byte case parity. Positive shared-object installation remains an
+// external/live concern.
 type r9FamilySpec struct {
 	Source             string
 	SourceTests        string
@@ -313,6 +323,7 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"mysql.database-create-remove-lifecycle",
 			"mysql.processlist-and-replication-status",
 			"mysql.slave-lag",
+			"mysql.plugin-add-remove-lifecycle",
 		},
 		Evidence: []string{
 			"R9.3m direct, registry, and CLI fake-Runner tests pin the exact source SHOW FULL PROCESSLIST/SHOW MASTER STATUS/SHOW SLAVE STATUS argv, dynamic header-keyed maps, numeric and nil value shapes, rowless and nonzero transport-empty shapes, cancellation, timeout/output bounds, and password redaction; no live database or driver is used",
@@ -320,6 +331,8 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"The pinned MySQL 8.4 live harness keeps the exact legacy replication SQL, correlates StateKit's [] compatibility output with the independent native mysql unsupported-sql classification, and rejects genuine empty output, auth failure, connection failure, unrelated errors, and StateKit/native mismatches; no successful replication retrieval is claimed",
 			"R9.3n direct, registry, and CLI fake-Runner tests pin slave_lag's exact -3 query/connection exit, -1 rowless/non-slave, Seconds_Behind_Master numeric and NULL, -2 broken-IO, short/malformed value-free errors, MySQL 8.4 unsupported exit boundary, cancellation, timeout/output limits, and scalar redaction; no replacement replication query or live retrieval is used",
 			"The R9.3n live extension correlates mysql.slave_lag's StateKit -3 result with the independent native MySQL 8.4 unsupported-sql classification for SHOW SLAVE STATUS and rejects native empty/available/auth/connection/runtime/unrelated outcomes; no replication retrieval is claimed",
+			"R9.3o direct, registry, and CLI fake-Runner tests pin plugin_add/plugin_remove preflight idempotence, empty-name false, invalid identifier/SONAME rejection, default/custom SONAME statements, nonzero query/mutation false results, cancellation, timeout/output bounds, fixed shell-free argv, an explicit uppercase/mixed-case exact-Go matching vector, and value-free redaction; local orchestration tests add deterministic exact-basename classifier fixtures for path rejection, permission, loader, interface, wrong-library, mixed, and unrelated diagnostics; no plugin shared object or live installation is used",
+			"The R9.3o live extension uses unique per-run nonexistent SONAME basenames without directory separators for default/custom INSTALL checks; the native classifier accepts only one exact ERROR 1126 (HY000) missing-file diagnostic tied to the requested basename and rejects path, permission, loader/interface, wrong-library, mixed, auth, connection, and unrelated variants; StateKit exact Go matching is its contract, while the pinned Salt parameterized PLUGIN_NAME equality is collation-dependent and is not claimed byte-for-byte parity. External native checks can correlate only with the selected MySQL server/collation, not establish Salt parity; it never claims a positive plugin installation and remains pending_external_ci",
 			"R9.3l direct, registry, and CLI fake-Runner tests pin db_get defaults before ALTER DATABASE, explicit/partial/empty-option behavior, successful rowless and failed catalog shapes, exact quoted identifier and bare charset/collation statement vectors, and true/false/[] results; source-result vectors model representative truthy/falsy cursor.execute returns while separate native-exit vectors document that the CLI cannot observe the exact DB-API predicate; failed preflight never mutates, and stateful mock post-alter/readback checks preserve seeded data; cancellation, timeout/output bounds, and preflight/mutation redaction are asserted; no live database or driver is used",
 			"R9.3i direct, registry, and CLI tests pin fixed SHOW PLUGINS/plugin-catalog argv, exact name/status shapes, source order and first-match filtering, empty/nonzero/cancel/boundary behavior, password redaction, and SQL-injection-shaped names without a live database",
 			"R9.3j direct, registry, and CLI fake-Runner tests pin db_create/db_remove fixed-catalog preflight, quoted CREATE/DROP statements, optional character_set/collate literal escaping and rejection, MYSQL_PWD transport, finite timeout/output bounds, cancellation before and after preflight, phase-specific timeout/output/redaction failures, protected-name no-op, false-on-existing/absent idempotence shapes, and the public true result after a successful DROP whose db_exists post-check returns false; no live database or driver is used",
@@ -369,6 +382,7 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"R9.3i keeps plugin_status' empty-name False and missing/nonzero empty-string shapes, plugins_list' ordered list-of-name/status maps, and the shared Runner/cancellation/boundary/redaction controls; caller names are never interpolated into SQL",
 			"R9.3j keeps db_create's db_exists preflight and false-on-existing/mutation-failure return shape, including optional character_set/collate values as MySQLdb-equivalent escaped literals; StateKit deliberately fails closed before CREATE when the CLI existence preflight is nonzero, whereas pinned Salt can reconnect and attempt CREATE after db_exists returns False from an OperationalError. db_remove keeps the db_exists preflight, the pinned mysql/information_scheme protected-name false branch, DROP false-on-error behavior, and the final not-db_exists boolean post-check: after a successful DROP, a nonzero post-check is db_exists false compatibility data and therefore the public db_remove result is true, not false. The native CLI has no force parameter, so no force surface is added; both lifecycle functions remain driver-free and mock-only in the differential contract",
 			"The pinned db_exists uses unescaped SHOW DATABASES LIKE, so '%' and '_' in a requested name are wildcard-shaped source inputs. StateKit intentionally uses exact client-side membership over the fixed catalog to keep wildcard bytes out of the catalog predicate; mutation statements still use the validated quoted-identifier path. Wildcard-shaped names are therefore a documented compatibility ceiling and have direct and CLI regression vectors",
+			"R9.3o preserves plugin_status' empty-name false/idempotence branches. StateKit matches fixed catalog names with exact Go string equality, including the explicit uppercase/mixed-case compatibility vector; that exact identity is the StateKit contract. The pinned Salt parameterized PLUGIN_NAME equality is collation-dependent, so byte-for-byte case parity is not claimed. External native checks correlate only against the selected MySQL server/collation and cannot establish Salt parity independent of collation. StateKit fails closed on a nonzero plugin catalog preflight, validates bare plugin identifiers and token/path SONAMEs before Runner invocation, and treats missing shared-object INSTALL exits as false; the native classifier accepts only the exact errno=2 No such file or directory diagnostic for the requested basename and rejects directory paths and other ER_CANT_OPEN_LIBRARY variants; no built-in plugin is uninstalled, no successful custom installation is claimed, and live E5.2 remains pending_external_ci",
 			"F1 public renderers sanitize every result header key with the connection redaction inventory; internal user_exists header matching remains raw, and a post-redaction key collision fails safely with the stable value-free mysql: redacted result header collision error",
 			"R9.3h keeps user_grants' one-call SHOW GRANTS contract: a successful header-only/empty result is [], a nonzero mysql exit is false, and Runner/cancellation/boundary failures remain errors; IDENTIFIED BY is removed exactly as the source does and WITH GRANT OPTION is restored after that removal",
 			"R9.2a registers the driver-free pure functions quote_identifier and tokenize_grant; R9.3a adds the read-only catalog family db_list, db_exists, user_list, and user_exists over the mysql CLI transport; R9.3b adds the read-only server facts family version, status, showvariables, and showglobal on the same transport; R9.3c adds the maintenance family db_check, db_repair, and db_optimize — REPAIR and OPTIMIZE are mutations, executed only through the (fake) Runner, never a live server; R9.3d adds the read-only db_get and db_tables catalog surfaces on the same fixed-query transport; R9.3e adds user_info plus fixed-query user_create/user_remove over the same fake-only CLI transport; R9.3f adds the exact grant_add, grant_exists, and grant_revoke surfaces over fixed GRANT/REVOKE, VERSION, SHOW PRIVILEGES, and SHOW GRANTS statements with SQL-aware account parsing and full redaction inventory; the remaining public surface stays pending behind its own MySQL protocol/arbitrary-query boundaries",
@@ -424,6 +438,8 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"mysql.grant_exists",
 			"mysql.grant_revoke",
 			"mysql.plugin_status",
+			"mysql.plugin_add",
+			"mysql.plugin_remove",
 			"mysql.plugins_list",
 			"mysql.processlist",
 			"mysql.quote_identifier",
@@ -723,6 +739,88 @@ type r9ReportTotals struct {
 	Pending    int `yaml:"pending_public"`
 }
 
+type r9MysqlRunner struct {
+	results []process.CommandResult
+	calls   []process.Command
+}
+
+func (r *r9MysqlRunner) Run(_ context.Context, command process.Command) process.CommandResult {
+	r.calls = append(r.calls, command)
+	if len(r.results) == 0 {
+		return process.CommandResult{ExitCode: 0}
+	}
+	result := r.results[0]
+	r.results = r.results[1:]
+	return result
+}
+
+func (*r9MysqlRunner) CommandAvailable(string) bool { return true }
+
+func TestR9MysqlPluginLifecycleDifferential(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := execmysql.Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	runner := &r9MysqlRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("PLUGIN_NAME\tPLUGIN_STATUS\n")},
+		{ExitCode: 0},
+		{ExitCode: 0, Stdout: []byte("PLUGIN_NAME\tPLUGIN_STATUS\nknown_plugin\tACTIVE\n")},
+		{ExitCode: 1},
+	}}
+	rt := &runtime.Runtime{Exec: reg, Runner: runner}
+
+	value, err := reg.Call(context.Background(), rt, "mysql.plugin_add", &execmysql.PluginAddArgs{
+		Name: "absent_plugin", Soname: func() *string { value := "absent_plugin.so"; return &value }(),
+	})
+	if err != nil || value != true || len(runner.calls) != 2 || runner.calls[1].Shell ||
+		runner.calls[1].Args[len(runner.calls[1].Args)-1] != "--execute=INSTALL PLUGIN absent_plugin SONAME \"absent_plugin.so\"" {
+		t.Fatalf("plugin_add differential value=%#v err=%v calls=%#v", value, err, runner.calls)
+	}
+	value, err = reg.Call(context.Background(), rt, "mysql.plugin_add", &execmysql.PluginAddArgs{Name: "known_plugin"})
+	if err != nil || value != true || len(runner.calls) != 3 {
+		t.Fatalf("installed plugin_add differential value=%#v err=%v calls=%d", value, err, len(runner.calls))
+	}
+	value, err = reg.Call(context.Background(), rt, "mysql.plugin_remove", &execmysql.PluginRemoveArgs{Name: "known_plugin"})
+	if err != nil || value != false || len(runner.calls) != 4 {
+		t.Fatalf("failed plugin_remove differential value=%#v err=%v calls=%d", value, err, len(runner.calls))
+	}
+	value, err = reg.Call(context.Background(), rt, "mysql.plugin_remove", &execmysql.PluginRemoveArgs{Name: "bad-name"})
+	if err == nil || value != nil || len(runner.calls) != 4 || strings.Contains(err.Error(), "bad-name") {
+		t.Fatalf("invalid plugin_remove differential value=%#v err=%v calls=%d", value, err, len(runner.calls))
+	}
+}
+
+func TestR9MysqlPluginCaseIdentityDifferential(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := execmysql.Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	const catalog = "PLUGIN_NAME\tPLUGIN_STATUS\nMiXeD_PlUgIn\tACTIVE\n"
+	runner := &r9MysqlRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte(catalog)},
+		{ExitCode: 0, Stdout: []byte(catalog)},
+		{ExitCode: 0, Stdout: []byte(catalog)},
+	}}
+	rt := &runtime.Runtime{Exec: reg, Runner: runner}
+
+	for _, tc := range []struct {
+		name string
+		want string
+	}{
+		{name: "MIXED_PLUGIN", want: ""},
+		{name: "MiXeD_PlUgIn", want: "ACTIVE"},
+		{name: "mixed_plugin", want: ""},
+	} {
+		value, err := reg.Call(context.Background(), rt, "mysql.plugin_status", &execmysql.PluginStatusArgs{Name: tc.name})
+		if err != nil || value != tc.want {
+			t.Fatalf("plugin_status(%q) = %#v, err=%v, want %#v", tc.name, value, err, tc.want)
+		}
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("plugin_status case-identity calls = %d, want 3", len(runner.calls))
+	}
+}
+
 func TestR9DifferentialScopeReport(t *testing.T) {
 	first, err := bootstrap.BuildRuntime()
 	if err != nil {
@@ -737,7 +835,7 @@ func TestR9DifferentialScopeReport(t *testing.T) {
 	registered := registeredNames(first)
 
 	report := r9Report{
-		Round:    "R9.3n",
+		Round:    "R9.3o",
 		Platform: "cross-platform",
 		RuntimeStatus: "mock-only differential contract: RabbitMQ is never started, MySQL is never connected, PostgreSQL is never contacted, and SQLite differential tests do not use live Salt; " +
 			"shell-free fake Runner tests, pure-function vectors, and SQLite boundary vectors provide the executable contract",
