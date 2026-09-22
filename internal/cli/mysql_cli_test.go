@@ -2494,3 +2494,243 @@ func TestMySQLCLIDatabaseMutationPhaseFailures(t *testing.T) {
 		t.Fatalf("post-check redaction transport=%#v", runner.calls[2])
 	}
 }
+
+// TestMySQLCLIAlterDatabase drives mysql.alter_db through flag decoding and
+// registry dispatch. The first fake call is the db_get default read and the
+// second is the fixed ALTER DATABASE mutation; no real client is used.
+func TestMySQLCLIAlterDatabase(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{Stdout: []byte("SCHEMA_NAME\tDEFAULT_CHARACTER_SET_NAME\tDEFAULT_COLLATION_NAME\ncli_alter\tlatin1\tlatin1_swedish_ci\n")},
+		{ExitCode: 0},
+	}}
+	code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.alter_db",
+		"--name", "cli_alter", "--character-set", "utf8mb4", "--collate", "utf8mb4_0900_ai_ci",
+		"--connection-user", "admin", "--connection-host", "mysql-host", "--connection-port", "3307",
+		"--connection-db", "mysql", "--connection-pass", "cli-alter-pass", "-o", "json")
+	if code != ExitOK || strings.TrimSpace(out) != "true" || errS != "" || len(runner.calls) != 2 {
+		t.Fatalf("alter_db code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+	if got := append([]string{runner.calls[1].Name}, runner.calls[1].Args...); !reflect.DeepEqual(got, []string{
+		"mysql", "--batch", "--user=admin", "--host=mysql-host", "--port=3307", "--database=mysql",
+		"--execute=ALTER DATABASE `cli_alter` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;",
+	}) {
+		t.Fatalf("alter_db argv=%q", got)
+	}
+	for _, command := range runner.calls {
+		if command.Shell || !reflect.DeepEqual(command.Env, []string{"MYSQL_PWD=cli-alter-pass"}) ||
+			strings.Contains(command.RedactedString(), "cli-alter-pass") {
+			t.Fatalf("alter_db unsafe transport=%#v", command)
+		}
+	}
+
+	// A single explicit option keeps the other catalog default, matching the
+	// source's truthy `or existing.get(...)` expressions.
+	for _, tc := range []struct {
+		name      string
+		option    string
+		value     string
+		statement string
+	}{
+		{name: "explicit charset", option: "--character-set", value: "utf8mb4", statement: "ALTER DATABASE `cli_alter` CHARACTER SET utf8mb4 COLLATE latin1_swedish_ci;"},
+		{name: "explicit collate", option: "--collate", value: "utf8mb4_0900_ai_ci", statement: "ALTER DATABASE `cli_alter` CHARACTER SET latin1 COLLATE utf8mb4_0900_ai_ci;"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &cliRecordingRunner{results: []process.CommandResult{
+				{Stdout: []byte("SCHEMA_NAME\tDEFAULT_CHARACTER_SET_NAME\tDEFAULT_COLLATION_NAME\ncli_alter\tlatin1\tlatin1_swedish_ci\n")},
+				{ExitCode: 0},
+			}}
+			code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.alter_db",
+				"--name", "cli_alter", tc.option, tc.value, "-o", "json")
+			if code != ExitOK || strings.TrimSpace(out) != "true" || errS != "" || len(runner.calls) != 2 ||
+				runner.calls[1].Args[len(runner.calls[1].Args)-1] != "--execute="+tc.statement {
+				t.Fatalf("partial %s code=%d out=%q err=%q calls=%d argv=%#v", tc.name, code, out, errS, len(runner.calls), runner.calls)
+			}
+		})
+	}
+
+	// Omitted options use db_get defaults, and an ALTER rejection remains the
+	// pinned false compatibility result.
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{Stdout: []byte("SCHEMA_NAME\tDEFAULT_CHARACTER_SET_NAME\tDEFAULT_COLLATION_NAME\ncli_alter\tutf8\tutf8_general_ci\n")},
+		{ExitCode: 1, Stderr: []byte("rejected")},
+	}}
+	code, out, errS = captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.alter_db", "--name", "cli_alter", "-o", "json")
+	if code != ExitOK || strings.TrimSpace(out) != "false" || errS != "" || len(runner.calls) != 2 {
+		t.Fatalf("default-preserving alter_db code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+	if got := runner.calls[1].Args[len(runner.calls[1].Args)-1]; got != "--execute=ALTER DATABASE `cli_alter` CHARACTER SET utf8 COLLATE utf8_general_ci;" {
+		t.Fatalf("default-preserving SQL=%q", got)
+	}
+
+	for _, option := range []string{"--character-set", "--collate"} {
+		runner = &cliRecordingRunner{}
+		code, out, errS = captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.alter_db",
+			"--name", "cli_alter", option, "utf8;DROP", "-o", "json")
+		if code != ExitFailed || out != "" || !strings.Contains(errS, "mysql: invalid argument") ||
+			strings.Contains(errS, "utf8;DROP") || len(runner.calls) != 0 {
+			t.Fatalf("invalid %s code=%d out=%q err=%q calls=%d", option, code, out, errS, len(runner.calls))
+		}
+	}
+	code, out, errS = captureCode(t, mysqlCLIRunnerApp(t, &cliRecordingRunner{}), "exec", "mysql.alter_db", "-o", "json")
+	if code != ExitInvalidInput || out != "" || !strings.Contains(errS, "missing required argument") {
+		t.Fatalf("missing alter_db name code=%d out=%q err=%q", code, out, errS)
+	}
+}
+
+func TestMySQLCLIAlterDatabaseRedaction(t *testing.T) {
+	marker := "cli_alter_secret"
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{Stdout: []byte("SCHEMA_NAME\tDEFAULT_CHARACTER_SET_NAME\tDEFAULT_COLLATION_NAME\ndb\tutf8\tutf8_general_ci\n")},
+		{Err: errors.New("alter failed " + marker), Stdout: []byte(marker), Stderr: []byte(marker)},
+	}}
+	code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.alter_db",
+		"--name", "db", "--character-set", marker, "-o", "json")
+	if code != ExitFailed || out != "" || strings.Contains(out+errS, marker) || len(runner.calls) != 2 {
+		t.Fatalf("alter_db redaction code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+	if strings.Contains(runner.calls[1].RedactedString(), marker) {
+		t.Fatalf("alter_db command leaks marker: %q", runner.calls[1].RedactedString())
+	}
+}
+
+// TestMySQLCLIAlterDatabaseSourceShapes documents the distinction between a
+// successful rowless db_get ({}), which can still support two explicit source
+// values, and a failed db_get ([]), which is returned without mutation.
+func TestMySQLCLIAlterDatabaseSourceShapes(t *testing.T) {
+	missingCatalog := "SCHEMA_NAME\tDEFAULT_CHARACTER_SET_NAME\tDEFAULT_COLLATION_NAME\nother\tutf8\tutf8_general_ci\n"
+	for _, tc := range []struct {
+		name    string
+		args    []string
+		results []process.CommandResult
+		code    int
+		output  string
+		calls   int
+		wantSQL string
+		caller  string
+	}{
+		{
+			name:    "missing catalog no options fails before alter",
+			args:    []string{"--name", "missing", "-o", "json"},
+			results: []process.CommandResult{{Stdout: []byte(missingCatalog)}},
+			code:    ExitFailed,
+			calls:   1,
+			caller:  "missing",
+		},
+		{
+			name:    "missing catalog partial option fails before alter",
+			args:    []string{"--name", "missing", "--character-set", "utf8mb4", "-o", "json"},
+			results: []process.CommandResult{{Stdout: []byte(missingCatalog)}},
+			code:    ExitFailed,
+			calls:   1,
+			caller:  "missing",
+		},
+		{
+			name:    "missing catalog explicit pair follows source bypass",
+			args:    []string{"--name", "missing", "--character-set", "utf8mb4", "--collate", "utf8mb4_0900_ai_ci", "-o", "json"},
+			results: []process.CommandResult{{Stdout: []byte(missingCatalog)}, {ExitCode: 0}},
+			code:    ExitOK,
+			output:  "true",
+			calls:   2,
+			wantSQL: "--execute=ALTER DATABASE `missing` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;",
+		},
+		{
+			name:    "failed catalog explicit pair is returned without alter",
+			args:    []string{"--name", "db", "--character-set", "utf8mb4", "--collate", "utf8mb4_0900_ai_ci", "-o", "json"},
+			results: []process.CommandResult{{ExitCode: 1, Stderr: []byte("catalog denied")}, {ExitCode: 0}},
+			code:    ExitOK,
+			output:  "[]",
+			calls:   1,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &cliRecordingRunner{results: tc.results}
+			code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), append([]string{"exec", "mysql.alter_db"}, tc.args...)...)
+			if code != tc.code || strings.TrimSpace(out) != tc.output || len(runner.calls) != tc.calls {
+				t.Fatalf("code=%d out=%q err=%q calls=%d; want code=%d out=%q calls=%d", code, out, errS, len(runner.calls), tc.code, tc.output, tc.calls)
+			}
+			if tc.caller != "" && strings.Contains(errS, tc.caller) {
+				// The stable error names the fixed argument key, not the caller's
+				// database value.
+				t.Fatalf("source shape error contains caller value: %q", errS)
+			}
+			if tc.wantSQL != "" && runner.calls[1].Args[len(runner.calls[1].Args)-1] != tc.wantSQL {
+				t.Fatalf("statement=%q, want %q", runner.calls[1].Args[len(runner.calls[1].Args)-1], tc.wantSQL)
+			}
+		})
+	}
+}
+
+// TestMySQLCLIAlterDatabaseNativeResultVectors pins the CLI-visible truthy
+// and falsy process results separately from the unobservable DB-API
+// cursor.execute return value in the pinned Salt implementation.
+func TestMySQLCLIAlterDatabaseNativeResultVectors(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		result process.CommandResult
+		want   string
+	}{
+		{name: "process success", result: process.CommandResult{ExitCode: 0}, want: "true"},
+		{name: "process rejection", result: process.CommandResult{ExitCode: 1}, want: "false"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &cliRecordingRunner{results: []process.CommandResult{
+				{Stdout: []byte("SCHEMA_NAME\tDEFAULT_CHARACTER_SET_NAME\tDEFAULT_COLLATION_NAME\ndb\tutf8\tutf8_general_ci\n")},
+				tc.result,
+			}}
+			code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.alter_db", "--name", "db", "-o", "json")
+			if code != ExitOK || strings.TrimSpace(out) != tc.want || errS != "" || len(runner.calls) != 2 {
+				t.Fatalf("native result code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+			}
+		})
+	}
+}
+
+// TestMySQLCLIAlterDatabasePhaseFailures keeps timeout/output errors fail
+// closed at both the db_get preflight and ALTER phases, and checks the
+// connection credential redaction on a failed preflight.
+func TestMySQLCLIAlterDatabasePhaseFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		results []process.CommandResult
+		calls   int
+	}{
+		{name: "preflight-timeout", results: []process.CommandResult{{Err: context.DeadlineExceeded}}, calls: 1},
+		{name: "preflight-output", results: []process.CommandResult{{StdoutTruncated: true}}, calls: 1},
+		{name: "mutation-timeout", results: []process.CommandResult{{Stdout: []byte("SCHEMA_NAME\tDEFAULT_CHARACTER_SET_NAME\tDEFAULT_COLLATION_NAME\ndb\tutf8\tutf8_general_ci\n")}, {Err: context.DeadlineExceeded}}, calls: 2},
+		{name: "mutation-output", results: []process.CommandResult{{Stdout: []byte("SCHEMA_NAME\tDEFAULT_CHARACTER_SET_NAME\tDEFAULT_COLLATION_NAME\ndb\tutf8\tutf8_general_ci\n")}, {StdoutTruncated: true}}, calls: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &cliRecordingRunner{results: tc.results}
+			code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.alter_db", "--name", "db", "-o", "json")
+			if code != ExitFailed || out != "" || errS == "" || len(runner.calls) != tc.calls {
+				t.Fatalf("phase code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+			}
+			for i, command := range runner.calls {
+				if command.Shell || command.Timeout != 30*time.Second || command.MaxStdoutBytes != 4<<20 || command.MaxStderrBytes != 4<<20 {
+					t.Fatalf("phase %s call %d transport=%#v", tc.name, i, command)
+				}
+			}
+		})
+	}
+
+	marker := "cli-alter-preflight-secret"
+	runner := &cliRecordingRunner{results: []process.CommandResult{{
+		Err:    errors.New("db_get failed " + marker),
+		Stdout: []byte(marker),
+		Stderr: []byte(marker),
+	}}}
+	code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.alter_db", "--name", "db", "--connection-pass", marker, "-o", "json")
+	found := false
+	if len(runner.calls) == 1 {
+		for _, secret := range runner.calls[0].Redact {
+			if secret == marker {
+				found = true
+				break
+			}
+		}
+	}
+	if code != ExitFailed || out != "" || strings.Contains(out+errS, marker) || len(runner.calls) != 1 ||
+		strings.Contains(runner.calls[0].RedactedString(), marker) || !found {
+		t.Fatalf("preflight redaction code=%d out=%q err=%q calls=%d command=%q redact=%q", code, out, errS, len(runner.calls), runner.calls[0].RedactedString(), runner.calls[0].Redact)
+	}
+}

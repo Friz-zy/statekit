@@ -225,7 +225,12 @@ import (
 // R9.3i registers mysql.plugin_status and mysql.plugins_list over fixed
 // plugin catalog/SHOW PLUGINS statements, preserving the source status string
 // and ordered name/status list without arbitrary SQL or a database dependency.
-// R9.3k registers the sqlite3 catalog family (sqlite3.py:33-149) over the
+// R9.3l registers mysql.alter_db (mysql.py:1164-1195) over the existing
+// db_get catalog and bounded native mysql CLI mutation transport, preserving
+// the source's db_get-default-then-ALTER order, false/[] compatibility shapes,
+// bare charset/collation token boundary, fixed identifier quoting, and an
+// explicit source-result versus CLI-result evidence boundary. R9.3k registers
+// the sqlite3 catalog family (sqlite3.py:33-149) over the
 // pinned CGO-free modernc.org/sqlite database/sql driver: version probes use
 // the pinned driver/engine constants, modify/fetch accept the source's raw SQL
 // boundary while preserving cursor.execute's one-statement rule, and
@@ -282,6 +287,7 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 		Platform:    "cross-platform pure functions and CLI wrapper",
 		Scenarios: []string{
 			"mysql.batch-field-decoding",
+			"mysql.database-alter",
 			"mysql.db-maintenance",
 			"mysql.identifier-quoting",
 			"mysql.grant-lexer-shapes",
@@ -296,6 +302,7 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"mysql.database-create-remove-lifecycle",
 		},
 		Evidence: []string{
+			"R9.3l direct, registry, and CLI fake-Runner tests pin db_get defaults before ALTER DATABASE, explicit/partial/empty-option behavior, successful rowless and failed catalog shapes, exact quoted identifier and bare charset/collation statement vectors, and true/false/[] results; source-result vectors model representative truthy/falsy cursor.execute returns while separate native-exit vectors document that the CLI cannot observe the exact DB-API predicate; failed preflight never mutates, and stateful mock post-alter/readback checks preserve seeded data; cancellation, timeout/output bounds, and preflight/mutation redaction are asserted; no live database or driver is used",
 			"R9.3i direct, registry, and CLI tests pin fixed SHOW PLUGINS/plugin-catalog argv, exact name/status shapes, source order and first-match filtering, empty/nonzero/cancel/boundary behavior, password redaction, and SQL-injection-shaped names without a live database",
 			"R9.3j direct, registry, and CLI fake-Runner tests pin db_create/db_remove fixed-catalog preflight, quoted CREATE/DROP statements, optional character_set/collate literal escaping and rejection, MYSQL_PWD transport, finite timeout/output bounds, cancellation before and after preflight, phase-specific timeout/output/redaction failures, protected-name no-op, false-on-existing/absent idempotence shapes, and the public true result after a successful DROP whose db_exists post-check returns false; no live database or driver is used",
 			"F2-F4 remediation pins the deliberate ceilings explicitly: a nonzero db_exists preflight is treated as unknown and db_create fails closed without CREATE, '%'/'_' names use exact fixed-catalog membership instead of the pinned unescaped LIKE wildcard behavior, and post-check false is distinguished from the public db_remove result after a successful DROP; the differential artifact remains mock-only with external live CI pending",
@@ -331,6 +338,10 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"R9.3g TestMysqlUserChpassStatementVectors pins password-over-hash precedence including an explicit empty password, old MySQL and modern MySQL/MariaDB password/hash clauses, passwordless/socket clauses, and unsafe plugin/column rejection; TestMysqlUserChpass pins the non-self six-call version/account/schema/plugin/mutation/flush sequence, exact connection flags, bounds, MYSQL_PWD transport, complete mutation inventory, and input nonmutation; TestMysqlUserChpassSelfPasswordUsesOneSession pins four preflights followed by exactly one fixed ALTER USER plus FLUSH command for matching connection and target users, ordered statements, old MYSQL_PWD, complete redaction, and no repeated mutation; TestMysqlUserChpassSelfPasswordRetryUsesNewCredential pins the rowless version retry, original/new MYSQL_PWD transition, unchanged input, one same-session command, and no repeated mutation; TestMysqlUserChpassShapesAndFailClosed executes unknown-plugin, passwordless, socket-status, nonzero mutation/flush, no-Runner, unsafe-input, and cancellation branches; TestMysqlUserChpassDirectRedactionPhaseMatrix fails every version/account/schema/plugin/mutation/flush phase, asserts raw/doubled/quoted/account/hash/native-verifier/connection forms are absent from the returned error and rendered command, and replays each failed command through the transport to assert redacted error/stdout/stderr; TestMysqlUserChpassRegistryRedactionPhaseMatrix repeats all six phases through the registered name; TestMySQLCLIUserChpassRedactionPhaseMatrix repeats all six phases through argument decoding and asserts CLI output/error/rendered-command redaction plus longest-first inventories; TestMySQLCLIUserChpassSelfPasswordSingleCommand asserts the same-session CLI argv and no second call; TestMysqlVerifyLogin and TestMysqlVerifyLoginFailClosed pin connection-user/password overrides, host/port/database preservation, fixed SELECT 1 with no password in SQL, bool/nonzero/error shapes, empty/nil MYSQL_PWD transport, cancellation, and value-free error/rendered-command redaction",
 		},
 		CompatibilityNotes: []string{
+			"R9.3l keeps alter_db's source default flow: db_get is read first, nil/empty explicit options use its character_set/collate values, and one ALTER DATABASE statement follows. The pinned cursor.execute predicate has explicit representative truthy/falsy source vectors (1/0), but the native mysql CLI exposes only process status; StateKit therefore maps exit zero to true and nonzero to false and documents exact cursor.execute/affected-row parity as unobservable at this boundary",
+			"A successful rowless db_get is {}, so two explicit non-empty options bypass default lookup like the pinned source; omitted/empty options or partial explicit options fail closed before ALTER when a default is absent. A nonzero db_get is [] and is returned without mutation even with both options explicit, because an uncertain catalog preflight must not authorize a mutation; Runner errors, cancellation, timeout, and output-limit failures likewise issue no later ALTER",
+			"Stateful fake-Runner evidence performs a post-alter db_get readback and a fixed seed-row readback: accepted ALTER changes only the modeled charset/collation metadata, rejected ALTER preserves metadata, and neither path deletes or rewrites the seed; this is mock evidence only and does not claim live MySQL postconditions",
+			"The pinned format string emits charset and collation as bare tokens. StateKit therefore rejects empty/malformed/control/punctuation-bearing non-empty options before db_get, accepts only identifier-like ASCII charset/collation names, and preserves the source's unquoted successful SQL shape; server semantic validation remains the server's responsibility",
 			"R9.3i keeps plugin_status' empty-name False and missing/nonzero empty-string shapes, plugins_list' ordered list-of-name/status maps, and the shared Runner/cancellation/boundary/redaction controls; caller names are never interpolated into SQL",
 			"R9.3j keeps db_create's db_exists preflight and false-on-existing/mutation-failure return shape, including optional character_set/collate values as MySQLdb-equivalent escaped literals; StateKit deliberately fails closed before CREATE when the CLI existence preflight is nonzero, whereas pinned Salt can reconnect and attempt CREATE after db_exists returns False from an OperationalError. db_remove keeps the db_exists preflight, the pinned mysql/information_scheme protected-name false branch, DROP false-on-error behavior, and the final not-db_exists boolean post-check: after a successful DROP, a nonzero post-check is db_exists false compatibility data and therefore the public db_remove result is true, not false. The native CLI has no force parameter, so no force surface is added; both lifecycle functions remain driver-free and mock-only in the differential contract",
 			"The pinned db_exists uses unescaped SHOW DATABASES LIKE, so '%' and '_' in a requested name are wildcard-shaped source inputs. StateKit intentionally uses exact client-side membership over the fixed catalog to keep wildcard bytes out of the catalog predicate; mutation statements still use the validated quoted-identifier path. Wildcard-shaped names are therefore a documented compatibility ceiling and have direct and CLI regression vectors",
@@ -375,6 +386,7 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"no MySQL driver, live server, network egress, or new dependency is claimed or added",
 		},
 		RegisteredSubset: []string{
+			"mysql.alter_db",
 			"mysql.db_check",
 			"mysql.db_create",
 			"mysql.db_exists",
@@ -697,7 +709,7 @@ func TestR9DifferentialScopeReport(t *testing.T) {
 	registered := registeredNames(first)
 
 	report := r9Report{
-		Round:    "R9.3k",
+		Round:    "R9.3l",
 		Platform: "cross-platform",
 		RuntimeStatus: "mock-only differential contract: RabbitMQ is never started, MySQL is never connected, PostgreSQL is never contacted, and SQLite differential tests do not use live Salt; " +
 			"shell-free fake Runner tests, pure-function vectors, and SQLite boundary vectors provide the executable contract",

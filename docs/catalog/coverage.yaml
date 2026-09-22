@@ -6,9 +6,9 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    source_inventory_count: 1207
-    catalog_intersection_count: 1185
-    implemented: 1185
+    source_inventory_count: 1208
+    catalog_intersection_count: 1186
+    implemented: 1186
 state:
     salt_modules: 132
     salt_functions: 669
@@ -438,6 +438,7 @@ implemented:
         - mount.is_mounted
         - mount.mount
         - mount.umount
+        - mysql.alter_db
         - mysql.db_check
         - mysql.db_create
         - mysql.db_exists

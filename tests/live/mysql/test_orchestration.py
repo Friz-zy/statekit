@@ -41,6 +41,19 @@ EXPECTED_CASES = (
     "mysql-db-negative-invalid-identifier",
     "mysql-db-negative-auth",
     "mysql-db-negative-connection",
+    "mysql-alter-db-native-absent-before-create",
+    "mysql-alter-db-create-and-seed",
+    "mysql-alter-db-native-defaults-before",
+    "mysql-alter-db-statekit-explicit",
+    "mysql-alter-db-native-explicit-readback",
+    "mysql-alter-db-statekit-explicit-readback",
+    "mysql-alter-db-statekit-default-preservation",
+    "mysql-alter-db-native-default-preserved-readback",
+    "mysql-alter-db-statekit-default-preserved-readback",
+    "mysql-alter-db-negative-auth",
+    "mysql-alter-db-negative-connection",
+    "mysql-alter-db-negative-invalid-identifier",
+    "mysql-alter-db-negative-invalid-option",
 )
 
 
@@ -116,6 +129,10 @@ native_failure_classification "$kind" "$execution_class" "$return_code" "$stdout
         self.assertIn("--user \"$CLIENT_USER\"", source)
         self.assertIn("runtime_preflight()", source)
         self.assertIn("verify_created_container_policy()", source)
+        self.assertIn("verify_python_mock_container_policy()", source)
+        self.assertIn("PYTHON_MOCK_TMPFS_DESTINATION", source)
+        self.assertIn("PYTHON_MOCK_TMPFS_OPTIONS", source)
+        self.assertIn("canonical_csv_set", source)
         self.assertIn("container inspect", source)
         self.assertIn("--format", source)
         self.assertIn("Config.Secrets", source)
@@ -124,7 +141,15 @@ native_failure_classification "$kind" "$execution_class" "$return_code" "$stdout
         self.assertNotIn("json.load(inspect", source)
         self.assertIn("container exists", source)
         self.assertIn("network exists", source)
+        self.assertIn("generate_resource_nonce()", source)
+        self.assertIn("secrets.token_hex(12)", source)
+        self.assertIn("RESOURCE_NONCE", source)
+        self.assertIn("DB_OWNED=1", source)
+        self.assertIn("NETWORK_OWNED=1", source)
+        self.assertIn("CLIENT_IMAGE_OWNED=1", source)
         self.assertIn("cleanup_container()", source)
+        self.assertIn("bounded_timeout()", source)
+        self.assertIn("--kill-after", source)
         self.assertIn("stop --time 5", source)
         self.assertIn("secret rm", source)
         self.assertIn("CLEANUP_FAILED=1", source)
@@ -134,10 +159,18 @@ native_failure_classification "$kind" "$execution_class" "$return_code" "$stdout
         self.assertIn("execution_rc:", source)
         self.assertIn("final_rc:", source)
         self.assertIn("LIFECYCLE_DB=", source)
+        self.assertIn("ALTER_DB=", source)
+        self.assertIn("ALTER_TABLE=", source)
         self.assertIn("DROP DATABASE IF EXISTS", source)
         self.assertIn("mysql.db_create", source)
         self.assertIn("mysql.db_remove", source)
+        self.assertIn("mysql.alter_db", source)
+        self.assertIn("mysql.db_get", source)
+        self.assertIn("utf8mb4_general_ci", source)
         self.assertIn("external_ci: pending", source)
+        self.assertNotIn("statekit-e51-mysql-$$", source)
+        self.assertNotIn("statekit-e51-net-$$", source)
+        self.assertNotIn("statekit-e51-client:$$", source)
         self.assertNotIn("--privileged", source)
         self.assertNotIn("--device", source)
         self.assertNotIn("--volume ", source)
@@ -208,7 +241,8 @@ write_report
 
     def test_workflow_keeps_build_and_python_checks_inside_pinned_sandboxes(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("e5.2 live mysql read-only/catalog/plugin/database-lifecycle", workflow)
+        self.assertIn("e5.2 live mysql read-only/catalog/plugin/database-lifecycle/alter-db", workflow)
+        self.assertIn("sqlite-live:", workflow)
         self.assertIn("e5-2-mysql-live-report", workflow)
         self.assertIn("run.sh --preflight-only", workflow)
         self.assertIn("golang:1.26.6@sha256:", workflow)
@@ -221,6 +255,157 @@ write_report
         self.assertNotIn("python3 tests/live/mysql/test_orchestration.py", workflow)
         self.assertNotIn("CGO_ENABLED=0 go build", workflow)
         self.assertNotIn("actions/setup-go", workflow)
+        mysql_job = workflow.split("  sqlite-live:", 1)[0]
+        self.assertIn('run_suffix="${GITHUB_RUN_ID:-manual}-${GITHUB_RUN_ATTEMPT:-0}"', mysql_job)
+        self.assertIn("reserve_resource_name network", mysql_job)
+        self.assertIn("reserve_resource_name image", mysql_job)
+        self.assertIn("reserve_resource_name container", mysql_job)
+        self.assertIn("fetch_network_owned=0", mysql_job)
+        self.assertIn("deps_image_owned=0", mysql_job)
+        self.assertIn("python_container_owned=0", mysql_job)
+        self.assertIn('cleanup_container "$python_container" "$python_container_owned"', mysql_job)
+        self.assertIn("cleanup_isolated_resources", mysql_job)
+        self.assertIn("resource_is_absent", mysql_job)
+        self.assertIn("--kill-after", mysql_job)
+        self.assertIn("verify_python_mock_container_policy", mysql_job)
+        self.assertIn("source tests/live/mysql/run.sh", mysql_job)
+        self.assertIn("EffectiveCaps", SCRIPT.read_text(encoding="utf-8"))
+        self.assertIn("BoundingCaps", SCRIPT.read_text(encoding="utf-8"))
+        self.assertIn("python check container effective policy failed before start", mysql_job)
+        self.assertLess(
+            mysql_job.index("verify_python_mock_container_policy \"$python_container\""),
+            mysql_job.index('podman start --attach "$python_container"'),
+        )
+
+    def _run_python_mock_policy_fixture(self, **overrides: str) -> subprocess.CompletedProcess[str]:
+        defaults = {
+            "user": "65532:65532",
+            "privileged": "false",
+            "readonly": "true",
+            "nnp": "no-new-privileges=true",
+            "effective": "",
+            "bounding": "",
+            "network": "none",
+            "ipc": "private",
+            "pid": "private",
+            "uts": "private",
+            "tmpfs": "/tmp|rw,nosuid,nodev,noexec,size=64m,mode=1777,rprivate,tmpcopyup",
+            "mounts": "0",
+            "mount_layout": "",
+            "binds": "0",
+            "volumes": "0",
+            "volumes_from": "0",
+            "devices": "0",
+            "ports": "0",
+            "extra_hosts": "0",
+            "group_add": "0",
+            "links": "0",
+            "secret_state": "absent",
+            "env_keys": "container\nPATH\nPYTHONDONTWRITEBYTECODE\nPYTHON_SHA256\nPYTHON_VERSION",
+        }
+        defaults.update(overrides)
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            runtime = temporary / "container"
+            runtime.write_text(
+                """#!/usr/bin/env bash
+set -u
+format="${3:-}"
+case "$format" in
+  *'.Config.User}}'*) printf '%s\\n' "$MOCK_user" ;;
+  *'.HostConfig.Privileged}}'*) printf '%s\\n' "$MOCK_privileged" ;;
+  *'.HostConfig.ReadonlyRootfs}}'*) printf '%s\\n' "$MOCK_readonly" ;;
+  *'.HostConfig.SecurityOpt}}'*) printf '%s\\n' "$MOCK_nnp" ;;
+  *'.EffectiveCaps}}'*) printf '%s\\n' "$MOCK_effective" ;;
+  *'.BoundingCaps}}'*) printf '%s\\n' "$MOCK_bounding" ;;
+  *'.HostConfig.NetworkMode}}'*) printf '%s\\n' "$MOCK_network" ;;
+  *'.HostConfig.IpcMode}}'*) printf '%s\\n' "$MOCK_ipc" ;;
+  *'.HostConfig.PidMode}}'*) printf '%s\\n' "$MOCK_pid" ;;
+  *'.HostConfig.UTSMode}}'*) printf '%s\\n' "$MOCK_uts" ;;
+  *'.HostConfig.Tmpfs}}'*) printf '%s\\n' "$MOCK_tmpfs" ;;
+  *'len .Mounts}}'*) printf '%s\\n' "$MOCK_mounts" ;;
+  *'.Mounts}}'*) printf '%s\\n' "$MOCK_mount_layout" ;;
+  *'len .HostConfig.Binds}}'*) printf '%s\\n' "$MOCK_binds" ;;
+  *'len .Config.Volumes}}'*) printf '%s\\n' "$MOCK_volumes" ;;
+  *'len .HostConfig.VolumesFrom}}'*) printf '%s\\n' "$MOCK_volumes_from" ;;
+  *'len .HostConfig.Devices}}'*) printf '%s\\n' "$MOCK_devices" ;;
+  *'len .HostConfig.PortBindings}}'*) printf '%s\\n' "$MOCK_ports" ;;
+  *'len .HostConfig.ExtraHosts}}'*) printf '%s\\n' "$MOCK_extra_hosts" ;;
+  *'len .HostConfig.GroupAdd}}'*) printf '%s\\n' "$MOCK_group_add" ;;
+  *'len .HostConfig.Links}}'*) printf '%s\\n' "$MOCK_links" ;;
+  *'.Config.Secrets}}'*) printf '%s\\n' "$MOCK_secret_state" ;;
+  *'.Config.Env}}'*) printf '%s\\n' "$MOCK_env_keys" ;;
+  *) exit 2 ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            start = temporary / "start"
+            start.write_text("printf 'start\\n' >> \"$MOCK_START_LOG\"\n", encoding="utf-8")
+            environment = os.environ.copy()
+            for key, value in defaults.items():
+                environment[f"MOCK_{key}"] = value
+            start_log = temporary / "starts"
+            environment["MOCK_START_LOG"] = str(start_log)
+            command = r'''
+script_path="$1"
+runtime_directory="$2"
+cd "$runtime_directory"
+set --
+source "$script_path"
+RUNTIME=/bin/bash
+set +e
+if verify_python_mock_container_policy mock-container; then
+  policy_rc=0
+  /bin/bash start mock-container
+  start_rc=$?
+else
+  policy_rc=$?
+  start_rc=blocked
+fi
+starts=0
+[[ -f "$MOCK_START_LOG" ]] && starts=$(wc -l < "$MOCK_START_LOG")
+printf 'policy_rc=%s start_rc=%s starts=%s\n' "$policy_rc" "$start_rc" "$starts"
+'''
+            result = subprocess.run(
+                ["bash", "-c", command, "python-mock-policy", str(SCRIPT), str(temporary)],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            return result
+
+    def test_python_mock_policy_accepts_exact_inspection_and_allows_start(self) -> None:
+        result = self._run_python_mock_policy_fixture()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("policy_rc=0 start_rc=0 starts=1", result.stdout)
+
+    def test_python_mock_policy_blocks_negative_inspection_variants(self) -> None:
+        cases = {
+            "extra-tmpfs-destination": {
+                "tmpfs": "/tmp|rw,nosuid,nodev,noexec,size=64m,mode=1777,rprivate,tmpcopyup\n/run|rw,nosuid,nodev,noexec,size=16m,mode=1777,rprivate,tmpcopyup",
+            },
+            "extra-tmpfs-option": {
+                "tmpfs": "/tmp|rw,nosuid,nodev,noexec,size=64m,mode=1777,rprivate,tmpcopyup,exec",
+            },
+            "unexpected-effective-mount": {
+                "mounts": "1",
+                "mount_layout": "bind|/workspace|rw||true|[]",
+            },
+            "unexpected-bind": {"binds": "1"},
+            "unexpected-volume": {"volumes": "1"},
+            "unexpected-secret": {"secret_state": "present"},
+            "unexpected-environment-key": {
+                "env_keys": "container\nPATH\nPYTHONDONTWRITEBYTECODE\nPYTHON_SHA256\nPYTHON_VERSION\nUNREVIEWED_KEY",
+            },
+        }
+        for name, overrides in cases.items():
+            with self.subTest(name=name):
+                result = self._run_python_mock_policy_fixture(**overrides)
+                self.assertEqual(result.returncode, 0, (name, result.stderr))
+                self.assertRegex(result.stdout, r"policy_rc=[1-9][0-9]* start_rc=blocked starts=0")
 
     def test_native_negative_checks_reject_timeout_and_unrelated_exit(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -365,6 +550,234 @@ printf 'create_rc=%s owned=%s reserved=%s statekit_count=%s native_count=%s\n' \
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(
             "create_rc=1 owned=1 reserved=1 statekit_count=1 native_count=1",
+            result.stdout,
+        )
+
+    def test_alter_unreserved_target_has_zero_dispatch(self) -> None:
+        command = r'''
+script_path="$1"
+work_dir="$2"
+set --
+source "$script_path"
+set +e
+WORK_DIR="$work_dir"
+ROOT_CLIENT_SECRET=root-secret
+DB_HOST=mysql-host
+ALTER_DB=statekit_r93l_1_2
+ALTER_DB_RESERVED=0
+ALTER_DB_OWNED=0
+ROOT_PASSWORD=root-marker
+LIVE_PASSWORD=live-marker
+BAD_PASSWORD=bad-marker
+CALL_COUNT=0
+statekit_call() {
+  CALL_COUNT=$((CALL_COUNT + 1))
+  return 0
+}
+if check_statekit_alter_explicit; then
+  alter_rc=0
+else
+  alter_rc=$?
+fi
+printf 'alter_rc=%s call_count=%s note=%s' "$alter_rc" "$CALL_COUNT" "$SETUP_NOTE"
+'''
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            result = subprocess.run(
+                ["bash", "-c", command, "alter-unreserved", str(SCRIPT), str(Path(temporary_directory))],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "alter_rc=1 call_count=0 note=alter-absence-reservation-required",
+            result.stdout,
+        )
+
+    def test_alter_interrupted_seed_keeps_cleanup_ownership(self) -> None:
+        command = r'''
+script_path="$1"
+work_dir="$2"
+set --
+source "$script_path"
+set +e
+WORK_DIR="$work_dir"
+ROOT_CLIENT_SECRET=root-secret
+DB_HOST=mysql-host
+ALTER_DB=statekit_r93l_1_2
+ALTER_DB_RESERVED=1
+ALTER_DB_OWNED=0
+ROOT_PASSWORD=root-marker
+LIVE_PASSWORD=live-marker
+BAD_PASSWORD=bad-marker
+NATIVE_COUNT=0
+native_mysql_as_user() {
+  NATIVE_COUNT=$((NATIVE_COUNT + 1))
+  : > "$6"
+  : > "$7"
+  if (( NATIVE_COUNT == 2 )); then
+    printf '%s' '1' > "$6"
+  fi
+  if (( NATIVE_COUNT == 1 )); then
+    return 124
+  fi
+  return 0
+}
+if check_native_alter_create_seed; then
+  seed_rc=0
+else
+  seed_rc=$?
+fi
+printf 'seed_rc=%s owned=%s reserved=%s native_count=%s note=%s' \
+  "$seed_rc" "$ALTER_DB_OWNED" "$ALTER_DB_RESERVED" "$NATIVE_COUNT" "$SETUP_NOTE"
+'''
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            result = subprocess.run(
+                ["bash", "-c", command, "alter-interrupted-seed", str(SCRIPT), str(Path(temporary_directory))],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "seed_rc=1 owned=1 reserved=1 native_count=2 note=alter-create-or-seed-failed",
+            result.stdout,
+        )
+
+    def test_alter_reserved_cleanup_drop_failure_propagates(self) -> None:
+        command = r'''
+script_path="$1"
+work_dir="$2"
+set --
+source "$script_path"
+set +e
+WORK_DIR="$work_dir"
+ROOT_CLIENT_SECRET=root-secret
+DB_HOST=mysql-host
+ALTER_DB=statekit_r93l_1_2
+ALTER_DB_RESERVED=1
+ALTER_DB_OWNED=1
+ROOT_PASSWORD=root-marker
+LIVE_PASSWORD=live-marker
+BAD_PASSWORD=bad-marker
+native_mysql_as_user() {
+  : > "$6"
+  : > "$7"
+  if [[ "$5" == DROP* ]]; then
+    return 9
+  fi
+  return 0
+}
+if cleanup_alter_database; then
+  cleanup_rc=0
+else
+  cleanup_rc=$?
+fi
+printf 'cleanup_rc=%s cleanup_failed=%s reserved=%s owned=%s note=%s' \
+  "$cleanup_rc" "$CLEANUP_FAILED" "$ALTER_DB_RESERVED" "$ALTER_DB_OWNED" "$CLEANUP_NOTE"
+'''
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            result = subprocess.run(
+                ["bash", "-c", command, "alter-drop-failure", str(SCRIPT), str(Path(temporary_directory))],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "cleanup_rc=1 cleanup_failed=1 reserved=1 owned=1 note=alter-cleanup-drop-failed",
+            result.stdout,
+        )
+
+    def test_alter_reserved_cleanup_uncertain_absence_fails_closed(self) -> None:
+        command = r'''
+script_path="$1"
+work_dir="$2"
+set --
+source "$script_path"
+set +e
+WORK_DIR="$work_dir"
+ROOT_CLIENT_SECRET=root-secret
+DB_HOST=mysql-host
+ALTER_DB=statekit_r93l_1_2
+ALTER_DB_RESERVED=1
+ALTER_DB_OWNED=1
+ROOT_PASSWORD=root-marker
+LIVE_PASSWORD=live-marker
+BAD_PASSWORD=bad-marker
+native_mysql_as_user() {
+  : > "$6"
+  : > "$7"
+  if [[ "$5" != DROP* ]]; then
+    printf '%s' 'uncertain-result' > "$6"
+  fi
+  return 0
+}
+if cleanup_alter_database; then
+  cleanup_rc=0
+else
+  cleanup_rc=$?
+fi
+printf 'cleanup_rc=%s cleanup_failed=%s reserved=%s owned=%s note=%s' \
+  "$cleanup_rc" "$CLEANUP_FAILED" "$ALTER_DB_RESERVED" "$ALTER_DB_OWNED" "$CLEANUP_NOTE"
+'''
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            result = subprocess.run(
+                ["bash", "-c", command, "alter-uncertain-absence", str(SCRIPT), str(Path(temporary_directory))],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "cleanup_rc=1 cleanup_failed=1 reserved=1 owned=1 note=alter-cleanup-absence-uncertain",
+            result.stdout,
+        )
+
+    def test_alter_cleanup_cancellation_fails_closed(self) -> None:
+        command = r'''
+script_path="$1"
+work_dir="$2"
+set --
+source "$script_path"
+set +e
+WORK_DIR="$work_dir"
+ROOT_CLIENT_SECRET=root-secret
+DB_HOST=mysql-host
+ALTER_DB=statekit_r93l_1_2
+ALTER_DB_RESERVED=1
+ALTER_DB_OWNED=1
+ROOT_PASSWORD=root-marker
+LIVE_PASSWORD=live-marker
+BAD_PASSWORD=bad-marker
+native_mysql_as_user() {
+  : > "$6"
+  : > "$7"
+  return 130
+}
+if cleanup_alter_database; then
+  cleanup_rc=0
+else
+  cleanup_rc=$?
+fi
+printf 'cleanup_rc=%s cleanup_failed=%s reserved=%s owned=%s note=%s' \
+  "$cleanup_rc" "$CLEANUP_FAILED" "$ALTER_DB_RESERVED" "$ALTER_DB_OWNED" "$CLEANUP_NOTE"
+'''
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            result = subprocess.run(
+                ["bash", "-c", command, "alter-cancellation", str(SCRIPT), str(Path(temporary_directory))],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "cleanup_rc=1 cleanup_failed=1 reserved=1 owned=1 note=alter-cleanup-drop-failed",
             result.stdout,
         )
 
@@ -576,8 +989,8 @@ printf 'duplicate_rc=%s unknown_rc=%s duplicate_status=%s missing_status=%s subs
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("status: fail", report)
             self.assertIn("execution: incomplete", report)
-            self.assertIn("cases_total: 23", report)
-            self.assertIn("cases_skipped: 22", report)
+            self.assertIn("cases_total: 36", report)
+            self.assertIn("cases_skipped: 35", report)
 
     def test_stale_or_unwritable_report_is_not_accepted(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

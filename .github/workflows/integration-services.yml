@@ -1,7 +1,7 @@
 name: integration-services
 
 # E5.2 required live MySQL gate, preserving every E5.1 read-only/catalog/plugin
-# case and adding the R9.3j database lifecycle cases. This job is intentionally
+# case and adding the R9.3j database lifecycle plus R9.3l alter_db cases. This job is intentionally
 # separate from the existing mock/fake-Runner integration workflows and runs
 # on the exact PR merge candidate or pushed commit with read-only token
 # permissions.
@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   mysql-live:
-    name: e5.2 live mysql read-only/catalog/plugin/database-lifecycle
+    name: e5.2 live mysql read-only/catalog/plugin/database-lifecycle/alter-db
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -46,18 +46,143 @@ jobs:
           PYTHON_CHECK_IMAGE: docker.io/library/python:3.14.7@sha256:be8ccd085666c34273c9dc5607c9842f8b2e3116128aae45148ce164c07ce09d
         run: |
           set -euo pipefail
-          deps_image='statekit-e51-go-deps:ci'
-          build_image='statekit-e51-go-build:ci'
-          python_image='statekit-e51-python-check:ci'
-          fetch_network='statekit-e51-fetch-net'
-          extract_container='statekit-e51-build-extract'
-          python_container='statekit-e51-python-run'
+          # The MySQL harness owns the fail-closed inspection of this mock
+          # container. It reads only policy fields and environment key names.
+          source tests/live/mysql/run.sh
+          run_suffix="${GITHUB_RUN_ID:-manual}-${GITHUB_RUN_ATTEMPT:-0}"
+          if [[ ! "$run_suffix" =~ ^[[:alnum:]_.-]+$ ]]; then
+            printf '%s\n' 'invalid workflow resource suffix' >&2
+            exit 2
+          fi
+          deps_image="statekit-e51-go-deps-${run_suffix}:ci"
+          build_image="statekit-e51-go-build-${run_suffix}:ci"
+          python_image="statekit-e51-python-check-${run_suffix}:ci"
+          fetch_network="statekit-e51-fetch-net-${run_suffix}"
+          extract_container="statekit-e51-build-extract-${run_suffix}"
+          python_container="statekit-e51-python-run-${run_suffix}"
+          cleanup_timeout_seconds=30
+          termination_grace_seconds=5
+          fetch_network_reserved=0
+          fetch_network_owned=0
+          deps_image_reserved=0
+          deps_image_owned=0
+          build_image_reserved=0
+          build_image_owned=0
+          python_image_reserved=0
+          python_image_owned=0
+          extract_container_reserved=0
+          extract_container_owned=0
+          python_container_reserved=0
+          python_container_owned=0
+          cleanup_failed=0
+
+          bounded_timeout() {
+            timeout --signal=TERM --kill-after="${termination_grace_seconds}s" "$@"
+          }
+
+          resource_exists() {
+            local kind="$1" reference="$2"
+            case "$kind" in
+              container) bounded_timeout "$cleanup_timeout_seconds" podman container exists "$reference" ;;
+              network) bounded_timeout "$cleanup_timeout_seconds" podman network exists "$reference" ;;
+              image) bounded_timeout "$cleanup_timeout_seconds" podman image exists "$reference" ;;
+              *) return 2 ;;
+            esac
+          }
+
+          resource_is_absent() {
+            local kind="$1" reference="$2" rc=0
+            if resource_exists "$kind" "$reference" >/dev/null 2>&1; then
+              return 1
+            else
+              rc=$?
+            fi
+            [[ "$rc" == 1 ]]
+          }
+
+          reserve_resource_name() {
+            local kind="$1" reference="$2"
+            if ! resource_is_absent "$kind" "$reference"; then
+              printf 'workflow resource name unavailable: %s\n' "$kind" >&2
+              return 1
+            fi
+          }
+
+          mark_cleanup_failure() {
+            cleanup_failed=1
+          }
+
+          cleanup_container() {
+            local name="$1" owned="$2" state=0 stop_rc=0 rm_rc=0
+            (( owned == 1 )) || return 0
+            if resource_exists container "$name" >/dev/null 2>&1; then
+              bounded_timeout "$cleanup_timeout_seconds" podman stop --time 5 "$name" >/dev/null 2>&1 || stop_rc=$?
+              if (( stop_rc != 0 )); then
+                bounded_timeout "$cleanup_timeout_seconds" podman kill "$name" >/dev/null 2>&1 || true
+              fi
+              bounded_timeout "$cleanup_timeout_seconds" podman rm --force "$name" >/dev/null 2>&1 || rm_rc=$?
+              (( rm_rc == 0 )) || mark_cleanup_failure
+            else
+              state=$?
+              (( state == 1 )) || mark_cleanup_failure
+            fi
+            if resource_exists container "$name" >/dev/null 2>&1; then
+              mark_cleanup_failure
+            else
+              state=$?
+              (( state == 1 )) || mark_cleanup_failure
+            fi
+          }
+
+          cleanup_network() {
+            local state=0 rm_rc=0
+            (( fetch_network_owned == 1 )) || return 0
+            if resource_exists network "$fetch_network" >/dev/null 2>&1; then
+              bounded_timeout "$cleanup_timeout_seconds" podman network rm "$fetch_network" >/dev/null 2>&1 || rm_rc=$?
+              (( rm_rc == 0 )) || mark_cleanup_failure
+            else
+              state=$?
+              (( state == 1 )) || mark_cleanup_failure
+            fi
+            if resource_exists network "$fetch_network" >/dev/null 2>&1; then
+              mark_cleanup_failure
+            else
+              state=$?
+              (( state == 1 )) || mark_cleanup_failure
+            fi
+          }
+
+          cleanup_image() {
+            local image="$1" owned="$2" state=0 rm_rc=0
+            (( owned == 1 )) || return 0
+            if resource_exists image "$image" >/dev/null 2>&1; then
+              bounded_timeout "$cleanup_timeout_seconds" podman rmi --force "$image" >/dev/null 2>&1 || rm_rc=$?
+              (( rm_rc == 0 )) || mark_cleanup_failure
+            else
+              state=$?
+              (( state == 1 )) || mark_cleanup_failure
+            fi
+            if resource_exists image "$image" >/dev/null 2>&1; then
+              mark_cleanup_failure
+            else
+              state=$?
+              (( state == 1 )) || mark_cleanup_failure
+            fi
+          }
+
           cleanup_isolated_resources() {
             local rc=$?
             trap '' INT TERM
-            podman rm --force "$extract_container" "$python_container" >/dev/null 2>&1 || true
-            podman network rm "$fetch_network" >/dev/null 2>&1 || true
-            podman rmi --force "$build_image" "$deps_image" "$python_image" >/dev/null 2>&1 || true
+            set +e
+            cleanup_container "$python_container" "$python_container_owned"
+            cleanup_container "$extract_container" "$extract_container_owned"
+            cleanup_network
+            cleanup_image "$build_image" "$build_image_owned"
+            cleanup_image "$deps_image" "$deps_image_owned"
+            cleanup_image "$python_image" "$python_image_owned"
+            if (( cleanup_failed == 1 )); then
+              rc=1
+            fi
             trap - EXIT
             exit "$rc"
           }
@@ -68,23 +193,41 @@ jobs:
           # enabled phase; all compile and test execution is network-denied.
           podman pull --quiet "$GO_TOOLCHAIN_IMAGE"
           podman pull --quiet "$PYTHON_CHECK_IMAGE"
+          reserve_resource_name network "$fetch_network"
+          fetch_network_reserved=1
+          fetch_network_owned=1
           podman network create "$fetch_network" >/dev/null
+          reserve_resource_name image "$deps_image"
+          deps_image_reserved=1
+          deps_image_owned=1
           podman build --pull=never --isolation=oci --network="$fetch_network" \
             --file tests/live/mysql/Containerfile.go-deps \
             --tag "$deps_image" .
+          reserve_resource_name image "$build_image"
+          build_image_reserved=1
+          build_image_owned=1
           podman build --pull=never --isolation=oci --network=none \
             --file tests/live/mysql/Containerfile.go-build \
             --build-arg GO_DEPS_IMAGE="$deps_image" \
             --tag "$build_image" .
 
           mkdir -p dist
+          reserve_resource_name container "$extract_container"
+          extract_container_reserved=1
+          extract_container_owned=1
           podman create --name "$extract_container" "$build_image" >/dev/null
           podman cp "$extract_container:/out/statekit" dist/statekit
           chmod 755 dist/statekit
 
+          reserve_resource_name image "$python_image"
+          python_image_reserved=1
+          python_image_owned=1
           podman build --pull=never --isolation=oci --network=none \
             --file tests/live/mysql/Containerfile.python-check \
             --tag "$python_image" .
+          reserve_resource_name container "$python_container"
+          python_container_reserved=1
+          python_container_owned=1
           podman create --name "$python_container" \
             --network=none \
             --read-only \
@@ -93,6 +236,11 @@ jobs:
             --cap-drop ALL --security-opt no-new-privileges \
             --ipc private --pid private --uts private \
             --user 65532:65532 "$python_image" >/dev/null
+          RUNTIME=podman
+          if ! verify_python_mock_container_policy "$python_container"; then
+            printf '%s\n' 'python check container effective policy failed before start' >&2
+            exit 1
+          fi
           podman start --attach "$python_container"
 
       - name: create value-free live report directory

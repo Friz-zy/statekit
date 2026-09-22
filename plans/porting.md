@@ -2246,6 +2246,65 @@ counts remain unchanged and `external_ci_status` remains
 | `R9.3j` | `mysql.db_create`/`mysql.db_remove`, source-parity tests, registry/CLI registration, and differential report update | `backend-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | local fake-Runner/static evidence is recorded; no database driver, no local live MySQL, no commit; external live behavior remains behind E5.2 and `pending_external_ci` |
 | `E5.2` | E5.1's 14 read-only/catalog/plugin cases plus 9 R9.3j lifecycle cases in the existing rootless Podman harness; value-free report and always-cleanup boundary | `devops-platform-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | implementation/workflow is prepared; exact case inventory is 23 with zero skips required; GitHub execution and live 23/23 evidence are pending and not claimed |
 
+##### 2026-09-22 R9.3l MySQL `alter_db` — implementation complete; external live CI pending
+
+R9.3l ports the pinned Salt `mysql.alter_db` contract from the locked
+`mysql.py`, catalog, and unit vectors. The public function is registered as
+`mysql.alter_db` and is available through the direct runtime, exec registry,
+and CLI argument decoder. It obtains `character_set` and `collate` defaults
+through the existing `mysql.db_get` fixed catalog before issuing one
+`ALTER DATABASE` statement through the shared native CLI Runner. Explicit
+non-empty options preserve the source's bare-token SQL shape; nil and empty
+options preserve Salt's truthiness fallback to the catalog values. Database
+identifiers use the validated, backtick-doubled path, and raw charset/collation
+positions accept only value-free, identifier-like ASCII tokens.
+
+The transport remains driver-free and shell-free: argv, stdout, stderr,
+cancellation, 30-second timeout, 4 MiB output caps, MYSQL_PWD-only connection
+transport, and complete phase redaction are inherited from the shared Runner.
+The compatibility and safety surface is explicit: source-result vectors cover
+representative truthy/falsy `cursor.execute` returns, but the native CLI cannot
+expose that DB-API value or an exact affected-row predicate. StateKit therefore
+maps exit zero to `true` and a server-rejected/nonzero exit to `false`; this is
+the documented CLI ceiling, not a claim of exact cursor-result parity. A
+successful rowless `db_get` is `{}`: two explicit non-empty options may proceed
+like the source's default-bypassing expressions, while omitted/empty or partial
+options fail closed when a default is absent. A nonzero `db_get` is `[]` and
+never authorizes ALTER, including with two explicit options. Runner,
+cancellation, output-limit, invalid-auth/connection, identifier, and option
+failures remain value-free errors or the pinned catalog compatibility shape as
+applicable, with no unsafe mutation after failed preflight.
+
+The local stateful mock also performs post-alter `db_get` and fixed seed-row
+readback: accepted ALTER changes only modeled charset/collation metadata,
+rejected ALTER preserves the metadata, and the seed remains unchanged. This is
+mock evidence; it does not replace the pending native MySQL observer.
+
+The exact evidence boundary is:
+
+* **Local mock/static evidence (completed in conforming rootless Podman):**
+  direct source-parity vectors, registry tests, CLI mock tests, R9 report
+  generation, coverage regeneration, Go test/race/vet checks, shell/Python/YAML
+  checks, and deterministic live-harness orchestration checks. These checks do
+  not start MySQL and do not claim live Salt parity.
+* **External live evidence (pending):** the existing GitHub E5.2 workflow must
+  preserve the prior 23 cases and execute 13 additional R9.3l cases (36 total,
+  zero skips): reserve and create/seed a disposable database, independently
+  observe defaults and explicit/default-preserving charset/collation changes
+  with the native client, read back with native client and StateKit `db_get`,
+  exercise invalid auth/connection/identifier/option negatives, verify the
+  seeded row after each successful alter/readback, and verify cleanup. The
+  native CLI can validate SQL/metadata/seed outcomes but cannot observe the
+  pinned MySQLdb `cursor.execute` return predicate exactly. No local live
+  MySQL is used and no GitHub run success is recorded; status is exactly
+  `pending_external_ci`.
+* The SQLite job and SQLite tests are outside this overlay and are not changed.
+
+| Phase | Scope | Implementation executor role | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `R9.3l` | `mysql.alter_db`, source-result/CLI-limit vectors, missing/failed-catalog and explicit/partial-option tests, stateful post-alter/readback/seed-preservation mock, direct/registry/CLI bounds/redaction tests, registration, coverage, and differential report update | `backend-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | current worktree contains the implementation and local Podman mock/static evidence; no database driver, no local live MySQL, no commit; external live behavior remains `pending_external_ci` |
+| `E5.2` | Preserve the prior 23 MySQL cases and add 13 R9.3l create/seed/observe/alter/read-back/negative cases; exact 36-case inventory, value-free report, bounded rootless Podman cleanup | `devops-platform-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | harness extension is prepared, but native execution and exact cursor-result observation remain external; zero skips and live 36/36 evidence remain pending in GitHub; no local live MySQL is claimed |
+
 ##### 2026-09-21 R9.3k SQLite catalog family — implementation ready; live CI pending
 
 R9.3k ports the public Salt `sqlite3` functions `version`, `sqlite_version`,
@@ -3492,7 +3551,7 @@ R8.1 update: after `e6e1ccd` every GOOS in {linux, darwin, windows, freebsd} car
 | [ ] | PTD-EXEC-0632 | `mount.swaps` | actionable | software-engineer-senior | catalog `docs/catalog/exec/mount.yaml#swaps`; Salt `saltstack/salt/modules/mount.py#swaps`; tests saltstack/tests/pytests/unit/modules/test_mount.py | `modules/exec/mount` (extend); unassigned-next-round; round assignment required before implementation; dependencies: cmd.run, cmd.run_all, cmd.run_stdout, disk.blkid, file.append, file.mkdir, file.touch, guestfs.mount, guestfs.umount, qemu_nbd.clear, qemu_nbd.init | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
 | [ ] | PTD-EXEC-0633 | `mount.vfstab` | actionable | software-engineer-senior | catalog `docs/catalog/exec/mount.yaml#vfstab`; Salt `saltstack/salt/modules/mount.py#vfstab`; tests saltstack/tests/pytests/unit/modules/test_mount.py | `modules/exec/mount` (extend); unassigned-next-round; round assignment required before implementation; dependencies: cmd.run_stdout, disk.blkid | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
 | [ ] | PTD-EXEC-0634 | `mount.write_mount_cache` | actionable | software-engineer-senior | catalog `docs/catalog/exec/mount.yaml#write_mount_cache`; Salt `saltstack/salt/modules/mount.py#write_mount_cache`; tests saltstack/tests/pytests/unit/modules/test_mount.py | `modules/exec/mount` (extend); unassigned-next-round; round assignment required before implementation; dependencies: cmd.run, cmd.run_all, cmd.run_stdout, disk.blkid, file.append, file.mkdir, file.touch, guestfs.mount, guestfs.umount, qemu_nbd.clear, qemu_nbd.init | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
-| [ ] | PTD-EXEC-0635 | `mysql.alter_db` | actionable | software-engineer-senior | catalog `docs/catalog/exec/mysql.yaml#alter_db`; Salt `saltstack/salt/modules/mysql.py#alter_db`; tests saltstack/tests/pytests/unit/modules/test_mysql.py | `modules/exec/mysql` (planned); R9 / E5 services dependency; dependencies: config.option, cp.cache_file | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
+| [x] | PTD-EXEC-0635 | `mysql.alter_db` | implemented | backend-engineer-senior | catalog `docs/catalog/exec/mysql.yaml#alter_db`; Salt `saltstack/salt/modules/mysql.py#alter_db`; tests saltstack/tests/pytests/unit/modules/test_mysql.py | `modules/exec/mysql/mysql.go#alterDbFunc`; R9.3l; dependencies: config.option, cp.cache_file | direct/registry/CLI source-parity vectors, bounded shell-free Runner, and mock-only differential report; external MySQL live validation remains `pending_external_ci` |
 | [ ] | PTD-EXEC-0636 | `mysql.db_check` | actionable | software-engineer-senior | catalog `docs/catalog/exec/mysql.yaml#db_check`; Salt `saltstack/salt/modules/mysql.py#db_check`; tests saltstack/tests/pytests/unit/modules/test_mysql.py | `modules/exec/mysql` (planned); R9 / E5 services dependency; dependencies: config.option, cp.cache_file | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
 | [ ] | PTD-EXEC-0637 | `mysql.db_create` | actionable | software-engineer-senior | catalog `docs/catalog/exec/mysql.yaml#db_create`; Salt `saltstack/salt/modules/mysql.py#db_create`; tests saltstack/tests/pytests/unit/modules/test_mysql.py | `modules/exec/mysql` (planned); R9 / E5 services dependency; dependencies: config.option, cp.cache_file | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
 | [ ] | PTD-EXEC-0638 | `mysql.db_exists` | actionable | software-engineer-senior | catalog `docs/catalog/exec/mysql.yaml#db_exists`; Salt `saltstack/salt/modules/mysql.py#db_exists`; tests saltstack/tests/pytests/unit/modules/test_mysql.py | `modules/exec/mysql` (planned); R9 / E5 services dependency; dependencies: config.option, cp.cache_file | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
@@ -5897,7 +5956,7 @@ R8.1 update: after `e6e1ccd` every GOOS in {linux, darwin, windows, freebsd} car
 | [ ] | PTD-TEST-0667 | `TestPortingDebtExecMountSwapsCanonicalRegistrationPTD_EXEC_0632` | actionable | qa-engineer-senior | `tests/porting_debt_test.go` (planned) | PTD-EXEC-0632 | contract/registration | `saltstack/salt/modules/mount.py#swaps`; tests saltstack/tests/pytests/unit/modules/test_mount.py | For `mount.swaps`, assert canonical registration and rejection of superseded aliases; assert catalog-declared parameters/defaults from `docs/catalog/exec/mount.yaml#swaps` against source signature(s) `saltstack/salt/modules/mount.py#swaps`; execute mapped Salt fixture(s) saltstack/tests/pytests/unit/modules/test_mount.py; assert the source-defined success and failure return/error shapes, declared side effects, and no mutation after validation or execution error. |
 | [ ] | PTD-TEST-0668 | `TestPortingDebtExecMountVfstabCanonicalRegistrationPTD_EXEC_0633` | actionable | qa-engineer-senior | `tests/porting_debt_test.go` (planned) | PTD-EXEC-0633 | contract/registration | `saltstack/salt/modules/mount.py#vfstab`; tests saltstack/tests/pytests/unit/modules/test_mount.py | For `mount.vfstab`, assert canonical registration and rejection of superseded aliases; assert catalog-declared parameters/defaults from `docs/catalog/exec/mount.yaml#vfstab` against source signature(s) `saltstack/salt/modules/mount.py#vfstab`; execute mapped Salt fixture(s) saltstack/tests/pytests/unit/modules/test_mount.py; assert the source-defined success and failure return/error shapes, declared side effects, and no mutation after validation or execution error. |
 | [ ] | PTD-TEST-0669 | `TestPortingDebtExecMountWriteMountCacheCanonicalRegistrationPTD_EXEC_0634` | actionable | qa-engineer-senior | `tests/porting_debt_test.go` (planned) | PTD-EXEC-0634 | contract/registration | `saltstack/salt/modules/mount.py#write_mount_cache`; tests saltstack/tests/pytests/unit/modules/test_mount.py | For `mount.write_mount_cache`, assert canonical registration and rejection of superseded aliases; assert catalog-declared parameters/defaults from `docs/catalog/exec/mount.yaml#write_mount_cache` against source signature(s) `saltstack/salt/modules/mount.py#write_mount_cache`; execute mapped Salt fixture(s) saltstack/tests/pytests/unit/modules/test_mount.py; assert the source-defined success and failure return/error shapes, declared side effects, and no mutation after validation or execution error. |
-| [ ] | PTD-TEST-0670 | `TestPortingDebtExecMysqlAlterDbCanonicalRegistrationPTD_EXEC_0635` | actionable | qa-engineer-senior | `tests/porting_debt_test.go` (planned) | PTD-EXEC-0635 | contract/registration | `saltstack/salt/modules/mysql.py#alter_db`; tests saltstack/tests/pytests/unit/modules/test_mysql.py | For `mysql.alter_db`, assert canonical registration and rejection of superseded aliases; assert catalog-declared parameters/defaults from `docs/catalog/exec/mysql.yaml#alter_db` against source signature(s) `saltstack/salt/modules/mysql.py#alter_db`; execute mapped Salt fixture(s) saltstack/tests/pytests/unit/modules/test_mysql.py; assert the source-defined success and failure return/error shapes, declared side effects, and no mutation after validation or execution error. |
+| [x] | PTD-TEST-0670 | `TestPortingDebtExecMysqlAlterDbCanonicalRegistrationPTD_EXEC_0635` | implemented | qa-engineer-senior | `modules/exec/mysql/mysql_test.go`, `internal/cli/mysql_cli_test.go`, `tests/differential/r9_test.go` | PTD-EXEC-0635 | contract/registration | `saltstack/salt/modules/mysql.py#alter_db`; tests `saltstack/tests/pytests/unit/modules/test_mysql.py` | R9.3l direct/registry/CLI vectors cover db_get-default-before-ALTER flow, explicit and empty-option defaults, quoted identifiers, true/false/[] shapes, invalid inputs, cancellation, bounds, timeout/output failure, and redaction; live behavior remains `pending_external_ci`. |
 | [ ] | PTD-TEST-0671 | `TestPortingDebtExecMysqlDbCheckCanonicalRegistrationPTD_EXEC_0636` | actionable | qa-engineer-senior | `tests/porting_debt_test.go` (planned) | PTD-EXEC-0636 | contract/registration | `saltstack/salt/modules/mysql.py#db_check`; tests saltstack/tests/pytests/unit/modules/test_mysql.py | For `mysql.db_check`, assert canonical registration and rejection of superseded aliases; assert catalog-declared parameters/defaults from `docs/catalog/exec/mysql.yaml#db_check` against source signature(s) `saltstack/salt/modules/mysql.py#db_check`; execute mapped Salt fixture(s) saltstack/tests/pytests/unit/modules/test_mysql.py; assert the source-defined success and failure return/error shapes, declared side effects, and no mutation after validation or execution error. |
 | [ ] | PTD-TEST-0672 | `TestPortingDebtExecMysqlDbCreateCanonicalRegistrationPTD_EXEC_0637` | actionable | qa-engineer-senior | `tests/porting_debt_test.go` (planned) | PTD-EXEC-0637 | contract/registration | `saltstack/salt/modules/mysql.py#db_create`; tests saltstack/tests/pytests/unit/modules/test_mysql.py | For `mysql.db_create`, assert canonical registration and rejection of superseded aliases; assert catalog-declared parameters/defaults from `docs/catalog/exec/mysql.yaml#db_create` against source signature(s) `saltstack/salt/modules/mysql.py#db_create`; execute mapped Salt fixture(s) saltstack/tests/pytests/unit/modules/test_mysql.py; assert the source-defined success and failure return/error shapes, declared side effects, and no mutation after validation or execution error. |
 | [ ] | PTD-TEST-0673 | `TestPortingDebtExecMysqlDbExistsCanonicalRegistrationPTD_EXEC_0638` | actionable | qa-engineer-senior | `tests/porting_debt_test.go` (planned) | PTD-EXEC-0638 | contract/registration | `saltstack/salt/modules/mysql.py#db_exists`; tests saltstack/tests/pytests/unit/modules/test_mysql.py | For `mysql.db_exists`, assert canonical registration and rejection of superseded aliases; assert catalog-declared parameters/defaults from `docs/catalog/exec/mysql.yaml#db_exists` against source signature(s) `saltstack/salt/modules/mysql.py#db_exists`; execute mapped Salt fixture(s) saltstack/tests/pytests/unit/modules/test_mysql.py; assert the source-defined success and failure return/error shapes, declared side effects, and no mutation after validation or execution error. |

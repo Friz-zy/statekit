@@ -17,7 +17,7 @@ Companion to `plans/init.md` (§24–§28). Defines the concrete CI/CD implement
 | Unit (Go) | parsers, precedence, outputters, exit codes, provider resolution, file algorithms, fixture loader | GH runner | every push/PR |
 | Smoke integration | binary boots; `version`, `--list`, `facts`, `test.echo`, `test.nop` | Docker (2 distros) | every push/PR |
 | Integration matrix | real-case fixtures per module family on each target distro | Docker matrix | push to `main`, path-filtered PRs |
-| E5.2 live service gate | workflow-ready authenticated disposable MySQL 8.4; StateKit E5.1 read-only/catalog/plugin calls plus lifecycle mutations and native-client postconditions | private rootless Podman network | every PR event, `main`, manual, nightly; live execution `pending_external_ci` |
+| E5.2 live service gate | workflow-ready authenticated disposable MySQL 8.4; StateKit E5.1 read-only/catalog/plugin calls plus R9.3j lifecycle and R9.3l alter/create/seed/read-back cases with native-client postconditions | private rootless Podman network | every PR event, `main`, manual, nightly; live execution `pending_external_ci` |
 | E5.3 live SQLite file gate | intended production `statekit`/native-observer workflow controls for a disposable actual SQLite file; exact value-free inventory | protected workflow with an inspected isolated Podman runner and owned temporary file | every PR event, `main`, manual, nightly; live execution `pending_external_ci` |
 | Differential vs Salt | identical scenarios via `salt-call --local` vs `statekit`, normalized comparison | Docker twins | nightly + label `differential` |
 | VM suite | systemd units, mounts, firewall, kernel-level cases containers cannot cover faithfully | QEMU on GH runner | nightly after Phase 3 |
@@ -135,11 +135,17 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
 ### `integration-services.yml` — E5.2 live MySQL gate (workflow-ready; external execution pending)
 
 - **Current state:** implementation files and workflow are ready. The local
-  mock/static gate covers the 23-case inventory and deterministic lifecycle,
-  validation, cleanup, and report-integrity fault injections. No live MySQL
-  GitHub execution has run; status is `pending_external_ci`, and no live 23/23
+  mock/static gate covers the exact 36-case inventory: the prior 23 cases plus
+  13 R9.3l create/seed/observe/alter/read-back/negative cases, with deterministic
+  lifecycle, validation, cleanup, and report-integrity fault injections. No live
+  MySQL GitHub execution has run; status is `pending_external_ci`, and no live 36/36
   result is claimed in this ledger. The user will validate the external run
-  after synchronization.
+  after synchronization. The local backend contract additionally has explicit
+  source-result vectors for representative truthy/falsy `cursor.execute`
+  returns, separate native process-exit vectors, failed-preflight no-mutation
+  cases, and a stateful post-alter/readback mock that verifies seed
+  preservation. The native CLI limitation is explicit: it cannot expose the
+  exact MySQLdb cursor return predicate.
   The independent backend and security gates requested changes on the local
   sandbox/trust boundary; they are not approvals.
 
@@ -175,17 +181,25 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
   images with explicit OCI isolation and `--network=none`, read-only roots, tmpfs-only scratch space,
   bounded resources, and no secrets. A hosted runner that cannot prove this
   preflight must not run a direct host build or test.
-- **External cases:** 23 exact cases are required: all 14 E5.1 cases plus the
-  9 lifecycle cases for reserved absence, StateKit create, repeat-create false,
-  native created postcondition, StateKit remove, native removed postcondition,
-  invalid identifier, authentication negative, and connection negative. Zero
+- **External cases:** 36 exact cases are required: the prior 14 E5.1 cases,
+  9 R9.3j lifecycle cases, and 13 R9.3l cases for reserved absence, native
+  create/seed, independent default observation, explicit StateKit ALTER,
+  native and StateKit read-back, empty-option default preservation, invalid
+  authentication/connection/identifier/option negatives. The prior 23 case IDs
+  and behavior are preserved. Zero
   cases or any skipped case must fail the external gate. Native negative cases
   require the expected MySQL error marker and must reject timeout, runtime,
   setup, and unrelated exit paths. Lifecycle CREATE/REMOVE dispatch is gated
   by the successful absence reservation; ownership is established before each
   CREATE dispatch, ambiguous CREATE is reconciled within that reservation, and
-  normal REMOVE requires ownership. The disposable database is always dropped
-  and independently checked absent; cleanup uncertainty fails the report.
+  normal REMOVE requires ownership. The lifecycle and alter disposable databases
+  are always dropped and independently checked absent; cleanup uncertainty fails
+  the report. Alter cases use a generated validated database name and a seeded
+  table, and never mutate the shared seed database. Each successful
+  alter/readback pair must also re-check the seeded row; this proves
+  post-alter seed preservation, but does not prove the unobservable MySQLdb
+  cursor return value. The local stateful mock covers that postcondition
+  without starting MySQL.
   The invalid-identifier case requires a completed StateKit execution with the
   expected validation category and diagnostic; setup, runtime, timeout, cleanup,
   and unrelated validation failures fail. `record_case` rejects unknown and
@@ -205,7 +219,10 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
   and runner loss can still prevent cleanup and report publication, so missing
   or incomplete evidence cannot claim a pass. Existing fake-Runner unit,
   registry, and CLI contract tests remain necessary for parser, redaction,
-  mutation, unsupported, and cross-platform behavior. No SQLite dependency is
+  mutation, unsupported, and cross-platform behavior. The checked-in Go/CLI
+  tests are the applicable evidence for timeout, cancellation, output bounds,
+  and redaction; the external gate must remain `pending_external_ci` until its
+  native run publishes a fresh value-free report. No SQLite dependency is
   introduced in E5.2.
 
 ### `integration-services.yml` — E5.3 live SQLite file gate (workflow controls defined; external execution pending)
@@ -285,7 +302,7 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
 | 2 | `integration.yml` grows per module family (Tier 1 first); coverage gates for new code |
 | 3 | Tier 2 systemd images; service/user/file/pkg suites complete matrix; `differential.yml` first run for core families |
 | 4 | broader module suites join matrix; `vm-nightly.yml` bootstrap |
-| E5.2 | `integration-services.yml` live MySQL 8.4 gate for the E5.1 read-only/catalog/plugin surface plus R9.3j lifecycle cases; unchanged by E5.3 |
+| E5.2 | `integration-services.yml` live MySQL 8.4 gate for the E5.1 read-only/catalog/plugin surface plus R9.3j lifecycle and R9.3l alter/create/seed/read-back cases; exact inventory is 36 and external execution remains `pending_external_ci` |
 | E5.3 | separate `sqlite-live` production-binary/file/native-observer gate for R9.3k; exact inventory, value-free report, cleanup, and zero-skip enforcement; external execution `pending_external_ci` |
 | 5+ | differential scope expansion driven by generated catalog; flake budget review |
 
@@ -296,5 +313,5 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
 - [ ] Every fixture references its Salt origin (source path/symbol/test)
 - [ ] Differential report artifacts retained 90 days; failures traceable to fixture IDs
 - [ ] No test requires network beyond package mirrors inside containers; mirror endpoints documented
-- [ ] E5.2 live reports, when produced by external CI, contain exact 23-case counts, zero skipped cases, and no credential-bearing output
+- [ ] E5.2 live reports, when produced by external CI, contain exact 36-case counts, zero skipped cases, native charset/collation and seed read-backs, cleanup success, and no credential-bearing output
 - [ ] E5.3 live reports, when produced by external CI, contain exact 14-case counts, zero skipped cases, native postconditions, cleanup success, and no value-bearing output; status remains `pending_external_ci` until an external run exists

@@ -7,8 +7,9 @@
 // db_optimize (R9.3c), the fixed-query user_create/user_remove mutation
 // family (R9.3e), the fixed-query grant_add/grant_exists/grant_revoke family
 // (R9.3f), the fixed-query user_grants reader (R9.3h), and the fixed-query
-// plugin_status/plugins_list readers (R9.3i), and the database lifecycle
-// mutations db_create/db_remove (R9.3j).
+// plugin_status/plugins_list readers (R9.3i), the database lifecycle
+// mutations db_create/db_remove (R9.3j), and the database metadata mutation
+// alter_db (R9.3l).
 //
 // Boundaries (R9.2a): no MySQL client driver or protocol, no new
 // dependencies, no Runner spawns, no filesystem access, and no live MySQL
@@ -97,6 +98,16 @@
 // from db_exists and may reconnect and attempt CREATE; StateKit never creates
 // on an uncertain absence. db_remove already returns False on that source
 // path. The ceiling is pinned by regression tests and the R9 report.
+//
+// Boundaries (R9.3l): alter_db first reads the existing character set and
+// collation through the registered db_get catalog path, then sends one fixed
+// ALTER DATABASE statement through the same shell-free mysql CLI transport.
+// Empty option values keep the pinned Python truthiness fallback to the
+// catalog defaults; non-empty charset/collation values are restricted to bare
+// MySQL name tokens before they can reach the statement. Database identifiers
+// retain the shared validated backtick-quoted path. The mutation result keeps
+// Salt's true/false/[] compatibility shapes while Runner errors, cancellation,
+// and output-limit failures remain bounded transport errors.
 package mysql
 
 import (
@@ -822,7 +833,8 @@ func (tokenizeGrantFunc) Execute(_ context.Context, _ *runtime.Runtime, args any
 // mysql CLI transport — the R9.3a/R9.3d read-only catalog families
 // (salt/modules/mysql.py:1131-1161 db_list, 1270-1297 db_exists,
 // 1397-1421 user_list, 1502-1605 user_exists, 1198-1267 db_get/db_tables
-// @ pinned revision).
+// @ pinned revision). R9.3l alter_db uses the same transport for its
+// fixed-query preflight and mutation statement.
 
 const (
 	// mysqlCommand is the canonical client binary the R9.3a family runs.
@@ -1743,6 +1755,169 @@ func (dbExistsFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) 
 }
 
 // ---------------------------------------------------------------------------
+// alter_db / db_create / db_remove — salt/modules/mysql.py:1164-1195 and
+// 1300-1393 @ pinned revision.
+
+// AlterDbArgs mirrors alter_db(name, character_set=None, collate=None,
+// **connection_args). Pointer option fields preserve Salt's distinction
+// between None and an explicitly supplied empty string: both nil and empty
+// values select the db_get default, while a non-empty value is rendered as a
+// bare charset/collation token exactly like the pinned format string.
+type AlterDbArgs struct {
+	Name         string  `statekit:"name=name,required"`
+	CharacterSet *string `statekit:"name=character_set"`
+	Collate      *string `statekit:"name=collate"`
+	User         *string `statekit:"name=connection_user"`
+	Host         *string `statekit:"name=connection_host"`
+	Port         *string `statekit:"name=connection_port"`
+	Password     *string `statekit:"name=connection_pass"`
+	DB           *string `statekit:"name=connection_db"`
+	Runas        *string `statekit:"name=runas"`
+}
+
+func (a *AlterDbArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return &myConnection{
+		User:     a.User,
+		Host:     a.Host,
+		Port:     a.Port,
+		Password: a.Password,
+		DB:       a.DB,
+		Runas:    a.Runas,
+	}
+}
+
+type alterDbFunc struct{}
+
+func (alterDbFunc) Name() string { return "mysql.alter_db" }
+func (alterDbFunc) Args() any    { return AlterDbArgs{} }
+
+func (alterDbFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[AlterDbArgs](args, "mysql.alter_db")
+	if err != nil {
+		return nil, err
+	}
+	if !validMaintenanceIdentifier(a.Name) {
+		return nil, databaseMutationIdentifierError()
+	}
+	// The pinned source puts these two values into a fixed format string. Do
+	// not allow an invalid non-empty token to reach either the db_get phase or
+	// the mutation phase, even though MySQL would reject many such values
+	// itself.
+	if a.CharacterSet != nil && *a.CharacterSet != "" && !validDatabaseAlterOption(*a.CharacterSet) {
+		return nil, databaseMutationArgumentError("character_set")
+	}
+	if a.Collate != nil && *a.Collate != "" && !validDatabaseAlterOption(*a.Collate) {
+		return nil, databaseMutationArgumentError("collate")
+	}
+
+	conn := a.connection()
+	// alter_db's source flow obtains both defaults through db_get before it
+	// builds or executes ALTER DATABASE. A failed catalog connection retains
+	// db_get's [] compatibility result and must not mutate.
+	value, err := dbGetCatalog(ctx, rt, conn, a.Name)
+	if err != nil {
+		return nil, err
+	}
+	if failed, ok := value.([]any); ok {
+		// A completed db_get with a nonzero native exit is the pinned []
+		// compatibility shape, but it is still an unknown preflight for a
+		// mutation. Do not let explicit options turn an uncertain catalog into
+		// an ALTER attempt.
+		return failed, nil
+	}
+	defaults, ok := value.(map[string]any)
+	if !ok {
+		return nil, databaseMutationArgumentError("character_set")
+	}
+	// A successful rowless db_get is {}, not the failed [] shape. Both
+	// explicit non-empty options therefore bypass default lookup just as the
+	// source's `or existing.get(...)` expressions do. If either option is
+	// omitted or explicitly empty, its missing default is rejected before the
+	// mutation; emitting a bare None/NULL token would be an unsafe partial
+	// translation of the pinned format string.
+	characterSet, err := mysqlAlterDatabaseOption(a.CharacterSet, defaults, "character_set")
+	if err != nil {
+		return nil, err
+	}
+	collate, err := mysqlAlterDatabaseOption(a.Collate, defaults, "collate")
+	if err != nil {
+		return nil, err
+	}
+	statement, err := mysqlDatabaseAlterStatement(a.Name, characterSet, collate)
+	if err != nil {
+		return nil, err
+	}
+	characterSetSecret := characterSet
+	collateSecret := collate
+	secrets := mysqlDatabaseMutationSecretInventory(conn, a.Name, &characterSetSecret, &collateSecret)
+	result, err := runMysqlSecrets(ctx, rt, mysqlQueryArgv(conn, statement), conn, secrets...)
+	if err != nil {
+		return nil, err
+	}
+	// Salt returns True only when MySQLdb cursor.execute(qry, {}) is truthy.
+	// The native mysql CLI exposes the process exit status, not that DB-API
+	// return value, so the exact affected-row/cursor predicate cannot be
+	// observed here. Exit zero is the deliberate CLI compatibility ceiling;
+	// a nonzero exit remains the source-compatible False shape.
+	return result.ExitCode == 0, nil
+}
+
+// validDatabaseAlterOption is the safety boundary for the pinned raw
+// CHARACTER SET/COLLATE format positions. MySQL charset and collation names
+// are bare ASCII identifier-like tokens; accepting quotes, whitespace, or
+// punctuation here would turn a source-compatible value into arbitrary SQL.
+func validDatabaseAlterOption(value string) bool {
+	if value == "" || !utf8.ValidString(value) {
+		return false
+	}
+	for _, char := range value {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
+			(char >= '0' && char <= '9') || char == '_' || char == '$' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func mysqlAlterDatabaseOption(explicit *string, defaults map[string]any, key string) (string, error) {
+	value := ""
+	if explicit != nil && *explicit != "" {
+		value = *explicit
+	} else {
+		defaultValue, exists := defaults[key]
+		if !exists {
+			return "", databaseMutationArgumentError(key)
+		}
+		var ok bool
+		value, ok = defaultValue.(string)
+		if !ok {
+			return "", databaseMutationArgumentError(key)
+		}
+	}
+	if !validDatabaseAlterOption(value) {
+		return "", databaseMutationArgumentError(key)
+	}
+	return value, nil
+}
+
+func mysqlDatabaseAlterStatement(name, characterSet, collate string) (string, error) {
+	if !validMaintenanceIdentifier(name) {
+		return "", databaseMutationIdentifierError()
+	}
+	if !validDatabaseAlterOption(characterSet) {
+		return "", databaseMutationArgumentError("character_set")
+	}
+	if !validDatabaseAlterOption(collate) {
+		return "", databaseMutationArgumentError("collate")
+	}
+	quotedName := strings.ReplaceAll(quoteIdentifier(name, false), "%%", "%")
+	return "ALTER DATABASE " + quotedName + " CHARACTER SET " + characterSet + " COLLATE " + collate + ";", nil
+}
+
 // db_create / db_remove — salt/modules/mysql.py:1300-1393 @ pinned revision.
 
 // DbCreateArgs mirrors db_create(name, character_set=None, collate=None,
@@ -5152,15 +5327,16 @@ func redactedError(err error, secrets ...string) error {
 // R9.3a/R9.3d/R9.3e fixed-query catalog family, the R9.3b server facts, the
 // R9.3c maintenance family, the R9.3e user account mutations, the R9.3f
 // grant family, the R9.3g password/login family, the R9.3i plugin readers,
-// and the R9.3j database lifecycle mutations over the central mysql CLI
-// transport. The remainder of the mysql family stays pending behind its own
-// source/transport boundary.
+// the R9.3j database lifecycle mutations, and the R9.3l database metadata
+// mutation over the central mysql CLI transport. The remainder of the mysql
+// family stays pending behind its own source/transport boundary.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		quoteIdentifierFunc{},
 		tokenizeGrantFunc{},
 		dbListFunc{},
 		dbExistsFunc{},
+		alterDbFunc{},
 		dbCreateFunc{},
 		dbRemoveFunc{},
 		dbGetFunc{},

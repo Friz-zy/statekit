@@ -290,6 +290,7 @@ func TestMysqlRegistryNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantNames := []string{
+		"mysql.alter_db",
 		"mysql.db_check",
 		"mysql.db_create",
 		"mysql.db_exists",
@@ -6945,5 +6946,508 @@ func TestMysqlDatabaseMutationsThroughRegistry(t *testing.T) {
 	value, err = reg.Call(context.Background(), rt, "mysql.db_remove", &DbRemoveArgs{Name: "registry_db"})
 	if err != nil || value != true || len(runner.calls) != 3 {
 		t.Fatalf("registry db_remove existing = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+}
+
+// TestMysqlAlterDatabaseSourceVectors pins the alter_db source flow: db_get
+// supplies falsy-option defaults, then exactly one ALTER DATABASE statement is
+// sent with the source's backtick identifier and bare charset/collation tokens.
+func TestMysqlAlterDatabaseSourceVectors(t *testing.T) {
+	name := "alter`db%"
+	rt, runner := newMysqlRuntime(
+		process.CommandResult{Stdout: []byte("SCHEMA_NAME\tDEFAULT_CHARACTER_SET_NAME\tDEFAULT_COLLATION_NAME\n" + name + "\tlatin1\tlatin1_swedish_ci\n")},
+		process.CommandResult{ExitCode: 0},
+	)
+	empty := ""
+	args := &AlterDbArgs{
+		Name:         name,
+		CharacterSet: &empty,
+		Collate:      &empty,
+		User:         mysqlString("alter-user"),
+		Host:         mysqlString("alter-host"),
+		Port:         mysqlString("3307"),
+		Password:     mysqlString("alter-pass"),
+		DB:           mysqlString("maintenance"),
+	}
+	value, err := (alterDbFunc{}).Execute(context.Background(), rt, args)
+	if err != nil || value != true || len(runner.calls) != 2 {
+		t.Fatalf("alter_db defaults = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+	if got := runner.calls[0].Args[len(runner.calls[0].Args)-1]; got != "--execute="+dbGetQuery {
+		t.Fatalf("alter_db preflight = %q", got)
+	}
+	want := "ALTER DATABASE `alter``db%` CHARACTER SET latin1 COLLATE latin1_swedish_ci;"
+	if got := runner.calls[1].Args[len(runner.calls[1].Args)-1]; got != "--execute="+want {
+		t.Fatalf("alter_db statement = %q, want %q", got, "--execute="+want)
+	}
+	for i, command := range runner.calls {
+		if command.Shell || command.Timeout != commandTimeout ||
+			command.MaxStdoutBytes != outputLimit || command.MaxStderrBytes != outputLimit ||
+			!reflect.DeepEqual(command.Env, []string{"MYSQL_PWD=alter-pass"}) {
+			t.Fatalf("alter_db transport %d = %#v", i, command)
+		}
+		if strings.Contains(command.RedactedString(), "alter-pass") {
+			t.Fatalf("alter_db transport %d leaks password", i)
+		}
+	}
+
+	// Explicit non-empty options keep their source spelling and do not use the
+	// catalog values.
+	rt, runner = newMysqlRuntime(
+		process.CommandResult{Stdout: []byte("SCHEMA_NAME\tDEFAULT_CHARACTER_SET_NAME\tDEFAULT_COLLATION_NAME\ndb\tlatin1\tlatin1_swedish_ci\n")},
+		process.CommandResult{ExitCode: 1, Stderr: []byte("rejected")},
+	)
+	value, err = (alterDbFunc{}).Execute(context.Background(), rt, &AlterDbArgs{
+		Name:         "db",
+		CharacterSet: mysqlString("utf8mb4"),
+		Collate:      mysqlString("utf8mb4_0900_ai_ci"),
+	})
+	if err != nil || value != false || len(runner.calls) != 2 {
+		t.Fatalf("alter_db rejected mutation = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+	if got := runner.calls[1].Args[len(runner.calls[1].Args)-1]; got != "--execute=ALTER DATABASE `db` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;" {
+		t.Fatalf("alter_db explicit statement = %q", got)
+	}
+
+	// A failed db_get retains its [] compatibility result and prevents ALTER.
+	rt, runner = newMysqlRuntime(process.CommandResult{ExitCode: 1})
+	value, err = (alterDbFunc{}).Execute(context.Background(), rt, &AlterDbArgs{Name: "db"})
+	if err != nil || !reflect.DeepEqual(value, []any{}) || len(runner.calls) != 1 {
+		t.Fatalf("alter_db failed db_get = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+}
+
+// TestMysqlAlterDatabaseSourceExecuteResultVectors keeps the source predicate
+// visible even though the native CLI cannot return cursor.execute's value.
+// The pinned _execute wrapper returns that DB-API result directly, so the
+// representative truthy/falsy integer vectors are 1 and 0.
+func TestMysqlAlterDatabaseSourceExecuteResultVectors(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		cursorExecute int
+		want          bool
+	}{
+		{name: "truthy execute result", cursorExecute: 1, want: true},
+		{name: "falsy execute result", cursorExecute: 0, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.cursorExecute != 0; got != tc.want {
+				t.Fatalf("source cursor.execute(%d) truthiness = %v, want %v", tc.cursorExecute, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestMysqlAlterDatabaseNativeExitResultVectors pins the only result predicate
+// observable through the shell-free mysql transport: process success is true
+// and process rejection is false. It deliberately does not claim that either
+// process result exposes MySQLdb cursor.execute's affected-row value.
+func TestMysqlAlterDatabaseNativeExitResultVectors(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		result process.CommandResult
+		want   bool
+	}{
+		{name: "native truthy process result", result: process.CommandResult{ExitCode: 0}, want: true},
+		{name: "native falsy process result", result: process.CommandResult{ExitCode: 1}, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, runner := newMysqlRuntime(
+				process.CommandResult{Stdout: []byte("SCHEMA_NAME\tDEFAULT_CHARACTER_SET_NAME\tDEFAULT_COLLATION_NAME\ndb\tutf8\tutf8_general_ci\n")},
+				tc.result,
+			)
+			value, err := (alterDbFunc{}).Execute(context.Background(), rt, &AlterDbArgs{Name: "db"})
+			if err != nil || value != tc.want || len(runner.calls) != 2 {
+				t.Fatalf("native result = %#v, %v, calls=%d; want %v", value, err, len(runner.calls), tc.want)
+			}
+			if got := runner.calls[1].Args[len(runner.calls[1].Args)-1]; got != "--execute=ALTER DATABASE `db` CHARACTER SET utf8 COLLATE utf8_general_ci;" {
+				t.Fatalf("native exit vector statement=%q", got)
+			}
+		})
+	}
+}
+
+// TestMysqlAlterDatabasePreflightShapes documents the source/transport
+// boundary around db_get. A successful rowless catalog is {}, whereas a
+// failed catalog is []; only the latter is an uncertain preflight and it must
+// never be followed by ALTER, even when both options are explicit.
+func TestMysqlAlterDatabasePreflightShapes(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		args      *AlterDbArgs
+		statement string
+	}{
+		{
+			name:      "explicit character set with catalog collate",
+			args:      &AlterDbArgs{Name: "db", CharacterSet: mysqlString("utf8mb4")},
+			statement: "ALTER DATABASE `db` CHARACTER SET utf8mb4 COLLATE latin1_swedish_ci;",
+		},
+		{
+			name:      "catalog character set with explicit collate",
+			args:      &AlterDbArgs{Name: "db", Collate: mysqlString("utf8mb4_0900_ai_ci")},
+			statement: "ALTER DATABASE `db` CHARACTER SET latin1 COLLATE utf8mb4_0900_ai_ci;",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, runner := newMysqlRuntime(
+				process.CommandResult{Stdout: []byte("SCHEMA_NAME\tDEFAULT_CHARACTER_SET_NAME\tDEFAULT_COLLATION_NAME\ndb\tlatin1\tlatin1_swedish_ci\n")},
+				process.CommandResult{ExitCode: 0},
+			)
+			value, err := (alterDbFunc{}).Execute(context.Background(), rt, tc.args)
+			if err != nil || value != true || len(runner.calls) != 2 || runner.calls[1].Args[len(runner.calls[1].Args)-1] != "--execute="+tc.statement {
+				t.Fatalf("partial options = %#v, %v, calls=%d argv=%#v", value, err, len(runner.calls), runner.calls)
+			}
+		})
+	}
+
+	missingCatalog := process.CommandResult{Stdout: []byte(
+		"SCHEMA_NAME\tDEFAULT_CHARACTER_SET_NAME\tDEFAULT_COLLATION_NAME\nother\tutf8\tutf8_general_ci\n")}
+	for _, tc := range []struct {
+		name      string
+		args      *AlterDbArgs
+		wantCalls int
+		wantError bool
+		statement string
+	}{
+		{name: "missing catalog and no options", args: &AlterDbArgs{Name: "missing"}, wantCalls: 1, wantError: true},
+		{name: "missing catalog and partial options", args: &AlterDbArgs{Name: "missing", CharacterSet: mysqlString("utf8mb4")}, wantCalls: 1, wantError: true},
+		{
+			name:      "missing catalog and both explicit options",
+			args:      &AlterDbArgs{Name: "missing", CharacterSet: mysqlString("utf8mb4"), Collate: mysqlString("utf8mb4_0900_ai_ci")},
+			wantCalls: 2,
+			statement: "ALTER DATABASE `missing` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, runner := newMysqlRuntime(missingCatalog, process.CommandResult{ExitCode: 0})
+			value, err := (alterDbFunc{}).Execute(context.Background(), rt, tc.args)
+			if tc.wantError {
+				if !errors.Is(err, errMysqlInvalidArgument) || value != nil {
+					t.Fatalf("missing catalog = %#v, %v; want value-free invalid-argument error", value, err)
+				}
+			} else if err != nil || value != true {
+				t.Fatalf("explicit missing catalog = %#v, %v; want true", value, err)
+			}
+			if len(runner.calls) != tc.wantCalls {
+				t.Fatalf("missing catalog calls=%d, want %d", len(runner.calls), tc.wantCalls)
+			}
+			if tc.statement != "" && runner.calls[1].Args[len(runner.calls[1].Args)-1] != "--execute="+tc.statement {
+				t.Fatalf("missing catalog statement=%q, want %q", runner.calls[1].Args[len(runner.calls[1].Args)-1], "--execute="+tc.statement)
+			}
+		})
+	}
+
+	for _, tc := range []struct {
+		name string
+		args *AlterDbArgs
+	}{
+		{name: "catalog failure without options", args: &AlterDbArgs{Name: "db"}},
+		{name: "catalog failure with partial options", args: &AlterDbArgs{Name: "db", CharacterSet: mysqlString("utf8mb4")}},
+		{name: "catalog failure with both explicit options", args: &AlterDbArgs{Name: "db", CharacterSet: mysqlString("utf8mb4"), Collate: mysqlString("utf8mb4_0900_ai_ci")}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, runner := newMysqlRuntime(process.CommandResult{ExitCode: 1, Stderr: []byte("catalog denied")}, process.CommandResult{ExitCode: 0})
+			value, err := (alterDbFunc{}).Execute(context.Background(), rt, tc.args)
+			if err != nil || !reflect.DeepEqual(value, []any{}) || len(runner.calls) != 1 {
+				t.Fatalf("failed catalog = %#v, %v, calls=%d; want [] and no mutation", value, err, len(runner.calls))
+			}
+		})
+	}
+
+	rt, runner := newMysqlRuntime(process.CommandResult{
+		Stdout: []byte("SCHEMA_NAME\tDEFAULT_CHARACTER_SET_NAME\tDEFAULT_COLLATION_NAME\ndb\tutf8\n"),
+	})
+	value, err := (alterDbFunc{}).Execute(context.Background(), rt, &AlterDbArgs{Name: "db", CharacterSet: mysqlString("utf8mb4"), Collate: mysqlString("utf8mb4_0900_ai_ci")})
+	if err == nil || value != nil || len(runner.calls) != 1 {
+		t.Fatalf("short catalog = %#v, %v, calls=%d; want error and no mutation", value, err, len(runner.calls))
+	}
+}
+
+const alterSeedReadbackQuery = "SELECT id, value FROM statekit_seed ORDER BY id"
+
+type mysqlAlterStateRunner struct {
+	calls            []process.Command
+	characterSet     string
+	collate          string
+	nextCharset      string
+	nextCollate      string
+	expectedAlterSQL string
+	seedValue        string
+	rejectAlter      bool
+}
+
+func (r *mysqlAlterStateRunner) CommandAvailable(string) bool { return true }
+
+func (r *mysqlAlterStateRunner) Run(_ context.Context, command process.Command) process.CommandResult {
+	command.Args = append([]string(nil), command.Args...)
+	command.Redact = append([]string(nil), command.Redact...)
+	command.Env = append([]string(nil), command.Env...)
+	r.calls = append(r.calls, command)
+	if len(command.Args) == 0 {
+		return process.CommandResult{ExitCode: 1}
+	}
+	statementArg := command.Args[len(command.Args)-1]
+	query := strings.TrimPrefix(statementArg, "--execute=")
+	switch query {
+	case dbGetQuery:
+		return process.CommandResult{Stdout: []byte("SCHEMA_NAME\tDEFAULT_CHARACTER_SET_NAME\tDEFAULT_COLLATION_NAME\nstate_db\t" + r.characterSet + "\t" + r.collate + "\n")}
+	case alterSeedReadbackQuery:
+		return process.CommandResult{Stdout: []byte("id\tvalue\n1\t" + r.seedValue + "\n")}
+	default:
+		if statementArg != "--execute="+r.expectedAlterSQL {
+			return process.CommandResult{ExitCode: 1}
+		}
+		if r.rejectAlter {
+			return process.CommandResult{ExitCode: 1}
+		}
+		r.characterSet = r.nextCharset
+		r.collate = r.nextCollate
+		return process.CommandResult{ExitCode: 0}
+	}
+}
+
+// TestMysqlAlterDatabasePostAlterReadbackPreservesSeed uses a stateful fake
+// Runner to make the post-alter evidence explicit: ALTER changes only the
+// database metadata, a subsequent fixed db_get reads the new metadata, and a
+// separate fixed seed readback remains byte-for-byte unchanged.
+func TestMysqlAlterDatabasePostAlterReadbackPreservesSeed(t *testing.T) {
+	const explicitAlterSQL = "ALTER DATABASE `state_db` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;"
+
+	for _, tc := range []struct {
+		name        string
+		rejectAlter bool
+		wantValue   bool
+		wantCharset string
+		wantCollate string
+		nextCharset string
+		nextCollate string
+	}{
+		{
+			name:        "explicit transition",
+			wantValue:   true,
+			wantCharset: "utf8mb4",
+			wantCollate: "utf8mb4_0900_ai_ci",
+			nextCharset: "utf8mb4",
+			nextCollate: "utf8mb4_0900_ai_ci",
+		},
+		{
+			name:        "rejected explicit transition",
+			rejectAlter: true,
+			wantValue:   false,
+			wantCharset: "latin1",
+			wantCollate: "latin1_swedish_ci",
+			nextCharset: "utf8mb4",
+			nextCollate: "utf8mb4_0900_ai_ci",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &mysqlAlterStateRunner{
+				characterSet:     "latin1",
+				collate:          "latin1_swedish_ci",
+				nextCharset:      tc.nextCharset,
+				nextCollate:      tc.nextCollate,
+				expectedAlterSQL: explicitAlterSQL,
+				seedValue:        "seed-row",
+				rejectAlter:      tc.rejectAlter,
+			}
+			rt := &runtime.Runtime{Runner: runner, FS: runtime.NewMemoryFS()}
+			value, err := (alterDbFunc{}).Execute(context.Background(), rt, &AlterDbArgs{
+				Name:         "state_db",
+				CharacterSet: mysqlString("utf8mb4"),
+				Collate:      mysqlString("utf8mb4_0900_ai_ci"),
+			})
+			if err != nil || value != tc.wantValue || len(runner.calls) != 2 {
+				t.Fatalf("stateful alter = %#v, %v, calls=%d", value, err, len(runner.calls))
+			}
+			wantMutationArgv := []string{"mysql", "--batch", "--execute=" + explicitAlterSQL}
+			if got := append([]string{runner.calls[1].Name}, runner.calls[1].Args...); !reflect.DeepEqual(got, wantMutationArgv) {
+				t.Fatalf("stateful alter argv = %#v, want %#v", got, wantMutationArgv)
+			}
+
+			metadata, err := dbGetCatalog(context.Background(), rt, &myConnection{}, "state_db")
+			if err != nil || !reflect.DeepEqual(metadata, map[string]any{"character_set": tc.wantCharset, "collate": tc.wantCollate}) {
+				t.Fatalf("post-alter metadata = %#v, %v", metadata, err)
+			}
+			header, rows, err := mysqlQueryRowsPreserve(context.Background(), rt, &myConnection{}, alterSeedReadbackQuery)
+			if err != nil || !reflect.DeepEqual(header, []string{"id", "value"}) || !reflect.DeepEqual(rows, [][]batchField{{{value: "1"}, {value: "seed-row"}}}) {
+				t.Fatalf("seed readback = header=%#v rows=%#v err=%v", header, rows, err)
+			}
+			if len(runner.calls) != 4 {
+				t.Fatalf("post-alter readback calls=%d, want 4", len(runner.calls))
+			}
+			wantArgv := [][]string{
+				{"mysql", "--batch", "--execute=" + dbGetQuery},
+				wantMutationArgv,
+				{"mysql", "--batch", "--execute=" + dbGetQuery},
+				{"mysql", "--batch", "--execute=" + alterSeedReadbackQuery},
+			}
+			for i, want := range wantArgv {
+				got := append([]string{runner.calls[i].Name}, runner.calls[i].Args...)
+				if !reflect.DeepEqual(got, want) {
+					t.Fatalf("stateful alter call %d argv = %#v, want %#v", i, got, want)
+				}
+			}
+		})
+	}
+
+	// Default preservation is a separate stateful case: omitted options dispatch
+	// the modeled defaults, and the fake's modeled charset/collation stay
+	// unchanged rather than simulating the explicit transition above.
+	t.Run("default preservation", func(t *testing.T) {
+		const defaultAlterSQL = "ALTER DATABASE `state_db` CHARACTER SET latin1 COLLATE latin1_swedish_ci;"
+		runner := &mysqlAlterStateRunner{
+			characterSet:     "latin1",
+			collate:          "latin1_swedish_ci",
+			nextCharset:      "latin1",
+			nextCollate:      "latin1_swedish_ci",
+			expectedAlterSQL: defaultAlterSQL,
+			seedValue:        "seed-row",
+		}
+		rt := &runtime.Runtime{Runner: runner, FS: runtime.NewMemoryFS()}
+		value, err := (alterDbFunc{}).Execute(context.Background(), rt, &AlterDbArgs{Name: "state_db"})
+		if err != nil || value != true || len(runner.calls) != 2 {
+			t.Fatalf("default-preserving alter = %#v, %v, calls=%d", value, err, len(runner.calls))
+		}
+		wantArgv := []string{"mysql", "--batch", "--execute=" + defaultAlterSQL}
+		if got := append([]string{runner.calls[1].Name}, runner.calls[1].Args...); !reflect.DeepEqual(got, wantArgv) {
+			t.Fatalf("default-preserving alter argv = %#v, want %#v", got, wantArgv)
+		}
+		metadata, err := dbGetCatalog(context.Background(), rt, &myConnection{}, "state_db")
+		if err != nil || !reflect.DeepEqual(metadata, map[string]any{"character_set": "latin1", "collate": "latin1_swedish_ci"}) {
+			t.Fatalf("default-preserving metadata = %#v, %v", metadata, err)
+		}
+		_, rows, err := mysqlQueryRowsPreserve(context.Background(), rt, &myConnection{}, alterSeedReadbackQuery)
+		if err != nil || !reflect.DeepEqual(rows, [][]batchField{{{value: "1"}, {value: "seed-row"}}}) {
+			t.Fatalf("default-preserving seed = %#v, %v", rows, err)
+		}
+	})
+}
+
+// TestMysqlAlterDatabaseBoundaries pins value-free validation, cancellation,
+// output/timeout propagation, and redaction across both phases.
+func TestMysqlAlterDatabaseBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		key string
+		set func(*AlterDbArgs, string)
+	}{
+		{key: "name", set: func(a *AlterDbArgs, value string) { a.Name = value }},
+	} {
+		for _, value := range []string{"", "bad\x00name", "bad\nname", "bad\x01name", "bad\x7fname"} {
+			runner := &mysqlFakeRunner{}
+			args := &AlterDbArgs{Name: "db"}
+			tc.set(args, value)
+			_, err := (alterDbFunc{}).Execute(context.Background(), &runtime.Runtime{Runner: runner}, args)
+			if !errors.Is(err, errMysqlInvalidArgument) || len(runner.calls) != 0 || (value != "" && strings.Contains(err.Error(), value)) {
+				t.Fatalf("invalid %s %q: err=%v calls=%d", tc.key, value, err, len(runner.calls))
+			}
+		}
+	}
+	for _, tc := range []struct {
+		key string
+		set func(*AlterDbArgs, *string)
+	}{
+		{key: "character_set", set: func(a *AlterDbArgs, value *string) { a.CharacterSet = value }},
+		{key: "collate", set: func(a *AlterDbArgs, value *string) { a.Collate = value }},
+	} {
+		marker := "alter-option-secret\nmarker"
+		args := &AlterDbArgs{Name: "db"}
+		tc.set(args, &marker)
+		runner := &mysqlFakeRunner{}
+		_, err := (alterDbFunc{}).Execute(context.Background(), &runtime.Runtime{Runner: runner}, args)
+		if !errors.Is(err, errMysqlInvalidArgument) || strings.Contains(err.Error(), marker) || len(runner.calls) != 0 {
+			t.Fatalf("invalid %s: err=%v calls=%d", tc.key, err, len(runner.calls))
+		}
+	}
+
+	// A transport timeout/limit at either phase is an error, never a false
+	// success. A failed catalog phase is never followed by ALTER.
+	for _, tc := range []struct {
+		name   string
+		result process.CommandResult
+		want   error
+		calls  int
+	}{
+		{name: "preflight-timeout", result: process.CommandResult{Err: context.DeadlineExceeded}, want: context.DeadlineExceeded, calls: 1},
+		{name: "preflight-output", result: process.CommandResult{StdoutTruncated: true}, want: process.ErrOutputLimit, calls: 1},
+		{name: "mutation-timeout", result: process.CommandResult{Err: context.DeadlineExceeded}, want: context.DeadlineExceeded, calls: 2},
+		{name: "mutation-output", result: process.CommandResult{StdoutTruncated: true}, want: process.ErrOutputLimit, calls: 2},
+	} {
+		results := []process.CommandResult{tc.result}
+		if tc.calls == 2 {
+			results = []process.CommandResult{
+				{Stdout: []byte("SCHEMA_NAME\tDEFAULT_CHARACTER_SET_NAME\tDEFAULT_COLLATION_NAME\ndb\tutf8mb4\tutf8mb4_0900_ai_ci\n")},
+				tc.result,
+			}
+		}
+		rt, runner := newMysqlRuntime(results...)
+		value, err := (alterDbFunc{}).Execute(context.Background(), rt, &AlterDbArgs{Name: "db"})
+		if value != nil || !errors.Is(err, tc.want) || len(runner.calls) != tc.calls {
+			t.Fatalf("alter_db %s = %#v, %v, calls=%d", tc.name, value, err, len(runner.calls))
+		}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cancelled := &mysqlFakeRunner{}
+	value, err := (alterDbFunc{}).Execute(ctx, &runtime.Runtime{Runner: cancelled}, &AlterDbArgs{Name: "db"})
+	if value != nil || !errors.Is(err, context.Canceled) || len(cancelled.calls) != 0 {
+		t.Fatalf("alter_db cancelled before db_get = %#v, %v, calls=%d", value, err, len(cancelled.calls))
+	}
+
+	ctx, cancel = context.WithCancel(context.Background())
+	base := &mysqlFakeRunner{results: []process.CommandResult{{Stdout: []byte("SCHEMA_NAME\tDEFAULT_CHARACTER_SET_NAME\tDEFAULT_COLLATION_NAME\ndb\tutf8\tutf8_general_ci\n")}, {ExitCode: 0}}}
+	cancelRunner := &mysqlCancelAfterRunner{base: base, cancel: cancel, after: 1}
+	value, err = (alterDbFunc{}).Execute(ctx, &runtime.Runtime{Runner: cancelRunner}, &AlterDbArgs{Name: "db"})
+	if value != nil || !errors.Is(err, context.Canceled) || len(base.calls) != 1 {
+		t.Fatalf("alter_db cancelled after db_get = %#v, %v, calls=%d", value, err, len(base.calls))
+	}
+
+	marker := "alter_redaction_secret"
+	rt, runner := newMysqlRuntime(
+		process.CommandResult{Stdout: []byte("SCHEMA_NAME\tDEFAULT_CHARACTER_SET_NAME\tDEFAULT_COLLATION_NAME\ndb\tutf8\tutf8_general_ci\n")},
+		process.CommandResult{Err: errors.New("alter failed " + marker), Stdout: []byte(marker), Stderr: []byte(marker)},
+	)
+	value, err = (alterDbFunc{}).Execute(context.Background(), rt, &AlterDbArgs{Name: "db", CharacterSet: mysqlString(marker)})
+	if value != nil || err == nil || strings.Contains(err.Error(), marker) || len(runner.calls) != 2 {
+		t.Fatalf("alter_db redaction = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+	if strings.Contains(runner.calls[1].RedactedString(), marker) || !containsAll(runner.calls[1].Redact, []string{marker}) {
+		t.Fatalf("alter_db mutation redaction leaked marker: command=%q redact=%q", runner.calls[1].RedactedString(), runner.calls[1].Redact)
+	}
+
+	connectionMarker := "alter_connection_secret"
+	rt, runner = newMysqlRuntime(process.CommandResult{
+		Err:    errors.New("db_get failed " + connectionMarker),
+		Stdout: []byte(connectionMarker),
+		Stderr: []byte(connectionMarker),
+	})
+	value, err = (alterDbFunc{}).Execute(context.Background(), rt, &AlterDbArgs{Name: "db", Password: mysqlString(connectionMarker)})
+	if value != nil || err == nil || strings.Contains(err.Error(), connectionMarker) || len(runner.calls) != 1 {
+		t.Fatalf("alter_db preflight redaction = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+	if strings.Contains(runner.calls[0].RedactedString(), connectionMarker) || !containsAll(runner.calls[0].Redact, []string{connectionMarker}) {
+		t.Fatalf("alter_db preflight redaction leaked marker: command=%q redact=%q", runner.calls[0].RedactedString(), runner.calls[0].Redact)
+	}
+}
+
+// TestMysqlAlterDatabaseThroughRegistry pins the public registry contract and
+// keeps the source's db_get-before-mutation call order at that boundary.
+func TestMysqlAlterDatabaseThroughRegistry(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	runner := &mysqlFakeRunner{results: []process.CommandResult{
+		{Stdout: []byte("SCHEMA_NAME\tDEFAULT_CHARACTER_SET_NAME\tDEFAULT_COLLATION_NAME\nregistry_db\tutf8mb4\tutf8mb4_0900_ai_ci\n")},
+		{ExitCode: 0},
+	}}
+	rt := &runtime.Runtime{Runner: runner, Exec: reg, FS: runtime.NewMemoryFS()}
+	value, err := reg.Call(context.Background(), rt, "mysql.alter_db", &AlterDbArgs{Name: "registry_db"})
+	if err != nil || value != true || len(runner.calls) != 2 {
+		t.Fatalf("registry alter_db = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+	if !strings.Contains(runner.calls[0].Args[len(runner.calls[0].Args)-1], dbGetQuery) ||
+		!strings.Contains(runner.calls[1].Args[len(runner.calls[1].Args)-1], "ALTER DATABASE `registry_db`") {
+		t.Fatalf("registry alter_db order = %#v", runner.calls)
 	}
 }

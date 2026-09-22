@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # E5.2 live MySQL gate extending the E5.1 read-only/catalog/plugin surface
-# with the already-ported R9.3j database lifecycle. The gate deliberately runs
+# with the already-ported R9.3j database lifecycle and R9.3l alter_db. The gate deliberately runs
 # the production statekit binary and the official image's native mysql client;
 # it does not use the Go fake Runner. Every E5.1 case remains in the inventory.
 #
@@ -25,9 +25,13 @@ readonly CLIENT_CREATE_TIMEOUT_SECONDS=30
 readonly CLIENT_START_TIMEOUT_SECONDS=30
 readonly NATIVE_CONNECT_TIMEOUT_SECONDS=3
 readonly CLEANUP_TIMEOUT_SECONDS=20
+readonly TERMINATION_GRACE_SECONDS=5
 readonly PREFLIGHT_TIMEOUT_SECONDS=30
 readonly MYSQL_SERVICE_USER='999:999'
 readonly CLIENT_USER='65532:65532'
+readonly ALTER_TABLE='statekit_r93l_seed'
+readonly PYTHON_MOCK_TMPFS_DESTINATION='/tmp'
+readonly PYTHON_MOCK_TMPFS_OPTIONS='rw,nosuid,nodev,noexec,size=64m,mode=1777,rprivate,tmpcopyup'
 NATIVE_CLIENT_USER="$TEST_USER"
 readonly SERVER_ROOT_SECRET_TARGET='/run/secrets/mysql-root-password'
 readonly SERVER_USER_SECRET_TARGET='/run/secrets/mysql-user-password'
@@ -36,6 +40,7 @@ readonly NATIVE_AUTH_FAILURE_MARKER='ERROR 1045 (28000): Access denied for user'
 readonly NATIVE_CONNECTION_FAILURE_MARKER="ERROR 2003 (HY000): Can't connect to MySQL server"
 readonly STATEKIT_INVALID_IDENTIFIER_CATEGORY='mysql: invalid argument'
 readonly STATEKIT_INVALID_IDENTIFIER_DIAGNOSTIC='statekit: mysql: invalid argument: unsupported identifier in name'
+readonly STATEKIT_INVALID_OPTION_DIAGNOSTIC='statekit: mysql: invalid argument: unsupported value in character_set'
 readonly CASE_IDS=(
   'mysql-readiness-authenticated-select-1'
   'mysql-version-live'
@@ -60,6 +65,19 @@ readonly CASE_IDS=(
   'mysql-db-negative-invalid-identifier'
   'mysql-db-negative-auth'
   'mysql-db-negative-connection'
+  'mysql-alter-db-native-absent-before-create'
+  'mysql-alter-db-create-and-seed'
+  'mysql-alter-db-native-defaults-before'
+  'mysql-alter-db-statekit-explicit'
+  'mysql-alter-db-native-explicit-readback'
+  'mysql-alter-db-statekit-explicit-readback'
+  'mysql-alter-db-statekit-default-preservation'
+  'mysql-alter-db-native-default-preserved-readback'
+  'mysql-alter-db-statekit-default-preserved-readback'
+  'mysql-alter-db-negative-auth'
+  'mysql-alter-db-negative-connection'
+  'mysql-alter-db-negative-invalid-identifier'
+  'mysql-alter-db-negative-invalid-option'
 )
 
 if [[ "${1:-}" == '--list-cases' ]]; then
@@ -81,16 +99,23 @@ REPORT_PATH="$REPORT_DIR/report.txt"
 STATEKIT_BIN="${STATEKIT_BIN:-dist/statekit}"
 RUNTIME="${CONTAINER_RUNTIME:-}"
 WORK_DIR=''
+RESOURCE_NONCE=''
 NETWORK=''
 DB_CONTAINER=''
 DB_CONTAINER_ID=''
 DB_HOST=''
 DB_RESERVED=0
+DB_OWNED=0
 LIFECYCLE_DB=''
 LIFECYCLE_DB_RESERVED=0
 LIFECYCLE_DB_OWNED=0
+ALTER_DB=''
+ALTER_DB_RESERVED=0
+ALTER_DB_OWNED=0
 NETWORK_RESERVED=0
+NETWORK_OWNED=0
 CLIENT_IMAGE_RESERVED=0
+CLIENT_IMAGE_OWNED=0
 SECRET_RESOURCE_RESERVED=0
 REPORT_WRITTEN=0
 REPORT_PREPARED=0
@@ -269,8 +294,8 @@ write_report() {
       printf '%s\n' 'cleanup: pass'
     fi
     printf 'cleanup_note: %s\n' "$CLEANUP_NOTE"
-    printf '%s\n' 'scope: E5.1 mysql.version/db_list/db_exists/plugins_list/plugin_status plus R9.3j mysql.db_create/mysql.db_remove lifecycle'
-    printf '%s\n' 'independent_checks: native mysql client database and plugin postconditions, including lifecycle presence and absence'
+    printf '%s\n' 'scope: E5.1 mysql.version/db_list/db_exists/plugins_list/plugin_status plus R9.3j lifecycle and R9.3l mysql.alter_db create/seed/alter/read-back cases'
+    printf '%s\n' 'independent_checks: native mysql client database/plugin/charset/collation/seed postconditions, plus StateKit db_get read-back'
     printf '%s\n' 'external_ci: pending'
     printf '%s\n' 'limitations: no full R9 live coverage, no broker/PostgreSQL/SQLite coverage, no live Salt differential parity; GitHub live execution is not claimed here; SIGKILL or runner loss can prevent cleanup/reporting'
     printf '%s\n' 'credentials: runtime-generated disposable values are delivered through ephemeral secret mounts only; not included in this report'
@@ -313,9 +338,13 @@ mark_cleanup_failure() {
   fi
 }
 
+bounded_timeout() {
+  timeout --signal=TERM --kill-after="${TERMINATION_GRACE_SECONDS}s" "$@"
+}
+
 container_exists_state() {
   local ref="$1" rc=0
-  if timeout "$CLEANUP_TIMEOUT_SECONDS" "$RUNTIME" container exists "$ref" >/dev/null 2>/dev/null; then
+  if bounded_timeout "$CLEANUP_TIMEOUT_SECONDS" "$RUNTIME" container exists "$ref" >/dev/null 2>/dev/null; then
     return 0
   else
     rc=$?
@@ -328,7 +357,7 @@ container_exists_state() {
 
 network_exists_state() {
   local ref="$1" rc=0
-  if timeout "$CLEANUP_TIMEOUT_SECONDS" "$RUNTIME" network exists "$ref" >/dev/null 2>/dev/null; then
+  if bounded_timeout "$CLEANUP_TIMEOUT_SECONDS" "$RUNTIME" network exists "$ref" >/dev/null 2>/dev/null; then
     return 0
   else
     rc=$?
@@ -341,7 +370,7 @@ network_exists_state() {
 
 image_exists_state() {
   local ref="$1" rc=0
-  if timeout "$CLEANUP_TIMEOUT_SECONDS" "$RUNTIME" image exists "$ref" >/dev/null 2>/dev/null; then
+  if bounded_timeout "$CLEANUP_TIMEOUT_SECONDS" "$RUNTIME" image exists "$ref" >/dev/null 2>/dev/null; then
     return 0
   else
     rc=$?
@@ -395,11 +424,11 @@ cleanup_container() {
   done
   [[ -n "$ref" ]] || return 0
 
-  timeout "$CLEANUP_TIMEOUT_SECONDS" "$RUNTIME" stop --time 5 "$ref" >/dev/null 2>/dev/null || stop_rc=$?
+  bounded_timeout "$CLEANUP_TIMEOUT_SECONDS" "$RUNTIME" stop --time 5 "$ref" >/dev/null 2>/dev/null || stop_rc=$?
   if (( stop_rc != 0 )); then
-    timeout "$CLEANUP_TIMEOUT_SECONDS" "$RUNTIME" kill "$ref" >/dev/null 2>/dev/null || kill_rc=$?
+    bounded_timeout "$CLEANUP_TIMEOUT_SECONDS" "$RUNTIME" kill "$ref" >/dev/null 2>/dev/null || kill_rc=$?
   fi
-  timeout "$CLEANUP_TIMEOUT_SECONDS" "$RUNTIME" rm --force --volumes "$ref" >/dev/null 2>/dev/null || rm_rc=$?
+  bounded_timeout "$CLEANUP_TIMEOUT_SECONDS" "$RUNTIME" rm --force --volumes "$ref" >/dev/null 2>/dev/null || rm_rc=$?
   if (( rm_rc != 0 )); then
     mark_cleanup_failure
     return 1
@@ -426,7 +455,7 @@ cleanup_container() {
 
 cleanup_network() {
   local state=0 rm_rc=0
-  [[ -n "$RUNTIME" && -n "$NETWORK" && "$NETWORK_RESERVED" == 1 ]] || return 0
+  [[ -n "$RUNTIME" && -n "$NETWORK" && "$NETWORK_RESERVED" == 1 && "$NETWORK_OWNED" == 1 ]] || return 0
   if network_exists_state "$NETWORK"; then
     state=0
   else
@@ -439,7 +468,7 @@ cleanup_network() {
     mark_cleanup_failure
     return 1
   fi
-  timeout "$CLEANUP_TIMEOUT_SECONDS" "$RUNTIME" network rm "$NETWORK" >/dev/null 2>/dev/null || rm_rc=$?
+  bounded_timeout "$CLEANUP_TIMEOUT_SECONDS" "$RUNTIME" network rm "$NETWORK" >/dev/null 2>/dev/null || rm_rc=$?
   if (( rm_rc != 0 )); then
     mark_cleanup_failure
     return 1
@@ -459,7 +488,7 @@ cleanup_network() {
 
 cleanup_image() {
   local state=0 rm_rc=0
-  [[ -n "$RUNTIME" && -n "$CLIENT_IMAGE" && "$CLIENT_IMAGE_RESERVED" == 1 ]] || return 0
+  [[ -n "$RUNTIME" && -n "$CLIENT_IMAGE" && "$CLIENT_IMAGE_RESERVED" == 1 && "$CLIENT_IMAGE_OWNED" == 1 ]] || return 0
   if image_exists_state "$CLIENT_IMAGE"; then
     state=0
   else
@@ -472,7 +501,7 @@ cleanup_image() {
     mark_cleanup_failure
     return 1
   fi
-  timeout "$CLEANUP_TIMEOUT_SECONDS" "$RUNTIME" rmi --force "$CLIENT_IMAGE" >/dev/null 2>/dev/null || rm_rc=$?
+  bounded_timeout "$CLEANUP_TIMEOUT_SECONDS" "$RUNTIME" rmi --force "$CLIENT_IMAGE" >/dev/null 2>/dev/null || rm_rc=$?
   if (( rm_rc != 0 )); then
     mark_cleanup_failure
     return 1
@@ -492,7 +521,7 @@ cleanup_image() {
 
 secret_exists_state() {
   local ref="$1" rc=0
-  if timeout "$CLEANUP_TIMEOUT_SECONDS" "$RUNTIME" secret exists "$ref" >/dev/null 2>/dev/null; then
+  if bounded_timeout "$CLEANUP_TIMEOUT_SECONDS" "$RUNTIME" secret exists "$ref" >/dev/null 2>/dev/null; then
     return 0
   else
     rc=$?
@@ -518,7 +547,7 @@ cleanup_secret() {
     mark_cleanup_failure
     return 1
   fi
-  timeout "$CLEANUP_TIMEOUT_SECONDS" "$RUNTIME" secret rm "$name" >/dev/null 2>/dev/null || rm_rc=$?
+  bounded_timeout "$CLEANUP_TIMEOUT_SECONDS" "$RUNTIME" secret rm "$name" >/dev/null 2>/dev/null || rm_rc=$?
   if (( rm_rc != 0 )); then
     mark_cleanup_failure
     return 1
@@ -538,7 +567,10 @@ cleanup_secret() {
 
 cleanup_work_dir() {
   if [[ -n "$WORK_DIR" && ( -e "$WORK_DIR" || -L "$WORK_DIR" ) ]]; then
-    rm -rf -- "$WORK_DIR" || true
+    if ! bounded_timeout "$CLEANUP_TIMEOUT_SECONDS" rm -rf -- "$WORK_DIR"; then
+      mark_cleanup_failure
+      return 1
+    fi
     [[ ! -e "$WORK_DIR" && ! -L "$WORK_DIR" ]] || mark_cleanup_failure
   fi
 }
@@ -554,11 +586,12 @@ cleanup() {
   trap '' INT TERM
   set +e
   cleanup_lifecycle_database || true
+  cleanup_alter_database || true
   while (( index < ${#OWNED_CLIENT_NAMES[@]} )); do
     cleanup_container "${OWNED_CLIENT_NAMES[index]}" "${OWNED_CLIENT_IDS[index]}" || true
     index=$((index + 1))
   done
-  if (( DB_RESERVED == 1 )); then
+  if (( DB_RESERVED == 1 && DB_OWNED == 1 )); then
     cleanup_container "$DB_CONTAINER" "$DB_CONTAINER_ID" || true
   fi
   cleanup_network || true
@@ -622,6 +655,10 @@ runtime_preflight() {
     set_note 'runtime-preflight-identity-failed'
     return 1
   fi
+  if ! timeout --help 2>&1 | grep -F -- '--kill-after' >/dev/null 2>&1; then
+    set_note 'runtime-preflight-bounded-timeout-missing'
+    return 1
+  fi
   for flag in CONTAINER_HOST DOCKER_HOST PODMAN_HOST CONTAINER_CONNECTION \
     DOCKER_CONFIG DOCKER_AUTH_CONFIG REGISTRY_AUTH_FILE CONTAINERS_AUTH_FILE SSH_AUTH_SOCK; do
     if [[ -n "${!flag:-}" ]]; then
@@ -680,6 +717,80 @@ policy_count_is_zero() {
   local container_id="$1" format="$2" value
   value=$(policy_field "$container_id" "$format") || return 1
   [[ "$value" == '0' ]]
+}
+
+canonical_csv_set() {
+  local value="$1" option
+  local -a options=()
+  [[ -n "$value" ]] || return 1
+  IFS=',' read -r -a options <<< "$value"
+  ((${#options[@]} > 0)) || return 1
+  for option in "${options[@]}"; do
+    [[ -n "$option" ]] || return 1
+  done
+  printf '%s\n' "${options[@]}" | LC_ALL=C sort | paste -sd, -
+}
+
+verify_exact_tmpfs_spec() {
+  local specs="$1" expected_destination="$2" expected_options="$3"
+  local destination options actual_options canonical_expected spec_count=0
+  [[ -n "$specs" ]] || return 1
+  while IFS='|' read -r destination options; do
+    [[ -n "$destination" && -n "$options" ]] || return 1
+    spec_count=$((spec_count + 1))
+    ((spec_count == 1)) || return 1
+    [[ "$destination" == "$expected_destination" ]] || return 1
+    actual_options=$(canonical_csv_set "$options") || return 1
+    canonical_expected=$(canonical_csv_set "$expected_options") || return 1
+    [[ "$actual_options" == "$canonical_expected" ]] || return 1
+  done <<< "$specs"
+  [[ "$spec_count" == '1' ]]
+}
+
+verify_python_mock_container_policy() {
+  local container_id="$1"
+  local user privileged readonly nnp effective bounding network ipc pid uts
+  local tmpfs mounts mount_layout binds volumes volumes_from devices ports
+  local extra_hosts group_add links secret_state env_keys expected_env_keys
+  user=$(policy_field "$container_id" '{{.Config.User}}') || return 1
+  privileged=$(policy_field "$container_id" '{{.HostConfig.Privileged}}') || return 1
+  readonly=$(policy_field "$container_id" '{{.HostConfig.ReadonlyRootfs}}') || return 1
+  nnp=$(policy_field "$container_id" '{{range .HostConfig.SecurityOpt}}{{if or (eq . "no-new-privileges") (eq . "no-new-privileges=true")}}no-new-privileges=true{{end}}{{end}}') || return 1
+  effective=$(policy_field "$container_id" '{{range .EffectiveCaps}}{{println .}}{{end}}') || return 1
+  bounding=$(policy_field "$container_id" '{{range .BoundingCaps}}{{println .}}{{end}}') || return 1
+  network=$(policy_field "$container_id" '{{.HostConfig.NetworkMode}}') || return 1
+  ipc=$(policy_field "$container_id" '{{.HostConfig.IpcMode}}') || return 1
+  pid=$(policy_field "$container_id" '{{.HostConfig.PidMode}}') || return 1
+  uts=$(policy_field "$container_id" '{{.HostConfig.UTSMode}}') || return 1
+  tmpfs=$(policy_field "$container_id" '{{range $path, $opts := .HostConfig.Tmpfs}}{{printf "%s|%s\n" $path $opts}}{{end}}') || return 1
+  mounts=$(policy_field "$container_id" '{{len .Mounts}}') || return 1
+  mount_layout=$(policy_field "$container_id" '{{range .Mounts}}{{printf "%s|%s|%s|%s|%t|%v\n" .Type .Destination .Mode .Propagation .RW .Options}}{{end}}') || return 1
+  binds=$(policy_field "$container_id" '{{len .HostConfig.Binds}}') || return 1
+  volumes=$(policy_field "$container_id" '{{len .Config.Volumes}}') || return 1
+  volumes_from=$(policy_field "$container_id" '{{len .HostConfig.VolumesFrom}}') || return 1
+  devices=$(policy_field "$container_id" '{{len .HostConfig.Devices}}') || return 1
+  ports=$(policy_field "$container_id" '{{len .HostConfig.PortBindings}}') || return 1
+  extra_hosts=$(policy_field "$container_id" '{{len .HostConfig.ExtraHosts}}') || return 1
+  group_add=$(policy_field "$container_id" '{{len .HostConfig.GroupAdd}}') || return 1
+  links=$(policy_field "$container_id" '{{len .HostConfig.Links}}') || return 1
+  secret_state=$(policy_field "$container_id" '{{if .Config.Secrets}}present{{else}}absent{{end}}') || return 1
+  # Only key names are emitted from Config.Env; values never enter a shell
+  # variable, log, report, or test fixture.
+  env_keys=$(policy_field "$container_id" '{{range .Config.Env}}{{println (index (split . "=") 0)}}{{end}}' |
+    awk 'NF { print }' | LC_ALL=C sort) || return 1
+  expected_env_keys=$(printf '%s\n' container PATH PYTHONDONTWRITEBYTECODE PYTHON_SHA256 PYTHON_VERSION |
+    LC_ALL=C sort)
+  [[ "$user" == '65532:65532' && "$privileged" == 'false' &&
+    "$readonly" == 'true' && "$nnp" == 'no-new-privileges=true' &&
+    -z "$effective" && -z "$bounding" && "$network" == 'none' &&
+    "$ipc" == 'private' && "$pid" == 'private' && "$uts" == 'private' &&
+    "$mounts" == '0' && -z "$mount_layout" && "$binds" == '0' &&
+    "$volumes" == '0' && "$volumes_from" == '0' && "$devices" == '0' &&
+    "$ports" == '0' && "$extra_hosts" == '0' && "$group_add" == '0' &&
+    "$links" == '0' && "$secret_state" == 'absent' &&
+    "$env_keys" == "$expected_env_keys" ]] || return 1
+  verify_exact_tmpfs_spec "$tmpfs" "$PYTHON_MOCK_TMPFS_DESTINATION" \
+    "$PYTHON_MOCK_TMPFS_OPTIONS"
 }
 
 verify_non_secret_env_keys() {
@@ -828,6 +939,19 @@ verify_created_container_policy() {
   return 0
 }
 
+generate_resource_nonce() {
+  local nonce
+  nonce=$(python3 -c 'import secrets; print(secrets.token_hex(12))') || {
+    set_note 'resource-name-nonce-generation-failed'
+    return 1
+  }
+  if [[ ! "$nonce" =~ ^[0-9a-f]{24}$ ]]; then
+    set_note 'resource-name-nonce-invalid'
+    return 1
+  fi
+  RESOURCE_NONCE="$nonce"
+}
+
 generate_credentials() {
   local root live bad
   root=$(python3 -c 'import secrets; print(secrets.token_hex(24))') || return 1
@@ -871,11 +995,15 @@ create_secret_from_stdin() {
 }
 
 create_runtime_secrets() {
-  SERVER_ROOT_SECRET="statekit-e51-root-$$"
-  SERVER_USER_SECRET="statekit-e51-user-$$"
-  CLIENT_SECRET="statekit-e51-client-$$"
-  BAD_CLIENT_SECRET="statekit-e51-bad-client-$$"
-  ROOT_CLIENT_SECRET="statekit-e51-root-client-$$"
+  if [[ ! "$RESOURCE_NONCE" =~ ^[0-9a-f]{24}$ ]]; then
+    set_note 'resource-name-nonce-unavailable'
+    return 1
+  fi
+  SERVER_ROOT_SECRET="statekit-e51-root-$RESOURCE_NONCE"
+  SERVER_USER_SECRET="statekit-e51-user-$RESOURCE_NONCE"
+  CLIENT_SECRET="statekit-e51-client-$RESOURCE_NONCE"
+  BAD_CLIENT_SECRET="statekit-e51-bad-client-$RESOURCE_NONCE"
+  ROOT_CLIENT_SECRET="statekit-e51-root-client-$RESOURCE_NONCE"
   reserve_secret_name "$SERVER_ROOT_SECRET" || return 1
   printf '%s' "$ROOT_PASSWORD" | create_secret_from_stdin "$SERVER_ROOT_SECRET" || return 1
   reserve_secret_name "$SERVER_USER_SECRET" || return 1
@@ -925,7 +1053,11 @@ pull_and_verify_image() {
 }
 
 create_private_network() {
-  NETWORK="statekit-e51-net-$$"
+  if [[ ! "$RESOURCE_NONCE" =~ ^[0-9a-f]{24}$ ]]; then
+    set_note 'resource-name-nonce-unavailable'
+    return 1
+  fi
+  NETWORK="statekit-e51-net-$RESOURCE_NONCE"
   local state=0
   if network_exists_state "$NETWORK"; then
     state=0
@@ -937,6 +1069,7 @@ create_private_network() {
     return 1
   fi
   NETWORK_RESERVED=1
+  NETWORK_OWNED=1
   if ! timeout 30 "$RUNTIME" network create --internal "$NETWORK" >"$WORK_DIR/network.out" 2>"$WORK_DIR/network.err"; then
     set_note 'private-network-create-failed'
     return 1
@@ -946,6 +1079,7 @@ create_private_network() {
 
 start_mysql() {
   local id_path="$WORK_DIR/server.id" container_id
+  DB_OWNED=1
   if ! timeout "$CLIENT_CREATE_TIMEOUT_SECONDS" "$RUNTIME" create \
     --name "$DB_CONTAINER" \
     --network "$NETWORK" \
@@ -1002,7 +1136,11 @@ build_client_image() {
     set_note 'statekit-client-binary-permission-failed'
     return 1
   fi
-  CLIENT_IMAGE="statekit-e51-client:$$"
+  if [[ ! "$RESOURCE_NONCE" =~ ^[0-9a-f]{24}$ ]]; then
+    set_note 'resource-name-nonce-unavailable'
+    return 1
+  fi
+  CLIENT_IMAGE="statekit-e51-client:$RESOURCE_NONCE"
   if image_exists_state "$CLIENT_IMAGE"; then
     set_note 'statekit-client-image-name-collision'
     return 1
@@ -1014,6 +1152,7 @@ build_client_image() {
     return 1
   fi
   CLIENT_IMAGE_RESERVED=1
+  CLIENT_IMAGE_OWNED=1
   # This COPY-only build has no network-capable instruction.  Network denial
   # is still explicit so a changed Containerfile cannot silently fetch code.
   if ! timeout 120 "$RUNTIME" build --pull=never --isolation=oci --network=none \
@@ -1028,7 +1167,7 @@ build_client_image() {
 run_client_container() {
   local stdout_path="$1" stderr_path="$2"
   shift 2
-  local name="statekit-e51-client-$$-$CLIENT_SEQUENCE" id_path wait_path start_rc=0 wait_rc=0
+  local name="statekit-e51-client-${RESOURCE_NONCE:-local}-$CLIENT_SEQUENCE" id_path wait_path start_rc=0 wait_rc=0
   local log_rc=0 container_id='' wait_value='' index
   CLIENT_SEQUENCE=$((CLIENT_SEQUENCE + 1))
   LAST_CLIENT_CLASS='setup'
@@ -1172,7 +1311,7 @@ lifecycle_mutation_precheck() {
     return 1
   fi
   if [[ -z "$WORK_DIR" || -z "$ROOT_CLIENT_SECRET" || -z "$DB_HOST" ||
-    ! "$LIFECYCLE_DB" =~ ^statekit_r93j_[0-9]+_[0-9]+$ ]]; then
+    ! "$LIFECYCLE_DB" =~ ^statekit_r93j_[[:alnum:]_-]+$ ]]; then
     set_note 'lifecycle-mutation-precheck-failed'
     return 1
   fi
@@ -1236,8 +1375,8 @@ reconcile_ambiguous_lifecycle_create() {
 cleanup_lifecycle_database() {
   local stdout_path stderr_path verify_stdout verify_stderr
   local rc=0 value presence=2
-  if (( LIFECYCLE_DB_RESERVED != 1 )); then
-    if (( LIFECYCLE_DB_OWNED == 1 )); then
+  if (( LIFECYCLE_DB_RESERVED != 1 || LIFECYCLE_DB_OWNED != 1 )); then
+    if (( LIFECYCLE_DB_OWNED == 1 && LIFECYCLE_DB_RESERVED != 1 )); then
       set_cleanup_note 'lifecycle-owned-without-absence-reservation'
       mark_cleanup_failure
       return 1
@@ -1245,7 +1384,7 @@ cleanup_lifecycle_database() {
     return 0
   fi
   if [[ -z "$WORK_DIR" || -z "$ROOT_CLIENT_SECRET" || -z "$DB_HOST" ||
-    ! "$LIFECYCLE_DB" =~ ^statekit_r93j_[0-9]+_[0-9]+$ ]]; then
+    ! "$LIFECYCLE_DB" =~ ^statekit_r93j_[[:alnum:]_-]+$ ]]; then
     set_cleanup_note 'lifecycle-cleanup-precheck-failed'
     mark_cleanup_failure
     return 1
@@ -1282,6 +1421,83 @@ cleanup_lifecycle_database() {
       ;;
     *)
       set_cleanup_note 'lifecycle-cleanup-absence-uncertain'
+      mark_cleanup_failure
+      rc=1
+      ;;
+  esac
+  rm -f -- "$stdout_path" "$stderr_path" "$verify_stdout" "$verify_stderr"
+  return "$rc"
+}
+
+alter_database_presence() {
+  local stdout_path="$1" stderr_path="$2" rc=0 value
+  : >"$stdout_path"
+  : >"$stderr_path"
+  native_mysql_as_user root "$ROOT_CLIENT_SECRET" "$DB_HOST" "$DB_PORT" \
+    "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '$ALTER_DB'" \
+    "$stdout_path" "$stderr_path" || rc=$?
+  if (( rc != 0 )) || ! value_free_files "$stdout_path" "$stderr_path"; then
+    return 2
+  fi
+  value=$(<"$stdout_path")
+  if [[ "$value" == "$ALTER_DB" ]]; then
+    return 0
+  fi
+  if [[ -z "$value" ]]; then
+    return 1
+  fi
+  return 2
+}
+
+cleanup_alter_database() {
+  local stdout_path stderr_path verify_stdout verify_stderr
+  local rc=0 value presence=2
+  if (( ALTER_DB_RESERVED != 1 || ALTER_DB_OWNED != 1 )); then
+    if (( ALTER_DB_OWNED == 1 && ALTER_DB_RESERVED != 1 )); then
+      set_cleanup_note 'alter-owned-without-absence-reservation'
+      mark_cleanup_failure
+      return 1
+    fi
+    return 0
+  fi
+  if [[ -z "$WORK_DIR" || -z "$ROOT_CLIENT_SECRET" || -z "$DB_HOST" ||
+    ! "$ALTER_DB" =~ ^statekit_r93l_[[:alnum:]_-]+$ ]]; then
+    set_cleanup_note 'alter-cleanup-precheck-failed'
+    mark_cleanup_failure
+    return 1
+  fi
+  stdout_path="$WORK_DIR/alter-cleanup.out"
+  stderr_path="$WORK_DIR/alter-cleanup.err"
+  verify_stdout="$WORK_DIR/alter-cleanup-verify.out"
+  verify_stderr="$WORK_DIR/alter-cleanup-verify.err"
+  native_mysql_as_user root "$ROOT_CLIENT_SECRET" "$DB_HOST" "$DB_PORT" \
+    "DROP DATABASE IF EXISTS \`$ALTER_DB\`" "$stdout_path" "$stderr_path" || rc=$?
+  value=''
+  [[ -f "$stdout_path" ]] && value=$(<"$stdout_path")
+  if (( rc != 0 )) || [[ -n "$value" ]] || ! value_free_files "$stdout_path" "$stderr_path"; then
+    set_cleanup_note 'alter-cleanup-drop-failed'
+    mark_cleanup_failure
+    rm -f -- "$stdout_path" "$stderr_path" "$verify_stdout" "$verify_stderr"
+    return 1
+  fi
+  if alter_database_presence "$verify_stdout" "$verify_stderr"; then
+    presence=0
+  else
+    presence=$?
+  fi
+  case "$presence" in
+    1)
+      ALTER_DB_OWNED=0
+      ALTER_DB_RESERVED=0
+      rc=0
+      ;;
+    0)
+      set_cleanup_note 'alter-cleanup-residual-database'
+      mark_cleanup_failure
+      rc=1
+      ;;
+    *)
+      set_cleanup_note 'alter-cleanup-absence-uncertain'
       mark_cleanup_failure
       rc=1
       ;;
@@ -1568,7 +1784,7 @@ check_native_lifecycle_absent() {
   local stdout_path="$WORK_DIR/lifecycle-before.out" stderr_path="$WORK_DIR/lifecycle-before.err"
   local presence=2 ok=1
   LIFECYCLE_DB_RESERVED=0
-  if [[ ! "$LIFECYCLE_DB" =~ ^statekit_r93j_[0-9]+_[0-9]+$ ]]; then
+  if [[ ! "$LIFECYCLE_DB" =~ ^statekit_r93j_[[:alnum:]_-]+$ ]]; then
     set_note 'lifecycle-database-name-invalid'
   else
     if lifecycle_database_presence "$stdout_path" "$stderr_path"; then
@@ -1689,6 +1905,293 @@ check_native_lifecycle_removed() {
   return "$ok"
 }
 
+alter_mutation_precheck() {
+  if (( ALTER_DB_RESERVED != 1 )); then
+    set_note 'alter-absence-reservation-required'
+    return 1
+  fi
+  if [[ -z "$WORK_DIR" || -z "$ROOT_CLIENT_SECRET" || -z "$DB_HOST" ||
+    ! "$ALTER_DB" =~ ^statekit_r93l_[[:alnum:]_-]+$ ]]; then
+    set_note 'alter-mutation-precheck-failed'
+    return 1
+  fi
+  return 0
+}
+
+check_native_alter_absent() {
+  local stdout_path="$WORK_DIR/alter-before.out" stderr_path="$WORK_DIR/alter-before.err"
+  local presence=2 ok=1
+  ALTER_DB_RESERVED=0
+  ALTER_DB_OWNED=0
+  if [[ ! "$ALTER_DB" =~ ^statekit_r93l_[[:alnum:]_-]+$ ]]; then
+    set_note 'alter-database-name-invalid'
+  else
+    if alter_database_presence "$stdout_path" "$stderr_path"; then
+      presence=0
+    else
+      presence=$?
+    fi
+    if (( presence == 1 )); then
+      # This reservation is the cleanup/mutation ownership boundary. Nothing
+      # is created until this exact native absence read succeeds.
+      ALTER_DB_RESERVED=1
+      ok=0
+    elif (( presence == 0 )); then
+      set_note 'alter-database-not-absent'
+    else
+      set_note 'alter-absence-check-uncertain'
+    fi
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_native_alter_create_seed() {
+  local stdout_path="$WORK_DIR/alter-create.out" stderr_path="$WORK_DIR/alter-create.err"
+  local verify_stdout="$WORK_DIR/alter-seed-verify.out" verify_stderr="$WORK_DIR/alter-seed-verify.err"
+  local rc=0 verify_rc=0 value='' verify_value='' ok=1
+  alter_mutation_precheck || return 1
+  # Reserve cleanup responsibility before dispatch because a client timeout
+  # can occur after CREATE DATABASE/seed statements have committed.
+  ALTER_DB_OWNED=1
+  native_mysql_as_user root "$ROOT_CLIENT_SECRET" "$DB_HOST" "$DB_PORT" \
+    "CREATE DATABASE \`$ALTER_DB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci; CREATE TABLE \`$ALTER_DB\`.\`$ALTER_TABLE\` (id INT PRIMARY KEY, note VARCHAR(32) NOT NULL); INSERT INTO \`$ALTER_DB\`.\`$ALTER_TABLE\` (id, note) VALUES (1, 'seeded')" \
+    "$stdout_path" "$stderr_path" || rc=$?
+  [[ -f "$stdout_path" ]] && value=$(<"$stdout_path")
+  native_mysql_as_user root "$ROOT_CLIENT_SECRET" "$DB_HOST" "$DB_PORT" \
+    "SELECT COUNT(*) FROM \`$ALTER_DB\`.\`$ALTER_TABLE\` WHERE id = 1 AND note = 'seeded'" \
+    "$verify_stdout" "$verify_stderr" || verify_rc=$?
+  [[ -f "$verify_stdout" ]] && verify_value=$(<"$verify_stdout")
+  if (( rc == 0 && verify_rc == 0 )) && [[ -z "$value" && "$verify_value" == '1' ]] &&
+    value_free_files "$stdout_path" "$stderr_path" "$verify_stdout" "$verify_stderr"; then
+    ok=0
+  else
+    set_note 'alter-create-or-seed-failed'
+  fi
+  rm -f "$stdout_path" "$stderr_path" "$verify_stdout" "$verify_stderr"
+  return "$ok"
+}
+
+native_alter_defaults_match() {
+  local expected_charset="$1" expected_collate="$2" stdout_path="$3" stderr_path="$4"
+  local rc=0 value
+  native_mysql_as_user root "$ROOT_CLIENT_SECRET" "$DB_HOST" "$DB_PORT" \
+    "SELECT DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '$ALTER_DB'" \
+    "$stdout_path" "$stderr_path" || rc=$?
+  value=$(<"$stdout_path")
+  [[ "$rc" == '0' && "$value" == "${expected_charset}"$'\t'"${expected_collate}" ]] &&
+    value_free_files "$stdout_path" "$stderr_path"
+}
+
+native_alter_transition_supported() {
+  local stdout_path="$1" stderr_path="$2" rc=0 value
+  native_mysql_as_user root "$ROOT_CLIENT_SECRET" "$DB_HOST" "$DB_PORT" \
+    "SELECT CHARACTER_SET_NAME, DEFAULT_COLLATE_NAME FROM information_schema.CHARACTER_SETS WHERE CHARACTER_SET_NAME = 'latin1'" \
+    "$stdout_path" "$stderr_path" || rc=$?
+  value=$(<"$stdout_path")
+  [[ "$rc" == '0' && "$value" == $'latin1\tlatin1_swedish_ci' ]] &&
+    value_free_files "$stdout_path" "$stderr_path"
+}
+
+native_alter_seed_present() {
+  local stdout_path="$1" stderr_path="$2" rc=0 value
+  native_mysql_as_user root "$ROOT_CLIENT_SECRET" "$DB_HOST" "$DB_PORT" \
+    "SELECT COUNT(*) FROM \`$ALTER_DB\`.\`$ALTER_TABLE\` WHERE id = 1 AND note = 'seeded'" \
+    "$stdout_path" "$stderr_path" || rc=$?
+  value=$(<"$stdout_path")
+  [[ "$rc" == '0' && "$value" == '1' ]] && value_free_files "$stdout_path" "$stderr_path"
+}
+
+check_native_alter_defaults_before() {
+  local stdout_path="$WORK_DIR/alter-defaults-before.out" stderr_path="$WORK_DIR/alter-defaults-before.err"
+  local transition_stdout="$WORK_DIR/alter-transition-supported.out" transition_stderr="$WORK_DIR/alter-transition-supported.err" ok=1
+  alter_mutation_precheck || return 1
+  if native_alter_transition_supported "$transition_stdout" "$transition_stderr" &&
+    native_alter_defaults_match utf8mb4 utf8mb4_0900_ai_ci "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'alter-charset-transition-unsupported'
+  fi
+  rm -f "$stdout_path" "$stderr_path" "$transition_stdout" "$transition_stderr"
+  return "$ok"
+}
+
+check_statekit_alter_explicit() {
+  local stdout_path="$WORK_DIR/alter-explicit.out" stderr_path="$WORK_DIR/alter-explicit.err"
+  local rc=0 value='' ok=1
+  alter_mutation_precheck || return 1
+  statekit_call "$ROOT_CLIENT_SECRET" 'mysql.alter_db' \
+    ",\"name\":\"$ALTER_DB\",\"character_set\":\"latin1\",\"collate\":\"latin1_swedish_ci\"" \
+    "$DB_HOST" "$DB_PORT" "$stdout_path" "$stderr_path" || rc=$?
+  [[ -f "$stdout_path" ]] && value=$(<"$stdout_path")
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' && "$value" == 'true' ]] &&
+    value_free_files "$stdout_path" "$stderr_path"; then
+    local seed_stdout="$WORK_DIR/alter-explicit-seed.out" seed_stderr="$WORK_DIR/alter-explicit-seed.err"
+    if native_alter_seed_present "$seed_stdout" "$seed_stderr"; then
+      ok=0
+    else
+      set_note 'alter-explicit-seed-not-preserved'
+    fi
+    rm -f "$seed_stdout" "$seed_stderr"
+  else
+    set_note 'alter-explicit-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_native_alter_explicit_readback() {
+  local stdout_path="$WORK_DIR/alter-explicit-native.out" stderr_path="$WORK_DIR/alter-explicit-native.err"
+  local seed_stdout="$WORK_DIR/alter-explicit-native-seed.out" seed_stderr="$WORK_DIR/alter-explicit-native-seed.err" ok=1
+  alter_mutation_precheck || return 1
+  if native_alter_defaults_match latin1 latin1_swedish_ci "$stdout_path" "$stderr_path" &&
+    native_alter_seed_present "$seed_stdout" "$seed_stderr"; then
+    ok=0
+  fi
+  rm -f "$stdout_path" "$stderr_path" "$seed_stdout" "$seed_stderr"
+  return "$ok"
+}
+
+statekit_alter_db_get_matches() {
+  local expected_charset="$1" expected_collate="$2" stdout_path="$3" stderr_path="$4"
+  local rc=0
+  statekit_call "$ROOT_CLIENT_SECRET" 'mysql.db_get' ",\"name\":\"$ALTER_DB\"" \
+    "$DB_HOST" "$DB_PORT" "$stdout_path" "$stderr_path" || rc=$?
+  if (( rc != 0 )) || ! value_free_files "$stdout_path" "$stderr_path"; then
+    return 1
+  fi
+  python3 -c 'import json, sys
+data = json.load(sys.stdin)
+raise SystemExit(0 if data == {"character_set": sys.argv[1], "collate": sys.argv[2]} else 1)' \
+    "$expected_charset" "$expected_collate" <"$stdout_path" >/dev/null 2>&1
+}
+
+check_statekit_alter_explicit_readback() {
+  local stdout_path="$WORK_DIR/alter-explicit-statekit.out" stderr_path="$WORK_DIR/alter-explicit-statekit.err" ok=1
+  alter_mutation_precheck || return 1
+  if statekit_alter_db_get_matches latin1 latin1_swedish_ci "$stdout_path" "$stderr_path"; then
+    ok=0
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_alter_default_preservation() {
+  local stdout_path="$WORK_DIR/alter-default-preserve.out" stderr_path="$WORK_DIR/alter-default-preserve.err"
+  local rc=0 value='' ok=1
+  alter_mutation_precheck || return 1
+  # The explicit empty character_set exercises Salt's truthiness fallback;
+  # db_get must supply latin1 while the requested collation changes.
+  statekit_call "$ROOT_CLIENT_SECRET" 'mysql.alter_db' \
+    ",\"name\":\"$ALTER_DB\",\"character_set\":\"\",\"collate\":\"latin1_general_ci\"" \
+    "$DB_HOST" "$DB_PORT" "$stdout_path" "$stderr_path" || rc=$?
+  [[ -f "$stdout_path" ]] && value=$(<"$stdout_path")
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' && "$value" == 'true' ]] &&
+    value_free_files "$stdout_path" "$stderr_path"; then
+    local seed_stdout="$WORK_DIR/alter-default-seed.out" seed_stderr="$WORK_DIR/alter-default-seed.err"
+    if native_alter_seed_present "$seed_stdout" "$seed_stderr"; then
+      ok=0
+    else
+      set_note 'alter-default-seed-not-preserved'
+    fi
+    rm -f "$seed_stdout" "$seed_stderr"
+  else
+    set_note 'alter-default-preservation-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_native_alter_default_preserved_readback() {
+  local stdout_path="$WORK_DIR/alter-default-native.out" stderr_path="$WORK_DIR/alter-default-native.err"
+  local seed_stdout="$WORK_DIR/alter-default-native-seed.out" seed_stderr="$WORK_DIR/alter-default-native-seed.err" ok=1
+  alter_mutation_precheck || return 1
+  if native_alter_defaults_match latin1 latin1_general_ci "$stdout_path" "$stderr_path" &&
+    native_alter_seed_present "$seed_stdout" "$seed_stderr"; then
+    ok=0
+  fi
+  rm -f "$stdout_path" "$stderr_path" "$seed_stdout" "$seed_stderr"
+  return "$ok"
+}
+
+check_statekit_alter_default_preserved_readback() {
+  local stdout_path="$WORK_DIR/alter-default-statekit.out" stderr_path="$WORK_DIR/alter-default-statekit.err" ok=1
+  alter_mutation_precheck || return 1
+  if statekit_alter_db_get_matches latin1 latin1_general_ci "$stdout_path" "$stderr_path"; then
+    ok=0
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_alter_auth_negative() {
+  local stdout_path="$WORK_DIR/alter-auth-negative.out" stderr_path="$WORK_DIR/alter-auth-negative.err"
+  local rc=0 value='' ok=1
+  alter_mutation_precheck || return 1
+  statekit_call "$BAD_CLIENT_SECRET" 'mysql.alter_db' \
+    ",\"name\":\"$ALTER_DB\",\"character_set\":\"utf8mb4\",\"collate\":\"utf8mb4_general_ci\"" \
+    "$DB_HOST" "$DB_PORT" "$stdout_path" "$stderr_path" || rc=$?
+  [[ -f "$stdout_path" ]] && value=$(<"$stdout_path")
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' && "$value" == '[]' ]] &&
+    value_free_files "$stdout_path" "$stderr_path"; then
+    ok=0
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_alter_connection_negative() {
+  local stdout_path="$WORK_DIR/alter-connection-negative.out" stderr_path="$WORK_DIR/alter-connection-negative.err"
+  local rc=0 value='' ok=1
+  alter_mutation_precheck || return 1
+  statekit_call "$ROOT_CLIENT_SECRET" 'mysql.alter_db' \
+    ",\"name\":\"$ALTER_DB\",\"character_set\":\"utf8mb4\",\"collate\":\"utf8mb4_general_ci\"" \
+    "$DB_HOST" '1' "$stdout_path" "$stderr_path" || rc=$?
+  [[ -f "$stdout_path" ]] && value=$(<"$stdout_path")
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' && "$value" == '[]' ]] &&
+    value_free_files "$stdout_path" "$stderr_path"; then
+    ok=0
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_alter_invalid_identifier() {
+  local stdout_path="$WORK_DIR/alter-invalid-identifier.out" stderr_path="$WORK_DIR/alter-invalid-identifier.err"
+  local rc=0 ok=1
+  alter_mutation_precheck || return 1
+  statekit_call "$ROOT_CLIENT_SECRET" 'mysql.alter_db' ',"name":"bad\nname"' \
+    "$DB_HOST" "$DB_PORT" "$stdout_path" "$stderr_path" || rc=$?
+  if (( rc == 1 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '1' ]] &&
+    [[ ! -s "$stdout_path" ]] && grep -F -q -- "$STATEKIT_INVALID_IDENTIFIER_CATEGORY" "$stderr_path" 2>/dev/null &&
+    grep -F -q -- "$STATEKIT_INVALID_IDENTIFIER_DIAGNOSTIC" "$stderr_path" 2>/dev/null &&
+    value_free_files "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'alter-invalid-identifier-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_alter_invalid_option() {
+  local stdout_path="$WORK_DIR/alter-invalid-option.out" stderr_path="$WORK_DIR/alter-invalid-option.err"
+  local rc=0 ok=1
+  alter_mutation_precheck || return 1
+  statekit_call "$ROOT_CLIENT_SECRET" 'mysql.alter_db' \
+    ",\"name\":\"$ALTER_DB\",\"character_set\":\"utf8;DROP\",\"collate\":\"utf8mb4_general_ci\"" \
+    "$DB_HOST" "$DB_PORT" "$stdout_path" "$stderr_path" || rc=$?
+  if (( rc == 1 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '1' ]] &&
+    [[ ! -s "$stdout_path" ]] && grep -F -q -- "$STATEKIT_INVALID_OPTION_DIAGNOSTIC" "$stderr_path" 2>/dev/null &&
+    ! grep -F -q -- 'utf8;DROP' "$stderr_path" 2>/dev/null && value_free_files "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'alter-invalid-option-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
 check_statekit_invalid_identifier_negative() {
   local stdout_path="$WORK_DIR/db-invalid-identifier.out" stderr_path="$WORK_DIR/db-invalid-identifier.err"
   local rc=0 ok=1
@@ -1778,9 +2281,15 @@ main() {
     mark_remaining_skipped
     return 1
   fi
-  DB_CONTAINER="statekit-e51-mysql-$$"
+  if ! generate_resource_nonce; then
+    record_case "${CASE_IDS[0]}" fail
+    mark_remaining_skipped
+    return 1
+  fi
+  DB_CONTAINER="statekit-e51-mysql-$RESOURCE_NONCE"
   DB_HOST="$DB_CONTAINER"
-  LIFECYCLE_DB="statekit_r93j_${BASHPID}_${RANDOM}"
+  LIFECYCLE_DB="statekit_r93j_$RESOURCE_NONCE"
+  ALTER_DB="statekit_r93l_$RESOURCE_NONCE"
   if ! pull_and_verify_image || ! build_client_image || ! create_private_network ||
     ! generate_credentials || ! create_runtime_secrets; then
     set_note 'runtime-or-resource-setup-failed'
@@ -1827,6 +2336,19 @@ main() {
   run_case 'mysql-db-negative-invalid-identifier' check_statekit_invalid_identifier_negative
   run_case 'mysql-db-negative-auth' check_statekit_lifecycle_auth_negative
   run_case 'mysql-db-negative-connection' check_statekit_lifecycle_connection_negative
+  run_case 'mysql-alter-db-native-absent-before-create' check_native_alter_absent
+  run_case 'mysql-alter-db-create-and-seed' check_native_alter_create_seed
+  run_case 'mysql-alter-db-native-defaults-before' check_native_alter_defaults_before
+  run_case 'mysql-alter-db-statekit-explicit' check_statekit_alter_explicit
+  run_case 'mysql-alter-db-native-explicit-readback' check_native_alter_explicit_readback
+  run_case 'mysql-alter-db-statekit-explicit-readback' check_statekit_alter_explicit_readback
+  run_case 'mysql-alter-db-statekit-default-preservation' check_statekit_alter_default_preservation
+  run_case 'mysql-alter-db-native-default-preserved-readback' check_native_alter_default_preserved_readback
+  run_case 'mysql-alter-db-statekit-default-preserved-readback' check_statekit_alter_default_preserved_readback
+  run_case 'mysql-alter-db-negative-auth' check_statekit_alter_auth_negative
+  run_case 'mysql-alter-db-negative-connection' check_statekit_alter_connection_negative
+  run_case 'mysql-alter-db-negative-invalid-identifier' check_statekit_alter_invalid_identifier
+  run_case 'mysql-alter-db-negative-invalid-option' check_statekit_alter_invalid_option
 
   EXECUTION_COMPLETE=1
   if ! case_results_are_exact || (( CASE_RESULT_INTEGRITY_FAILED != 0 || PASSED != ${#CASE_IDS[@]} || FAILED != 0 || SKIPPED != 0 )); then
