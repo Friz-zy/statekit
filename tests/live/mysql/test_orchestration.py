@@ -71,6 +71,11 @@ EXPECTED_CASES = (
     "mysql-slave-lag-native-observation",
     "mysql-slave-lag-negative-auth",
     "mysql-slave-lag-negative-connection",
+    "mysql-free-slave-statekit",
+    "mysql-free-slave-native-unsupported",
+    "mysql-free-slave-negative-auth",
+    "mysql-free-slave-negative-connection",
+    "mysql-free-slave-negative-runtime",
     "mysql-plugin-add-installed-idempotent",
     "mysql-plugin-add-installed-native-status",
     "mysql-plugin-status-case-sensitive",
@@ -551,7 +556,7 @@ write_query_frame_fixture "$fixture" "$path"
             text=True,
         )
         self.assertEqual(tuple(result.stdout.splitlines()), EXPECTED_CASES)
-        self.assertEqual(len(EXPECTED_CASES), 96)
+        self.assertEqual(len(EXPECTED_CASES), 101)
         self.assertEqual(result.stderr, "")
 
     def test_image_digest_and_runtime_secret_boundary(self) -> None:
@@ -718,7 +723,7 @@ write_report
 
     def test_workflow_keeps_build_and_python_checks_inside_pinned_sandboxes(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("e5.2 live mysql read-only/catalog/plugin/database-lifecycle/alter-db/process-replication-status", workflow)
+        self.assertIn("e5.2 live mysql read-only/catalog/plugin/database-lifecycle/alter-db/process-replication-status/free-slave", workflow)
         self.assertIn("sqlite-live:", workflow)
         self.assertIn("e5-2-mysql-live-report", workflow)
         self.assertIn("run.sh --preflight-only", workflow)
@@ -1560,6 +1565,162 @@ rm -f -- "$input_path" "$request_path"
         self.assertTrue(self._status_correlates("processlist", "available", "available"))
         self.assertFalse(self._status_correlates("processlist", "available", "auth-failure"))
 
+    def test_free_slave_classification_is_unsupported_and_non_promoting(self) -> None:
+        unsupported = "ERROR 1064 (42000) at line 1: You have an error in your SQL syntax; check the manual near 'SLAVE STATUS' at line 1\n"
+        self.assertEqual(
+            self._classify_status_json("free_slave", ""), "compatibility-empty-string"
+        )
+        self.assertEqual(self._classify_status_json("free_slave", []), "unexpected-shape")
+        self.assertEqual(self._classify_status_json("free_slave", "promoted"), "unexpected-shape")
+        self.assertEqual(self._classify_status_json("free_slave", "failed"), "unexpected-shape")
+        self.assertEqual(
+            self._classify_status_result("free_slave", "exited", 1, "", unsupported),
+            "unsupported-sql",
+        )
+        self.assertEqual(
+            self._classify_status_result("free_slave", "runtime", 125, "", ""),
+            "runtime",
+        )
+        self.assertTrue(
+            self._status_correlates(
+                "free_slave", "compatibility-empty-string", "unsupported-sql"
+            )
+        )
+        self.assertFalse(
+            self._status_correlates("free_slave", "compatibility-empty-string", "runtime")
+        )
+
+    def test_free_slave_no_dispatch_contract_is_documented(self) -> None:
+        source = (ROOT / "modules/exec/mysql/mysql.go").read_text(encoding="utf-8")
+        self.assertIn("R93R-01..03", source)
+        self.assertIn("return \"\", nil", source)
+        self.assertIn("derived master connection", source)
+        self.assertIn("CHANGE MASTER", source)
+
+    def test_free_slave_negative_checks_require_json_empty_string(self) -> None:
+        command = r'''
+script_path="$1"
+work_dir="$2"
+statekit_output="$3"
+expected_native_class="$4"
+secret_name="$5"
+set --
+source "$script_path"
+set +e
+WORK_DIR="$work_dir"
+DB_HOST='mysql-host'
+ROOT_CLIENT_SECRET='root-client-secret'
+BAD_CLIENT_SECRET='bad-client-secret'
+ROOT_PASSWORD='root-password'
+LIVE_PASSWORD='live-password'
+BAD_PASSWORD='bad-password'
+statekit_calls=0
+native_calls=0
+statekit_call() {
+  statekit_calls=$((statekit_calls + 1))
+  if [[ "$statekit_output" == 'missing' ]]; then
+    rm -f -- "$6"
+  else
+    printf '%s' "$statekit_output" >"$6"
+  fi
+  : >"$7"
+  LAST_CLIENT_CLASS='exited'
+  LAST_CLIENT_EXIT_RC=0
+  return 0
+}
+native_mysql_as_user() {
+  native_calls=$((native_calls + 1))
+  : >"$6"
+  : >"$7"
+  if [[ "$expected_native_class" == 'auth-failure' ]]; then
+    printf '%s\n' "$NATIVE_AUTH_FAILURE_MARKER" >"$7"
+  else
+    printf '%s\n' "$NATIVE_CONNECTION_FAILURE_MARKER" >"$7"
+  fi
+  LAST_CLIENT_CLASS='exited'
+  LAST_CLIENT_EXIT_RC=1
+  return 1
+}
+if check_statekit_status_negative mysql.free_slave free_slave "$expected_native_class" \
+  "$secret_name" "$DB_PORT" free-slave-negative; then
+  check_rc=0
+else
+  check_rc=$?
+fi
+printf 'check_rc=%s statekit_calls=%s native_calls=%s\n' "$check_rc" "$statekit_calls" "$native_calls"
+'''
+        cases = (
+            ('""', 'auth-failure', 'BAD_CLIENT_SECRET', 'check_rc=0 statekit_calls=1 native_calls=1'),
+            ('""', 'connection-failure', 'ROOT_CLIENT_SECRET', 'check_rc=0 statekit_calls=1 native_calls=1'),
+            ('missing', 'auth-failure', 'BAD_CLIENT_SECRET', 'check_rc=1 statekit_calls=1 native_calls=0'),
+            ('[]', 'auth-failure', 'BAD_CLIENT_SECRET', 'check_rc=1 statekit_calls=1 native_calls=0'),
+        )
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            for statekit_output, native_class, secret_variable, expected in cases:
+                with self.subTest(statekit_output=statekit_output, native_class=native_class):
+                    result = subprocess.run(
+                        [
+                            'bash',
+                            '-c',
+                            command,
+                            'free-slave-negative-check',
+                            str(SCRIPT),
+                            str(temporary),
+                            statekit_output,
+                            native_class,
+                            secret_variable,
+                        ],
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout, expected + '\n')
+                    self.assertEqual(result.stderr, '')
+
+    def test_free_slave_runtime_negative_is_classifier_only(self) -> None:
+        command = r'''
+script_path="$1"
+work_dir="$2"
+set --
+source "$script_path"
+set +e
+WORK_DIR="$work_dir"
+ROOT_PASSWORD='root-password'
+LIVE_PASSWORD='live-password'
+BAD_PASSWORD='bad-password'
+CALLS="$work_dir/calls"
+statekit_call() {
+  printf 'statekit\n' >>"$CALLS"
+  return 99
+}
+native_mysql_as_user() {
+  printf 'native\n' >>"$CALLS"
+  return 99
+}
+if check_free_slave_runtime_negative; then
+  check_rc=0
+else
+  check_rc=$?
+fi
+call_count=0
+[[ -f "$CALLS" ]] && call_count=$(wc -l <"$CALLS")
+printf 'check_rc=%s call_count=%s\n' "$check_rc" "$call_count"
+'''
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            result = subprocess.run(
+                ['bash', '-c', command, 'free-slave-runtime-check', str(SCRIPT), temporary_directory],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, 'check_rc=0 call_count=0\n')
+        self.assertEqual(result.stderr, '')
+
     def test_status_shape_distinguishes_missing_key_from_present_null(self) -> None:
         self.assertEqual(
             self._classify_status_json(
@@ -2127,8 +2288,8 @@ printf 'duplicate_rc=%s unknown_rc=%s duplicate_status=%s missing_status=%s subs
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("status: fail", report)
             self.assertIn("execution: incomplete", report)
-            self.assertIn("cases_total: 96", report)
-            self.assertIn("cases_failed: 96", report)
+            self.assertIn("cases_total: 101", report)
+            self.assertIn("cases_failed: 101", report)
             self.assertIn("cases_skipped: 0", report)
             self.assertIn("setup_note: production-statekit-binary-missing", report)
 

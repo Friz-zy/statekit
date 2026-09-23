@@ -163,7 +163,16 @@ functions:
       source:
         path: salt/modules/mysql.py
         symbol: free_slave
-      summary: Frees a slave from its master.  This is a WIP, do not use.
+      summary: >-
+        WIP compatibility surface intentionally unsupported by the current
+        bounded native transport. After value-free connection-argument
+        validation it returns the source-facing empty string without Runner
+        dispatch: no status probe, derived master connection, credential use
+        against a status-controlled host, or destructive replication statement
+        is performed. A future upgrade requires a separately provisioned and
+        authorized master/replica topology, a complete reviewed sequence with
+        phase/unknown-outcome reporting, and human approval; MySQL 8.4 legacy
+        status support and promotion are not claimed.
       parameters:
         - name: connection_args
           kind: '**'

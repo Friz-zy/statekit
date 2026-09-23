@@ -448,6 +448,7 @@ implemented:
         - mysql.db_remove
         - mysql.db_repair
         - mysql.db_tables
+        - mysql.free_slave
         - mysql.get_master_status
         - mysql.get_slave_status
         - mysql.grant_add

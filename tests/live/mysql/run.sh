@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # E5.2 live MySQL gate extending the E5.1 read-only/catalog/plugin surface
 # with the already-ported R9.3j database lifecycle, R9.3l alter_db, R9.3m
-# process/replication status readers, R9.3n slave_lag, R9.3o plugin
+# process/replication status readers, R9.3n slave_lag, R9.3r free_slave
+# no-dispatch guard,
+# R9.3o plugin
 # add/remove lifecycle negatives and idempotence, R9.3p mysql.query, and R9.3q
 # mysql.file_query.
 # The gate deliberately runs
@@ -117,6 +119,11 @@ readonly CASE_IDS=(
   'mysql-slave-lag-native-observation'
   'mysql-slave-lag-negative-auth'
   'mysql-slave-lag-negative-connection'
+  'mysql-free-slave-statekit'
+  'mysql-free-slave-native-unsupported'
+  'mysql-free-slave-negative-auth'
+  'mysql-free-slave-negative-connection'
+  'mysql-free-slave-negative-runtime'
   'mysql-plugin-add-installed-idempotent'
   'mysql-plugin-add-installed-native-status'
   'mysql-plugin-status-case-sensitive'
@@ -387,11 +394,11 @@ write_report() {
       printf '%s\n' 'cleanup: pass'
     fi
     printf 'cleanup_note: %s\n' "$CLEANUP_NOTE"
-    printf '%s\n' 'scope: E5.1 mysql.version/db_list/db_exists/plugins_list/plugin_status plus R9.3j lifecycle, R9.3l mysql.alter_db create/seed/alter/read-back, R9.3m process/replication status, R9.3n mysql.slave_lag, R9.3o plugin_add/plugin_remove lifecycle cases, and R9.3p mysql.query SELECT/DDL/DML/stdin-boundary cases'
-    printf '%s\n' 'independent_checks: native mysql client database/plugin/charset/collation/seed postconditions, exact plugin status/case observations, missing-shared-object INSTALL failure classifications, available SHOW FULL PROCESSLIST correlation, MySQL 8.4 unsupported SHOW MASTER STATUS/SHOW SLAVE STATUS classifications including slave_lag, and independent scalar/table/query-database/multiline/diagnostic observations; no positive plugin installation or replication retrieval is claimed'
-    printf '%s\n' 'status_classification: StateKit [] compatibility output is accepted only when the matching native legacy SHOW statement is classified unsupported-sql, mysql.slave_lag -3 is accepted only with the matching native unsupported-sql classification, and missing-plugin INSTALL exits are accepted only with the exact ER_CANT_OPEN_LIBRARY errno=2 diagnostic bound to the requested basename; path, permission, loader/interface, mixed, unrelated, auth, connection, runtime/setup/cleanup, or StateKit/native mismatch fails'
+    printf '%s\n' 'scope: E5.1 mysql.version/db_list/db_exists/plugins_list/plugin_status plus R9.3j lifecycle, R9.3l mysql.alter_db create/seed/alter/read-back, R9.3m process/replication status, R9.3n mysql.slave_lag, R9.3r mysql.free_slave no-dispatch/unsupported and native-negative cases, R9.3o plugin_add/plugin_remove lifecycle cases, and R9.3p mysql.query plus R9.3q mysql.file_query fixed-boundary cases'
+    printf '%s\n' 'independent_checks: native mysql client database/plugin/charset/collation/seed postconditions, exact plugin status/case observations, missing-shared-object INSTALL failure classifications, available SHOW FULL PROCESSLIST correlation, MySQL 8.4 unsupported SHOW MASTER STATUS/SHOW SLAVE STATUS classifications including slave_lag/free_slave, independent scalar/table/query-database/multiline/diagnostic observations, and a deterministic runtime-classification negative; free_slave has no native StateKit connection, no status-derived master endpoint, no destructive dispatch, and no promotion or partial-mutation claim'
+    printf '%s\n' 'status_classification: StateKit [] compatibility output is accepted only when the matching native legacy SHOW statement is classified unsupported-sql, mysql.slave_lag -3 and mysql.free_slave empty-string no-dispatch output are accepted only with the matching native unsupported-sql classification, and missing-plugin INSTALL exits are accepted only with the exact ER_CANT_OPEN_LIBRARY errno=2 diagnostic bound to the requested basename; path, permission, loader/interface, mixed, unrelated, auth, connection, runtime/setup/cleanup, or StateKit/native mismatch fails'
     printf '%s\n' 'external_ci: pending'
-    printf '%s\n' 'limitations: no full R9 live coverage, no broker/PostgreSQL/SQLite coverage, no live Salt differential parity; mysql.query is an explicitly privileged fixed-case live probe, never arbitrary PR SQL, and its generated credentials are disposable rather than repository secrets; DB-API exception/rowcount and bare-NULL parity remain CLI ceilings; MySQL 8.4 positive plugin installation is not claimed because no test plugin .so is bundled, and built-in plugins are never uninstalled; GitHub live execution is not claimed here; SIGKILL or runner loss can prevent cleanup/reporting'
+    printf '%s\n' 'limitations: no full R9 live coverage, no broker/PostgreSQL/SQLite coverage, no live Salt differential parity; mysql.query is an explicitly privileged fixed-case live probe, never arbitrary PR SQL, and its generated credentials are disposable rather than repository secrets; DB-API exception/rowcount and bare-NULL parity remain CLI ceilings; MySQL 8.4 positive plugin installation and free_slave status/promotion are not claimed because no test plugin .so or separately provisioned and authorized master/replica topology exists; free_slave remains a value-free no-dispatch guard and never claims partial mutation; built-in plugins are never uninstalled; GitHub live execution is not claimed here; SIGKILL or runner loss can prevent cleanup/reporting'
     printf '%s\n' 'credentials: runtime-generated disposable values are delivered through ephemeral secret mounts only; not included in this report'
     local result
     for result in "${CASE_RESULTS[@]}"; do
@@ -2198,7 +2205,7 @@ END {
 native_status_statement_marker() {
   case "$1" in
     master) printf '%s\n' 'MASTER STATUS' ;;
-    slave|slave_lag) printf '%s\n' 'SLAVE STATUS' ;;
+    slave|slave_lag|free_slave) printf '%s\n' 'SLAVE STATUS' ;;
     processlist) printf '%s\n' 'FULL PROCESSLIST' ;;
     *) return 1 ;;
   esac
@@ -2208,7 +2215,7 @@ status_sql() {
   case "$1" in
     processlist) printf '%s\n' 'SHOW FULL PROCESSLIST' ;;
     master) printf '%s\n' 'SHOW MASTER STATUS' ;;
-    slave|slave_lag) printf '%s\n' 'SHOW SLAVE STATUS' ;;
+    slave|slave_lag|free_slave) printf '%s\n' 'SHOW SLAVE STATUS' ;;
     *) return 1 ;;
   esac
 }
@@ -2217,7 +2224,7 @@ native_status_is_unsupported() {
   local kind="$1" stdout_path="$2" stderr_path="$3" statement_marker counts
   local error_count expected_count
   case "$kind" in
-    master|slave|slave_lag) ;;
+    master|slave|slave_lag|free_slave) ;;
     *) return 1 ;;
   esac
   statement_marker=$(native_status_statement_marker "$kind") || return 1
@@ -2360,6 +2367,13 @@ if kind == "slave_lag":
         print("invalid-type")
     raise SystemExit(0)
 
+if kind == "free_slave":
+    if value == "":
+        print("compatibility-empty-string")
+    else:
+        print("unexpected-shape")
+    raise SystemExit(0)
+
 if value == []:
     print("compatibility-empty-list")
     raise SystemExit(0)
@@ -2422,6 +2436,9 @@ status_observation_correlates() {
     slave_lag)
       [[ "$statekit_class" == 'compatibility-query-failure' && "$native_class" == 'unsupported-sql' ]]
       ;;
+    free_slave)
+      [[ "$statekit_class" == 'compatibility-empty-string' && "$native_class" == 'unsupported-sql' ]]
+      ;;
     *) return 1 ;;
   esac
 }
@@ -2431,6 +2448,8 @@ status_negative_correlates() {
   local expected_statekit_class='compatibility-empty-list'
   if [[ "$kind" == 'slave_lag' ]]; then
     expected_statekit_class='compatibility-query-failure'
+  elif [[ "$kind" == 'free_slave' ]]; then
+    expected_statekit_class='compatibility-empty-string'
   fi
   [[ "$statekit_class" == "$expected_statekit_class" && "$native_class" == "$expected_native_class" ]]
 }
@@ -3964,9 +3983,27 @@ raise SystemExit(0 if ok else 1)' "$stdout_path" &&
 check_statekit_status_unsupported() {
   local function_name="$1" kind="$2" label="$3"
   local stdout_path="$WORK_DIR/${label}-statekit.out" stderr_path="$WORK_DIR/${label}-statekit.err"
-  local rc=0 ok=1 classification='invalid-execution' expected_class='compatibility-empty-list'
+  local preflight_stdout_path="$WORK_DIR/${label}-native-preflight.out"
+  local preflight_stderr_path="$WORK_DIR/${label}-native-preflight.err"
+  local rc=0 native_rc=0 ok=1 classification='invalid-execution' expected_class='compatibility-empty-list' native_classification='invalid-execution'
   if [[ "$kind" == 'slave_lag' ]]; then
     expected_class='compatibility-query-failure'
+  elif [[ "$kind" == 'free_slave' ]]; then
+    expected_class='compatibility-empty-string'
+    # The free_slave live case independently proves MySQL 8.4 rejects the
+    # legacy statement. The production StateKit call is a no-dispatch guard;
+    # this native observation does not authorize a status-derived connection
+    # or any replication mutation.
+    native_mysql_as_user root "$ROOT_CLIENT_SECRET" "$DB_HOST" "$DB_PORT" \
+      'SHOW SLAVE STATUS' "$preflight_stdout_path" "$preflight_stderr_path" || native_rc=$?
+    native_classification=$(native_status_classification free_slave "$LAST_CLIENT_CLASS" "$native_rc" \
+      "$preflight_stdout_path" "$preflight_stderr_path") || native_classification='classification-failure'
+    if [[ "$native_classification" != 'unsupported-sql' ]] ||
+      ! value_free_files "$preflight_stdout_path" "$preflight_stderr_path"; then
+      set_note "${label}-native-preflight-${native_classification}"
+      rm -f "$preflight_stdout_path" "$preflight_stderr_path"
+      return 1
+    fi
   fi
   statekit_call "$ROOT_CLIENT_SECRET" "$function_name" '' "$DB_HOST" "$DB_PORT" \
     "$stdout_path" "$stderr_path" || rc=$?
@@ -3981,7 +4018,7 @@ check_statekit_status_unsupported() {
     write_status_classification "$label" "$classification" || true
     set_note "${label}-statekit-${classification}"
   fi
-  rm -f "$stdout_path" "$stderr_path"
+  rm -f "$stdout_path" "$stderr_path" "$preflight_stdout_path" "$preflight_stderr_path"
   return "$ok"
 }
 
@@ -4014,16 +4051,25 @@ check_statekit_status_negative() {
   local secret_name="$4" port="$5" label="$6"
   local stdout_path="$WORK_DIR/${label}.out" stderr_path="$WORK_DIR/${label}.err"
   local native_stdout_path="$WORK_DIR/${label}-native.out" native_stderr_path="$WORK_DIR/${label}-native.err"
-  local rc=0 native_rc=0 value='' ok=1 statekit_classification='invalid-execution' native_classification='invalid-execution'
+  local rc=0 native_rc=0 value='' statekit_output_present=0 ok=1 statekit_classification='invalid-execution' native_classification='invalid-execution'
   local expected_value='[]' expected_class='compatibility-empty-list'
   if [[ "$kind" == 'slave_lag' ]]; then
     expected_value='-3'
     expected_class='compatibility-query-failure'
+  elif [[ "$kind" == 'free_slave' ]]; then
+    # The JSON CLI renders the source empty string as `""`; an empty file is
+    # missing output and must not satisfy this negative check.
+    expected_value='""'
+    expected_class='compatibility-empty-string'
   fi
   statekit_call "$secret_name" "$function_name" '' "$DB_HOST" "$port" \
     "$stdout_path" "$stderr_path" || rc=$?
-  [[ -f "$stdout_path" ]] && value=$(<"$stdout_path")
+  if [[ -f "$stdout_path" ]]; then
+    statekit_output_present=1
+    value=$(<"$stdout_path")
+  fi
   if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' ]] &&
+    (( statekit_output_present == 1 )) &&
     [[ "$value" == "$expected_value" ]] && [[ ! -s "$stderr_path" ]] && value_free_files "$stdout_path" "$stderr_path"; then
     statekit_classification="$expected_class"
     native_mysql_as_user root "$secret_name" "$DB_HOST" "$port" "$(status_sql "$kind")" \
@@ -4040,6 +4086,25 @@ check_statekit_status_negative() {
     set_note "${label}-unexpected-result"
   fi
   rm -f "$stdout_path" "$stderr_path" "$native_stdout_path" "$native_stderr_path"
+  return "$ok"
+}
+
+check_free_slave_runtime_negative() {
+  local stdout_path="$WORK_DIR/free-slave-runtime.out" stderr_path="$WORK_DIR/free-slave-runtime.err"
+  local classification='invalid-execution' ok=1
+  : >"$stdout_path"
+  : >"$stderr_path"
+  # A live MySQL server cannot truthfully manufacture a production process
+  # runtime crash without leaving the database boundary. Exercise the
+  # classifier's runtime rejection deterministically instead; this is the
+  # static negative promised by the report, not promotion evidence.
+  classification=$(native_status_classification free_slave runtime 125 "$stdout_path" "$stderr_path") || classification='classification-failure'
+  if [[ "$classification" == 'runtime' ]] && value_free_files "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note "free-slave-runtime-${classification}"
+  fi
+  rm -f "$stdout_path" "$stderr_path"
   return "$ok"
 }
 
@@ -4219,6 +4284,11 @@ main() {
   run_case 'mysql-slave-lag-native-observation' check_native_status_unsupported 'SHOW SLAVE STATUS' slave_lag slave-lag
   run_case 'mysql-slave-lag-negative-auth' check_statekit_status_negative 'mysql.slave_lag' slave_lag auth-failure "$BAD_CLIENT_SECRET" "$DB_PORT" slave-lag-negative-auth
   run_case 'mysql-slave-lag-negative-connection' check_statekit_status_negative 'mysql.slave_lag' slave_lag connection-failure "$ROOT_CLIENT_SECRET" '1' slave-lag-negative-connection
+  run_case 'mysql-free-slave-statekit' check_statekit_status_unsupported 'mysql.free_slave' free_slave free-slave
+  run_case 'mysql-free-slave-native-unsupported' check_native_status_unsupported 'SHOW SLAVE STATUS' free_slave free-slave
+  run_case 'mysql-free-slave-negative-auth' check_statekit_status_negative 'mysql.free_slave' free_slave auth-failure "$BAD_CLIENT_SECRET" "$DB_PORT" free-slave-negative-auth
+  run_case 'mysql-free-slave-negative-connection' check_statekit_status_negative 'mysql.free_slave' free_slave connection-failure "$ROOT_CLIENT_SECRET" '1' free-slave-negative-connection
+  run_case 'mysql-free-slave-negative-runtime' check_free_slave_runtime_negative
   run_case 'mysql-plugin-add-installed-idempotent' check_statekit_plugin_add "$INSTALLED_PLUGIN" '' true plugin-add-installed
   run_case 'mysql-plugin-add-installed-native-status' check_native_plugin_status "$INSTALLED_PLUGIN" ACTIVE installed-after-add
   run_case 'mysql-plugin-status-case-sensitive' check_statekit_plugin_status 'CACHING_SHA2_PASSWORD' '' case-sensitive
@@ -4236,7 +4306,7 @@ main() {
   if [[ "${MYSQL_QUERY_LIVE_ENABLED:-0}" != '1' ]]; then
     set_note 'query-live-control-not-enabled'
     local query_case
-    # Keep the ordered 96-case report total and make the control decision
+    # Keep the ordered 101-case report total and make the control decision
     # visible as failures rather than silently converting unexecuted cases to
     # skips.  No query is dispatched without the explicit live opt-in.
     for query_case in "${CASE_IDS[@]}"; do

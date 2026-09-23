@@ -3444,3 +3444,75 @@ func TestMySQLCLISlaveLagBoundedFailures(t *testing.T) {
 		}
 	}
 }
+
+// TestMySQLCLIFreeSlaveR93R02NoRunner drives the guarded compatibility surface
+// through argument decoding and JSON rendering. Unsupported and status-shaped
+// native outputs are deliberately queued but must not be consumed.
+func TestMySQLCLIFreeSlaveR93R02NoRunner(t *testing.T) {
+	secret := "free-slave-cli-secret"
+	cases := []struct {
+		name    string
+		args    []string
+		results []process.CommandResult
+	}{
+		{
+			name: "unsupported-status",
+			results: []process.CommandResult{{
+				ExitCode: 1,
+				Stderr:   []byte("ERROR 1064 (42000): SHOW SLAVE STATUS"),
+			}},
+		},
+		{
+			name: "malformed-status",
+			results: []process.CommandResult{{
+				Stdout: []byte("Master_Host\n" + secret + "\n"),
+			}},
+		},
+		{
+			name: "partial-topology",
+			args: []string{
+				"--connection-host", "replica.example",
+				"--connection-pass", secret,
+			},
+			results: []process.CommandResult{{Stdout: []byte("Master_Host\nmaster.example\n")}},
+		},
+		{
+			name: "no-topology",
+			args: []string{"--connection-pass", secret},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &cliRecordingRunner{results: tc.results}
+			argv := append([]string{"exec", "mysql.free_slave"}, tc.args...)
+			argv = append(argv, "-o", "json")
+			code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), argv...)
+			if code != ExitOK || strings.TrimSpace(out) != `""` || errS != "" || len(runner.calls) != 0 {
+				t.Fatalf("free_slave %s code=%d out=%q err=%q calls=%d", tc.name, code, out, errS, len(runner.calls))
+			}
+			if strings.Contains(out+errS, secret) {
+				t.Fatalf("free_slave %s leaked secret: out=%q err=%q", tc.name, out, errS)
+			}
+		})
+	}
+}
+
+func TestMySQLCLIFreeSlaveR93R03MalformedDiagnostic(t *testing.T) {
+	secret := "free-slave-cli-invalid-secret"
+	runner := &cliRecordingRunner{}
+	code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner),
+		"exec", "mysql.free_slave", "--connection-host", secret+"\n",
+		"--connection-pass", secret, "-o", "json")
+	if code != ExitFailed || out != "" || len(runner.calls) != 0 || strings.Contains(errS, secret) ||
+		!strings.Contains(errS, "mysql: invalid argument") {
+		t.Fatalf("free_slave malformed code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+
+	runner = &cliRecordingRunner{}
+	code, out, errS = captureCode(t, mysqlCLIRunnerApp(t, runner),
+		"exec", "mysql.free_slave", "--runas", secret, "-o", "json")
+	if code != ExitFailed || out != "" || len(runner.calls) != 0 || strings.Contains(errS, secret) ||
+		!strings.Contains(errS, "runas") {
+		t.Fatalf("free_slave runas code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+}

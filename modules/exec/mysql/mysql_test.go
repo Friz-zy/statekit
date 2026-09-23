@@ -318,6 +318,7 @@ func TestMysqlRegistryNames(t *testing.T) {
 		"mysql.query",
 		"mysql.showglobal",
 		"mysql.showvariables",
+		"mysql.free_slave",
 		"mysql.slave_lag",
 		"mysql.status",
 		"mysql.tokenize_grant",
@@ -9229,5 +9230,122 @@ func TestMysqlSlaveLagThroughRegistry(t *testing.T) {
 	}
 	if len(runner.calls) != 2 || runner.calls[0].Args[len(runner.calls[0].Args)-1] != "--execute=SHOW SLAVE STATUS" || runner.calls[1].Args[len(runner.calls[1].Args)-1] != "--execute=SHOW SLAVE STATUS" {
 		t.Fatalf("registry slave_lag calls = %#v", runner.calls)
+	}
+}
+
+// TestMysqlFreeSlaveR93R01NoRunner proves that unsupported, malformed, partial,
+// and topology-free inputs never probe status or dispatch a master/slave
+// command. The queued outputs are deliberately ignored: the current native
+// transport has no authorization contract for this destructive WIP operation.
+func TestMysqlFreeSlaveR93R01NoRunner(t *testing.T) {
+	secret := "free-slave-secret"
+	partialHost := "replica.example"
+	cases := []struct {
+		name    string
+		args    *FreeSlaveArgs
+		results []process.CommandResult
+		want    any
+		wantErr error
+	}{
+		{
+			name: "unsupported-status-is-not-probed",
+			results: []process.CommandResult{{
+				ExitCode: 1,
+				Stderr:   []byte("ERROR 1064 (42000): SHOW SLAVE STATUS"),
+			}},
+			want: "",
+		},
+		{
+			name: "malformed-status-is-not-probed",
+			results: []process.CommandResult{{
+				Stdout: []byte("Master_Host\n" + secret + "\n"),
+			}},
+			want: "",
+		},
+		{
+			name: "partial-topology-is-not-probed",
+			args: &FreeSlaveArgs{
+				Host:     &partialHost,
+				Password: &secret,
+			},
+			results: []process.CommandResult{{Stdout: []byte("Master_Host\nmaster.example\n")}},
+			want:    "",
+		},
+		{
+			name:    "no-topology-is-empty",
+			results: []process.CommandResult{{Stdout: []byte("Master_Host\n")}},
+			want:    "",
+		},
+		{
+			name: "malformed-connection-is-value-free",
+			args: &FreeSlaveArgs{
+				Host:     stringPtrForTest(secret + "\n"),
+				Password: &secret,
+			},
+			wantErr: errMysqlInvalidArgument,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, runner := newMysqlRuntime(tc.results...)
+			value, err := (freeSlaveFunc{}).Execute(context.Background(), rt, freeSlaveArgsOrEmpty(tc.args))
+			if !errors.Is(err, tc.wantErr) || value != tc.want || len(runner.calls) != 0 {
+				t.Fatalf("free_slave %s = %#v, %v, calls=%d; want %#v/%v/0", tc.name, value, err, len(runner.calls), tc.want, tc.wantErr)
+			}
+			if err != nil && strings.Contains(err.Error(), secret) {
+				t.Fatalf("free_slave %s diagnostic leaked secret: %q", tc.name, err)
+			}
+		})
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	rt, runner := newMysqlRuntime()
+	value, err := (freeSlaveFunc{}).Execute(ctx, rt, &FreeSlaveArgs{})
+	if value != nil || !errors.Is(err, context.Canceled) || len(runner.calls) != 0 {
+		t.Fatalf("free_slave canceled = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+}
+
+func freeSlaveArgsOrEmpty(args *FreeSlaveArgs) *FreeSlaveArgs {
+	if args == nil {
+		return &FreeSlaveArgs{}
+	}
+	return args
+}
+
+func stringPtrForTest(value string) *string { return &value }
+
+// TestMysqlFreeSlaveR93R02RegistryNoRunner proves the registered API keeps the
+// same value-free empty contract and never creates a status or master call.
+func TestMysqlFreeSlaveR93R02RegistryNoRunner(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	password := "registry-free-slave-secret"
+	host := "status-controlled-host"
+	rt, runner := newMysqlRuntime(process.CommandResult{
+		Stdout: []byte("Master_Host\n" + host + "\n"),
+	})
+	rt.Exec = reg
+	value, err := reg.Call(context.Background(), rt, "mysql.free_slave", &FreeSlaveArgs{
+		Host:     &host,
+		Password: &password,
+	})
+	if err != nil || value != "" || len(runner.calls) != 0 {
+		t.Fatalf("registry free_slave = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+
+	invalidHost := password + "\n"
+	badRT, badRunner := newMysqlRuntime()
+	badRT.Exec = reg
+	value, err = reg.Call(context.Background(), badRT, "mysql.free_slave", &FreeSlaveArgs{
+		Host:     &invalidHost,
+		Password: &password,
+	})
+	if value != nil || !errors.Is(err, errMysqlInvalidArgument) ||
+		strings.Contains(err.Error(), password) || len(badRunner.calls) != 0 {
+		t.Fatalf("registry malformed free_slave = %#v, %v, calls=%d", value, err, len(badRunner.calls))
 	}
 }

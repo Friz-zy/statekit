@@ -11,8 +11,9 @@
 // mutations db_create/db_remove (R9.3j), the database metadata mutation
 // alter_db (R9.3l), the process/replication status readers
 // processlist/get_master_status/get_slave_status (R9.3m), slave_lag (R9.3n),
-// the plugin lifecycle mutations (R9.3o), mysql.query (R9.3p), and
-// mysql.file_query (R9.3q).
+// the plugin lifecycle mutations (R9.3o), mysql.query (R9.3p),
+// mysql.file_query (R9.3q), and the fail-closed free_slave compatibility
+// surface (R9.3r).
 //
 // Boundaries (R9.2a): no MySQL client driver or protocol, no new
 // dependencies, no Runner spawns, no filesystem access, and no live MySQL
@@ -146,6 +147,22 @@
 // corruption fails closed with a value-free error. The scalar value is
 // redacted before it leaves the module, using the same bounded transport,
 // cancellation, timeout, and output limits as the other fixed SHOW readers.
+//
+// Boundaries (R9.3r): free_slave remains registered for API compatibility, but
+// the current bounded native transport is intentionally unsupported. It
+// validates the ordinary connection argument boundary and returns the pinned
+// source-facing empty string without a Runner dispatch. It therefore performs
+// no SHOW SLAVE STATUS probe, no derived master connection, and no FLUSH LOGS,
+// STOP SLAVE, RESET MASTER, or CHANGE MASTER mutation. On MySQL 8.4 the live
+// harness independently classifies the removed legacy status statement as
+// unsupported; StateKit does not turn that observation into a promotion claim.
+//
+// R93R-01..03 are an explicit compatibility ceiling. A future implementation
+// requires a separately provisioned master/replica topology, an authorized
+// endpoint identity and port that are not derived from status output, a
+// complete reviewed sequence with phase/unknown-outcome reporting, and human
+// approval before any destructive dispatch. It must not silently repair
+// CHANGE MASTER, guess topology, or claim rollback after an unknown outcome.
 //
 // Boundaries (mysql.query): query text is privileged caller input. It is
 // validated as SQL input, bounded, and sent only as stdin to the native mysql
@@ -3752,6 +3769,56 @@ func mysqlSlaveLag(ctx context.Context, rt *runtime.Runtime, conn *myConnection)
 	return lag, nil
 }
 
+// FreeSlaveArgs are the pinned free_slave(**connection_args) fields plus the
+// single-user runas guard. No SQL argument exists. The current compatibility
+// ceiling deliberately has no topology or mutation-control fields: accepting
+// guessed or status-derived topology here would authorize an unsafe sequence.
+type FreeSlaveArgs struct {
+	User     *string `statekit:"name=connection_user"`
+	Host     *string `statekit:"name=connection_host"`
+	Port     *string `statekit:"name=connection_port"`
+	Password *string `statekit:"name=connection_pass"`
+	DB       *string `statekit:"name=connection_db"`
+	Runas    *string `statekit:"name=runas"`
+}
+
+func (a *FreeSlaveArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	return &myConnection{
+		User: a.User, Host: a.Host, Port: a.Port, Password: a.Password, DB: a.DB, Runas: a.Runas,
+	}
+}
+
+type freeSlaveFunc struct{}
+
+func (freeSlaveFunc) Name() string { return "mysql.free_slave" }
+func (freeSlaveFunc) Args() any    { return FreeSlaveArgs{} }
+
+func (freeSlaveFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[FreeSlaveArgs](args, "mysql.free_slave")
+	if err != nil {
+		return nil, err
+	}
+	conn := a.connection()
+	if err := validateMysqlQueryConnection(conn, nil); err != nil {
+		return nil, err
+	}
+
+	// R93R-01: the native CLI has no authorized topology contract, reviewed
+	// phase protocol, or human-approval channel for this WIP operation. Return
+	// the source-compatible empty value before touching the Runner. In
+	// particular, do not probe SHOW SLAVE STATUS, derive a master host, connect
+	// with the replica credential, or dispatch any destructive statement.
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+	}
+	return "", nil
+}
+
 // ---------------------------------------------------------------------------
 // user_list — salt/modules/mysql.py:1397-1421 @ pinned revision.
 
@@ -7149,11 +7216,12 @@ func redactedError(err error, secrets ...string) error {
 // grant family, the R9.3g password/login family, the R9.3i plugin readers and
 // R9.3o plugin mutations,
 // the R9.3j database lifecycle mutations, the R9.3l database metadata
-// mutation, the R9.3m process/replication status readers, and the R9.3n
-// slave_lag scalar reader, mysql.query's explicit stdin-only arbitrary-SQL
-// boundary, and mysql.file_query's bounded local-file framing over the central
-// mysql CLI transport. The remainder of the mysql family stays pending behind
-// its own source/transport boundary.
+// mutation, the R9.3m process/replication status readers, the R9.3n
+// slave_lag scalar reader, the R9.3r fail-closed free_slave compatibility
+// guard, mysql.query's explicit stdin-only arbitrary-SQL boundary, and
+// mysql.file_query's bounded local-file framing over the central mysql CLI
+// transport. The remainder of the mysql family stays pending behind its own
+// source/transport boundary.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		quoteIdentifierFunc{},
@@ -7171,6 +7239,7 @@ func Register(reg *runtime.ExecRegistry) error {
 		getMasterStatusFunc{},
 		getSlaveStatusFunc{},
 		slaveLagFunc{},
+		freeSlaveFunc{},
 		userListFunc{},
 		userExistsFunc{},
 		userInfoFunc{},

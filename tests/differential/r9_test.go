@@ -253,7 +253,14 @@ import (
 // slave_lag keeps its exact -1/-2/-3 scalar ladder. The fixed native CLI
 // transport remains bounded, shell-free, redacted, cancellable, and driver-free;
 // live standalone-MySQL observations are an E5.2 concern, not R9 differential
-// execution. R9.3o adds the fixed mysql.plugin_add/plugin_remove lifecycle
+// execution. R9.3r retains mysql.free_slave from the pinned WIP source
+// (mysql.py:1085-1127) as a registered compatibility name, but the current
+// bounded native transport is deliberately unsupported: R93R-01..03 validate
+// the argument boundary and return the source-facing empty string before any
+// Runner dispatch. No legacy status probe, derived master connection,
+// credential use against a status-controlled host, FLUSH/STOP/RESET/CHANGE
+// mutation, promotion, or partial mutation is claimed. MySQL 8.4's native
+// unsupported classification is independent evidence only. R9.3o adds the fixed mysql.plugin_add/plugin_remove lifecycle
 // mutations: plugin_status is the bounded preflight, idempotent branches do
 // not mutate, invalid name/SONAME tokens never reach SQL, and absent plugins
 // use only the fixed INSTALL/UNINSTALL statements. StateKit plugin names use
@@ -326,11 +333,15 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"mysql.database-create-remove-lifecycle",
 			"mysql.processlist-and-replication-status",
 			"mysql.slave-lag",
+			"mysql.free-slave-no-dispatch-unsupported-guard",
 			"mysql.plugin-add-remove-lifecycle",
 			"mysql.query-stdin-boundary",
 			"mysql.file-query-bounded-file-boundary",
 		},
 		Evidence: []string{
+			"R93R-01 direct TestMysqlFreeSlaveR93R01NoRunner proves unsupported, malformed, partial, and topology-free free_slave inputs return the value-free empty compatibility result or a value-free validation error with zero Runner dispatch; no status output is parsed and no master endpoint is derived",
+			"R93R-02 registry TestMysqlFreeSlaveR93R02RegistryNoRunner and CLI TestMySQLCLIFreeSlaveR93R02NoRunner preserve the empty JSON contract, no master connection, no credential-bearing command, and zero Runner calls; R93R-03 malformed diagnostics remain value-free and no mutation is claimed",
+			"R9.3r keeps MySQL 8.4 live evidence truthful: the harness independently observes unsupported SHOW SLAVE STATUS; each authentication and connection negative pairs a native negative observation with the guarded StateKit JSON empty string; the runtime negative is deterministic classifier-only and invokes neither StateKit nor a native runtime; no replica/master promotion or partial mutation is claimed, and external live execution remains pending_external_ci",
 			"R9.3q explicitly names mysql.file_query and its 11 exact native postcondition cases: SELECT, DML, and multiline framing observations plus invalid path/oversize/content and authentication/connection negatives; the bounded descriptor/no-follow file-read boundary feeds only bounded stdin, and external_ci remains pending_external_ci",
 			"R9.3q direct, registry, and CLI fake-Runner tests pin file path validation, bounded no-follow reads, permission/nonregular/oversize failures, invalid UTF-8/NUL/control SQL content, quote/comment/multistatement framing, cancellation, no-dispatch preflight, aggregate SELECT/DML shapes, and value-free redaction; SQL/file paths never enter mysql argv or shell and SQL is only bounded stdin",
 			"R93Q-01..03 remediation vectors pin exact-once %% normalization parity for SELECT and mutation stdin, statement-count/cumulative-row/cumulative-encoded-byte/result-item ceilings, one whole-operation deadline or cancellation between statements with no partial aggregate, and complete-file rejection of prohibited controls in quoted text, unquoted text, comments, and later statements",
@@ -381,11 +392,14 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"R9.3g TestMysqlUserChpassStatementVectors pins password-over-hash precedence including an explicit empty password, old MySQL and modern MySQL/MariaDB password/hash clauses, passwordless/socket clauses, and unsafe plugin/column rejection; TestMysqlUserChpass pins the non-self six-call version/account/schema/plugin/mutation/flush sequence, exact connection flags, bounds, MYSQL_PWD transport, complete mutation inventory, and input nonmutation; TestMysqlUserChpassSelfPasswordUsesOneSession pins four preflights followed by exactly one fixed ALTER USER plus FLUSH command for matching connection and target users, ordered statements, old MYSQL_PWD, complete redaction, and no repeated mutation; TestMysqlUserChpassSelfPasswordRetryUsesNewCredential pins the rowless version retry, original/new MYSQL_PWD transition, unchanged input, one same-session command, and no repeated mutation; TestMysqlUserChpassShapesAndFailClosed executes unknown-plugin, passwordless, socket-status, nonzero mutation/flush, no-Runner, unsafe-input, and cancellation branches; TestMysqlUserChpassDirectRedactionPhaseMatrix fails every version/account/schema/plugin/mutation/flush phase, asserts raw/doubled/quoted/account/hash/native-verifier/connection forms are absent from the returned error and rendered command, and replays each failed command through the transport to assert redacted error/stdout/stderr; TestMysqlUserChpassRegistryRedactionPhaseMatrix repeats all six phases through the registered name; TestMySQLCLIUserChpassRedactionPhaseMatrix repeats all six phases through argument decoding and asserts CLI output/error/rendered-command redaction plus longest-first inventories; TestMySQLCLIUserChpassSelfPasswordSingleCommand asserts the same-session CLI argv and no second call; TestMysqlVerifyLogin and TestMysqlVerifyLoginFailClosed pin connection-user/password overrides, host/port/database preservation, fixed SELECT 1 with no password in SQL, bool/nonzero/error shapes, empty/nil MYSQL_PWD transport, cancellation, and value-free error/rendered-command redaction",
 		},
 		CompatibilityNotes: []string{
+			"R93R-01..03 are intentionally stricter than a status-gated source port: the current bounded native transport validates only connection arguments, returns the source-facing empty string, and dispatches zero Runner commands for unsupported, malformed, partial, or topology-free requests; it never probes status or derives a master connection",
+			"The value-free CLI contract is empty JSON string on the unsupported guard, with value-free validation errors for malformed arguments; no credential, status-controlled host, SQL text, FLUSH LOGS, STOP SLAVE, RESET MASTER, CHANGE MASTER, promoted result, or partial mutation is emitted or claimed",
+			"MySQL 8.4 removes the legacy replication statements. The live harness independently classifies SHOW SLAVE STATUS as unsupported; each authentication and connection negative pairs its native negative observation with the guarded StateKit JSON empty string, while the runtime negative is deterministic classifier-only and invokes neither StateKit nor a native runtime. Future destructive support requires separately provisioned topology, authorized identity/port, a complete reviewed sequence, phase/unknown-outcome reporting, and human approval",
 			"R9.3q accepts one caller-supplied local file path without Salt fileserver/cache expansion. Invalid UTF-8, NUL/control/URI-like paths, symlink/non-regular/unreadable files, and files above the documented 1 MiB ceiling fail value-free before Runner dispatch; the bounded Runtime reader provides descriptor/no-follow semantics where supported",
 			"R9.3q frames semicolon-separated statements with quote/comment awareness, rejects malformed quotes, executable comments, client DELIMITER directives, NUL/invalid UTF-8, prohibited SQL controls anywhere in the complete file, backslash-dependent quoted SQL, and invalid later statements before any earlier statement is sent. Each statement preserves its original validated text so mysql.query performs %% normalization exactly once, then reuses its scanner, ROW_COUNT probe, timeout/cancel/output/input caps, false nonzero shape, and redaction inventory; Salt's aggregate keys are nested per statement and query time is summed",
 			"R93Q-02 documents whole-operation ceilings of 256 statements, 10000 positive returned/affected rows, 100000 column/field/affected-result items, 8 MiB compact-JSON statement-result bytes, and one 30-second operation deadline. Limit, cancellation, and deadline failures are stable value-free errors and never return a partial aggregate; completed earlier mutations are not rolled back",
 			"R93Q-03 allows only space, tab, LF, CR, and form feed as SQL control whitespace. A complete-file pass rejects other Unicode Cc controls in quoted tokens, unquoted text, comments, and later statements before Runner dispatch; mysql.query uses the same policy",
-			"R9.3q's direct/registry/CLI contract is mock-only. The protected E5.2 harness adds 11 cases (96 exact total): SELECT and DML native postconditions, multiline/multiple-statement quotes/comments, invalid path/oversize/content, auth/connection negatives, owned 0600 ephemeral SQL-file stdin framing, value-free reports, and cleanup. External live evidence remains pending_external_ci; no local MySQL is used",
+			"R9.3q's direct/registry/CLI contract is mock-only. The protected E5.2 harness adds 11 file-query cases within the 101 exact total: SELECT and DML native postconditions, multiline/multiple-statement quotes/comments, invalid path/oversize/content, auth/connection negatives, owned 0600 ephemeral SQL-file stdin framing, value-free reports, and cleanup. R9.3r preserves five free_slave no-dispatch/unsupported negative cases without a replica, promotion, or partial-mutation claim. External live evidence remains pending_external_ci; no local MySQL is used",
 			"R9.3p applies the pinned mysql.query no-args %% to % normalization before sending query text through bounded stdin; the caller's one statement is validated with quoted semicolons and comments, a real delimiter is inserted before trailing comments when needed, and the fixed ROW_COUNT probe is appended only for non-row statements",
 			"R93P-01 is an explicit compatibility ceiling: StateKit does not prove or set the server SQL mode before scanning, so every backslash inside a single-, double-, or backtick-quoted token is rejected before framing and Runner invocation; backslashes in comments remain allowed. The upgrade path is a separately proven matching mode, not a permissive scanner guess",
 			"R9.3p defines the WITH contract explicitly: a comment-aware CTE whose final top-level command is SELECT returns rows, while WITH UPDATE/INSERT/DELETE/REPLACE is a write and receives the fixed ROW_COUNT probe. This deliberately improves on Salt's raw-prefix classification, which treats leading comments and CTE reads as non-row; the divergence is direct/registry/CLI tested",
@@ -469,6 +483,7 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"mysql.showglobal",
 			"mysql.showvariables",
 			"mysql.slave_lag",
+			"mysql.free_slave",
 			"mysql.status",
 			"mysql.tokenize_grant",
 			"mysql.user_create",
@@ -951,7 +966,7 @@ func TestR9DifferentialScopeReport(t *testing.T) {
 	registered := registeredNames(first)
 
 	report := r9Report{
-		Round:    "R9.3q",
+		Round:    "R9.3r",
 		Platform: "cross-platform",
 		RuntimeStatus: "mock-only differential contract: RabbitMQ is never started, MySQL is never connected, PostgreSQL is never contacted, and SQLite differential tests do not use live Salt; " +
 			"shell-free fake Runner tests, pure-function vectors, and SQLite boundary vectors provide the executable contract",

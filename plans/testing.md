@@ -135,8 +135,10 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
 ### `integration-services.yml` — E5.2 live MySQL gate (workflow-ready; external execution pending)
 
 - **Current state:** implementation files and workflow are ready. The local
-  mock/static gate covers the exact 96-case inventory: the prior 65 cases plus
-  20 R9.3p query cases and 11 R9.3q file-query cases. The prior 65 include the 13 R9.3o
+  mock/static gate covers the exact 101-case inventory: the prior 96 cases plus
+  five R9.3r free_slave cases. The prior 65 include the 13 R9.3o
+  plugin cases, followed by 20 R9.3p query cases and 11 R9.3q file-query
+  cases.
   `plugin_add`/`plugin_remove` built-in/idempotence, native status,
   uppercase/mixed-case StateKit exact-Go identity, missing-shared-object, invalid-input, authentication, and
   connection cases. The prior 36 cases comprise the earlier E5.1/R9.3j/R9.3l
@@ -144,8 +146,17 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
   four R9.3n `slave_lag` StateKit/native/negative
   cases, with deterministic
   lifecycle, validation, cleanup, report-integrity, status-classification, and
-  missing-vs-null-key fault injections. No live
-  MySQL GitHub execution has run; status is `pending_external_ci`, and no live 96/96
+  missing-vs-null-key fault injections. R9.3r adds the fixed free_slave
+  no-dispatch/unsupported StateKit/native correlation plus authentication and
+  connection cases that each pair a native negative observation with the
+  guarded StateKit JSON empty string. Its runtime case is deterministic
+  classifier-only and invokes neither StateKit nor a native runtime. The
+  current bounded transport returns the source-compatible empty string without
+  a Runner call; the native unsupported check is independent. It never
+  provisions a replica, opens a status-derived master connection, or dispatches
+  FLUSH/STOP/RESET/CHANGE, so the harness makes no promotion or partial
+  mutation claim. No live
+  MySQL GitHub execution has run; status is `pending_external_ci`, and no live 101/101
   result is claimed in this ledger. The user will validate the external run
   after synchronization. The local backend contract additionally has explicit
    source-result vectors for representative truthy/falsy `cursor.execute`
@@ -249,9 +260,10 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
   images with explicit OCI isolation and `--network=none`, read-only roots, tmpfs-only scratch space,
   bounded resources, and no secrets. A hosted runner that cannot prove this
   preflight must not run a direct host build or test.
-- **External cases:** 96 exact cases are required: the prior 65 cases
+- **External cases:** 101 exact cases are required: the prior 65 cases
   (`14 + 9 + 13 + 12 + 4 + 13 = 65`, including the R9.3o plugin lifecycle
-  cases) plus 20 R9.3p query cases and 11 R9.3q file-query cases (`65 + 20 + 11 = 96`). The plugin group covers installed add
+  cases) plus 20 R9.3p query cases, 11 R9.3q file-query cases, and five
+  R9.3r free_slave cases (`65 + 20 + 11 + 5 = 101`). The plugin group covers installed add
   idempotence, independent native built-in status, uppercase/mixed-case
   StateKit exact-Go status identity, absent remove idempotence, independent native absence, default/custom
   SONAME missing-library false results with native `ERROR 1126 (HY000)`
@@ -265,7 +277,17 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
   classify that same legacy statement as `unsupported-sql`; native empty
   output, an available status map, auth failure, connection failure, unrelated
   error, or a StateKit/native classification mismatch fails the case. The
-  `slave_lag` StateKit call must retain `-3` for the native query/connection
+  The R9.3r group has exactly five cases: the StateKit no-dispatch empty
+  contract, independent native unsupported classification, authentication and
+  connection negatives that each pair a native negative observation with the
+  guarded StateKit JSON empty string, and one deterministic runtime
+  classifier-only negative that invokes neither StateKit nor a native runtime.
+  It accepts only the source-facing empty string, verifies that no FLUSH LOGS,
+  STOP SLAVE, RESET MASTER, or CHANGE MASTER command is claimed or dispatched,
+  and makes no `promoted` or partial-mutation claim; the pinned MySQL 8.4
+  harness has no replica. Runtime, timeout, setup, cleanup, unrelated, or
+  native/StateKit mismatch outcomes fail rather than skip. The `slave_lag`
+  StateKit call must retain `-3` for the native query/connection
   exit on MySQL 8.4, and only the independent native 1064/42000 syntax
   diagnostic for `SHOW SLAVE STATUS` can classify it as `unsupported-sql`;
   native empty/available output, auth failure, connection failure, runtime,
@@ -420,7 +442,7 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
 | 2 | `integration.yml` grows per module family (Tier 1 first); coverage gates for new code |
 | 3 | Tier 2 systemd images; service/user/file/pkg suites complete matrix; `differential.yml` first run for core families |
 | 4 | broader module suites join matrix; `vm-nightly.yml` bootstrap |
-| E5.2 | `integration-services.yml` live MySQL 8.4 gate for the E5.1 read-only/catalog/plugin surface plus R9.3j lifecycle, R9.3l alter/create/seed/read-back, R9.3m process/replication status, R9.3n `slave_lag`, R9.3o plugin lifecycle, R9.3p `mysql.query`, and R9.3q `mysql.file_query`; exact inventory is 96 and external execution remains `pending_external_ci` |
+| E5.2 | `integration-services.yml` live MySQL 8.4 gate for the E5.1 read-only/catalog/plugin surface plus R9.3j lifecycle, R9.3l alter/create/seed/read-back, R9.3m process/replication status, R9.3n `slave_lag`, R9.3r `mysql.free_slave` unsupported/negative preflights, R9.3o plugin lifecycle, R9.3p `mysql.query`, and R9.3q `mysql.file_query`; exact inventory is 101 and external execution remains `pending_external_ci` |
 | E5.3 | separate `sqlite-live` production-binary/file/native-observer gate for R9.3k; exact inventory, value-free report, cleanup, and zero-skip enforcement; external execution `pending_external_ci` |
 | 5+ | differential scope expansion driven by generated catalog; flake budget review |
 
@@ -431,5 +453,5 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
 - [ ] Every fixture references its Salt origin (source path/symbol/test)
 - [ ] Differential report artifacts retained 90 days; failures traceable to fixture IDs
 - [ ] No test requires network beyond package mirrors inside containers; mirror endpoints documented
-- [ ] E5.2 live reports, when produced by external CI, contain exact 96-case counts, zero skipped cases, native charset/collation/seed/query postconditions, available processlist correlation, built-in plugin status plus uppercase/mixed-case StateKit exact-Go observations with the native collation ceiling documented, default/custom missing-shared-object INSTALL classifications without a positive installation claim, explicit MySQL 8.4 unsupported classifications for the two removed legacy replication statements plus `slave_lag`'s `-3` compatibility result, mysql.query and mysql.file_query scalar/table/DDL/multiline/negative classifications, owned-file cleanup success, disposable-database cleanup success, and no credential-bearing or SQL-bearing output
+- [ ] E5.2 live reports, when produced by external CI, contain exact 101-case counts, zero skipped cases, native charset/collation/seed/query postconditions, available processlist correlation, built-in plugin status plus uppercase/mixed-case StateKit exact-Go observations with the native collation ceiling documented, default/custom missing-shared-object INSTALL classifications without a positive installation claim, explicit MySQL 8.4 unsupported classifications for the two removed legacy replication statements plus `slave_lag`'s `-3` and `free_slave`'s empty-string compatibility results, five truthful free_slave cases in which auth/connection negatives pair native observations with the guarded StateKit JSON empty string and the runtime negative is classifier-only without StateKit/native runtime invocation, no replica/promotion claim, mysql.query and mysql.file_query scalar/table/DDL/multiline/negative classifications, owned-file cleanup success, disposable-database cleanup success, and no credential-bearing or SQL-bearing output
 - [ ] E5.3 live reports, when produced by external CI, contain exact 14-case counts, zero skipped cases, native postconditions, cleanup success, and no value-bearing output; status remains `pending_external_ci` until an external run exists

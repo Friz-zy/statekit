@@ -2599,7 +2599,48 @@ remain unchanged.
 | Phase | Scope | Implementation executor role | Independent gate(s) | Result / boundary |
 |---|---|---|---|---|
 | `R9.3q` | `mysql.file_query`, bounded file/framing/security contract, direct/registry/CLI/differential tests, report, and 85→96 E5.2 extension | `backend-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | local mock/static evidence complete on clean `1edf3ac`; no commit and no local live MySQL; `pending_external_ci` remains |
-| `E5.2` | Exact 96-case MySQL GitHub inventory with owned ephemeral SQL files, native postconditions, negatives, value-free report, and cleanup | `devops-platform-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | workflow/harness prepared; live 96/96 and cleanup evidence remain pending in GitHub; SQLite and previous pins unchanged |
+| `E5.2` | Exact 101-case MySQL GitHub inventory with five R9.3r free_slave unsupported/negative cases, owned ephemeral SQL files, native postconditions, negatives, value-free report, and cleanup | `devops-platform-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | workflow/harness prepared; live 101/101 and cleanup evidence remain pending in GitHub; no replica/promotion claim; SQLite and previous pins unchanged |
+
+### 2026-09-23 R9.3r MySQL `free_slave` — fail-closed compatibility implementation; live CI pending
+
+**Executor:** `backend-engineer-senior`. **Independent gates:**
+`backend-engineer-lead` and `security-engineer-senior` review the protected
+workflow/report boundary; `devops-platform-engineer-senior` owns any external
+live execution. No local live MySQL is permitted or claimed.
+
+R9.3r retains the pinned WIP `mysql.free_slave` source/catalog name
+(`salt/modules/mysql.py:1085-1127`) as a registered compatibility surface, but
+the current bounded native transport is deliberately unsupported. After
+value-free connection-argument validation it returns the source-facing empty
+string before any Runner dispatch. It does not probe legacy `SHOW SLAVE
+STATUS`, derive a master endpoint, send credentials to a status-controlled
+host, or issue `FLUSH LOGS`, `STOP SLAVE`, `RESET MASTER`, or `CHANGE MASTER`.
+This is the R93R-01..03 remediation: unsupported, malformed, partial, and
+topology-free inputs have zero dispatch; diagnostics and CLI output remain
+value-free; and no promotion or partial mutation is claimed.
+
+The upgrade ceiling is explicit. A future implementation requires a separately
+provisioned master/replica topology, an authorized endpoint identity and port
+that are not derived from status output, a complete reviewed sequence,
+phase/unknown-outcome reporting, and human approval before any destructive
+dispatch. It must not silently repair `CHANGE MASTER` or guess topology.
+
+The pinned MySQL 8.4 image removes these legacy replication statements. The
+extended E5.2 harness therefore preserves five exact, value-free cases:
+StateKit no-dispatch/empty classification, independent native unsupported
+classification, authentication and connection negatives that each pair a
+native negative observation with the guarded StateKit JSON empty string, and a
+deterministic runtime classifier-only negative that invokes neither StateKit
+nor a native runtime. The auth/connection pairings are not proof that
+`free_slave` opened a connection. It does not create a replica, does not claim
+`"promoted"` or partial mutation, preserves the SQLite job and all prior case
+order/pins/permissions, and leaves external live evidence
+`pending_external_ci`.
+
+| Phase | Scope | Implementation executor role | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `R9.3r` | `mysql.free_slave`, R93R-01..03 fail-closed no-dispatch contract, direct/registry/CLI tests, coverage, plans, and R9 report | `backend-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | local mock/static evidence is non-live and no commit is made; current result is value-free empty/unsupported with zero Runner dispatch; no promotion or partial-mutation claim |
+| `E5.2` | Preserve the prior 96 MySQL cases and the five truthful R9.3r no-dispatch/unsupported negative cases; exact 101-case inventory, value-free report, bounded rootless Podman cleanup | `devops-platform-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | harness/workflow prepared; live 101/101 and cleanup evidence remain pending in GitHub; no replica/promotion claim; SQLite and previous pins/permissions unchanged |
 
 ##### 2026-09-21 R9.3k SQLite catalog family — implementation ready; live CI pending
 
