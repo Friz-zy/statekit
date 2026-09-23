@@ -250,6 +250,56 @@ func TestPostgresVersionRunnerErrorIsRedacted(t *testing.T) {
 	}
 }
 
+type postgresSensitiveRunnerCause struct {
+	secret string
+}
+
+func (e *postgresSensitiveRunnerCause) Error() string {
+	if e.secret != "" {
+		return "postgres-private-cause: " + e.secret
+	}
+	return "postgres-private-cause"
+}
+
+type postgresSafeRunnerOuter struct {
+	cause error
+}
+
+func (*postgresSafeRunnerOuter) Error() string { return "postgres runner diagnostic" }
+
+func (e *postgresSafeRunnerOuter) Unwrap() error { return e.cause }
+
+func TestPostgresRedactedErrorChainIsOpaque(t *testing.T) {
+	marker := "postgres-chain-secret"
+	cause := &postgresSensitiveRunnerCause{secret: marker}
+	outer := &postgresSafeRunnerOuter{cause: fmt.Errorf("typed runner cause: %w", cause)}
+	err := redactedError(outer, marker)
+	if err == nil || err == outer || err.Error() != outer.Error() || strings.Contains(err.Error(), marker) || errors.Unwrap(err) != nil {
+		t.Fatalf("redacted error = %v", err)
+	}
+	var got *postgresSensitiveRunnerCause
+	if errors.As(err, &got) || errors.Is(err, cause) {
+		t.Fatalf("redacted error exposed raw cause: %v", err)
+	}
+	for _, tc := range []struct {
+		name  string
+		cause error
+		want  error
+	}{
+		{name: "canceled", cause: context.Canceled, want: context.Canceled},
+		{name: "deadline", cause: context.DeadlineExceeded, want: context.DeadlineExceeded},
+		{name: "output", cause: process.ErrOutputLimit, want: process.ErrOutputLimit},
+		{name: "input", cause: runtime.ErrCommandInputLimit, want: runtime.ErrCommandInputLimit},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			wrapped := redactedError(&postgresSafeRunnerOuter{cause: tc.cause}, marker)
+			if !errors.Is(wrapped, tc.want) || errors.Unwrap(wrapped) != nil || wrapped.Error() != "postgres runner diagnostic" {
+				t.Fatalf("identity=%v err=%v", tc.want, wrapped)
+			}
+		})
+	}
+}
+
 // TestPostgresVersionCanceled proves cancellation is checked before and
 // after the Runner call and never reaches a second execution.
 func TestPostgresVersionCanceled(t *testing.T) {

@@ -35,6 +35,56 @@ type rabbitmqFakeRunner struct {
 	afterRun           func(call int)
 }
 
+type rabbitmqSensitiveRunnerCause struct {
+	secret string
+}
+
+func (e *rabbitmqSensitiveRunnerCause) Error() string {
+	if e.secret != "" {
+		return "rabbitmq-private-cause: " + e.secret
+	}
+	return "rabbitmq-private-cause"
+}
+
+type rabbitmqSafeRunnerOuter struct {
+	cause error
+}
+
+func (*rabbitmqSafeRunnerOuter) Error() string { return "rabbitmq runner diagnostic" }
+
+func (e *rabbitmqSafeRunnerOuter) Unwrap() error { return e.cause }
+
+func TestRabbitMQRedactedErrorChainIsOpaque(t *testing.T) {
+	marker := "rabbitmq-chain-secret"
+	cause := &rabbitmqSensitiveRunnerCause{secret: marker}
+	outer := &rabbitmqSafeRunnerOuter{cause: fmt.Errorf("typed runner cause: %w", cause)}
+	err := redactedError(outer, marker)
+	if err == nil || err == outer || err.Error() != outer.Error() || strings.Contains(err.Error(), marker) || errors.Unwrap(err) != nil {
+		t.Fatalf("redacted error = %v", err)
+	}
+	var got *rabbitmqSensitiveRunnerCause
+	if errors.As(err, &got) || errors.Is(err, cause) {
+		t.Fatalf("redacted error exposed raw cause: %v", err)
+	}
+	for _, tc := range []struct {
+		name  string
+		cause error
+		want  error
+	}{
+		{name: "canceled", cause: context.Canceled, want: context.Canceled},
+		{name: "deadline", cause: context.DeadlineExceeded, want: context.DeadlineExceeded},
+		{name: "output", cause: process.ErrOutputLimit, want: process.ErrOutputLimit},
+		{name: "input", cause: runtime.ErrCommandInputLimit, want: runtime.ErrCommandInputLimit},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			wrapped := redactedError(&rabbitmqSafeRunnerOuter{cause: tc.cause}, marker)
+			if !errors.Is(wrapped, tc.want) || errors.Unwrap(wrapped) != nil || wrapped.Error() != "rabbitmq runner diagnostic" {
+				t.Fatalf("identity=%v err=%v", tc.want, wrapped)
+			}
+		})
+	}
+}
+
 func (r *rabbitmqFakeRunner) Run(_ context.Context, command process.Command) process.CommandResult {
 	command.Args = append([]string(nil), command.Args...)
 	command.Redact = append([]string(nil), command.Redact...)

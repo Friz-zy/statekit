@@ -319,7 +319,9 @@ func CommandWithInput(argv []string, input string) process.Command {
 	return c
 }
 
-var ErrCommandInputLimit = errors.New("runtime: command input exceeds limit")
+// ErrCommandInputLimit is shared with process so sensitive Runner boundaries
+// can preserve this control identity without importing runtime from process.
+var ErrCommandInputLimit = process.ErrCommandInputLimit
 
 // MaxCommandInputBytes is the finite input ceiling for untrusted command data.
 const MaxCommandInputBytes = 1 << 20
