@@ -2522,8 +2522,8 @@ exit cannot expose the source exception class. SELECT/SHOW/DESC headers and rows
 affected writes, empty result behavior, and nonzero value-free failure behavior
 are covered by direct, registry, CLI, source-derived, and differential mock tests.
 
-The E5.2 harness preserves all prior 65 ordered cases and appends 20 production
-binary cases (85 exact cases, zero skips): scalar/table SELECTs with independent
+At the R9.3p baseline, the E5.2 harness preserved all prior 65 ordered cases and
+appended 20 production binary cases (85 exact cases, zero skips): scalar/table SELECTs with independent
 native observations, a reserved disposable database DDL/DML lifecycle and native
 postconditions, multiline/comment/quoted SQL, invalid database/auth/connection,
 finite timeout, oversize input, and independent 1064 diagnostic classification.
@@ -2539,7 +2539,7 @@ Evidence boundary:
   shell/Python/YAML validation, and live-harness inventory/orchestration tests.
   These checks do not start a MySQL service and do not claim live behavior.
 * **External live evidence (executor `devops-platform-engineer-senior`):** the
-  protected GitHub E5.2 job must execute all 85 cases with `cases_skipped: 0`,
+  protected GitHub E5.2 job must execute the exact current inventory with `cases_skipped: 0`,
   publish a fresh value-free report, independently observe native outcomes,
   classify negatives, and verify cleanup. `backend-engineer-lead` and
   `security-engineer-senior` are independent review gates for the artifact; no
@@ -2549,7 +2549,57 @@ Evidence boundary:
 | Phase | Scope | Implementation executor role | Independent gate(s) | Result / boundary |
 |---|---|---|---|---|
 | `R9.3p` | `mysql.query`, source/direct/registry/CLI/differential tests, stdin-only SQL boundary, report/plans, and protected live-harness extension | `backend-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | implementation and local non-live evidence are in the clean worktree; no commit and no local live MySQL; CLI rowcount/NULL/exception ceilings are documented; external live behavior remains `pending_external_ci` |
-| `E5.2` | Preserve 65 MySQL cases and append 20 R9.3p production/native/negative query cases; exact 85-case inventory, value-free report, disposable-credential control, bounded Podman cleanup | `devops-platform-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | workflow/harness is prepared; live 85/85, native diagnostics, and cleanup evidence remain pending in GitHub; SQLite job and previous pins remain unchanged |
+| `E5.2` | Historical R9.3p baseline: preserve 65 MySQL cases and append 20 production/native/negative query cases; exact 85-case inventory | `devops-platform-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | superseded by the R9.3q 96-case inventory below; no live evidence was claimed |
+
+### 2026-09-23 R9.3q MySQL `file_query` — implementation ready; live CI pending
+
+**Executor:** `backend-engineer-senior`. **Independent gates:** `backend-engineer-lead` and `security-engineer-senior` review the protected workflow change; `devops-platform-engineer-senior` owns the external live execution. No local live MySQL is permitted or claimed.
+
+R9.3q implements Salt-compatible `mysql.file_query(database, file_name,
+**connection_args)` from the pinned module/catalog/test contract. Registration is
+direct, registry, and CLI. The caller boundary accepts only a validated local
+path: invalid UTF-8, NUL/C0/DEL controls, URI/fileserver-like expansion, and
+oversized path values are rejected without echoing the path. The bounded Runtime
+reader enforces the 1 MiB file ceiling and, on supported Unix builds, descriptor
+walking with `O_NOFOLLOW`, regular-file checks, and no path-based read after the
+open. Read failures are collapsed to value-free errors; file contents are never
+put in process argv or a shell.
+
+The whole file is read and framed before the first dispatch. Quote/comment-aware
+semicolon framing accepts multiline and quoted semicolons, while malformed
+quotes/comments, executable comments, client `DELIMITER` directives, invalid
+UTF-8/NUL, prohibited SQL controls, backslash-dependent quoted tokens, and
+invalid later statements fail closed with no partial dispatch. The SQL control
+policy permits only space, tab, LF, CR, and form feed; it is checked over the
+complete file before framing, including quoted text, comments, and later
+statements. Each statement preserves that original validated text and reuses
+`mysql.query`'s single `%%` to `%` normalization, bounded stdin-only input,
+timeout/cancellation/output caps, redaction, affected-row probe, and nonzero
+`false` shape. The whole operation is capped at 256 statements, 10000 positive
+returned/affected rows, 100000 result items, and 8 MiB of compact-JSON
+statement-result bytes, plus one 30-second operation deadline. Limit,
+cancellation, or deadline failure returns no partial aggregate. The aggregate
+retains Salt's keys by nesting statement columns/results and summing rows
+affected/query time; known native CLI ceilings remain documented rather than
+overstated.
+
+The protected E5.2 harness explicitly names `mysql.file_query`; its 11 exact
+native postcondition cases extend the 85-case R9.3p inventory to 96 with zero
+skips: SELECT and DML native postconditions,
+multiline/multiple-statement quotes/comments, invalid path/oversize/content,
+authentication and connection negatives, a job-owned 0600 SQL file delivered
+through a bounded stdin frame, exact inventory/value-free report assertions,
+and cleanup. The bounded descriptor/no-follow file-read boundary is used where
+supported, and the validated SQL/file content crosses only the bounded stdin
+boundary, never Podman argv or shell text. The temporary file is removed by
+the client wrapper and the disposable database cleanup remains unchanged. The
+SQLite job, pins, permissions, and `external_ci: pending_external_ci` boundary
+remain unchanged.
+
+| Phase | Scope | Implementation executor role | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `R9.3q` | `mysql.file_query`, bounded file/framing/security contract, direct/registry/CLI/differential tests, report, and 85→96 E5.2 extension | `backend-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | local mock/static evidence complete on clean `1edf3ac`; no commit and no local live MySQL; `pending_external_ci` remains |
+| `E5.2` | Exact 96-case MySQL GitHub inventory with owned ephemeral SQL files, native postconditions, negatives, value-free report, and cleanup | `devops-platform-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | workflow/harness prepared; live 96/96 and cleanup evidence remain pending in GitHub; SQLite and previous pins unchanged |
 
 ##### 2026-09-21 R9.3k SQLite catalog family — implementation ready; live CI pending
 

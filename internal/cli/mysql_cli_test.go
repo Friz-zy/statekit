@@ -230,6 +230,111 @@ func TestMySQLCLIQueryUsesStdinAndPreservesShapes(t *testing.T) {
 	}
 }
 
+func mysqlCLIFileRunnerApp(t *testing.T, runner *cliRecordingRunner, path, contents string) *App {
+	t.Helper()
+	rt := &runtime.Runtime{
+		Exec:   runtime.NewExecRegistry(),
+		States: runtime.NewStateRegistry(),
+		Facts:  facts.ForTesting(facts.Overrides{}),
+		Runner: runner,
+		FS:     runtime.NewMemoryFS(),
+	}
+	if err := rt.FS.(*runtime.MemoryFS).WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := execmysql.Register(rt.Exec); err != nil {
+		t.Fatal(err)
+	}
+	return NewApp("test-version", func() (*runtime.Runtime, error) { return rt, nil })
+}
+
+func TestMySQLCLIFileQueryUsesBoundedStdinAndPreservesAggregateShape(t *testing.T) {
+	path := "/tmp/cli-file-query.sql"
+	contents := "SELECT 1 AS id, 'quoted; value' AS note"
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("id\tnote\n1\tquoted; value\n")},
+	}}
+	code, out, errS := captureCode(t, mysqlCLIFileRunnerApp(t, runner, path, contents),
+		"exec", "mysql.file_query", "--database", "query_db", "--file-name", path,
+		"--connection-pass", "file-query-pass", "-o", "json")
+	var value map[string]any
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &value) != nil {
+		t.Fatalf("file_query code=%d out=%q err=%q", code, out, errS)
+	}
+	if !reflect.DeepEqual(value["columns"], []any{[]any{"id", "note"}}) ||
+		!reflect.DeepEqual(value["results"], []any{[]any{[]any{"1", "quoted; value"}}}) ||
+		value["rows returned"] != float64(1) {
+		t.Fatalf("file_query shape = %#v", value)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("file_query calls = %d", len(runner.calls))
+	}
+	call := runner.calls[0]
+	argv := append([]string{call.Name}, call.Args...)
+	if strings.Contains(strings.Join(argv, "\x00"), path) || strings.Contains(strings.Join(argv, "\x00"), contents) ||
+		strings.Contains(strings.Join(argv, "\x00"), "quoted; value") {
+		t.Fatalf("file/query value escaped argv: %#v", argv)
+	}
+	if string(call.Stdin) != contents || !containsCLISecret(call.Redact, contents) ||
+		!containsCLISecret(call.Redact, "file-query-pass") || call.Shell ||
+		call.Timeout <= 0 || call.MaxStdoutBytes <= 0 || call.MaxStderrBytes <= 0 {
+		t.Fatalf("file_query transport = %#v", call)
+	}
+
+	runner = &cliRecordingRunner{}
+	invalidPath := "/tmp/file-query-\n-invalid.sql"
+	code, out, errS = captureCode(t, mysqlCLIFileRunnerApp(t, runner, path, contents),
+		"exec", "mysql.file_query", "--database", "query_db", "--file-name", invalidPath, "-o", "json")
+	if code != ExitFailed || out != "" || strings.Contains(errS, invalidPath) || len(runner.calls) != 0 {
+		t.Fatalf("file_query invalid path code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+}
+
+func TestMySQLCLIQueryAndFileQueryNormalizePercentExactlyOnce(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		statement string
+		stdout    string
+		wantStdin string
+	}{
+		{
+			name:      "select",
+			statement: "SELECT '%%%%' AS percent",
+			stdout:    "percent\n%%\n",
+			wantStdin: "SELECT '%%' AS percent",
+		},
+		{
+			name:      "mutation",
+			statement: "UPDATE t SET note = '%%%%' WHERE id = 1",
+			stdout:    "__statekit_rows_affected__\n3\n",
+			wantStdin: "UPDATE t SET note = '%%' WHERE id = 1;\nSELECT ROW_COUNT() AS __statekit_rows_affected__;\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			directRunner := &cliRecordingRunner{results: []process.CommandResult{{ExitCode: 0, Stdout: []byte(tc.stdout)}}}
+			code, _, errS := captureCode(t, mysqlCLIRunnerApp(t, directRunner),
+				"exec", "mysql.query", "--database", "query_db", "--query", tc.statement, "-o", "json")
+			if code != ExitOK || errS != "" || len(directRunner.calls) != 1 {
+				t.Fatalf("direct code=%d err=%q calls=%d", code, errS, len(directRunner.calls))
+			}
+
+			fileRunner := &cliRecordingRunner{results: []process.CommandResult{{ExitCode: 0, Stdout: []byte(tc.stdout)}}}
+			path := "/tmp/cli-percent-" + tc.name + ".sql"
+			code, _, errS = captureCode(t, mysqlCLIFileRunnerApp(t, fileRunner, path, tc.statement),
+				"exec", "mysql.file_query", "--database", "query_db", "--file-name", path, "-o", "json")
+			if code != ExitOK || errS != "" || len(fileRunner.calls) != 1 {
+				t.Fatalf("file code=%d err=%q calls=%d", code, errS, len(fileRunner.calls))
+			}
+			if got := string(directRunner.calls[0].Stdin); got != tc.wantStdin {
+				t.Fatalf("direct stdin=%q want=%q", got, tc.wantStdin)
+			}
+			if got := string(fileRunner.calls[0].Stdin); got != tc.wantStdin {
+				t.Fatalf("file stdin=%q want=%q", got, tc.wantStdin)
+			}
+		})
+	}
+}
+
 func TestMySQLCLIQueryPreservesPositionalColumnsAndEmptyHeaders(t *testing.T) {
 	marker := "mysql-cli-query-column-secret"
 	backslashPassword := `mysql-cli-query-column-secret\backslash`

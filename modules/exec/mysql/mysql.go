@@ -11,7 +11,8 @@
 // mutations db_create/db_remove (R9.3j), the database metadata mutation
 // alter_db (R9.3l), the process/replication status readers
 // processlist/get_master_status/get_slave_status (R9.3m), slave_lag (R9.3n),
-// the plugin lifecycle mutations (R9.3o), and mysql.query (R9.3p).
+// the plugin lifecycle mutations (R9.3o), mysql.query (R9.3p), and
+// mysql.file_query (R9.3q).
 //
 // Boundaries (R9.2a): no MySQL client driver or protocol, no new
 // dependencies, no Runner spawns, no filesystem access, and no live MySQL
@@ -161,6 +162,17 @@
 // write and receives the probe. This comment-aware/CTE classification is a
 // deliberate safety/usefulness ceiling over Salt's raw prefix test, which
 // does not recognize leading comments or CTE reads.
+//
+// Boundaries (mysql.file_query): the caller-supplied local file is read through
+// the descriptor-relative, no-follow bounded reader at 1 MiB. The complete
+// content is checked for valid UTF-8 and the SQL control policy before
+// quote/comment framing or dispatch; only space, tab, LF, CR, and form feed are
+// allowed controls. All framed statements are preflighted before the first
+// dispatch and retain their original text so %% normalization occurs once in
+// mysql.query. One operation context bounds dispatch to 30 seconds and the
+// aggregate is capped at 256 statements, 10000 positive rows, 100000 result
+// items, and 8 MiB compact-JSON output; limit/cancel/deadline errors return no
+// partial aggregate.
 // R93P-01 adds a deliberate SQL-mode compatibility ceiling: the scanner does
 // not establish the server's backslash-escape mode, so any backslash inside a
 // single-, double-, or backtick-quoted token is rejected before framing or
@@ -179,12 +191,24 @@
 // input limits retain their canonical errors.Is identities. Runner, timeout,
 // cancellation, output-limit, malformed-output, and validation failures are
 // value-free and never return a partial result.
+//
+// Boundaries (mysql.file_query): the caller supplies one local path. Remote
+// Salt/fileserver URL expansion is deliberately not performed; the path is
+// validated without echoing it and read through Runtime.ReadFileBounded. The
+// production bounded reader walks directory descriptors with O_NOFOLLOW on
+// supported Unix systems, rejects non-regular files, and reads at most the
+// same 1 MiB command-input ceiling used by mysql.query. The complete file is
+// framed and validated before the first Runner call. Each statement then uses
+// mysql.query's bounded stdin-only transport, and Salt's aggregate result
+// shape is retained. A native CLI cannot expose DB-API exception classes, so
+// its nonzero connection/query exit remains the documented false shape.
 package mysql
 
 import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -219,6 +243,13 @@ var (
 	// errMysqlSlaveLagMalformed is value-free: malformed native status output
 	// must never echo a field that can overlap the connection credential.
 	errMysqlSlaveLagMalformed = errors.New("mysql: malformed SHOW SLAVE STATUS result")
+	// File-query ceilings are whole-operation controls. They are deliberately
+	// value-free so a rejected statement, result, or caller-provided file
+	// content cannot become part of a public diagnostic.
+	errMysqlFileQueryStatementLimit = errors.New("mysql: file query statement limit exceeded")
+	errMysqlFileQueryRowsLimit      = errors.New("mysql: file query row limit exceeded")
+	errMysqlFileQueryEncodedLimit   = errors.New("mysql: file query encoded result limit exceeded")
+	errMysqlFileQueryItemsLimit     = errors.New("mysql: file query result item limit exceeded")
 )
 
 // mysqlGrantPrivileges is the pinned __grants__ allow-list from mysql.py.
@@ -1069,6 +1100,9 @@ var (
 	errMysqlQueryExecution     = errors.New("mysql: query execution failed")
 	errMysqlQueryResult        = errors.New("mysql: malformed query result")
 	errMysqlQueryAffected      = errors.New("mysql: malformed affected-row result")
+	errMysqlFilePath           = errors.New("mysql: invalid file path")
+	errMysqlFileRead           = errors.New("mysql: SQL file read failed")
+	errMysqlFileResult         = errors.New("mysql: malformed file query result")
 )
 
 var mysqlProtectedDatabaseNames = map[string]struct{}{
@@ -1484,27 +1518,9 @@ func (mysqlQueryFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any
 	if err := validateMysqlQueryConnection(conn, a.DB); err != nil {
 		return nil, err
 	}
-	// Reject the caller's raw request before normalization. The source's
-	// MySQLdb no-args path normalizes %% to %, but an oversized request must
-	// never be allowed to consume unbounded parser or redaction work merely
-	// because normalization happens to shorten it.
-	if len(a.Query) > runtime.MaxCommandInputBytes {
-		return nil, runtime.ErrCommandInputLimit
-	}
-	query := strings.ReplaceAll(a.Query, "%%", "%")
-	mode, err := classifyMysqlQuery(query)
+	query, mode, input, err := prepareMysqlQuery(a.Query)
 	if err != nil {
 		return nil, err
-	}
-	input := query
-	if mode == mysqlQueryResultAffected {
-		input, err = frameMysqlAffectedQuery(query)
-		if err != nil {
-			return nil, err
-		}
-	}
-	if len(input) > runtime.MaxCommandInputBytes {
-		return nil, runtime.ErrCommandInputLimit
 	}
 	argv := mysqlArgv(
 		pointerString(conn.User),
@@ -1542,6 +1558,518 @@ func (mysqlQueryFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any
 		return renderMysqlQueryRows(string(result.Stdout), elapsed, secrets)
 	}
 	return renderMysqlQueryAffected(string(result.Stdout), elapsed, secrets)
+}
+
+// prepareMysqlQuery is shared by mysql.query and mysql.file_query. Keeping
+// the complete scanner/framing preflight in one helper prevents a file with a
+// valid first statement and invalid later statement from dispatching a
+// partial script.
+func prepareMysqlQuery(raw string) (string, mysqlQueryMode, string, error) {
+	// Reject the caller's raw request before normalization. The source's
+	// MySQLdb no-args path normalizes %% to %, but an oversized request must
+	// never be allowed to consume unbounded parser or redaction work merely
+	// because normalization happens to shorten it.
+	if len(raw) > runtime.MaxCommandInputBytes {
+		return "", 0, "", runtime.ErrCommandInputLimit
+	}
+	if !validateMysqlSQLControls(raw) {
+		return "", 0, "", errMysqlQuery
+	}
+	query := strings.ReplaceAll(raw, "%%", "%")
+	mode, err := classifyMysqlQuery(query)
+	if err != nil {
+		return "", 0, "", err
+	}
+	input := query
+	if mode == mysqlQueryResultAffected {
+		input, err = frameMysqlAffectedQuery(query)
+		if err != nil {
+			return "", 0, "", err
+		}
+	}
+	if len(input) > runtime.MaxCommandInputBytes {
+		return "", 0, "", runtime.ErrCommandInputLimit
+	}
+	return query, mode, input, nil
+}
+
+// FileQueryArgs is the canonical mysql.file_query(database, file_name,
+// **connection_args) surface. The file name is intentionally separate from
+// QueryArgs.Query: it is never forwarded to the native client and the file
+// contents are read only through the bounded Runtime filesystem capability.
+type FileQueryArgs struct {
+	Database string  `statekit:"name=database,required"`
+	FileName string  `statekit:"name=file_name,required"`
+	User     *string `statekit:"name=connection_user"`
+	Host     *string `statekit:"name=connection_host"`
+	Port     *string `statekit:"name=connection_port"`
+	Password *string `statekit:"name=connection_pass"`
+	DB       *string `statekit:"name=connection_db"`
+	Runas    *string `statekit:"name=runas"`
+}
+
+func (a *FileQueryArgs) queryArgs(query string) *QueryArgs {
+	if a == nil {
+		return &QueryArgs{Query: query}
+	}
+	return &QueryArgs{
+		Database: a.Database,
+		Query:    query,
+		User:     a.User,
+		Host:     a.Host,
+		Port:     a.Port,
+		Password: a.Password,
+		DB:       a.DB,
+		Runas:    a.Runas,
+	}
+}
+
+type mysqlFileQueryFunc struct{}
+
+func (mysqlFileQueryFunc) Name() string { return "mysql.file_query" }
+func (mysqlFileQueryFunc) Args() any    { return FileQueryArgs{} }
+
+const (
+	// mysqlFileQueryFileLimit is the shared 1 MiB source/file and per-command
+	// stdin ceiling. The remaining controls bound the complete aggregate rather
+	// than each individual statement, so a file cannot multiply the per-command
+	// transport budget without a finite whole-operation limit.
+	mysqlFileQueryFileLimit int64 = runtime.MaxCommandInputBytes
+	// mysqlFileQueryStatementLimit bounds the number of executable statements
+	// that can be framed and dispatched from one file.
+	mysqlFileQueryStatementLimit = 256
+	// mysqlFileQueryRowsLimit counts positive returned and affected rows across
+	// all successful statements in one operation.
+	mysqlFileQueryRowsLimit int64 = 10_000
+	// mysqlFileQueryEncodedLimit counts compact JSON bytes for each decoded
+	// statement result and also caps the final nested aggregate.
+	mysqlFileQueryEncodedLimit int64 = 8 << 20
+	// mysqlFileQueryItemsLimit counts column labels, row fields, and affected
+	// row scalars across all successful statement results.
+	mysqlFileQueryItemsLimit int64 = 100_000
+)
+
+func (mysqlFileQueryFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[FileQueryArgs](args, "mysql.file_query")
+	if err != nil {
+		return nil, err
+	}
+	operationCtx, cancel := mysqlFileQueryOperationContext(ctx)
+	defer cancel()
+	if err := validateMysqlQueryDatabase(a.Database); err != nil {
+		return nil, err
+	}
+	if err := validateMysqlFilePath(a.FileName); err != nil {
+		return nil, err
+	}
+	conn := a.queryArgs("").connection()
+	if err := validateMysqlQueryConnection(conn, a.DB); err != nil {
+		return nil, err
+	}
+	data, err := readMysqlQueryFile(operationCtx, rt, a.FileName)
+	if err != nil {
+		return nil, err
+	}
+	statements, err := splitMysqlFileQueries(string(data))
+	if err != nil {
+		return nil, err
+	}
+
+	// Preflight every framed statement before invoking mysql.query. This is
+	// deliberately separate from the execution loop: scanner, quote, comment,
+	// and per-command stdin-limit failures cannot leave earlier statements
+	// applied.
+	validated := make([]string, len(statements))
+	for i, statement := range statements {
+		if err := ctxErr(operationCtx); err != nil {
+			return nil, err
+		}
+		_, _, _, prepErr := prepareMysqlQuery(statement)
+		if prepErr != nil {
+			return nil, prepErr
+		}
+		// Retain the original validated statement. mysql.query performs the
+		// MySQLdb-compatible %% -> % normalization exactly once when it is
+		// dispatched; passing the prepared form here would normalize it twice.
+		validated[i] = statement
+	}
+
+	aggregate := newMysqlFileQueryAggregate()
+	for _, query := range validated {
+		if err := ctxErr(operationCtx); err != nil {
+			return nil, err
+		}
+		value, queryErr := (mysqlQueryFunc{}).Execute(operationCtx, rt, a.queryArgs(query))
+		if queryErr != nil {
+			return nil, queryErr
+		}
+		if value == false {
+			return false, nil
+		}
+		if err := aggregate.add(value); err != nil {
+			return nil, err
+		}
+	}
+	if err := ctxErr(operationCtx); err != nil {
+		return nil, err
+	}
+	result := aggregate.result()
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return nil, errMysqlFileResult
+	}
+	if int64(len(encoded)) > mysqlFileQueryEncodedLimit {
+		return nil, errMysqlFileQueryEncodedLimit
+	}
+	return result, nil
+}
+
+func mysqlFileQueryOperationContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithTimeout(ctx, commandTimeout)
+}
+
+func ctxErr(ctx context.Context) error {
+	if ctx == nil {
+		return nil
+	}
+	return ctx.Err()
+}
+
+func validateMysqlFilePath(name string) error {
+	if name == "" || len(name) > runtime.MaxCommandInputBytes || !utf8.ValidString(name) {
+		return errMysqlFilePath
+	}
+	for _, char := range name {
+		if unicode.IsControl(char) {
+			return errMysqlFilePath
+		}
+	}
+	// A path containing a URI scheme must not accidentally become a request
+	// for Salt's fileserver/cache expansion. This boundary accepts local paths
+	// exactly as supplied and performs no path or URL expansion.
+	if strings.Contains(name, "://") {
+		return errMysqlFilePath
+	}
+	return nil
+}
+
+func readMysqlQueryFile(ctx context.Context, rt *runtime.Runtime, name string) ([]byte, error) {
+	if err := ctxErr(ctx); err != nil {
+		return nil, err
+	}
+	if rt == nil || rt.FS == nil {
+		return nil, errMysqlFileRead
+	}
+	data, err := runtime.ReadFileBounded(rt.FS, name, mysqlFileQueryFileLimit)
+	if err != nil {
+		switch {
+		case errors.Is(err, runtime.ErrReadLimit):
+			return nil, runtime.ErrReadLimit
+		case errors.Is(err, runtime.ErrNonRegularFile):
+			return nil, runtime.ErrNonRegularFile
+		case errors.Is(err, context.Canceled):
+			return nil, context.Canceled
+		case errors.Is(err, context.DeadlineExceeded):
+			return nil, context.DeadlineExceeded
+		default:
+			// Do not return fs.PathError or any custom error containing the
+			// caller's path. The public file boundary is value-free.
+			return nil, errMysqlFileRead
+		}
+	}
+	if err := ctxErr(ctx); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+// splitMysqlFileQueries frames semicolon-separated statements without treating
+// semicolons inside quoted strings or comments as delimiters. It intentionally
+// accepts only the native client's statement subset: DELIMITER directives,
+// executable comments, backslash-quoted strings, and malformed framing are
+// rejected by the same scanner used by mysql.query before any dispatch.
+func splitMysqlFileQueries(contents string) ([]string, error) {
+	if !validateMysqlSQLControls(contents) {
+		return nil, errMysqlQuery
+	}
+	statements := make([]string, 0, 1)
+	start := -1
+	sawToken := false
+	for i := 0; i < len(contents); {
+		next, ok := skipMysqlQueryTrivia(contents, i)
+		if !ok {
+			return nil, errMysqlQuery
+		}
+		if next != i {
+			i = next
+			if i >= len(contents) {
+				break
+			}
+		}
+		if i >= len(contents) {
+			break
+		}
+		if start < 0 {
+			start = i
+		}
+		switch contents[i] {
+		case '\'', '"', '`':
+			end := skipMysqlQueryQuote(contents, i, contents[i])
+			if end < 0 {
+				return nil, errMysqlQuery
+			}
+			sawToken = true
+			i = end
+		case ';':
+			if !sawToken || start < 0 {
+				return nil, errMysqlQuery
+			}
+			statement := strings.TrimSpace(contents[start:i])
+			if statement == "" {
+				return nil, errMysqlQuery
+			}
+			if len(statements) >= mysqlFileQueryStatementLimit {
+				return nil, errMysqlFileQueryStatementLimit
+			}
+			statements = append(statements, statement)
+			start = -1
+			sawToken = false
+			i++
+		case '\\':
+			return nil, errMysqlQuery
+		default:
+			sawToken = true
+			i++
+		}
+	}
+	if sawToken && start >= 0 {
+		statement := strings.TrimSpace(contents[start:])
+		if statement == "" {
+			return nil, errMysqlQuery
+		}
+		if len(statements) >= mysqlFileQueryStatementLimit {
+			return nil, errMysqlFileQueryStatementLimit
+		}
+		statements = append(statements, statement)
+	}
+	return statements, nil
+}
+
+type mysqlFileQueryAggregate struct {
+	rowsReturned int64
+	columns      []any
+	results      []any
+	rowsAffected int64
+	querySeconds float64
+	rows         int64
+	encodedBytes int64
+	resultItems  int64
+}
+
+func newMysqlFileQueryAggregate() *mysqlFileQueryAggregate {
+	return &mysqlFileQueryAggregate{
+		columns: make([]any, 0),
+		results: make([]any, 0),
+	}
+}
+
+func (a *mysqlFileQueryAggregate) add(value any) error {
+	result, ok := value.(map[string]any)
+	if !ok {
+		return errMysqlFileResult
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return errMysqlFileResult
+	}
+	rawSeconds := float64(0)
+	if rawTime, ok := result["query time"].(map[string]string); ok {
+		raw, parseErr := strconv.ParseFloat(rawTime["raw"], 64)
+		if parseErr != nil || math.IsNaN(raw) || math.IsInf(raw, 0) {
+			return errMysqlFileResult
+		}
+		if math.IsInf(a.querySeconds+raw, 0) || math.IsNaN(a.querySeconds+raw) {
+			return errMysqlFileResult
+		}
+		rawSeconds = raw
+	} else {
+		return errMysqlFileResult
+	}
+	var (
+		returnedCount int64
+		affectedCount int64
+		rows          int64
+		items         int64
+		columns       any
+		hasColumns    bool
+		results       any
+		hasResults    bool
+	)
+	if rawRows, ok := result["rows returned"]; ok {
+		count, ok := mysqlInteger(rawRows)
+		if !ok {
+			return errMysqlFileResult
+		}
+		if _, ok := addMysqlInt64(a.rowsReturned, count); !ok {
+			return errMysqlFileResult
+		}
+		returnedCount = count
+		if count > 0 {
+			if count > math.MaxInt64-rows {
+				return errMysqlFileResult
+			}
+			rows += count
+		}
+	}
+	if rawColumns, ok := result["columns"]; ok {
+		count, countOK := mysqlFileQueryItems(rawColumns)
+		if !countOK {
+			return errMysqlFileResult
+		}
+		columns, hasColumns = rawColumns, true
+		if count > math.MaxInt64-items {
+			return errMysqlFileResult
+		}
+		items += count
+	}
+	if rawResults, ok := result["results"]; ok {
+		count, countOK := mysqlFileQueryItems(rawResults)
+		if !countOK {
+			return errMysqlFileResult
+		}
+		results, hasResults = rawResults, true
+		if count > math.MaxInt64-items {
+			return errMysqlFileResult
+		}
+		items += count
+	}
+	if rawAffected, ok := result["rows affected"]; ok {
+		count, ok := mysqlInteger(rawAffected)
+		if !ok {
+			return errMysqlFileResult
+		}
+		if _, ok := addMysqlInt64(a.rowsAffected, count); !ok {
+			return errMysqlFileResult
+		}
+		affectedCount = count
+		if count > 0 {
+			if count > math.MaxInt64-rows {
+				return errMysqlFileResult
+			}
+			rows += count
+		}
+		if items == math.MaxInt64 {
+			return errMysqlFileResult
+		}
+		items++
+	}
+	encodedBytes := int64(len(encoded))
+	if encodedBytes > mysqlFileQueryEncodedLimit ||
+		a.encodedBytes > mysqlFileQueryEncodedLimit-encodedBytes {
+		return errMysqlFileQueryEncodedLimit
+	}
+	if rows > mysqlFileQueryRowsLimit || a.rows > mysqlFileQueryRowsLimit-rows {
+		return errMysqlFileQueryRowsLimit
+	}
+	if items > mysqlFileQueryItemsLimit || a.resultItems > mysqlFileQueryItemsLimit-items {
+		return errMysqlFileQueryItemsLimit
+	}
+	if _, ok := addMysqlInt64(a.rowsReturned, returnedCount); !ok {
+		return errMysqlFileResult
+	}
+	if _, ok := addMysqlInt64(a.rowsAffected, affectedCount); !ok {
+		return errMysqlFileResult
+	}
+	if hasColumns {
+		a.columns = append(a.columns, columns)
+	}
+	if hasResults {
+		a.results = append(a.results, results)
+	}
+	a.rowsReturned += returnedCount
+	a.rowsAffected += affectedCount
+	a.querySeconds += rawSeconds
+	a.rows += rows
+	a.resultItems += items
+	a.encodedBytes += encodedBytes
+	return nil
+}
+
+func addMysqlInt64(current, delta int64) (int64, bool) {
+	if delta > 0 && current > math.MaxInt64-delta {
+		return 0, false
+	}
+	if delta < 0 && current < math.MinInt64-delta {
+		return 0, false
+	}
+	return current + delta, true
+}
+
+func mysqlFileQueryItems(value any) (int64, bool) {
+	switch value := value.(type) {
+	case []string:
+		return int64(len(value)), true
+	case [][]any:
+		var count int64
+		for _, row := range value {
+			if int64(len(row)) > math.MaxInt64-count {
+				return 0, false
+			}
+			count += int64(len(row))
+		}
+		return count, true
+	default:
+		return 0, false
+	}
+}
+
+func mysqlInteger(value any) (int64, bool) {
+	switch value := value.(type) {
+	case int:
+		return int64(value), true
+	case int64:
+		return value, true
+	case float64:
+		if value != math.Trunc(value) || value > math.MaxInt64 || value < math.MinInt64 {
+			return 0, false
+		}
+		return int64(value), true
+	default:
+		return 0, false
+	}
+}
+
+func (a *mysqlFileQueryAggregate) result() map[string]any {
+	humanSeconds := strconv.FormatFloat(math.Round(a.querySeconds*100)/100, 'f', -1, 64)
+	if !strings.ContainsAny(humanSeconds, ".eE") {
+		humanSeconds += ".0"
+	}
+	result := map[string]any{
+		"rows returned": a.rowsReturned,
+		"columns":       a.columns,
+		"results":       a.results,
+		"rows affected": a.rowsAffected,
+		"query time": map[string]any{
+			"human": humanSeconds + "s",
+			"raw":   math.Round(a.querySeconds*100000) / 100000,
+		},
+	}
+	if a.rowsReturned == 0 {
+		delete(result, "rows returned")
+	}
+	if len(a.columns) == 0 {
+		delete(result, "columns")
+	}
+	if len(a.results) == 0 {
+		delete(result, "results")
+	}
+	if a.rowsAffected == 0 {
+		delete(result, "rows affected")
+	}
+	return result
 }
 
 func validateMysqlQueryDatabase(database string) error {
@@ -1599,7 +2127,7 @@ func canonicalMysqlQueryTransportError(err error) error {
 }
 
 func classifyMysqlQuery(query string) (mysqlQueryMode, error) {
-	if !utf8.ValidString(query) || strings.IndexByte(query, 0) >= 0 {
+	if !validateMysqlSQLControls(query) {
 		return 0, errMysqlQuery
 	}
 	if len(query) == 0 {
@@ -1623,6 +2151,29 @@ func classifyMysqlQuery(query string) (mysqlQueryMode, error) {
 	default:
 		return mysqlQueryResultAffected, nil
 	}
+}
+
+// validateMysqlSQLControls is the complete SQL control policy for the
+// arbitrary-SQL boundary. Only the documented ASCII whitespace controls are
+// accepted: space, tab, LF, CR, and form feed. Every other Unicode Cc/control
+// rune is rejected regardless of whether it occurs in a quoted token, a
+// comment, or a later framed statement. This whole-input pass must happen
+// before framing so an earlier statement can never dispatch around a
+// prohibited control in the remainder of a file.
+func validateMysqlSQLControls(sql string) bool {
+	if !utf8.ValidString(sql) {
+		return false
+	}
+	for _, char := range sql {
+		switch char {
+		case ' ', '\t', '\n', '\r', '\f':
+			continue
+		}
+		if unicode.IsControl(char) {
+			return false
+		}
+	}
+	return true
 }
 
 type mysqlQueryScan struct {
@@ -6599,14 +7150,16 @@ func redactedError(err error, secrets ...string) error {
 // R9.3o plugin mutations,
 // the R9.3j database lifecycle mutations, the R9.3l database metadata
 // mutation, the R9.3m process/replication status readers, and the R9.3n
-// slave_lag scalar reader, and mysql.query's explicit stdin-only arbitrary-SQL
-// boundary over the central mysql CLI transport. The remainder of the mysql
-// family stays pending behind its own source/transport boundary.
+// slave_lag scalar reader, mysql.query's explicit stdin-only arbitrary-SQL
+// boundary, and mysql.file_query's bounded local-file framing over the central
+// mysql CLI transport. The remainder of the mysql family stays pending behind
+// its own source/transport boundary.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		quoteIdentifierFunc{},
 		tokenizeGrantFunc{},
 		mysqlQueryFunc{},
+		mysqlFileQueryFunc{},
 		dbListFunc{},
 		dbExistsFunc{},
 		alterDbFunc{},

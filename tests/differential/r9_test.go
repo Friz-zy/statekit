@@ -328,8 +328,12 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"mysql.slave-lag",
 			"mysql.plugin-add-remove-lifecycle",
 			"mysql.query-stdin-boundary",
+			"mysql.file-query-bounded-file-boundary",
 		},
 		Evidence: []string{
+			"R9.3q explicitly names mysql.file_query and its 11 exact native postcondition cases: SELECT, DML, and multiline framing observations plus invalid path/oversize/content and authentication/connection negatives; the bounded descriptor/no-follow file-read boundary feeds only bounded stdin, and external_ci remains pending_external_ci",
+			"R9.3q direct, registry, and CLI fake-Runner tests pin file path validation, bounded no-follow reads, permission/nonregular/oversize failures, invalid UTF-8/NUL/control SQL content, quote/comment/multistatement framing, cancellation, no-dispatch preflight, aggregate SELECT/DML shapes, and value-free redaction; SQL/file paths never enter mysql argv or shell and SQL is only bounded stdin",
+			"R93Q-01..03 remediation vectors pin exact-once %% normalization parity for SELECT and mutation stdin, statement-count/cumulative-row/cumulative-encoded-byte/result-item ceilings, one whole-operation deadline or cancellation between statements with no partial aggregate, and complete-file rejection of prohibited controls in quoted text, unquoted text, comments, and later statements",
 			"R9.3p direct, registry, and CLI fake-Runner tests pin mysql.query SELECT headers/rows/NULL, affected DDL/DML rows, multiline comments and quoted semicolons, one-statement validation, NUL/size/cancellation/timeout/output bounds, value-free diagnostics, redaction, and the invariant that arbitrary SQL is present only in bounded stdin and never argv; no live MySQL or driver is used",
 			"R93P-01 direct TestMysqlQueryRejectsSQLModeDependentBackslashQuotesBeforeRunner, registry TestMysqlQueryRegistryRejectsSQLModeDependentBackslashQuotesBeforeRunner, and CLI TestMySQLCLIQueryRejectsSQLModeDependentBackslashQuotesBeforeRunner reject odd/even backslash quote-boundary fixtures before any fake Runner dispatch; ordinary quoted semicolons/comments and executable-comment rejection remain covered separately",
 			"R9.3p live-orchestration remediation is mock-only here: native SQL and complete StateKit request JSON use owned 0600 bounded stdin files, the client performs a production-binary version preflight, framing fixtures are byte-exact, native/StateKit postconditions share one decoded expected value, and diagnostic classifiers require exited exact value-free categories; external_ci remains pending_external_ci",
@@ -377,6 +381,11 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"R9.3g TestMysqlUserChpassStatementVectors pins password-over-hash precedence including an explicit empty password, old MySQL and modern MySQL/MariaDB password/hash clauses, passwordless/socket clauses, and unsafe plugin/column rejection; TestMysqlUserChpass pins the non-self six-call version/account/schema/plugin/mutation/flush sequence, exact connection flags, bounds, MYSQL_PWD transport, complete mutation inventory, and input nonmutation; TestMysqlUserChpassSelfPasswordUsesOneSession pins four preflights followed by exactly one fixed ALTER USER plus FLUSH command for matching connection and target users, ordered statements, old MYSQL_PWD, complete redaction, and no repeated mutation; TestMysqlUserChpassSelfPasswordRetryUsesNewCredential pins the rowless version retry, original/new MYSQL_PWD transition, unchanged input, one same-session command, and no repeated mutation; TestMysqlUserChpassShapesAndFailClosed executes unknown-plugin, passwordless, socket-status, nonzero mutation/flush, no-Runner, unsafe-input, and cancellation branches; TestMysqlUserChpassDirectRedactionPhaseMatrix fails every version/account/schema/plugin/mutation/flush phase, asserts raw/doubled/quoted/account/hash/native-verifier/connection forms are absent from the returned error and rendered command, and replays each failed command through the transport to assert redacted error/stdout/stderr; TestMysqlUserChpassRegistryRedactionPhaseMatrix repeats all six phases through the registered name; TestMySQLCLIUserChpassRedactionPhaseMatrix repeats all six phases through argument decoding and asserts CLI output/error/rendered-command redaction plus longest-first inventories; TestMySQLCLIUserChpassSelfPasswordSingleCommand asserts the same-session CLI argv and no second call; TestMysqlVerifyLogin and TestMysqlVerifyLoginFailClosed pin connection-user/password overrides, host/port/database preservation, fixed SELECT 1 with no password in SQL, bool/nonzero/error shapes, empty/nil MYSQL_PWD transport, cancellation, and value-free error/rendered-command redaction",
 		},
 		CompatibilityNotes: []string{
+			"R9.3q accepts one caller-supplied local file path without Salt fileserver/cache expansion. Invalid UTF-8, NUL/control/URI-like paths, symlink/non-regular/unreadable files, and files above the documented 1 MiB ceiling fail value-free before Runner dispatch; the bounded Runtime reader provides descriptor/no-follow semantics where supported",
+			"R9.3q frames semicolon-separated statements with quote/comment awareness, rejects malformed quotes, executable comments, client DELIMITER directives, NUL/invalid UTF-8, prohibited SQL controls anywhere in the complete file, backslash-dependent quoted SQL, and invalid later statements before any earlier statement is sent. Each statement preserves its original validated text so mysql.query performs %% normalization exactly once, then reuses its scanner, ROW_COUNT probe, timeout/cancel/output/input caps, false nonzero shape, and redaction inventory; Salt's aggregate keys are nested per statement and query time is summed",
+			"R93Q-02 documents whole-operation ceilings of 256 statements, 10000 positive returned/affected rows, 100000 column/field/affected-result items, 8 MiB compact-JSON statement-result bytes, and one 30-second operation deadline. Limit, cancellation, and deadline failures are stable value-free errors and never return a partial aggregate; completed earlier mutations are not rolled back",
+			"R93Q-03 allows only space, tab, LF, CR, and form feed as SQL control whitespace. A complete-file pass rejects other Unicode Cc controls in quoted tokens, unquoted text, comments, and later statements before Runner dispatch; mysql.query uses the same policy",
+			"R9.3q's direct/registry/CLI contract is mock-only. The protected E5.2 harness adds 11 cases (96 exact total): SELECT and DML native postconditions, multiline/multiple-statement quotes/comments, invalid path/oversize/content, auth/connection negatives, owned 0600 ephemeral SQL-file stdin framing, value-free reports, and cleanup. External live evidence remains pending_external_ci; no local MySQL is used",
 			"R9.3p applies the pinned mysql.query no-args %% to % normalization before sending query text through bounded stdin; the caller's one statement is validated with quoted semicolons and comments, a real delimiter is inserted before trailing comments when needed, and the fixed ROW_COUNT probe is appended only for non-row statements",
 			"R93P-01 is an explicit compatibility ceiling: StateKit does not prove or set the server SQL mode before scanning, so every backslash inside a single-, double-, or backtick-quoted token is rejected before framing and Runner invocation; backslashes in comments remain allowed. The upgrade path is a separately proven matching mode, not a permissive scanner guess",
 			"R9.3p defines the WITH contract explicitly: a comment-aware CTE whose final top-level command is SELECT returns rows, while WITH UPDATE/INSERT/DELETE/REPLACE is a write and receives the fixed ROW_COUNT probe. This deliberately improves on Salt's raw-prefix classification, which treats leading comments and CTE reads as non-row; the divergence is direct/registry/CLI tested",
@@ -397,7 +406,7 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"R9.3o preserves plugin_status' empty-name false/idempotence branches. StateKit matches fixed catalog names with exact Go string equality, including the explicit uppercase/mixed-case compatibility vector; that exact identity is the StateKit contract. The pinned Salt parameterized PLUGIN_NAME equality is collation-dependent, so byte-for-byte case parity is not claimed. External native checks correlate only against the selected MySQL server/collation and cannot establish Salt parity independent of collation. StateKit fails closed on a nonzero plugin catalog preflight, validates bare plugin identifiers and token/path SONAMEs before Runner invocation, and treats missing shared-object INSTALL exits as false; the native classifier accepts only the exact errno=2 No such file or directory diagnostic for the requested basename and rejects directory paths and other ER_CANT_OPEN_LIBRARY variants; no built-in plugin is uninstalled, no successful custom installation is claimed, and live E5.2 remains pending_external_ci",
 			"F1 public renderers sanitize every result header key with the connection redaction inventory; internal user_exists header matching remains raw, and a post-redaction key collision fails safely with the stable value-free mysql: redacted result header collision error",
 			"R9.3h keeps user_grants' one-call SHOW GRANTS contract: a successful header-only/empty result is [], a nonzero mysql exit is false, and Runner/cancellation/boundary failures remain errors; IDENTIFIED BY is removed exactly as the source does and WITH GRANT OPTION is restored after that removal",
-			"R9.2a registers the driver-free pure functions quote_identifier and tokenize_grant; R9.3a adds the read-only catalog family db_list, db_exists, user_list, and user_exists over the mysql CLI transport; R9.3b adds the read-only server facts family version, status, showvariables, and showglobal on the same transport; R9.3c adds the maintenance family db_check, db_repair, and db_optimize — REPAIR and OPTIMIZE are mutations, executed only through the (fake) Runner, never a live server; R9.3d adds the read-only db_get and db_tables catalog surfaces on the same fixed-query transport; R9.3e adds user_info plus fixed-query user_create/user_remove over the same fake-only CLI transport; R9.3f adds the exact grant_add, grant_exists, and grant_revoke surfaces over fixed GRANT/REVOKE, VERSION, SHOW PRIVILEGES, and SHOW GRANTS statements with SQL-aware account parsing and full redaction inventory; R9.3p adds mysql.query only through its explicit stdin-only arbitrary-SQL boundary; the remaining public surface stays pending behind its own MySQL protocol/arbitrary-query boundaries",
+			"R9.2a registers the driver-free pure functions quote_identifier and tokenize_grant; R9.3a adds the read-only catalog family db_list, db_exists, user_list, and user_exists over the mysql CLI transport; R9.3b adds the read-only server facts family version, status, showvariables, and showglobal on the same transport; R9.3c adds the maintenance family db_check, db_repair, and db_optimize — REPAIR and OPTIMIZE are mutations, executed only through the (fake) Runner, never a live server; R9.3d adds the read-only db_get and db_tables catalog surfaces on the same fixed-query transport; R9.3e adds user_info plus fixed-query user_create/user_remove over the same fake-only CLI transport; R9.3f adds the exact grant_add, grant_exists, and grant_revoke surfaces over fixed GRANT/REVOKE, VERSION, SHOW PRIVILEGES, and SHOW GRANTS statements with SQL-aware account parsing and full redaction inventory; R9.3p adds mysql.query only through its explicit stdin-only arbitrary-SQL boundary; R9.3q adds mysql.file_query through its bounded local-file/framing boundary; the remaining public surface stays pending behind its own MySQL protocol/arbitrary-query boundaries",
 			"R9.3c keeps the pinned statement construction exactly: the committed quote_identifier quotes both identifiers (backtick doubling plus MySQLdb's doubled percent), and the pinned _execute no-args unescape (qry.replace(\"%%\", \"%\")) restores single percent signs, so the --execute SQL is byte-identical to what the pinned __check_table/__repair_table/__optimize_table send through MySQLdb; for_grants stays false because these are not grant positions, and the underscore stays raw exactly like the pinned source",
 			"R9.3c keeps the pinned (name, table=None) wrapper shapes exactly: table=None lists the database's tables and answers the list of per-table fetchall lists in source order (the pinned ret.append loop), a given table answers that single statement's bare row list, and an empty table list answers the pinned [] after exactly two catalog calls",
 			"R9.3d keeps db_get's pinned dict keys character_set and collate, with a successful missing schema answering {} and a matching SQL NULL field answering nil; a nonzero mysql result stays the pinned [] connection/query-failure shape, while Runner, cancellation, client-discovery, and output-bound failures remain errors",
@@ -455,6 +464,7 @@ var r9FamilySpecs = map[string]r9FamilySpec{
 			"mysql.plugins_list",
 			"mysql.processlist",
 			"mysql.quote_identifier",
+			"mysql.file_query",
 			"mysql.query",
 			"mysql.showglobal",
 			"mysql.showvariables",
@@ -882,6 +892,51 @@ func TestR9MysqlQueryDifferential(t *testing.T) {
 	}
 }
 
+func TestR9MysqlFileQueryDifferential(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := execmysql.Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	fileName := "/r9-file-query.sql"
+	contents := "-- file comment\nSELECT 7 AS id, 'quoted; text' AS note;\nUPDATE r9_query SET note = 'changed' WHERE id = 7"
+	fsys := runtime.NewMemoryFS()
+	if err := fsys.WriteFile(fileName, []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runner := &r9MysqlRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("id\tnote\n7\tquoted; text\n")},
+		{ExitCode: 0, Stdout: []byte("__statekit_rows_affected__\n1\n")},
+	}}
+	rt := &runtime.Runtime{Exec: reg, Runner: runner, FS: fsys}
+
+	value, err := reg.Call(context.Background(), rt, "mysql.file_query", &execmysql.FileQueryArgs{
+		Database: "r9_query",
+		FileName: fileName,
+	})
+	if err != nil {
+		t.Fatalf("file query value=%#v err=%v", value, err)
+	}
+	result, ok := value.(map[string]any)
+	if !ok || result["rows returned"] != int64(1) || result["rows affected"] != int64(1) ||
+		!reflect.DeepEqual(result["columns"], []any{[]string{"id", "note"}}) ||
+		!reflect.DeepEqual(result["results"], []any{[][]any{{"7", "quoted; text"}}}) {
+		t.Fatalf("file query result=%#v", value)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("file query calls=%d", len(runner.calls))
+	}
+	for _, call := range runner.calls {
+		argv := append([]string{call.Name}, call.Args...)
+		if strings.Contains(strings.Join(argv, "\x00"), fileName) || strings.Contains(strings.Join(argv, "\x00"), contents) || call.Shell {
+			t.Fatalf("file path/SQL crossed argv/shell boundary: %#v", call)
+		}
+	}
+	if string(runner.calls[0].Stdin) != "SELECT 7 AS id, 'quoted; text' AS note" ||
+		!strings.HasPrefix(string(runner.calls[1].Stdin), "UPDATE r9_query SET note = 'changed' WHERE id = 7") {
+		t.Fatalf("file query stdin select=%q update=%q", runner.calls[0].Stdin, runner.calls[1].Stdin)
+	}
+}
+
 func TestR9DifferentialScopeReport(t *testing.T) {
 	first, err := bootstrap.BuildRuntime()
 	if err != nil {
@@ -896,7 +951,7 @@ func TestR9DifferentialScopeReport(t *testing.T) {
 	registered := registeredNames(first)
 
 	report := r9Report{
-		Round:    "R9.3p",
+		Round:    "R9.3q",
 		Platform: "cross-platform",
 		RuntimeStatus: "mock-only differential contract: RabbitMQ is never started, MySQL is never connected, PostgreSQL is never contacted, and SQLite differential tests do not use live Salt; " +
 			"shell-free fake Runner tests, pure-function vectors, and SQLite boundary vectors provide the executable contract",

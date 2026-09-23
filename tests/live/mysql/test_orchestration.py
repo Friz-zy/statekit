@@ -93,6 +93,17 @@ EXPECTED_CASES = (
     "mysql-query-create-table",
     "mysql-query-insert-dml",
     "mysql-query-dml-native-postcondition",
+    "mysql-file-query-select-statekit",
+    "mysql-file-query-select-native-observation",
+    "mysql-file-query-dml-statekit",
+    "mysql-file-query-dml-native-postcondition",
+    "mysql-file-query-multiline-quoted-statekit",
+    "mysql-file-query-multiline-quoted-native-observation",
+    "mysql-file-query-negative-invalid-path",
+    "mysql-file-query-negative-oversize",
+    "mysql-file-query-negative-invalid-content",
+    "mysql-file-query-negative-auth",
+    "mysql-file-query-negative-connection",
     "mysql-query-multiline-quoted-statekit",
     "mysql-query-multiline-quoted-native-observation",
     "mysql-query-drop-database",
@@ -471,6 +482,35 @@ query_result_matches "$kind" "$json_path"
             text=True,
         )
 
+    def _run_file_query_matcher(self, kind: str, value: object) -> subprocess.CompletedProcess[str]:
+        command = """
+script_path="$1"
+kind="$2"
+json_path="$3"
+set --
+source "$script_path"
+file_query_result_matches "$kind" "$json_path"
+"""
+        temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary_directory.cleanup)
+        json_path = Path(temporary_directory.name) / "file-query.json"
+        json_path.write_text(json.dumps(value), encoding="utf-8")
+        return subprocess.run(
+            [
+                "bash",
+                "-c",
+                command,
+                "file-query-matcher",
+                str(SCRIPT),
+                kind,
+                str(json_path),
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
     def _query_frame_bytes(self, fixture: str) -> bytes:
         command = """
 script_path="$1"
@@ -511,7 +551,7 @@ write_query_frame_fixture "$fixture" "$path"
             text=True,
         )
         self.assertEqual(tuple(result.stdout.splitlines()), EXPECTED_CASES)
-        self.assertEqual(len(EXPECTED_CASES), 85)
+        self.assertEqual(len(EXPECTED_CASES), 96)
         self.assertEqual(result.stderr, "")
 
     def test_image_digest_and_runtime_secret_boundary(self) -> None:
@@ -583,6 +623,12 @@ write_query_frame_fixture "$fixture" "$path"
         self.assertIn("mysql.plugin_add", source)
         self.assertIn("mysql.plugin_remove", source)
         self.assertIn("mysql.query", source)
+        self.assertIn("mysql.file_query", source)
+        self.assertIn("statekit_file_query_call_path", source)
+        self.assertIn("FILE_QUERY_SCRIPT", source)
+        self.assertIn("FILE_QUERY_PATH", source)
+        self.assertIn("file_query_result_matches", source)
+        self.assertIn("dd if=/dev/stdin", source)
         self.assertIn("MYSQL_QUERY_LIVE_ENABLED", source)
         self.assertIn("query_extra_json", source)
         self.assertIn("create_owned_input_file", source)
@@ -1001,6 +1047,83 @@ esac
             self.assertNotIn("mock-live-password", container_args)
             self.assertEqual(frozenset(ROOT.iterdir()), source_entries_before)
 
+    def test_file_query_keeps_sql_in_owned_stdin_frame_and_out_of_container_argv(self) -> None:
+        command = """
+script_path="$1"
+work_dir="$2"
+cd "$work_dir"
+set --
+source "$script_path"
+WORK_DIR="$work_dir"
+RUNTIME=/bin/sh
+NETWORK='mock-network'
+CLIENT_IMAGE='mock-client-image'
+CLIENT_SECRET='mock-client-secret'
+BAD_CLIENT_SECRET='mock-bad-secret'
+ROOT_CLIENT_SECRET='mock-root-secret'
+LIVE_PASSWORD='mock-live-password'
+BAD_PASSWORD='mock-bad-password'
+ROOT_PASSWORD='mock-root-password'
+DB_HOST='db-host'
+reserve_container_name() { return 0; }
+verify_created_container_policy() { return 0; }
+cleanup_container() { return 0; }
+statekit_file_query_call "$CLIENT_SECRET" 'statekit_file_query_db' "SELECT 'file; content'" "$work_dir/stdout" "$work_dir/stderr"
+! compgen -G "$work_dir/statekit-file-query-input.*" >/dev/null
+"""
+        fake_runtime = """#!/bin/sh
+set -eu
+case "${0##*/}" in
+  create) printf 'mock-container-id\n'; printf '%s\n' "$@" >"$MOCK_ARGS" ;;
+  start) cat >"$MOCK_STDIN"; printf '%s\n' '{"result":true}'; printf '%s\n' 'statekit: production-binary-completed' >&2 ;;
+  wait) printf '0\n' ;;
+  *) exit 1 ;;
+esac
+"""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            source_entries_before = frozenset(ROOT.iterdir())
+            for runtime_command in ("create", "start", "wait"):
+                runtime = temporary / runtime_command
+                self.addCleanup(runtime.unlink, missing_ok=True)
+                runtime.write_text(fake_runtime, encoding="utf-8")
+                runtime.chmod(0o700)
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    command,
+                    "file-query-stdin",
+                    str(SCRIPT),
+                    str(temporary),
+                ],
+                cwd=ROOT,
+                env={
+                    **os.environ,
+                    "MOCK_ARGS": str(temporary / "args"),
+                    "MOCK_STDIN": str(temporary / "stdin"),
+                },
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.stdout, "")
+            self.assertEqual(result.stderr, "")
+            raw = (temporary / "stdin").read_bytes()
+            header, framed = raw.split(b"\n", 1)
+            sql_bytes = int(header)
+            self.assertEqual(framed[:sql_bytes], b"SELECT 'file; content'")
+            request = json.loads(framed[sql_bytes:].decode("utf-8"))
+            self.assertEqual(request["database"], "statekit_file_query_db")
+            self.assertEqual(request["file_name"], "/tmp/statekit-file-query.sql")
+            self.assertEqual(request["connection_pass"], "mock-live-password")
+            self.assertNotIn("SELECT 'file; content'", request)
+            container_args = (temporary / "args").read_text(encoding="utf-8")
+            self.assertNotIn("SELECT 'file; content'", container_args)
+            self.assertNotIn('"file_name"', container_args)
+            self.assertNotIn("mock-live-password", container_args)
+            self.assertEqual(frozenset(ROOT.iterdir()), source_entries_before)
+
     def test_sql_and_request_inputs_are_owned_private_files(self) -> None:
         command = """
 script_path="$1"
@@ -1067,6 +1190,35 @@ rm -f -- "$input_path" "$request_path"
         wrong_value = dict(multiline)
         wrong_value["results"] = [["1", "line one"], ["2", "quote; value"]]
         result = self._run_query_matcher("multiline", wrong_value)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr, "")
+
+    def test_file_query_result_matchers_require_aggregate_shapes(self) -> None:
+        query_time = {"human": "0.001s", "raw": 0.001}
+        select = {
+            "columns": [["id", "note"]],
+            "results": [[["1", "line one"], ["2", "quote; value;"]]],
+            "rows returned": 2,
+            "query time": query_time,
+        }
+        dml = {"rows affected": 1, "query time": query_time}
+        multiline = {
+            "columns": [["id", "note"], ["note"]],
+            "results": [[["1", "line one"]], [["quote; value;"]]],
+            "rows returned": 2,
+            "query time": query_time,
+        }
+        for kind, value in (("select", select), ("dml", dml), ("multiline", multiline), ("false", False)):
+            with self.subTest(kind=kind):
+                result = self._run_file_query_matcher(kind, value)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, "")
+                self.assertEqual(result.stderr, "")
+
+        wrong = dict(select)
+        wrong["results"] = [[["1", "line one"]]]
+        result = self._run_file_query_matcher("select", wrong)
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(result.stdout, "")
         self.assertEqual(result.stderr, "")
@@ -1975,8 +2127,8 @@ printf 'duplicate_rc=%s unknown_rc=%s duplicate_status=%s missing_status=%s subs
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("status: fail", report)
             self.assertIn("execution: incomplete", report)
-            self.assertIn("cases_total: 85", report)
-            self.assertIn("cases_failed: 85", report)
+            self.assertIn("cases_total: 96", report)
+            self.assertIn("cases_failed: 96", report)
             self.assertIn("cases_skipped: 0", report)
             self.assertIn("setup_note: production-statekit-binary-missing", report)
 

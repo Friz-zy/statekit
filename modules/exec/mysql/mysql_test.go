@@ -6,6 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -311,6 +314,7 @@ func TestMysqlRegistryNames(t *testing.T) {
 		"mysql.plugins_list",
 		"mysql.processlist",
 		"mysql.quote_identifier",
+		"mysql.file_query",
 		"mysql.query",
 		"mysql.showglobal",
 		"mysql.showvariables",
@@ -1176,6 +1180,21 @@ func TestMysqlQueryCancellationAndRedactedRunnerFailure(t *testing.T) {
 	}
 }
 
+func TestMysqlQueryRejectsProhibitedSQLControlsBeforeRunner(t *testing.T) {
+	for _, query := range []string{
+		"SELECT 1\x01",
+		"SELECT 'quoted\x02value'",
+		"/* comment\x7f */ SELECT 1",
+		"SELECT 1; SELECT 2\u0085",
+	} {
+		rt, runner := newMysqlRuntime()
+		value, err := (mysqlQueryFunc{}).Execute(context.Background(), rt, &QueryArgs{Database: "db", Query: query})
+		if value != nil || err != errMysqlQuery || len(runner.calls) != 0 {
+			t.Fatalf("query=%q value=%#v err=%v calls=%d", query, value, err, len(runner.calls))
+		}
+	}
+}
+
 type mysqlSensitiveRunnerCause struct {
 	secret string
 }
@@ -1319,6 +1338,418 @@ func TestMysqlQueryNonzeroIsValueFreeCompatibilityFailure(t *testing.T) {
 	value, err = (mysqlQueryFunc{}).Execute(context.Background(), rt, &QueryArgs{Database: "db", Query: "SELECT 1"})
 	if err != nil || value != false || len(runner.calls) != 1 {
 		t.Fatalf("connection nonzero = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+}
+
+func TestMysqlQueryAndFileQueryNormalizePercentExactlyOnce(t *testing.T) {
+	cases := []struct {
+		name       string
+		statement  string
+		stdout     string
+		wantStdin  string
+		wantResult func(t *testing.T, direct, file any)
+	}{
+		{
+			name:      "select",
+			statement: "SELECT '%%%%' AS percent",
+			stdout:    "percent\n%%\n",
+			wantStdin: "SELECT '%%' AS percent",
+			wantResult: func(t *testing.T, direct, file any) {
+				t.Helper()
+				if direct == nil || file == nil {
+					t.Fatalf("nil result: direct=%#v file=%#v", direct, file)
+				}
+			},
+		},
+		{
+			name:      "mutation",
+			statement: "UPDATE t SET note = '%%%%' WHERE id = 1",
+			stdout:    "__statekit_rows_affected__\n3\n",
+			wantStdin: "UPDATE t SET note = '%%' WHERE id = 1;\n" + mysqlQueryAffectedProbe,
+			wantResult: func(t *testing.T, direct, file any) {
+				t.Helper()
+				directMap, directOK := direct.(map[string]any)
+				fileMap, fileOK := file.(map[string]any)
+				if !directOK || !fileOK || directMap["rows affected"] != int64(3) || fileMap["rows affected"] != int64(3) {
+					t.Fatalf("mutation results: direct=%#v file=%#v", direct, file)
+				}
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			directRT, directRunner := newMysqlRuntime(process.CommandResult{
+				ExitCode: 0,
+				Stdout:   []byte(tc.stdout),
+			})
+			direct, err := (mysqlQueryFunc{}).Execute(context.Background(), directRT, &QueryArgs{
+				Database: "db",
+				Query:    tc.statement,
+			})
+			if err != nil || len(directRunner.calls) != 1 {
+				t.Fatalf("direct result=%#v err=%v calls=%d", direct, err, len(directRunner.calls))
+			}
+
+			fileRT, fileRunner := newMysqlRuntime(process.CommandResult{
+				ExitCode: 0,
+				Stdout:   []byte(tc.stdout),
+			})
+			path := "/tmp/percent-" + tc.name + ".sql"
+			if err := fileRT.FS.(*runtime.MemoryFS).WriteFile(path, []byte(tc.statement), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			file, err := (mysqlFileQueryFunc{}).Execute(context.Background(), fileRT, &FileQueryArgs{
+				Database: "db",
+				FileName: path,
+			})
+			if err != nil || len(fileRunner.calls) != 1 {
+				t.Fatalf("file result=%#v err=%v calls=%d", file, err, len(fileRunner.calls))
+			}
+			if got := string(directRunner.calls[0].Stdin); got != tc.wantStdin {
+				t.Fatalf("direct stdin=%q want=%q", got, tc.wantStdin)
+			}
+			if got := string(fileRunner.calls[0].Stdin); got != tc.wantStdin {
+				t.Fatalf("file stdin=%q want=%q", got, tc.wantStdin)
+			}
+			if got := string(fileRunner.calls[0].Stdin); got != string(directRunner.calls[0].Stdin) {
+				t.Fatalf("direct/file stdin mismatch: direct=%q file=%q", directRunner.calls[0].Stdin, fileRunner.calls[0].Stdin)
+			}
+			tc.wantResult(t, direct, file)
+		})
+	}
+}
+
+func TestMysqlFileQueryFramesQuotesCommentsAndAggregates(t *testing.T) {
+	rt, runner := newMysqlRuntime(
+		process.CommandResult{
+			ExitCode: 0,
+			Stdout:   []byte("id\tnote\n1\tline one\n"),
+		},
+		process.CommandResult{
+			ExitCode: 0,
+			Stdout:   []byte("__statekit_rows_affected__\n2\n"),
+		},
+	)
+	path := "/tmp/statekit-file-query.sql"
+	content := "/* leading comment */\nSELECT id, note FROM t WHERE note = 'semi;quote';\n" +
+		"-- statement boundary\nUPDATE t SET note = 'quoted; value' WHERE id = 1"
+	if err := rt.FS.(*runtime.MemoryFS).WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	value, err := (mysqlFileQueryFunc{}).Execute(context.Background(), rt, &FileQueryArgs{
+		Database: "db",
+		FileName: path,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, ok := value.(map[string]any)
+	if !ok || result["rows returned"] != int64(1) || result["rows affected"] != int64(2) {
+		t.Fatalf("aggregate = %#v", value)
+	}
+	columns, ok := result["columns"].([]any)
+	if !ok || !reflect.DeepEqual(columns, []any{[]string{"id", "note"}}) {
+		t.Fatalf("aggregate columns = %#v", result["columns"])
+	}
+	rows, ok := result["results"].([]any)
+	if !ok || !reflect.DeepEqual(rows, []any{[][]any{{"1", "line one"}}}) {
+		t.Fatalf("aggregate rows = %#v", result["results"])
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("dispatch count = %d", len(runner.calls))
+	}
+	if string(runner.calls[0].Stdin) != "SELECT id, note FROM t WHERE note = 'semi;quote'" {
+		t.Fatalf("select stdin = %q", runner.calls[0].Stdin)
+	}
+	if !strings.Contains(string(runner.calls[1].Stdin), "UPDATE t SET note = 'quoted; value'") ||
+		!strings.Contains(string(runner.calls[1].Stdin), mysqlQueryAffectedProbe) {
+		t.Fatalf("write stdin = %q", runner.calls[1].Stdin)
+	}
+	for _, call := range runner.calls {
+		if strings.Contains(strings.Join(call.Args, " "), path) || strings.Contains(call.RedactedString(), path) {
+			t.Fatalf("file path escaped transport: %#v", call)
+		}
+	}
+}
+
+func TestMysqlFileQueryRegisteredAndPreservesFalseShape(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	rt, runner := newMysqlRuntime(process.CommandResult{ExitCode: 1, Stderr: []byte("secret diagnostic")})
+	path := "/tmp/registered.sql"
+	if err := rt.FS.(*runtime.MemoryFS).WriteFile(path, []byte("SELECT 1"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rt.Exec = reg
+	value, err := reg.Call(context.Background(), rt, "mysql.file_query", &FileQueryArgs{Database: "db", FileName: path})
+	if err != nil || value != false || len(runner.calls) != 1 {
+		t.Fatalf("registered file_query = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+}
+
+func TestMysqlFileQueryRejectsPathReadAndContentFailuresBeforeDispatch(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		path string
+		data []byte
+		want error
+	}{
+		{name: "empty-path", path: "", want: errMysqlFilePath},
+		{name: "control-path", path: "/tmp/file\nname.sql", want: errMysqlFilePath},
+		{name: "nul-path", path: "/tmp/file\x00name.sql", want: errMysqlFilePath},
+		{name: "invalid-utf8-path", path: string([]byte{'/', 't', 'm', 'p', '/', 0xff}), want: errMysqlFilePath},
+		{name: "remote-path", path: "salt://secret.sql", want: errMysqlFilePath},
+		{name: "invalid-utf8-content", path: "/tmp/invalid-utf8.sql", data: []byte("SELECT \xff"), want: errMysqlQuery},
+		{name: "nul-content", path: "/tmp/nul.sql", data: []byte("SELECT 1\x00"), want: errMysqlQuery},
+		{name: "control-in-quoted-token", path: "/tmp/quoted-control.sql", data: []byte("SELECT 'quoted\x01value'"), want: errMysqlQuery},
+		{name: "control-in-unquoted-token", path: "/tmp/unquoted-control.sql", data: []byte("SELECT\x01 1"), want: errMysqlQuery},
+		{name: "control-in-comment", path: "/tmp/comment-control.sql", data: []byte("/* comment\x7f */ SELECT 1"), want: errMysqlQuery},
+		{name: "control-in-later-statement", path: "/tmp/later-control.sql", data: []byte("SELECT 1; SELECT 2\x01"), want: errMysqlQuery},
+		{name: "unterminated-quote", path: "/tmp/quote.sql", data: []byte("SELECT 'unterminated"), want: errMysqlQuery},
+		{name: "backslash-quote", path: "/tmp/backslash.sql", data: []byte("SELECT 'a\\'b'"), want: errMysqlQuery},
+		{name: "executable-comment", path: "/tmp/executable-comment.sql", data: []byte("/*! SELECT 1 */"), want: errMysqlQuery},
+		{name: "delimiter-directive", path: "/tmp/delimiter.sql", data: []byte("DELIMITER //\nSELECT 1//"), want: errMysqlQuery},
+		{name: "invalid-later-statement", path: "/tmp/later.sql", data: []byte("SELECT 1; SELECT 'unterminated"), want: errMysqlQuery},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, runner := newMysqlRuntime()
+			if tc.data != nil {
+				if err := rt.FS.(*runtime.MemoryFS).WriteFile(tc.path, tc.data, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			value, err := (mysqlFileQueryFunc{}).Execute(context.Background(), rt, &FileQueryArgs{
+				Database: "db",
+				FileName: tc.path,
+			})
+			if value != nil || err != tc.want || len(runner.calls) != 0 {
+				t.Fatalf("value=%#v err=%v want=%v calls=%d", value, err, tc.want, len(runner.calls))
+			}
+			if tc.path != "" && err != nil && strings.Contains(err.Error(), tc.path) {
+				t.Fatalf("path leaked in error: %v", err)
+			}
+		})
+	}
+}
+
+func TestMysqlFileQueryAllowsOnlyDocumentedSQLWhitespace(t *testing.T) {
+	rt, runner := newMysqlRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte("value\n1\n"),
+	})
+	path := "/tmp/allowed-whitespace.sql"
+	contents := " \t\n\r\fSELECT 1"
+	if err := rt.FS.(*runtime.MemoryFS).WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	value, err := (mysqlFileQueryFunc{}).Execute(context.Background(), rt, &FileQueryArgs{Database: "db", FileName: path})
+	if err != nil || value == nil || len(runner.calls) != 1 || string(runner.calls[0].Stdin) != "SELECT 1" {
+		t.Fatalf("allowed whitespace value=%#v err=%v calls=%d stdin=%q", value, err, len(runner.calls), runner.calls[0].Stdin)
+	}
+}
+
+func TestMysqlFileQueryWholeOperationCeilings(t *testing.T) {
+	t.Run("statement-count-before-dispatch", func(t *testing.T) {
+		rt, runner := newMysqlRuntime()
+		path := "/tmp/statement-limit.sql"
+		contents := strings.Repeat("SELECT 1;", mysqlFileQueryStatementLimit+1)
+		if err := rt.FS.(*runtime.MemoryFS).WriteFile(path, []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		value, err := (mysqlFileQueryFunc{}).Execute(context.Background(), rt, &FileQueryArgs{Database: "db", FileName: path})
+		if value != nil || err != errMysqlFileQueryStatementLimit || len(runner.calls) != 0 {
+			t.Fatalf("statement limit value=%#v err=%v calls=%d", value, err, len(runner.calls))
+		}
+	})
+
+	t.Run("cumulative-rows", func(t *testing.T) {
+		var stdout strings.Builder
+		stdout.WriteString("value\n")
+		for i := int64(0); i < mysqlFileQueryRowsLimit+1; i++ {
+			stdout.WriteString("x\n")
+		}
+		rt, runner := newMysqlRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(stdout.String())})
+		path := "/tmp/row-limit.sql"
+		if err := rt.FS.(*runtime.MemoryFS).WriteFile(path, []byte("SELECT 1"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		value, err := (mysqlFileQueryFunc{}).Execute(context.Background(), rt, &FileQueryArgs{Database: "db", FileName: path})
+		if value != nil || err != errMysqlFileQueryRowsLimit || len(runner.calls) != 1 {
+			t.Fatalf("row limit value=%#v err=%v calls=%d", value, err, len(runner.calls))
+		}
+	})
+
+	t.Run("cumulative-encoded-bytes", func(t *testing.T) {
+		chunk := strings.Repeat("x", outputLimit-1024)
+		stdout := []byte("value\n" + chunk + "\n")
+		rt, runner := newMysqlRuntime(
+			process.CommandResult{ExitCode: 0, Stdout: stdout},
+			process.CommandResult{ExitCode: 0, Stdout: stdout},
+			process.CommandResult{ExitCode: 0, Stdout: stdout},
+		)
+		path := "/tmp/encoded-limit.sql"
+		if err := rt.FS.(*runtime.MemoryFS).WriteFile(path, []byte("SELECT 1; SELECT 2; SELECT 3"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		value, err := (mysqlFileQueryFunc{}).Execute(context.Background(), rt, &FileQueryArgs{Database: "db", FileName: path})
+		if value != nil || err != errMysqlFileQueryEncodedLimit || len(runner.calls) != 3 {
+			t.Fatalf("encoded limit value=%#v err=%v calls=%d", value, err, len(runner.calls))
+		}
+	})
+
+	t.Run("result-items", func(t *testing.T) {
+		columnCount := mysqlFileQueryItemsLimit
+		var stdout strings.Builder
+		for i := int64(0); i < columnCount; i++ {
+			if i > 0 {
+				stdout.WriteByte('\t')
+			}
+			stdout.WriteString("c")
+		}
+		stdout.WriteByte('\n')
+		for i := int64(0); i < columnCount; i++ {
+			if i > 0 {
+				stdout.WriteByte('\t')
+			}
+			stdout.WriteByte('x')
+		}
+		stdout.WriteByte('\n')
+		rt, runner := newMysqlRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(stdout.String())})
+		path := "/tmp/items-limit.sql"
+		if err := rt.FS.(*runtime.MemoryFS).WriteFile(path, []byte("SELECT 1"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		value, err := (mysqlFileQueryFunc{}).Execute(context.Background(), rt, &FileQueryArgs{Database: "db", FileName: path})
+		if value != nil || err != errMysqlFileQueryItemsLimit || len(runner.calls) != 1 {
+			t.Fatalf("result item limit value=%#v err=%v calls=%d", value, err, len(runner.calls))
+		}
+	})
+}
+
+type mysqlSleepFirstRunner struct {
+	base  *mysqlFakeRunner
+	delay time.Duration
+}
+
+func (r *mysqlSleepFirstRunner) Run(ctx context.Context, command process.Command) process.CommandResult {
+	if len(r.base.calls) == 0 {
+		time.Sleep(r.delay)
+	}
+	return r.base.Run(ctx, command)
+}
+
+func (r *mysqlSleepFirstRunner) CommandAvailable(name string) bool {
+	return r.base.CommandAvailable(name)
+}
+
+func TestMysqlFileQueryStopsBetweenStatementsOnCancelOrDeadline(t *testing.T) {
+	file := func(t *testing.T, rt *runtime.Runtime, path string) {
+		t.Helper()
+		if err := rt.FS.(*runtime.MemoryFS).WriteFile(path, []byte("SELECT 1; SELECT 2"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Run("cancel", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		base := &mysqlFakeRunner{results: []process.CommandResult{
+			{ExitCode: 0, Stdout: []byte("value\n1\n")},
+			{ExitCode: 0, Stdout: []byte("value\n2\n")},
+		}}
+		runner := &mysqlCancelAfterRunner{base: base, cancel: cancel, after: 1}
+		rt := &runtime.Runtime{Runner: runner, FS: runtime.NewMemoryFS()}
+		file(t, rt, "/tmp/cancel-between.sql")
+		value, err := (mysqlFileQueryFunc{}).Execute(ctx, rt, &FileQueryArgs{Database: "db", FileName: "/tmp/cancel-between.sql"})
+		if value != nil || !errors.Is(err, context.Canceled) || len(base.calls) != 1 {
+			t.Fatalf("cancel value=%#v err=%v calls=%d", value, err, len(base.calls))
+		}
+	})
+
+	t.Run("deadline", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer cancel()
+		base := &mysqlFakeRunner{results: []process.CommandResult{
+			{ExitCode: 0, Stdout: []byte("value\n1\n")},
+			{ExitCode: 0, Stdout: []byte("value\n2\n")},
+		}}
+		runner := &mysqlSleepFirstRunner{base: base, delay: 100 * time.Millisecond}
+		rt := &runtime.Runtime{Runner: runner, FS: runtime.NewMemoryFS()}
+		file(t, rt, "/tmp/deadline-between.sql")
+		value, err := (mysqlFileQueryFunc{}).Execute(ctx, rt, &FileQueryArgs{Database: "db", FileName: "/tmp/deadline-between.sql"})
+		if value != nil || !errors.Is(err, context.DeadlineExceeded) || len(base.calls) != 1 {
+			t.Fatalf("deadline value=%#v err=%v calls=%d", value, err, len(base.calls))
+		}
+	})
+}
+
+func TestMysqlFileQueryRejectsOversizePermissionAndCancellation(t *testing.T) {
+	path := "/tmp/bounded.sql"
+	rt, runner := newMysqlRuntime()
+	if err := rt.FS.(*runtime.MemoryFS).WriteFile(path, []byte(strings.Repeat("x", runtime.MaxCommandInputBytes+1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	value, err := (mysqlFileQueryFunc{}).Execute(context.Background(), rt, &FileQueryArgs{Database: "db", FileName: path})
+	if value != nil || !errors.Is(err, runtime.ErrReadLimit) || len(runner.calls) != 0 {
+		t.Fatalf("oversize value=%#v err=%v calls=%d", value, err, len(runner.calls))
+	}
+
+	permissionFS := &mysqlFileQueryReadErrorFS{MemoryFS: runtime.NewMemoryFS(), err: fs.ErrPermission}
+	permissionRT := &runtime.Runtime{Runner: &mysqlFakeRunner{}, FS: permissionFS}
+	value, err = (mysqlFileQueryFunc{}).Execute(context.Background(), permissionRT, &FileQueryArgs{Database: "db", FileName: path})
+	if value != nil || err != errMysqlFileRead || permissionFS.reads != 1 || strings.Contains(err.Error(), path) {
+		t.Fatalf("permission value=%#v err=%v reads=%d", value, err, permissionFS.reads)
+	}
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	cancelFS := &mysqlFileQueryReadErrorFS{MemoryFS: runtime.NewMemoryFS(), err: fs.ErrPermission}
+	cancelRT := &runtime.Runtime{Runner: &mysqlFakeRunner{}, FS: cancelFS}
+	value, err = (mysqlFileQueryFunc{}).Execute(cancelled, cancelRT, &FileQueryArgs{Database: "db", FileName: path})
+	if value != nil || !errors.Is(err, context.Canceled) || cancelFS.reads != 0 {
+		t.Fatalf("cancelled value=%#v err=%v reads=%d", value, err, cancelFS.reads)
+	}
+}
+
+func TestMysqlFileQueryRejectsSymlinkAndNonRegularOSFiles(t *testing.T) {
+	directory := t.TempDir()
+	target := filepath.Join(directory, "target.sql")
+	link := filepath.Join(directory, "link.sql")
+	if err := os.WriteFile(target, []byte("SELECT 1"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	rt, runner := newMysqlRuntime()
+	rt.FS = runtime.NewOSFileSystem()
+	for _, path := range []string{link, directory} {
+		value, err := (mysqlFileQueryFunc{}).Execute(context.Background(), rt, &FileQueryArgs{
+			Database: "db",
+			FileName: path,
+		})
+		if value != nil || err != errMysqlFileRead || len(runner.calls) != 0 || strings.Contains(err.Error(), path) {
+			t.Fatalf("path=%q value=%#v err=%v calls=%d", path, value, err, len(runner.calls))
+		}
+	}
+}
+
+func TestMysqlFileQueryRedactsRunnerFailures(t *testing.T) {
+	marker := "file-query-secret"
+	path := "/tmp/redacted.sql"
+	rt, runner := newMysqlRuntime(process.CommandResult{Err: fmt.Errorf("runner leaked %s", marker)})
+	if err := rt.FS.(*runtime.MemoryFS).WriteFile(path, []byte("SELECT '"+marker+"'"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	value, err := (mysqlFileQueryFunc{}).Execute(context.Background(), rt, &FileQueryArgs{
+		Database: "db",
+		FileName: path,
+		Password: mysqlString(marker),
+	})
+	if value != nil || !errors.Is(err, errMysqlQueryExecution) || strings.Contains(err.Error(), marker) ||
+		len(runner.calls) != 1 || strings.Contains(runner.calls[0].RedactedString(), marker) {
+		t.Fatalf("redacted value=%#v err=%v calls=%d command=%q", value, err, len(runner.calls), runner.calls[0].RedactedString())
 	}
 }
 
@@ -2396,6 +2827,17 @@ func (r *mysqlFakeRunner) CommandAvailable(name string) bool {
 func newMysqlRuntime(results ...process.CommandResult) (*runtime.Runtime, *mysqlFakeRunner) {
 	runner := &mysqlFakeRunner{results: results}
 	return &runtime.Runtime{Runner: runner, FS: runtime.NewMemoryFS()}, runner
+}
+
+type mysqlFileQueryReadErrorFS struct {
+	*runtime.MemoryFS
+	err   error
+	reads int
+}
+
+func (f *mysqlFileQueryReadErrorFS) ReadFileBounded(_ string, _ int64) ([]byte, error) {
+	f.reads++
+	return nil, f.err
 }
 
 func mysqlString(value string) *string { return &value }

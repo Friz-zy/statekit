@@ -2,7 +2,8 @@
 # E5.2 live MySQL gate extending the E5.1 read-only/catalog/plugin surface
 # with the already-ported R9.3j database lifecycle, R9.3l alter_db, R9.3m
 # process/replication status readers, R9.3n slave_lag, R9.3o plugin
-# add/remove lifecycle negatives and idempotence, and R9.3p mysql.query.
+# add/remove lifecycle negatives and idempotence, R9.3p mysql.query, and R9.3q
+# mysql.file_query.
 # The gate deliberately runs
 # the production statekit binary and the official image's native mysql client;
 # it does not use the Go fake Runner. Every E5.1 case remains in the inventory.
@@ -50,6 +51,10 @@ readonly NATIVE_PLUGIN_INSTALL_MISSING_SUFFIX='(errno: 2 No such file or directo
 readonly MAX_COMMAND_INPUT_BYTES=$((1024 * 1024))
 readonly STATEKIT_REQUEST_MAX_BYTES=$((MAX_COMMAND_INPUT_BYTES + 65536))
 readonly QUERY_EXPECTED_NOTE='quote; value;'
+readonly FILE_QUERY_DML_NOTE='file; dml;'
+readonly FILE_QUERY_PATH='/tmp/statekit-file-query.sql'
+readonly STATEKIT_FILE_QUERY_INVALID_PATH_DIAGNOSTIC='statekit: mysql: invalid file path'
+readonly STATEKIT_FILE_QUERY_CONTENT_DIAGNOSTIC='statekit: mysql: invalid query'
 readonly STATEKIT_QUERY_INPUT_LIMIT_DIAGNOSTIC='statekit: runtime: command input exceeds limit'
 readonly STATEKIT_QUERY_TIMEOUT_DIAGNOSTIC='statekit: context deadline exceeded'
 readonly NATIVE_QUERY_DIAGNOSTIC_SIGNATURE='You have an error in your SQL syntax;'
@@ -134,6 +139,17 @@ readonly CASE_IDS=(
   'mysql-query-create-table'
   'mysql-query-insert-dml'
   'mysql-query-dml-native-postcondition'
+  'mysql-file-query-select-statekit'
+  'mysql-file-query-select-native-observation'
+  'mysql-file-query-dml-statekit'
+  'mysql-file-query-dml-native-postcondition'
+  'mysql-file-query-multiline-quoted-statekit'
+  'mysql-file-query-multiline-quoted-native-observation'
+  'mysql-file-query-negative-invalid-path'
+  'mysql-file-query-negative-oversize'
+  'mysql-file-query-negative-invalid-content'
+  'mysql-file-query-negative-auth'
+  'mysql-file-query-negative-connection'
   'mysql-query-multiline-quoted-statekit'
   'mysql-query-multiline-quoted-native-observation'
   'mysql-query-drop-database'
@@ -1928,6 +1944,124 @@ statekit_call() {
   return "$rc"
 }
 
+# The first stdin frame is a decimal byte count followed by the owned SQL file
+# bytes. The remaining bytes are the ordinary JSON request consumed by the
+# production binary. Keeping the SQL in this pipe, rather than in a Podman
+# argv or shell fragment, exercises the actual file_query filesystem boundary.
+# shellcheck disable=SC2016
+readonly FILE_QUERY_SCRIPT='set -eu
+secret_source="$1"
+test -r "$secret_source"
+sql_file=/tmp/statekit-file-query.sql
+proof_file=/tmp/statekit-version.json
+trap '\''rm -f -- "$sql_file" "$proof_file"'\'' EXIT
+IFS= read -r sql_bytes
+case "$sql_bytes" in
+  ""|*[!0-9]*) exit 125 ;;
+esac
+umask 077
+: >"$sql_file"
+dd if=/dev/stdin of="$sql_file" bs=1 count="$sql_bytes" 2>/dev/null
+actual_bytes=$(wc -c <"$sql_file")
+[ "$actual_bytes" = "$sql_bytes" ]
+chmod 600 "$sql_file"
+/usr/local/bin/statekit version --output json >"$proof_file"
+grep -Eq '\''"version"[[:space:]]*:'\'' "$proof_file"
+set +e
+/usr/local/bin/statekit exec mysql.file_query --stdin --output json
+statekit_rc=$?
+set -e
+printf '\''%s\n'\'' '\''statekit: production-binary-completed'\'' >&2
+exit "$statekit_rc"'
+
+statekit_file_query_call_path() {
+  local secret_name="$1" database="$2" sql="$3" file_name="$4" stdout_path="$5" stderr_path="$6" connection_host="${7:-$DB_HOST}" connection_port="${8:-$DB_PORT}" extra_json sql_path request_path input_path sql_bytes input_bytes rc=0
+  LAST_STATEKIT_BINARY_LAUNCHED=0
+  if ! extra_json=$(file_query_extra_json "$database" "$file_name"); then
+    LAST_CLIENT_CLASS='setup'
+    LAST_CLIENT_EXIT_RC=125
+    return 125
+  fi
+  sql_path=$(create_owned_input_file "$sql" "$STATEKIT_REQUEST_MAX_BYTES") || {
+    LAST_CLIENT_CLASS='setup'
+    LAST_CLIENT_EXIT_RC=125
+    return 125
+  }
+  request_path=$(create_statekit_request_file "$secret_name" 'mysql.file_query' "$extra_json" "$connection_host" "$connection_port") || {
+    rm -f -- "$sql_path"
+    LAST_CLIENT_CLASS='setup'
+    LAST_CLIENT_EXIT_RC=125
+    return 125
+  }
+  input_path=$(mktemp "$WORK_DIR/statekit-file-query-input.XXXXXX") || {
+    rm -f -- "$sql_path" "$request_path"
+    LAST_CLIENT_CLASS='setup'
+    LAST_CLIENT_EXIT_RC=125
+    return 125
+  }
+  if ! chmod 600 "$input_path" || ! owned_private_file "$input_path"; then
+    rm -f -- "$sql_path" "$request_path" "$input_path"
+    LAST_CLIENT_CLASS='setup'
+    LAST_CLIENT_EXIT_RC=125
+    return 125
+  fi
+  sql_bytes=$(wc -c <"$sql_path") || {
+    rm -f -- "$sql_path" "$request_path" "$input_path"
+    LAST_CLIENT_CLASS='setup'
+    LAST_CLIENT_EXIT_RC=125
+    return 125
+  }
+  if ! printf '%s\n' "$sql_bytes" >"$input_path" || ! cat "$sql_path" "$request_path" >>"$input_path"; then
+    rm -f -- "$sql_path" "$request_path" "$input_path"
+    LAST_CLIENT_CLASS='setup'
+    LAST_CLIENT_EXIT_RC=125
+    return 125
+  fi
+  input_bytes=$(wc -c <"$input_path") || {
+    rm -f -- "$sql_path" "$request_path" "$input_path"
+    LAST_CLIENT_CLASS='setup'
+    LAST_CLIENT_EXIT_RC=125
+    return 125
+  }
+  if (( input_bytes > STATEKIT_REQUEST_MAX_BYTES )) || ! owned_private_file "$input_path"; then
+    rm -f -- "$sql_path" "$request_path" "$input_path"
+    LAST_CLIENT_CLASS='setup'
+    LAST_CLIENT_EXIT_RC=125
+    return 125
+  fi
+  CLIENT_EXPECT_STATEKIT_PROOF=1
+  if run_client_container "$stdout_path" "$stderr_path" "$input_path" \
+    --network "$NETWORK" \
+    --secret "source=$secret_name,type=mount,target=$CLIENT_SECRET_TARGET,uid=65532,gid=65532,mode=400" \
+    --read-only \
+    --tmpfs /var/lib/mysql:rw,nosuid,nodev,noexec,size=16m,mode=1777 \
+    --tmpfs /tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777 \
+    --memory 256m \
+    --cpus 1 \
+    --pids-limit 64 \
+    --cap-drop ALL \
+    --security-opt no-new-privileges \
+    --ipc private \
+    --pid private \
+    --uts private \
+    --user "$CLIENT_USER" \
+    --entrypoint /bin/sh \
+    "$CLIENT_IMAGE" \
+    -c "$FILE_QUERY_SCRIPT" \
+    -- "$CLIENT_SECRET_TARGET"; then
+    rc=0
+  else
+    rc=$?
+  fi
+  CLIENT_EXPECT_STATEKIT_PROOF=0
+  rm -f -- "$sql_path" "$request_path"
+  return "$rc"
+}
+
+statekit_file_query_call() {
+  statekit_file_query_call_path "$1" "$2" "$3" "$FILE_QUERY_PATH" "$4" "$5"
+}
+
 value_free_files() {
   local path content
   for path in "$@"; do
@@ -2623,6 +2757,23 @@ PY
   return "$rc"
 }
 
+file_query_extra_json() {
+  local database="$1" file_name="$2" spec_path rc=0
+  spec_path=$(create_query_spec_file "$database" "$file_name") || return $?
+  python3 - "$spec_path" <<'PY' || rc=$?
+import json
+from pathlib import Path
+import sys
+
+database, file_name = Path(sys.argv[1]).read_bytes().split(b"\0", 1)
+fragment = {"database": database.decode("utf-8"), "file_name": file_name.decode("utf-8")}
+encoded = json.dumps(fragment, ensure_ascii=False, separators=(",", ":"))
+print("," + encoded[1:-1], end="")
+PY
+  rm -f -- "$spec_path"
+  return "$rc"
+}
+
 query_frame_fixture() {
   case "$1" in
     terminated) printf '%s' 'SELECT 7 AS value;' ;;
@@ -2698,6 +2849,54 @@ elif kind.startswith("affected:"):
         raise SystemExit(1)
     ok = exact_keys(value, ("rows affected", "query time"))
     ok = ok and value.get("rows affected") == expected
+else:
+    ok = False
+raise SystemExit(0 if ok else 1)
+PY
+}
+
+file_query_result_matches() {
+  local kind="$1" path="$2"
+  QUERY_EXPECTED_NOTE_VALUE="$QUERY_EXPECTED_NOTE" python3 - "$kind" "$path" <<'PY'
+import json
+import os
+import sys
+
+kind, path = sys.argv[1:]
+expected_note = os.environ["QUERY_EXPECTED_NOTE_VALUE"]
+try:
+    with open(path, encoding="utf-8") as stream:
+        value = json.load(stream)
+except (OSError, UnicodeError, ValueError, TypeError):
+    raise SystemExit(1)
+
+def query_time_ok(candidate):
+    return (
+        isinstance(candidate, dict)
+        and isinstance(candidate.get("human"), str)
+        and isinstance(candidate.get("raw"), (int, float))
+    )
+
+def exact_keys(candidate, keys):
+    return isinstance(candidate, dict) and set(candidate) == set(keys)
+
+if kind == "false":
+    raise SystemExit(0 if value is False else 1)
+if not isinstance(value, dict) or not query_time_ok(value.get("query time")):
+    raise SystemExit(1)
+if kind == "select":
+    ok = exact_keys(value, ("columns", "results", "rows returned", "query time"))
+    ok = ok and value.get("columns") == [["id", "note"]]
+    ok = ok and value.get("results") == [[["1", "line one"], ["2", expected_note]]]
+    ok = ok and value.get("rows returned") == 2
+elif kind == "dml":
+    ok = exact_keys(value, ("rows affected", "query time"))
+    ok = ok and value.get("rows affected") == 1
+elif kind == "multiline":
+    ok = exact_keys(value, ("columns", "results", "rows returned", "query time"))
+    ok = ok and value.get("columns") == [["id", "note"], ["note"]]
+    ok = ok and value.get("results") == [[ ["1", "line one"] ], [[expected_note]]]
+    ok = ok and value.get("rows returned") == 2
 else:
     ok = False
 raise SystemExit(0 if ok else 1)
@@ -2931,6 +3130,193 @@ check_statekit_query_insert() {
   fi
   rm -f "$stdout_path" "$stderr_path"
   return "$ok"
+}
+
+check_statekit_file_query_select() {
+  local stdout_path="$WORK_DIR/file-query-select.out" stderr_path="$WORK_DIR/file-query-select.err"
+  local sql="SELECT id, note FROM \`$QUERY_DB\`.\`$QUERY_TABLE\` ORDER BY id" rc=0 ok=1
+  if (( QUERY_DB_RESERVED != 1 || QUERY_DB_OWNED != 1 )); then
+    set_note 'file-query-select-ownership-required'
+    return 1
+  fi
+  statekit_file_query_call "$ROOT_CLIENT_SECRET" "$QUERY_DB" "$sql" "$stdout_path" "$stderr_path" || rc=$?
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' ]] &&
+    file_query_result_matches select "$stdout_path" && [[ ! -s "$stderr_path" ]] &&
+    query_files_are_value_free "$sql" "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'file-query-select-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_native_file_query_select() {
+  local stdout_path="$WORK_DIR/file-query-select-native.out" stderr_path="$WORK_DIR/file-query-select-native.err"
+  local sql="SELECT id, note FROM \`$QUERY_DB\`.\`$QUERY_TABLE\` ORDER BY id" rc=0 value='' ok=1 expected_value
+  expected_value=$'1\tline one\n2\t'"$QUERY_EXPECTED_NOTE"
+  native_mysql_as_user root "$ROOT_CLIENT_SECRET" "$DB_HOST" "$DB_PORT" "$sql" "$stdout_path" "$stderr_path" || rc=$?
+  [[ -f "$stdout_path" ]] && value=$(<"$stdout_path")
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' && "$value" == "$expected_value" ]] &&
+    [[ ! -s "$stderr_path" ]] && value_free_files "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'file-query-select-native-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_file_query_dml() {
+  local stdout_path="$WORK_DIR/file-query-dml.out" stderr_path="$WORK_DIR/file-query-dml.err"
+  local sql="INSERT INTO \`$QUERY_TABLE\` (id, note) VALUES (3, '$FILE_QUERY_DML_NOTE')" rc=0 ok=1
+  if (( QUERY_DB_RESERVED != 1 || QUERY_DB_OWNED != 1 )); then
+    set_note 'file-query-dml-ownership-required'
+    return 1
+  fi
+  statekit_file_query_call "$ROOT_CLIENT_SECRET" "$QUERY_DB" "$sql" "$stdout_path" "$stderr_path" || rc=$?
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' ]] &&
+    file_query_result_matches dml "$stdout_path" && [[ ! -s "$stderr_path" ]] &&
+    query_files_are_value_free "$sql" "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'file-query-dml-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_native_file_query_dml() {
+  local stdout_path="$WORK_DIR/file-query-dml-native.out" stderr_path="$WORK_DIR/file-query-dml-native.err"
+  local sql="SELECT id, note FROM \`$QUERY_DB\`.\`$QUERY_TABLE\` ORDER BY id" rc=0 value='' ok=1 expected_value
+  expected_value=$'1\tline one\n2\t'"$QUERY_EXPECTED_NOTE"$'\n3\t'"$FILE_QUERY_DML_NOTE"
+  native_mysql_as_user root "$ROOT_CLIENT_SECRET" "$DB_HOST" "$DB_PORT" "$sql" "$stdout_path" "$stderr_path" || rc=$?
+  [[ -f "$stdout_path" ]] && value=$(<"$stdout_path")
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' && "$value" == "$expected_value" ]] &&
+    [[ ! -s "$stderr_path" ]] && value_free_files "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'file-query-dml-native-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+file_query_multiline_sql() {
+  printf '%s\n' \
+    '-- file query comment' \
+    'SELECT id, note' \
+    "FROM \`$QUERY_DB\`.\`$QUERY_TABLE\`" \
+    'WHERE id = 1;' \
+    '/* quoted semicolon */' \
+    "SELECT '$QUERY_EXPECTED_NOTE' AS note"
+}
+
+check_statekit_file_query_multiline() {
+  local stdout_path="$WORK_DIR/file-query-multiline.out" stderr_path="$WORK_DIR/file-query-multiline.err"
+  local sql rc=0 ok=1
+  sql=$(file_query_multiline_sql)
+  statekit_file_query_call "$ROOT_CLIENT_SECRET" "$QUERY_DB" "$sql" "$stdout_path" "$stderr_path" || rc=$?
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' ]] &&
+    file_query_result_matches multiline "$stdout_path" && [[ ! -s "$stderr_path" ]] &&
+    query_files_are_value_free "$sql" "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'file-query-multiline-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_native_file_query_multiline() {
+  local stdout_path="$WORK_DIR/file-query-multiline-native.out" stderr_path="$WORK_DIR/file-query-multiline-native.err"
+  local sql rc=0 value='' ok=1 expected_value
+  sql=$(file_query_multiline_sql)
+  expected_value=$'1\tline one\n'"$QUERY_EXPECTED_NOTE"
+  native_mysql_as_user root "$ROOT_CLIENT_SECRET" "$DB_HOST" "$DB_PORT" "$sql" "$stdout_path" "$stderr_path" || rc=$?
+  [[ -f "$stdout_path" ]] && value=$(<"$stdout_path")
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' && "$value" == "$expected_value" ]] &&
+    [[ ! -s "$stderr_path" ]] && value_free_files "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'file-query-multiline-native-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_file_query_invalid_path() {
+  local stdout_path="$WORK_DIR/file-query-invalid-path.out" stderr_path="$WORK_DIR/file-query-invalid-path.err"
+  local invalid_path=$'/tmp/statekit-file-query-\n-invalid.sql' rc=0 ok=1 sql='SELECT 1'
+  statekit_file_query_call_path "$CLIENT_SECRET" "$SEED_DB" "$sql" "$invalid_path" "$stdout_path" "$stderr_path" || rc=$?
+  if (( rc == 1 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '1' ]] &&
+    [[ ! -s "$stdout_path" ]] && [[ "$(<"$stderr_path")" == "$STATEKIT_FILE_QUERY_INVALID_PATH_DIAGNOSTIC" ]] &&
+    [[ "$(<"$stderr_path")" != *"$invalid_path"* ]] && value_free_files "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'file-query-invalid-path-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_file_query_oversize() {
+  local stdout_path="$WORK_DIR/file-query-oversize.out" stderr_path="$WORK_DIR/file-query-oversize.err"
+  local sql rc=0 ok=1
+  sql=$(python3 - "$MAX_COMMAND_INPUT_BYTES" <<'PY'
+import sys
+print("x" * (int(sys.argv[1]) + 1), end="")
+PY
+  ) || return 1
+  statekit_file_query_call "$CLIENT_SECRET" "$SEED_DB" "$sql" "$stdout_path" "$stderr_path" || rc=$?
+  if (( rc == 1 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '1' ]] &&
+    [[ ! -s "$stdout_path" ]] && [[ "$(<"$stderr_path")" == 'statekit: runtime: file exceeds read limit' ]] &&
+    value_free_files "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'file-query-oversize-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_file_query_invalid_content() {
+  local stdout_path="$WORK_DIR/file-query-invalid-content.out" stderr_path="$WORK_DIR/file-query-invalid-content.err"
+  local rc=0 ok=1 sql="SELECT 'unterminated"
+  statekit_file_query_call "$CLIENT_SECRET" "$SEED_DB" "$sql" "$stdout_path" "$stderr_path" || rc=$?
+  if (( rc == 1 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '1' ]] &&
+    [[ ! -s "$stdout_path" ]] && [[ "$(<"$stderr_path")" == "$STATEKIT_FILE_QUERY_CONTENT_DIAGNOSTIC" ]] &&
+    query_files_are_value_free "$sql" "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'file-query-invalid-content-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_file_query_negative_false() {
+  local label="$1" secret_name="$2" database="$3" host="$4" port="$5" sql="$6"
+  local stdout_path="$WORK_DIR/file-query-negative-${label}.out" stderr_path="$WORK_DIR/file-query-negative-${label}.err"
+  local rc=0 ok=1
+  statekit_file_query_call_path "$secret_name" "$database" "$sql" "$FILE_QUERY_PATH" "$stdout_path" "$stderr_path" "$host" "$port" || rc=$?
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' ]] &&
+    file_query_result_matches false "$stdout_path" && [[ ! -s "$stderr_path" ]] &&
+    query_files_are_value_free "$sql" "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note "file-query-negative-${label}-unexpected-result"
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_file_query_auth_negative() {
+  check_statekit_file_query_negative_false auth "$BAD_CLIENT_SECRET" "$SEED_DB" "$DB_HOST" "$DB_PORT" 'SELECT 1'
+}
+
+check_statekit_file_query_connection_negative() {
+  check_statekit_file_query_negative_false connection "$ROOT_CLIENT_SECRET" "$SEED_DB" "$DB_HOST" '1' 'SELECT 1'
 }
 
 check_native_query_dml_postcondition() {
@@ -3850,11 +4236,11 @@ main() {
   if [[ "${MYSQL_QUERY_LIVE_ENABLED:-0}" != '1' ]]; then
     set_note 'query-live-control-not-enabled'
     local query_case
-    # Keep the ordered 85-case report total and make the control decision
+    # Keep the ordered 96-case report total and make the control decision
     # visible as failures rather than silently converting unexecuted cases to
     # skips.  No query is dispatched without the explicit live opt-in.
     for query_case in "${CASE_IDS[@]}"; do
-      if [[ "$query_case" == mysql-query-* ]]; then
+      if [[ "$query_case" == mysql-query-* || "$query_case" == mysql-file-query-* ]]; then
         record_case "$query_case" fail
       fi
     done
@@ -3870,6 +4256,17 @@ main() {
   run_case 'mysql-query-create-table' check_statekit_query_create_table
   run_case 'mysql-query-insert-dml' check_statekit_query_insert
   run_case 'mysql-query-dml-native-postcondition' check_native_query_dml_postcondition
+  run_case 'mysql-file-query-select-statekit' check_statekit_file_query_select
+  run_case 'mysql-file-query-select-native-observation' check_native_file_query_select
+  run_case 'mysql-file-query-dml-statekit' check_statekit_file_query_dml
+  run_case 'mysql-file-query-dml-native-postcondition' check_native_file_query_dml
+  run_case 'mysql-file-query-multiline-quoted-statekit' check_statekit_file_query_multiline
+  run_case 'mysql-file-query-multiline-quoted-native-observation' check_native_file_query_multiline
+  run_case 'mysql-file-query-negative-invalid-path' check_statekit_file_query_invalid_path
+  run_case 'mysql-file-query-negative-oversize' check_statekit_file_query_oversize
+  run_case 'mysql-file-query-negative-invalid-content' check_statekit_file_query_invalid_content
+  run_case 'mysql-file-query-negative-auth' check_statekit_file_query_auth_negative
+  run_case 'mysql-file-query-negative-connection' check_statekit_file_query_connection_negative
   run_case 'mysql-query-multiline-quoted-statekit' check_statekit_query_multiline_quoted
   run_case 'mysql-query-multiline-quoted-native-observation' check_native_query_multiline_quoted
   run_case 'mysql-query-drop-database' check_statekit_query_drop_database
