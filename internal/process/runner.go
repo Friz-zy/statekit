@@ -34,6 +34,12 @@ var redactedPlaceholderBytes = []byte(RedactedPlaceholder)
 // capture limit. CommandResult retains the captured prefix in this case.
 var ErrOutputLimit = errors.New("process: output limit exceeded")
 
+// ErrCommandInputLimit reports that untrusted command input exceeded the
+// shared finite transport bound. The runtime package aliases this sentinel so
+// redacted Runner errors can preserve the identity without importing runtime
+// and creating an import cycle.
+var ErrCommandInputLimit = errors.New("runtime: command input exceeds limit")
+
 // ErrInvalidOutputLimit reports a negative output capture limit.
 var ErrInvalidOutputLimit = errors.New("process: invalid output limit")
 
@@ -267,6 +273,56 @@ func RedactString(secrets []string, s string) string {
 	return redactStringLimited(secrets, s, maxDisplayBytes)
 }
 
+// RedactedError returns a bounded diagnostic with only approved control-error
+// identities. It deliberately does not unwrap err: a Runner error can carry a
+// path, command argument, or captured credential in an arbitrary wrapped cause
+// even when its top-level text has been redacted. Callers retain the stable
+// cancellation, deadline, and input/output-limit classifications through
+// errors.Is. Once secrets are supplied, the returned error is always opaque;
+// an unchanged top-level message is not evidence that the wrapped cause is
+// safe to expose. If no secret is supplied, the original error is retained
+// for compatibility with non-sensitive failures.
+func RedactedError(err error, secrets ...string) error {
+	if err == nil {
+		return nil
+	}
+	if len(secrets) == 0 {
+		return err
+	}
+	message := RedactString(secrets, err.Error())
+
+	identities := make([]error, 0, 4)
+	for _, candidate := range []error{
+		context.Canceled,
+		context.DeadlineExceeded,
+		ErrOutputLimit,
+		ErrCommandInputLimit,
+	} {
+		if errors.Is(err, candidate) {
+			identities = append(identities, candidate)
+		}
+	}
+	return &redactedError{message: message, identities: identities}
+}
+
+type redactedError struct {
+	message    string
+	identities []error
+}
+
+func (e *redactedError) Error() string { return e.message }
+
+// Is exposes only the fixed identities collected by RedactedError. There is
+// intentionally no Unwrap method, so errors.As cannot reach the raw cause.
+func (e *redactedError) Is(target error) bool {
+	for _, identity := range e.identities {
+		if identity == target {
+			return true
+		}
+	}
+	return false
+}
+
 // boundedString constructs a command display without allocating for arbitrary
 // Name or Args values. Its raw budget is finite and intentionally shared by
 // all arguments, so the result is deterministic for oversized commands.
@@ -471,9 +527,9 @@ func (r DefaultRunner) Run(ctx context.Context, c Command) CommandResult {
 	display := c.RedactedString()
 	switch {
 	case errors.Is(runCtx.Err(), context.DeadlineExceeded):
-		res.Err = fmt.Errorf("%s timed out after %s", display, c.Timeout)
+		res.Err = fmt.Errorf("%s timed out after %s: %w", display, c.Timeout, context.DeadlineExceeded)
 	case errors.Is(runCtx.Err(), context.Canceled):
-		res.Err = fmt.Errorf("%s canceled", display)
+		res.Err = fmt.Errorf("%s canceled: %w", display, context.Canceled)
 	case err != nil && cmd.ProcessState == nil:
 		res.Err = fmt.Errorf("%s: %w", display, err)
 	case res.StdoutTruncated || res.StderrTruncated:

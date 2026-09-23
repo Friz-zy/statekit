@@ -84,6 +84,26 @@ EXPECTED_CASES = (
     "mysql-plugin-add-invalid-soname",
     "mysql-plugin-add-negative-auth",
     "mysql-plugin-remove-negative-connection",
+    "mysql-query-select-scalar-statekit",
+    "mysql-query-select-scalar-native-observation",
+    "mysql-query-select-table-statekit",
+    "mysql-query-select-table-native-observation",
+    "mysql-query-database-native-absent-before-create",
+    "mysql-query-create-database",
+    "mysql-query-create-table",
+    "mysql-query-insert-dml",
+    "mysql-query-dml-native-postcondition",
+    "mysql-query-multiline-quoted-statekit",
+    "mysql-query-multiline-quoted-native-observation",
+    "mysql-query-drop-database",
+    "mysql-query-database-native-removed-postcondition",
+    "mysql-query-negative-invalid-database",
+    "mysql-query-negative-auth",
+    "mysql-query-negative-connection",
+    "mysql-query-negative-timeout",
+    "mysql-query-negative-oversize",
+    "mysql-query-negative-diagnostic-statekit",
+    "mysql-query-negative-diagnostic-native-classification",
 )
 
 
@@ -280,6 +300,208 @@ native_failure_classification "$kind" "$execution_class" "$return_code" "$stdout
         self.assertEqual(result.stderr, "")
         return result.stdout.strip()
 
+    def _classify_statekit_query_result(
+        self,
+        execution_class: str,
+        return_code: int,
+        stdout: str,
+        stderr: str,
+    ) -> str:
+        command = """
+script_path="$1"
+execution_class="$2"
+return_code="$3"
+stdout_path="$4"
+stderr_path="$5"
+set --
+source "$script_path"
+statekit_query_failure_classification "$execution_class" "$return_code" "$stdout_path" "$stderr_path"
+"""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            stdout_path = temporary / "stdout"
+            stderr_path = temporary / "stderr"
+            stdout_path.write_text(stdout, encoding="utf-8")
+            stderr_path.write_text(stderr, encoding="utf-8")
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    command,
+                    "statekit-query-classifier",
+                    str(SCRIPT),
+                    execution_class,
+                    str(return_code),
+                    str(stdout_path),
+                    str(stderr_path),
+                ],
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.stderr, "")
+        return result.stdout.strip()
+
+    def _expected_statekit_query_failure(
+        self,
+        *,
+        launched: int,
+        execution_class: str,
+        client_exit: int,
+        return_code: int,
+        expected: str,
+        stderr: str,
+    ) -> str:
+        command = """
+script_path="$1"
+launched="$2"
+execution_class="$3"
+client_exit="$4"
+return_code="$5"
+expected_class="$6"
+stderr_path="$7"
+set --
+source "$script_path"
+LAST_STATEKIT_BINARY_LAUNCHED="$launched"
+LAST_CLIENT_CLASS="$execution_class"
+LAST_CLIENT_EXIT_RC="$client_exit"
+printf '%s' "$EXPECTED_STDERR" >"$stderr_path"
+: >"$stderr_path.stdout"
+if statekit_query_expected_failure "$expected_class" "$return_code" "$stderr_path.stdout" "$stderr_path"; then
+  printf 'accepted\n'
+else
+  printf 'rejected\n'
+fi
+"""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            stderr_path = Path(temporary_directory) / "stderr"
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    command,
+                    "statekit-query-expected",
+                    str(SCRIPT),
+                    str(launched),
+                    execution_class,
+                    str(client_exit),
+                    str(return_code),
+                    expected,
+                    str(stderr_path),
+                ],
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+                text=True,
+                env={**os.environ, "EXPECTED_STDERR": stderr},
+            )
+        self.assertEqual(result.stderr, "")
+        return result.stdout.strip()
+
+    def _classify_native_query_result(
+        self,
+        execution_class: str,
+        return_code: int,
+        stdout: str,
+        stderr: str,
+    ) -> str:
+        command = """
+script_path="$1"
+execution_class="$2"
+return_code="$3"
+stdout_path="$4"
+stderr_path="$5"
+set --
+source "$script_path"
+native_query_diagnostic_classification "$execution_class" "$return_code" "$stdout_path" "$stderr_path"
+"""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            stdout_path = temporary / "stdout"
+            stderr_path = temporary / "stderr"
+            stdout_path.write_text(stdout, encoding="utf-8")
+            stderr_path.write_text(stderr, encoding="utf-8")
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    command,
+                    "native-query-classifier",
+                    str(SCRIPT),
+                    execution_class,
+                    str(return_code),
+                    str(stdout_path),
+                    str(stderr_path),
+                ],
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.stderr, "")
+        return result.stdout.strip()
+
+    def _run_query_matcher(self, kind: str, value: object) -> subprocess.CompletedProcess[str]:
+        command = """
+script_path="$1"
+kind="$2"
+json_path="$3"
+set --
+source "$script_path"
+query_result_matches "$kind" "$json_path"
+"""
+        temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary_directory.cleanup)
+        json_path = Path(temporary_directory.name) / "query.json"
+        json_path.write_text(json.dumps(value), encoding="utf-8")
+        return subprocess.run(
+            [
+                "bash",
+                "-c",
+                command,
+                "query-matcher",
+                str(SCRIPT),
+                kind,
+                str(json_path),
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+    def _query_frame_bytes(self, fixture: str) -> bytes:
+        command = """
+script_path="$1"
+work_dir="$2"
+fixture="$3"
+set --
+source "$script_path"
+WORK_DIR="$work_dir"
+path="$work_dir/frame"
+write_query_frame_fixture "$fixture" "$path"
+"""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    command,
+                    "query-frame",
+                    str(SCRIPT),
+                    str(temporary),
+                    fixture,
+                ],
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.stderr, "")
+            return (temporary / "frame").read_bytes()
+
     def test_case_inventory_is_deterministic_without_a_runtime(self) -> None:
         result = subprocess.run(
             [str(SCRIPT), "--list-cases"],
@@ -289,6 +511,7 @@ native_failure_classification "$kind" "$execution_class" "$return_code" "$stdout
             text=True,
         )
         self.assertEqual(tuple(result.stdout.splitlines()), EXPECTED_CASES)
+        self.assertEqual(len(EXPECTED_CASES), 85)
         self.assertEqual(result.stderr, "")
 
     def test_image_digest_and_runtime_secret_boundary(self) -> None:
@@ -330,6 +553,10 @@ native_failure_classification "$kind" "$execution_class" "$return_code" "$stdout
         self.assertIn("NETWORK_OWNED=1", source)
         self.assertIn("CLIENT_IMAGE_OWNED=1", source)
         self.assertIn("cleanup_container()", source)
+        self.assertIn("owned_private_file()", source)
+        self.assertIn("stat -c '%a'", source)
+        self.assertIn("STATEKIT_PROOF_MARKER", source)
+        self.assertIn("LAST_STATEKIT_BINARY_LAUNCHED", source)
         self.assertIn("bounded_timeout()", source)
         self.assertIn("--kill-after", source)
         self.assertIn("stop --time 5", source)
@@ -343,6 +570,7 @@ native_failure_classification "$kind" "$execution_class" "$return_code" "$stdout
         self.assertIn("LIFECYCLE_DB=", source)
         self.assertIn("ALTER_DB=", source)
         self.assertIn("ALTER_TABLE=", source)
+        self.assertIn("QUERY_DB=", source)
         self.assertIn("DROP DATABASE IF EXISTS", source)
         self.assertIn("mysql.db_create", source)
         self.assertIn("mysql.db_remove", source)
@@ -354,6 +582,17 @@ native_failure_classification "$kind" "$execution_class" "$return_code" "$stdout
         self.assertIn("mysql-plugin-add-installed-idempotent", source)
         self.assertIn("mysql.plugin_add", source)
         self.assertIn("mysql.plugin_remove", source)
+        self.assertIn("mysql.query", source)
+        self.assertIn("MYSQL_QUERY_LIVE_ENABLED", source)
+        self.assertIn("query_extra_json", source)
+        self.assertIn("create_owned_input_file", source)
+        self.assertIn("create_statekit_request_file", source)
+        self.assertIn("start --attach --interactive", source)
+        self.assertIn("/usr/local/bin/statekit version --output json", source)
+        self.assertNotIn('--execute="$sql"', source)
+        self.assertNotIn("payload=$(printf", source)
+        self.assertIn("STATEKIT_QUERY_INPUT_LIMIT_DIAGNOSTIC", source)
+        self.assertIn("STATEKIT_QUERY_TIMEOUT_DIAGNOSTIC", source)
         self.assertIn('"$PLUGIN_CUSTOM_FAILURE.so"', source)
         self.assertNotIn("/definitely/missing/", source)
         self.assertIn("utf8mb4_general_ci", source)
@@ -425,6 +664,8 @@ write_report
         self.assertNotIn("root-secret-marker", report)
         self.assertNotIn("live-secret-marker", report)
         self.assertNotIn("bad-secret-marker", report)
+        self.assertNotIn("quote; value;", report)
+        self.assertNotIn("THIS IS NOT VALID SQL", report)
         self.assertIn("execution_rc: 1", report)
         self.assertIn("final_rc: 1", report)
         self.assertIn("status: fail", report)
@@ -639,6 +880,338 @@ printf 'policy_rc=%s start_rc=%s starts=%s\n' "$policy_rc" "$start_rc" "$starts"
                 ),
                 "expected",
             )
+
+    def test_native_negative_classification_requires_exact_exited_single_diagnostic(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            stdout_path = temporary / "stdout"
+            stderr_path = temporary / "stderr"
+            stdout_path.write_text("", encoding="utf-8")
+            stderr_path.write_text(
+                "ERROR 1045 (28000): Access denied for user\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                self._classify_native_result("auth", "exited", 125, stdout_path, stderr_path),
+                "unexpected-error",
+            )
+            stderr_path.write_text(
+                "ERROR 1045 (28000): Access denied for user\n"
+                "ERROR 1105 (HY000): unrelated\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                self._classify_native_result("auth", "exited", 1, stdout_path, stderr_path),
+                "unexpected-error",
+            )
+            stderr_path.write_text(
+                "ERROR 1045 (28000): Access denied for user\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                self._classify_native_result("auth", "setup", 1, stdout_path, stderr_path),
+                "setup",
+            )
+
+    def test_query_stdin_fixtures_are_byte_exact(self) -> None:
+        fixtures = {
+            "terminated": b"SELECT 7 AS value;",
+            "unterminated": b"SELECT 7 AS value",
+            "trailing-comment": b"SELECT 7 AS value; -- trailing comment",
+            "quoted-semicolon": b"SELECT 'quoted; semicolon' AS value",
+        }
+        for fixture, expected in fixtures.items():
+            with self.subTest(fixture=fixture):
+                self.assertEqual(self._query_frame_bytes(fixture), expected)
+
+    def test_mock_podman_delivers_owned_input_over_attach_stdin(self) -> None:
+        command = """
+script_path="$1"
+work_dir="$2"
+cd "$work_dir"
+set --
+source "$script_path"
+WORK_DIR="$work_dir"
+RUNTIME=/bin/sh
+NETWORK='mock-network'
+CLIENT_IMAGE='mock-client-image'
+CLIENT_SECRET='mock-client-secret'
+BAD_CLIENT_SECRET='mock-bad-secret'
+ROOT_CLIENT_SECRET='mock-root-secret'
+LIVE_PASSWORD='mock-live-password'
+BAD_PASSWORD='mock-bad-password'
+ROOT_PASSWORD='mock-root-password'
+reserve_container_name() { return 0; }
+verify_created_container_policy() { return 0; }
+cleanup_container() { return 0; }
+statekit_call "$CLIENT_SECRET" mysql.query ',"database":"statekit_r93p_query","query":"SELECT quoted; semicolon"' db-host 3306 "$work_dir/stdout" "$work_dir/stderr"
+! compgen -G "$work_dir/statekit-request.*" >/dev/null
+"""
+        fake_runtime = """#!/bin/sh
+set -eu
+case "${0##*/}" in
+  create) printf 'mock-container-id\n'; printf '%s\n' "$@" >"$MOCK_ARGS" ;;
+  start) cat >"$MOCK_STDIN"; printf '%s\n' '{"result":true}'; printf '%s\n' 'statekit: production-binary-completed' >&2 ;;
+  wait) printf '0\n' ;;
+  *) exit 1 ;;
+esac
+        """
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            source_entries_before = frozenset(ROOT.iterdir())
+            for runtime_command in ("create", "start", "wait"):
+                runtime = temporary / runtime_command
+                self.addCleanup(runtime.unlink, missing_ok=True)
+                runtime.write_text(fake_runtime, encoding="utf-8")
+                runtime.chmod(0o700)
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    command,
+                    "mock-podman",
+                    str(SCRIPT),
+                    str(temporary),
+                ],
+                cwd=ROOT,
+                env={
+                    **os.environ,
+                    "MOCK_ARGS": str(temporary / "args"),
+                    "MOCK_STDIN": str(temporary / "stdin"),
+                },
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.stdout, "")
+            self.assertEqual(result.stderr, "")
+            request = json.loads((temporary / "stdin").read_text(encoding="utf-8"))
+            self.assertEqual(request["connection_pass"], "mock-live-password")
+            self.assertEqual(request["connection_port"], "3306")
+            self.assertEqual(request["query"], "SELECT quoted; semicolon")
+            self.assertEqual(request["database"], "statekit_r93p_query")
+            self.assertEqual(
+                json.loads((temporary / "stdout").read_text(encoding="utf-8")),
+                {"result": True},
+            )
+            container_args = (temporary / "args").read_text(encoding="utf-8")
+            self.assertNotIn("quoted; semicolon", container_args)
+            self.assertNotIn('"query"', container_args)
+            self.assertNotIn('"database"', container_args)
+            self.assertNotIn("mock-live-password", container_args)
+            self.assertEqual(frozenset(ROOT.iterdir()), source_entries_before)
+
+    def test_sql_and_request_inputs_are_owned_private_files(self) -> None:
+        command = """
+script_path="$1"
+work_dir="$2"
+set --
+source "$script_path"
+WORK_DIR="$work_dir"
+CLIENT_SECRET='client-secret'
+LIVE_PASSWORD='live-password'
+input_path=$(create_owned_input_file 'SELECT 1' 100)
+input_mode=$(stat -c '%a' "$input_path")
+input_owner=$([[ -O "$input_path" ]] && printf yes || printf no)
+request_path=$(create_statekit_request_file "$CLIENT_SECRET" mysql.query ',"database":"db","query":"SELECT 1"' host 3306)
+request_mode=$(stat -c '%a' "$request_path")
+request_owner=$([[ -O "$request_path" ]] && printf yes || printf no)
+printf 'input=%s/%s request=%s/%s\n' "$input_mode" "$input_owner" "$request_mode" "$request_owner"
+rm -f -- "$input_path" "$request_path"
+"""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            result = subprocess.run(
+                ["bash", "-c", command, "owned-inputs", str(SCRIPT), temporary_directory],
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.stdout, "input=600/yes request=600/yes\n")
+        self.assertEqual(result.stderr, "")
+
+    def test_query_result_matchers_execute_expected_decoded_value(self) -> None:
+        query_time = {"human": "0.001s", "raw": "0.001"}
+        scalar = {
+            "columns": ["value"],
+            "results": [["7"]],
+            "rows returned": 1,
+            "query time": query_time,
+        }
+        table = {
+            "columns": ["id", "note"],
+            "results": [["1", "alpha"], ["2", "beta"]],
+            "rows returned": 2,
+            "query time": query_time,
+        }
+        multiline = {
+            "columns": ["id", "note"],
+            "results": [["1", "line one"], ["2", "quote; value;"]],
+            "rows returned": 2,
+            "query time": query_time,
+        }
+        affected = {"rows affected": 2, "query time": query_time}
+        for kind, value in (
+            ("scalar", scalar),
+            ("table", table),
+            ("multiline", multiline),
+            ("affected:2", affected),
+            ("false", False),
+        ):
+            with self.subTest(kind=kind):
+                result = self._run_query_matcher(kind, value)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, "")
+                self.assertEqual(result.stderr, "")
+
+        wrong_value = dict(multiline)
+        wrong_value["results"] = [["1", "line one"], ["2", "quote; value"]]
+        result = self._run_query_matcher("multiline", wrong_value)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr, "")
+
+    def test_statekit_query_diagnostics_require_exited_exact_value_free_category(self) -> None:
+        deadline = "statekit: context deadline exceeded\n"
+        generic_execution = "statekit: mysql: query execution failed\n"
+        cancellation = "statekit: context canceled\n"
+        self.assertEqual(
+            self._classify_statekit_query_result(
+                "exited", 1, "", "statekit: runtime: command input exceeds limit\n"
+            ),
+            "input-limit",
+        )
+        self.assertEqual(
+            self._classify_statekit_query_result("exited", 1, "", deadline),
+            "timeout",
+        )
+        for diagnostic in (generic_execution, cancellation):
+            with self.subTest(diagnostic=diagnostic):
+                self.assertEqual(
+                    self._classify_statekit_query_result("exited", 1, "", diagnostic),
+                    "unexpected-diagnostic",
+                )
+        for execution_class, expected_class in (
+            ("setup", "setup"),
+            ("start", "runtime"),
+            ("runtime", "exec"),
+            ("cleanup", "cleanup"),
+            ("timeout", "outer-timeout"),
+        ):
+            with self.subTest(execution_class=execution_class):
+                self.assertEqual(
+                    self._classify_statekit_query_result(execution_class, 1, "", deadline),
+                    expected_class,
+                )
+        for stderr in (
+            generic_execution + "unrelated\n",
+            deadline + generic_execution,
+            deadline + cancellation,
+            "unrelated\n" + deadline,
+            "statekit: unrelated failure\n",
+        ):
+            self.assertEqual(
+                self._classify_statekit_query_result("exited", 1, "", stderr),
+                "unexpected-diagnostic",
+            )
+        self.assertEqual(
+            self._classify_statekit_query_result(
+                "exited", 0, "", "statekit: runtime: command input exceeds limit\n"
+            ),
+                "unexpected-diagnostic",
+            )
+        self.assertEqual(
+            self._classify_statekit_query_result("exited", 0, "", deadline),
+            "unexpected-diagnostic",
+        )
+        self.assertEqual(
+            self._classify_statekit_query_result("exited", 1, "unexpected\n", deadline),
+            "unexpected-diagnostic",
+        )
+
+    def test_statekit_query_expected_failure_requires_binary_launch_and_exit_one(self) -> None:
+        input_limit = "statekit: runtime: command input exceeds limit\n"
+        deadline = "statekit: context deadline exceeded\n"
+        self.assertEqual(
+            self._expected_statekit_query_failure(
+                launched=1,
+                execution_class="exited",
+                client_exit=1,
+                return_code=1,
+                expected="input-limit",
+                stderr=input_limit,
+            ),
+            "accepted",
+        )
+        self.assertEqual(
+            self._expected_statekit_query_failure(
+                launched=1,
+                execution_class="exited",
+                client_exit=1,
+                return_code=1,
+                expected="timeout",
+                stderr=deadline,
+            ),
+            "accepted",
+        )
+        fixtures = (
+            (0, "exited", 1, 1, deadline),
+            (1, "setup", 125, 125, deadline),
+            (1, "start", 125, 125, deadline),
+            (1, "runtime", 125, 125, deadline),
+            (1, "timeout", 124, 124, deadline),
+            (1, "cleanup", 1, 125, deadline),
+            (1, "exited", 0, 0, deadline),
+            (1, "exited", 1, 1, "statekit: mysql: query execution failed\n"),
+            (1, "exited", 1, 1, "statekit: context canceled\n"),
+            (1, "exited", 1, 1, deadline + "unrelated\n"),
+            (1, "exited", 1, 1, deadline + "statekit: mysql: query execution failed\n"),
+        )
+        for fixture in fixtures:
+            with self.subTest(fixture=fixture):
+                self.assertEqual(
+                    self._expected_statekit_query_failure(
+                        launched=fixture[0],
+                        execution_class=fixture[1],
+                        client_exit=fixture[2],
+                        return_code=fixture[3],
+                        expected="timeout",
+                        stderr=fixture[4],
+                    ),
+                    "rejected",
+                )
+
+    def test_native_query_diagnostic_requires_exact_exited_value_free_category(self) -> None:
+        expected = (
+            "ERROR 1064 (42000) at line 1: You have an error in your SQL syntax; "
+            "check the manual near 'THIS IS NOT VALID SQL' at line 1\n"
+        )
+        self.assertEqual(
+            self._classify_native_query_result("exited", 1, "", expected),
+            "syntax-error",
+        )
+        for execution_class, return_code in (("setup", 125), ("runtime", 125), ("cleanup", 125), ("timeout", 124)):
+            with self.subTest(execution_class=execution_class):
+                self.assertNotEqual(
+                    self._classify_native_query_result(execution_class, return_code, "", expected),
+                    "syntax-error",
+                )
+        for stdout, stderr, return_code in (
+            ("", expected + "ERROR 1105 (HY000): unrelated\n", 1),
+            ("unexpected\n", expected, 1),
+            ("", expected, 125),
+            ("", "ERROR 9999 (HY000): unrelated\n", 1),
+            (
+                "",
+                expected.replace("THIS IS NOT VALID SQL", "OTHER STATEMENT"),
+                1,
+            ),
+        ):
+            with self.subTest(stdout=stdout, stderr=stderr, return_code=return_code):
+                self.assertEqual(
+                    self._classify_native_query_result("exited", return_code, stdout, stderr),
+                    "unexpected-diagnostic",
+                )
 
     def test_plugin_install_classification_requires_exact_missing_basename(self) -> None:
         requested_soname = "statekit_missing_fixture_0123456789abcdef.so"
@@ -1378,7 +1951,7 @@ printf 'duplicate_rc=%s unknown_rc=%s duplicate_status=%s missing_status=%s subs
             result.stdout,
         )
 
-    def test_incomplete_execution_is_reported_as_failure(self) -> None:
+    def test_missing_production_executable_fails_all_cases_without_skips(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary = Path(temporary_directory)
             report_directory = temporary / "report"
@@ -1402,8 +1975,10 @@ printf 'duplicate_rc=%s unknown_rc=%s duplicate_status=%s missing_status=%s subs
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("status: fail", report)
             self.assertIn("execution: incomplete", report)
-            self.assertIn("cases_total: 65", report)
-            self.assertIn("cases_skipped: 64", report)
+            self.assertIn("cases_total: 85", report)
+            self.assertIn("cases_failed: 85", report)
+            self.assertIn("cases_skipped: 0", report)
+            self.assertIn("setup_note: production-statekit-binary-missing", report)
 
     def test_stale_or_unwritable_report_is_not_accepted(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

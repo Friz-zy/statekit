@@ -2,7 +2,8 @@ name: integration-services
 
 # E5.2 required live MySQL gate, preserving every E5.1 read-only/catalog/plugin
 # case and adding the R9.3j database lifecycle, R9.3l alter_db, R9.3m
-# process/replication status, and R9.3o plugin lifecycle cases. This job is intentionally
+# process/replication status, R9.3o plugin lifecycle, and R9.3p mysql.query cases.
+# This job is intentionally
 # separate from the existing mock/fake-Runner integration workflows and runs
 # on the exact PR merge candidate or pushed commit with read-only token
 # permissions.
@@ -25,7 +26,7 @@ concurrency:
 
 jobs:
   mysql-live:
-    name: e5.2 live mysql read-only/catalog/plugin/database-lifecycle/alter-db/process-replication-status/plugin-lifecycle
+    name: e5.2 live mysql read-only/catalog/plugin/database-lifecycle/alter-db/process-replication-status/plugin-lifecycle/query
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -251,6 +252,11 @@ jobs:
       - name: run live MySQL 8.4 gate
         env:
           STATEKIT_BIN: ${{ github.workspace }}/dist/statekit
+          # Explicit protected opt-in for the fixed mysql.query cases. The
+          # harness generates disposable credentials locally and never reads
+          # repository/organization secrets; arbitrary PR SQL is not sourced
+          # from workflow secrets or executed by this gate.
+          MYSQL_QUERY_LIVE_ENABLED: "1"
         run: tests/live/mysql/run.sh
 
       - name: upload value-free live report

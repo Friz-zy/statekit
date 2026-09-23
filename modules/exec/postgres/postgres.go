@@ -6872,11 +6872,7 @@ func redactedError(err error, secrets ...string) error {
 	if len(list) == 0 {
 		return err
 	}
-	message := process.RedactString(list, err.Error())
-	if message == err.Error() {
-		return err
-	}
-	return errors.New(message)
+	return process.RedactedError(err, list...)
 }
 
 // Register installs the R9.2o postgres slice: the version probe, the five

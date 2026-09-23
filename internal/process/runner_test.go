@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os/exec"
 	"reflect"
 	"runtime"
@@ -62,7 +63,7 @@ func TestTimeout(t *testing.T) {
 		Name: "sleep", Args: []string{"5"},
 		Timeout: 100 * time.Millisecond,
 	})
-	if res.Err == nil || !strings.Contains(res.Err.Error(), "timed out") {
+	if res.Err == nil || !errors.Is(res.Err, context.DeadlineExceeded) || !strings.Contains(res.Err.Error(), "timed out") {
 		t.Fatalf("expected timeout error, got %v", res.Err)
 	}
 	if !res.Started {
@@ -80,7 +81,7 @@ func TestContextCancellation(t *testing.T) {
 		cancel()
 	}()
 	res := NewRunner().Run(ctx, Command{Name: "sleep", Args: []string{"5"}})
-	if res.Err == nil || !errors.Is(res.Err, context.Canceled) && !strings.Contains(res.Err.Error(), "canceled") {
+	if res.Err == nil || !errors.Is(res.Err, context.Canceled) || !strings.Contains(res.Err.Error(), "canceled") {
 		t.Fatalf("expected cancellation error, got %v", res.Err)
 	}
 	if !res.Started {
@@ -106,6 +107,81 @@ func TestRedaction(t *testing.T) {
 	}
 	if !strings.Contains(rendered, RedactedPlaceholder) {
 		t.Fatalf("placeholder missing in %q", rendered)
+	}
+}
+
+type runnerSensitiveCause struct {
+	secret string
+}
+
+func (e *runnerSensitiveCause) Error() string {
+	if e.secret != "" {
+		return "private-cause: " + e.secret
+	}
+	return "private-cause"
+}
+
+type runnerSafeOuterError struct {
+	cause error
+}
+
+func (*runnerSafeOuterError) Error() string { return "safe runner diagnostic" }
+
+func (e *runnerSafeOuterError) Unwrap() error { return e.cause }
+
+func TestRedactedErrorAlwaysOpaqueAndPreservesOnlyControlIdentities(t *testing.T) {
+	secret := "runner-secret"
+	cause := &runnerSensitiveCause{secret: secret}
+	outer := &runnerSafeOuterError{cause: fmt.Errorf("typed wrapper: %w", cause)}
+	redacted := RedactedError(outer, secret)
+	if redacted == nil || redacted == outer || redacted.Error() != outer.Error() || strings.Contains(redacted.Error(), secret) {
+		t.Fatalf("redacted error = %v", redacted)
+	}
+	if errors.Unwrap(redacted) != nil {
+		t.Fatalf("redacted error unexpectedly unwraps: %v", redacted)
+	}
+	var got *runnerSensitiveCause
+	if errors.As(redacted, &got) {
+		t.Fatalf("redacted error exposed sensitive cause: %T", got)
+	}
+	if errors.Is(redacted, cause) {
+		t.Fatalf("redacted error preserved arbitrary cause identity: %v", redacted)
+	}
+
+	arbitrary := errors.New("arbitrary cause")
+	joined := errors.Join(
+		&runnerSafeOuterError{cause: context.Canceled},
+		fmt.Errorf("deadline detail: %w", context.DeadlineExceeded),
+		fmt.Errorf("output detail: %w", ErrOutputLimit),
+		fmt.Errorf("input detail: %w", ErrCommandInputLimit),
+		cause,
+		arbitrary,
+	)
+	redacted = RedactedError(joined, secret)
+	if redacted == joined || strings.Contains(redacted.Error(), secret) || errors.Unwrap(redacted) != nil {
+		t.Fatalf("multi-error was not opaque: %v", redacted)
+	}
+	for _, identity := range []error{
+		context.Canceled,
+		context.DeadlineExceeded,
+		ErrOutputLimit,
+		ErrCommandInputLimit,
+	} {
+		if !errors.Is(redacted, identity) {
+			t.Fatalf("canonical identity %v was lost: %v", identity, redacted)
+		}
+	}
+	if errors.Is(redacted, arbitrary) || errors.Is(redacted, cause) {
+		t.Fatalf("multi-error exposed a non-canonical cause: %v", redacted)
+	}
+	got = nil
+	if errors.As(redacted, &got) {
+		t.Fatalf("multi-error exposed sensitive cause: %T", got)
+	}
+
+	bounded := RedactedError(errors.New(strings.Repeat("s", maxDisplayBytes+1)), secret)
+	if bounded == nil || len(bounded.Error()) > maxDisplayBytes {
+		t.Fatalf("redacted diagnostic exceeded bound: len=%d", len(bounded.Error()))
 	}
 }
 

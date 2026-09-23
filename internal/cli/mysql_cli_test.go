@@ -182,6 +182,268 @@ func TestMySQLCLIDBList(t *testing.T) {
 	}
 }
 
+func TestMySQLCLIQueryUsesStdinAndPreservesShapes(t *testing.T) {
+	query := "/* cli comment */\nSELECT 1 AS id, 'quoted; value' AS note, NULL AS missing\n"
+	runner := &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("id\tnote\tmissing\n1\tquoted; value\tNULL\n")},
+	}}
+	app := mysqlCLIRunnerApp(t, runner)
+	code, out, errS := captureCode(t, app, "exec", "mysql.query",
+		"--database", "query_db", "--query", query,
+		"--connection-user", "query_user", "--connection-pass", "query-pass", "-o", "json")
+	var value map[string]any
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &value) != nil {
+		t.Fatalf("query code=%d out=%q err=%q", code, out, errS)
+	}
+	if !reflect.DeepEqual(value["columns"], []any{"id", "note", "missing"}) ||
+		!reflect.DeepEqual(value["results"], []any{[]any{"1", "quoted; value", nil}}) ||
+		value["rows returned"] != float64(1) {
+		t.Fatalf("query shape = %#v", value)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("query calls = %d", len(runner.calls))
+	}
+	call := runner.calls[0]
+	argv := append([]string{call.Name}, call.Args...)
+	if strings.Contains(strings.Join(argv, "\x00"), query) || strings.Contains(strings.Join(argv, "\x00"), "quoted; value") {
+		t.Fatalf("query leaked into argv: %#v", argv)
+	}
+	if string(call.Stdin) != query || !containsCLISecret(call.Redact, query) || !containsCLISecret(call.Redact, "query-pass") {
+		t.Fatalf("query stdin/redaction = stdin %q redact %#v", call.Stdin, call.Redact)
+	}
+	if call.Shell || call.Timeout <= 0 || call.MaxStdoutBytes <= 0 || call.MaxStderrBytes <= 0 {
+		t.Fatalf("unsafe query command = %#v", call)
+	}
+
+	writeQuery := "UPDATE t SET note = 'x' WHERE id = 1"
+	runner = &cliRecordingRunner{results: []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("__statekit_rows_affected__\n1\n")},
+	}}
+	app = mysqlCLIRunnerApp(t, runner)
+	code, out, errS = captureCode(t, app, "exec", "mysql.query", "--database", "query_db", "--query", writeQuery, "-o", "json")
+	var affected map[string]any
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &affected) != nil || affected["rows affected"] != float64(1) {
+		t.Fatalf("query write code=%d out=%q err=%q value=%#v", code, out, errS, affected)
+	}
+	if len(runner.calls) != 1 || !strings.HasSuffix(string(runner.calls[0].Stdin), "SELECT ROW_COUNT() AS __statekit_rows_affected__;\n") {
+		t.Fatalf("query write stdin=%q", runner.calls[0].Stdin)
+	}
+}
+
+func TestMySQLCLIQueryPreservesPositionalColumnsAndEmptyHeaders(t *testing.T) {
+	marker := "mysql-cli-query-column-secret"
+	backslashPassword := `mysql-cli-query-column-secret\backslash`
+	tabPassword := "mysql-cli-query-column-secret\\slash	internal-tab"
+	backslashWire := mysqlCLIBatchEscape(backslashPassword)
+	tabWire := mysqlCLIBatchEscape(tabPassword)
+	for _, tc := range []struct {
+		name        string
+		query       string
+		stdout      string
+		password    string
+		wantColumns []any
+		wantResults []any
+	}{
+		{
+			name:        "empty-alias-with-populated-row",
+			query:       "SELECT 1 AS ''",
+			stdout:      "\npopulated\n",
+			wantColumns: []any{""},
+			wantResults: []any{[]any{"populated"}},
+		},
+		{
+			name:        "empty-string-row",
+			query:       "SELECT '' AS value",
+			stdout:      "value\n\n",
+			wantColumns: []any{"value"},
+			wantResults: []any{[]any{""}},
+		},
+		{
+			name:        "no-rows",
+			query:       "SELECT 1 AS value WHERE 1 = 0",
+			stdout:      "value\n",
+			wantColumns: []any{"value"},
+			wantResults: []any{},
+		},
+		{
+			name:        "duplicate-aliases",
+			query:       "SELECT 1 AS alias, 2 AS alias",
+			stdout:      "alias\talias\nfirst\tsecond\n",
+			wantColumns: []any{"alias", "alias"},
+			wantResults: []any{[]any{"first", "second"}},
+		},
+		{
+			name:        "redaction-collision",
+			query:       "SELECT 1 AS first, 2 AS second",
+			stdout:      marker + "\t" + process.RedactedPlaceholder + "\nfirst\tsecond\n",
+			password:    marker,
+			wantColumns: []any{process.RedactedPlaceholder, process.RedactedPlaceholder},
+			wantResults: []any{[]any{"first", "second"}},
+		},
+		{
+			name:        "raw-and-batch-escaped-password-with-backslash",
+			query:       "SELECT 1 AS first, 2 AS second, 3 AS third",
+			stdout:      backslashPassword + "\t" + backslashWire + "\t" + process.RedactedPlaceholder + "\nfirst\tsecond\tthird\n",
+			password:    backslashPassword,
+			wantColumns: []any{process.RedactedPlaceholder, process.RedactedPlaceholder, process.RedactedPlaceholder},
+			wantResults: []any{[]any{"first", "second", "third"}},
+		},
+		{
+			name:        "duplicate-batch-escaped-password-with-tab",
+			query:       "SELECT 1 AS first, 2 AS second, 3 AS third",
+			stdout:      tabWire + "\t" + tabWire + "\t" + process.RedactedPlaceholder + "\nfirst\tsecond\tthird\n",
+			password:    tabPassword,
+			wantColumns: []any{process.RedactedPlaceholder, process.RedactedPlaceholder, process.RedactedPlaceholder},
+			wantResults: []any{[]any{"first", "second", "third"}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &cliRecordingRunner{results: []process.CommandResult{{
+				ExitCode: 0,
+				Stdout:   []byte(tc.stdout),
+			}}}
+			argv := []string{"exec", "mysql.query", "--database", "db", "--query", tc.query}
+			if tc.password != "" {
+				argv = append(argv, "--connection-pass", tc.password)
+			}
+			argv = append(argv, "-o", "json")
+			code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), argv...)
+			var value map[string]any
+			if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &value) != nil || len(runner.calls) != 1 {
+				t.Fatalf("code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+			}
+			if !reflect.DeepEqual(value["columns"], tc.wantColumns) ||
+				!reflect.DeepEqual(value["results"], tc.wantResults) ||
+				value["rows returned"] != float64(len(tc.wantResults)) || strings.Contains(out+errS, marker) {
+				t.Fatalf("query shape=%#v out=%q", value, out)
+			}
+			if tc.password != "" {
+				wire := mysqlCLIBatchEscape(tc.password)
+				if strings.Contains(out+errS, tc.password) || strings.Contains(out+errS, wire) {
+					t.Fatalf("CLI output leaks a connection secret form: out=%q err=%q", out, errS)
+				}
+				if !containsCLISecret(runner.calls[0].Redact, tc.password) || !containsCLISecret(runner.calls[0].Redact, wire) {
+					t.Fatalf("connection secret inventory = %#v", runner.calls[0].Redact)
+				}
+				decodeMySQLCLIValueWithSecrets(t, "json", out, tc.password, wire)
+			}
+		})
+	}
+}
+
+func TestMySQLCLIQueryNegativeInputAndErrorAreValueFree(t *testing.T) {
+	query := "SELECT 'cli-query-secret'"
+	runner := &cliRecordingRunner{results: []process.CommandResult{{Err: errors.New("runner failed: " + query)}}}
+	code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.query",
+		"--database", "query_db", "--query", query, "-o", "json")
+	if code != ExitFailed || out != "" || strings.Contains(errS, "cli-query-secret") || len(runner.calls) != 1 {
+		t.Fatalf("query error code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+
+	runner = &cliRecordingRunner{}
+	code, out, errS = captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.query",
+		"--database", "bad\ndb", "--query", "SELECT 1", "-o", "json")
+	if code != ExitFailed || out != "" || strings.Contains(errS, "bad\ndb") || len(runner.calls) != 0 {
+		t.Fatalf("query invalid database code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+}
+
+func TestMySQLCLIQueryRejectsSecondStatementAndExecutableComments(t *testing.T) {
+	for _, query := range []string{
+		"SELECT 1;\n--\nSELECT 2",
+		"SELECT 1 /*!40101 UNION SELECT 2 */",
+		"UPDATE t SET x = 1 /*! WHERE id = 1 */",
+		"SELECT 1 /*+ MAX_EXECUTION_TIME(1) */",
+	} {
+		t.Run(query, func(t *testing.T) {
+			runner := &cliRecordingRunner{}
+			code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.query",
+				"--database", "query_db", "--query", query, "-o", "json")
+			if code != ExitFailed || out != "" || errS != "statekit: mysql: invalid query\n" || len(runner.calls) != 0 {
+				t.Fatalf("query=%q code=%d out=%q err=%q calls=%d", query, code, out, errS, len(runner.calls))
+			}
+		})
+	}
+}
+
+func TestMySQLCLIQueryRejectsSQLModeDependentBackslashQuotesBeforeRunner(t *testing.T) {
+	for _, query := range []string{
+		`SELECT 'a\\'; SELECT 2; -- '`,
+		`SELECT 'a\'; SELECT 2; -- '`,
+		`SELECT "a\"; SELECT 2; -- "`,
+		"SELECT `a\\`; SELECT 2; -- `",
+	} {
+		t.Run(query, func(t *testing.T) {
+			runner := &cliRecordingRunner{}
+			code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.query",
+				"--database", "query_db", "--query", query, "-o", "json")
+			if code != ExitFailed || out != "" || errS != "statekit: mysql: invalid query\n" || len(runner.calls) != 0 {
+				t.Fatalf("query=%q code=%d out=%q err=%q calls=%d", query, code, out, errS, len(runner.calls))
+			}
+		})
+	}
+}
+
+func TestMySQLCLIQueryFramesEmptyLineCommentExact(t *testing.T) {
+	query := "UPDATE t SET note = 'x'\n--\n"
+	runner := &cliRecordingRunner{results: []process.CommandResult{{
+		ExitCode: 0,
+		Stdout:   []byte("__statekit_rows_affected__\n2\n"),
+	}}}
+	code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.query",
+		"--database", "query_db", "--query", query, "-o", "json")
+	if code != ExitOK || out == "" || errS != "" || len(runner.calls) != 1 {
+		t.Fatalf("code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+	}
+	want := "UPDATE t SET note = 'x';\n--\nSELECT ROW_COUNT() AS __statekit_rows_affected__;\n"
+	if got := string(runner.calls[0].Stdin); got != want {
+		t.Fatalf("stdin=%q, want %q", got, want)
+	}
+}
+
+func TestMySQLCLIQueryWithWriteCTEUsesAffectedProbe(t *testing.T) {
+	runner := &cliRecordingRunner{results: []process.CommandResult{{
+		ExitCode: 0,
+		Stdout:   []byte("__statekit_rows_affected__\n1\n"),
+	}}}
+	query := "WITH cte AS (SELECT 1) UPDATE t SET id = 2"
+	code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.query",
+		"--database", "query_db", "--query", query, "-o", "json")
+	var result map[string]any
+	if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &result) != nil || result["rows affected"] != float64(1) || len(runner.calls) != 1 {
+		t.Fatalf("code=%d out=%q err=%q calls=%d result=%#v", code, out, errS, len(runner.calls), result)
+	}
+	want := query + ";\nSELECT ROW_COUNT() AS __statekit_rows_affected__;\n"
+	if got := string(runner.calls[0].Stdin); got != want {
+		t.Fatalf("CTE stdin=%q, want %q", got, want)
+	}
+}
+
+func TestMySQLCLIQueryCanonicalTransportErrors(t *testing.T) {
+	marker := "cli-partial-sql-credential-fragment"
+	cases := []struct {
+		name      string
+		result    process.CommandResult
+		wantError string
+	}{
+		{name: "cancel", result: process.CommandResult{Err: fmt.Errorf("runner %s: %w", marker, context.Canceled)}, wantError: "context canceled"},
+		{name: "deadline", result: process.CommandResult{Err: fmt.Errorf("runner %s: %w", marker, context.DeadlineExceeded)}, wantError: "context deadline exceeded"},
+		{name: "output", result: process.CommandResult{Err: fmt.Errorf("runner %s: %w", marker, process.ErrOutputLimit)}, wantError: "process: output limit exceeded"},
+		{name: "arbitrary", result: process.CommandResult{Err: fmt.Errorf("runner %s: %w", marker, errors.New("private transport detail"))}, wantError: "mysql: query execution failed"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &cliRecordingRunner{results: []process.CommandResult{tc.result}}
+			query := "SELECT '" + marker + "'"
+			code, out, errS := captureCode(t, mysqlCLIRunnerApp(t, runner), "exec", "mysql.query",
+				"--database", "query_db", "--query", query, "--connection-pass", marker, "-o", "json")
+			if code != ExitFailed || out != "" || !strings.Contains(errS, tc.wantError) || strings.Contains(out+errS, marker) || len(runner.calls) != 1 {
+				t.Fatalf("code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+			}
+		})
+	}
+}
+
 // TestMySQLCLIDBListShapes pins the bare default call and the pinned
 // nonzero-exit compatibility data: an unreachable or denying server
 // answers the empty list with a zero CLI exit, never an error.
@@ -1353,15 +1615,6 @@ func TestMySQLCLIUserGrants(t *testing.T) {
 		t.Fatalf("user_grants missing preflight code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
 	}
 
-	// Unsupported providers never reach the Runner through the actual CLI
-	// registry.
-	runner = &cliRecordingRunner{}
-	app = mysqlCLIRunnerApp(t, runner)
-	code, out, errS = captureCode(t, app, "exec", "mysql.query", "--query", "SELECT 1", "-o", "json")
-	if code != ExitUnsupported || out != "" || errS == "" || len(runner.calls) != 0 {
-		t.Fatalf("unsupported mysql.query code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
-	}
-
 	// runas is rejected before the fixed user_exists preflight.
 	runner = &cliRecordingRunner{}
 	app = mysqlCLIRunnerApp(t, runner)
@@ -2187,7 +2440,23 @@ func TestMySQLCLIPluginMutations(t *testing.T) {
 	}
 }
 
+func mysqlCLIBatchEscape(value string) string {
+	return strings.NewReplacer(
+		`\`, `\\`,
+		"\x00", `\0`,
+		"\t", `\t`,
+		"\n", `\n`,
+		"\r", `\r`,
+		"\b", `\b`,
+		"\x1a", `\Z`,
+	).Replace(value)
+}
+
 func assertMySQLCLIValueHasNoMarker(t *testing.T, value any, marker string) {
+	assertMySQLCLIValueHasNoSecrets(t, value, marker)
+}
+
+func assertMySQLCLIValueHasNoSecrets(t *testing.T, value any, markers ...string) {
 	t.Helper()
 	var walk func(reflect.Value)
 	walk = func(v reflect.Value) {
@@ -2200,8 +2469,10 @@ func assertMySQLCLIValueHasNoMarker(t *testing.T, value any, marker string) {
 				walk(v.Elem())
 			}
 		case reflect.String:
-			if strings.Contains(v.String(), marker) {
-				t.Fatal("serialized CLI value contains an unredacted marker")
+			for _, marker := range markers {
+				if strings.Contains(v.String(), marker) {
+					t.Fatal("serialized CLI value contains an unredacted secret form")
+				}
 			}
 		case reflect.Map:
 			if v.IsNil() {
@@ -2222,6 +2493,10 @@ func assertMySQLCLIValueHasNoMarker(t *testing.T, value any, marker string) {
 }
 
 func decodeMySQLCLIValue(t *testing.T, format, serialized, marker string) any {
+	return decodeMySQLCLIValueWithSecrets(t, format, serialized, marker)
+}
+
+func decodeMySQLCLIValueWithSecrets(t *testing.T, format, serialized string, markers ...string) any {
 	t.Helper()
 	var value any
 	var err error
@@ -2233,7 +2508,7 @@ func decodeMySQLCLIValue(t *testing.T, format, serialized, marker string) any {
 	if err != nil {
 		t.Fatalf("CLI %s output could not be decoded", format)
 	}
-	assertMySQLCLIValueHasNoMarker(t, value, marker)
+	assertMySQLCLIValueHasNoSecrets(t, value, markers...)
 	return value
 }
 

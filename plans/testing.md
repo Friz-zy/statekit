@@ -17,7 +17,7 @@ Companion to `plans/init.md` (§24–§28). Defines the concrete CI/CD implement
 | Unit (Go) | parsers, precedence, outputters, exit codes, provider resolution, file algorithms, fixture loader | GH runner | every push/PR |
 | Smoke integration | binary boots; `version`, `--list`, `facts`, `test.echo`, `test.nop` | Docker (2 distros) | every push/PR |
 | Integration matrix | real-case fixtures per module family on each target distro | Docker matrix | push to `main`, path-filtered PRs |
-| E5.2 live service gate | workflow-ready authenticated disposable MySQL 8.4; StateKit E5.1 read-only/catalog/plugin calls plus R9.3j lifecycle, R9.3l alter/create/seed/read-back, R9.3m process/replication status, R9.3n `mysql.slave_lag`, and R9.3o plugin lifecycle cases with native-client postconditions | private rootless Podman network | every PR event, `main`, manual, nightly; live execution `pending_external_ci` |
+| E5.2 live service gate | workflow-ready authenticated disposable MySQL 8.4; StateKit E5.1 read-only/catalog/plugin calls plus R9.3j lifecycle, R9.3l alter/create/seed/read-back, R9.3m process/replication status, R9.3n `mysql.slave_lag`, R9.3o plugin lifecycle, and R9.3p `mysql.query` cases with native-client postconditions | private rootless Podman network | every PR event, `main`, manual, nightly; live execution `pending_external_ci` |
 | E5.3 live SQLite file gate | intended production `statekit`/native-observer workflow controls for a disposable actual SQLite file; exact value-free inventory | protected workflow with an inspected isolated Podman runner and owned temporary file | every PR event, `main`, manual, nightly; live execution `pending_external_ci` |
 | Differential vs Salt | identical scenarios via `salt-call --local` vs `statekit`, normalized comparison | Docker twins | nightly + label `differential` |
 | VM suite | systemd units, mounts, firewall, kernel-level cases containers cannot cover faithfully | QEMU on GH runner | nightly after Phase 3 |
@@ -135,8 +135,9 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
 ### `integration-services.yml` — E5.2 live MySQL gate (workflow-ready; external execution pending)
 
 - **Current state:** implementation files and workflow are ready. The local
-  mock/static gate covers the exact 65-case inventory: the prior 52 cases plus
-  13 R9.3o `plugin_add`/`plugin_remove` built-in/idempotence, native status,
+  mock/static gate covers the exact 85-case inventory: the prior 65 cases plus
+  20 R9.3p query cases. The prior 65 include the 13 R9.3o
+  `plugin_add`/`plugin_remove` built-in/idempotence, native status,
   uppercase/mixed-case StateKit exact-Go identity, missing-shared-object, invalid-input, authentication, and
   connection cases. The prior 36 cases comprise the earlier E5.1/R9.3j/R9.3l
   inventory, followed by 12 R9.3m processlist/master-status/slave-status and
@@ -144,7 +145,7 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
   cases, with deterministic
   lifecycle, validation, cleanup, report-integrity, status-classification, and
   missing-vs-null-key fault injections. No live
-  MySQL GitHub execution has run; status is `pending_external_ci`, and no live 65/65
+  MySQL GitHub execution has run; status is `pending_external_ci`, and no live 85/85
   result is claimed in this ledger. The user will validate the external run
   after synchronization. The local backend contract additionally has explicit
    source-result vectors for representative truthy/falsy `cursor.execute`
@@ -160,7 +161,37 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
    MySQL 8.4 image has no test plugin `.so`. The built-in
    `caching_sha2_password` is observed without uninstalling it, and default/
    custom SONAME attempts must independently classify the exact missing shared
-   library failure rather than be reported as successful installation.
+    library failure rather than be reported as successful installation. R9.3p
+    adds 20 fixed production-binary query cases: scalar/table SELECTs with
+    independent native observations, a reserved disposable database DDL/DML
+    lifecycle and native postconditions, multiline/comment/quoted SQL through
+    bounded stdin, and invalid-database/auth/connection/timeout/oversize/
+    diagnostic-classification negatives. The workflow supplies an explicit
+     `MYSQL_QUERY_LIVE_ENABLED=1` control; all credentials are generated locally
+     and disposable, no repository secret is available, and no arbitrary SQL
+     supplied by a PR or a secret is executed. The report records only
+     value-free classifications and cleanup verifies the disposable database is
+     absent.
+     The R9.3p transport remediation keeps SQL and request JSON out of every
+     container argv: native SQL is an owned 0600 bounded stdin file, while the
+     complete StateKit request is an owned ephemeral bounded stdin file. The
+     client proves the production binary with a version preflight before the
+     `exec --stdin` call. Terminated, unterminated, trailing-comment, and
+     quoted-semicolon framing fixtures are byte-exact; inserted and observed
+     `quote; value;` data use one decoded expected value. Expected input-limit
+     and query-timeout diagnostics require an exited client and exact
+     value-free stderr, while setup, exec, cleanup, and outer-timeout classes
+     are rejected. Native syntax negatives likewise require one exited code-1
+     diagnostic and reject mixed/unrelated output.
+     R93P-01 is tested without live MySQL: the direct, registered, and CLI
+     mysql.query paths reject odd/even backslash-containing quoted SQL before
+     Runner dispatch because the server SQL mode is not proven; ordinary
+     quoted semicolons, comments, executable-comment rejection, and affected
+     query framing remain covered. The documented upgrade path is a proven
+     matching mode before scan, not relaxing this ceiling.
+     Local orchestration tests execute the JSON result matchers against both
+     matching and deliberately mismatched decoded fixtures; they do not rely
+     on source-marker assertions alone.
   The implementation and test-plan update executor is the senior backend
   engineer; external CI execution remains an independent workflow gate.
   The independent backend and security gates requested changes on the local
@@ -198,10 +229,9 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
   images with explicit OCI isolation and `--network=none`, read-only roots, tmpfs-only scratch space,
   bounded resources, and no secrets. A hosted runner that cannot prove this
   preflight must not run a direct host build or test.
-- **External cases:** 65 exact cases are required: the prior 52 cases (the
-  prior 14 E5.1 cases, 9 R9.3j lifecycle cases, 13 R9.3l cases, 12 R9.3m
-  process/replication-status cases, and four R9.3n `slave_lag` cases) plus 13
-  R9.3o plugin lifecycle cases. The plugin group covers installed add
+- **External cases:** 85 exact cases are required: the prior 65 cases
+  (`14 + 9 + 13 + 12 + 4 + 13 = 65`, including the R9.3o plugin lifecycle
+  cases) plus 20 R9.3p query cases (`65 + 20 = 85`). The plugin group covers installed add
   idempotence, independent native built-in status, uppercase/mixed-case
   StateKit exact-Go status identity, absent remove idempotence, independent native absence, default/custom
   SONAME missing-library false results with native `ERROR 1126 (HY000)`
@@ -240,7 +270,17 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
   alter/readback pair must also re-check the seeded row; this proves
   post-alter seed preservation, but does not prove the unobservable MySQLdb
   cursor return value. The local stateful mock covers that postcondition
-  without starting MySQL.
+  without starting MySQL. The R9.3p group requires scalar and table SELECT
+  result/header shapes plus separate native observations, reserved absence
+  before creating a generated disposable database, query-driven CREATE TABLE
+  and INSERT postconditions, a multiline/comment/quoted SELECT, query-driven
+  DROP and native absence, invalid database/auth/connection negatives, the
+  finite native-client timeout, bounded oversize rejection, and an independent
+  native 1064/42000 diagnostic classification. All query SQL is fixed test
+  input and enters the production binary through its JSON/stdin request; it is
+  never placed in the mysql argv or report. The StateKit query contract itself
+  documents the CLI ceilings for DB-API exception classes, rowcount predicates,
+  and bare NULL ambiguity.
   Plugin lifecycle dispatch never removes the known built-in plugin and never
   treats a missing `.so` as an installation success. The uppercase/mixed-case
   case must prove StateKit's exact Go string identity rather than a case-folded
@@ -353,7 +393,7 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
 | 2 | `integration.yml` grows per module family (Tier 1 first); coverage gates for new code |
 | 3 | Tier 2 systemd images; service/user/file/pkg suites complete matrix; `differential.yml` first run for core families |
 | 4 | broader module suites join matrix; `vm-nightly.yml` bootstrap |
-| E5.2 | `integration-services.yml` live MySQL 8.4 gate for the E5.1 read-only/catalog/plugin surface plus R9.3j lifecycle, R9.3l alter/create/seed/read-back, R9.3m process/replication status, R9.3n `slave_lag`, and R9.3o plugin lifecycle; exact inventory is 65 and external execution remains `pending_external_ci` |
+| E5.2 | `integration-services.yml` live MySQL 8.4 gate for the E5.1 read-only/catalog/plugin surface plus R9.3j lifecycle, R9.3l alter/create/seed/read-back, R9.3m process/replication status, R9.3n `slave_lag`, R9.3o plugin lifecycle, and R9.3p `mysql.query`; exact inventory is 85 and external execution remains `pending_external_ci` |
 | E5.3 | separate `sqlite-live` production-binary/file/native-observer gate for R9.3k; exact inventory, value-free report, cleanup, and zero-skip enforcement; external execution `pending_external_ci` |
 | 5+ | differential scope expansion driven by generated catalog; flake budget review |
 
@@ -364,5 +404,5 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
 - [ ] Every fixture references its Salt origin (source path/symbol/test)
 - [ ] Differential report artifacts retained 90 days; failures traceable to fixture IDs
 - [ ] No test requires network beyond package mirrors inside containers; mirror endpoints documented
-- [ ] E5.2 live reports, when produced by external CI, contain exact 65-case counts, zero skipped cases, native charset/collation/seed postconditions, available processlist correlation, built-in plugin status plus uppercase/mixed-case StateKit exact-Go observations with the native collation ceiling documented, default/custom missing-shared-object INSTALL classifications without a positive installation claim, explicit MySQL 8.4 unsupported classifications for the two removed legacy replication statements plus `slave_lag`'s `-3` compatibility result, cleanup success, and no credential-bearing output
+- [ ] E5.2 live reports, when produced by external CI, contain exact 85-case counts, zero skipped cases, native charset/collation/seed/query postconditions, available processlist correlation, built-in plugin status plus uppercase/mixed-case StateKit exact-Go observations with the native collation ceiling documented, default/custom missing-shared-object INSTALL classifications without a positive installation claim, explicit MySQL 8.4 unsupported classifications for the two removed legacy replication statements plus `slave_lag`'s `-3` compatibility result, mysql.query scalar/table/DDL/DML/multiline/negative classifications, disposable-database cleanup success, and no credential-bearing or SQL-bearing output
 - [ ] E5.3 live reports, when produced by external CI, contain exact 14-case counts, zero skipped cases, native postconditions, cleanup success, and no value-bearing output; status remains `pending_external_ci` until an external run exists

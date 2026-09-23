@@ -11,7 +11,7 @@
 // mutations db_create/db_remove (R9.3j), the database metadata mutation
 // alter_db (R9.3l), the process/replication status readers
 // processlist/get_master_status/get_slave_status (R9.3m), slave_lag (R9.3n),
-// and the plugin lifecycle mutations (R9.3o).
+// the plugin lifecycle mutations (R9.3o), and mysql.query (R9.3p).
 //
 // Boundaries (R9.2a): no MySQL client driver or protocol, no new
 // dependencies, no Runner spawns, no filesystem access, and no live MySQL
@@ -145,6 +145,40 @@
 // corruption fails closed with a value-free error. The scalar value is
 // redacted before it leaves the module, using the same bounded transport,
 // cancellation, timeout, and output limits as the other fixed SHOW readers.
+//
+// Boundaries (mysql.query): query text is privileged caller input. It is
+// validated as SQL input, bounded, and sent only as stdin to the native mysql
+// client; it is never placed in argv, a shell command, or a diagnostic. The
+// database and connection fields are validated independently and remain argv
+// or MYSQL_PWD transport values. Binary mode prevents mysql client commands
+// from turning this API into a local shell/file boundary. StateKit accepts one
+// SQL statement (comments, multiline text, and quoted semicolons are allowed).
+// The source no-args percent normalization (%% to %) is applied before
+// transport. For non-row statements StateKit inserts a real caller delimiter
+// before trailing comments and appends the fixed SELECT ROW_COUNT() probe to
+// the same bounded stdin payload. A WITH statement whose final top-level
+// command is SELECT is a row query; a WITH UPDATE/INSERT/DELETE/REPLACE is a
+// write and receives the probe. This comment-aware/CTE classification is a
+// deliberate safety/usefulness ceiling over Salt's raw prefix test, which
+// does not recognize leading comments or CTE reads.
+// R93P-01 adds a deliberate SQL-mode compatibility ceiling: the scanner does
+// not establish the server's backslash-escape mode, so any backslash inside a
+// single-, double-, or backtick-quoted token is rejected before framing or
+// Runner invocation. Backslashes in comments remain comment data; callers that
+// need quoted backslash data must first provide a transport with a proven
+// matching SQL mode.
+//
+// The native client cannot expose the exact MySQLdb cursor.execute predicate,
+// DB-API exception classes, or distinguish a literal string NULL from SQL NULL
+// in batch output. SQL NULL is therefore rendered as nil and a literal NULL
+// token has that ambiguity. The CLI also exposes only a process exit, so a
+// nonzero mysql.query exit is the value-free false compatibility shape for
+// both connection and query failures; Salt's connection-only {} shape is not
+// distinguishable without a driver. Runner errors are collapsed to stable
+// value-free sentinels/categories, while cancellation, deadline, output, and
+// input limits retain their canonical errors.Is identities. Runner, timeout,
+// cancellation, output-limit, malformed-output, and validation failures are
+// value-free and never return a partial result.
 package mysql
 
 import (
@@ -153,6 +187,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -1030,6 +1065,10 @@ var (
 	errMysqlAuthPlugin         = errors.New("mysql: unsupported authentication plugin")
 	errMysqlPasswordColumn     = errors.New("mysql: unsupported password column")
 	errMysqlPasswordChangeExit = errors.New("mysql: password change run completed nonzero")
+	errMysqlQuery              = errors.New("mysql: invalid query")
+	errMysqlQueryExecution     = errors.New("mysql: query execution failed")
+	errMysqlQueryResult        = errors.New("mysql: malformed query result")
+	errMysqlQueryAffected      = errors.New("mysql: malformed affected-row result")
 )
 
 var mysqlProtectedDatabaseNames = map[string]struct{}{
@@ -1341,6 +1380,19 @@ func redactMysqlHeaderKeys(header []string, secrets []string) ([]string, error) 
 	return keys, nil
 }
 
+// redactMysqlQueryColumns redacts result labels by position. mysql.query
+// returns columns and rows as parallel slices, so duplicate labels (including
+// labels that collide only after redaction) are valid and must remain distinct.
+// Map-based renderers use redactMysqlHeaderKeys instead so they retain their
+// collision rejection before assigning public map keys.
+func redactMysqlQueryColumns(header []string, secrets []string) []string {
+	columns := make([]string, len(header))
+	for i, column := range header {
+		columns[i] = string(process.RedactBytes(secrets, []byte(column)))
+	}
+	return columns
+}
+
 func redactBatchRows(rows [][]batchField, secrets []string) [][]batchField {
 	if len(secrets) == 0 {
 		return rows
@@ -1357,6 +1409,616 @@ func redactBatchRows(rows [][]batchField, secrets []string) [][]batchField {
 		}
 	}
 	return redacted
+}
+
+// ---------------------------------------------------------------------------
+// query — salt/modules/mysql.py:740-884 @ pinned revision.
+
+// QueryArgs is the canonical mysql.query(database, query, **connection_args)
+// surface. Database deliberately remains a positional, required field: the
+// pinned function overwrites connection_db with it before connecting. The
+// optional connection_db is retained in the argument contract for source
+// compatibility and is validated, but cannot override database.
+type QueryArgs struct {
+	Database string  `statekit:"name=database,required"`
+	Query    string  `statekit:"name=query,required"`
+	User     *string `statekit:"name=connection_user"`
+	Host     *string `statekit:"name=connection_host"`
+	Port     *string `statekit:"name=connection_port"`
+	Password *string `statekit:"name=connection_pass"`
+	DB       *string `statekit:"name=connection_db"`
+	Runas    *string `statekit:"name=runas"`
+}
+
+func (a *QueryArgs) connection() *myConnection {
+	if a == nil {
+		return &myConnection{}
+	}
+	// A non-nil pointer preserves the source distinction between an explicitly
+	// supplied empty database and a missing connection_db option. mysqlArgv
+	// still omits the empty value, matching _connect's falsy handling.
+	database := a.Database
+	return &myConnection{
+		User:     a.User,
+		Host:     a.Host,
+		Port:     a.Port,
+		Password: a.Password,
+		DB:       &database,
+		Runas:    a.Runas,
+	}
+}
+
+type mysqlQueryMode uint8
+
+const (
+	mysqlQueryResultRows mysqlQueryMode = iota + 1
+	mysqlQueryResultAffected
+)
+
+// The probe is fixed code, not caller input. It is sent through the same
+// bounded stdin as the caller's statement so ordinary DDL/DML can retain the
+// source's affected-row shape without putting SQL in argv. The effective input
+// limit therefore includes the probe and the delimiter framing.
+const mysqlQueryAffectedProbe = "SELECT ROW_COUNT() AS __statekit_rows_affected__;\n"
+
+// mysqlQueryAffectedSuffix is retained as the canonical separator used by
+// existing transport assertions. frameMysqlAffectedQuery emits the same
+// bytes for an ordinary unterminated statement, while placing the caller's
+// delimiter before trailing comments when necessary.
+const mysqlQueryAffectedSuffix = "\n" + mysqlQueryAffectedProbe
+
+type mysqlQueryFunc struct{}
+
+func (mysqlQueryFunc) Name() string { return "mysql.query" }
+func (mysqlQueryFunc) Args() any    { return QueryArgs{} }
+
+func (mysqlQueryFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[QueryArgs](args, "mysql.query")
+	if err != nil {
+		return nil, err
+	}
+	if err := validateMysqlQueryDatabase(a.Database); err != nil {
+		return nil, err
+	}
+	conn := a.connection()
+	if err := validateMysqlQueryConnection(conn, a.DB); err != nil {
+		return nil, err
+	}
+	// Reject the caller's raw request before normalization. The source's
+	// MySQLdb no-args path normalizes %% to %, but an oversized request must
+	// never be allowed to consume unbounded parser or redaction work merely
+	// because normalization happens to shorten it.
+	if len(a.Query) > runtime.MaxCommandInputBytes {
+		return nil, runtime.ErrCommandInputLimit
+	}
+	query := strings.ReplaceAll(a.Query, "%%", "%")
+	mode, err := classifyMysqlQuery(query)
+	if err != nil {
+		return nil, err
+	}
+	input := query
+	if mode == mysqlQueryResultAffected {
+		input, err = frameMysqlAffectedQuery(query)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if len(input) > runtime.MaxCommandInputBytes {
+		return nil, runtime.ErrCommandInputLimit
+	}
+	argv := mysqlArgv(
+		pointerString(conn.User),
+		pointerString(conn.Host),
+		pointerString(conn.Port),
+		pointerString(conn.DB),
+		"--binary-mode",
+	)
+	transportSecrets := mysqlQuerySecrets(conn, a.Query, query)
+	started := time.Now()
+	result, err := runMysqlInputResultSecrets(ctx, rt, argv, input, conn, nil, true, transportSecrets...)
+	if err != nil {
+		// Arbitrary SQL can contain any diagnostic-looking or credential-like
+		// value. Transport redaction is defense in depth, but the public query
+		// boundary must not return an arbitrary Runner error that echoes only a
+		// fragment of that SQL. Preserve the stable control-flow sentinels and
+		// collapse all other Runner details to a value-free execution error.
+		if canonical := canonicalMysqlQueryTransportError(err); canonical != nil {
+			return nil, canonical
+		}
+		return nil, errMysqlQueryExecution
+	}
+	if result.ExitCode != 0 {
+		// The native client has no DB-API exception boundary. A nonzero result
+		// is the closest safe equivalent to the pinned OperationalError branch;
+		// diagnostics remain internal and are never returned to the caller.
+		return false, nil
+	}
+	elapsed := result.Duration
+	if elapsed <= 0 {
+		elapsed = time.Since(started)
+	}
+	secrets := mysqlQuerySecrets(conn, a.Query, query)
+	if mode == mysqlQueryResultRows {
+		return renderMysqlQueryRows(string(result.Stdout), elapsed, secrets)
+	}
+	return renderMysqlQueryAffected(string(result.Stdout), elapsed, secrets)
+}
+
+func validateMysqlQueryDatabase(database string) error {
+	if !utf8.ValidString(database) || strings.IndexByte(database, 0) >= 0 || strings.ContainsAny(database, "\r\n") {
+		return errMysqlInvalidArgument
+	}
+	return nil
+}
+
+func validateMysqlQueryConnection(conn *myConnection, ignoredDB *string) error {
+	if conn == nil {
+		return errMysqlInvalidArgument
+	}
+	if err := rejectRunas(conn.Runas); err != nil {
+		return err
+	}
+	for _, value := range []*string{conn.User, conn.Host, conn.Port, conn.DB, ignoredDB} {
+		if value == nil {
+			continue
+		}
+		if !utf8.ValidString(*value) || strings.IndexByte(*value, 0) >= 0 || strings.ContainsAny(*value, "\r\n") {
+			return errMysqlInvalidArgument
+		}
+	}
+	// The password is an environment value, not an argv value, but the same
+	// NUL/newline boundary avoids ambiguous process transport and keeps error
+	// redaction deterministic. Do not reject other punctuation: MySQL passwords
+	// commonly contain shell-significant bytes and are never shell-parsed here.
+	if conn.Password != nil && (!utf8.ValidString(*conn.Password) ||
+		strings.IndexByte(*conn.Password, 0) >= 0 || strings.ContainsAny(*conn.Password, "\r\n")) {
+		return errMysqlInvalidArgument
+	}
+	return validateArgv(mysqlArgv(
+		pointerString(conn.User),
+		pointerString(conn.Host),
+		pointerString(conn.Port),
+		pointerString(conn.DB),
+		"--binary-mode",
+	))
+}
+
+func canonicalMysqlQueryTransportError(err error) error {
+	switch {
+	case errors.Is(err, context.Canceled):
+		return context.Canceled
+	case errors.Is(err, context.DeadlineExceeded):
+		return context.DeadlineExceeded
+	case errors.Is(err, process.ErrOutputLimit):
+		return process.ErrOutputLimit
+	case errors.Is(err, runtime.ErrCommandInputLimit):
+		return runtime.ErrCommandInputLimit
+	default:
+		return nil
+	}
+}
+
+func classifyMysqlQuery(query string) (mysqlQueryMode, error) {
+	if !utf8.ValidString(query) || strings.IndexByte(query, 0) >= 0 {
+		return 0, errMysqlQuery
+	}
+	if len(query) == 0 {
+		return 0, errMysqlQuery
+	}
+	scan, ok := scanMysqlSingleStatementDetails(query)
+	if !ok || scan.firstKeyword == "" {
+		return 0, errMysqlQuery
+	}
+	switch scan.firstKeyword {
+	case "SELECT", "SHOW", "DESC", "DESCRIBE":
+		return mysqlQueryResultRows, nil
+	case "WITH":
+		// A CTE is classified by its final top-level statement, not by the
+		// SELECT used inside a CTE body. Read CTEs return rows; write CTEs
+		// receive the same delimiter/ROW_COUNT framing as ordinary writes.
+		if mysqlQueryWithFinalKeyword(query) == "SELECT" {
+			return mysqlQueryResultRows, nil
+		}
+		return mysqlQueryResultAffected, nil
+	default:
+		return mysqlQueryResultAffected, nil
+	}
+}
+
+type mysqlQueryScan struct {
+	firstKeyword      string
+	firstKeywordStart int
+	topLevelSemicolon int
+	statementEnd      int
+}
+
+// frameMysqlAffectedQuery makes the caller's one statement explicit before
+// adding the fixed probe. Inserting the delimiter at statementEnd is
+// important: appending a semicolon after a trailing --/# line comment would
+// leave the probe inside that comment, and appending after a trailing block
+// comment would make the comment part of the statement boundary.
+func frameMysqlAffectedQuery(query string) (string, error) {
+	scan, ok := scanMysqlSingleStatementDetails(query)
+	if !ok || scan.firstKeyword == "" {
+		return "", errMysqlQuery
+	}
+	framed := query
+	if scan.topLevelSemicolon < 0 {
+		framed = query[:scan.statementEnd] + ";" + query[scan.statementEnd:]
+	}
+	if !strings.HasSuffix(framed, "\n") {
+		framed += "\n"
+	}
+	return framed + mysqlQueryAffectedProbe, nil
+}
+
+// scanMysqlSingleStatement rejects client directives and multiple statements
+// while deliberately avoiding a SQL parser. It understands the MySQL comment
+// forms and quoted semicolons needed by mysql.query's contract. The server
+// remains the authority for SQL grammar and privileges.
+func scanMysqlSingleStatement(query string) (string, bool) {
+	scan, ok := scanMysqlSingleStatementDetails(query)
+	if !ok {
+		return "", false
+	}
+	return scan.firstKeyword, true
+}
+
+func scanMysqlSingleStatementDetails(query string) (mysqlQueryScan, bool) {
+	scan := mysqlQueryScan{topLevelSemicolon: -1}
+	// mysql --binary-mode still reserves DELIMITER in noninteractive input on
+	// supported client versions. Reject line-oriented client directives before
+	// the lightweight SQL scan; a false positive here is safer than allowing a
+	// client-version-dependent delimiter boundary to escape the one-statement
+	// contract.
+	for _, line := range strings.Split(query, "\n") {
+		trimmed := strings.TrimLeft(line, " \t\r\f")
+		if len(trimmed) >= len("delimiter") && strings.EqualFold(trimmed[:len("delimiter")], "delimiter") &&
+			(len(trimmed) == len("delimiter") || strings.ContainsRune(" \t\r\f", rune(trimmed[len("delimiter")])) || trimmed[len("delimiter")] == ';') {
+			return mysqlQueryScan{}, false
+		}
+	}
+	sawToken := false
+	finished := false
+	for i := 0; i < len(query); {
+		next, ok := skipMysqlQueryTrivia(query, i)
+		if !ok {
+			return mysqlQueryScan{}, false
+		}
+		i = next
+		if i >= len(query) {
+			break
+		}
+		if finished {
+			return mysqlQueryScan{}, false
+		}
+		switch query[i] {
+		case '\'', '"', '`':
+			i = skipMysqlQueryQuote(query, i, query[i])
+			if i < 0 {
+				return mysqlQueryScan{}, false
+			}
+			sawToken = true
+			scan.statementEnd = i
+		case ';':
+			if !sawToken {
+				return mysqlQueryScan{}, false
+			}
+			scan.topLevelSemicolon = i
+			finished = true
+			i++
+		case '\\':
+			// mysql client commands (notably \\! and \\source) are not SQL.
+			// Rejecting them is required even with --binary-mode because client
+			// versions differ in which noninteractive commands remain enabled.
+			return mysqlQueryScan{}, false
+		default:
+			if !sawToken {
+				if word, end := mysqlQueryWord(query, i); end > i {
+					scan.firstKeyword = strings.ToUpper(word)
+					scan.firstKeywordStart = i
+					sawToken = true
+					i = end
+					scan.statementEnd = i
+					continue
+				}
+				sawToken = true
+			}
+			i++
+			scan.statementEnd = i
+		}
+	}
+	if !sawToken {
+		return mysqlQueryScan{}, false
+	}
+	return scan, true
+}
+
+// mysqlQueryWithFinalKeyword walks the top-level CTE list and returns the
+// first keyword after the final CTE body. It intentionally understands only
+// the delimiter/parenthesis structure needed for classification; MySQL remains
+// the authority for the full WITH grammar.
+func mysqlQueryWithFinalKeyword(query string) string {
+	scan, ok := scanMysqlSingleStatementDetails(query)
+	if !ok || scan.firstKeyword != "WITH" {
+		return ""
+	}
+	i := scan.firstKeywordStart + len("WITH")
+	depth := 0
+	awaitBody := false
+	bodyActive := false
+	bodyDone := false
+	for i < len(query) {
+		next, ok := skipMysqlQueryTrivia(query, i)
+		if !ok {
+			return ""
+		}
+		i = next
+		if i >= len(query) {
+			return ""
+		}
+		if query[i] == '\'' || query[i] == '"' || query[i] == '`' {
+			i = skipMysqlQueryQuote(query, i, query[i])
+			if i < 0 {
+				return ""
+			}
+			continue
+		}
+		if depth == 0 && query[i] == '(' {
+			if awaitBody {
+				depth = 1
+				bodyActive = true
+				awaitBody = false
+				bodyDone = false
+			} else {
+				depth = 1
+			}
+			i++
+			continue
+		}
+		if depth > 0 {
+			switch query[i] {
+			case '(':
+				depth++
+			case ')':
+				depth--
+				if depth == 0 && bodyActive {
+					bodyActive = false
+					bodyDone = true
+				}
+			}
+			i++
+			continue
+		}
+		if bodyDone {
+			if query[i] == ',' {
+				bodyDone = false
+				awaitBody = false
+				i++
+				continue
+			}
+			if word, end := mysqlQueryWord(query, i); end > i {
+				return strings.ToUpper(word)
+			}
+			// A malformed CTE list is left to MySQL; treat it as a write
+			// contract so it receives a real delimiter and a bounded probe.
+			return ""
+		}
+		if word, end := mysqlQueryWord(query, i); end > i {
+			if strings.EqualFold(word, "AS") {
+				awaitBody = true
+			}
+			i = end
+			continue
+		}
+		i++
+	}
+	return ""
+}
+
+func skipMysqlQueryTrivia(query string, index int) (int, bool) {
+	for index < len(query) {
+		for index < len(query) {
+			switch query[index] {
+			case ' ', '\t', '\n', '\r', '\f':
+				index++
+			default:
+				goto nonSpace
+			}
+		}
+	nonSpace:
+		if index >= len(query) {
+			return index, true
+		}
+		if query[index] == '#' {
+			for index < len(query) && query[index] != '\n' {
+				index++
+			}
+			continue
+		}
+		if query[index] == '-' && index+2 < len(query) && query[index+1] == '-' &&
+			(query[index+2] == ' ' || query[index+2] == '\t' || query[index+2] == '\r' || query[index+2] == '\n' || query[index+2] == '\f') {
+			// Leave the LF for the outer trivia loop. In particular, an
+			// empty comment written as "--\n" must not skip the first byte
+			// of the following SQL line while framing a probe.
+			index += 2
+			for index < len(query) && query[index] != '\n' {
+				index++
+			}
+			continue
+		}
+		if query[index] == '/' && index+1 < len(query) && query[index+1] == '*' {
+			// MySQL versioned comments (/*!...*/), optimizer hints
+			// (/*+...*/), and MariaDB executable comments (/*M!...*/)
+			// can change the statement rather than acting as inert
+			// whitespace. The arbitrary query surface does not support
+			// those forms, so reject them before framing or transport.
+			if index+2 < len(query) && (query[index+2] == '!' || query[index+2] == '+' ||
+				((query[index+2] == 'M' || query[index+2] == 'm') && index+3 < len(query) && query[index+3] == '!')) {
+				return 0, false
+			}
+			end := strings.Index(query[index+2:], "*/")
+			if end < 0 {
+				return 0, false
+			}
+			index += end + 4
+			continue
+		}
+		return index, true
+	}
+	return index, true
+}
+
+func skipMysqlQueryQuote(query string, index int, quote byte) int {
+	for i := index + 1; i < len(query); i++ {
+		switch query[i] {
+		case '\\':
+			// Whether a backslash quotes the following byte depends on the
+			// server SQL mode (notably NO_BACKSLASH_ESCAPES). The native
+			// client invocation does not establish a matching mode before this
+			// scanner runs, so accepting either interpretation could move a
+			// semicolon across the statement boundary. Reject every backslash
+			// inside a quoted token rather than guessing; backslashes in
+			// comments are still handled as comment data by
+			// skipMysqlQueryTrivia.
+			return -1
+		case quote:
+			if i+1 < len(query) && query[i+1] == quote {
+				i++
+				continue
+			}
+			return i + 1
+		}
+	}
+	return -1
+}
+
+func mysqlQueryWord(query string, index int) (string, int) {
+	start := index
+	for index < len(query) {
+		c := query[index]
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' {
+			index++
+			continue
+		}
+		break
+	}
+	return query[start:index], index
+}
+
+func mysqlQuerySecrets(conn *myConnection, queries ...string) []string {
+	// Query headers stay in mysql --batch's raw spelling instead of passing
+	// through decodeBatchField. Reuse the bounded header inventory so a
+	// password containing backslashes or control bytes is covered both before
+	// and after batch escaping at the positional result boundary.
+	secrets := mysqlHeaderSecrets(conn)
+	for _, query := range queries {
+		if query == "" {
+			continue
+		}
+		secrets = secretList(append(secrets, query)...)
+		escaped := mysqlBatchEscape(query)
+		// process redaction has the same 1 MiB secret ceiling as command input.
+		// A query whose batch spelling expands beyond that ceiling is already
+		// rejected before Runner start; do not turn a valid raw-size boundary
+		// into an unrelated invalid-redaction error.
+		if escaped != query && len(escaped) <= runtime.MaxCommandInputBytes {
+			secrets = secretList(append(secrets, escaped)...)
+		}
+	}
+	return secrets
+}
+
+func parseMysqlQueryRows(stdout string) ([]string, [][]batchField, error) {
+	// The shared catalog parser intentionally skips empty lines because its
+	// fixed catalogs never select an empty-only field. Arbitrary SELECT output
+	// must retain both an empty header label and an empty string row, so the
+	// first framed record is always the header, even when that record is empty.
+	header := []string{}
+	rows := [][]batchField{}
+	seenHeader := false
+	for _, line := range splitBatchRows(stdout) {
+		if !seenHeader {
+			seenHeader = true
+			header = strings.Split(line, "\t")
+			continue
+		}
+		fields := strings.Split(line, "\t")
+		row := make([]batchField, len(fields))
+		for i, field := range fields {
+			row[i] = decodeBatchField(field)
+		}
+		rows = append(rows, row)
+	}
+	for i := range rows {
+		if len(rows[i]) != len(header) {
+			return nil, nil, errMysqlQueryResult
+		}
+		for j := range rows[i] {
+			// Native mysql --batch prints SQL NULL as the bare token NULL.
+			// This is necessarily ambiguous with a literal string NULL; the
+			// compatibility ceiling is documented at the package boundary.
+			if !rows[i][j].null && rows[i][j].value == "NULL" {
+				rows[i][j].null = true
+				rows[i][j].value = ""
+			}
+		}
+	}
+	return header, rows, nil
+}
+
+func renderMysqlQueryRows(stdout string, elapsed time.Duration, secrets []string) (map[string]any, error) {
+	header, rows, err := parseMysqlQueryRows(stdout)
+	if err != nil {
+		return nil, err
+	}
+	columns := redactMysqlQueryColumns(header, secrets)
+	results := make([][]any, len(rows))
+	for i, row := range rows {
+		results[i] = make([]any, len(row))
+		for j, field := range row {
+			if field.null {
+				results[i][j] = nil
+				continue
+			}
+			results[i][j] = string(process.RedactBytes(secrets, []byte(field.value)))
+		}
+	}
+	return map[string]any{
+		"columns":       columns,
+		"query time":    mysqlQueryTime(elapsed),
+		"results":       results,
+		"rows returned": int64(len(results)),
+	}, nil
+}
+
+func renderMysqlQueryAffected(stdout string, elapsed time.Duration, secrets []string) (map[string]any, error) {
+	header, rows, err := parseMysqlQueryRows(stdout)
+	if err != nil || len(header) != 1 || header[0] != "__statekit_rows_affected__" || len(rows) != 1 || len(rows[0]) != 1 || rows[0][0].null {
+		return nil, errMysqlQueryAffected
+	}
+	value := rows[0][0].value
+	// Validate the numeric probe before applying public redaction. A malformed
+	// or secret-overlapping count must never become a fabricated success.
+	affected, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return nil, errMysqlQueryAffected
+	}
+	return map[string]any{
+		"query time":    mysqlQueryTime(elapsed),
+		"rows affected": affected,
+	}, nil
+}
+
+func mysqlQueryTime(elapsed time.Duration) map[string]string {
+	seconds := elapsed.Seconds()
+	raw := strconv.FormatFloat(math.Round(seconds*100000)/100000, 'f', -1, 64)
+	if seconds < 0.200 {
+		human := strconv.FormatFloat(math.Round(seconds*1000*10)/10, 'f', -1, 64) + "ms"
+		return map[string]string{"human": human, "raw": raw}
+	}
+	human := strconv.FormatFloat(math.Round(seconds*100)/100, 'f', -1, 64) + "s"
+	return map[string]string{"human": human, "raw": raw}
 }
 
 // splitBatchRows frames mysql --batch stdout into raw row lines in one
@@ -5927,11 +6589,7 @@ func redactedError(err error, secrets ...string) error {
 	if len(list) == 0 {
 		return err
 	}
-	message := process.RedactString(list, err.Error())
-	if message == err.Error() {
-		return err
-	}
-	return errors.New(message)
+	return process.RedactedError(err, list...)
 }
 
 // Register installs the mysql slice: the R9.2a pure functions, the
@@ -5941,12 +6599,14 @@ func redactedError(err error, secrets ...string) error {
 // R9.3o plugin mutations,
 // the R9.3j database lifecycle mutations, the R9.3l database metadata
 // mutation, the R9.3m process/replication status readers, and the R9.3n
-// slave_lag scalar reader over the central mysql CLI transport. The remainder
-// of the mysql family stays pending behind its own source/transport boundary.
+// slave_lag scalar reader, and mysql.query's explicit stdin-only arbitrary-SQL
+// boundary over the central mysql CLI transport. The remainder of the mysql
+// family stays pending behind its own source/transport boundary.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		quoteIdentifierFunc{},
 		tokenizeGrantFunc{},
+		mysqlQueryFunc{},
 		dbListFunc{},
 		dbExistsFunc{},
 		alterDbFunc{},

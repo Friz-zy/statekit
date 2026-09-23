@@ -2483,6 +2483,74 @@ The evidence boundary is:
 | `R9.3o` | `mysql.plugin_add`/`mysql.plugin_remove`, plugin-status preflight, default/custom SONAME, identifier validation, idempotence/failure/redaction/bounds vectors, direct/registry/CLI registration and tests, live harness extension, coverage, and R9 report update | `backend-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | implementation and local non-live evidence are prepared on the clean worktree; no commit and no local live MySQL; external behavior remains `pending_external_ci` |
 | `E5.2` | Preserve 52 cases and append 13 R9.3o built-in/negative/native-observation cases; exact 65-case inventory, value-free report, bounded rootless Podman cleanup | `devops-platform-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | workflow is extended with read-only permissions and existing pins; live 65/65, native failure diagnostics, and external cleanup evidence remain pending in GitHub |
 
+##### 2026-09-23 R9.3p MySQL `query` — implementation complete; external live CI pending
+
+R9.3p implements the pinned Salt `mysql.query(database, query, **connection_args)`
+surface in the direct runtime, exec registry, and CLI decoder. Arbitrary SQL is an
+explicit privileged boundary: the validated statement is bounded and sent only as
+stdin to the native `mysql` client in binary/batch mode, never interpolated into
+shell text or argv. Database, connection, password, and runas inputs are validated
+separately; the shared finite timeout, cancellation, stdin/stdout/stderr limits,
+truncation rejection, and value-free redaction/error behavior remain in force.
+One SQL statement is accepted, including multiline comments and quoted semicolons;
+client backslash commands and NUL/oversize input fail closed. For ordinary
+non-row DDL/DML, a fixed `SELECT ROW_COUNT()` probe is appended inside the same
+bounded stdin payload so the public `rows affected` shape remains useful.
+R93P-01 is an explicit compatibility ceiling: because the native client
+session's backslash-escape SQL mode is not proven before scanning, any
+backslash inside a single-, double-, or backtick-quoted token is rejected
+before framing and Runner invocation. Backslashes in comments remain allowed;
+the upgrade path is a separately proven matching SQL mode, not a permissive
+scanner guess. Direct, registry, and CLI no-dispatch regressions cover odd and
+even backslash quote-boundary fixtures.
+The pinned no-args path's `%%` to `%` normalization is applied before transport;
+the caller statement receives a real delimiter before any trailing line/block
+comments, so an existing terminator, quoted semicolon, or comment cannot swallow
+the probe. `WITH ... SELECT` is the documented read contract, while a CTE whose
+final top-level command is `UPDATE`/`INSERT`/`DELETE`/`REPLACE` is the write
+contract and receives the probe. This comment-aware/CTE classification is a
+tested StateKit ceiling over Salt's raw-prefix behavior. The CLI exposes only a
+process exit, so query and connection nonzero exits both use value-free `false`
+rather than claiming Salt's connection-only `{}` shape; canonical cancellation,
+deadline, output-limit, and input-limit sentinels are preserved, and wrapped
+arbitrary Runner errors collapse to a value-free execution error.
+
+The native CLI compatibility ceiling is explicit rather than overclaimed: batch
+output cannot distinguish a literal string `NULL` from SQL NULL, the probe cannot
+reproduce every MySQLdb/DB-API cursor rowcount predicate, and a native nonzero
+exit cannot expose the source exception class. SELECT/SHOW/DESC headers and rows,
+affected writes, empty result behavior, and nonzero value-free failure behavior
+are covered by direct, registry, CLI, source-derived, and differential mock tests.
+
+The E5.2 harness preserves all prior 65 ordered cases and appends 20 production
+binary cases (85 exact cases, zero skips): scalar/table SELECTs with independent
+native observations, a reserved disposable database DDL/DML lifecycle and native
+postconditions, multiline/comment/quoted SQL, invalid database/auth/connection,
+finite timeout, oversize input, and independent 1064 diagnostic classification.
+The query live cases require an explicit workflow opt-in and use only runtime-
+generated disposable credentials; repository/organization secrets and arbitrary
+untrusted PR SQL are never used. Reports remain value-free and cleanup verifies
+database removal. The SQLite job and prior pins are unchanged.
+
+Evidence boundary:
+
+* **Local mock/static evidence (executor `backend-engineer-senior`):** Podman
+  gofmt, focused/race/vet/report checks, direct/registry/CLI/differential tests,
+  shell/Python/YAML validation, and live-harness inventory/orchestration tests.
+  These checks do not start a MySQL service and do not claim live behavior.
+* **External live evidence (executor `devops-platform-engineer-senior`):** the
+  protected GitHub E5.2 job must execute all 85 cases with `cases_skipped: 0`,
+  publish a fresh value-free report, independently observe native outcomes,
+  classify negatives, and verify cleanup. `backend-engineer-lead` and
+  `security-engineer-senior` are independent review gates for the artifact; no
+  local live MySQL or external run success is recorded here. Status is exactly
+  `pending_external_ci`.
+
+| Phase | Scope | Implementation executor role | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `R9.3p` | `mysql.query`, source/direct/registry/CLI/differential tests, stdin-only SQL boundary, report/plans, and protected live-harness extension | `backend-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | implementation and local non-live evidence are in the clean worktree; no commit and no local live MySQL; CLI rowcount/NULL/exception ceilings are documented; external live behavior remains `pending_external_ci` |
+| `E5.2` | Preserve 65 MySQL cases and append 20 R9.3p production/native/negative query cases; exact 85-case inventory, value-free report, disposable-credential control, bounded Podman cleanup | `devops-platform-engineer-senior` | `backend-engineer-lead` + `security-engineer-senior` | workflow/harness is prepared; live 85/85, native diagnostics, and cleanup evidence remain pending in GitHub; SQLite job and previous pins remain unchanged |
+
 ##### 2026-09-21 R9.3k SQLite catalog family — implementation ready; live CI pending
 
 R9.3k ports the public Salt `sqlite3` functions `version`, `sqlite_version`,

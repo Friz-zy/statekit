@@ -120,11 +120,7 @@ func redactedError(err error, secrets ...string) error {
 	if len(secrets) == 0 {
 		return err
 	}
-	message := process.RedactString(secretList(secrets...), err.Error())
-	if message == err.Error() {
-		return err
-	}
-	return errors.New(message)
+	return process.RedactedError(err, secretList(secrets...)...)
 }
 
 func validateArgv(executable string, argv []string) error {

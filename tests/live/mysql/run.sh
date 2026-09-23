@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # E5.2 live MySQL gate extending the E5.1 read-only/catalog/plugin surface
 # with the already-ported R9.3j database lifecycle, R9.3l alter_db, R9.3m
-# process/replication status readers, R9.3n slave_lag, and R9.3o plugin
-# add/remove lifecycle negatives and idempotence. The gate deliberately runs
+# process/replication status readers, R9.3n slave_lag, R9.3o plugin
+# add/remove lifecycle negatives and idempotence, and R9.3p mysql.query.
+# The gate deliberately runs
 # the production statekit binary and the official image's native mysql client;
 # it does not use the Go fake Runner. Every E5.1 case remains in the inventory.
 #
@@ -22,9 +23,9 @@ readonly INSTALLED_PLUGIN='caching_sha2_password'
 readonly ABSENT_PLUGIN='statekit_e51_absent_plugin'
 readonly READINESS_TIMEOUT_SECONDS=120
 readonly POLL_INTERVAL_SECONDS=2
-readonly CLIENT_TIMEOUT_SECONDS=45
+readonly CLIENT_TIMEOUT_SECONDS=60
 readonly CLIENT_CREATE_TIMEOUT_SECONDS=30
-readonly CLIENT_START_TIMEOUT_SECONDS=30
+readonly CLIENT_START_TIMEOUT_SECONDS=60
 readonly NATIVE_CONNECT_TIMEOUT_SECONDS=3
 readonly CLEANUP_TIMEOUT_SECONDS=20
 readonly TERMINATION_GRACE_SECONDS=5
@@ -32,6 +33,7 @@ readonly PREFLIGHT_TIMEOUT_SECONDS=30
 readonly MYSQL_SERVICE_USER='999:999'
 readonly CLIENT_USER='65532:65532'
 readonly ALTER_TABLE='statekit_r93l_seed'
+readonly QUERY_TABLE='statekit_r93p_query'
 readonly PYTHON_MOCK_TMPFS_DESTINATION='/tmp'
 readonly PYTHON_MOCK_TMPFS_OPTIONS='rw,nosuid,nodev,noexec,size=64m,mode=1777,rprivate,tmpcopyup'
 NATIVE_CLIENT_USER="$TEST_USER"
@@ -45,6 +47,14 @@ readonly NATIVE_UNSUPPORTED_STATUS_SQLSTATE='42000'
 readonly NATIVE_UNSUPPORTED_STATUS_SIGNATURE='You have an error in your SQL syntax;'
 readonly NATIVE_PLUGIN_INSTALL_FAILURE_MARKER="ERROR 1126 (HY000): Can't open shared library"
 readonly NATIVE_PLUGIN_INSTALL_MISSING_SUFFIX='(errno: 2 No such file or directory)'
+readonly MAX_COMMAND_INPUT_BYTES=$((1024 * 1024))
+readonly STATEKIT_REQUEST_MAX_BYTES=$((MAX_COMMAND_INPUT_BYTES + 65536))
+readonly QUERY_EXPECTED_NOTE='quote; value;'
+readonly STATEKIT_QUERY_INPUT_LIMIT_DIAGNOSTIC='statekit: runtime: command input exceeds limit'
+readonly STATEKIT_QUERY_TIMEOUT_DIAGNOSTIC='statekit: context deadline exceeded'
+readonly NATIVE_QUERY_DIAGNOSTIC_SIGNATURE='You have an error in your SQL syntax;'
+readonly NATIVE_QUERY_DIAGNOSTIC_STATEMENT='THIS IS NOT VALID SQL'
+readonly STATEKIT_PROOF_MARKER='statekit: production-binary-completed'
 readonly STATEKIT_INVALID_IDENTIFIER_CATEGORY='mysql: invalid argument'
 readonly STATEKIT_INVALID_IDENTIFIER_DIAGNOSTIC='statekit: mysql: invalid argument: unsupported identifier in name'
 readonly STATEKIT_INVALID_SONAME_DIAGNOSTIC='statekit: mysql: invalid argument: unsupported identifier in soname'
@@ -115,6 +125,26 @@ readonly CASE_IDS=(
   'mysql-plugin-add-invalid-soname'
   'mysql-plugin-add-negative-auth'
   'mysql-plugin-remove-negative-connection'
+  'mysql-query-select-scalar-statekit'
+  'mysql-query-select-scalar-native-observation'
+  'mysql-query-select-table-statekit'
+  'mysql-query-select-table-native-observation'
+  'mysql-query-database-native-absent-before-create'
+  'mysql-query-create-database'
+  'mysql-query-create-table'
+  'mysql-query-insert-dml'
+  'mysql-query-dml-native-postcondition'
+  'mysql-query-multiline-quoted-statekit'
+  'mysql-query-multiline-quoted-native-observation'
+  'mysql-query-drop-database'
+  'mysql-query-database-native-removed-postcondition'
+  'mysql-query-negative-invalid-database'
+  'mysql-query-negative-auth'
+  'mysql-query-negative-connection'
+  'mysql-query-negative-timeout'
+  'mysql-query-negative-oversize'
+  'mysql-query-negative-diagnostic-statekit'
+  'mysql-query-negative-diagnostic-native-classification'
 )
 
 if [[ "${1:-}" == '--list-cases' ]]; then
@@ -146,6 +176,9 @@ DB_OWNED=0
 LIFECYCLE_DB=''
 LIFECYCLE_DB_RESERVED=0
 LIFECYCLE_DB_OWNED=0
+QUERY_DB=''
+QUERY_DB_RESERVED=0
+QUERY_DB_OWNED=0
 ALTER_DB=''
 ALTER_DB_RESERVED=0
 ALTER_DB_OWNED=0
@@ -174,6 +207,8 @@ CLEANUP_NOTE='none'
 CLIENT_SEQUENCE=0
 LAST_CLIENT_CLASS='not-run'
 LAST_CLIENT_EXIT_RC=125
+LAST_STATEKIT_BINARY_LAUNCHED=0
+CLIENT_EXPECT_STATEKIT_PROOF=0
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_PASSWORD=''
 LIVE_PASSWORD=''
@@ -261,11 +296,14 @@ run_case() {
   fi
 }
 
-mark_remaining_skipped() {
+mark_remaining_failed() {
   local case_id
   for case_id in "${CASE_IDS[@]}"; do
     if ! case_id_is_recorded "$case_id"; then
-      record_case "$case_id" skipped || return 1
+      # A setup/start failure is evidence of a failed gate, not a reason to
+      # manufacture skips.  Keep the ordered inventory complete and make the
+      # failure visible in the value-free report.
+      record_case "$case_id" fail || return 1
     fi
   done
 }
@@ -333,11 +371,11 @@ write_report() {
       printf '%s\n' 'cleanup: pass'
     fi
     printf 'cleanup_note: %s\n' "$CLEANUP_NOTE"
-    printf '%s\n' 'scope: E5.1 mysql.version/db_list/db_exists/plugins_list/plugin_status plus R9.3j lifecycle, R9.3l mysql.alter_db create/seed/alter/read-back, R9.3m process/replication status, R9.3n mysql.slave_lag, and R9.3o plugin_add/plugin_remove lifecycle cases'
-    printf '%s\n' 'independent_checks: native mysql client database/plugin/charset/collation/seed postconditions, exact plugin status/case observations, missing-shared-object INSTALL failure classifications, available SHOW FULL PROCESSLIST correlation, and MySQL 8.4 unsupported SHOW MASTER STATUS/SHOW SLAVE STATUS classifications including slave_lag; no positive plugin installation or replication retrieval is claimed'
+    printf '%s\n' 'scope: E5.1 mysql.version/db_list/db_exists/plugins_list/plugin_status plus R9.3j lifecycle, R9.3l mysql.alter_db create/seed/alter/read-back, R9.3m process/replication status, R9.3n mysql.slave_lag, R9.3o plugin_add/plugin_remove lifecycle cases, and R9.3p mysql.query SELECT/DDL/DML/stdin-boundary cases'
+    printf '%s\n' 'independent_checks: native mysql client database/plugin/charset/collation/seed postconditions, exact plugin status/case observations, missing-shared-object INSTALL failure classifications, available SHOW FULL PROCESSLIST correlation, MySQL 8.4 unsupported SHOW MASTER STATUS/SHOW SLAVE STATUS classifications including slave_lag, and independent scalar/table/query-database/multiline/diagnostic observations; no positive plugin installation or replication retrieval is claimed'
     printf '%s\n' 'status_classification: StateKit [] compatibility output is accepted only when the matching native legacy SHOW statement is classified unsupported-sql, mysql.slave_lag -3 is accepted only with the matching native unsupported-sql classification, and missing-plugin INSTALL exits are accepted only with the exact ER_CANT_OPEN_LIBRARY errno=2 diagnostic bound to the requested basename; path, permission, loader/interface, mixed, unrelated, auth, connection, runtime/setup/cleanup, or StateKit/native mismatch fails'
     printf '%s\n' 'external_ci: pending'
-    printf '%s\n' 'limitations: no full R9 live coverage, no broker/PostgreSQL/SQLite coverage, no live Salt differential parity; MySQL 8.4 positive plugin installation is not claimed because no test plugin .so is bundled, and built-in plugins are never uninstalled; GitHub live execution is not claimed here; SIGKILL or runner loss can prevent cleanup/reporting'
+    printf '%s\n' 'limitations: no full R9 live coverage, no broker/PostgreSQL/SQLite coverage, no live Salt differential parity; mysql.query is an explicitly privileged fixed-case live probe, never arbitrary PR SQL, and its generated credentials are disposable rather than repository secrets; DB-API exception/rowcount and bare-NULL parity remain CLI ceilings; MySQL 8.4 positive plugin installation is not claimed because no test plugin .so is bundled, and built-in plugins are never uninstalled; GitHub live execution is not claimed here; SIGKILL or runner loss can prevent cleanup/reporting'
     printf '%s\n' 'credentials: runtime-generated disposable values are delivered through ephemeral secret mounts only; not included in this report'
     local result
     for result in "${CASE_RESULTS[@]}"; do
@@ -626,6 +664,7 @@ cleanup() {
   trap '' INT TERM
   set +e
   cleanup_lifecycle_database || true
+  cleanup_query_database || true
   cleanup_alter_database || true
   while (( index < ${#OWNED_CLIENT_NAMES[@]} )); do
     cleanup_container "${OWNED_CLIENT_NAMES[index]}" "${OWNED_CLIENT_IDS[index]}" || true
@@ -1204,17 +1243,101 @@ build_client_image() {
   fi
 }
 
+create_owned_input_file() {
+  local content="$1" max_bytes="$2" path bytes
+  [[ -n "$WORK_DIR" && -d "$WORK_DIR" ]] || return 125
+  path=$(mktemp "$WORK_DIR/input.XXXXXX") || return 125
+  if ! chmod 600 "$path" || ! printf '%s' "$content" >"$path"; then
+    rm -f -- "$path"
+    return 125
+  fi
+  if ! owned_private_file "$path"; then
+    rm -f -- "$path"
+    return 125
+  fi
+  bytes=$(wc -c <"$path") || {
+    rm -f -- "$path"
+    return 125
+  }
+  if (( bytes > max_bytes )); then
+    rm -f -- "$path"
+    return 2
+  fi
+  printf '%s\n' "$path"
+}
+
+create_query_spec_file() {
+  local database="$1" sql="$2" path bytes
+  [[ -n "$WORK_DIR" && -d "$WORK_DIR" ]] || return 125
+  path=$(mktemp "$WORK_DIR/query-spec.XXXXXX") || return 125
+  if ! chmod 600 "$path" || ! printf '%s\0%s' "$database" "$sql" >"$path"; then
+    rm -f -- "$path"
+    return 125
+  fi
+  if ! owned_private_file "$path"; then
+    rm -f -- "$path"
+    return 125
+  fi
+  bytes=$(wc -c <"$path") || {
+    rm -f -- "$path"
+    return 125
+  }
+  if (( bytes > STATEKIT_REQUEST_MAX_BYTES )); then
+    rm -f -- "$path"
+    return 2
+  fi
+  printf '%s\n' "$path"
+}
+
+owned_private_file() {
+  local path="$1" mode
+  [[ -f "$path" && ! -L "$path" && -O "$path" ]] || return 1
+  mode=$(stat -c '%a' -- "$path" 2>/dev/null) || return 1
+  [[ "$mode" == '600' ]]
+}
+
+strip_statekit_proof() {
+  local path="$1" temporary count
+  [[ -f "$path" && ! -L "$path" ]] || return 1
+  count=$(awk -v marker="$STATEKIT_PROOF_MARKER" \
+    '$0 == marker { count++ } END { print count + 0 }' "$path" 2>/dev/null) || return 1
+  [[ "$count" == '1' ]] || return 1
+  temporary="${path}.proof"
+  if ! awk -v marker="$STATEKIT_PROOF_MARKER" '$0 != marker { print }' "$path" >"$temporary" ||
+    ! chmod 600 "$temporary" || ! mv -f -- "$temporary" "$path"; then
+    rm -f -- "$temporary"
+    return 1
+  fi
+}
+
+discard_client_input() {
+  local path="$1"
+  if [[ -e "$path" || -L "$path" ]]; then
+    rm -f -- "$path" || return 1
+  fi
+  [[ ! -e "$path" && ! -L "$path" ]]
+}
+
 run_client_container() {
-  local stdout_path="$1" stderr_path="$2"
-  shift 2
-  local name="statekit-e51-client-${RESOURCE_NONCE:-local}-$CLIENT_SEQUENCE" id_path wait_path start_rc=0 wait_rc=0
-  local log_rc=0 container_id='' wait_value='' index
+  local stdout_path="$1" stderr_path="$2" input_path="$3"
+  shift 3
+  local name="statekit-e51-client-${RESOURCE_NONCE:-local}-$CLIENT_SEQUENCE" id_path wait_path create_rc=0 attach_rc=0 wait_rc=0
+  local container_id='' wait_value='' index
   CLIENT_SEQUENCE=$((CLIENT_SEQUENCE + 1))
   LAST_CLIENT_CLASS='setup'
   LAST_CLIENT_EXIT_RC=125
   : >"$stdout_path"
   : >"$stderr_path"
+  if [[ -z "$WORK_DIR" || -z "$input_path" || "$input_path" != "$WORK_DIR"/* ]] ||
+    ! owned_private_file "$input_path"; then
+    LAST_CLIENT_CLASS='setup'
+    return 125
+  fi
   if ! reserve_container_name "$name"; then
+    if ! discard_client_input "$input_path"; then
+      LAST_CLIENT_CLASS='cleanup'
+      mark_cleanup_failure
+    fi
     return 125
   fi
   index=${#OWNED_CLIENT_NAMES[@]}
@@ -1222,9 +1345,14 @@ run_client_container() {
   OWNED_CLIENT_IDS+=('')
   id_path="$WORK_DIR/client-${CLIENT_SEQUENCE}.id"
   wait_path="$WORK_DIR/client-${CLIENT_SEQUENCE}.wait"
-  timeout "$CLIENT_CREATE_TIMEOUT_SECONDS" "$RUNTIME" create --name "$name" "$@" >"$id_path" 2>"$WORK_DIR/client-${CLIENT_SEQUENCE}.create.err" || start_rc=$?
-  if (( start_rc != 0 )); then
-    LAST_CLIENT_CLASS='setup'
+  timeout "$CLIENT_CREATE_TIMEOUT_SECONDS" "$RUNTIME" create --interactive --name "$name" "$@" >"$id_path" 2>"$WORK_DIR/client-${CLIENT_SEQUENCE}.create.err" || create_rc=$?
+  if (( create_rc != 0 )); then
+    if discard_client_input "$input_path"; then
+      LAST_CLIENT_CLASS='setup'
+    else
+      LAST_CLIENT_CLASS='cleanup'
+      mark_cleanup_failure
+    fi
     if ! cleanup_container "$name" ''; then
       LAST_CLIENT_CLASS='cleanup'
     fi
@@ -1232,7 +1360,12 @@ run_client_container() {
   fi
   container_id=$(tr -d '[:space:]' <"$id_path")
   if [[ ! "$container_id" =~ ^[[:alnum:]_.-]+$ ]]; then
-    LAST_CLIENT_CLASS='setup'
+    if discard_client_input "$input_path"; then
+      LAST_CLIENT_CLASS='setup'
+    else
+      LAST_CLIENT_CLASS='cleanup'
+      mark_cleanup_failure
+    fi
     if ! cleanup_container "$name" ''; then
       LAST_CLIENT_CLASS='cleanup'
     fi
@@ -1240,14 +1373,40 @@ run_client_container() {
   fi
   OWNED_CLIENT_IDS[index]="$container_id"
   if ! verify_created_container_policy "$container_id" client; then
-    LAST_CLIENT_CLASS='setup'
+    if discard_client_input "$input_path"; then
+      LAST_CLIENT_CLASS='setup'
+    else
+      LAST_CLIENT_CLASS='cleanup'
+      mark_cleanup_failure
+    fi
     if ! cleanup_container "$name" "$container_id"; then
       LAST_CLIENT_CLASS='cleanup'
     fi
     return 125
   fi
-  timeout "$CLIENT_START_TIMEOUT_SECONDS" "$RUNTIME" start "$container_id" >"$WORK_DIR/client-${CLIENT_SEQUENCE}.start.out" 2>"$WORK_DIR/client-${CLIENT_SEQUENCE}.start.err" || start_rc=$?
-  if (( start_rc != 0 )); then
+  # Attach at start so the request is delivered over the container's stdin.
+  # The request path is host-owned and ephemeral; its contents never occur in
+  # the create/start argv or in a bind mount.
+  timeout "$CLIENT_START_TIMEOUT_SECONDS" "$RUNTIME" start --attach --interactive "$container_id" \
+    <"$input_path" >"$stdout_path" 2>"$stderr_path" || attach_rc=$?
+  if ! discard_client_input "$input_path"; then
+    LAST_CLIENT_CLASS='cleanup'
+    if ! cleanup_container "$name" "$container_id"; then
+      LAST_CLIENT_CLASS='cleanup'
+    fi
+    return 125
+  fi
+  if (( attach_rc == 124 )); then
+    LAST_CLIENT_CLASS='timeout'
+    if ! cleanup_container "$name" "$container_id"; then
+      LAST_CLIENT_CLASS='cleanup'
+    fi
+    return 124
+  fi
+  if (( attach_rc >= 125 )); then
+    # Podman reserves 125+ for a start/exec/runtime failure.  A normal
+    # production process exit is carried by wait and may be 1, so do not use
+    # every nonzero attach status as a setup failure.
     LAST_CLIENT_CLASS='runtime'
     if ! cleanup_container "$name" "$container_id"; then
       LAST_CLIENT_CLASS='cleanup'
@@ -1274,15 +1433,24 @@ run_client_container() {
     fi
     return 125
   fi
-  LAST_CLIENT_EXIT_RC="$wait_value"
-  timeout "$CLIENT_CREATE_TIMEOUT_SECONDS" "$RUNTIME" logs "$container_id" >"$stdout_path" 2>"$stderr_path" || log_rc=$?
-  if (( log_rc != 0 )); then
+  if (( CLIENT_EXPECT_STATEKIT_PROOF == 1 )); then
+    if ! strip_statekit_proof "$stderr_path"; then
+      LAST_CLIENT_CLASS='runtime'
+      if ! cleanup_container "$name" "$container_id"; then
+        LAST_CLIENT_CLASS='cleanup'
+      fi
+      return 125
+    fi
+    LAST_STATEKIT_BINARY_LAUNCHED=1
+  fi
+  if (( attach_rc != 0 && wait_value == 0 )); then
     LAST_CLIENT_CLASS='runtime'
     if ! cleanup_container "$name" "$container_id"; then
       LAST_CLIENT_CLASS='cleanup'
     fi
     return 125
   fi
+  LAST_CLIENT_EXIT_RC="$wait_value"
   if ! cleanup_container "$name" "$container_id"; then
     LAST_CLIENT_CLASS='cleanup'
     return 125
@@ -1301,8 +1469,15 @@ trap '\''rm -f -- "$credentials_file"'\'' EXIT
 exec mysql --defaults-extra-file="$credentials_file" "$@"'
 
 native_mysql() {
-  local secret_name="$1" host="$2" port="$3" sql="$4" stdout_path="$5" stderr_path="$6"
-  run_client_container "$stdout_path" "$stderr_path" \
+  local secret_name="$1" host="$2" port="$3" sql="$4" stdout_path="$5" stderr_path="$6" input_path
+  if ! input_path=$(create_owned_input_file "$sql" "$STATEKIT_REQUEST_MAX_BYTES"); then
+    LAST_CLIENT_CLASS='setup'
+    LAST_CLIENT_EXIT_RC=125
+    return 125
+  fi
+  CLIENT_EXPECT_STATEKIT_PROOF=0
+  LAST_STATEKIT_BINARY_LAUNCHED=0
+  run_client_container "$stdout_path" "$stderr_path" "$input_path" \
     --network "$NETWORK" \
     --secret "source=$secret_name,type=mount,target=$CLIENT_SECRET_TARGET,uid=65532,gid=65532,mode=400" \
     --read-only \
@@ -1328,8 +1503,8 @@ native_mysql() {
     --user="$NATIVE_CLIENT_USER" \
     --database="$SEED_DB" \
     --batch \
-    --skip-column-names \
-    --execute="$sql"
+    --binary-mode \
+    --skip-column-names
 }
 
 native_mysql_as_user() {
@@ -1469,6 +1644,82 @@ cleanup_lifecycle_database() {
   return "$rc"
 }
 
+query_database_presence() {
+  local stdout_path="$1" stderr_path="$2" rc=0 value
+  : >"$stdout_path"
+  : >"$stderr_path"
+  native_mysql_as_user root "$ROOT_CLIENT_SECRET" "$DB_HOST" "$DB_PORT" \
+    "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '$QUERY_DB'" \
+    "$stdout_path" "$stderr_path" || rc=$?
+  if (( rc != 0 )) || ! value_free_files "$stdout_path" "$stderr_path"; then
+    return 2
+  fi
+  value=$(<"$stdout_path")
+  if [[ "$value" == "$QUERY_DB" ]]; then
+    return 0
+  fi
+  if [[ -z "$value" ]]; then
+    return 1
+  fi
+  return 2
+}
+
+cleanup_query_database() {
+  local stdout_path stderr_path verify_stdout verify_stderr
+  local rc=0 value='' presence=2
+  if (( QUERY_DB_RESERVED != 1 || QUERY_DB_OWNED != 1 )); then
+    if (( QUERY_DB_OWNED == 1 && QUERY_DB_RESERVED != 1 )); then
+      set_cleanup_note 'query-owned-without-absence-reservation'
+      mark_cleanup_failure
+      return 1
+    fi
+    return 0
+  fi
+  if [[ -z "$WORK_DIR" || -z "$ROOT_CLIENT_SECRET" || -z "$DB_HOST" ||
+    ! "$QUERY_DB" =~ ^statekit_r93p_[[:alnum:]_-]+$ ]]; then
+    set_cleanup_note 'query-cleanup-precheck-failed'
+    mark_cleanup_failure
+    return 1
+  fi
+  stdout_path="$WORK_DIR/query-cleanup.out"
+  stderr_path="$WORK_DIR/query-cleanup.err"
+  verify_stdout="$WORK_DIR/query-cleanup-verify.out"
+  verify_stderr="$WORK_DIR/query-cleanup-verify.err"
+  native_mysql_as_user root "$ROOT_CLIENT_SECRET" "$DB_HOST" "$DB_PORT" \
+    "DROP DATABASE IF EXISTS \`$QUERY_DB\`" "$stdout_path" "$stderr_path" || rc=$?
+  [[ -f "$stdout_path" ]] && value=$(<"$stdout_path")
+  if (( rc != 0 )) || [[ -n "$value" ]] || ! value_free_files "$stdout_path" "$stderr_path"; then
+    set_cleanup_note 'query-cleanup-drop-failed'
+    mark_cleanup_failure
+    rm -f -- "$stdout_path" "$stderr_path" "$verify_stdout" "$verify_stderr"
+    return 1
+  fi
+  if query_database_presence "$verify_stdout" "$verify_stderr"; then
+    presence=0
+  else
+    presence=$?
+  fi
+  case "$presence" in
+    1)
+      QUERY_DB_OWNED=0
+      QUERY_DB_RESERVED=0
+      rc=0
+      ;;
+    0)
+      set_cleanup_note 'query-cleanup-residual-database'
+      mark_cleanup_failure
+      rc=1
+      ;;
+    *)
+      set_cleanup_note 'query-cleanup-absence-uncertain'
+      mark_cleanup_failure
+      rc=1
+      ;;
+  esac
+  rm -f -- "$stdout_path" "$stderr_path" "$verify_stdout" "$verify_stderr"
+  return "$rc"
+}
+
 alter_database_presence() {
   local stdout_path="$1" stderr_path="$2" rc=0 value
   : >"$stdout_path"
@@ -1546,28 +1797,111 @@ cleanup_alter_database() {
   return "$rc"
 }
 
+statekit_secret_password() {
+  case "$1" in
+    "$CLIENT_SECRET") printf '%s' "$LIVE_PASSWORD" ;;
+    "$BAD_CLIENT_SECRET") printf '%s' "$BAD_PASSWORD" ;;
+    "$ROOT_CLIENT_SECRET") printf '%s' "$ROOT_PASSWORD" ;;
+    *) return 1 ;;
+  esac
+}
+
+statekit_secret_user() {
+  if [[ "$1" == "$ROOT_CLIENT_SECRET" ]]; then
+    printf '%s' 'root'
+  else
+    printf '%s' "$TEST_USER"
+  fi
+}
+
+create_statekit_request_file() {
+  local secret_name="$1" function_name="$2" extra_json="$3" host="$4" port="$5" path spec_path password user rc=0 bytes
+  [[ -n "$WORK_DIR" && -d "$WORK_DIR" ]] || return 125
+  password=$(statekit_secret_password "$secret_name") || return 125
+  user=$(statekit_secret_user "$secret_name") || return 125
+  spec_path=$(mktemp "$WORK_DIR/statekit-spec.XXXXXX") || return 125
+  path=$(mktemp "$WORK_DIR/statekit-request.XXXXXX") || {
+    rm -f -- "$spec_path"
+    return 125
+  }
+  if ! chmod 600 "$spec_path" "$path" ||
+    ! printf '%s\0%s\0%s\0%s\0%s\0%s\0%s' \
+      "$user" "$password" "$host" "$port" "$SEED_DB" "$function_name" "$extra_json" >"$spec_path"; then
+    rm -f -- "$spec_path" "$path"
+    return 125
+  fi
+  python3 - "$spec_path" "$path" <<'PY' || rc=$?
+import json
+import sys
+
+spec_path, output_path = sys.argv[1:]
+parts = open(spec_path, "rb").read().split(b"\0")
+if len(parts) != 7:
+    raise SystemExit(2)
+user, password, host, port, database, _function_name, fragment = [part.decode("utf-8") for part in parts]
+try:
+    extras = json.loads("{" + fragment[1:] + "}") if fragment else {}
+except (TypeError, ValueError, json.JSONDecodeError):
+    raise SystemExit(2)
+if not isinstance(extras, dict):
+    raise SystemExit(2)
+payload = {
+    "connection_user": user,
+    "connection_pass": password,
+    "connection_host": host,
+    "connection_port": port,
+    "connection_db": database,
+}
+if set(extras).intersection(payload):
+    raise SystemExit(2)
+payload.update(extras)
+with open(output_path, "w", encoding="utf-8") as stream:
+    json.dump(payload, stream, ensure_ascii=False, separators=(",", ":"))
+PY
+  rm -f -- "$spec_path"
+  if (( rc != 0 )); then
+    rm -f -- "$path"
+    return "$rc"
+  fi
+  bytes=$(wc -c <"$path") || {
+    rm -f -- "$path"
+    return 125
+  }
+  if (( bytes > STATEKIT_REQUEST_MAX_BYTES )) || ! owned_private_file "$path"; then
+    rm -f -- "$path"
+    return 2
+  fi
+  printf '%s\n' "$path"
+}
+
 # The single-quoted value is intentionally expanded by /bin/sh in the client.
 # shellcheck disable=SC2016
 readonly STATEKIT_SCRIPT='set -eu
 secret_source="$1"
 function_name="$2"
-extra_json="$3"
-host="$4"
-port="$5"
-database="$6"
-credentials_file=/tmp/mysql-client.cnf
-cp -- "$secret_source" "$credentials_file"
-chmod 600 "$credentials_file"
-trap '\''rm -f -- "$credentials_file"'\'' EXIT
-connection_user=$(awk -F= '\''$1 == "user" { print substr($0, index($0, "=") + 1); exit }'\'' "$credentials_file")
-connection_pass=$(awk -F= '\''$1 == "password" { print substr($0, index($0, "=") + 1); exit }'\'' "$credentials_file")
-test -n "$connection_user" -a -n "$connection_pass"
-payload=$(printf '\''{"connection_user":"%s","connection_host":"%s","connection_port":"%s","connection_db":"%s","connection_pass":"%s"%s}'\'' "$connection_user" "$host" "$port" "$database" "$connection_pass" "$extra_json")
-printf '\''%s'\'' "$payload" | /usr/local/bin/statekit exec "$function_name" --stdin --output json'
+test -r "$secret_source"
+proof_file=/tmp/statekit-version.json
+trap '\''rm -f -- "$proof_file"'\'' EXIT
+/usr/local/bin/statekit version --output json >"$proof_file"
+grep -Eq '\''"version"[[:space:]]*:'\'' "$proof_file"
+set +e
+/usr/local/bin/statekit exec "$function_name" --stdin --output json
+statekit_rc=$?
+set -e
+printf '\''%s\n'\'' '\''statekit: production-binary-completed'\'' >&2
+exit "$statekit_rc"'
 
 statekit_call() {
   local secret_name="$1" function_name="$2" extra_json="$3" host="$4" port="$5" stdout_path="$6" stderr_path="$7"
-  run_client_container "$stdout_path" "$stderr_path" \
+  local input_path rc=0
+  LAST_STATEKIT_BINARY_LAUNCHED=0
+  input_path=$(create_statekit_request_file "$secret_name" "$function_name" "$extra_json" "$host" "$port") || {
+    LAST_CLIENT_CLASS='setup'
+    LAST_CLIENT_EXIT_RC=125
+    return 125
+  }
+  CLIENT_EXPECT_STATEKIT_PROOF=1
+  if run_client_container "$stdout_path" "$stderr_path" "$input_path" \
     --network "$NETWORK" \
     --secret "source=$secret_name,type=mount,target=$CLIENT_SECRET_TARGET,uid=65532,gid=65532,mode=400" \
     --read-only \
@@ -1585,7 +1919,13 @@ statekit_call() {
     --entrypoint /bin/sh \
     "$CLIENT_IMAGE" \
     -c "$STATEKIT_SCRIPT" \
-    -- "$CLIENT_SECRET_TARGET" "$function_name" "$extra_json" "$host" "$port" "$SEED_DB"
+    -- "$CLIENT_SECRET_TARGET" "$function_name"; then
+    rc=0
+  else
+    rc=$?
+  fi
+  CLIENT_EXPECT_STATEKIT_PROOF=0
+  return "$rc"
 }
 
 value_free_files() {
@@ -1602,7 +1942,7 @@ value_free_files() {
 }
 
 native_failure_classification() {
-  local kind="$1" execution_class="$2" rc="$3" stdout_path="$4" stderr_path="$5" marker=''
+  local kind="$1" execution_class="$2" rc="$3" stdout_path="$4" stderr_path="$5" marker='' nonempty_count
   case "$execution_class" in
     timeout|runtime|setup|cleanup)
       printf '%s\n' "$execution_class"
@@ -1614,8 +1954,12 @@ native_failure_classification() {
       return 0
       ;;
   esac
-  if [[ "$rc" == '0' ]]; then
-    printf '%s\n' 'unexpected-success'
+  if [[ "$rc" != '1' ]]; then
+    if [[ "$rc" == '0' ]]; then
+      printf '%s\n' 'unexpected-success'
+    else
+      printf '%s\n' 'unexpected-error'
+    fi
     return 0
   fi
   case "$kind" in
@@ -1626,7 +1970,12 @@ native_failure_classification() {
       return 0
       ;;
   esac
-  if { grep -F -q -- "$marker" "$stdout_path" 2>/dev/null || grep -F -q -- "$marker" "$stderr_path" 2>/dev/null; }; then
+  nonempty_count=$(awk 'NF { count++ } END { print count + 0 }' "$stdout_path" "$stderr_path" 2>/dev/null) || {
+    printf '%s\n' 'unexpected-error'
+    return 0
+  }
+  if [[ "$nonempty_count" == '1' ]] &&
+    { grep -F -q -- "$marker" "$stdout_path" 2>/dev/null || grep -F -q -- "$marker" "$stderr_path" 2>/dev/null; }; then
     printf '%s\n' 'expected'
   else
     printf '%s\n' 'unexpected-error'
@@ -1647,8 +1996,12 @@ native_plugin_install_classification() {
       return 0
       ;;
   esac
-  if [[ "$rc" == '0' ]]; then
-    printf '%s\n' 'unexpected-success'
+  if [[ "$rc" != '1' ]]; then
+    if [[ "$rc" == '0' ]]; then
+      printf '%s\n' 'unexpected-success'
+    else
+      printf '%s\n' 'unexpected-error'
+    fi
     return 0
   fi
   # Only a caller-provided SONAME basename may satisfy the missing-library
@@ -1771,7 +2124,7 @@ END {
 }
 
 native_status_classification() {
-  local kind="$1" execution_class="$2" rc="$3" stdout_path="$4" stderr_path="$5"
+  local kind="$1" execution_class="$2" rc="$3" stdout_path="$4" stderr_path="$5" nonempty_count
   case "$execution_class" in
     timeout|runtime|setup|cleanup)
       printf '%s\n' "$execution_class"
@@ -1791,13 +2144,23 @@ native_status_classification() {
     fi
     return 0
   fi
-  if grep -F -q -- "$NATIVE_AUTH_FAILURE_MARKER" "$stdout_path" 2>/dev/null ||
-    grep -F -q -- "$NATIVE_AUTH_FAILURE_MARKER" "$stderr_path" 2>/dev/null; then
+  if [[ "$rc" != '1' ]]; then
+    printf '%s\n' 'unexpected-error'
+    return 0
+  fi
+  nonempty_count=$(awk 'NF { count++ } END { print count + 0 }' "$stdout_path" "$stderr_path" 2>/dev/null) || {
+    printf '%s\n' 'unexpected-error'
+    return 0
+  }
+  if [[ "$nonempty_count" == '1' ]] &&
+    { grep -F -q -- "$NATIVE_AUTH_FAILURE_MARKER" "$stdout_path" 2>/dev/null ||
+      grep -F -q -- "$NATIVE_AUTH_FAILURE_MARKER" "$stderr_path" 2>/dev/null; }; then
     printf '%s\n' 'auth-failure'
     return 0
   fi
-  if grep -F -q -- "$NATIVE_CONNECTION_FAILURE_MARKER" "$stdout_path" 2>/dev/null ||
-    grep -F -q -- "$NATIVE_CONNECTION_FAILURE_MARKER" "$stderr_path" 2>/dev/null; then
+  if [[ "$nonempty_count" == '1' ]] &&
+    { grep -F -q -- "$NATIVE_CONNECTION_FAILURE_MARKER" "$stdout_path" 2>/dev/null ||
+      grep -F -q -- "$NATIVE_CONNECTION_FAILURE_MARKER" "$stderr_path" 2>/dev/null; }; then
     printf '%s\n' 'connection-failure'
     return 0
   fi
@@ -2238,6 +2601,510 @@ check_statekit_connection_negative() {
   value=$(<"$stdout_path")
   if (( rc == 0 )) && [[ "$value" == '""' ]] && value_free_files "$stdout_path" "$stderr_path"; then
     ok=0
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+query_extra_json() {
+  local database="$1" sql="$2" spec_path rc=0
+  spec_path=$(create_query_spec_file "$database" "$sql") || return $?
+  python3 - "$spec_path" <<'PY' || rc=$?
+import json
+from pathlib import Path
+import sys
+
+database, sql = Path(sys.argv[1]).read_bytes().split(b"\0", 1)
+fragment = {"database": database.decode("utf-8"), "query": sql.decode("utf-8")}
+encoded = json.dumps(fragment, ensure_ascii=False, separators=(",", ":"))
+print("," + encoded[1:-1], end="")
+PY
+  rm -f -- "$spec_path"
+  return "$rc"
+}
+
+query_frame_fixture() {
+  case "$1" in
+    terminated) printf '%s' 'SELECT 7 AS value;' ;;
+    unterminated) printf '%s' 'SELECT 7 AS value' ;;
+    trailing-comment) printf '%s' 'SELECT 7 AS value; -- trailing comment' ;;
+    quoted-semicolon) printf '%s' "SELECT 'quoted; semicolon' AS value" ;;
+    *) return 1 ;;
+  esac
+}
+
+write_query_frame_fixture() {
+  local fixture="$1" path="$2"
+  [[ -n "$path" && "$path" == "$WORK_DIR"/* ]] || return 125
+  (umask 077; query_frame_fixture "$fixture" >"$path") || return 125
+  chmod 600 "$path" && owned_private_file "$path"
+}
+
+statekit_query_call() {
+  local secret_name="$1" database="$2" sql="$3" stdout_path="$4" stderr_path="$5" extra_json
+  if ! extra_json=$(query_extra_json "$database" "$sql"); then
+    LAST_CLIENT_CLASS='setup'
+    LAST_CLIENT_EXIT_RC=125
+    return 125
+  fi
+  statekit_call "$secret_name" 'mysql.query' "$extra_json" "$DB_HOST" "$DB_PORT" "$stdout_path" "$stderr_path"
+}
+
+query_result_matches() {
+  local kind="$1" path="$2"
+  QUERY_EXPECTED_NOTE_VALUE="$QUERY_EXPECTED_NOTE" python3 - "$kind" "$path" <<'PY'
+import json
+import os
+import sys
+
+kind, path = sys.argv[1:]
+expected_note = os.environ["QUERY_EXPECTED_NOTE_VALUE"]
+try:
+    with open(path, encoding="utf-8") as stream:
+        value = json.load(stream)
+except (OSError, UnicodeError, ValueError, TypeError):
+    raise SystemExit(1)
+
+def query_time_ok(candidate):
+    return (
+        isinstance(candidate, dict)
+        and isinstance(candidate.get("human"), str)
+        and isinstance(candidate.get("raw"), str)
+    )
+
+def exact_keys(candidate, keys):
+    return isinstance(candidate, dict) and set(candidate) == set(keys)
+
+if kind == "false":
+    raise SystemExit(0 if value is False else 1)
+if not isinstance(value, dict) or not query_time_ok(value.get("query time")):
+    raise SystemExit(1)
+if kind == "scalar":
+    ok = exact_keys(value, ("columns", "results", "rows returned", "query time"))
+    ok = ok and value.get("columns") == ["value"] and value.get("results") == [["7"]]
+    ok = ok and value.get("rows returned") == 1
+elif kind == "table":
+    ok = exact_keys(value, ("columns", "results", "rows returned", "query time"))
+    ok = ok and value.get("columns") == ["id", "note"] and value.get("rows returned") == 2
+    ok = ok and value.get("results") == [["1", "alpha"], ["2", "beta"]]
+elif kind == "multiline":
+    ok = exact_keys(value, ("columns", "results", "rows returned", "query time"))
+    ok = ok and value.get("columns") == ["id", "note"] and value.get("rows returned") == 2
+    ok = ok and value.get("results") == [["1", "line one"], ["2", expected_note]]
+elif kind.startswith("affected:"):
+    try:
+        expected = int(kind.split(":", 1)[1])
+    except (TypeError, ValueError):
+        raise SystemExit(1)
+    ok = exact_keys(value, ("rows affected", "query time"))
+    ok = ok and value.get("rows affected") == expected
+else:
+    ok = False
+raise SystemExit(0 if ok else 1)
+PY
+}
+
+query_files_are_value_free() {
+  local sql="$1" path content
+  for path in "${@:2}"; do
+    [[ -f "$path" ]] || continue
+    content=$(<"$path")
+    if [[ -n "$sql" && "$content" == *"$sql"* ]]; then
+      return 1
+    fi
+  done
+  value_free_files "${@:2}"
+}
+
+statekit_query_failure_classification() {
+  local execution_class="$1" rc="$2" stdout_path="$3" stderr_path="$4" diagnostic=''
+  case "$execution_class" in
+    setup) printf '%s\n' 'setup' ; return 0 ;;
+    runtime) printf '%s\n' 'exec' ; return 0 ;;
+    cleanup) printf '%s\n' 'cleanup' ; return 0 ;;
+    timeout) printf '%s\n' 'outer-timeout' ; return 0 ;;
+    exited) ;;
+    *) printf '%s\n' 'runtime' ; return 0 ;;
+  esac
+  if [[ "$rc" != '1' || -s "$stdout_path" || ! -f "$stderr_path" ]]; then
+    printf '%s\n' 'unexpected-diagnostic'
+    return 0
+  fi
+  diagnostic=$(<"$stderr_path")
+  case "$diagnostic" in
+    "$STATEKIT_QUERY_INPUT_LIMIT_DIAGNOSTIC") printf '%s\n' 'input-limit' ;;
+    "$STATEKIT_QUERY_TIMEOUT_DIAGNOSTIC") printf '%s\n' 'timeout' ;;
+    *) printf '%s\n' 'unexpected-diagnostic' ;;
+  esac
+}
+
+statekit_query_expected_failure() {
+  local expected="$1" rc="$2" stdout_path="$3" stderr_path="$4" classification
+  classification=$(statekit_query_failure_classification \
+    "$LAST_CLIENT_CLASS" "$rc" "$stdout_path" "$stderr_path")
+  [[ "$LAST_STATEKIT_BINARY_LAUNCHED" == '1' && "$LAST_CLIENT_CLASS" == 'exited' &&
+    "$LAST_CLIENT_EXIT_RC" == '1' && "$rc" == '1' && "$classification" == "$expected" ]]
+}
+
+native_query_diagnostic_classification() {
+  local execution_class="$1" rc="$2" stdout_path="$3" stderr_path="$4" counts nonempty_count expected_count
+  case "$execution_class" in
+    setup) printf '%s\n' 'setup' ; return 0 ;;
+    runtime) printf '%s\n' 'exec' ; return 0 ;;
+    cleanup) printf '%s\n' 'cleanup' ; return 0 ;;
+    timeout) printf '%s\n' 'outer-timeout' ; return 0 ;;
+    exited) ;;
+    *) printf '%s\n' 'runtime' ; return 0 ;;
+  esac
+  if [[ "$rc" != '1' || -s "$stdout_path" ]]; then
+    printf '%s\n' 'unexpected-diagnostic'
+    return 0
+  fi
+  counts=$(awk \
+    -v signature="$NATIVE_QUERY_DIAGNOSTIC_SIGNATURE" \
+    -v statement="$NATIVE_QUERY_DIAGNOSTIC_STATEMENT" '
+BEGIN {
+  quote = sprintf("%c", 39)
+  expected = "^ERROR 1064 \\(42000\\) at line 1: " signature \
+    " check the manual .*near " quote statement quote " at line 1$"
+}
+{
+  if ($0 != "")
+    nonempty_count++
+  if ($0 ~ expected)
+    expected_count++
+}
+END { printf "%d %d\n", nonempty_count + 0, expected_count + 0 }
+' "$stdout_path" "$stderr_path" 2>/dev/null) || {
+    printf '%s\n' 'unexpected-diagnostic'
+    return 0
+  }
+  read -r nonempty_count expected_count <<<"$counts"
+  if [[ "$nonempty_count" == '1' && "$expected_count" == '1' ]]; then
+    printf '%s\n' 'syntax-error'
+  else
+    printf '%s\n' 'unexpected-diagnostic'
+  fi
+}
+
+check_statekit_query_scalar() {
+  local stdout_path="$WORK_DIR/query-scalar-statekit.out" stderr_path="$WORK_DIR/query-scalar-statekit.err"
+  local sql rc=0 ok=1
+  sql=$(query_frame_fixture terminated)
+  statekit_query_call "$CLIENT_SECRET" "$SEED_DB" "$sql" "$stdout_path" "$stderr_path" || rc=$?
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' ]] &&
+    query_result_matches scalar "$stdout_path" && [[ ! -s "$stderr_path" ]] &&
+    query_files_are_value_free "$sql" "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'query-scalar-statekit-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_native_query_scalar() {
+  local stdout_path="$WORK_DIR/query-scalar-native.out" stderr_path="$WORK_DIR/query-scalar-native.err"
+  local sql rc=0 value='' ok=1
+  sql=$(query_frame_fixture terminated)
+  native_mysql "$CLIENT_SECRET" "$DB_HOST" "$DB_PORT" "$sql" "$stdout_path" "$stderr_path" || rc=$?
+  [[ -f "$stdout_path" ]] && value=$(<"$stdout_path")
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' && "$value" == '7' ]] &&
+    [[ ! -s "$stderr_path" ]] && value_free_files "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'query-scalar-native-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_query_table() {
+  local stdout_path="$WORK_DIR/query-table-statekit.out" stderr_path="$WORK_DIR/query-table-statekit.err"
+  local sql='SELECT 1 AS id, '\''alpha'\'' AS note UNION ALL SELECT 2, '\''beta'\''' rc=0 ok=1
+  statekit_query_call "$CLIENT_SECRET" "$SEED_DB" "$sql" "$stdout_path" "$stderr_path" || rc=$?
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' ]] &&
+    query_result_matches table "$stdout_path" && [[ ! -s "$stderr_path" ]] &&
+    query_files_are_value_free "$sql" "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'query-table-statekit-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_native_query_table() {
+  local stdout_path="$WORK_DIR/query-table-native.out" stderr_path="$WORK_DIR/query-table-native.err"
+  local rc=0 value='' ok=1
+  native_mysql "$CLIENT_SECRET" "$DB_HOST" "$DB_PORT" \
+    'SELECT 1 AS id, '\''alpha'\'' AS note UNION ALL SELECT 2, '\''beta'\''' "$stdout_path" "$stderr_path" || rc=$?
+  [[ -f "$stdout_path" ]] && value=$(<"$stdout_path")
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' && "$value" == $'1\talpha\n2\tbeta' ]] &&
+    [[ ! -s "$stderr_path" ]] && value_free_files "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'query-table-native-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_native_query_database_absent() {
+  local stdout_path="$WORK_DIR/query-before.out" stderr_path="$WORK_DIR/query-before.err"
+  local presence=2 ok=1
+  QUERY_DB_RESERVED=0
+  if [[ ! "$QUERY_DB" =~ ^statekit_r93p_[[:alnum:]_-]+$ ]]; then
+    set_note 'query-database-name-invalid'
+  else
+    if query_database_presence "$stdout_path" "$stderr_path"; then
+      presence=0
+    else
+      presence=$?
+    fi
+    if (( presence == 1 )); then
+      QUERY_DB_RESERVED=1
+      ok=0
+    elif (( presence == 0 )); then
+      set_note 'query-database-not-absent'
+    else
+      set_note 'query-database-absence-uncertain'
+    fi
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_query_create_database() {
+  local stdout_path="$WORK_DIR/query-create-database.out" stderr_path="$WORK_DIR/query-create-database.err"
+  local sql="CREATE DATABASE \`$QUERY_DB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci" rc=0 ok=1
+  if (( QUERY_DB_RESERVED != 1 )); then
+    set_note 'query-create-absence-reservation-required'
+    return 1
+  fi
+  QUERY_DB_OWNED=1
+  statekit_query_call "$ROOT_CLIENT_SECRET" "$SEED_DB" "$sql" "$stdout_path" "$stderr_path" || rc=$?
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' ]] &&
+    query_result_matches affected:0 "$stdout_path" && [[ ! -s "$stderr_path" ]] &&
+    query_files_are_value_free "$sql" "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'query-create-database-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_query_create_table() {
+  local stdout_path="$WORK_DIR/query-create-table.out" stderr_path="$WORK_DIR/query-create-table.err"
+  local sql="CREATE TABLE \`$QUERY_DB\`.\`$QUERY_TABLE\` (id INT PRIMARY KEY, note VARCHAR(64) NOT NULL)" rc=0 ok=1
+  if (( QUERY_DB_RESERVED != 1 || QUERY_DB_OWNED != 1 )); then
+    set_note 'query-create-table-ownership-required'
+    return 1
+  fi
+  statekit_query_call "$ROOT_CLIENT_SECRET" "$QUERY_DB" "$sql" "$stdout_path" "$stderr_path" || rc=$?
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' ]] &&
+    query_result_matches affected:0 "$stdout_path" && [[ ! -s "$stderr_path" ]] &&
+    query_files_are_value_free "$sql" "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'query-create-table-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_query_insert() {
+  local stdout_path="$WORK_DIR/query-insert.out" stderr_path="$WORK_DIR/query-insert.err"
+  local sql="INSERT INTO \`$QUERY_TABLE\` (id, note) VALUES (1, 'line one'), (2, '$QUERY_EXPECTED_NOTE')" rc=0 ok=1
+  if (( QUERY_DB_RESERVED != 1 || QUERY_DB_OWNED != 1 )); then
+    set_note 'query-insert-ownership-required'
+    return 1
+  fi
+  statekit_query_call "$ROOT_CLIENT_SECRET" "$QUERY_DB" "$sql" "$stdout_path" "$stderr_path" || rc=$?
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' ]] &&
+    query_result_matches affected:2 "$stdout_path" && [[ ! -s "$stderr_path" ]] &&
+    query_files_are_value_free "$sql" "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'query-insert-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_native_query_dml_postcondition() {
+  local stdout_path="$WORK_DIR/query-dml-postcondition.out" stderr_path="$WORK_DIR/query-dml-postcondition.err"
+  local rc=0 value='' ok=1 expected_value
+  expected_value=$'1\tline one\n2\t'"$QUERY_EXPECTED_NOTE"
+  native_mysql_as_user root "$ROOT_CLIENT_SECRET" "$DB_HOST" "$DB_PORT" \
+    "SELECT id, note FROM \`$QUERY_DB\`.\`$QUERY_TABLE\` ORDER BY id" "$stdout_path" "$stderr_path" || rc=$?
+  [[ -f "$stdout_path" ]] && value=$(<"$stdout_path")
+  if (( rc == 0 )) && [[ "$value" == "$expected_value" ]] &&
+    [[ ! -s "$stderr_path" ]] && value_free_files "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'query-dml-postcondition-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_query_multiline_quoted() {
+  local stdout_path="$WORK_DIR/query-multiline-statekit.out" stderr_path="$WORK_DIR/query-multiline-statekit.err"
+  local sql="/* stdin-only multiline query */"$'\n'"SELECT id, note"$'\n'"FROM \`$QUERY_DB\`.\`$QUERY_TABLE\`"$'\n'"WHERE note IN ('line one', '$QUERY_EXPECTED_NOTE')"$'\n'"ORDER BY id; -- trailing comment" rc=0 ok=1
+  if (( QUERY_DB_RESERVED != 1 || QUERY_DB_OWNED != 1 )); then
+    set_note 'query-multiline-ownership-required'
+    return 1
+  fi
+  statekit_query_call "$ROOT_CLIENT_SECRET" "$QUERY_DB" "$sql" "$stdout_path" "$stderr_path" || rc=$?
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' ]] &&
+    query_result_matches multiline "$stdout_path" && [[ ! -s "$stderr_path" ]] &&
+    query_files_are_value_free "$sql" "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'query-multiline-statekit-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_native_query_multiline_quoted() {
+  local stdout_path="$WORK_DIR/query-multiline-native.out" stderr_path="$WORK_DIR/query-multiline-native.err"
+  local rc=0 value='' ok=1 expected_value
+  expected_value=$'1\tline one\n2\t'"$QUERY_EXPECTED_NOTE"
+  native_mysql_as_user root "$ROOT_CLIENT_SECRET" "$DB_HOST" "$DB_PORT" \
+    "SELECT id, note FROM \`$QUERY_DB\`.\`$QUERY_TABLE\` WHERE note IN ('line one', '$QUERY_EXPECTED_NOTE') ORDER BY id; -- trailing comment" \
+    "$stdout_path" "$stderr_path" || rc=$?
+  [[ -f "$stdout_path" ]] && value=$(<"$stdout_path")
+  if (( rc == 0 )) && [[ "$value" == "$expected_value" ]] &&
+    [[ ! -s "$stderr_path" ]] && value_free_files "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'query-multiline-native-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_query_drop_database() {
+  local stdout_path="$WORK_DIR/query-drop-database.out" stderr_path="$WORK_DIR/query-drop-database.err"
+  local sql="DROP DATABASE \`$QUERY_DB\`" rc=0 ok=1
+  if (( QUERY_DB_RESERVED != 1 || QUERY_DB_OWNED != 1 )); then
+    set_note 'query-drop-ownership-required'
+    return 1
+  fi
+  statekit_query_call "$ROOT_CLIENT_SECRET" "$SEED_DB" "$sql" "$stdout_path" "$stderr_path" || rc=$?
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' ]] &&
+    query_result_matches affected:0 "$stdout_path" && [[ ! -s "$stderr_path" ]] &&
+    query_files_are_value_free "$sql" "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'query-drop-database-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_native_query_database_removed() {
+  local stdout_path="$WORK_DIR/query-after.out" stderr_path="$WORK_DIR/query-after.err"
+  local presence=2 ok=1
+  if query_database_presence "$stdout_path" "$stderr_path"; then
+    presence=0
+  else
+    presence=$?
+  fi
+  if (( presence == 1 )); then
+    ok=0
+  else
+    set_note 'query-database-removal-postcondition-failed'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_query_negative_false() {
+  local label="$1" secret_name="$2" database="$3" host="$4" port="$5" sql="$6"
+  local stdout_path="$WORK_DIR/query-negative-${label}.out" stderr_path="$WORK_DIR/query-negative-${label}.err"
+  local rc=0 ok=1
+  statekit_call "$secret_name" 'mysql.query' "$(query_extra_json "$database" "$sql")" "$host" "$port" "$stdout_path" "$stderr_path" || rc=$?
+  if (( rc == 0 )) && [[ "$LAST_CLIENT_CLASS" == 'exited' && "$LAST_CLIENT_EXIT_RC" == '0' ]] &&
+    query_result_matches false "$stdout_path" && [[ ! -s "$stderr_path" ]] &&
+    query_files_are_value_free "$sql" "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note "query-negative-${label}-unexpected-result"
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_query_invalid_database() {
+  check_statekit_query_negative_false invalid-database "$CLIENT_SECRET" "${QUERY_DB}_missing" "$DB_HOST" "$DB_PORT" 'SELECT 1'
+}
+
+check_statekit_query_auth_negative() {
+  check_statekit_query_negative_false auth "$BAD_CLIENT_SECRET" "$SEED_DB" "$DB_HOST" "$DB_PORT" 'SELECT 1'
+}
+
+check_statekit_query_connection_negative() {
+  check_statekit_query_negative_false connection "$ROOT_CLIENT_SECRET" "$SEED_DB" "$DB_HOST" '1' 'SELECT 1'
+}
+
+check_statekit_query_timeout() {
+  local stdout_path="$WORK_DIR/query-negative-timeout.out" stderr_path="$WORK_DIR/query-negative-timeout.err"
+  local sql='SELECT SLEEP(31)' rc=0 ok=1
+  statekit_query_call "$CLIENT_SECRET" "$SEED_DB" "$sql" "$stdout_path" "$stderr_path" || rc=$?
+  if statekit_query_expected_failure timeout "$rc" "$stdout_path" "$stderr_path" &&
+    query_files_are_value_free "$sql" "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'query-negative-timeout-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_query_oversize() {
+  local stdout_path="$WORK_DIR/query-negative-oversize.out" stderr_path="$WORK_DIR/query-negative-oversize.err"
+  local oversized rc=0 ok=1
+  oversized=$(python3 -c 'import sys; sys.stdout.write("x" * (1024 * 1024 + 1))') || return 1
+  statekit_query_call "$CLIENT_SECRET" "$SEED_DB" "$oversized" "$stdout_path" "$stderr_path" || rc=$?
+  if statekit_query_expected_failure input-limit "$rc" "$stdout_path" "$stderr_path" &&
+    query_files_are_value_free "$oversized" "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'query-negative-oversize-unexpected-result'
+  fi
+  unset oversized
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_statekit_query_diagnostic() {
+  local stdout_path="$WORK_DIR/query-negative-diagnostic-statekit.out" stderr_path="$WORK_DIR/query-negative-diagnostic-statekit.err"
+  local sql='THIS IS NOT VALID SQL' rc=0 ok=1
+  statekit_query_call "$ROOT_CLIENT_SECRET" "$SEED_DB" "$sql" "$stdout_path" "$stderr_path" || rc=$?
+  if (( rc == 0 )) && query_result_matches false "$stdout_path" && [[ ! -s "$stderr_path" ]] &&
+    query_files_are_value_free "$sql" "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'query-negative-diagnostic-statekit-unexpected-result'
+  fi
+  rm -f "$stdout_path" "$stderr_path"
+  return "$ok"
+}
+
+check_native_query_diagnostic() {
+  local stdout_path="$WORK_DIR/query-negative-diagnostic-native.out" stderr_path="$WORK_DIR/query-negative-diagnostic-native.err"
+  local sql='THIS IS NOT VALID SQL' rc=0 ok=1 classification=''
+  native_mysql_as_user root "$ROOT_CLIENT_SECRET" "$DB_HOST" "$DB_PORT" "$sql" "$stdout_path" "$stderr_path" || rc=$?
+  classification=$(native_query_diagnostic_classification "$LAST_CLIENT_CLASS" "$rc" "$stdout_path" "$stderr_path")
+  if [[ "$classification" == 'syntax-error' && "$LAST_CLIENT_EXIT_RC" == '1' ]] &&
+    value_free_files "$stdout_path" "$stderr_path"; then
+    ok=0
+  else
+    set_note 'query-negative-diagnostic-native-unexpected-classification'
   fi
   rm -f "$stdout_path" "$stderr_path"
   return "$ok"
@@ -2859,34 +3726,35 @@ main() {
   if [[ ! -x "$STATEKIT_BIN" ]]; then
     set_note 'production-statekit-binary-missing'
     record_case "${CASE_IDS[0]}" fail
-    mark_remaining_skipped
+    mark_remaining_failed
     return 1
   fi
   if ! command -v timeout >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1; then
     set_note 'required-local-tool-missing'
     record_case "${CASE_IDS[0]}" fail
-    mark_remaining_skipped
+    mark_remaining_failed
     return 1
   fi
   if ! select_runtime || ! runtime_preflight; then
     record_case "${CASE_IDS[0]}" fail
-    mark_remaining_skipped
+    mark_remaining_failed
     return 1
   fi
   if ! WORK_DIR=$(mktemp -d); then
     set_note 'temporary-work-directory-create-failed'
     record_case "${CASE_IDS[0]}" fail
-    mark_remaining_skipped
+    mark_remaining_failed
     return 1
   fi
   if ! generate_resource_nonce; then
     record_case "${CASE_IDS[0]}" fail
-    mark_remaining_skipped
+    mark_remaining_failed
     return 1
   fi
   DB_CONTAINER="statekit-e51-mysql-$RESOURCE_NONCE"
   DB_HOST="$DB_CONTAINER"
   LIFECYCLE_DB="statekit_r93j_$RESOURCE_NONCE"
+  QUERY_DB="statekit_r93p_$RESOURCE_NONCE"
   ALTER_DB="statekit_r93l_$RESOURCE_NONCE"
   PLUGIN_DEFAULT_FAILURE="statekit_r93o_default_$RESOURCE_NONCE"
   PLUGIN_CUSTOM_FAILURE="statekit_r93o_custom_$RESOURCE_NONCE"
@@ -2894,24 +3762,24 @@ main() {
     ! generate_credentials || ! create_runtime_secrets; then
     set_note 'runtime-or-resource-setup-failed'
     record_case "${CASE_IDS[0]}" fail
-    mark_remaining_skipped
+    mark_remaining_failed
     return 1
   fi
   if ! reserve_container_name "$DB_CONTAINER"; then
     record_case "${CASE_IDS[0]}" fail
-    mark_remaining_skipped
+    mark_remaining_failed
     return 1
   fi
   DB_RESERVED=1
   if ! start_mysql; then
     record_case "${CASE_IDS[0]}" fail
-    mark_remaining_skipped
+    mark_remaining_failed
     return 1
   fi
 
   run_case 'mysql-readiness-authenticated-select-1' check_readiness
   if (( PASSED != 1 )); then
-    mark_remaining_skipped
+    mark_remaining_failed
     return 1
   fi
   run_case 'mysql-version-live' check_statekit_version
@@ -2978,6 +3846,41 @@ main() {
   run_case 'mysql-plugin-add-invalid-soname' check_statekit_plugin_invalid_soname
   run_case 'mysql-plugin-add-negative-auth' check_statekit_plugin_add "$PLUGIN_DEFAULT_FAILURE" '' false add-auth-failure "$BAD_CLIENT_SECRET"
   run_case 'mysql-plugin-remove-negative-connection' check_statekit_plugin_remove "$ABSENT_PLUGIN" false remove-connection "$ROOT_CLIENT_SECRET" '1'
+
+  if [[ "${MYSQL_QUERY_LIVE_ENABLED:-0}" != '1' ]]; then
+    set_note 'query-live-control-not-enabled'
+    local query_case
+    # Keep the ordered 85-case report total and make the control decision
+    # visible as failures rather than silently converting unexecuted cases to
+    # skips.  No query is dispatched without the explicit live opt-in.
+    for query_case in "${CASE_IDS[@]}"; do
+      if [[ "$query_case" == mysql-query-* ]]; then
+        record_case "$query_case" fail
+      fi
+    done
+    EXECUTION_COMPLETE=1
+    return 1
+  fi
+  run_case 'mysql-query-select-scalar-statekit' check_statekit_query_scalar
+  run_case 'mysql-query-select-scalar-native-observation' check_native_query_scalar
+  run_case 'mysql-query-select-table-statekit' check_statekit_query_table
+  run_case 'mysql-query-select-table-native-observation' check_native_query_table
+  run_case 'mysql-query-database-native-absent-before-create' check_native_query_database_absent
+  run_case 'mysql-query-create-database' check_statekit_query_create_database
+  run_case 'mysql-query-create-table' check_statekit_query_create_table
+  run_case 'mysql-query-insert-dml' check_statekit_query_insert
+  run_case 'mysql-query-dml-native-postcondition' check_native_query_dml_postcondition
+  run_case 'mysql-query-multiline-quoted-statekit' check_statekit_query_multiline_quoted
+  run_case 'mysql-query-multiline-quoted-native-observation' check_native_query_multiline_quoted
+  run_case 'mysql-query-drop-database' check_statekit_query_drop_database
+  run_case 'mysql-query-database-native-removed-postcondition' check_native_query_database_removed
+  run_case 'mysql-query-negative-invalid-database' check_statekit_query_invalid_database
+  run_case 'mysql-query-negative-auth' check_statekit_query_auth_negative
+  run_case 'mysql-query-negative-connection' check_statekit_query_connection_negative
+  run_case 'mysql-query-negative-timeout' check_statekit_query_timeout
+  run_case 'mysql-query-negative-oversize' check_statekit_query_oversize
+  run_case 'mysql-query-negative-diagnostic-statekit' check_statekit_query_diagnostic
+  run_case 'mysql-query-negative-diagnostic-native-classification' check_native_query_diagnostic
 
   EXECUTION_COMPLETE=1
   if ! case_results_are_exact || (( CASE_RESULT_INTEGRITY_FAILED != 0 || PASSED != ${#CASE_IDS[@]} || FAILED != 0 || SKIPPED != 0 )); then

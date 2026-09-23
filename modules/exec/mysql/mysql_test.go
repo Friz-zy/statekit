@@ -311,6 +311,7 @@ func TestMysqlRegistryNames(t *testing.T) {
 		"mysql.plugins_list",
 		"mysql.processlist",
 		"mysql.quote_identifier",
+		"mysql.query",
 		"mysql.showglobal",
 		"mysql.showvariables",
 		"mysql.slave_lag",
@@ -613,17 +614,726 @@ func TestMysqlUserGrantsUserExistsPreflight(t *testing.T) {
 	}
 }
 
-func TestMysqlUnsupportedProviderNotRegistered(t *testing.T) {
-	rt, runner := newMysqlRuntime()
+func TestMysqlQueryRegisteredAndCallable(t *testing.T) {
+	rt, runner := newMysqlRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("n\ttext\n1\thello\n")})
 	rt.Exec = runtime.NewExecRegistry()
 	if err := Register(rt.Exec); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := rt.Exec.Get("mysql.query"); ok {
-		t.Fatal("unsupported mysql.query must remain unregistered")
+	if _, ok := rt.Exec.Get("mysql.query"); !ok {
+		t.Fatal("mysql.query must be registered")
 	}
-	if _, err := rt.Exec.Call(context.Background(), rt, "mysql.query", nil); err == nil || len(runner.calls) != 0 {
-		t.Fatalf("unsupported mysql.query call = %v, calls=%d", err, len(runner.calls))
+	database := "test_db"
+	value, err := rt.Exec.Call(context.Background(), rt, "mysql.query", &QueryArgs{
+		Database: database,
+		Query:    "SELECT 1, 'hello'",
+	})
+	if err != nil || len(runner.calls) != 1 {
+		t.Fatalf("registered mysql.query call = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+	runner.results = []process.CommandResult{{ExitCode: 0, Stdout: []byte("__statekit_rows_affected__\n1\n")}}
+	value, err = rt.Exec.Call(context.Background(), rt, "mysql.query", &QueryArgs{
+		Database: database,
+		Query:    "WITH cte AS (SELECT 1) UPDATE t SET id = 2",
+	})
+	if err != nil || value.(map[string]any)["rows affected"] != int64(1) || len(runner.calls) != 2 {
+		t.Fatalf("registered CTE write = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+}
+
+func TestMysqlQuerySelectPreservesRowsHeadersAndNullShape(t *testing.T) {
+	query := "/* leading comment */\nSELECT 1 AS id, 'semi;quote' AS note, NULL AS missing\n-- trailing comment\n"
+	rt, runner := newMysqlRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte("id\tnote\tmissing\n1\tline\\nvalue\tNULL\n"),
+		Duration: 42 * time.Millisecond,
+	})
+	value, err := (mysqlQueryFunc{}).Execute(context.Background(), rt, &QueryArgs{
+		Database: "query_db",
+		Query:    query,
+		User:     mysqlString("query_user"),
+		Host:     mysqlString("query_host"),
+		Port:     mysqlString("3307"),
+		Password: mysqlString("query-pass"),
+		DB:       mysqlString("ignored-db"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := value.(map[string]any)
+	if !ok {
+		t.Fatalf("query result type = %T", value)
+	}
+	if !reflect.DeepEqual(got["columns"], []string{"id", "note", "missing"}) {
+		t.Fatalf("columns = %#v", got["columns"])
+	}
+	if !reflect.DeepEqual(got["results"], [][]any{{"1", "line\nvalue", nil}}) {
+		t.Fatalf("results = %#v", got["results"])
+	}
+	if got["rows returned"] != int64(1) {
+		t.Fatalf("rows returned = %#v", got["rows returned"])
+	}
+	if got["query time"] == nil {
+		t.Fatal("query time missing")
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d", len(runner.calls))
+	}
+	call := runner.calls[0]
+	argv := append([]string{call.Name}, call.Args...)
+	if strings.Contains(strings.Join(argv, "\x00"), query) || strings.Contains(strings.Join(argv, "\x00"), "semi;quote") {
+		t.Fatalf("query leaked into argv: %q", argv)
+	}
+	if !reflect.DeepEqual(call.Stdin, []byte(query)) {
+		t.Fatalf("stdin = %q, want %q", call.Stdin, query)
+	}
+	if !containsAll(call.Redact, []string{"query-pass", query}) {
+		t.Fatalf("redaction inventory = %#v", call.Redact)
+	}
+	if call.Shell || call.Timeout != commandTimeout || call.MaxStdoutBytes != outputLimit || call.MaxStderrBytes != outputLimit {
+		t.Fatalf("unsafe query transport = %#v", call)
+	}
+}
+
+func TestMysqlQuerySelectPreservesEmptyHeadersAndRows(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		query       string
+		stdout      string
+		wantColumns []string
+		wantResults [][]any
+	}{
+		{
+			name:        "empty-alias-with-populated-row",
+			query:       "SELECT 1 AS ''",
+			stdout:      "\npopulated\n",
+			wantColumns: []string{""},
+			wantResults: [][]any{{"populated"}},
+		},
+		{
+			name:        "empty-string-row",
+			query:       "SELECT '' AS value",
+			stdout:      "value\n\n",
+			wantColumns: []string{"value"},
+			wantResults: [][]any{{""}},
+		},
+		{
+			name:        "no-rows",
+			query:       "SELECT 1 AS value WHERE 1 = 0",
+			stdout:      "value\n",
+			wantColumns: []string{"value"},
+			wantResults: [][]any{},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, runner := newMysqlRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(tc.stdout)})
+			value, err := (mysqlQueryFunc{}).Execute(context.Background(), rt, &QueryArgs{Database: "db", Query: tc.query})
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, ok := value.(map[string]any)
+			if !ok || !reflect.DeepEqual(result["columns"], tc.wantColumns) ||
+				!reflect.DeepEqual(result["results"], tc.wantResults) ||
+				result["rows returned"] != int64(len(tc.wantResults)) || len(runner.calls) != 1 {
+				t.Fatalf("query result=%#v calls=%d", value, len(runner.calls))
+			}
+		})
+	}
+}
+
+func TestMysqlQuerySelectPreservesPositionalDuplicateAndRedactedColumns(t *testing.T) {
+	marker := "mysql-query-column-secret"
+	backslashPassword := `mysql-query-column-secret\backslash`
+	tabPassword := "mysql-query-column-secret\\slash\tinternal-tab"
+	for _, tc := range []struct {
+		name        string
+		query       string
+		stdout      string
+		password    string
+		wantColumns []string
+		wantResults [][]any
+	}{
+		{
+			name:        "duplicate-aliases",
+			query:       "SELECT 1 AS alias, 2 AS alias",
+			stdout:      "alias\talias\nfirst\tsecond\n",
+			wantColumns: []string{"alias", "alias"},
+			wantResults: [][]any{{"first", "second"}},
+		},
+		{
+			name:        "redaction-collision",
+			query:       "SELECT 1 AS first, 2 AS second",
+			stdout:      marker + "\t" + process.RedactedPlaceholder + "\nfirst\tsecond\n",
+			password:    marker,
+			wantColumns: []string{process.RedactedPlaceholder, process.RedactedPlaceholder},
+			wantResults: [][]any{{"first", "second"}},
+		},
+		{
+			name:     "raw-and-batch-escaped-password-with-backslash",
+			query:    "SELECT 1 AS first, 2 AS second, 3 AS third",
+			stdout:   backslashPassword + "\t" + mysqlBatchEscape(backslashPassword) + "\t" + process.RedactedPlaceholder + "\nfirst\tsecond\tthird\n",
+			password: backslashPassword,
+			wantColumns: []string{
+				process.RedactedPlaceholder,
+				process.RedactedPlaceholder,
+				process.RedactedPlaceholder,
+			},
+			wantResults: [][]any{{"first", "second", "third"}},
+		},
+		{
+			name:     "duplicate-batch-escaped-password-with-tab",
+			query:    "SELECT 1 AS first, 2 AS second, 3 AS third",
+			stdout:   mysqlBatchEscape(tabPassword) + "\t" + mysqlBatchEscape(tabPassword) + "\t" + process.RedactedPlaceholder + "\nfirst\tsecond\tthird\n",
+			password: tabPassword,
+			wantColumns: []string{
+				process.RedactedPlaceholder,
+				process.RedactedPlaceholder,
+				process.RedactedPlaceholder,
+			},
+			wantResults: [][]any{{"first", "second", "third"}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, runner := newMysqlRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(tc.stdout)})
+			args := &QueryArgs{Database: "db", Query: tc.query}
+			if tc.password != "" {
+				args.Password = mysqlString(tc.password)
+			}
+			value, err := (mysqlQueryFunc{}).Execute(context.Background(), rt, args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, ok := value.(map[string]any)
+			if !ok || !reflect.DeepEqual(result["columns"], tc.wantColumns) ||
+				!reflect.DeepEqual(result["results"], tc.wantResults) || len(runner.calls) != 1 {
+				t.Fatalf("query result=%#v calls=%d", value, len(runner.calls))
+			}
+			if tc.name == "raw-and-batch-escaped-password-with-backslash" || tc.name == "duplicate-batch-escaped-password-with-tab" {
+				if !containsAll(runner.calls[0].Redact, []string{tc.password, mysqlBatchEscape(tc.password)}) {
+					t.Fatalf("connection secret inventory = %#v", runner.calls[0].Redact)
+				}
+				encoded, err := json.Marshal(value)
+				if err != nil {
+					t.Fatal("query result could not be serialized")
+				}
+				decodeMysqlJSONValueWithSecrets(t, encoded, tc.password, mysqlBatchEscape(tc.password))
+			}
+		})
+	}
+}
+
+func TestMysqlQuerySelectPreservesPositionalColumnsThroughRegistry(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	marker := "mysql-query-registry-column-secret"
+	backslashPassword := `mysql-query-registry-column-secret\backslash`
+	tabPassword := "mysql-query-registry-column-secret\\slash	internal-tab"
+	for _, tc := range []struct {
+		name        string
+		query       string
+		stdout      string
+		password    string
+		wantColumns []string
+		wantResults [][]any
+	}{
+		{
+			name:        "empty-alias-with-populated-row",
+			query:       "SELECT 1 AS ''",
+			stdout:      "\npopulated\n",
+			wantColumns: []string{""},
+			wantResults: [][]any{{"populated"}},
+		},
+		{
+			name:        "empty-string-row",
+			query:       "SELECT '' AS value",
+			stdout:      "value\n\n",
+			wantColumns: []string{"value"},
+			wantResults: [][]any{{""}},
+		},
+		{
+			name:        "no-rows",
+			query:       "SELECT 1 AS value WHERE 1 = 0",
+			stdout:      "value\n",
+			wantColumns: []string{"value"},
+			wantResults: [][]any{},
+		},
+		{
+			name:        "duplicate-aliases",
+			query:       "SELECT 1 AS alias, 2 AS alias",
+			stdout:      "alias\talias\nfirst\tsecond\n",
+			wantColumns: []string{"alias", "alias"},
+			wantResults: [][]any{{"first", "second"}},
+		},
+		{
+			name:        "redaction-collision",
+			query:       "SELECT 1 AS first, 2 AS second",
+			stdout:      marker + "\t" + process.RedactedPlaceholder + "\nfirst\tsecond\n",
+			password:    marker,
+			wantColumns: []string{process.RedactedPlaceholder, process.RedactedPlaceholder},
+			wantResults: [][]any{{"first", "second"}},
+		},
+		{
+			name:     "raw-and-batch-escaped-password-with-backslash",
+			query:    "SELECT 1 AS first, 2 AS second, 3 AS third",
+			stdout:   backslashPassword + "\t" + mysqlBatchEscape(backslashPassword) + "\t" + process.RedactedPlaceholder + "\nfirst\tsecond\tthird\n",
+			password: backslashPassword,
+			wantColumns: []string{
+				process.RedactedPlaceholder,
+				process.RedactedPlaceholder,
+				process.RedactedPlaceholder,
+			},
+			wantResults: [][]any{{"first", "second", "third"}},
+		},
+		{
+			name:     "duplicate-batch-escaped-password-with-tab",
+			query:    "SELECT 1 AS first, 2 AS second, 3 AS third",
+			stdout:   mysqlBatchEscape(tabPassword) + "\t" + mysqlBatchEscape(tabPassword) + "\t" + process.RedactedPlaceholder + "\nfirst\tsecond\tthird\n",
+			password: tabPassword,
+			wantColumns: []string{
+				process.RedactedPlaceholder,
+				process.RedactedPlaceholder,
+				process.RedactedPlaceholder,
+			},
+			wantResults: [][]any{{"first", "second", "third"}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, runner := newMysqlRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(tc.stdout)})
+			rt.Exec = reg
+			args := &QueryArgs{Database: "db", Query: tc.query}
+			if tc.password != "" {
+				args.Password = mysqlString(tc.password)
+			}
+			value, err := reg.Call(context.Background(), rt, "mysql.query", args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, ok := value.(map[string]any)
+			if !ok || !reflect.DeepEqual(result["columns"], tc.wantColumns) ||
+				!reflect.DeepEqual(result["results"], tc.wantResults) || len(runner.calls) != 1 {
+				t.Fatalf("registry query result=%#v calls=%d", value, len(runner.calls))
+			}
+			if tc.password != "" {
+				if !containsAll(runner.calls[0].Redact, []string{tc.password, mysqlBatchEscape(tc.password)}) {
+					t.Fatalf("connection secret inventory = %#v", runner.calls[0].Redact)
+				}
+				encoded, err := json.Marshal(value)
+				if err != nil {
+					t.Fatal("registry query result could not be serialized")
+				}
+				decodeMysqlJSONValueWithSecrets(t, encoded, tc.password, mysqlBatchEscape(tc.password))
+			}
+		})
+	}
+}
+
+func TestMysqlQueryAffectedWritesUseBoundedStdinProbe(t *testing.T) {
+	query := "UPDATE `query table` SET note = 'quoted; value' WHERE id = 7"
+	rt, runner := newMysqlRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte("__statekit_rows_affected__\n3\n"),
+	})
+	value, err := (mysqlQueryFunc{}).Execute(context.Background(), rt, &QueryArgs{Database: "query_db", Query: query})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := value.(map[string]any)
+	if !ok || got["rows affected"] != int64(3) {
+		t.Fatalf("affected result = %#v", value)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d", len(runner.calls))
+	}
+	call := runner.calls[0]
+	if !strings.HasSuffix(string(call.Stdin), mysqlQueryAffectedSuffix) ||
+		!strings.HasPrefix(string(call.Stdin), query) {
+		t.Fatalf("affected stdin = %q", call.Stdin)
+	}
+	if strings.Contains(strings.Join(append([]string{call.Name}, call.Args...), "\x00"), query) {
+		t.Fatalf("affected query leaked into argv: %#v", call.Args)
+	}
+}
+
+func TestMysqlQueryAffectedStdinFramesExactCallerStatements(t *testing.T) {
+	probed := "SELECT ROW_COUNT() AS __statekit_rows_affected__;\n"
+	cases := []struct {
+		name  string
+		query string
+		want  string
+	}{
+		{
+			name:  "unterminated",
+			query: "UPDATE t SET note = 'x'",
+			want:  "UPDATE t SET note = 'x';\n" + probed,
+		},
+		{
+			name:  "terminated",
+			query: "UPDATE t SET note = 'x';",
+			want:  "UPDATE t SET note = 'x';\n" + probed,
+		},
+		{
+			name:  "trailing-line-comment",
+			query: "UPDATE t SET note = 'x'\n-- trailing; comment\n",
+			want:  "UPDATE t SET note = 'x';\n-- trailing; comment\n" + probed,
+		},
+		{
+			name:  "empty-line-comment-ending-lf",
+			query: "UPDATE t SET note = 'x'\n--\n",
+			want:  "UPDATE t SET note = 'x';\n--\n" + probed,
+		},
+		{
+			name:  "trailing-block-comment",
+			query: "UPDATE t SET note = 'x' /* trailing; comment */",
+			want:  "UPDATE t SET note = 'x'; /* trailing; comment */\n" + probed,
+		},
+		{
+			name:  "terminated-trailing-line-comment",
+			query: "UPDATE t SET note = 'x'; -- trailing\n",
+			want:  "UPDATE t SET note = 'x'; -- trailing\n" + probed,
+		},
+		{
+			name:  "quoted-semicolon",
+			query: "UPDATE t SET note = 'quoted; semicolon'",
+			want:  "UPDATE t SET note = 'quoted; semicolon';\n" + probed,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, runner := newMysqlRuntime(process.CommandResult{
+				ExitCode: 0,
+				Stdout:   []byte("__statekit_rows_affected__\n2\n"),
+			})
+			value, err := (mysqlQueryFunc{}).Execute(context.Background(), rt, &QueryArgs{Database: "db", Query: tc.query})
+			if err != nil || value.(map[string]any)["rows affected"] != int64(2) {
+				t.Fatalf("value=%#v err=%v", value, err)
+			}
+			if got := string(runner.calls[0].Stdin); got != tc.want {
+				t.Fatalf("stdin=%q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestMysqlQueryPercentNormalizationAndWithContract(t *testing.T) {
+	readQuery := "WITH cte AS (SELECT 1) SELECT '100%%' AS pct FROM cte"
+	rt, runner := newMysqlRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("pct\n100%\n")})
+	value, err := (mysqlQueryFunc{}).Execute(context.Background(), rt, &QueryArgs{Database: "db", Query: readQuery})
+	if err != nil || value.(map[string]any)["rows returned"] != int64(1) {
+		t.Fatalf("WITH read value=%#v err=%v", value, err)
+	}
+	if got := string(runner.calls[0].Stdin); got != "WITH cte AS (SELECT 1) SELECT '100%' AS pct FROM cte" {
+		t.Fatalf("normalized WITH read stdin=%q", got)
+	}
+
+	writeQuery := "WITH cte (id) AS (SELECT 1) UPDATE t SET id = 2 WHERE id IN (SELECT id FROM cte)"
+	rt, runner = newMysqlRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("__statekit_rows_affected__\n1\n")})
+	value, err = (mysqlQueryFunc{}).Execute(context.Background(), rt, &QueryArgs{Database: "db", Query: writeQuery})
+	if err != nil || value.(map[string]any)["rows affected"] != int64(1) {
+		t.Fatalf("WITH write value=%#v err=%v", value, err)
+	}
+	wantWrite := writeQuery + ";\nSELECT ROW_COUNT() AS __statekit_rows_affected__;\n"
+	if got := string(runner.calls[0].Stdin); got != wantWrite {
+		t.Fatalf("WITH write stdin=%q, want %q", got, wantWrite)
+	}
+}
+
+func TestMysqlQueryRejectsInputAndConnectionBoundaryFailures(t *testing.T) {
+	cases := []struct {
+		name string
+		args *QueryArgs
+		want error
+	}{
+		{name: "nul", args: &QueryArgs{Database: "db", Query: "SELECT 1\x00"}, want: errMysqlQuery},
+		{name: "multiple-statements", args: &QueryArgs{Database: "db", Query: "SELECT 1; SELECT 2"}, want: errMysqlQuery},
+		{name: "second-statement-after-empty-line-comment", args: &QueryArgs{Database: "db", Query: "SELECT 1;\n--\nSELECT 2"}, want: errMysqlQuery},
+		{name: "mysql-version-comment-suffix", args: &QueryArgs{Database: "db", Query: "SELECT 1 /*!40101 UNION SELECT 2 */"}, want: errMysqlQuery},
+		{name: "mysql-executable-write-suffix", args: &QueryArgs{Database: "db", Query: "UPDATE t SET x = 1 /*! WHERE id = 1 */"}, want: errMysqlQuery},
+		{name: "mysql-optimizer-hint-suffix", args: &QueryArgs{Database: "db", Query: "SELECT 1 /*+ MAX_EXECUTION_TIME(1) */"}, want: errMysqlQuery},
+		{name: "mariadb-executable-comment-suffix", args: &QueryArgs{Database: "db", Query: "SELECT 1 /*M!100100 UNION SELECT 2 */"}, want: errMysqlQuery},
+		{name: "client-delimiter", args: &QueryArgs{Database: "db", Query: "DELIMITER //\nSELECT 1//"}, want: errMysqlQuery},
+		{name: "oversize", args: &QueryArgs{Database: "db", Query: strings.Repeat("x", runtime.MaxCommandInputBytes)}, want: runtime.ErrCommandInputLimit},
+		{name: "database-newline", args: &QueryArgs{Database: "bad\ndb", Query: "SELECT 1"}, want: errMysqlInvalidArgument},
+		{name: "connection-newline", args: &QueryArgs{Database: "db", Query: "SELECT 1", Host: mysqlString("host\nmarker")}, want: errMysqlInvalidArgument},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, runner := newMysqlRuntime()
+			_, err := (mysqlQueryFunc{}).Execute(context.Background(), rt, tc.args)
+			if !errors.Is(err, tc.want) || (tc.want == errMysqlQuery && err != errMysqlQuery) {
+				t.Fatalf("error = %v, want %v", err, tc.want)
+			}
+			if len(runner.calls) != 0 {
+				t.Fatalf("invalid query invoked Runner: %d", len(runner.calls))
+			}
+			if err != nil && strings.Contains(err.Error(), "marker") {
+				t.Fatalf("error leaked rejected value: %v", err)
+			}
+		})
+	}
+}
+
+func TestMysqlQueryRegistryRejectsSecondStatementAndExecutableComments(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{
+		"SELECT 1;\n--\nSELECT 2",
+		"SELECT 1 /*!40101 UNION SELECT 2 */",
+		"UPDATE t SET x = 1 /*! WHERE id = 1 */",
+		"SELECT 1 /*+ MAX_EXECUTION_TIME(1) */",
+	} {
+		t.Run(query, func(t *testing.T) {
+			rt, runner := newMysqlRuntime()
+			rt.Exec = reg
+			value, err := reg.Call(context.Background(), rt, "mysql.query", &QueryArgs{Database: "db", Query: query})
+			if value != nil || err != errMysqlQuery || len(runner.calls) != 0 {
+				t.Fatalf("query=%q value=%#v err=%v calls=%d", query, value, err, len(runner.calls))
+			}
+		})
+	}
+}
+
+func TestMysqlQueryRejectsSQLModeDependentBackslashQuotesBeforeRunner(t *testing.T) {
+	cases := []struct {
+		name  string
+		query string
+	}{
+		// Keep both spellings: the first is the exact two-backslash fixture
+		// and the second is the one-backslash spelling commonly produced by
+		// a Go/JSON caller. Neither may let the scanner choose a mode.
+		{name: "target-even-backslashes", query: `SELECT 'a\\'; SELECT 2; -- '`},
+		{name: "target-odd-backslash", query: `SELECT 'a\'; SELECT 2; -- '`},
+		{name: "double-quoted-boundary", query: `SELECT "a\"; SELECT 2; -- "`},
+		{name: "backtick-quoted-boundary", query: "SELECT `a\\`; SELECT 2; -- `"},
+		{name: "single-statement-backslash-literal", query: `SELECT 'a\b'`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, runner := newMysqlRuntime()
+			value, err := (mysqlQueryFunc{}).Execute(context.Background(), rt, &QueryArgs{
+				Database: "db",
+				Query:    tc.query,
+			})
+			if value != nil || err != errMysqlQuery || len(runner.calls) != 0 {
+				t.Fatalf("query=%q value=%#v err=%v calls=%d", tc.query, value, err, len(runner.calls))
+			}
+		})
+	}
+}
+
+func TestMysqlQueryRegistryRejectsSQLModeDependentBackslashQuotesBeforeRunner(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{
+		`SELECT 'a\\'; SELECT 2; -- '`,
+		`SELECT 'a\'; SELECT 2; -- '`,
+		`SELECT "a\"; SELECT 2; -- "`,
+		"SELECT `a\\`; SELECT 2; -- `",
+	} {
+		t.Run(query, func(t *testing.T) {
+			rt, runner := newMysqlRuntime()
+			rt.Exec = reg
+			value, err := reg.Call(context.Background(), rt, "mysql.query", &QueryArgs{
+				Database: "db",
+				Query:    query,
+			})
+			if value != nil || err != errMysqlQuery || len(runner.calls) != 0 {
+				t.Fatalf("query=%q value=%#v err=%v calls=%d", query, value, err, len(runner.calls))
+			}
+		})
+	}
+}
+
+func TestMysqlQueryCancellationAndRedactedRunnerFailure(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	rt, runner := newMysqlRuntime()
+	_, err := (mysqlQueryFunc{}).Execute(ctx, rt, &QueryArgs{Database: "db", Query: "SELECT 1"})
+	if !errors.Is(err, context.Canceled) || len(runner.calls) != 0 {
+		t.Fatalf("cancelled query = %v, calls=%d", err, len(runner.calls))
+	}
+	deadlineCtx, deadlineCancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer deadlineCancel()
+	rt, runner = newMysqlRuntime()
+	_, err = (mysqlQueryFunc{}).Execute(deadlineCtx, rt, &QueryArgs{Database: "db", Query: "SELECT 1"})
+	if !errors.Is(err, context.DeadlineExceeded) || len(runner.calls) != 0 {
+		t.Fatalf("timed-out query = %v, calls=%d", err, len(runner.calls))
+	}
+
+	query := "SELECT 'runner-secret-query'"
+	rt, runner = newMysqlRuntime(process.CommandResult{Err: errors.New("runner failed: " + query)})
+	_, err = (mysqlQueryFunc{}).Execute(context.Background(), rt, &QueryArgs{Database: "db", Query: query})
+	if !errors.Is(err, errMysqlQueryExecution) || strings.Contains(err.Error(), query) || strings.Contains(err.Error(), "runner-secret-query") {
+		t.Fatalf("runner failure leaked query: %v", err)
+	}
+	if len(runner.calls) != 1 || strings.Contains(runner.calls[0].RedactedString(), query) {
+		t.Fatalf("runner command leaked query: %#v", runner.calls)
+	}
+}
+
+type mysqlSensitiveRunnerCause struct {
+	secret string
+}
+
+func (e *mysqlSensitiveRunnerCause) Error() string {
+	if e.secret != "" {
+		return "mysql-private-cause: " + e.secret
+	}
+	return "mysql-private-cause"
+}
+
+type mysqlSafeRunnerOuter struct {
+	cause error
+}
+
+func (*mysqlSafeRunnerOuter) Error() string { return "mysql runner diagnostic" }
+
+func (e *mysqlSafeRunnerOuter) Unwrap() error { return e.cause }
+
+func TestMysqlRedactedErrorChainIsOpaque(t *testing.T) {
+	marker := "mysql-chain-secret"
+	cause := &mysqlSensitiveRunnerCause{secret: marker}
+	outer := &mysqlSafeRunnerOuter{cause: fmt.Errorf("typed runner cause: %w", cause)}
+	err := redactedError(outer, marker)
+	if err == nil || err == outer || err.Error() != outer.Error() || strings.Contains(err.Error(), marker) || errors.Unwrap(err) != nil {
+		t.Fatalf("redacted error = %v", err)
+	}
+	var got *mysqlSensitiveRunnerCause
+	if errors.As(err, &got) || errors.Is(err, cause) {
+		t.Fatalf("redacted error exposed raw cause: %v", err)
+	}
+	for _, tc := range []struct {
+		name  string
+		cause error
+		want  error
+	}{
+		{name: "canceled", cause: context.Canceled, want: context.Canceled},
+		{name: "deadline", cause: context.DeadlineExceeded, want: context.DeadlineExceeded},
+		{name: "output", cause: process.ErrOutputLimit, want: process.ErrOutputLimit},
+		{name: "input", cause: runtime.ErrCommandInputLimit, want: runtime.ErrCommandInputLimit},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			wrapped := redactedError(&mysqlSafeRunnerOuter{cause: tc.cause}, marker)
+			if !errors.Is(wrapped, tc.want) || errors.Unwrap(wrapped) != nil || wrapped.Error() != "mysql runner diagnostic" {
+				t.Fatalf("identity=%v err=%v", tc.want, wrapped)
+			}
+		})
+	}
+}
+
+func TestMysqlQueryRegistryFramesEmptyLineCommentExact(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	rt, runner := newMysqlRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte("__statekit_rows_affected__\n2\n"),
+	})
+	rt.Exec = reg
+	query := "UPDATE t SET note = 'x'\n--\n"
+	value, err := reg.Call(context.Background(), rt, "mysql.query", &QueryArgs{Database: "db", Query: query})
+	if err != nil || value.(map[string]any)["rows affected"] != int64(2) || len(runner.calls) != 1 {
+		t.Fatalf("value=%#v err=%v calls=%d", value, err, len(runner.calls))
+	}
+	want := "UPDATE t SET note = 'x';\n--\n" + mysqlQueryAffectedProbe
+	if got := string(runner.calls[0].Stdin); got != want {
+		t.Fatalf("stdin=%q, want %q", got, want)
+	}
+}
+
+func TestMysqlQueryCanonicalTransportErrorsDirectAndRegistry(t *testing.T) {
+	marker := "partial-sql-credential-fragment"
+	cases := []struct {
+		name   string
+		result process.CommandResult
+		want   error
+	}{
+		{name: "cancel", result: process.CommandResult{Err: fmt.Errorf("runner %s: %w", marker, context.Canceled)}, want: context.Canceled},
+		{name: "deadline", result: process.CommandResult{Err: fmt.Errorf("runner %s: %w", marker, context.DeadlineExceeded)}, want: context.DeadlineExceeded},
+		{name: "output", result: process.CommandResult{Err: fmt.Errorf("runner %s: %w", marker, process.ErrOutputLimit)}, want: process.ErrOutputLimit},
+		{name: "arbitrary", result: process.CommandResult{Err: fmt.Errorf("runner %s: %w", marker, errors.New("transport detail"))}, want: errMysqlQueryExecution},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name+"/direct", func(t *testing.T) {
+			rt, runner := newMysqlRuntime(tc.result)
+			_, err := (mysqlQueryFunc{}).Execute(context.Background(), rt, &QueryArgs{
+				Database: "db", Query: "SELECT '" + marker + "'",
+				Password: mysqlString(marker),
+			})
+			if err != tc.want || len(runner.calls) != 1 || strings.Contains(err.Error(), marker) {
+				t.Fatalf("err=%v want=%v calls=%d", err, tc.want, len(runner.calls))
+			}
+		})
+
+		t.Run(tc.name+"/registry", func(t *testing.T) {
+			reg := runtime.NewExecRegistry()
+			if err := Register(reg); err != nil {
+				t.Fatal(err)
+			}
+			rt, runner := newMysqlRuntime(tc.result)
+			rt.Exec = reg
+			_, err := reg.Call(context.Background(), rt, "mysql.query", &QueryArgs{
+				Database: "db", Query: "SELECT '" + marker + "'",
+				Password: mysqlString(marker),
+			})
+			if err != tc.want || len(runner.calls) != 1 || strings.Contains(err.Error(), marker) {
+				t.Fatalf("err=%v want=%v calls=%d", err, tc.want, len(runner.calls))
+			}
+		})
+	}
+
+	oversized := strings.Repeat("x", runtime.MaxCommandInputBytes)
+	rt, runner := newMysqlRuntime()
+	_, err := (mysqlQueryFunc{}).Execute(context.Background(), rt, &QueryArgs{Database: "db", Query: oversized})
+	if err != runtime.ErrCommandInputLimit || len(runner.calls) != 0 {
+		t.Fatalf("input limit err=%v calls=%d", err, len(runner.calls))
+	}
+}
+
+func TestMysqlQueryNonzeroIsValueFreeCompatibilityFailure(t *testing.T) {
+	rt, runner := newMysqlRuntime(process.CommandResult{
+		ExitCode: 1,
+		Stderr:   []byte("ERROR 1064 (42000): query-secret\n"),
+	})
+	value, err := (mysqlQueryFunc{}).Execute(context.Background(), rt, &QueryArgs{Database: "db", Query: "SELECT 'query-secret'"})
+	if err != nil || value != false || len(runner.calls) != 1 {
+		t.Fatalf("nonzero query = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+	if strings.Contains(runner.calls[0].RedactedString(), "query-secret") {
+		t.Fatalf("nonzero diagnostic leaked secret: %q", runner.calls[0].RedactedString())
+	}
+
+	// The CLI cannot distinguish Salt's connection-only {} shape from a
+	// query-time OperationalError. mysql.query therefore keeps the explicit
+	// value-free false ceiling for a native connection diagnostic as well.
+	rt, runner = newMysqlRuntime(process.CommandResult{
+		ExitCode: 1,
+		Stderr:   []byte("ERROR 2003 (HY000): Can't connect to MySQL server\n"),
+	})
+	value, err = (mysqlQueryFunc{}).Execute(context.Background(), rt, &QueryArgs{Database: "db", Query: "SELECT 1"})
+	if err != nil || value != false || len(runner.calls) != 1 {
+		t.Fatalf("connection nonzero = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+}
+
+func TestMysqlQueryRejectsTruncatedOutputBeforeRendering(t *testing.T) {
+	query := "SELECT 'output-secret'"
+	rt, runner := newMysqlRuntime(process.CommandResult{
+		Stdout:          []byte("value\noutput-secret\n"),
+		StdoutTruncated: true,
+	})
+	value, err := (mysqlQueryFunc{}).Execute(context.Background(), rt, &QueryArgs{Database: "db", Query: query})
+	if !errors.Is(err, process.ErrOutputLimit) || value != nil || len(runner.calls) != 1 {
+		t.Fatalf("truncated query = %#v, %v, calls=%d", value, err, len(runner.calls))
+	}
+	if strings.Contains(err.Error(), "output-secret") || strings.Contains(runner.calls[0].RedactedString(), "output-secret") {
+		t.Fatalf("truncated query leaked value: err=%v command=%q", err, runner.calls[0].RedactedString())
 	}
 }
 
@@ -6472,6 +7182,10 @@ func TestMysqlVerifyLoginFailClosed(t *testing.T) {
 }
 
 func assertMysqlValueHasNoMarker(t *testing.T, value any, marker string) {
+	assertMysqlValueHasNoSecrets(t, value, marker)
+}
+
+func assertMysqlValueHasNoSecrets(t *testing.T, value any, markers ...string) {
 	t.Helper()
 	var walk func(reflect.Value)
 	walk = func(v reflect.Value) {
@@ -6484,8 +7198,10 @@ func assertMysqlValueHasNoMarker(t *testing.T, value any, marker string) {
 				walk(v.Elem())
 			}
 		case reflect.String:
-			if strings.Contains(v.String(), marker) {
-				t.Fatal("serialized value contains an unredacted marker")
+			for _, marker := range markers {
+				if strings.Contains(v.String(), marker) {
+					t.Fatal("serialized value contains an unredacted secret form")
+				}
 			}
 		case reflect.Map:
 			if v.IsNil() {
@@ -6506,12 +7222,16 @@ func assertMysqlValueHasNoMarker(t *testing.T, value any, marker string) {
 }
 
 func decodeMysqlJSONValue(t *testing.T, encoded []byte, marker string) any {
+	return decodeMysqlJSONValueWithSecrets(t, encoded, marker)
+}
+
+func decodeMysqlJSONValueWithSecrets(t *testing.T, encoded []byte, markers ...string) any {
 	t.Helper()
 	var value any
 	if err := json.Unmarshal(encoded, &value); err != nil {
 		t.Fatalf("serialized JSON could not be decoded")
 	}
-	assertMysqlValueHasNoMarker(t, value, marker)
+	assertMysqlValueHasNoSecrets(t, value, markers...)
 	return value
 }
 
