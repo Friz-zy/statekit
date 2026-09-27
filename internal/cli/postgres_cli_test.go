@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"syscall"
@@ -18,6 +20,264 @@ import (
 	"github.com/friz-zy/statekit/internal/runtime"
 	execpostgres "github.com/friz-zy/statekit/modules/exec/postgres"
 )
+
+// postgresCLIRequirePgpass asserts the CLI-visible half of the R92T-SEC-06
+// credential boundary: the clean child environment carries exactly one
+// PGPASSFILE entry — never PGPASSWORD — and the per-call passfile and its
+// private directory are already gone once the CLI invocation returned.
+// (The invocation-time bytes, modes, and cleanup matrix are pinned by the
+// module's direct suite over the same transport.)
+func postgresCLIRequirePgpass(t *testing.T, command process.Command) {
+	t.Helper()
+	passfiles := 0
+	for _, entry := range command.Env {
+		if strings.HasPrefix(entry, "PGPASSWORD=") {
+			t.Fatalf("child environment carries PGPASSWORD: %q", entry)
+		}
+		if !strings.HasPrefix(entry, "PGPASSFILE=") {
+			continue
+		}
+		passfiles++
+		path := strings.TrimPrefix(entry, "PGPASSFILE=")
+		if _, err := os.Stat(path); !errors.Is(err, fs.ErrNotExist) {
+			t.Fatalf("passfile survived the CLI run: %q (err %v)", path, err)
+		}
+		if _, err := os.Stat(filepath.Dir(path)); !errors.Is(err, fs.ErrNotExist) {
+			t.Fatalf("passfile directory survived the CLI run: %q (err %v)", filepath.Dir(path), err)
+		}
+	}
+	if passfiles != 1 {
+		t.Fatalf("child environment carries %d PGPASSFILE entries: %q", passfiles, command.Env)
+	}
+}
+
+func TestPostgresCLIPsqlQueryFlagAndStructuredStdin(t *testing.T) {
+	query := "SELECT 'x;y' AS note"
+	for _, input := range [][]string{
+		{"exec", "postgres.psql_query", "--query", query, "--write", "--password", "synthetic-pass", "-o", "json"},
+		{"exec", "postgres.psql_query", "--stdin", "-o", "json"},
+	} {
+		runner := &cliRecordingRunner{results: []process.CommandResult{{ExitCode: 0, Stdout: []byte("note\n\"a,b\"\n")}}}
+		app := postgresCLIApp(t, runner)
+		if len(input) < 5 {
+			t.Fatal("invalid test invocation")
+		}
+		if input[2] == "--stdin" {
+			stdinFile, err := os.CreateTemp(t.TempDir(), "request")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = stdinFile.WriteString(`{"query":"SELECT 'x;y' AS note","write":true,"password":"synthetic-pass"}`); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = stdinFile.Seek(0, 0); err != nil {
+				t.Fatal(err)
+			}
+			old := os.Stdin
+			os.Stdin = stdinFile
+			t.Cleanup(func() { os.Stdin = old; _ = stdinFile.Close() })
+		}
+		code, out, errS := captureCode(t, app, input...)
+		var rows []map[string]string
+		if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &rows) != nil || !reflect.DeepEqual(rows, []map[string]string{{"note": "a,b"}}) || len(runner.calls) != 1 {
+			t.Fatalf("psql_query code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+		}
+		call := runner.calls[0]
+		if !strings.Contains(string(call.Stdin), "START TRANSACTION READ WRITE;\nCOPY (\n"+query+"\n) TO STDOUT WITH CSV HEADER;\nCOMMIT TRANSACTION;\n") || strings.Contains(strings.Join(call.Args, "\x00"), query) || call.Shell || call.Timeout <= 0 || call.MaxStdoutBytes <= 0 || call.MaxStderrBytes <= 0 || strings.Contains(call.RedactedString()+out+errS, "synthetic-pass") {
+			t.Fatalf("unsafe CLI transport: %#v", call)
+		}
+	}
+}
+
+func TestPostgresCLIPsqlQueryRejectsBeforeDispatch(t *testing.T) {
+	missing := &cliRecordingRunner{}
+	code, out, errS := captureCode(t, postgresCLIApp(t, missing), "exec", "postgres.psql_query", "-o", "json")
+	if code != ExitInvalidInput || out != "" || errS == "" || len(missing.calls) != 0 {
+		t.Fatalf("missing query code=%d out=%q err=%q calls=%d", code, out, errS, len(missing.calls))
+	}
+	for _, query := range []string{"SELECT 1; DROP TABLE t", "SELECT 1\n\\! sh", "SELECT :value", "SELECT 'unclosed", "SELECT 1\x00", strings.Repeat("x", 1<<20)} {
+		runner := &cliRecordingRunner{}
+		code, out, errS := captureCode(t, postgresCLIApp(t, runner), "exec", "postgres.psql_query", "--query", query, "-o", "json")
+		if code == ExitOK || out != "" || len(runner.calls) != 0 || strings.Contains(errS, query) {
+			t.Fatalf("invalid query bytes=%d code=%d err=%q calls=%d", len(query), code, errS, len(runner.calls))
+		}
+	}
+	for _, channel := range []string{"--config", "--stdin"} {
+		runner := &cliRecordingRunner{}
+		big := strings.Repeat("x", 1<<20+1)
+		args := []string{"exec", "postgres.psql_query", channel}
+		if channel == "--config" {
+			args = append(args, `{"query":"`+big+`"}`)
+		} else {
+			stdinFile, err := os.CreateTemp(t.TempDir(), "oversized-request")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = stdinFile.WriteString(`{"query":"` + big + `"}`); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = stdinFile.Seek(0, 0); err != nil {
+				t.Fatal(err)
+			}
+			old := os.Stdin
+			os.Stdin = stdinFile
+			t.Cleanup(func() { os.Stdin = old; _ = stdinFile.Close() })
+		}
+		code, out, errS := captureCode(t, postgresCLIApp(t, runner), args...)
+		if code != ExitInvalidInput || out != "" || len(runner.calls) != 0 || strings.Contains(errS, big) {
+			t.Fatalf("oversized %s code=%d out=%q err=%q calls=%d", channel, code, out, errS, len(runner.calls))
+		}
+	}
+}
+
+func TestPostgresCLIPsqlQueryStructuredFunctionCapNoDispatch(t *testing.T) {
+	query := "SELECT '" + strings.Repeat("x", (256<<10)-len("SELECT ''")+1) + "'"
+	if len(query) != (256<<10)+1 {
+		t.Fatal("oversize fixture does not cross the function-level query cap")
+	}
+	request, err := json.Marshal(map[string]string{"query": query})
+	if err != nil || len(request) > runtime.MaxCommandInputBytes {
+		t.Fatalf("structured fixture exceeds CLI cap: bytes=%d err=%v", len(request), err)
+	}
+	stdinFile, err := os.CreateTemp(t.TempDir(), "oversize-query")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stdinFile.Close()
+	if _, err := stdinFile.Write(request); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stdinFile.Seek(0, 0); err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stdin
+	os.Stdin = stdinFile
+	defer func() { os.Stdin = old }()
+
+	runner := &cliRecordingRunner{}
+	code, out, errS := captureCode(t, postgresCLIApp(t, runner), "exec", "postgres.psql_query", "--stdin", "-o", "json")
+	if code != ExitFailed || out != "" || errS != "statekit: runtime: command input exceeds limit\n" || len(runner.calls) != 0 {
+		t.Fatalf("query cap code=%d stdout bytes=%d stderr=%q calls=%d", code, len(out), errS, len(runner.calls))
+	}
+}
+
+func TestPostgresCLIPsqlQueryCSVShapesAndFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		result process.CommandResult
+		want   []map[string]string
+	}{
+		{"positive exit", process.CommandResult{ExitCode: 3, Stdout: []byte("v\nfailed\n")}, []map[string]string{}},
+		{"empty", process.CommandResult{ExitCode: 0, Stdout: []byte("v\n")}, []map[string]string{}},
+		{"ragged duplicates", process.CommandResult{ExitCode: 0, Stdout: []byte("a,a,b\r\n1,2\r\n3,4,5,6\r\n")}, []map[string]string{{"a": "2"}, {"a": "4", "b": "5"}}},
+		{"quoted multiline", process.CommandResult{ExitCode: 0, Stdout: []byte("v\n\"a\r\nb\"\n")}, []map[string]string{{"v": "a\r\nb"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &cliRecordingRunner{results: []process.CommandResult{tc.result}}
+			code, out, errS := captureCode(t, postgresCLIApp(t, runner), "exec", "postgres.psql_query", "--query", "SELECT 'x;y' AS v;;;", "-o", "json")
+			var got []map[string]string
+			if code != ExitOK || errS != "" || json.Unmarshal([]byte(out), &got) != nil || !reflect.DeepEqual(got, tc.want) || len(runner.calls) != 1 {
+				t.Fatalf("code=%d output=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+			}
+		})
+	}
+	const marker = "synthetic-query-secret"
+	for _, failure := range []process.CommandResult{
+		{Err: fmt.Errorf("psql failed: %s SELECT", marker)},
+		{Err: context.DeadlineExceeded, Stdout: []byte("v\npartial\n")},
+		{StdoutTruncated: true, Stdout: []byte("v\npartial\n")},
+		{StderrTruncated: true, Stdout: []byte("v\npartial\n")},
+		{Stdout: []byte("v\npartial\nbad\rx\n")},
+		{Stdout: []byte("v\n" + strings.Repeat("partial\n", 10001))},
+	} {
+		runner := &cliRecordingRunner{results: []process.CommandResult{failure}}
+		code, out, errS := captureCode(t, postgresCLIApp(t, runner), "exec", "postgres.psql_query", "--query", "SELECT '"+marker+"' AS v", "--password", marker, "-o", "json")
+		if code != ExitFailed || out != "" || errS == "" || strings.Contains(errS, marker) || strings.Contains(errS, "SELECT '") || len(runner.calls) != 1 {
+			t.Fatalf("failure code=%d out=%q err=%q calls=%d", code, out, errS, len(runner.calls))
+		}
+	}
+}
+
+// postgresCLIStrandSandboxRunner sabotages the per-call pgpass cleanup
+// deterministically without any privilege: during the recorded run it
+// renames the whole TMPDIR sandbox (with the fresh passfile directory
+// inside) away and puts a regular file at the sandbox path, so the
+// transport's RemoveAll over the recorded passfile path resolves through
+// a non-directory parent and fails (ENOTDIR) for every uid.
+type postgresCLIStrandSandboxRunner struct {
+	inner   *cliRecordingRunner
+	sandbox string
+}
+
+func (r *postgresCLIStrandSandboxRunner) Run(ctx context.Context, command process.Command) process.CommandResult {
+	for _, entry := range command.Env {
+		if !strings.HasPrefix(entry, "PGPASSFILE=") {
+			continue
+		}
+		dir := filepath.Dir(filepath.Dir(strings.TrimPrefix(entry, "PGPASSFILE=")))
+		if dir == r.sandbox {
+			_ = os.Rename(dir, dir+".stranded")
+			_ = os.WriteFile(dir, nil, 0o644)
+		}
+		break
+	}
+	return r.inner.Run(ctx, command)
+}
+
+// TestPostgresCLIPsqlQueryCleanupAggregateSerialization pins the CLI half
+// of the R92T-FINAL-05 aggregate: a psql_query failure whose per-call
+// pgpass cleanup also fails serializes through the CLI error path as
+// exactly the two fixed value-free lines — the generic run category and
+// the password file cleanup category — with an empty stdout, the
+// ExitFailed code, and no password, SQL, or temp path in the rendering;
+// the credential boundary keeps exactly one PGPASSFILE and never
+// PGPASSWORD, and the stranded renamed directory is the observable
+// residue this test sweeps.
+func TestPostgresCLIPsqlQueryCleanupAggregateSerialization(t *testing.T) {
+	const marker = "synthetic-cli-aggregate-pass"
+	sandbox := t.TempDir()
+	t.Setenv("TMPDIR", sandbox)
+	t.Cleanup(func() {
+		_ = os.RemoveAll(sandbox + ".stranded")
+		_ = os.Remove(sandbox)
+	})
+	runner := &cliRecordingRunner{results: []process.CommandResult{{
+		ExitCode: -1,
+		Err:      fmt.Errorf("psql exited: password %s for SELECT", marker),
+	}}}
+	code, out, errS := captureCode(t, postgresCLIApp(t, &postgresCLIStrandSandboxRunner{inner: runner, sandbox: sandbox}),
+		"exec", "postgres.psql_query", "--query", "SELECT '"+marker+"' AS v", "--password", marker, "-o", "json")
+	if code != ExitFailed || out != "" {
+		t.Fatalf("code=%d out=%q, want ExitFailed with empty stdout", code, out)
+	}
+	want := "statekit: postgres.psql_query: psql execution failed\npostgres: password file cleanup failed\n"
+	if errS != want {
+		t.Fatalf("err = %q, want the two fixed serialized lines %q", errS, want)
+	}
+	for _, banned := range []string{marker, "SELECT", sandbox, "PGPASSFILE=", "statekit-psql-pgpass"} {
+		if strings.Contains(errS, banned) {
+			t.Fatalf("serialized error leaks %q: %q", banned, errS)
+		}
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("calls = %d, want 1", len(runner.calls))
+	}
+	passfiles := 0
+	for _, entry := range runner.calls[0].Env {
+		if strings.HasPrefix(entry, "PGPASSWORD=") {
+			t.Fatalf("child environment carries PGPASSWORD: %q", entry)
+		}
+		if strings.HasPrefix(entry, "PGPASSFILE=") {
+			passfiles++
+		}
+	}
+	if passfiles != 1 {
+		t.Fatalf("child environment carries %d PGPASSFILE entries: %q", passfiles, runner.calls[0].Env)
+	}
+	if _, err := os.Stat(sandbox + ".stranded"); err != nil {
+		t.Fatalf("stranded sandbox not observable: %v", err)
+	}
+}
 
 // postgresCLIMD5Hex renders the hex MD5 of the concatenated password+role
 // input the pinned md5 verifier hashes, for asserting exact CLI digests.
@@ -95,11 +355,12 @@ func TestPostgresCLIVersion(t *testing.T) {
 		argv[15] != "-t" {
 		t.Fatalf("argv = %q", argv)
 	}
-	if len(command.Env) != 4 || command.Env[0] != "PGPASSWORD=test_pass" ||
+	if len(command.Env) != 4 || !strings.HasPrefix(command.Env[0], "PGPASSFILE=") ||
 		command.Env[1] != "PGUSER=test_user" || command.Env[2] != "PGHOST=test_host" ||
 		command.Env[3] != "PGPORT=test_port" {
 		t.Fatalf("env = %q", command.Env)
 	}
+	postgresCLIRequirePgpass(t, command)
 	if command.Shell || len(command.Redact) != 1 || command.Redact[0] != "test_pass" {
 		t.Fatalf("unsafe command: %#v", command)
 	}
@@ -247,15 +508,15 @@ func TestPostgresCLIDbExists(t *testing.T) {
 		}
 	}
 
-	// The generic query surface stays unregistered (exit 3, no calls).
+	// Private helpers remain unregistered (exit 3, no calls).
 	runner := &cliRecordingRunner{}
 	app := postgresCLIApp(t, runner)
-	code, _, _ := captureCode(t, app, "exec", "postgres.psql_query", "--query", "SELECT 1", "-o", "json")
+	code, _, _ := captureCode(t, app, "exec", "postgres._psql_cmd", "-o", "json")
 	if code != ExitUnsupported {
-		t.Fatalf("psql_query code=%d, want ExitUnsupported", code)
+		t.Fatalf("private helper code=%d, want ExitUnsupported", code)
 	}
 	if len(runner.calls) != 0 {
-		t.Fatalf("psql_query executed %d commands", len(runner.calls))
+		t.Fatalf("private helper executed %d commands", len(runner.calls))
 	}
 
 	// db_exists without the required name fails validation before any run.
@@ -1602,10 +1863,11 @@ func TestPostgresCLIDbCreate(t *testing.T) {
 		argv[14] != `CREATE DATABASE "dbname" WITH TABLESPACE = "testspace" OWNER = "otheruser"` {
 		t.Fatalf("argv = %q", argv)
 	}
-	if len(command.Env) != 4 || command.Env[0] != "PGPASSWORD=foo" ||
+	if len(command.Env) != 4 || !strings.HasPrefix(command.Env[0], "PGPASSFILE=") ||
 		command.Shell || len(command.Redact) != 1 || command.Redact[0] != "foo" {
 		t.Fatalf("unsafe command: %#v", command)
 	}
+	postgresCLIRequirePgpass(t, command)
 	if strings.Contains(command.RedactedString(), "foo") || strings.Contains(out+errS, "foo") {
 		t.Fatalf("password leaked: %q %q", command.RedactedString(), out+errS)
 	}
@@ -2208,10 +2470,11 @@ func TestPostgresCLITablespaceCreate(t *testing.T) {
 	if strings.Contains(strings.Join(argv, "\x00"), "foo") {
 		t.Fatalf("argv carries the password token: %q", argv)
 	}
-	if len(command.Env) != 4 || command.Env[0] != "PGPASSWORD=foo" ||
+	if len(command.Env) != 4 || !strings.HasPrefix(command.Env[0], "PGPASSFILE=") ||
 		command.Shell || len(command.Redact) != 1 || command.Redact[0] != "foo" {
 		t.Fatalf("unsafe command: %#v", command)
 	}
+	postgresCLIRequirePgpass(t, command)
 	if strings.Contains(command.RedactedString(), "foo") || strings.Contains(out+errS, "foo") {
 		t.Fatalf("password leaked: %q %q", command.RedactedString(), out+errS)
 	}
@@ -2483,10 +2746,11 @@ func TestPostgresCLITablespaceRemove(t *testing.T) {
 	if strings.Contains(strings.Join(argv, "\x00"), "foo") {
 		t.Fatalf("argv carries the password token: %q", argv)
 	}
-	if len(command.Env) != 4 || command.Env[0] != "PGPASSWORD=foo" ||
+	if len(command.Env) != 4 || !strings.HasPrefix(command.Env[0], "PGPASSFILE=") ||
 		command.Shell || len(command.Redact) != 1 || command.Redact[0] != "foo" {
 		t.Fatalf("unsafe command: %#v", command)
 	}
+	postgresCLIRequirePgpass(t, command)
 	if strings.Contains(command.RedactedString(), "foo") || strings.Contains(out+errS, "foo") {
 		t.Fatalf("password leaked: %q %q", command.RedactedString(), out+errS)
 	}
@@ -2583,12 +2847,13 @@ func TestPostgresCLIUserCreate(t *testing.T) {
 			`'test_role_pass' VALID UNTIL '2042-07-01'; GRANT "test_groups" TO "testuser"` {
 		t.Fatalf("argv = %q", argv)
 	}
-	if len(command.Env) != 4 || command.Env[0] != "PGPASSWORD=test_pass" ||
+	if len(command.Env) != 4 || !strings.HasPrefix(command.Env[0], "PGPASSFILE=") ||
 		command.Shell || len(command.Redact) != 3 ||
 		command.Redact[0] != "'test_role_pass'" ||
 		command.Redact[1] != "test_role_pass" || command.Redact[2] != "test_pass" {
 		t.Fatalf("unsafe command: %#v", command)
 	}
+	postgresCLIRequirePgpass(t, command)
 	if rendered := command.RedactedString(); strings.Contains(rendered, "test_pass") ||
 		strings.Contains(rendered, "test_role_pass") ||
 		strings.Contains(rendered, "'test_role_pass'") {
@@ -3007,12 +3272,13 @@ func TestPostgresCLIGroupCreate(t *testing.T) {
 			`'testrolepass'; GRANT "testgroup" TO "testgroup"` {
 		t.Fatalf("argv = %q", argv)
 	}
-	if len(command.Env) != 4 || command.Env[0] != "PGPASSWORD=foo" ||
+	if len(command.Env) != 4 || !strings.HasPrefix(command.Env[0], "PGPASSFILE=") ||
 		command.Shell || len(command.Redact) != 3 ||
 		command.Redact[0] != "'testrolepass'" ||
 		command.Redact[1] != "testrolepass" || command.Redact[2] != "foo" {
 		t.Fatalf("unsafe command: %#v", command)
 	}
+	postgresCLIRequirePgpass(t, command)
 	if rendered := command.RedactedString(); strings.Contains(rendered, "foo") ||
 		strings.Contains(rendered, "testrolepass") ||
 		strings.Contains(rendered, "'testrolepass'") {
@@ -3391,8 +3657,16 @@ func TestPostgresCLIUserRawStatementRedaction(t *testing.T) {
 				}
 				command := runner.calls[2]
 				sql := command.Args[len(command.Args)-1]
-				if !strings.HasPrefix(sql, verb) || !strings.Contains(runner.raw, sql) || !strings.Contains(runner.raw, connection) {
-					t.Fatal("runner error did not contain the actual SQL and connection password")
+				if !strings.HasPrefix(sql, verb) || !strings.Contains(runner.raw, sql) {
+					t.Fatal("runner error did not contain the actual SQL")
+				}
+				// R92T-SEC-06: the connection password never reaches the
+				// raw runner surface anymore — the child environment
+				// carries only the per-call PGPASSFILE path — so its
+				// absence, not a redaction placeholder, is the guarantee.
+				if strings.Contains(runner.raw, connection) ||
+					strings.Contains(strings.Join(command.Env, " "), connection) {
+					t.Fatal("connection password reached the raw runner surface")
 				}
 				_, literal, ok := strings.Cut(sql, "PASSWORD '")
 				if !ok || !strings.HasSuffix(literal, "'") {
@@ -3483,10 +3757,11 @@ func TestPostgresCLIPrivilegesGrant(t *testing.T) {
 		argv[14] != `GRANT ALL ON TABLE public."awl" TO "baruwa" WITH GRANT OPTION` {
 		t.Fatalf("argv = %q", argv)
 	}
-	if len(command.Env) != 4 || command.Env[0] != "PGPASSWORD=testpassword" ||
+	if len(command.Env) != 4 || !strings.HasPrefix(command.Env[0], "PGPASSFILE=") ||
 		command.Shell || len(command.Redact) != 1 || command.Redact[0] != "testpassword" {
 		t.Fatalf("unsafe command: %#v", command)
 	}
+	postgresCLIRequirePgpass(t, command)
 	if strings.Contains(command.RedactedString(), "testpassword") || strings.Contains(out+errS, "testpassword") {
 		t.Fatalf("password leaked: %q %q", command.RedactedString(), out+errS)
 	}
@@ -3768,7 +4043,11 @@ func TestPostgresCLIPrivilegesMutationFailures(t *testing.T) {
 	}
 
 	// A mutation-time Runner failure whose raw text embeds argv and the
-	// environment surfaces redacted through the CLI.
+	// environment surfaces redacted through the CLI. The privileges
+	// statements carry no secret in SQL, and R92T-SEC-06 keeps the
+	// connection password out of the environment entirely, so the CLI
+	// error can carry neither the password nor a redaction placeholder
+	// for it — absence is the guarantee.
 	leak := &statementLeakRunner{results: []process.CommandResult{
 		{ExitCode: 0, Stdout: []byte(ownerCLITableCSV)},
 		{ExitCode: 0, Stdout: []byte(privCLIGrantTableCSV)},
@@ -3780,7 +4059,7 @@ func TestPostgresCLIPrivilegesMutationFailures(t *testing.T) {
 	if code != ExitFailed || out != "" || errS == "" {
 		t.Fatalf("runner failure code=%d out=%q err=%q", code, out, errS)
 	}
-	if strings.Contains(out+errS, "testpassword") || !strings.Contains(errS, process.RedactedPlaceholder) {
+	if strings.Contains(out+errS, "testpassword") || strings.Contains(errS, "PGPASSWORD=") {
 		t.Fatalf("CLI error was not redacted: %q", errS)
 	}
 	if strings.Contains(leak.calls[2].RedactedString(), "testpassword") {
@@ -3836,10 +4115,11 @@ func TestPostgresCLIDefaultPrivilegesList(t *testing.T) {
 		!strings.HasPrefix(argv[16], "COPY (") {
 		t.Fatalf("argv = %q", argv)
 	}
-	if len(command.Env) != 4 || command.Env[0] != "PGPASSWORD=testpassword" ||
+	if len(command.Env) != 4 || !strings.HasPrefix(command.Env[0], "PGPASSFILE=") ||
 		command.Shell || len(command.Redact) != 1 || command.Redact[0] != "testpassword" {
 		t.Fatalf("unsafe command: %#v", command)
 	}
+	postgresCLIRequirePgpass(t, command)
 	if strings.Contains(command.RedactedString(), "testpassword") || strings.Contains(out+errS, "testpassword") {
 		t.Fatalf("password leaked: %q %q", command.RedactedString(), out+errS)
 	}
@@ -3890,10 +4170,11 @@ func TestPostgresCLIDefaultPrivilegesGrant(t *testing.T) {
 		argv[14] != `ALTER DEFAULT PRIVILEGES IN SCHEMA public."awl" GRANT ALL ON TABLES TO "baruwa" WITH GRANT OPTION` {
 		t.Fatalf("argv = %q", argv)
 	}
-	if len(command.Env) != 4 || command.Env[0] != "PGPASSWORD=testpassword" ||
+	if len(command.Env) != 4 || !strings.HasPrefix(command.Env[0], "PGPASSFILE=") ||
 		command.Shell || len(command.Redact) != 1 || command.Redact[0] != "testpassword" {
 		t.Fatalf("unsafe command: %#v", command)
 	}
+	postgresCLIRequirePgpass(t, command)
 	if strings.Contains(command.RedactedString(), "testpassword") || strings.Contains(out+errS, "testpassword") {
 		t.Fatalf("password leaked: %q %q", command.RedactedString(), out+errS)
 	}
@@ -4192,7 +4473,11 @@ func TestPostgresCLIDefaultPrivilegesMutationFailures(t *testing.T) {
 	}
 
 	// A mutation-time Runner failure whose raw text embeds argv and the
-	// environment surfaces redacted through the CLI.
+	// environment surfaces redacted through the CLI. The default-
+	// privileges statements carry no secret in SQL, and R92T-SEC-06 keeps
+	// the connection password out of the environment entirely, so the
+	// CLI error can carry neither the password nor a redaction
+	// placeholder for it — absence is the guarantee.
 	leak := &statementLeakRunner{results: []process.CommandResult{
 		{ExitCode: 0, Stdout: []byte(ownerCLITableCSV)},
 		{ExitCode: 0, Stdout: []byte(defCLIGrantTableCSV)},
@@ -4204,7 +4489,7 @@ func TestPostgresCLIDefaultPrivilegesMutationFailures(t *testing.T) {
 	if code != ExitFailed || out != "" || errS == "" {
 		t.Fatalf("runner failure code=%d out=%q err=%q", code, out, errS)
 	}
-	if strings.Contains(out+errS, "testpassword") || !strings.Contains(errS, process.RedactedPlaceholder) {
+	if strings.Contains(out+errS, "testpassword") || strings.Contains(errS, "PGPASSWORD=") {
 		t.Fatalf("CLI error was not redacted: %q", errS)
 	}
 	if strings.Contains(leak.calls[2].RedactedString(), "testpassword") {

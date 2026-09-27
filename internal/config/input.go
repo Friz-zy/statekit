@@ -7,6 +7,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -28,7 +29,12 @@ type Channels struct {
 	Stdin  bool   // --stdin flag
 	Dash   bool   // "-" positional argument
 	Data   []byte
+	// MaxBytes scopes a pre-decode, pre-allocation limit to sensitive
+	// functions. Zero keeps existing callers' input behavior unchanged.
+	MaxBytes int
 }
+
+var ErrStructuredInputLimit = errors.New("structured input exceeds limit")
 
 func (c Channels) structuredRequested() bool { return c.Config != "" || c.File != "" }
 
@@ -58,12 +64,25 @@ func (c Channels) Load() (map[string]any, error) {
 
 	if c.Stdin || c.Dash {
 		data := c.Data
+		if c.MaxBytes > 0 && len(data) > c.MaxBytes {
+			return nil, ErrStructuredInputLimit
+		}
 		if data == nil {
-			raw, err := io.ReadAll(os.Stdin)
+			var input io.Reader = os.Stdin
+			if c.MaxBytes > 0 {
+				input = io.LimitReader(input, int64(c.MaxBytes)+1)
+			}
+			raw, err := io.ReadAll(input)
 			if err != nil {
+				if c.MaxBytes > 0 {
+					return nil, fmt.Errorf("stdin: read failed")
+				}
 				return nil, fmt.Errorf("stdin: %w", err)
 			}
 			data = raw
+		}
+		if c.MaxBytes > 0 && len(data) > c.MaxBytes {
+			return nil, ErrStructuredInputLimit
 		}
 		parsed, err := ParseStructured(data)
 		if err != nil {
@@ -73,18 +92,41 @@ func (c Channels) Load() (map[string]any, error) {
 	}
 
 	if c.File != "" {
-		data, err := os.ReadFile(c.File)
-		if err != nil {
-			return nil, fmt.Errorf("--file %q: %w", c.File, err)
+		var data []byte
+		if c.MaxBytes > 0 {
+			file, err := os.Open(c.File)
+			if err != nil {
+				return nil, fmt.Errorf("--file: read failed")
+			}
+			data, err = io.ReadAll(io.LimitReader(file, int64(c.MaxBytes)+1))
+			_ = file.Close()
+			if err != nil {
+				return nil, fmt.Errorf("--file: read failed")
+			}
+			if len(data) > c.MaxBytes {
+				return nil, ErrStructuredInputLimit
+			}
+		} else {
+			var err error
+			data, err = os.ReadFile(c.File)
+			if err != nil {
+				return nil, fmt.Errorf("--file %q: %w", c.File, err)
+			}
 		}
 		parsed, err := ParseStructured(data)
 		if err != nil {
+			if c.MaxBytes > 0 {
+				return nil, fmt.Errorf("--file: %w", err)
+			}
 			return nil, fmt.Errorf("--file %q: %w", c.File, err)
 		}
 		mergeInto(merged, parsed)
 	}
 
 	if c.Config != "" {
+		if c.MaxBytes > 0 && len(c.Config) > c.MaxBytes {
+			return nil, ErrStructuredInputLimit
+		}
 		parsed, err := ParseStructured([]byte(c.Config))
 		if err != nil {
 			return nil, fmt.Errorf("--config: %w", err)

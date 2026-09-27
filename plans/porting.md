@@ -1663,6 +1663,40 @@ The PTD tables below are retained as an immutable audit snapshot. These
 overrides are the current status and do not delete or rewrite any original
 rows or counts.
 
+##### 2026-09-24 current override (R9.2t PostgreSQL `psql_query`; external CI pending)
+
+This is the current PostgreSQL status; the dated phase counts below describe
+their earlier snapshots, not today's registration inventory. In
+particular, the frozen 2026-08-29 PTD-EXEC-1018 `actionable`/unregistered row
+is superseded: `postgres.psql_query` is registered. The generator-backed R9
+report (`round: R9.3r`) now records **50/50 PostgreSQL public functions**
+registered (77 catalog entries, 27 private), with zero PostgreSQL public names
+pending; R9 totals are 132/132 public registrations across its scoped families.
+This is registration and local mock-contract coverage, **not** a completed R9
+live-service or Salt parity gate.
+
+| Phase | Scope | Implementation executor role | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `R9.2t` (shared, uncommitted) | Privileged bounded stdin-only `postgres.psql_query`, direct/registry/CLI fake-Runner and differential contract; generated report from `TestR9DifferentialScopeReport` | `backend-engineer-senior` | Independent local tests and code security review reported passed in the task handoff; external approval/execution not inferred | Registered 50/50; mock-only local evidence, no local PostgreSQL and no added Go module dependency; external service outcome remains `pending_external_ci` |
+| `E5 PostgreSQL` (configured, not executed here) | Exactly 20 ordered real-service cases for the production binary and independent native `psql` against a disposable PostgreSQL database; value-free result and cleanup gate | `devops-platform-engineer-senior` | Independent `security-architect-lead` review of the protected workflow, rootfs builder, Podman inspection boundary, and host-network/firewall exception remains required; human approval does not replace runtime preflight | Workflow is main-only for push/manual/schedule; no PR execution. Exact Go 1.26.8/PostgreSQL 16.15 source closure is staged into `/dev/shm`; the fixed `go mod download` runs in its own manifest-closed dependency-fetch rootfs container behind a pinned loopback-DNS/proxy-IP egress allowlist (the host never fetches); Go build/tests and Python mocks run in rootless Podman `--rootfs` with `network=none`; container existence is tri-state fail-closed; the staged rootfs and its manifest are independently revalidated before every create/start and an in-rootfs preflight entrypoint rechecks effective UID/capabilities/NoNewPrivs/mountinfo/manifest digest before payload code; the rootless bootstrap wrapper keeps setuid subordinate mapping viable while payload containers drop all capabilities; the compiled binary lives in the verified exec tmpfs and is digest-checked before live start; live container alone uses host network after loopback and per-test-UID firewall verification. No OCI image, pull, local service, or live run. External 20/20 pass, live behavior, the exact libpod inspect schema, and Salt differential parity are not claimed; `external_ci: pending_external_ci`. On 2026-09-26 all 19 local Python orchestration tests passed in a rootless `network=none` mock container; the OCI/libpod inspect schema and live mountinfo layout remain unobserved on GitHub and the runtime rejects them if they differ |
+
+The 20 configured cases cover `psql_query` only, not live validation of the
+other 49 PostgreSQL public functions. They include both `write=false`
+INSERT RETURNING with native persistence observation and `write=true` UPDATE
+RETURNING with native committed read-back; these are configured assertions,
+not observations from an external run.
+
+The arbitrary SQL entry point is privileged, not a safe read API: `write=false`
+does **not** enforce read-only access (data-modifying CTEs/functions inside
+COPY can persist writes). A timeout, client/Runner error, or result-limit
+failure returns no partial result but cannot establish whether a prior write
+committed; callers must reconcile an unknown write outcome before retrying.
+COPY CSV compatibility maps SQL NULL and the empty string to the same empty
+string in the returned string map; callers needing lossless values require a
+separately proven transport. The bounded lexical/size restrictions and mock
+coverage are documented in the generated report, whose external status remains
+`pending_external_ci`. No live PostgreSQL is run by this documentation update.
+
 ##### 2026-09-17 current status (R9.2c-R9.2f PostgreSQL catalog, extension/language, schema, and role/privilege read-only queries)
 
 Backfill: the four read-only PostgreSQL phases between R9.2b and R9.2g,

@@ -2,8 +2,29 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
+
+func TestChannelsLoadScopedBoundedStructuredInput(t *testing.T) {
+	const bound = 128
+	oversize := `{"query":"` + strings.Repeat("synthetic-marker-", 9) + `"}`
+	file := writeTemp(t, t.TempDir(), "request.json", oversize)
+	for _, ch := range []Channels{
+		{Stdin: true, Data: []byte(oversize), MaxBytes: bound},
+		{Config: oversize, MaxBytes: bound},
+		{File: file, MaxBytes: bound},
+	} {
+		got, err := ch.Load()
+		if err == nil || got != nil || strings.Contains(err.Error(), "synthetic-marker") {
+			t.Fatalf("oversized structured input returned %#v err=%v", got, err)
+		}
+	}
+	got, err := (Channels{Config: `{"query":"safe"}`, MaxBytes: bound}).Load()
+	if err != nil || got["query"] != "safe" {
+		t.Fatalf("bounded valid config %#v err=%v", got, err)
+	}
+}
 
 func TestParseStructured(t *testing.T) {
 	fromJSON, err := ParseStructured([]byte(`{"name":"curl","version":"8.14.1"}`))

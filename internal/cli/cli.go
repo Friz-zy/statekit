@@ -422,6 +422,20 @@ func parseOr(fs *flag.FlagSet, argv []string) bool {
 // returns the "fun" key. Returns the args pointer, the explicitly requested
 // output format (empty when none), the extracted fun key, and an exit code.
 func decodeArgs(kind, fullName string, template any, argv []string, base config.Channels, wantFun bool) (any, string, string, int) {
+	boundedQuery := kind == "exec" && fullName == "postgres.psql_query"
+	if boundedQuery {
+		// Reject oversized flag text before normalization and flag decoding
+		// duplicate the caller's SQL. Structured channels are capped below.
+		for i, arg := range argv {
+			if arg == "--query" && i+1 < len(argv) && len(argv[i+1]) > runtime.MaxCommandInputBytes {
+				return nil, "", "", failf(ExitInvalidInput, "postgres.psql_query: query exceeds input limit")
+			}
+			if strings.HasPrefix(arg, "--query=") && len(arg)-len("--query=") > runtime.MaxCommandInputBytes {
+				return nil, "", "", failf(ExitInvalidInput, "postgres.psql_query: query exceeds input limit")
+			}
+		}
+		base.MaxBytes = runtime.MaxCommandInputBytes
+	}
 	if template == nil {
 		bare := flag.NewFlagSet("state single", flag.ContinueOnError)
 		bare.SetOutput(io.Discard)
@@ -493,6 +507,9 @@ func decodeArgs(kind, fullName string, template any, argv []string, base config.
 	}
 
 	ch := mergeChannels(base, fnFS)
+	if boundedQuery {
+		ch.MaxBytes = runtime.MaxCommandInputBytes
+	}
 
 	structured, err := ch.Load()
 	if err != nil {

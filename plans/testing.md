@@ -19,6 +19,7 @@ Companion to `plans/init.md` (§24–§28). Defines the concrete CI/CD implement
 | Integration matrix | real-case fixtures per module family on each target distro | Docker matrix | push to `main`, path-filtered PRs |
 | E5.2 live service gate | workflow-ready authenticated disposable MySQL 8.4; StateKit E5.1 read-only/catalog/plugin calls plus R9.3j lifecycle, R9.3l alter/create/seed/read-back, R9.3m process/replication status, R9.3n `mysql.slave_lag`, R9.3o plugin lifecycle, R9.3p `mysql.query`, and R9.3q `mysql.file_query` cases with native-client postconditions | private rootless Podman network | every PR event, `main`, manual, nightly; live execution `pending_external_ci` |
 | E5.3 live SQLite file gate | intended production `statekit`/native-observer workflow controls for a disposable actual SQLite file; exact value-free inventory | protected workflow with an inspected isolated Podman runner and owned temporary file | every PR event, `main`, manual, nightly; live execution `pending_external_ci` |
+| E5 PostgreSQL live gate | production `postgres.psql_query` and independent native `psql` against an owned disposable database on the `ubuntu-24.04` runner's bundled PostgreSQL 16.15; exactly 20 ordered cases | rootless Podman `--rootfs` from exact runner Go/psql runtime files; no OCI image/service, image pull, published port, or repository secret | main push/manual/schedule only; no PR path; live run remains `external_ci: pending_external_ci` |
 | Differential vs Salt | identical scenarios via `salt-call --local` vs `statekit`, normalized comparison | Docker twins | nightly + label `differential` |
 | VM suite | systemd units, mounts, firewall, kernel-level cases containers cannot cover faithfully | QEMU on GH runner | nightly after Phase 3 |
 
@@ -106,7 +107,7 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
 .github/workflows/
 ├── ci.yml              # PR gate
 ├── integration.yml     # reusable full matrix (workflow_call + main pushes)
-├── integration-services.yml # E5.2 MySQL + E5.3 SQLite live gates
+├── integration-services.yml # E5.2 MySQL + E5.3 SQLite + PostgreSQL live gates
 ├── differential.yml    # nightly + workflow_dispatch + label:differential
 └── vm-nightly.yml      # QEMU suite (Phase 4+, allow-fail initially)
 
@@ -407,6 +408,236 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
   Salt live differential parity, GitHub success, MySQL behavior, or any external
   database service result.
 
+### `integration-services.yml` — runner-bundled PostgreSQL live query gate (external execution pending)
+
+- **Platform and exact baseline:** `postgres-live` uses the GitHub-hosted
+  `ubuntu-24.04` runner's existing PostgreSQL cluster and Go toolchain; it adds
+  no OCI image, service, pull, dependency, or digest claim. The runner bundle is
+  mutable, so preflight fails closed unless Go, PostgreSQL server, `pg_config`,
+  and `psql` are exactly `1.26.8` / `16.15`. Only PostgreSQL `16/main` on port
+  5432 is accepted. The workflow job condition is restricted to `push`,
+  `workflow_dispatch`, and `schedule` on `refs/heads/main`; PR events do not
+  execute the privileged controller. SHA-pinned actions, `contents: read`,
+  `persist-credentials: false`, no secrets/OIDC/write permissions, and the job
+  timeout remain in force.
+- **Executor and review:** `devops-platform-engineer-senior` owns the CI
+  controller and `security-architect-lead` (independent senior security
+  reviewer) owns the required security review. The user explicitly authorized
+  this isolated workflow remediation; the independent review remains a separate
+  pre-merge gate. No generated Agent Manager session ID is available.
+  `backend-engineer-senior` owns the PostgreSQL API and existing Go mock
+  contract. Human approval does not replace runtime preflight.
+- **Preflight and admin separation:** before module fetch or project/toolchain
+  execution, the live controller checks the trusted main event/ref, exact
+  toolchain, a noexec `/dev/shm` parent, an unused safe
+  `/dev/shm/statekit-exec-<20hex>` path, and noninteractive sudo authorization
+  for the exact mount/unmount argv. It also checks the single cluster, effective
+  loopback listener configuration, and (if online) the selected postmaster PID,
+  UID, executable/config arguments, and PID-to-listener association. The
+  main-only admin bootstrap provisions a temporary rootless test identity with
+  a no-sudo policy and an isolated subordinate-ID range, mounts one bounded
+  tmpfs for the minimal executable rootfs, performs PostgreSQL setup/cleanup,
+  and installs/removes the per-UID firewall. The test process has no sudo and an
+  allowlist containing only `psql`.
+- **Manifest-closed rootfs and execution boundary:** dependency acquisition runs
+  only in its own manifest-closed dependency-fetch rootfs container: fixed
+  `go mod download` with the fixed Go binary/argv, the copied read-only
+  `go.mod`/`go.sum` pair at `/deps`, one writable go-module cache output at
+  `/modules`, an isolated tmpfs `HOME`, fixed `GOPROXY=https://proxy.golang.org`
+  with no direct fallback, public `GOSUMDB`, no checkout source, scripts, hooks,
+  credentials, sockets, or other host paths, and bounded resources. The host
+  never executes `go mod download`. That one container uses host networking
+  behind per-test-UID iptables and ip6tables OUTPUT chains that are installed
+  **unconditionally for both families**: an empty resolved address set for a
+  family installs that family's resolver-only default-drop chain instead of
+  leaving the family unfiltered. The chains allow only the loopback resolver
+  (UDP/TCP 53, exact configured address), the resolved and pinned
+  `proxy.golang.org`/`sum.golang.org`/`storage.googleapis.com` addresses over
+  TCP/443, and then DROP all remaining traffic. Rule verification parses
+  canonical `iptables -S` tuples (normalizing `-m tcp` serialization and
+  `/32`//`/128` suffixes) and requires the exact ordered owned chain plus a
+  single first-position owner jump for both families — any extra
+  ACCEPT/RETURN/bypass, wrong DNS/proxy address, source, port, or altered
+  ordering fails closed. Chain ownership is recorded the moment each chain is
+  created, cleanup is idempotent/bounded and proves absence for every owned
+  chain of both families (failure invalidates the published report), and the
+  effective dual-family policy is re-verified immediately before the fetch
+  container starts. A builder then stages exact runner Go 1.26.8, PostgreSQL 16.15
+  `psql`, Python standard library, shell/test utilities, and trusted `ldd`
+  shared-library closure into a minimal rootfs under the dedicated
+  `/dev/shm/statekit-exec-<20hex>` tmpfs mounted with
+  `rw,exec,nosuid,nodev,size=4g,mode=0700`. The noexec `/dev/shm` parent remains
+  required for the isolated `/dev/shm/statekit-pg-*` workspace and credentials;
+  the child mount is independently verified with `findmnt` for exact target,
+  source `tmpfs`, `tmpfs` type, effective executable/noexec/nosuid/nodev/size/mode
+  options, and dedicated test-user ownership. Since kernel mount tables may omit
+  default `exec`, the verifier derives effective `exec` only when `noexec` is
+  absent and independently confirms VFS flags with `statvfs`. The builder
+  requires the exact run mount,
+  direct nonsymlink paths, and these flags before staging; unsupported exec
+  tmpfs fails closed with no ordinary-host-rootfs fallback. The rootfs manifest
+  distinguishes `live-executable`, `dependency-fetch`, and `mock-only`. The
+  builder verifies every source/symlink path against explicit public
+  tool/library roots, rejects sockets/devices/escapes, and writes a hashed
+  path/content manifest with exact Go/PostgreSQL versions. Immediately before
+  every create and every start, the controller independently revalidates the
+  manifest digest, canonical root/parent, exact entry list (no unlisted
+  files/dirs/sockets/devices), per-entry type/mode/hash, and symlink targets
+  that stay inside the staged root; labels alone are never rootfs proof. The
+  Podman inspect gate additionally requires an authoritative rootfs source field
+  (`RootfsPath`/`Rootfs`/`GraphDriver` merged directory) to match the staged
+  root and fails closed when none is present. The exact libpod inspect schema
+  is not observed on GitHub yet; if the runtime names these fields differently
+  the gate rejects the runtime rather than trusting labels.
+  Every build/mock/live/fetch container command is wrapped by a trusted
+  in-rootfs preflight entrypoint that is itself manifest-hashed: it checks the
+  real `/proc/self/status` UID/EUID/GID/groups, `NoNewPrivs`, and
+  `CapInh`/`CapPrm`/`CapEff`/`CapBnd`/`CapAmb` — absent fields are failures,
+  never implicit zeros — plus `/proc/self/mountinfo` source/readonly/exec
+  identity for the root, `/tmp`, `/dev/shm`, `/workspace`, `/artifact`,
+  `/run/pgpass`, `/out`, `/modules`, and `/deps` mounts with a closed
+  mountpoint allowlist, and the manifest digest, before exec'ing the payload
+  command.
+  Go verify/build/all Go tests and the Python orchestration mocks run in
+  separate rootless Podman `--rootfs` containers with `--userns=keep-id`, a
+  non-root user, dropped capabilities, no-new-privileges, read-only rootfs,
+  private PID/IPC/UTS, bounded CPU/memory/PID/tmpfs/timeout, and no network.
+  Container inspect checks effective rootfs manifest, user, environment key
+  allowlist, exact bind/tmpfs mounts, network mode, namespaces, capabilities,
+  devices, and resource limits before each start. The build/mock containers
+  receive the checkout read-only (`/workspace`, `noexec`) in `network=none`;
+  the **live payload container never receives the checkout**: the trusted
+  controller stages reviewed copies of exactly two harness files (`run.py`
+  and the psql dispatch probe) under the isolated workspace, digest-pins them
+  against the reviewed sources before create and again before start, and
+  binds only that staged tree at `/workspace` — no repository content,
+  working tree, or `.git` path crosses the boundary. Moving those two files
+  into the manifest-closed rootfs profile is the recorded follow-up that
+  removes this last `/workspace` bind as well. The compiled
+  `statekit` binary is stored under the verified exec tmpfs
+  (`<exec-mount>/artifacts`) rather than the noexec workspace: digest, owner,
+  and mode are verified after the build and re-verified before live
+  create/start, it is mounted read-only (exec) into the live container at
+  `/artifact/statekit`, and the controller never executes it on the host. No
+  host root, runner home, credentials, or runtime socket is mounted.
+- **Rootless bootstrap and container lifecycle:** the Podman client wrapper
+  runs as the isolated test user without `no-new-privileges` or capability
+  bounding restrictions so the setuid `newuidmap`/`newgidmap` subordinate
+  mapping helpers still work; those helpers are verified for exact path,
+  root ownership, and setuid mode, the subordinate ranges are exactly one
+  65536-ID range, and the test user has no sudo authorization. Payload
+  containers carry their own controls (`--cap-drop=ALL`,
+  `no-new-privileges`, non-root UID) and those are enforced again by the
+  in-rootfs preflight before project code runs. Container existence is handled
+  as a tri-state (`present`/`absent`/`unknown` from `podman container
+  exists`): every create collision check fails on present or unknown,
+  cleanup/removal proves absence, and repeated cleanup stays idempotent; mount
+  teardown happens only after every run container is proven absent. The
+  behavior is exercised by a mocked Podman lifecycle self-test.
+- **Live PostgreSQL exception and credentials:** only the live test container
+  uses host networking, and only after the selected server is verified
+  loopback-only and the effective IPv4/IPv6 per-test-UID OUTPUT chains are
+  structurally verified. IPv4 allows only `127.0.0.1:5432`; the IPv6 chain is
+  installed unconditionally and allows `[::1]:5432` only when the selected
+  service actually binds IPv6 loopback (probed from the listener snapshot) —
+  otherwise it contains no ACCEPT rule at all. Every other address and port
+  defaults to DROP in both families, and the exact canonical rules of both
+  families are verified again immediately before the live container starts.
+  Container mounts/network/privileges are inspected again before start. The
+  passfile is a
+  single-link regular mode-0600 file mounted read-only at `/run/pgpass`; SQL and
+  request JSON remain stdin-only, and temporary bad-auth passfiles live on the
+  private tmpfs and are removed per call. The parallel backend task owns moving
+  the production Go transport from `PGPASSWORD` child-environment transit to the
+  same per-call passfile boundary (`modules/exec/postgres/postgres.go` is not
+  modified by the CI harness task); this harness retains the `PGPASSFILE`
+  boundary for that change and makes no claim about its completion. Values are
+  not logged or included in reports/artifacts. This is a rootless execution
+  boundary, not a claim that the hosted
+  runner controller itself is untrusted.
+- **Cases, cleanup, and evidence:** preserve the exact 20 ordered case IDs and
+  semantics, with no renames; tests continue to assert exact inventory equality
+  and the 50/50 PostgreSQL registration report is unchanged. The live cases
+  cover only `postgres.psql_query`, not the other 49 PostgreSQL functions, and
+  are not Salt parity evidence. Database/role, container, account/subuid,
+  firewall, passfile, rootfs/workspace, and job-started cluster cleanup are
+  bounded and checked before report publication. After containers are stopped,
+  removed, and confirmed absent, cleanup verifies the exact run-owned tmpfs,
+  performs bounded `sudo -n umount` on that path only, proves mount absence,
+  removes the empty mountpoint, and proves path absence; cleanup failure removes
+  or invalidates the report. Report publication itself is success-only and
+  gated by an **independent trusted-controller validator**
+  (`tests/live/postgres/validate_report.py`, no shared code with the payload
+  harness): after the payload container has exited and been removed and
+  teardown is verified, and before any artifact copy, it checks a
+  regular single-link mode-0600 file of bounded size, the exact 16-field
+  value-free top-level schema (including `postgres_major: 16` and
+  `postgres_version: 16.15`), the exact ordered 20 known case IDs exactly once
+  with `status=pass` for every case, no extra fields, nested structures, or
+  SQL/query/output/password-bearing content, and the expected aggregate
+  status; on failure it logs only a fixed category and never report bytes, and
+  any later cleanup failure removes the published artifact. Runner loss can
+  still prevent cleanup/publication.
+  `external_ci: pending_external_ci`; no live pass or successful GitHub
+  execution is claimed.
+- **Local validation boundary:** only mock/static tests run in rootless Podman
+  using scratch storage `.gotmp`; do not start PostgreSQL, run Actions, pull an
+  image, or invoke the live controller. Local tests use a Python-only rootfs
+  built in executable `.gotmp`; that profile is explicitly `mock-only`, bypasses
+  the live-mount requirement, and makes no claim to be an executable live
+  toolchain rootfs. The live rootfs remains required to use the separately
+  verified exec tmpfs. Exact Go 1.26.8 and PostgreSQL 16.15 are not required
+  locally. On 2026-09-26, all 21 Python orchestration tests passed in a
+  rootless
+  `--rootfs --network=none` mock container on the existing `.gotmp` store
+  (source mounted read-only, non-root UID, all capabilities dropped,
+  no-new-privileges), including the exact 20-case inventory, the mocked
+  container-existence tri-state lifecycle self-test
+  (reserve/create/remove/repeated cleanup/mount teardown for
+  present/absent/unknown), behavioral firewall mocks over a canonicalizing
+  iptables/ip6tables simulator (dual-family install with an empty IPv6 set
+  defaulting to DROP, unexpected ACCEPT/RETURN bypass rejection, altered
+  DNS-rule/proxy-rule ordering, wrong resolver/port/source, unapproved pinned
+  address, foreign rule before and duplicate owner jump, ownership recorded
+  immediately after chain creation with failures before and after the hook,
+  and idempotent bounded cleanup proving absence), the independent
+  controller-side report validator (accepts the exact generated all-pass
+  report; rejects extra fields, value-bearing/JSON-shaped content,
+  duplicate/unknown/missing/reordered case IDs, skip/fail statuses, wrong
+  major/minor, truncation, symlink/hardlink/wrong-mode/wrong-owner/oversize
+  files, and emits only its fixed failure category), staged-rootfs manifest
+  revalidation
+  positives and unlisted-socket/mode/content/symlink-escape negatives, the
+  generated in-rootfs preflight entrypoint against synthetic
+  status/mountinfo/manifest fixtures (success plus missing-field, wrong-UID,
+  nonzero-capability, wrong-digest, unexpected-mount, and mount-policy
+  negatives, with the live `/workspace` mount modeled as the staged harness
+  directory), synthetic noexec-parent/exec-child mount policy, mount
+  identity/cleanup rejection fixtures, Go/psql rootfs closure,
+  symlink-escape rejection, and per-phase Podman-inspect policy fixtures
+  (fetch/build/mock/live bind sets, including rejection of a live container
+  that still binds the checkout, and the fail-closed authoritative rootfs
+  field). Bash syntax and diff
+  checks also passed. As an explicitly authorized local-only exception, offline
+  host Go validation ran with `-mod=readonly` and `GOPROXY=off` against the
+  populated module cache: `go vet ./...` passed; `go test ./...` passed for all
+  packages except the backend-owned `tests/differential` scope-report
+  staleness check (report regeneration belongs to the parallel backend task and
+  was not performed) and a pre-existing unrelated
+  `tools/salt-reference` lock-fallback expectation; the integration harness
+  needed the executable `.gotmp` tmpdir because the host `/tmp` is noexec. No
+  local PostgreSQL, GitHub Actions, exact Go 1.26.8, exact PostgreSQL 16.15,
+  sudo, or actual mount/umount operation was performed. This evidence cannot
+  substitute for independent security review or external CI.
+- **Follow-up ownership:** `security-architect-lead` (independent senior
+  security reviewer) reviews the protected workflow, rootfs builder, Podman
+  inspection boundary, and live host-network/firewall exception before merge.
+  `devops-platform-engineer-senior` verifies local mock/static results and
+  reviews the artifact; the requesting user (human CI operator; seniority not
+  specified) runs GitHub Actions after synchronization. External evidence stays
+  `pending_external_ci` until that user-run job completes. No generated
+  Agent Manager session is assigned in this plan.
+
 ### `differential.yml` — Salt comparison (init.md §26)
 
 - Nightly cron + manual dispatch + `label:differential` on PRs touching core modules
@@ -444,6 +675,7 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
 | 4 | broader module suites join matrix; `vm-nightly.yml` bootstrap |
 | E5.2 | `integration-services.yml` live MySQL 8.4 gate for the E5.1 read-only/catalog/plugin surface plus R9.3j lifecycle, R9.3l alter/create/seed/read-back, R9.3m process/replication status, R9.3n `slave_lag`, R9.3r `mysql.free_slave` unsupported/negative preflights, R9.3o plugin lifecycle, R9.3p `mysql.query`, and R9.3q `mysql.file_query`; exact inventory is 101 and external execution remains `pending_external_ci` |
 | E5.3 | separate `sqlite-live` production-binary/file/native-observer gate for R9.3k; exact inventory, value-free report, cleanup, and zero-skip enforcement; external execution `pending_external_ci` |
+| E5 PostgreSQL | separate `postgres-live` production-binary/native-psql service gate for the R9.2t query boundary; 20 exact ordered cases, independent cleanup and zero-skip enforcement; external execution `pending_external_ci` |
 | 5+ | differential scope expansion driven by generated catalog; flake budget review |
 
 ## Acceptance criteria for the test system itself
@@ -455,3 +687,4 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
 - [ ] No test requires network beyond package mirrors inside containers; mirror endpoints documented
 - [ ] E5.2 live reports, when produced by external CI, contain exact 101-case counts, zero skipped cases, native charset/collation/seed/query postconditions, available processlist correlation, built-in plugin status plus uppercase/mixed-case StateKit exact-Go observations with the native collation ceiling documented, default/custom missing-shared-object INSTALL classifications without a positive installation claim, explicit MySQL 8.4 unsupported classifications for the two removed legacy replication statements plus `slave_lag`'s `-3` and `free_slave`'s empty-string compatibility results, five truthful free_slave cases in which auth/connection negatives pair native observations with the guarded StateKit JSON empty string and the runtime negative is classifier-only without StateKit/native runtime invocation, no replica/promotion claim, mysql.query and mysql.file_query scalar/table/DDL/multiline/negative classifications, owned-file cleanup success, disposable-database cleanup success, and no credential-bearing or SQL-bearing output
 - [ ] E5.3 live reports, when produced by external CI, contain exact 14-case counts, zero skipped cases, native postconditions, cleanup success, and no value-bearing output; status remains `pending_external_ci` until an external run exists
+- [ ] PostgreSQL live reports, when produced by external CI, contain exactly 20 ordered case IDs, zero skipped cases, fixed-value StateKit/native correlation, explicit `write=false` persistence proof, no-dispatch and output-cap negatives, independent database-absence proof, successful cleanup and no SQL, credentials, or query result values, and are accepted by the independent controller-side validator (strict mode-0600 single-link file, exact 16-field value-free schema with PostgreSQL 16/16.15, ordered all-pass inventory) before artifact publication. The runner-bundled PostgreSQL major-16 source is not a digest-pinned image; no OCI image or quarantine exception is used. External CI and independent protected-workflow security review remain pending.

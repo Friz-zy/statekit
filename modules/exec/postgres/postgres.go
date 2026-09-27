@@ -234,9 +234,9 @@
 // R9.2s path only the pinned transaction script assembled from the five
 // fixed catalogs and the two validated identifiers, and the
 // R9.2i role paths construct only the pinned CREATE/ALTER/DROP ROLE and
-// GRANT statements with the same validated identifiers, so the generic
-// psql_query surface stays
-// pending for a later round. The pinned module's private helpers (_run_psql 179-235,
+// GRANT statements with the same validated identifiers. The public
+// psql_query privileged surface instead uses a conservative scanner and
+// bounded stdin transport. The pinned module's private helpers (_run_psql 179-235,
 // _parsed_version 334-361, _psql_cmd 386-432, psql_query's CSV parse,
 // _role_cmd_args 1271-1365, _add_role_flag 1173-1184,
 // _maybe_encrypt_password 1187-1206, _md5_password 1242-1247,
@@ -257,12 +257,15 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/friz-zy/statekit/internal/facts"
@@ -520,21 +523,31 @@ var (
 	errPostgresInvalidDataDirPath = fmt.Errorf("%w: invalid data directory path", errPostgresInvalidArgument)
 	errPostgresInvalidWalDirPath  = fmt.Errorf("%w: invalid wal directory path", errPostgresInvalidArgument)
 	// errPostgresPwfileCleanup is the fixed, value-free fail-closed error
-	// for a password file that cannot be removed after initdb ran: the
-	// pinned source only logs a warning, but StateKit modules have no
-	// logging surface, and silently leaving credential bytes on disk is
-	// the strictly worse outcome, so the cleanup failure is surfaced.
+	// for a credential file that cannot be removed after its consumer ran
+	// (the initdb pwfile over Runtime.FS and the per-call psql pgpass file
+	// under the process TMPDIR share it): the pinned source only logs a
+	// warning, but StateKit modules have no logging surface, and silently
+	// leaving credential bytes on disk is the strictly worse outcome, so
+	// the cleanup failure is surfaced.
 	errPostgresPwfileCleanup = errors.New("postgres: password file cleanup failed")
 	// errPostgresPwfileTempDir and errPostgresPwfileWrite are the fixed,
-	// value-free fail-closed errors for the pwfile transport's
-	// preparation half: the raw MkdirTemp/WriteFile errors are
-	// *fs.PathError values whose Op/Path fields name the
-	// credential-holding temp location, and a faulting filesystem may
-	// fold any bytes (path echoes, captured stderr) into its error
+	// value-free fail-closed errors for the credential-file transports'
+	// preparation half (the initdb pwfile's MkdirTemp/WriteFile and the
+	// psql pgpass file's MkdirTemp/OpenFile/write/sync/close alike): the
+	// raw filesystem errors are *fs.PathError values whose Op/Path fields
+	// name the credential-holding temp location, and a faulting filesystem
+	// may fold any bytes (path echoes, captured stderr) into its error
 	// strings, so only the stable category travels onward — the same
 	// redaction boundary errPostgresPwfileCleanup holds for the removal.
 	errPostgresPwfileTempDir = errors.New("postgres: password file temp directory failed")
 	errPostgresPwfileWrite   = errors.New("postgres: password file write failed")
+	// errPostgresInvalidPgpassField is the fixed, value-free rejection for
+	// a connection field that cannot travel through the per-call pgpass
+	// file: a CR, LF, or NUL byte would terminate or corrupt the one-line
+	// five-field record (or forge a second matching line), so the value is
+	// refused before any temp directory, file, or Runner invocation
+	// exists, naming no rejected bytes.
+	errPostgresInvalidPgpassField = fmt.Errorf("%w: unsafe connection field for password file", errPostgresInvalidArgument)
 )
 
 // validateDataDirPath enforces the datadir family's path boundary shared
@@ -756,14 +769,19 @@ type pgConnection struct {
 }
 
 // runPsql ports the pinned _run_psql execution half: a shell-free,
-// centrally executed psql command with bounded output. The password half is
-// adapted: Salt writes a temporary PGPASSFILE and chowns it to the runas
-// user, but the StateKit runtime is single-user and has no elevation or
-// file-chown contract, so credentials travel through psql's native
-// PGPASSWORD (with PGUSER/PGHOST/PGPORT for the resolved connection) in an
-// otherwise clean environment, matching Salt's clean_env=True. The password
-// is a Redact secret: it never appears in the rendered command, captured
-// output, or returned errors. A non-zero psql exit stays compatibility
+// centrally executed psql command with bounded output. The credential
+// half keeps the pinned source's own out-of-band shape (R92T-SEC-06):
+// instead of exposing the request password as PGPASSWORD in the child
+// environment, every password-carrying invocation gets its own one-line
+// mode-0600 PGPASSFILE inside a fresh 0700 private directory under the
+// process's TMPDIR (tmpfs in the approved live rootfs), created with
+// O_CREATE|O_EXCL so no pre-existing path or planted symlink can be
+// followed, and removed on every success, error, timeout, cancellation,
+// and output-limit path. The otherwise clean child environment exports
+// only PGPASSFILE=<path> plus the resolved PGUSER/PGHOST/PGPORT — the
+// password value never enters argv, the environment, a log, a report, or
+// a rendered command — and it stays a Redact secret over the captured
+// output and returned errors. A non-zero psql exit stays compatibility
 // data, like Salt's logged-but-returned retcode.
 func runPsql(ctx context.Context, rt *runtime.Runtime, argv []string, conn *pgConnection) (process.CommandResult, error) {
 	return runPsqlSecrets(ctx, rt, argv, conn, nil)
@@ -829,9 +847,46 @@ func runPsqlSecrets(ctx context.Context, rt *runtime.Runtime, argv []string, con
 		Timeout:        commandTimeout,
 		MaxStdoutBytes: outputLimit,
 		MaxStderrBytes: outputLimit,
-		Env:            psqlEnvironment(conn),
 	}
-	return finishPsqlRun(ctx, rt, command, secrets)
+	return runPsqlCommand(ctx, rt, command, conn, secrets)
+}
+
+// runPsqlCommand is the shared credential tail of every psql invocation:
+// the per-call pgpass file is created before and removed after the single
+// central Runner run — on every success, error, timeout, cancellation, and
+// output-limit path, exactly once per invocation so no cleanup race
+// exists — and the clean child environment (the resolved connection
+// variables plus PGPASSFILE=<path> alone) is attached here. A cleanup
+// failure after an otherwise successful run is the value-free
+// errPostgresPwfileCleanup; a cleanup failure alongside a primary error
+// joins that fixed category onto the primary with errors.Join, so BOTH
+// stay observable through errors.Is — the primary's sentinel semantics
+// (cancellation, deadline, output limits) and the stranded-credential
+// signal alike — while neither error's text is altered.
+func runPsqlCommand(ctx context.Context, rt *runtime.Runtime, command process.Command, conn *pgConnection, secrets []string) (process.CommandResult, error) {
+	passfile, cleanup, err := pgpassForConnection(conn)
+	if err != nil {
+		return process.CommandResult{ExitCode: -1}, err
+	}
+	command.Env = psqlEnvironment(conn, passfile)
+	result, err := finishPsqlRun(ctx, rt, command, secrets)
+	if cleanup != nil {
+		if cleanupErr := cleanup(); cleanupErr != nil {
+			if err == nil {
+				err = cleanupErr
+			} else {
+				// The pgpass closure maps every removal failure onto the
+				// fixed value-free sentinel, so this join is exactly
+				// errors.Join(primary, errPostgresPwfileCleanup): the
+				// aggregate adds only the stable category, never a raw
+				// path or credential, and errors.Is keeps the primary
+				// identity (cancellation, deadline, output limit, or the
+				// redacted Runner failure) reachable.
+				err = errors.Join(err, errPostgresPwfileCleanup)
+			}
+		}
+	}
+	return result, err
 }
 
 // finishPsqlRun is the shared transport tail of every psql invocation:
@@ -869,10 +924,11 @@ func finishPsqlRun(ctx context.Context, rt *runtime.Runtime, command process.Com
 // CommandWithInputBounded, so no host filesystem artifact, chmod, or
 // cleanup exists on this path — the bounded central Runner receives the
 // bytes directly. Shell stays false, the password stays out of band in
-// the clean PG environment, and the shared guards (cancellation, runas,
-// argv bounds, psql availability) run before any Runner invocation; the
-// script itself is bounded twice, once by the caller's accumulation
-// ceiling and once by CommandWithInputBounded.
+// the per-call pgpass file behind the clean PG environment, and the
+// shared guards (cancellation, runas, argv bounds, psql availability) run
+// before any Runner invocation; the script itself is bounded twice, once
+// by the caller's accumulation ceiling and once by
+// CommandWithInputBounded.
 func runPsqlScript(ctx context.Context, rt *runtime.Runtime, argv []string, conn *pgConnection, script string) (process.CommandResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -903,22 +959,24 @@ func runPsqlScript(ctx context.Context, rt *runtime.Runtime, argv []string, conn
 	command.Timeout = commandTimeout
 	command.MaxStdoutBytes = outputLimit
 	command.MaxStderrBytes = outputLimit
-	command.Env = psqlEnvironment(conn)
 	secrets := append([]string(nil), conn.Secrets...)
 	if conn.Password != nil {
 		secrets = append(secrets, *conn.Password)
 	}
-	return finishPsqlRun(ctx, rt, command, secretList(secrets...))
+	return runPsqlCommand(ctx, rt, command, conn, secretList(secrets...))
 }
 
 // psqlEnvironment builds the clean child environment for psql. Salt runs
-// psql with clean_env=True and passes credentials out of band, so only the
-// resolved connection variables are exported; an empty result leaves the
-// child with no inherited environment at all.
-func psqlEnvironment(conn *pgConnection) []string {
+// psql with clean_env=True and passes credentials out of band, so only
+// the resolved connection variables are exported, plus PGPASSFILE=<path>
+// pointing at the per-call credential file when the connection carries a
+// password; an empty result leaves the child with no inherited
+// environment at all. The password value itself never enters the
+// environment.
+func psqlEnvironment(conn *pgConnection, passfile string) []string {
 	env := make([]string, 0, 4)
-	if conn.Password != nil {
-		env = append(env, "PGPASSWORD="+*conn.Password)
+	if passfile != "" {
+		env = append(env, "PGPASSFILE="+passfile)
 	}
 	if value := pointerString(conn.User); value != "" {
 		env = append(env, "PGUSER="+value)
@@ -930,6 +988,141 @@ func psqlEnvironment(conn *pgConnection) []string {
 		env = append(env, "PGPORT="+value)
 	}
 	return env
+}
+
+// pgpassForConnection creates the per-call pgpass credential file when
+// the connection carries a password and returns its path plus the removal
+// closure; a passwordless connection keeps the clean environment with no
+// passfile — and no PGPASSWORD — at all.
+func pgpassForConnection(conn *pgConnection) (string, func() error, error) {
+	if conn == nil || conn.Password == nil {
+		return "", nil, nil
+	}
+	return writePgpassFile(conn)
+}
+
+// pgpassOpenFile and pgpassRemoveAll are narrow fault-injection seams for
+// the pgpass transport's failure tests; the production values are the os
+// package functions, and neither hook ever carries a credential value
+// (the file bytes hold the only copy, and the paths are random temp
+// names).
+var (
+	pgpassOpenFile  = os.OpenFile
+	pgpassRemoveAll = os.RemoveAll
+)
+
+// writePgpassFile creates the per-call pgpass credential file (the pinned
+// _run_psql transport's shape, minus the runas chown the single-user
+// runtime has no contract for): a fresh 0700 private directory inside the
+// process's TMPDIR, then a mode-0600 file created with O_CREATE|O_EXCL —
+// never O_TRUNC, never following a pre-existing path or planted symlink —
+// written with the single one-line record, fsynced, and closed. Only the
+// PGPASSFILE path travels onward; the password value never enters argv,
+// the environment, a log, or a rendered command. Every preparation
+// failure is the fixed value-free category (the shared
+// errPostgresPwfileTempDir/errPostgresPwfileWrite sentinels, because the
+// raw *fs.PathError renderings name the credential-holding location), a
+// write-side failure removes the directory again — joining
+// errPostgresPwfileCleanup when that rescue also fails, exactly like the
+// initdb pwfile transport — and the returned cleanup removes the whole
+// directory, answering errPostgresPwfileCleanup when it cannot.
+func writePgpassFile(conn *pgConnection) (string, func() error, error) {
+	line, err := pgpassLine(conn)
+	if err != nil {
+		return "", nil, err
+	}
+	dir, err := os.MkdirTemp("", "statekit-psql-pgpass-")
+	if err != nil {
+		return "", nil, errPostgresPwfileTempDir
+	}
+	passfile := filepath.Join(dir, "pgpass")
+	failWrite := func() error {
+		if rmErr := pgpassRemoveAll(dir); rmErr != nil {
+			return errors.Join(errPostgresPwfileWrite, errPostgresPwfileCleanup)
+		}
+		return errPostgresPwfileWrite
+	}
+	file, err := pgpassOpenFile(passfile, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return "", nil, failWrite()
+	}
+	if _, err := file.WriteString(line + "\n"); err != nil {
+		_ = file.Close()
+		return "", nil, failWrite()
+	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return "", nil, failWrite()
+	}
+	if err := file.Close(); err != nil {
+		return "", nil, failWrite()
+	}
+	return passfile, func() error {
+		if err := pgpassRemoveAll(dir); err != nil {
+			return errPostgresPwfileCleanup
+		}
+		return nil
+	}, nil
+}
+
+// pgpassEscape escapes one pgpass field value per the documented libpq
+// password-file format: an entry that needs to contain ":" or "\"
+// escapes that character with "\".
+func pgpassEscape(value string) string {
+	if !strings.ContainsAny(value, `:\`) {
+		return value
+	}
+	var escaped strings.Builder
+	escaped.Grow(len(value))
+	for i := 0; i < len(value); i++ {
+		if value[i] == ':' || value[i] == '\\' {
+			escaped.WriteByte('\\')
+		}
+		escaped.WriteByte(value[i])
+	}
+	return escaped.String()
+}
+
+// pgpassField renders one pgpass match field: the wildcard for an omitted
+// field (Salt's None meaning, the same emptiness psqlArgv omits the
+// --username/--host/--port flag for), the exact resolved value with the
+// documented escaping otherwise.
+func pgpassField(value string) string {
+	if value == "" {
+		return "*"
+	}
+	return pgpassEscape(value)
+}
+
+// pgpassLine builds the one-line pgpass record from the exact resolved
+// connection fields — hostname, port, database, username, password — with
+// the database keeping the same "postgres" fallback psqlArgv resolves
+// for --dbname, so the record psql matches is the connection psql dials.
+// Omitted user, host, and port render the pgpass wildcard; every field is
+// escaped per the documented format. CR, LF, or NUL anywhere in the five
+// values would terminate or corrupt the one-line record (or forge a
+// second matching line), so such values are rejected fail-closed before
+// any temp file or Runner invocation with the fixed value-free error.
+func pgpassLine(conn *pgConnection) (string, error) {
+	database := pointerString(conn.MaintenanceDB)
+	if database == "" {
+		database = defaultMaintenanceDB
+	}
+	fields := [5]string{
+		pointerString(conn.Host),
+		pointerString(conn.Port),
+		database,
+		pointerString(conn.User),
+		pointerString(conn.Password),
+	}
+	for _, field := range fields {
+		if strings.ContainsAny(field, "\r\n") || strings.IndexByte(field, 0) >= 0 {
+			return "", errPostgresInvalidPgpassField
+		}
+	}
+	return pgpassField(fields[0]) + ":" + pgpassField(fields[1]) + ":" +
+		pgpassField(fields[2]) + ":" + pgpassField(fields[3]) + ":" +
+		pgpassEscape(fields[4]), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -1067,8 +1260,237 @@ func parsedServerVersion(ctx context.Context, rt *runtime.Runtime, conn *pgConne
 }
 
 // ---------------------------------------------------------------------------
-// psql_query (read-only transport) — salt/modules/postgres.py:433-524 @
-// pinned revision, restricted to the write=False shape.
+// psql_query transport — salt/modules/postgres.py:433-524 @ pinned revision.
+
+const (
+	// COPY framing and the transaction envelope also fit the shared 1 MiB
+	// bounded-stdin ceiling. CLI structured input has its own pre-decode cap.
+	maxPsqlQueryBytes   = 256 << 10
+	maxPsqlQueryRows    = 10000
+	maxPsqlQueryColumns = 256
+)
+
+var (
+	errPsqlQueryInvalid = fmt.Errorf("%w: unsafe psql query", errPostgresInvalidArgument)
+	errPsqlQueryRows    = errors.New("postgres.psql_query: CSV result limit exceeded")
+	errPsqlQueryRun     = errors.New("postgres.psql_query: psql execution failed")
+)
+
+// PsqlQueryArgs mirrors the pinned (query, user, host, port, maintenance_db,
+// password, runas, write=False) signature. Arbitrary SQL is privileged:
+// write=false only omits an explicit READ WRITE transaction and is NOT a
+// read-only guarantee (DML CTEs and functions inside COPY can have effects).
+type PsqlQueryArgs struct {
+	Query         string  `statekit:"name=query,required"`
+	User          *string `statekit:"name=user"`
+	Host          *string `statekit:"name=host"`
+	Port          *string `statekit:"name=port"`
+	MaintenanceDB *string `statekit:"name=maintenance_db"`
+	Password      *string `statekit:"name=password"`
+	Runas         *string `statekit:"name=runas"`
+	Write         *bool   `statekit:"name=write"`
+}
+
+func (a *PsqlQueryArgs) connection() *pgConnection {
+	return &pgConnection{
+		User: a.User, Host: a.Host, Port: a.Port,
+		MaintenanceDB: a.MaintenanceDB, Password: a.Password, Runas: a.Runas,
+	}
+}
+
+type psqlQueryFunc struct{}
+
+func (psqlQueryFunc) Name() string { return "postgres.psql_query" }
+func (psqlQueryFunc) Args() any    { return PsqlQueryArgs{} }
+
+func (psqlQueryFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, err := typedArgs[PsqlQueryArgs](args, "postgres.psql_query")
+	if err != nil {
+		return nil, err
+	}
+	if len(a.Query) > maxPsqlQueryBytes {
+		return nil, runtime.ErrCommandInputLimit
+	}
+	// Preserve exactly the pinned strip/rstrip(';') transformation, then
+	// reject any input whose boundaries psql and PostgreSQL may disagree on.
+	if err := validatePsqlQuery(a.Query); err != nil {
+		return nil, err
+	}
+	query := strings.TrimRight(strings.TrimSpace(a.Query), ";")
+	script := "COPY (\n" + query + "\n) TO STDOUT WITH CSV HEADER;\n"
+	if pointerBool(a.Write) {
+		script = "START TRANSACTION READ WRITE;\n" + script + "COMMIT TRANSACTION;\n"
+	}
+	conn := a.connection()
+	argv := psqlArgv(pointerString(a.User), pointerString(a.Host), pointerString(a.Port), pointerString(a.MaintenanceDB),
+		"-v", "datestyle=ISO,MDY", "--set=ON_ERROR_STOP=on", "--quiet", "-f", "-")
+	result, err := runPsqlScript(ctx, rt, argv, conn, script)
+	if err != nil {
+		return nil, psqlQueryError(err)
+	}
+	if result.ExitCode > 0 {
+		return []map[string]string{}, nil // pinned positive-retcode mapping
+	}
+	if result.ExitCode < 0 {
+		return nil, errPsqlQueryRun
+	}
+	// --quiet suppresses transaction command tags, not COPY's CSV stream.
+	// Never blindly remove the final CSV record: it may itself be "COMMIT".
+	// Live psql framing still requires separate external-CI corroboration.
+	rows, err := parseCSVRowsBounded(string(result.Stdout))
+	if err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
+// psqlQueryError maps one psql_query transport failure onto the stable
+// public failure path (the R92T-FINAL-05 aggregate): the primary identity
+// survives exactly like the pre-aggregate mapping — cancellation,
+// deadline, output and input limits answer their control sentinels, the
+// module's own Runner and argument sentinels pass through, and every
+// other failure becomes the fixed value-free errPsqlQueryRun category,
+// because a custom Runner's error text may echo captured output, paths,
+// or caller SQL — while a transport error that also carries the pgpass
+// cleanup sentinel (a stranded credential file) is answered by the
+// aggregate errors.Join(primary, errPostgresPwfileCleanup): both
+// identities stay observable through errors.Is, and the rendering stays
+// the two fixed value-free lines, so no raw cause, temp path, password,
+// or SQL travels. The compatibility data is unchanged: a positive psql
+// exit maps to the pinned empty row list only when the cleanup succeeded.
+func psqlQueryError(err error) error {
+	var primary error
+	switch {
+	case errors.Is(err, context.Canceled):
+		primary = context.Canceled
+	case errors.Is(err, context.DeadlineExceeded):
+		primary = context.DeadlineExceeded
+	case errors.Is(err, process.ErrOutputLimit):
+		primary = process.ErrOutputLimit
+	case errors.Is(err, runtime.ErrCommandInputLimit):
+		primary = runtime.ErrCommandInputLimit
+	case errors.Is(err, errPostgresRunnerUnavailable), errors.Is(err, errPostgresPsqlUnavailable), errors.Is(err, errPostgresRunas), errors.Is(err, errPostgresInvalidArgument):
+		primary = err
+	default:
+		primary = errPsqlQueryRun
+	}
+	if errors.Is(err, errPostgresPwfileCleanup) && !errors.Is(primary, errPostgresPwfileCleanup) {
+		return errors.Join(primary, errPostgresPwfileCleanup)
+	}
+	return primary
+}
+
+// validatePsqlQuery is a conservative lexical *framing* check, NOT a SQL
+// authorization policy. It intentionally does not classify SELECT vs writes.
+// Dollar quotes, backslash escapes/meta-commands, psql colon interpolation,
+// backticks, and SQL string prefixes that can change quote interpretation are
+// refused rather than guessed. Normal quotes, doubled quotes, nested comments
+// and quoted semicolons retain the caller's bytes. Upgrade path for rejected
+// forms is a separately proven psql/server lexical boundary, not relaxing it.
+func validatePsqlQuery(raw string) error {
+	if raw == "" || !utf8.ValidString(raw) {
+		return errPsqlQueryInvalid
+	}
+	for _, r := range raw {
+		if r == '\\' || r == '\u2028' || r == '\u2029' ||
+			(unicode.IsControl(r) && r != '\t' && r != '\n' && r != '\r' && r != '\f') {
+			return errPsqlQueryInvalid
+		}
+	}
+	query := strings.TrimRight(strings.TrimSpace(raw), ";")
+	if query == "" || len(query) > maxPsqlQueryBytes {
+		return errPsqlQueryInvalid
+	}
+	const (
+		normal = iota
+		quotedString
+		quotedIdent
+		lineComment
+		blockComment
+	)
+	state, depth := normal, 0
+	hasSQL := false
+	for i := 0; i < len(query); i++ {
+		c := query[i]
+		next := byte(0)
+		if i+1 < len(query) {
+			next = query[i+1]
+		}
+		switch state {
+		case normal:
+			switch {
+			case c == '-' && next == '-':
+				state, i = lineComment, i+1
+			case c == '/' && next == '*':
+				state, depth, i = blockComment, 1, i+1
+			case c == '\'' || c == '"':
+				if i > 0 && (isPsqlTokenByte(query[i-1]) || query[i-1] == '&') {
+					return errPsqlQueryInvalid
+				}
+				hasSQL = true
+				if c == '\'' {
+					state = quotedString
+				} else {
+					state = quotedIdent
+				}
+			case c == ';' || c == '$' || c == '`' || c == ':':
+				if c == ':' && next == ':' { // PostgreSQL's ordinary cast operator
+					i++
+					continue
+				}
+				return errPsqlQueryInvalid
+			case c >= utf8.RuneSelf:
+				r, size := utf8.DecodeRuneInString(query[i:])
+				if unicode.IsSpace(r) {
+					return errPsqlQueryInvalid
+				}
+				hasSQL = true
+				i += size - 1
+			case c != ' ' && c != '\t' && c != '\n' && c != '\r' && c != '\f':
+				hasSQL = true
+			}
+		case quotedString, quotedIdent:
+			quote := byte('\'')
+			if state == quotedIdent {
+				quote = '"'
+			}
+			if c == quote {
+				if next == quote {
+					i++
+				} else {
+					state = normal
+				}
+			}
+		case lineComment:
+			if c == '\n' || c == '\r' {
+				state = normal
+			}
+		case blockComment:
+			switch {
+			case c == '/' && next == '*':
+				depth++
+				if depth > 16 {
+					return errPsqlQueryInvalid
+				}
+				i++
+			case c == '*' && next == '/':
+				depth--
+				i++
+				if depth == 0 {
+					state = normal
+				}
+			}
+		}
+	}
+	if !hasSQL || state == quotedString || state == quotedIdent || state == blockComment {
+		return errPsqlQueryInvalid
+	}
+	return nil
+}
+
+func isPsqlTokenByte(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_'
+}
 
 // psqlQueryRows ports the pinned psql_query reader for this module's fixed
 // catalog queries: the query is wrapped in "COPY (...) TO STDOUT WITH CSV
@@ -1078,8 +1500,9 @@ func parsedServerVersion(ctx context.Context, rt *runtime.Runtime, conn *pgConne
 // empty rows skipped, first row the header, dict(zip(header,row)) rows).
 // A positive psql retcode keeps Salt's empty-list compatibility data; only
 // Runner failures, cancellation, and output-limit violations are errors.
-// The generic query surface stays unregistered: callers pass fixed SQL
-// fragments only.
+// This internal helper stays unregistered: callers pass fixed SQL
+// fragments only; the separately registered public function uses bounded
+// stdin instead of this -c/argv path.
 func psqlQueryRows(ctx context.Context, rt *runtime.Runtime, conn *pgConnection, query string) ([]map[string]string, error) {
 	result, err := runPsql(ctx, rt, psqlCatalogArgv(conn, query), conn)
 	if err != nil {
@@ -1133,8 +1556,21 @@ func psqlQueryRowsStrict(ctx context.Context, rt *runtime.Runtime, conn *pgConne
 // dict(zip(header, row)); empty records are skipped. The reader itself is the
 // pyCSVReader port of the pinned Python csv module described below.
 func parseCSVRows(stdout string) ([]map[string]string, error) {
+	return parseCSVRowsWithLimits(stdout, 0, 0)
+}
+
+func parseCSVRowsBounded(stdout string) ([]map[string]string, error) {
+	if len(stdout) > outputLimit {
+		return nil, process.ErrOutputLimit
+	}
+	return parseCSVRowsWithLimits(stdout, maxPsqlQueryRows, maxPsqlQueryColumns)
+}
+
+// Zero limits preserve the existing fixed-catalog decoder's behavior.
+func parseCSVRowsWithLimits(stdout string, maxRows, maxColumns int) ([]map[string]string, error) {
 	rows := []map[string]string{}
 	reader := newPyCSVReader(stdout)
+	reader.maxFields = maxColumns
 	var header []string
 	for {
 		record, err := reader.next()
@@ -1148,9 +1584,15 @@ func parseCSVRows(stdout string) ([]map[string]string, error) {
 		if len(record) == 0 {
 			continue
 		}
+		if maxColumns > 0 && len(record) > maxColumns {
+			return nil, errPsqlQueryRows
+		}
 		if header == nil {
 			header = record
 			continue
+		}
+		if maxRows > 0 && len(rows) >= maxRows {
+			return nil, errPsqlQueryRows
 		}
 		shared := len(header)
 		if len(record) < shared {
@@ -1218,13 +1660,14 @@ const (
 // content, so no source, query, or credential material can leak through
 // them.
 type pyCSVReader struct {
-	input    string
-	pos      int
-	single   bool
-	state    pyCSVState
-	fields   []string
-	field    []byte
-	fieldLen int
+	input     string
+	pos       int
+	single    bool
+	state     pyCSVState
+	fields    []string
+	field     []byte
+	fieldLen  int
+	maxFields int // optional public-query cap; 0 keeps pinned catalog decoding
 }
 
 // newPyCSVReader mirrors csv.reader(io.StringIO(stdout)): the input is a
@@ -1254,6 +1697,9 @@ func (r *pyCSVReader) next() ([]string, error) {
 				return nil, io.EOF
 			}
 			r.saveField()
+			if r.maxFields > 0 && len(r.fields) > r.maxFields {
+				return nil, errPsqlQueryRows
+			}
 			return r.emit(), nil
 		}
 		lineEnd := strings.IndexByte(r.input[r.pos:], '\n')
@@ -1267,6 +1713,9 @@ func (r *pyCSVReader) next() ([]string, error) {
 		for _, c := range segment {
 			if err := r.step(c); err != nil {
 				return nil, err
+			}
+			if r.maxFields > 0 && len(r.fields) > r.maxFields {
+				return nil, errPsqlQueryRows
 			}
 		}
 		switch r.state {
@@ -6907,16 +7356,15 @@ func redactedError(err error, secrets ...string) error {
 // create_metadata (the exact ladder the R9.2m extension mutations run
 // as their preflight and post-check, now registered under its canonical
 // public name with the caller's own ext_version and schema). The
-// remainder of the
-// postgres family needs the generic psql query surface (psql_query itself
-// stays pending; no arbitrary-query registration exists in this phase) and
-// stays pending for later R9 rounds; the internal parsed-version,
-// psql-query, and role-statement helpers are
+// public generic psql_query is also registered through its separately
+// bounded, conservative stdin-only framing boundary; the internal parsed-version,
+// fixed-catalog query, and role-statement helpers are
 // intentionally not registered, exactly like
 // the pinned private functions.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		versionFunc{},
+		psqlQueryFunc{},
 		dbListFunc{},
 		dbExistsFunc{},
 		dbCreateFunc{},

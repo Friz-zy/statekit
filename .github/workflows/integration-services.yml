@@ -623,3 +623,35 @@ jobs:
           path: artifacts/sqlite-live/report.txt
           if-no-files-found: error
           retention-days: 7
+
+  postgres-live:
+    name: e5 live postgres psql-query production/native gate
+    # Only main-ref push, dispatch, and schedule events reach this privileged
+    # job. The controller independently verifies runner/event context and tools.
+    if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      # Read-only source checkout with no persistent credential.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      # The main-only controller uses runner-bundled Go/PostgreSQL in a
+      # manifest-closed rootfs container. It pulls no OCI image or repository
+      # secret; runner-admin work stays in this audited bootstrap only.
+      - name: rootless Podman rootfs build and PostgreSQL production/native gate
+        run: bash tests/live/postgres/ci.sh
+
+      - name: upload value-free PostgreSQL live report
+        # Never upload a checked-out stale report if preflight failed before
+        # the controller could remove it. Failure still fails the CI job.
+        if: success()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
+        with:
+          name: e5-postgres-live-report
+          path: artifacts/postgres-live/report.txt
+          if-no-files-found: error
+          retention-days: 7

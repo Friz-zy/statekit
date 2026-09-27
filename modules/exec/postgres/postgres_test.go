@@ -9,7 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"sort"
@@ -25,11 +27,24 @@ import (
 	"github.com/friz-zy/statekit/internal/runtime"
 )
 
+// postgresPgpassCapture records what one invocation observed about the
+// per-call pgpass credential file (R92T-SEC-06) while the child
+// environment still pointed at it: the exact bytes, the file mode, and
+// the private directory's mode. The transport removes the file before
+// Execute returns, so only this invocation-time capture can pin them.
+type postgresPgpassCapture struct {
+	path    string
+	data    string
+	mode    fs.FileMode
+	dirMode fs.FileMode
+}
+
 type postgresFakeRunner struct {
 	results       []process.CommandResult
 	defaultResult process.CommandResult
 	calls         []process.Command
 	available     map[string]bool
+	pgpass        map[int]postgresPgpassCapture
 }
 
 func (r *postgresFakeRunner) Run(_ context.Context, command process.Command) process.CommandResult {
@@ -45,12 +60,34 @@ func (r *postgresFakeRunner) Run(_ context.Context, command process.Command) pro
 		command.Env = copied
 	}
 	r.calls = append(r.calls, command)
+	if path, ok := postgresEnvValue(command.Env, "PGPASSFILE"); ok {
+		r.capturePgpass(len(r.calls)-1, path)
+	}
 	if len(r.results) == 0 {
 		return r.defaultResult
 	}
 	result := r.results[0]
 	r.results = r.results[1:]
 	return result
+}
+
+// capturePgpass inspects the per-call pgpass credential file at
+// invocation time, exactly like the psql child would find it.
+func (r *postgresFakeRunner) capturePgpass(call int, path string) {
+	capture := postgresPgpassCapture{path: path}
+	if info, err := os.Stat(path); err == nil {
+		capture.mode = info.Mode().Perm()
+	}
+	if info, err := os.Stat(filepath.Dir(path)); err == nil {
+		capture.dirMode = info.Mode().Perm()
+	}
+	if data, err := os.ReadFile(path); err == nil {
+		capture.data = string(data)
+	}
+	if r.pgpass == nil {
+		r.pgpass = map[int]postgresPgpassCapture{}
+	}
+	r.pgpass[call] = capture
 }
 
 func (r *postgresFakeRunner) CommandAvailable(name string) bool {
@@ -72,9 +109,495 @@ func newPostgresRuntime(results ...process.CommandResult) (*runtime.Runtime, *po
 
 func postgresString(value string) *string { return &value }
 
+// postgresEnvValue returns the value of key in a recorded child env.
+func postgresEnvValue(env []string, key string) (string, bool) {
+	prefix := key + "="
+	for _, entry := range env {
+		if strings.HasPrefix(entry, prefix) {
+			return strings.TrimPrefix(entry, prefix), true
+		}
+	}
+	return "", false
+}
+
+// postgresRequirePgpassEnv asserts the R92T-SEC-06 credential boundary of
+// one recorded invocation and returns the passfile path: the clean child
+// environment carries exactly one PGPASSFILE entry and never PGPASSWORD,
+// its full shape is the PGPASSFILE entry followed by wantRest, the
+// invocation-time capture held exactly wantLine plus the trailing
+// newline at mode 0600 inside its 0700 private directory, and both the
+// file and the directory are already gone once the invocation returned.
+func postgresRequirePgpassEnv(t *testing.T, runner *postgresFakeRunner, call int, wantLine string, wantRest ...string) string {
+	t.Helper()
+	command := runner.calls[call]
+	if _, exists := postgresEnvValue(command.Env, "PGPASSWORD"); exists {
+		t.Fatalf("call %d: child environment carries PGPASSWORD: %q", call, command.Env)
+	}
+	path, exists := postgresEnvValue(command.Env, "PGPASSFILE")
+	if !exists {
+		t.Fatalf("call %d: child environment carries no PGPASSFILE: %q", call, command.Env)
+	}
+	wantEnv := append([]string{"PGPASSFILE=" + path}, wantRest...)
+	if !reflect.DeepEqual(command.Env, wantEnv) {
+		t.Fatalf("call %d env = %q, want %q", call, command.Env, wantEnv)
+	}
+	capture, ok := runner.pgpass[call]
+	if !ok {
+		t.Fatalf("call %d: no invocation-time capture for passfile %q", call, path)
+	}
+	if capture.path != path {
+		t.Fatalf("call %d: captured passfile %q, env names %q", call, capture.path, path)
+	}
+	if capture.data != wantLine+"\n" {
+		t.Fatalf("call %d passfile bytes = %q, want the one-line record %q", call, capture.data, wantLine)
+	}
+	if capture.mode != 0o600 {
+		t.Fatalf("call %d passfile mode = %o, want 0600", call, capture.mode)
+	}
+	if capture.dirMode != 0o700 {
+		t.Fatalf("call %d passfile directory mode = %o, want 0700", call, capture.dirMode)
+	}
+	if _, err := os.Lstat(path); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("call %d passfile survived the invocation: %q (err %v)", call, path, err)
+	}
+	if _, err := os.Lstat(filepath.Dir(path)); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("call %d passfile directory survived the invocation: %q (err %v)", call, filepath.Dir(path), err)
+	}
+	return path
+}
+
 func postgresBool(value bool) *bool { return &value }
 
 func postgresInt64(value int64) *int64 { return &value }
+
+// The public arbitrary-SQL path is privileged, unlike the fixed-query helpers.
+// Its complete SQL must travel only in bounded stdin to psql -f -.
+func TestPostgresPsqlQueryRegistryStdinBoundary(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("label,value\nfirst,\"a,b\"\nsecond,\"c\"\"d\"\n")})
+	query := "  SELECT 'a;''b' AS label,\n  \"co\"\"l\" FROM sample -- trailing\n;;"
+	value, err := reg.Call(context.Background(), rt, "postgres.psql_query", map[string]any{"query": query})
+	if err == nil {
+		// Registry calls require the function's typed argument contract; the
+		// map deliberately cannot bypass its decoder.
+		t.Fatalf("registry accepted untyped args: %#v", value)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatal("untyped args dispatched to psql")
+	}
+	value, err = reg.Call(context.Background(), rt, "postgres.psql_query", &PsqlQueryArgs{Query: query})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []map[string]string{{"label": "first", "value": "a,b"}, {"label": "second", "value": `c"d`}}
+	if !reflect.DeepEqual(value, want) || len(runner.calls) != 1 {
+		t.Fatalf("value=%#v calls=%d", value, len(runner.calls))
+	}
+	call := runner.calls[0]
+	argv := append([]string{call.Name}, call.Args...)
+	if !reflect.DeepEqual(argv, []string{"psql", "--no-align", "--no-readline", "--no-psqlrc", "--no-password", "--dbname", "postgres", "-v", "datestyle=ISO,MDY", "--set=ON_ERROR_STOP=on", "--quiet", "-f", "-"}) || call.Shell || call.Timeout != commandTimeout || call.MaxStdoutBytes != outputLimit || call.MaxStderrBytes != outputLimit {
+		t.Fatalf("unsafe psql argv/bounds: %#v", call)
+	}
+	if got := string(call.Stdin); got != "COPY (\nSELECT 'a;''b' AS label,\n  \"co\"\"l\" FROM sample -- trailing\n\n) TO STDOUT WITH CSV HEADER;\n" {
+		t.Fatalf("stdin = %q", got)
+	}
+	if strings.Contains(strings.Join(argv, "\x00"), query) || strings.Contains(call.RedactedString(), "a;''b") {
+		t.Fatal("SQL leaked to psql command argv/display")
+	}
+}
+
+func TestPostgresPsqlQueryRegistryFailures(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, query string
+		result      process.CommandResult
+		wantEmpty   bool
+		noDispatch  bool
+	}{
+		{"multiple statements", "SELECT 1; SELECT 2", process.CommandResult{}, false, true},
+		{"meta-command", "SELECT 1\n\\! id", process.CommandResult{}, false, true},
+		{"interpolation", "SELECT :v", process.CommandResult{}, false, true},
+		{"positive exit", "SELECT 1", process.CommandResult{ExitCode: 3}, true, false},
+		{"late malformed CSV", "SELECT 1", process.CommandResult{Stdout: []byte("n\n1\n2\rbad\n")}, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, runner := newPostgresRuntime(tc.result)
+			value, err := reg.Call(context.Background(), rt, "postgres.psql_query", &PsqlQueryArgs{Query: tc.query})
+			if tc.noDispatch {
+				if err == nil || value != nil || len(runner.calls) != 0 {
+					t.Fatalf("unsafe query value=%#v err=%v calls=%d", value, err, len(runner.calls))
+				}
+				return
+			}
+			if len(runner.calls) != 1 {
+				t.Fatalf("calls=%d", len(runner.calls))
+			}
+			if tc.wantEmpty {
+				if err != nil || !reflect.DeepEqual(value, []map[string]string{}) {
+					t.Fatalf("positive exit value=%#v err=%v", value, err)
+				}
+			} else if err == nil || value != nil {
+				t.Fatalf("parser returned partial value=%#v err=%v", value, err)
+			}
+		})
+	}
+}
+
+func TestPostgresPsqlQueryDirectShapesAndWriteFraming(t *testing.T) {
+	for _, tc := range []struct {
+		name, query, stdout, stdin string
+		write                      bool
+		want                       []map[string]string
+	}{
+		{"trim semicolons", " \nSELECT 1 AS n;;; \n", "n\n1\n", "COPY (\nSELECT 1 AS n\n) TO STDOUT WITH CSV HEADER;\n", false, []map[string]string{{"n": "1"}}},
+		{"quoted delimiters", "SELECT 'x;''y' AS v /* ; */", "v\n\"a,b\"\n", "COPY (\nSELECT 'x;''y' AS v /* ; */\n) TO STDOUT WITH CSV HEADER;\n", false, []map[string]string{{"v": "a,b"}}},
+		{"CSV NULL and empty collapse", "SELECT NULL AS n, '' AS e", "n,e\n,\n", "COPY (\nSELECT NULL AS n, '' AS e\n) TO STDOUT WITH CSV HEADER;\n", false, []map[string]string{{"n": "", "e": ""}}},
+		{"header only", "SELECT v FROM t", "v\n", "COPY (\nSELECT v FROM t\n) TO STDOUT WITH CSV HEADER;\n", false, []map[string]string{}},
+		{"write single row named COMMIT", "WITH x AS (UPDATE t SET v=1 RETURNING v) SELECT * FROM x", "v\nCOMMIT\n", "START TRANSACTION READ WRITE;\nCOPY (\nWITH x AS (UPDATE t SET v=1 RETURNING v) SELECT * FROM x\n) TO STDOUT WITH CSV HEADER;\nCOMMIT TRANSACTION;\n", true, []map[string]string{{"v": "COMMIT"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(tc.stdout)})
+			value, err := (psqlQueryFunc{}).Execute(context.Background(), rt, &PsqlQueryArgs{Query: tc.query, Write: postgresBool(tc.write)})
+			if err != nil || !reflect.DeepEqual(value, tc.want) || len(runner.calls) != 1 || string(runner.calls[0].Stdin) != tc.stdin {
+				t.Fatalf("value=%#v err=%v calls=%d", value, err, len(runner.calls))
+			}
+			if strings.Contains(strings.Join(runner.calls[0].Args, "\x00"), tc.query) {
+				t.Fatal("SQL leaked into subprocess argv")
+			}
+		})
+	}
+	for _, stdout := range []string{"", "n\n"} {
+		rt, _ := newPostgresRuntime(process.CommandResult{ExitCode: 3, Stdout: []byte(stdout)})
+		value, err := (psqlQueryFunc{}).Execute(context.Background(), rt, &PsqlQueryArgs{Query: "SELECT 1"})
+		if err != nil || !reflect.DeepEqual(value, []map[string]string{}) {
+			t.Fatalf("positive exit value=%#v err=%v", value, err)
+		}
+	}
+}
+
+func TestPostgresPsqlQueryRejectsAmbiguousInputBeforeRunner(t *testing.T) {
+	bad := []string{
+		"", " ;;; ", "-- only a comment", "SELECT 1; SELECT 2", "SELECT 1; -- tail",
+		"SELECT 1; /* tail */", "SELECT 'unfinished", `SELECT "unfinished`, "SELECT 1 /* unclosed",
+		"SELECT 1\n\\! touch /tmp/pwn", "SELECT '\\gexec'", "SELECT 1 -- \\! bad",
+		"SELECT :var", "SELECT :'var'", `SELECT :"var"`, "SELECT :{?var}",
+		"SELECT $tag$hi; there$tag$", "SELECT E'a\\'b'", "SELECT U&'d\\0061'", "SELECT U&\"name\"",
+		"SELECT `whoami`", "SELECT 1\x00", "SELECT 1\x01", "SELECT 1\x7f", "SELECT 1\u0085", "SELECT \xff",
+		"SELECT " + strings.Repeat("x", 1<<20),
+	}
+	for _, query := range bad {
+		rt, runner := newPostgresRuntime()
+		value, err := (psqlQueryFunc{}).Execute(context.Background(), rt, &PsqlQueryArgs{Query: query})
+		if err == nil || value != nil || len(runner.calls) != 0 || strings.Contains(err.Error(), query) && query != "" {
+			t.Fatalf("bad query dispatched or leaked: bytes=%d err=%v calls=%d", len(query), err, len(runner.calls))
+		}
+	}
+	for _, query := range []string{"SELECT 'a;b' AS x", "SELECT \"a;b\" FROM t", "SELECT 1::int -- ;\n", "/* nested /* ; */ */ SELECT 1", "SELECT 'http://host/a:b'"} {
+		rt, runner := newPostgresRuntime(process.CommandResult{Stdout: []byte("x\n1\n")})
+		_, err := (psqlQueryFunc{}).Execute(context.Background(), rt, &PsqlQueryArgs{Query: query})
+		if err != nil || len(runner.calls) != 1 {
+			t.Fatalf("safe query rejected: %v", err)
+		}
+	}
+}
+
+func TestPostgresPsqlQueryInputLimitAndNoRunnerDispatch(t *testing.T) {
+	exact := "SELECT " + strings.Repeat("a", maxPsqlQueryBytes-len("SELECT "))
+	rt, runner := newPostgresRuntime()
+	value, err := (psqlQueryFunc{}).Execute(context.Background(), rt, &PsqlQueryArgs{Query: exact})
+	if err != nil || !reflect.DeepEqual(value, []map[string]string{}) || len(runner.calls) != 1 || len(runner.calls[0].Stdin) > runtime.MaxCommandInputBytes {
+		t.Fatalf("exact bound value=%#v err=%v calls=%d", value, err, len(runner.calls))
+	}
+	rt, runner = newPostgresRuntime()
+	value, err = (psqlQueryFunc{}).Execute(context.Background(), rt, &PsqlQueryArgs{Query: exact + "a"})
+	if !errors.Is(err, runtime.ErrCommandInputLimit) || value != nil || len(runner.calls) != 0 {
+		t.Fatalf("input bound value=%#v err=%v calls=%d", value, err, len(runner.calls))
+	}
+	for _, tc := range []struct {
+		name string
+		rt   *runtime.Runtime
+		args PsqlQueryArgs
+	}{
+		{"nil runner", &runtime.Runtime{}, PsqlQueryArgs{Query: "SELECT 1"}},
+		{"runas", rt, PsqlQueryArgs{Query: "SELECT 1", Runas: postgresString("postgres")}},
+	} {
+		value, err := (psqlQueryFunc{}).Execute(context.Background(), tc.rt, &tc.args)
+		if err == nil || value != nil || len(runner.calls) != 0 {
+			t.Fatalf("%s value=%#v err=%v calls=%d", tc.name, value, err, len(runner.calls))
+		}
+	}
+	rt, runner = newPostgresRuntime()
+	runner.available = map[string]bool{"psql": false}
+	value, err = (psqlQueryFunc{}).Execute(context.Background(), rt, &PsqlQueryArgs{Query: "SELECT 1"})
+	if err == nil || value != nil || len(runner.calls) != 0 {
+		t.Fatalf("unavailable psql value=%#v err=%v calls=%d", value, err, len(runner.calls))
+	}
+}
+
+func TestPostgresPsqlQueryCSVDupesRaggedAndLimits(t *testing.T) {
+	rt, _ := newPostgresRuntime(process.CommandResult{Stdout: []byte("a,a,b\n1,2\n3,4,5,6\n\n")})
+	value, err := (psqlQueryFunc{}).Execute(context.Background(), rt, &PsqlQueryArgs{Query: "SELECT 1"})
+	want := []map[string]string{{"a": "2"}, {"a": "4", "b": "5"}}
+	if err != nil || !reflect.DeepEqual(value, want) {
+		t.Fatalf("ragged duplicate CSV %#v err=%v", value, err)
+	}
+	for _, stdout := range []string{
+		"a\n" + strings.Repeat("b\n", 10001),
+		strings.Repeat("c,", 256) + "c\n1\n",
+		"a\n" + strings.Repeat("x", 131073) + "\n",
+		"a\n1\nb\rx\n", // parser error after one valid row: no partial result
+		strings.Repeat("a", outputLimit+1),
+	} {
+		rt, runner := newPostgresRuntime(process.CommandResult{Stdout: []byte(stdout)})
+		value, err := (psqlQueryFunc{}).Execute(context.Background(), rt, &PsqlQueryArgs{Query: "SELECT 1"})
+		if err == nil || value != nil || len(runner.calls) != 1 {
+			t.Fatalf("invalid CSV bytes=%d returned %#v err=%v", len(stdout), value, err)
+		}
+	}
+}
+
+func TestPostgresPsqlQueryCSVFailureReturnsNilInterface(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, stdout string
+		wantErr      error
+	}{
+		{"malformed after valid row", "n\n1\n2\rbad\n", errPyCSVNewline},
+		{"more than 10000 rows", "n\n" + strings.Repeat("1\n", maxPsqlQueryRows+1), errPsqlQueryRows},
+	} {
+		for _, call := range []struct {
+			name string
+			exec func(*runtime.Runtime) (any, error)
+		}{
+			{"direct", func(rt *runtime.Runtime) (any, error) {
+				return (psqlQueryFunc{}).Execute(context.Background(), rt, &PsqlQueryArgs{Query: "SELECT 1"})
+			}},
+			{"registry", func(rt *runtime.Runtime) (any, error) {
+				return reg.Call(context.Background(), rt, "postgres.psql_query", &PsqlQueryArgs{Query: "SELECT 1"})
+			}},
+		} {
+			t.Run(tc.name+"/"+call.name, func(t *testing.T) {
+				rt, runner := newPostgresRuntime(process.CommandResult{Stdout: []byte(tc.stdout)})
+				value, err := call.exec(rt)
+				if !errors.Is(err, tc.wantErr) || value != nil || len(runner.calls) != 1 {
+					t.Fatalf("value=%#v err=%v calls=%d", value, err, len(runner.calls))
+				}
+			})
+		}
+	}
+}
+
+func TestPostgresPsqlQueryFailureRedactionAndNoPartial(t *testing.T) {
+	const marker = "synthetic-password-marker"
+	query := "SELECT '" + marker + "' AS value"
+	for _, failure := range []process.CommandResult{
+		{Err: fmt.Errorf("runner failed: %s %s", marker, query), Stdout: []byte(marker), Stderr: []byte(marker)},
+		{Err: context.DeadlineExceeded, Stdout: []byte("value\npartial\n")},
+		{StdoutTruncated: true, Stdout: []byte("value\npartial\n")},
+		{StderrTruncated: true, Stdout: []byte("value\npartial\n")},
+	} {
+		rt, runner := newPostgresRuntime(failure)
+		value, err := (psqlQueryFunc{}).Execute(context.Background(), rt, &PsqlQueryArgs{Query: query, Password: postgresString(marker)})
+		if err == nil || value != nil || len(runner.calls) != 1 || strings.Contains(err.Error(), marker) || strings.Contains(err.Error(), query) {
+			t.Fatalf("unsafe failure value=%#v err=%v", value, err)
+		}
+		call := runner.calls[0]
+		postgresRequirePgpassEnv(t, runner, 0, "*:*:postgres:*:"+marker)
+		if !reflect.DeepEqual(call.Redact, []string{marker}) || strings.Contains(call.RedactedString(), marker) {
+			t.Fatal("connection password redaction lost")
+		}
+	}
+	for _, ctx := range []context.Context{func() context.Context { c, cancel := context.WithCancel(context.Background()); cancel(); return c }()} {
+		rt, runner := newPostgresRuntime()
+		value, err := (psqlQueryFunc{}).Execute(ctx, rt, &PsqlQueryArgs{Query: "SELECT 1"})
+		if !errors.Is(err, context.Canceled) || value != nil || len(runner.calls) != 0 {
+			t.Fatalf("cancel value=%#v err=%v calls=%d", value, err, len(runner.calls))
+		}
+	}
+	rt, runner := newPostgresRuntime(process.CommandResult{Stdout: []byte("value\n" + marker + "\n")})
+	value, err := (psqlQueryFunc{}).Execute(context.Background(), rt, &PsqlQueryArgs{Query: "SELECT 1", Password: postgresString(marker)})
+	if err != nil || strings.Contains(fmt.Sprint(value), marker) || len(runner.calls) != 1 {
+		t.Fatalf("returned CSV exposes credential: value=%#v err=%v", value, err)
+	}
+}
+
+// TestPostgresPsqlQueryCleanupAggregatePreservesBothIdentities pins the
+// R92T-FINAL-05 public aggregate of psql_query: when the transport error
+// also carries the per-call pgpass cleanup failure, the mapped public
+// error keeps the primary control identity (cancellation, deadline,
+// output limit, or the fixed run category for an arbitrary Runner
+// failure) AND the errPostgresPwfileCleanup category through errors.Is,
+// rendered as exactly two fixed value-free lines with no password, SQL,
+// or temp path — asserted direct and through the registry — while the
+// same primaries without a cleanup failure keep their exact
+// pre-aggregate mapping, and a positive psql exit whose cleanup failed
+// answers the joined categories instead of the pinned empty-list
+// compatibility data (which a stranded credential must override).
+func TestPostgresPsqlQueryCleanupAggregatePreservesBothIdentities(t *testing.T) {
+	const marker = "synthetic-aggregate-pass"
+	query := "SELECT '" + marker + "' AS v"
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	vectors := []struct {
+		name        string
+		wantPrimary error
+		build       func(t *testing.T) (context.Context, *runtime.Runtime, *postgresFakeRunner)
+	}{
+		{
+			name:        "cancellation",
+			wantPrimary: context.Canceled,
+			build: func(t *testing.T) (context.Context, *runtime.Runtime, *postgresFakeRunner) {
+				ctx, cancel := context.WithCancel(context.Background())
+				t.Cleanup(cancel)
+				rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("v\n1\n")})
+				rt.Runner = runnerFunc(func(command process.Command) process.CommandResult {
+					result := runner.Run(context.Background(), command)
+					cancel()
+					return result
+				})
+				return ctx, rt, runner
+			},
+		},
+		{
+			name:        "deadline",
+			wantPrimary: context.DeadlineExceeded,
+			build: func(t *testing.T) (context.Context, *runtime.Runtime, *postgresFakeRunner) {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+				t.Cleanup(cancel)
+				rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("v\n1\n")})
+				rt.Runner = runnerFunc(func(command process.Command) process.CommandResult {
+					time.Sleep(20 * time.Millisecond)
+					return runner.Run(context.Background(), command)
+				})
+				return ctx, rt, runner
+			},
+		},
+		{
+			name:        "output limit",
+			wantPrimary: process.ErrOutputLimit,
+			build: func(t *testing.T) (context.Context, *runtime.Runtime, *postgresFakeRunner) {
+				rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0, StdoutTruncated: true})
+				return context.Background(), rt, runner
+			},
+		},
+		{
+			name:        "runner failure",
+			wantPrimary: errPsqlQueryRun,
+			build: func(t *testing.T) (context.Context, *runtime.Runtime, *postgresFakeRunner) {
+				rt, runner := newPostgresRuntime(process.CommandResult{
+					ExitCode: -1,
+					Err:      fmt.Errorf("psql failed: password %s for %s", marker, query),
+				})
+				return context.Background(), rt, runner
+			},
+		},
+	}
+	for _, vector := range vectors {
+		for _, cleanupFails := range []bool{false, true} {
+			for _, channel := range []string{"direct", "registry"} {
+				t.Run(vector.name+"/"+channel+"/cleanup-fails-"+strconv.FormatBool(cleanupFails), func(t *testing.T) {
+					restore := func() {}
+					if cleanupFails {
+						original := pgpassRemoveAll
+						pgpassRemoveAll = func(string) error {
+							return &fs.PathError{Op: "remove", Path: "/synthetic/psql-query-aggregate", Err: fs.ErrPermission}
+						}
+						restore = func() { pgpassRemoveAll = original }
+					}
+					defer restore()
+					ctx, rt, runner := vector.build(t)
+					args := &PsqlQueryArgs{Query: query, Password: postgresString(marker)}
+					var err error
+					if channel == "registry" {
+						_, err = reg.Call(ctx, rt, "postgres.psql_query", args)
+					} else {
+						_, err = (psqlQueryFunc{}).Execute(ctx, rt, args)
+					}
+					if len(runner.calls) != 1 {
+						t.Fatalf("calls = %d, want 1", len(runner.calls))
+					}
+					if !errors.Is(err, vector.wantPrimary) {
+						t.Fatalf("err = %v, want the primary identity %v", err, vector.wantPrimary)
+					}
+					if cleanupFails {
+						if !errors.Is(err, errPostgresPwfileCleanup) {
+							t.Fatalf("err = %v, want the cleanup category preserved", err)
+						}
+						want := vector.wantPrimary.Error() + "\n" + errPostgresPwfileCleanup.Error()
+						if err.Error() != want {
+							t.Fatalf("err = %q, want the two fixed lines %q", err, want)
+						}
+						path, ok := postgresEnvValue(runner.calls[0].Env, "PGPASSFILE")
+						if !ok {
+							t.Fatalf("env carries no PGPASSFILE: %q", runner.calls[0].Env)
+						}
+						if _, statErr := os.Lstat(path); statErr != nil {
+							t.Fatalf("stranded passfile not observable: %v", statErr)
+						}
+						if removeErr := os.RemoveAll(filepath.Dir(path)); removeErr != nil {
+							t.Fatalf("manual residue cleanup failed: %v", removeErr)
+						}
+					} else {
+						if errors.Is(err, errPostgresPwfileCleanup) {
+							t.Fatalf("successful cleanup must not raise the cleanup category: %v", err)
+						}
+						if err.Error() != vector.wantPrimary.Error() {
+							t.Fatalf("err = %q, want the exact pre-aggregate mapping %q", err, vector.wantPrimary)
+						}
+					}
+					for _, banned := range []string{marker, query, "statekit-psql-pgpass", os.TempDir()} {
+						if strings.Contains(err.Error(), banned) {
+							t.Fatalf("mapped error leaks %q: %v", banned, err)
+						}
+					}
+				})
+			}
+		}
+	}
+
+	// A positive psql exit stays pinned empty-list compatibility data only
+	// when the credential cleanup succeeded; a stranded passfile fails
+	// closed with the joined fixed categories.
+	t.Run("positive exit with cleanup failure", func(t *testing.T) {
+		original := pgpassRemoveAll
+		pgpassRemoveAll = func(string) error {
+			return &fs.PathError{Op: "remove", Path: "/synthetic/positive-exit-strand", Err: fs.ErrPermission}
+		}
+		defer func() { pgpassRemoveAll = original }()
+		rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 3, Stdout: []byte("v\nboom\n")})
+		value, err := (psqlQueryFunc{}).Execute(context.Background(), rt, &PsqlQueryArgs{Query: query, Password: postgresString(marker)})
+		if value != nil {
+			t.Fatalf("positive exit with stranded credential returned compatibility data: %#v", value)
+		}
+		if !errors.Is(err, errPsqlQueryRun) || !errors.Is(err, errPostgresPwfileCleanup) {
+			t.Fatalf("err = %v, want the joined run + cleanup categories", err)
+		}
+		if want := errPsqlQueryRun.Error() + "\n" + errPostgresPwfileCleanup.Error(); err.Error() != want {
+			t.Fatalf("err = %q, want %q", err, want)
+		}
+		path, ok := postgresEnvValue(runner.calls[0].Env, "PGPASSFILE")
+		if !ok {
+			t.Fatalf("env carries no PGPASSFILE: %q", runner.calls[0].Env)
+		}
+		if _, statErr := os.Lstat(path); statErr != nil {
+			t.Fatalf("stranded passfile not observable: %v", statErr)
+		}
+		if removeErr := os.RemoveAll(filepath.Dir(path)); removeErr != nil {
+			t.Fatalf("manual residue cleanup failed: %v", removeErr)
+		}
+	})
+}
 
 // wantVersionArgv is the exact argv the pinned test_postgres.py test_version
 // asserts shape on: with every connection argument supplied, the SQL query
@@ -129,15 +652,9 @@ func TestPostgresVersionArgvEnvAndResult(t *testing.T) {
 	if all := append([]string{command.Name}, command.Args...); all[14] != serverVersionQuery {
 		t.Fatalf("argv[14] = %q, want the server_version query", all[14])
 	}
-	wantEnv := []string{
-		"PGPASSWORD=test_pass",
-		"PGUSER=test_user",
-		"PGHOST=test_host",
-		"PGPORT=test_port",
-	}
-	if !reflect.DeepEqual(command.Env, wantEnv) {
-		t.Fatalf("env = %q, want %q", command.Env, wantEnv)
-	}
+	postgresRequirePgpassEnv(t, runner, 0,
+		"test_host:test_port:test_maint:test_user:test_pass",
+		"PGUSER=test_user", "PGHOST=test_host", "PGPORT=test_port")
 	if command.Shell {
 		t.Fatal("psql must run without a shell")
 	}
@@ -400,9 +917,8 @@ func TestPostgresVersionInvalidInputs(t *testing.T) {
 	}
 }
 
-// TestPostgresRegistrySurface pins the forty-nine canonical
-// registrations, their argument prototypes, and the absence of public
-// psql_query and _parsed_version entries.
+// TestPostgresRegistrySurface pins the fifty canonical registrations, their
+// argument prototypes, and the absence of private helper registrations.
 func TestPostgresRegistrySurface(t *testing.T) {
 	reg := runtime.NewExecRegistry()
 	if err := Register(reg); err != nil {
@@ -441,6 +957,7 @@ func TestPostgresRegistrySurface(t *testing.T) {
 		"postgres.privileges_grant",
 		"postgres.privileges_list",
 		"postgres.privileges_revoke",
+		"postgres.psql_query",
 		"postgres.role_get",
 		"postgres.schema_create",
 		"postgres.schema_exists",
@@ -471,6 +988,8 @@ func TestPostgresRegistrySurface(t *testing.T) {
 		switch name {
 		case "postgres.version":
 			want = VersionArgs{}
+		case "postgres.psql_query":
+			want = PsqlQueryArgs{}
 		case "postgres.db_create":
 			want = DbCreateArgs{}
 		case "postgres.db_remove":
@@ -556,9 +1075,8 @@ func TestPostgresRegistrySurface(t *testing.T) {
 			t.Fatalf("%s prototype = %#v, want zero-value defaults %#v", name, fn.Args(), want)
 		}
 	}
-	// The generic query surface and the private helpers stay unregistered.
+	// Private helpers stay unregistered, including the internal -c reader.
 	for _, pending := range []string{
-		"postgres.psql_query",
 		"postgres._parsed_version",
 	} {
 		if _, ok := reg.Get(pending); ok {
@@ -572,6 +1090,7 @@ func TestPostgresRegistrySurface(t *testing.T) {
 		want []string
 	}{
 		{versionFunc{}, connection},
+		{psqlQueryFunc{}, append([]string{"query", "write"}, connection...)},
 		{dbListFunc{}, connection},
 		{dbExistsFunc{}, append([]string{"name"}, connection...)},
 		{dbCreateFunc{}, append([]string{
@@ -834,16 +1353,11 @@ func TestPostgresDbListArgvAndParse(t *testing.T) {
 	want = append(want, "-v", "datestyle=ISO,MDY", "-c",
 		"COPY ("+dbListQuery+") TO STDOUT WITH CSV HEADER")
 	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
-		t.Fatalf("argv = %q", got)
+		t.Fatalf("argv = %q, want %q", got, want)
 	}
-	if !reflect.DeepEqual(command.Env, []string{
-		"PGPASSWORD=test_pass",
-		"PGUSER=test_user",
-		"PGHOST=test_host",
-		"PGPORT=test_port",
-	}) {
-		t.Fatalf("env = %q", command.Env)
-	}
+	postgresRequirePgpassEnv(t, runner, 0,
+		"test_host:test_port:test_maint:test_user:test_pass",
+		"PGUSER=test_user", "PGHOST=test_host", "PGPORT=test_port")
 	if command.Shell || !reflect.DeepEqual(command.Redact, []string{"test_pass"}) {
 		t.Fatalf("unsafe command: %#v", command)
 	}
@@ -1003,15 +1517,9 @@ func TestPostgresDbCreateArgvAndResult(t *testing.T) {
 	if all := append([]string{command.Name}, command.Args...); all[14] != want[14] {
 		t.Fatalf("argv[14] = %q, want the pinned CREATE DATABASE statement", all[14])
 	}
-	wantEnv := []string{
-		"PGPASSWORD=foo",
-		"PGUSER=testuser",
-		"PGHOST=testhost",
-		"PGPORT=testport",
-	}
-	if !reflect.DeepEqual(command.Env, wantEnv) {
-		t.Fatalf("env = %q, want %q", command.Env, wantEnv)
-	}
+	postgresRequirePgpassEnv(t, runner, 0,
+		"testhost:testport:maint_db:testuser:foo",
+		"PGUSER=testuser", "PGHOST=testhost", "PGPORT=testport")
 	if command.Shell {
 		t.Fatal("psql must run without a shell")
 	}
@@ -1319,15 +1827,9 @@ func TestPostgresDbRemoveArgvAndResult(t *testing.T) {
 		if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
 			t.Fatalf("call %d argv = %q, want %q", i, got, want)
 		}
-		wantEnv := []string{
-			"PGPASSWORD=foo",
-			"PGUSER=testuser",
-			"PGHOST=testhost",
-			"PGPORT=testport",
-		}
-		if !reflect.DeepEqual(command.Env, wantEnv) {
-			t.Fatalf("call %d env = %q, want %q", i, command.Env, wantEnv)
-		}
+		postgresRequirePgpassEnv(t, runner, i,
+			"testhost:testport:maint_db:testuser:foo",
+			"PGUSER=testuser", "PGHOST=testhost", "PGPORT=testport")
 		if command.Shell {
 			t.Fatalf("call %d must run without a shell", i)
 		}
@@ -1731,15 +2233,9 @@ func TestPostgresDbAlterArgvAndResult(t *testing.T) {
 		if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
 			t.Fatalf("call %d argv = %q, want %q", i, got, want)
 		}
-		wantEnv := []string{
-			"PGPASSWORD=foo",
-			"PGUSER=testuser",
-			"PGHOST=testhost",
-			"PGPORT=testport",
-		}
-		if !reflect.DeepEqual(command.Env, wantEnv) {
-			t.Fatalf("call %d env = %q, want %q", i, command.Env, wantEnv)
-		}
+		postgresRequirePgpassEnv(t, runner, i,
+			"testhost:testport:maint_db:testuser:foo",
+			"PGUSER=testuser", "PGHOST=testhost", "PGPORT=testport")
 		if command.Shell {
 			t.Fatalf("call %d must run without a shell", i)
 		}
@@ -2058,15 +2554,9 @@ func TestPostgresOwnerToConnectionArgv(t *testing.T) {
 	if !reflect.DeepEqual(first, wantFirst) {
 		t.Fatalf("catalog argv = %q, want %q", first, wantFirst)
 	}
-	wantEnv := []string{
-		"PGPASSWORD=test_pass",
-		"PGUSER=test_user",
-		"PGHOST=test_host",
-		"PGPORT=test_port",
-	}
-	if !reflect.DeepEqual(runner.calls[0].Env, wantEnv) {
-		t.Fatalf("catalog env = %q, want %q", runner.calls[0].Env, wantEnv)
-	}
+	postgresRequirePgpassEnv(t, runner, 0,
+		"test_host:test_port:dbname:test_user:test_pass",
+		"PGUSER=test_user", "PGHOST=test_host", "PGPORT=test_port")
 	if !reflect.DeepEqual(runner.calls[0].Redact, []string{"test_pass"}) {
 		t.Fatalf("catalog redact = %q", runner.calls[0].Redact)
 	}
@@ -2080,9 +2570,9 @@ func TestPostgresOwnerToConnectionArgv(t *testing.T) {
 		got[len(got)-3] != "--set=ON_ERROR_STOP=on" {
 		t.Fatalf("script tail = %q", got[len(got)-3:])
 	}
-	if !reflect.DeepEqual(script.Env, wantEnv) {
-		t.Fatalf("script env = %q, want %q", script.Env, wantEnv)
-	}
+	postgresRequirePgpassEnv(t, runner, 5,
+		"test_host:test_port:dbname:test_user:test_pass",
+		"PGUSER=test_user", "PGHOST=test_host", "PGPORT=test_port")
 	if !reflect.DeepEqual(script.Redact, []string{"test_pass"}) {
 		t.Fatalf("script redact = %q", script.Redact)
 	}
@@ -3019,15 +3509,9 @@ func TestPostgresTablespaceCreateArgvAndResult(t *testing.T) {
 	if all := append([]string{command.Name}, command.Args...); all[14] != wantTablespaceCreateStatement {
 		t.Fatalf("argv[14] = %q, want the pinned CREATE TABLESPACE statement", all[14])
 	}
-	wantEnv := []string{
-		"PGPASSWORD=foo",
-		"PGUSER=testuser",
-		"PGHOST=testhost",
-		"PGPORT=testport",
-	}
-	if !reflect.DeepEqual(command.Env, wantEnv) {
-		t.Fatalf("env = %q, want %q", command.Env, wantEnv)
-	}
+	postgresRequirePgpassEnv(t, runner, 0,
+		"testhost:testport:maint_db:testuser:foo",
+		"PGUSER=testuser", "PGHOST=testhost", "PGPORT=testport")
 	if command.Shell {
 		t.Fatal("psql must run without a shell")
 	}
@@ -3625,15 +4109,9 @@ func TestPostgresTablespaceRemoveArgvAndResult(t *testing.T) {
 	if all := append([]string{command.Name}, command.Args...); all[14] != `DROP TABLESPACE "test_tablespace"` {
 		t.Fatalf("argv[14] = %q, want the pinned DROP TABLESPACE statement", all[14])
 	}
-	wantEnv := []string{
-		"PGPASSWORD=foo",
-		"PGUSER=testuser",
-		"PGHOST=testhost",
-		"PGPORT=testport",
-	}
-	if !reflect.DeepEqual(command.Env, wantEnv) {
-		t.Fatalf("env = %q, want %q", command.Env, wantEnv)
-	}
+	postgresRequirePgpassEnv(t, runner, 0,
+		"testhost:testport:maint_db:testuser:foo",
+		"PGUSER=testuser", "PGHOST=testhost", "PGPORT=testport")
 	if command.Shell {
 		t.Fatal("psql must run without a shell")
 	}
@@ -5756,16 +6234,11 @@ func TestPostgresAvailableExtensionsArgvAndParse(t *testing.T) {
 	want = append(want, "-v", "datestyle=ISO,MDY", "-c",
 		"COPY ("+availableExtensionsQuery[:len(availableExtensionsQuery)-1]+") TO STDOUT WITH CSV HEADER")
 	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
-		t.Fatalf("argv = %q", got)
+		t.Fatalf("argv = %q, want %q", got, want)
 	}
-	if !reflect.DeepEqual(command.Env, []string{
-		"PGPASSWORD=test_pass",
-		"PGUSER=test_user",
-		"PGHOST=test_host",
-		"PGPORT=test_port",
-	}) {
-		t.Fatalf("env = %q", command.Env)
-	}
+	postgresRequirePgpassEnv(t, runner, 0,
+		"test_host:test_port:test_maint:test_user:test_pass",
+		"PGUSER=test_user", "PGHOST=test_host", "PGPORT=test_port")
 	if command.Shell || !reflect.DeepEqual(command.Redact, []string{"test_pass"}) {
 		t.Fatalf("unsafe command: %#v", command)
 	}
@@ -6094,14 +6567,9 @@ func TestPostgresLanguageListArgvAndParse(t *testing.T) {
 	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
 		t.Fatalf("argv = %q, want %q", got, want)
 	}
-	if !reflect.DeepEqual(command.Env, []string{
-		"PGPASSWORD=foo",
-		"PGUSER=testuser",
-		"PGHOST=testhost",
-		"PGPORT=testport",
-	}) {
-		t.Fatalf("env = %q", command.Env)
-	}
+	postgresRequirePgpassEnv(t, runner, 0,
+		"testhost:testport:testdb:testuser:foo",
+		"PGUSER=testuser", "PGHOST=testhost", "PGPORT=testport")
 	if command.Shell || !reflect.DeepEqual(command.Redact, []string{"foo"}) {
 		t.Fatalf("unsafe command: %#v", command)
 	}
@@ -6523,14 +6991,9 @@ func TestPostgresSchemaListArgvAndParse(t *testing.T) {
 	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
 		t.Fatalf("argv = %q, want %q", got, want)
 	}
-	if !reflect.DeepEqual(command.Env, []string{
-		"PGPASSWORD=foo",
-		"PGUSER=testuser",
-		"PGHOST=testhost",
-		"PGPORT=testport",
-	}) {
-		t.Fatalf("env = %q", command.Env)
-	}
+	postgresRequirePgpassEnv(t, runner, 0,
+		"testhost:testport:maint_db:testuser:foo",
+		"PGUSER=testuser", "PGHOST=testhost", "PGPORT=testport")
 	if command.Shell || !reflect.DeepEqual(command.Redact, []string{"foo"}) {
 		t.Fatalf("unsafe command: %#v", command)
 	}
@@ -7197,15 +7660,9 @@ func TestPostgresUserCreateArgvAndResult(t *testing.T) {
 	if got := append([]string{command.Name}, command.Args...); got[14] != want[14] {
 		t.Fatalf("argv[14] = %q, want the pinned CREATE ROLE statement", got[14])
 	}
-	wantEnv := []string{
-		"PGPASSWORD=test_pass",
-		"PGUSER=testuser",
-		"PGHOST=testhost",
-		"PGPORT=testport",
-	}
-	if !reflect.DeepEqual(command.Env, wantEnv) {
-		t.Fatalf("env = %q, want %q", command.Env, wantEnv)
-	}
+	postgresRequirePgpassEnv(t, runner, 0,
+		"testhost:testport:maint_test:testuser:test_pass",
+		"PGUSER=testuser", "PGHOST=testhost", "PGPORT=testport")
 	if command.Shell {
 		t.Fatal("psql must run without a shell")
 	}
@@ -8668,15 +9125,9 @@ func TestPostgresGroupCreateArgvAndResult(t *testing.T) {
 	if got := append([]string{command.Name}, command.Args...); got[14] != want[14] {
 		t.Fatalf("argv[14] = %q, want the pinned CREATE ROLE statement", got[14])
 	}
-	wantEnv := []string{
-		"PGPASSWORD=foo",
-		"PGUSER=testuser",
-		"PGHOST=testhost",
-		"PGPORT=testport",
-	}
-	if !reflect.DeepEqual(command.Env, wantEnv) {
-		t.Fatalf("env = %q, want %q", command.Env, wantEnv)
-	}
+	postgresRequirePgpassEnv(t, runner, 0,
+		"testhost:testport:maint_db:testuser:foo",
+		"PGUSER=testuser", "PGHOST=testhost", "PGPORT=testport")
 	if command.Shell {
 		t.Fatal("psql must run without a shell")
 	}
@@ -9193,9 +9644,12 @@ func TestPostgresHasPrivilegesTableArgv(t *testing.T) {
 	// The connection tuple is transported exactly like the pinned
 	// psql_query call (runas rejected, password out of band).
 	command := runner.calls[0]
-	if command.Shell || len(command.Env) != 4 || command.Env[0] != "PGPASSWORD=testpassword" {
-		t.Fatalf("unsafe owner command: %#v", command)
+	if command.Shell {
+		t.Fatal("psql must run without a shell")
 	}
+	postgresRequirePgpassEnv(t, runner, 0,
+		"testhost:testport:db_name:testuser:testpassword",
+		"PGUSER=testuser", "PGHOST=testhost", "PGPORT=testport")
 	if !reflect.DeepEqual(command.Redact, []string{"testpassword"}) {
 		t.Fatalf("redact = %q", command.Redact)
 	}
@@ -9684,10 +10138,9 @@ func TestPostgresRoleRegistryKeys(t *testing.T) {
 		t.Fatalf("registry privileges_list baruwa = %#v", listed["baruwa"])
 	}
 
-	// The slice additions are the only new surface: the generic query
-	// transport and the remaining write paths stay unregistered.
+	// The historical slice test still uses a wrong argument type; these
+	// calls fail typed decoding and cannot dispatch any Runner command.
 	for _, pending := range []string{
-		"postgres.psql_query",
 		"postgres.default_privileges_grant",
 		"postgres.default_privileges_revoke",
 	} {
@@ -9746,9 +10199,12 @@ func TestPostgresPrivilegesListTableArgv(t *testing.T) {
 		t.Fatalf("query leaked a lookup string into SQL: %q", joined)
 	}
 	command := runner.calls[0]
-	if command.Shell || len(command.Env) != 4 || command.Env[0] != "PGPASSWORD=testpassword" {
-		t.Fatalf("unsafe command: %#v", command)
+	if command.Shell {
+		t.Fatal("psql must run without a shell")
 	}
+	postgresRequirePgpassEnv(t, runner, 0,
+		"testhost:testport:db_name:testuser:testpassword",
+		"PGUSER=testuser", "PGHOST=testhost", "PGPORT=testport")
 	if !reflect.DeepEqual(command.Redact, []string{"testpassword"}) {
 		t.Fatalf("redact = %q", command.Redact)
 	}
@@ -10263,15 +10719,9 @@ func TestPostgresPrivilegesGrantArgv(t *testing.T) {
 		if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
 			t.Fatalf("%s argv = %q, want %q", tc.label, got, want)
 		}
-		wantEnv := []string{
-			"PGPASSWORD=testpassword",
-			"PGUSER=testuser",
-			"PGHOST=testhost",
-			"PGPORT=testport",
-		}
-		if !reflect.DeepEqual(command.Env, wantEnv) {
-			t.Fatalf("%s env = %q, want %q", tc.label, command.Env, wantEnv)
-		}
+		postgresRequirePgpassEnv(t, runner, 2,
+			"testhost:testport:db_name:testuser:testpassword",
+			"PGUSER=testuser", "PGHOST=testhost", "PGPORT=testport")
 		if command.Shell {
 			t.Fatalf("%s psql must run without a shell", tc.label)
 		}
@@ -10910,8 +11360,25 @@ func TestPostgresPrivilegesMutationRedaction(t *testing.T) {
 					if err == nil || value != nil {
 						t.Fatal("run did not stop at injected error")
 					}
-					if strings.Contains(err.Error(), marker) || !strings.Contains(err.Error(), process.RedactedPlaceholder) {
-						t.Fatalf("error was not redacted: %v", err)
+					if strings.Contains(err.Error(), marker) {
+						t.Fatalf("error leaks the marker: %v", err)
+					}
+					if strings.Contains(err.Error(), "PGPASSWORD=") {
+						t.Fatalf("error environment still carries PGPASSWORD: %v", err)
+					}
+					switch overlap {
+					case "host", "user", "maintenance_db":
+						// The marker rode the argv into the raw Runner
+						// error, so the redaction pass must have replaced
+						// it with the placeholder.
+						if !strings.Contains(err.Error(), process.RedactedPlaceholder) {
+							t.Fatalf("error was not redacted: %v", err)
+						}
+					default:
+						// The connection password no longer travels in
+						// the child environment (R92T-SEC-06): the raw
+						// error cannot carry it at all, so no placeholder
+						// exists and absence is the guarantee.
 					}
 					if len(runner.calls) != failAt {
 						t.Fatalf("calls = %d, want %d", len(runner.calls), failAt)
@@ -11223,15 +11690,9 @@ func TestPostgresDefaultPrivilegesListArgv(t *testing.T) {
 	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
 		t.Fatalf("argv = %q, want %q", got, want)
 	}
-	wantEnv := []string{
-		"PGPASSWORD=testpassword",
-		"PGUSER=testuser",
-		"PGHOST=testhost",
-		"PGPORT=testport",
-	}
-	if !reflect.DeepEqual(command.Env, wantEnv) {
-		t.Fatalf("env = %q, want %q", command.Env, wantEnv)
-	}
+	postgresRequirePgpassEnv(t, runner, 0,
+		"testhost:testport:db_name:testuser:testpassword",
+		"PGUSER=testuser", "PGHOST=testhost", "PGPORT=testport")
 	if command.Shell {
 		t.Fatal("psql must run without a shell")
 	}
@@ -11677,15 +12138,9 @@ func TestPostgresDefaultPrivilegesGrantArgv(t *testing.T) {
 		if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
 			t.Fatalf("%s argv = %q, want %q", tc.label, got, want)
 		}
-		wantEnv := []string{
-			"PGPASSWORD=testpassword",
-			"PGUSER=testuser",
-			"PGHOST=testhost",
-			"PGPORT=testport",
-		}
-		if !reflect.DeepEqual(command.Env, wantEnv) {
-			t.Fatalf("%s env = %q, want %q", tc.label, command.Env, wantEnv)
-		}
+		postgresRequirePgpassEnv(t, runner, 2,
+			"testhost:testport:db_name:testuser:testpassword",
+			"PGUSER=testuser", "PGHOST=testhost", "PGPORT=testport")
 		if command.Shell {
 			t.Fatalf("%s psql must run without a shell", tc.label)
 		}
@@ -12101,9 +12556,12 @@ func TestPostgresHasDefaultPrivilegesArgv(t *testing.T) {
 	// The connection tuple is transported exactly like the pinned
 	// psql_query call (runas rejected, password out of band).
 	command := runner.calls[0]
-	if command.Shell || len(command.Env) != 4 || command.Env[0] != "PGPASSWORD=testpassword" {
-		t.Fatalf("unsafe owner command: %#v", command)
+	if command.Shell {
+		t.Fatal("psql must run without a shell")
 	}
+	postgresRequirePgpassEnv(t, runner, 0,
+		"testhost:testport:db_name:testuser:testpassword",
+		"PGUSER=testuser", "PGHOST=testhost", "PGPORT=testport")
 	if !reflect.DeepEqual(command.Redact, []string{"testpassword"}) {
 		t.Fatalf("redact = %q", command.Redact)
 	}
@@ -12836,8 +13294,25 @@ func TestPostgresDefaultPrivilegesMutationRedaction(t *testing.T) {
 					if err == nil || value != nil {
 						t.Fatal("run did not stop at injected error")
 					}
-					if strings.Contains(err.Error(), marker) || !strings.Contains(err.Error(), process.RedactedPlaceholder) {
-						t.Fatalf("error was not redacted: %v", err)
+					if strings.Contains(err.Error(), marker) {
+						t.Fatalf("error leaks the marker: %v", err)
+					}
+					if strings.Contains(err.Error(), "PGPASSWORD=") {
+						t.Fatalf("error environment still carries PGPASSWORD: %v", err)
+					}
+					switch overlap {
+					case "host", "user", "maintenance_db":
+						// The marker rode the argv into the raw Runner
+						// error, so the redaction pass must have replaced
+						// it with the placeholder.
+						if !strings.Contains(err.Error(), process.RedactedPlaceholder) {
+							t.Fatalf("error was not redacted: %v", err)
+						}
+					default:
+						// The connection password no longer travels in
+						// the child environment (R92T-SEC-06): the raw
+						// error cannot carry it at all, so no placeholder
+						// exists and absence is the guarantee.
 					}
 					if len(runner.calls) != failAt {
 						t.Fatalf("calls = %d, want %d", len(runner.calls), failAt)
@@ -13101,9 +13576,27 @@ func TestPostgresRolePreflightRedaction(t *testing.T) {
 						if err == nil || value != nil || len(runner.calls) != failAt {
 							t.Fatal("preflight did not stop at injected error")
 						}
-						if strings.Contains(err.Error(), marker) || !strings.Contains(err.Error(), process.RedactedPlaceholder) {
+					if strings.Contains(err.Error(), marker) {
+						t.Fatal("preflight error leaks the marker")
+					}
+					if strings.Contains(err.Error(), "PGPASSWORD=") {
+						t.Fatal("preflight error environment still carries PGPASSWORD")
+					}
+					switch overlap {
+					case "host", "user", "maintenance_db", "sql":
+						// The marker rode the argv into the raw Runner
+						// error, so the redaction pass must have replaced
+						// it with the placeholder.
+						if !strings.Contains(err.Error(), process.RedactedPlaceholder) {
 							t.Fatal("preflight error was not redacted")
 						}
+					default:
+						// The connection password overlaps the marker but
+						// no longer travels in the child environment
+						// (R92T-SEC-06): the raw error cannot carry it at
+						// all — only the PGPASSFILE path does — so no
+						// placeholder exists and absence is the guarantee.
+					}
 						for _, command := range runner.calls {
 							if strings.Contains(command.RedactedString(), marker) {
 								t.Fatal("rendered preflight leaks marker")
@@ -13208,15 +13701,9 @@ func TestPostgresSchemaCreateArgvAndResult(t *testing.T) {
 	if got := append([]string{command.Name}, command.Args...); !reflect.DeepEqual(got, want) {
 		t.Fatalf("argv = %q, want %q", got, want)
 	}
-	wantEnv := []string{
-		"PGPASSWORD=testpassword",
-		"PGUSER=testuser",
-		"PGHOST=testhost",
-		"PGPORT=testport",
-	}
-	if !reflect.DeepEqual(command.Env, wantEnv) {
-		t.Fatalf("env = %q, want %q", command.Env, wantEnv)
-	}
+	postgresRequirePgpassEnv(t, runner, 1,
+		"testhost:testport:maint_db:testuser:testpassword",
+		"PGUSER=testuser", "PGHOST=testhost", "PGPORT=testport")
 	if command.Shell {
 		t.Fatal("psql must run without a shell")
 	}
@@ -13896,9 +14383,9 @@ func TestPostgresCreateMetadataArgv(t *testing.T) {
 	}
 	// The connection tuple is transported exactly like the pinned
 	// psql_query call (runas rejected, password out of band).
-	if len(command.Env) != 4 || command.Env[0] != "PGPASSWORD=testpassword" {
-		t.Fatalf("unsafe catalog command: %#v", command)
-	}
+	postgresRequirePgpassEnv(t, runner, 0,
+		"testhost:testport:db_name:testuser:testpassword",
+		"PGUSER=testuser", "PGHOST=testhost", "PGPORT=testport")
 	if !reflect.DeepEqual(command.Redact, []string{"testpassword"}) {
 		t.Fatalf("redact = %q", command.Redact)
 	}
@@ -14730,4 +15217,570 @@ func TestPostgresMutationValidationErrorsRedactedThroughRegistry(t *testing.T) {
 			t.Fatalf("%s executed %d commands, want 0", tc.fn, len(runner.calls))
 		}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// R92T-SEC-06 pgpass credential transport.
+
+// TestPostgresPgpassLineEscaping pins the one-line pgpass record built
+// from the exact resolved connection fields: colons and backslashes are
+// escaped with a backslash in every field per the documented libpq
+// password-file format, so no value can shift a field boundary or
+// terminate the record.
+func TestPostgresPgpassLineEscaping(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		conn pgConnection
+		want string
+	}{
+		{
+			"plain values",
+			pgConnection{
+				Host: postgresString("h"), Port: postgresString("5432"),
+				MaintenanceDB: postgresString("d"), User: postgresString("u"),
+				Password: postgresString("p"),
+			},
+			"h:5432:d:u:p",
+		},
+		{
+			"colon in every field",
+			pgConnection{
+				Host: postgresString("h:1"), Port: postgresString("54:32"),
+				MaintenanceDB: postgresString("d:b"), User: postgresString("u:se"),
+				Password: postgresString("p:w"),
+			},
+			`h\:1:54\:32:d\:b:u\:se:p\:w`,
+		},
+		{
+			"backslash in every field",
+			pgConnection{
+				Host: postgresString(`h\1`), Port: postgresString(`54\32`),
+				MaintenanceDB: postgresString(`d\b`), User: postgresString(`u\se`),
+				Password: postgresString(`p\w`),
+			},
+			`h\\1:54\\32:d\\b:u\\se:p\\w`,
+		},
+		{
+			"colon and backslash mixed in every field",
+			pgConnection{
+				Host: postgresString(`h:\1`), Port: postgresString(`5\:4`),
+				MaintenanceDB: postgresString(`d:\b`), User: postgresString(`u:\se`),
+				Password: postgresString(`p:\w`),
+			},
+			`h\:\\1:5\\\:4:d\:\\b:u\:\\se:p\:\\w`,
+		},
+		{
+			"empty password keeps the fifth field empty",
+			pgConnection{
+				Host: postgresString("h"), Port: postgresString("5432"),
+				MaintenanceDB: postgresString("d"), User: postgresString("u"),
+				Password: postgresString(""),
+			},
+			"h:5432:d:u:",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := pgpassLine(&tc.conn)
+			if err != nil || got != tc.want {
+				t.Fatalf("pgpassLine = (%q, %v), want %q", got, err, tc.want)
+			}
+		})
+	}
+}
+
+// TestPostgresPgpassOmittedFields pins the wildcard rendering: only
+// omitted fields (Salt's None meaning) become *, the maintenance database
+// keeps the same "postgres" fallback the psql argv resolves, and an empty
+// explicit string keeps Salt's omitted meaning exactly like psqlArgv.
+func TestPostgresPgpassOmittedFields(t *testing.T) {
+	line, err := pgpassLine(&pgConnection{Password: postgresString("p")})
+	if err != nil || line != "*:*:postgres:*:p" {
+		t.Fatalf("all omitted = (%q, %v), want *:*:postgres:*:p", line, err)
+	}
+	line, err = pgpassLine(&pgConnection{
+		Host: postgresString(""), Port: postgresString(""),
+		MaintenanceDB: postgresString(""), User: postgresString(""),
+		Password: postgresString("p"),
+	})
+	if err != nil || line != "*:*:postgres:*:p" {
+		t.Fatalf("explicit empty = (%q, %v), want *:*:postgres:*:p", line, err)
+	}
+	line, err = pgpassLine(&pgConnection{
+		Host: postgresString("pg"), Port: postgresString("5433"),
+		User: postgresString("admin"), Password: postgresString("p"),
+	})
+	if err != nil || line != "pg:5433:postgres:admin:p" {
+		t.Fatalf("default db = (%q, %v), want pg:5433:postgres:admin:p", line, err)
+	}
+}
+
+// TestPostgresPgpassHostileValues pins the fail-closed record boundary:
+// CR, LF, or NUL in any of the five connection fields is rejected
+// value-free before any temp directory, passfile, or Runner invocation
+// exists — a hostile value cannot forge a second matching pgpass line.
+// The four argv-carried fields already fail the shared argv boundary; the
+// password field is rejected by the pgpass record boundary itself.
+func TestPostgresPgpassHostileValues(t *testing.T) {
+	const marker = "synthetic-pgpass-marker"
+	setters := []struct {
+		name  string
+		apply func(v string, args *VersionArgs)
+	}{
+		{"host", func(v string, a *VersionArgs) { a.Host = postgresString(v) }},
+		{"port", func(v string, a *VersionArgs) { a.Port = postgresString(v) }},
+		{"maintenance_db", func(v string, a *VersionArgs) { a.MaintenanceDB = postgresString(v) }},
+		{"user", func(v string, a *VersionArgs) { a.User = postgresString(v) }},
+		{"password", func(v string, a *VersionArgs) { a.Password = postgresString(v) }},
+	}
+	for _, value := range []string{"\r", "\n", "\x00", "a\nb", "x\r\ny", "pre\x00post"} {
+		for _, setter := range setters {
+			t.Run(setter.name+" carries hostile bytes", func(t *testing.T) {
+				sandbox := t.TempDir()
+				t.Setenv("TMPDIR", sandbox)
+				args := fullVersionArgs()
+				setter.apply(marker+value, args)
+				rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("9.1.9\n")})
+				_, err := (versionFunc{}).Execute(context.Background(), rt, args)
+				if !errors.Is(err, errPostgresInvalidArgument) {
+					t.Fatalf("hostile %s err = %v, want the invalid-argument category", setter.name, err)
+				}
+				if setter.name == "password" && !errors.Is(err, errPostgresInvalidPgpassField) {
+					t.Fatalf("hostile password err = %v, want the pgpass field rejection", err)
+				}
+				if strings.Contains(err.Error(), value) || strings.Contains(err.Error(), marker) {
+					t.Fatalf("hostile %s rejection leaks the value: %v", setter.name, err)
+				}
+				if len(runner.calls) != 0 {
+					t.Fatalf("hostile %s dispatched %d commands", setter.name, len(runner.calls))
+				}
+				entries, readErr := os.ReadDir(sandbox)
+				if readErr != nil || len(entries) != 0 {
+					t.Fatalf("hostile %s left temp artifacts: %v (%d entries)", setter.name, readErr, len(entries))
+				}
+			})
+		}
+	}
+}
+
+// TestPostgresPgpassTransportBoundary drives version() with the full
+// connection tuple and pins the whole credential boundary: the passfile
+// exists at invocation time inside a 0700 private directory with mode
+// 0600 and exactly the one-line record, the child environment carries
+// PGPASSFILE=<path> alone for credentials (never PGPASSWORD), the argv,
+// rendered command, and Redact inventory carry no password value, and
+// the file and directory are removed once the invocation returns.
+func TestPostgresPgpassTransportBoundary(t *testing.T) {
+	sandbox := t.TempDir()
+	t.Setenv("TMPDIR", sandbox)
+	rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("9.1.9\n")})
+	value, err := (versionFunc{}).Execute(context.Background(), rt, fullVersionArgs())
+	if err != nil || value != "9.1.9" {
+		t.Fatalf("version = (%#v, %v)", value, err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("runner calls = %d, want 1", len(runner.calls))
+	}
+	command := runner.calls[0]
+	postgresRequirePgpassEnv(t, runner, 0,
+		"test_host:test_port:test_maint:test_user:test_pass",
+		"PGUSER=test_user", "PGHOST=test_host", "PGPORT=test_port")
+	if joined := strings.Join(command.Args, "\x00"); strings.Contains(joined, "test_pass") {
+		t.Fatalf("argv carries the password: %q", command.Args)
+	}
+	if rendered := command.RedactedString(); strings.Contains(rendered, "test_pass") {
+		t.Fatalf("rendered command leaks the password: %q", rendered)
+	}
+	if !reflect.DeepEqual(command.Redact, []string{"test_pass"}) {
+		t.Fatalf("redact = %q", command.Redact)
+	}
+	// The passfile lived under the process TMPDIR sandbox, not elsewhere.
+	entries, readErr := os.ReadDir(sandbox)
+	if readErr != nil || len(entries) != 0 {
+		t.Fatalf("pgpass directory survived outside cleanup: %v (%d entries)", readErr, len(entries))
+	}
+}
+
+// TestPostgresPgpassNoPasswordKeepsCleanEnv pins the passwordless shape:
+// no passfile is created at all and the child environment keeps only the
+// resolved connection variables with neither PGPASSFILE nor PGPASSWORD.
+func TestPostgresPgpassNoPasswordKeepsCleanEnv(t *testing.T) {
+	sandbox := t.TempDir()
+	t.Setenv("TMPDIR", sandbox)
+	rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("9.1.9\n")})
+	args := fullVersionArgs()
+	args.Password = nil
+	if _, err := (versionFunc{}).Execute(context.Background(), rt, args); err != nil {
+		t.Fatal(err)
+	}
+	command := runner.calls[0]
+	wantEnv := []string{"PGUSER=test_user", "PGHOST=test_host", "PGPORT=test_port"}
+	if !reflect.DeepEqual(command.Env, wantEnv) {
+		t.Fatalf("env = %q, want %q", command.Env, wantEnv)
+	}
+	if _, exists := postgresEnvValue(command.Env, "PGPASSFILE"); exists {
+		t.Fatal("passwordless connection created a passfile")
+	}
+	entries, readErr := os.ReadDir(sandbox)
+	if readErr != nil || len(entries) != 0 {
+		t.Fatalf("passwordless run left temp artifacts: %v (%d entries)", readErr, len(entries))
+	}
+}
+
+// TestPostgresPgpassCleanupOnEveryPath pins the removal contract: the
+// passfile and its private directory are gone after success, a positive
+// psql exit (compatibility data), a Runner error, a timeout, an
+// output-limit violation, and a cancellation that lands after the Runner
+// returned — every path runs the cleanup exactly once.
+func TestPostgresPgpassCleanupOnEveryPath(t *testing.T) {
+	sandbox := t.TempDir()
+	t.Setenv("TMPDIR", sandbox)
+	for _, tc := range []struct {
+		name   string
+		result process.CommandResult
+		err    error
+	}{
+		{"success", process.CommandResult{ExitCode: 0, Stdout: []byte("9.1.9\n")}, nil},
+		{"positive exit compatibility data", process.CommandResult{ExitCode: 2, Stderr: []byte("psql: error: connection refused")}, nil},
+		{"runner error", process.CommandResult{Err: fmt.Errorf("runner failed: synthetic")}, nil},
+		{"timeout", process.CommandResult{Err: context.DeadlineExceeded}, nil},
+		{"stdout output limit", process.CommandResult{StdoutTruncated: true, Stdout: []byte("9.1.9\n")}, nil},
+		{"stderr output limit", process.CommandResult{StderrTruncated: true}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, runner := newPostgresRuntime(tc.result)
+			_, err := (versionFunc{}).Execute(context.Background(), rt, fullVersionArgs())
+			if tc.err != nil && !errors.Is(err, tc.err) {
+				t.Fatalf("err = %v, want %v", err, tc.err)
+			}
+			if len(runner.calls) != 1 {
+				t.Fatalf("calls = %d, want 1", len(runner.calls))
+			}
+			postgresRequirePgpassEnv(t, runner, 0,
+				"test_host:test_port:test_maint:test_user:test_pass",
+				"PGUSER=test_user", "PGHOST=test_host", "PGPORT=test_port")
+		})
+	}
+	t.Run("cancellation during run", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		runner := &postgresFakeRunner{
+			defaultResult: process.CommandResult{ExitCode: 0, Stdout: []byte("9.1.9\n")},
+		}
+		runner.results = []process.CommandResult{{ExitCode: 0, Stdout: []byte("9.1.9\n")}}
+		rt := &runtime.Runtime{Runner: runner, FS: runtime.NewMemoryFS()}
+		cancel()
+		_, err := (versionFunc{}).Execute(ctx, rt, fullVersionArgs())
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("err = %v, want context.Canceled", err)
+		}
+		// The canceled context aborts before the Runner; nothing exists.
+		if len(runner.calls) != 0 {
+			t.Fatalf("calls = %d, want 0", len(runner.calls))
+		}
+	})
+	t.Run("cancellation after runner returned", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("9.1.9\n")})
+		captured := make(chan struct{})
+		wrapped := runnerFunc(func(command process.Command) process.CommandResult {
+			result := runner.Run(context.Background(), command)
+			cancel()
+			close(captured)
+			return result
+		})
+		rt.Runner = wrapped
+		_, err := (versionFunc{}).Execute(ctx, rt, fullVersionArgs())
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("err = %v, want context.Canceled", err)
+		}
+		<-captured
+		postgresRequirePgpassEnv(t, runner, 0,
+			"test_host:test_port:test_maint:test_user:test_pass",
+			"PGUSER=test_user", "PGHOST=test_host", "PGPORT=test_port")
+	})
+}
+
+// runnerFunc adapts a closure to the process.Runner interface for the
+// mid-run cancellation vector above.
+type runnerFunc func(command process.Command) process.CommandResult
+
+func (f runnerFunc) Run(ctx context.Context, command process.Command) process.CommandResult {
+	return f(command)
+}
+
+// TestPostgresPgpassPreparationFailures pins the value-free fail-closed
+// preparation boundary: a failing temp directory, an exclusive-create
+// failure, and a failing write each answer their fixed category, run no
+// Runner invocation, and leave no credential artifact behind.
+func TestPostgresPgpassPreparationFailures(t *testing.T) {
+	const marker = "synthetic-pgpass-marker"
+	t.Run("temp directory failure", func(t *testing.T) {
+		t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "missing-statekit-dir"))
+		rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0})
+		_, err := (versionFunc{}).Execute(context.Background(), rt, fullVersionArgs())
+		if !errors.Is(err, errPostgresPwfileTempDir) || err.Error() != errPostgresPwfileTempDir.Error() {
+			t.Fatalf("err = %v, want the fixed temp-dir category", err)
+		}
+		if strings.Contains(err.Error(), marker) {
+			t.Fatalf("temp-dir failure leaks marker: %v", err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("calls = %d, want 0", len(runner.calls))
+		}
+	})
+	t.Run("exclusive create failure", func(t *testing.T) {
+		sandbox := t.TempDir()
+		t.Setenv("TMPDIR", sandbox)
+		original := pgpassOpenFile
+		pgpassOpenFile = func(string, int, fs.FileMode) (*os.File, error) {
+			return nil, &fs.PathError{Op: "open", Path: "/synthetic/" + marker, Err: fs.ErrPermission}
+		}
+		defer func() { pgpassOpenFile = original }()
+		rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0})
+		_, err := (versionFunc{}).Execute(context.Background(), rt, fullVersionArgs())
+		if !errors.Is(err, errPostgresPwfileWrite) || err.Error() != errPostgresPwfileWrite.Error() {
+			t.Fatalf("err = %v, want the fixed write category", err)
+		}
+		if strings.Contains(err.Error(), marker) {
+			t.Fatalf("create failure leaks marker: %v", err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("calls = %d, want 0", len(runner.calls))
+		}
+		entries, readErr := os.ReadDir(sandbox)
+		if readErr != nil || len(entries) != 0 {
+			t.Fatalf("failed create left artifacts: %v (%d entries)", readErr, len(entries))
+		}
+	})
+	t.Run("write failure", func(t *testing.T) {
+		sandbox := t.TempDir()
+		t.Setenv("TMPDIR", sandbox)
+		original := pgpassOpenFile
+		pgpassOpenFile = func(string, int, fs.FileMode) (*os.File, error) {
+			readEnd, writeEnd, err := os.Pipe()
+			if err != nil {
+				return nil, err
+			}
+			// Closing the read end makes every write fail (EPIPE), so
+			// the record bytes never land anywhere.
+			if err := readEnd.Close(); err != nil {
+				return nil, err
+			}
+			return writeEnd, nil
+		}
+		defer func() { pgpassOpenFile = original }()
+		rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0})
+		_, err := (versionFunc{}).Execute(context.Background(), rt, fullVersionArgs())
+		if !errors.Is(err, errPostgresPwfileWrite) || err.Error() != errPostgresPwfileWrite.Error() {
+			t.Fatalf("err = %v, want the fixed write category", err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("calls = %d, want 0", len(runner.calls))
+		}
+		entries, readErr := os.ReadDir(sandbox)
+		if readErr != nil || len(entries) != 0 {
+			t.Fatalf("failed write left artifacts: %v (%d entries)", readErr, len(entries))
+		}
+	})
+}
+
+// TestPostgresPgpassCleanupFailure pins the removal boundary: a cleanup
+// that fails after an otherwise successful run answers the fixed
+// value-free errPostgresPwfileCleanup, and a write-side failure whose
+// rescue removal also fails joins the write category with the cleanup
+// sentinel exactly like the initdb pwfile transport.
+func TestPostgresPgpassCleanupFailure(t *testing.T) {
+	t.Run("cleanup failure after success", func(t *testing.T) {
+		original := pgpassRemoveAll
+		pgpassRemoveAll = func(string) error {
+			return &fs.PathError{Op: "remove", Path: "/synthetic/pgpass-cleanup", Err: fs.ErrPermission}
+		}
+		defer func() { pgpassRemoveAll = original }()
+		rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("9.1.9\n")})
+		_, err := (versionFunc{}).Execute(context.Background(), rt, fullVersionArgs())
+		if !errors.Is(err, errPostgresPwfileCleanup) || err.Error() != errPostgresPwfileCleanup.Error() {
+			t.Fatalf("err = %v, want the fixed cleanup category", err)
+		}
+		if len(runner.calls) != 1 {
+			t.Fatalf("calls = %d, want 1", len(runner.calls))
+		}
+		// The stranded passfile is the observable residue; remove it with
+		// the real removal so this test leaves nothing behind.
+		path, ok := postgresEnvValue(runner.calls[0].Env, "PGPASSFILE")
+		if !ok {
+			t.Fatalf("env carries no PGPASSFILE: %q", runner.calls[0].Env)
+		}
+		if _, statErr := os.Lstat(path); statErr != nil {
+			t.Fatalf("stranded passfile not observable: %v", statErr)
+		}
+		if err := original(path); err != nil {
+			t.Fatalf("manual residue cleanup failed: %v", err)
+		}
+		if err := original(filepath.Dir(path)); err != nil {
+			t.Fatalf("manual residue cleanup failed: %v", err)
+		}
+	})
+	t.Run("write failure with failed rescue removal", func(t *testing.T) {
+		originalOpen, originalRemove := pgpassOpenFile, pgpassRemoveAll
+		pgpassOpenFile = func(string, int, fs.FileMode) (*os.File, error) {
+			readEnd, writeEnd, err := os.Pipe()
+			if err != nil {
+				return nil, err
+			}
+			if err := readEnd.Close(); err != nil {
+				return nil, err
+			}
+			return writeEnd, nil
+		}
+		pgpassRemoveAll = func(string) error {
+			return &fs.PathError{Op: "remove", Path: "/synthetic/pgpass-rescue", Err: fs.ErrPermission}
+		}
+		defer func() { pgpassOpenFile, pgpassRemoveAll = originalOpen, originalRemove }()
+		rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0})
+		_, err := (versionFunc{}).Execute(context.Background(), rt, fullVersionArgs())
+		if !errors.Is(err, errPostgresPwfileWrite) || !errors.Is(err, errPostgresPwfileCleanup) {
+			t.Fatalf("err = %v, want the joined write+cleanup categories", err)
+		}
+		if want := errPostgresPwfileWrite.Error() + "\n" + errPostgresPwfileCleanup.Error(); err.Error() != want {
+			t.Fatalf("err = %q, want %q", err, want)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("calls = %d, want 0", len(runner.calls))
+		}
+	})
+}
+
+// TestPostgresPgpassCleanupFailureJoinsPrimary pins the R92T-FINAL-05
+// transport aggregate: when the per-call pgpass cleanup fails while the
+// run already failed, the returned error preserves BOTH identities
+// through errors.Is — the primary control failure (cancellation,
+// deadline, output limit) or the redacted primary Runner error, plus the
+// fixed value-free cleanup category — rendered as the primary line plus
+// the sentinel line only, with no password or temp path, exactly one
+// Runner invocation, and the stranded residue still observable for the
+// manual sweep.
+func TestPostgresPgpassCleanupFailureJoinsPrimary(t *testing.T) {
+	failCleanup := func(t *testing.T) func() {
+		t.Helper()
+		original := pgpassRemoveAll
+		pgpassRemoveAll = func(string) error {
+			return &fs.PathError{Op: "remove", Path: "/synthetic/pgpass-primary-join", Err: fs.ErrPermission}
+		}
+		return func() { pgpassRemoveAll = original }
+	}
+	residue := func(t *testing.T, runner *postgresFakeRunner) {
+		t.Helper()
+		path, ok := postgresEnvValue(runner.calls[0].Env, "PGPASSFILE")
+		if !ok {
+			t.Fatalf("env carries no PGPASSFILE: %q", runner.calls[0].Env)
+		}
+		if _, statErr := os.Lstat(path); statErr != nil {
+			t.Fatalf("stranded passfile not observable: %v", statErr)
+		}
+		if err := os.RemoveAll(filepath.Dir(path)); err != nil {
+			t.Fatalf("manual residue cleanup failed: %v", err)
+		}
+	}
+	t.Run("cancellation after runner returned", func(t *testing.T) {
+		defer failCleanup(t)()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("9.1.9\n")})
+		rt.Runner = runnerFunc(func(command process.Command) process.CommandResult {
+			result := runner.Run(context.Background(), command)
+			cancel()
+			return result
+		})
+		_, err := (versionFunc{}).Execute(ctx, rt, fullVersionArgs())
+		if !errors.Is(err, context.Canceled) || !errors.Is(err, errPostgresPwfileCleanup) {
+			t.Fatalf("err = %v, want joined cancellation + cleanup identities", err)
+		}
+		if want := context.Canceled.Error() + "\n" + errPostgresPwfileCleanup.Error(); err.Error() != want {
+			t.Fatalf("err = %q, want %q", err, want)
+		}
+		if strings.Contains(err.Error(), "test_pass") {
+			t.Fatalf("joined error leaks the password: %v", err)
+		}
+		if len(runner.calls) != 1 {
+			t.Fatalf("calls = %d, want 1", len(runner.calls))
+		}
+		residue(t, runner)
+	})
+	t.Run("deadline exceeded", func(t *testing.T) {
+		defer failCleanup(t)()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+		defer cancel()
+		rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("9.1.9\n")})
+		rt.Runner = runnerFunc(func(command process.Command) process.CommandResult {
+			time.Sleep(20 * time.Millisecond)
+			return runner.Run(context.Background(), command)
+		})
+		_, err := (versionFunc{}).Execute(ctx, rt, fullVersionArgs())
+		if !errors.Is(err, context.DeadlineExceeded) || !errors.Is(err, errPostgresPwfileCleanup) {
+			t.Fatalf("err = %v, want joined deadline + cleanup identities", err)
+		}
+		if want := context.DeadlineExceeded.Error() + "\n" + errPostgresPwfileCleanup.Error(); err.Error() != want {
+			t.Fatalf("err = %q, want %q", err, want)
+		}
+		if len(runner.calls) != 1 {
+			t.Fatalf("calls = %d, want 1", len(runner.calls))
+		}
+		residue(t, runner)
+	})
+	t.Run("output limit", func(t *testing.T) {
+		defer failCleanup(t)()
+		rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0, StdoutTruncated: true})
+		_, err := (versionFunc{}).Execute(context.Background(), rt, fullVersionArgs())
+		if !errors.Is(err, process.ErrOutputLimit) || !errors.Is(err, errPostgresPwfileCleanup) {
+			t.Fatalf("err = %v, want joined output-limit + cleanup identities", err)
+		}
+		if want := process.ErrOutputLimit.Error() + "\n" + errPostgresPwfileCleanup.Error(); err.Error() != want {
+			t.Fatalf("err = %q, want %q", err, want)
+		}
+		if len(runner.calls) != 1 {
+			t.Fatalf("calls = %d, want 1", len(runner.calls))
+		}
+		residue(t, runner)
+	})
+	t.Run("runner failure", func(t *testing.T) {
+		defer failCleanup(t)()
+		rt, runner := newPostgresRuntime(process.CommandResult{
+			ExitCode: -1,
+			Err:      fmt.Errorf("exec psql: auth failed for test_pass"),
+		})
+		_, err := (versionFunc{}).Execute(context.Background(), rt, fullVersionArgs())
+		if !errors.Is(err, errPostgresPwfileCleanup) {
+			t.Fatalf("runner failure hides the cleanup category: %v", err)
+		}
+		if !strings.Contains(err.Error(), "exec psql:") || !strings.HasSuffix(err.Error(), "\n"+errPostgresPwfileCleanup.Error()) {
+			t.Fatalf("runner failure must keep the redacted primary and append the cleanup sentinel: %v", err)
+		}
+		if strings.Contains(err.Error(), "test_pass") {
+			t.Fatalf("joined error leaks the password: %v", err)
+		}
+		if len(runner.calls) != 1 {
+			t.Fatalf("calls = %d, want 1", len(runner.calls))
+		}
+		residue(t, runner)
+	})
+}
+
+// TestPostgresPgpassRegistryPath pins the transport through the registry
+// dispatch: the same PGPASSFILE-only credential boundary and cleanup hold
+// under the canonical registered name.
+func TestPostgresPgpassRegistryPath(t *testing.T) {
+	sandbox := t.TempDir()
+	t.Setenv("TMPDIR", sandbox)
+	reg := runtime.NewExecRegistry()
+	if err := Register(reg); err != nil {
+		t.Fatal(err)
+	}
+	rt, runner := newPostgresRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("9.1.9\n")})
+	rt.Exec = reg
+	value, err := reg.Call(context.Background(), rt, "postgres.version", fullVersionArgs())
+	if err != nil || value != "9.1.9" {
+		t.Fatalf("version = (%#v, %v)", value, err)
+	}
+	postgresRequirePgpassEnv(t, runner, 0,
+		"test_host:test_port:test_maint:test_user:test_pass",
+		"PGUSER=test_user", "PGHOST=test_host", "PGPORT=test_port")
 }
