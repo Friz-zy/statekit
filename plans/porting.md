@@ -1663,6 +1663,51 @@ The PTD tables below are retained as an immutable audit snapshot. These
 overrides are the current status and do not delete or rewrite any original
 rows or counts.
 
+##### 2026-09-27 current status (R10.1 Slack `slack_notify` exec family; external CI pending)
+
+R10 opens the Cloud & SaaS API round under its §2 policy (thin stdlib HTTP
+for webhook-style APIs; contract tests against recorded-response fixtures;
+live smoke behind an opt-in label only). R10.1 registers the complete
+slack exec family — all six public functions of the pinned
+`salt/modules/slack_notify.py` (`list_rooms`, `list_users`, `find_room`,
+`find_user`, `post_message`, `call_hook`), with the private
+`_get_api_key`/`_get_hook_id` ladders ported as internal helpers over the
+optional `config.get` delegate — over one bounded stdlib HTTP transport
+(net/http + encoding/json only; no new dependency). The frozen 2026-08-29
+PTD-EXEC rows for the slack family are superseded for these six names:
+they are registered. The generated R10 report
+(`docs/differential/R10/report.yaml`, `round: R10.1`) records 8 catalog
+functions, 6 public, 2 private, 6/6 registered, 0 pending, mock-only.
+
+| Phase | Scope | Implementation executor role | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `R10.1` (uncommitted) | Complete `slack` exec family on a bounded stdlib HTTP transport: pinned Bearer-header token placement, pinned urlencoded `post_message` bodies with full Python-falsy `attachments`/`blocks or []` parity, pinned `call_hook` payload/status ladder with fixed-origin webhook construction, pinned `slack.api_key`/`slack:api_key` and `slack.hook`/`slack:hook` config ladders, value-free error surface, key-and-value secret redaction with fail-closed collision handling; direct/registry/CLI fake-transport tests plus loopback-only httptest vectors (exact-origin redirect chains, foreign-origin hook rejection); generated R10 report | `backend-engineer-senior` | Local quality gates run in conforming rootless Podman (`network=none`, `.gotmp` store): gofmt, focused `go test -count=1 ./modules/exec/slack ./internal/cli ./internal/config`, race, vet, differential generator consistency, cross-compile of the slack test binary (linux/darwin/windows amd64); independent code security review re-run pending, external gates not yet run | Registered 6/6 public (8 catalog, 2 private); mock-only local evidence — no live Slack endpoint, no Salt oracle, no real webhook; security remediation closed including both independent re-gates' converged residuals (F1-F5, SEC-001..006): hook identifiers restricted to the fixed `https://hooks.slack.com/services/` origin (path tokens with decoded-path traversal AND decoded-backslash rejection — encoded separators like `%5C`/`%5c` included in both token and full-URL forms; a full URL only when already exactly that origin — the pinned `urljoin` absolute-replacement behavior is deliberately not reproduced), redirects repeat the exact origin (scheme/host/port; subdomains and downgrades fail closed), Referer stripped on every followed hop, exactly 3 redirects followed (4 exchanges total; the prior code followed only 2 — the documented-3 off-by-one is fixed), key-aware recursive redaction of api key and hook identifier in raw/percent-encoded/JSON-escaped forms (Go and Python `json.dumps` ASCII escaping — control characters, DEL, and non-ASCII as `\uXXXX`, astral runes as surrogate pairs; webhook failure bodies additionally covered against the identifier's canonical forms: decoded path token, normalized default-port-removed URL, path-only echo) with the value-free `slack: redacted key collision` fail-closed error, and the enforced slack CLI diagnostic boundary is: value-free slack-scoped flag-parse failures, unexpected positionals, invalid output-format values (namespace-level and function-level `-o`/`--output` alike), and unknown structured keys on `slack.*` dispatch targets reporting fixed categories with zero dispatch, plus repo-wide value-free scalar decode texts that quote only the template-declared argument NAME and failure class — argument NAMES may still appear in diagnostics per the module metadata convention, non-slack families keep the flag package's name-bearing parse errors and Salt's unknown-kwarg echo (pinned by the mysql CLI flag-name assertions), and target-less surfaces (`version`, `facts`, `--list`) keep verbatim output-format diagnostics, the module-owned bounded client is never mutated (test injection only via a `testing.TB`-scoped seam carrying the 30s context deadline), the non-200/204 error-object body decodes into the unexpected-response sentinel exactly like the pinned KeyError crash position, and the ledger catalog-regen sentence below states both reconciled drifts; the pinned status-0 transport-failure mappings (API `invalid_auth` false result, `call_hook` success `True`) are deliberately not reproduced and fail closed value-free; live smoke behind an opt-in label is **not implemented in this phase** and remains the R10-plan contract-test policy; `go.mod`/`go.sum` unchanged (no new dependency); R3-R9 report hashes unchanged |
+
+Transport ceilings are documented divergences, not parity claims: fixed
+30s exchange deadline carried on the request context (so it holds for the
+module-owned client and any test-injected transport alike), 1 MiB request
+body, 4 MiB response body, exact-origin https redirects with the Referer
+stripped (exactly 3 redirects followed, 4 exchanges total), and strict
+object-only JSON decode replace the pinned minion defaults (1 hour
+request timeout, 100 GB body, unrestricted redirect following,
+content-type-dispatched decode). Composite `attachments`/`blocks` form
+values render as compact JSON instead of the pinned Python `str()` repr;
+the empty list still renders `[]` exactly like the pinned source. The
+catalog regeneration that accompanies this phase
+(`go run ./tools/salt-reference`) also reconciled pre-existing
+registration drift at HEAD `3342199` in two places: the four
+MySQL functions (`mysql.query`, `mysql.file_query`, `mysql.plugin_add`,
+`mysql.plugin_remove`, registered by earlier R9.3 commits without
+regenerating `docs/catalog/`) AND `postgres.psql_query` (registered by
+the R9.2t commit without the same regen) — both now appear in
+`docs/catalog/coverage.yaml`, and the regenerated `mysql.yaml` summaries
+return to the generator-extracted docstrings. Those restored catalog
+summaries are source metadata extracted from the pinned Salt source,
+not native runtime claims: the native StateKit bounds and behaviors of
+the affected functions are unchanged by the regeneration. No external
+service outcome is claimed anywhere in this entry; external evidence
+remains `pending_external_ci`.
+
 ##### 2026-09-24 current override (R9.2t PostgreSQL `psql_query`; external CI pending)
 
 This is the current PostgreSQL status; the dated phase counts below describe

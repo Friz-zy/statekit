@@ -89,6 +89,7 @@ import (
 	execselinux "github.com/friz-zy/statekit/modules/exec/selinux"
 	execservice "github.com/friz-zy/statekit/modules/exec/service"
 	execshadow "github.com/friz-zy/statekit/modules/exec/shadow"
+	execslack "github.com/friz-zy/statekit/modules/exec/slack"
 	execsmbios "github.com/friz-zy/statekit/modules/exec/smbios"
 	execsoftwareupdate "github.com/friz-zy/statekit/modules/exec/softwareupdate"
 	execsqlite3 "github.com/friz-zy/statekit/modules/exec/sqlite3"
@@ -291,6 +292,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execmysql.Register,
 		execpostgres.Register,
 		execsqlite3.Register,
+		execslack.Register,
 		execxfs.Register,
 		execsysctl.Register,
 		execsysfs.Register,

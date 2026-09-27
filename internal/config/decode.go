@@ -335,7 +335,10 @@ func assignFromFlag(field reflect.Value, name, raw string) error {
 	} else if field.Type().Elem().Kind() == reflect.Bool {
 		b, err := strconv.ParseBool(raw)
 		if err != nil {
-			return fmt.Errorf("argument %q: invalid boolean %q", name, raw)
+			// Value-free (R10.1 SEC-006): the unparsed flag text is raw
+			// caller input (a secret pasted as a boolean value must not
+			// reach stderr); only the argument name and class travel.
+			return fmt.Errorf("argument %q: invalid boolean", name)
 		}
 		field.Set(reflect.ValueOf(&b))
 		return nil
@@ -346,7 +349,8 @@ func assignFromFlag(field reflect.Value, name, raw string) error {
 	} else if field.Type().Elem().Kind() == reflect.Int || field.Type().Elem().Kind() == reflect.Int64 {
 		n, err := strconv.ParseInt(raw, 10, field.Type().Elem().Bits())
 		if err != nil {
-			return fmt.Errorf("argument %q: invalid integer %q", name, raw)
+			// Value-free for the same reason as the boolean branch.
+			return fmt.Errorf("argument %q: invalid integer", name)
 		}
 		ptr := reflect.New(field.Type().Elem())
 		if err := setIntScalar(ptr.Elem(), n); err != nil {
@@ -363,13 +367,13 @@ func assignFromFlag(field reflect.Value, name, raw string) error {
 	case reflect.Bool:
 		b, err := strconv.ParseBool(raw)
 		if err != nil {
-			return fmt.Errorf("argument %q: invalid boolean %q", name, raw)
+			return fmt.Errorf("argument %q: invalid boolean", name)
 		}
 		field.SetBool(b)
 	case reflect.Int, reflect.Int64:
 		n, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil {
-			return fmt.Errorf("argument %q: invalid integer %q", name, raw)
+			return fmt.Errorf("argument %q: invalid integer", name)
 		}
 		if err := setIntScalar(field, n); err != nil {
 			return fmt.Errorf("argument %q: %w", name, err)
@@ -377,7 +381,7 @@ func assignFromFlag(field reflect.Value, name, raw string) error {
 	case reflect.Float64:
 		f, err := strconv.ParseFloat(raw, 64)
 		if err != nil {
-			return fmt.Errorf("argument %q: invalid number %q", name, raw)
+			return fmt.Errorf("argument %q: invalid number", name)
 		}
 		field.SetFloat(f)
 	case reflect.Slice:

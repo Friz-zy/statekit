@@ -207,6 +207,27 @@ func splitTarget(token string) (module, function string, ok bool) {
 		!strings.Contains(function, ".")
 }
 
+// slackTarget reports whether a <module>.<function> dispatch target
+// belongs to the slack family, whose inputs are credentials (api keys
+// and webhook identifiers; R10.1 SEC-006).
+func slackTarget(target string) bool {
+	return strings.HasPrefix(target, "slack.")
+}
+
+// outputFormatFailure reports an invalid output-format diagnostic on
+// the function dispatch path. For slack.* targets the diagnostic is
+// value-free (R10.1 SEC-006): the supplied format is raw caller input,
+// so a secret pasted as a format value must not reach stderr and one
+// fixed category travels instead. Every other target keeps the verbatim
+// message; target-less surfaces (version, facts, --list) never resolve
+// a dispatch target and keep verbatim diagnostics too.
+func outputFormatFailure(target string, err error) int {
+	if slackTarget(target) {
+		return failf(ExitInvalidInput, "invalid output format")
+	}
+	return failf(ExitInvalidInput, "%v", err)
+}
+
 func (a *App) cmdFunction(kind string, argv []string) int {
 	namespaceFS, list := newNamespaceFlagSet(kind)
 	if !parseOr(namespaceFS, argv) {
@@ -263,6 +284,14 @@ func (a *App) cmdFunction(kind string, argv []string) int {
 	module, function, ok := splitTarget(target)
 	if !ok {
 		if single && target == "" {
+			// Deferred format boundary: with the function name still
+			// unresolved this branch keeps verbatim output-format
+			// diagnostics. That scoping holds only while the invariant
+			// does: deferred state-single resolution consults the
+			// state registry only, and slack is registered exclusively
+			// as an exec module, so this branch can never dispatch
+			// slack. Introducing slack state registrations would
+			// require revisiting the value-free scoping.
 			ok = false // deferred to structured "fun" key below
 		} else {
 			return failf(ExitInvalidInput, "function must be <module>.<function>, got %q", target)
@@ -271,7 +300,9 @@ func (a *App) cmdFunction(kind string, argv []string) int {
 
 	format, err := formatFrom(namespaceFS)
 	if err != nil {
-		return failf(ExitInvalidInput, "%v", err)
+		// The dispatch target is resolved here, so the diagnostic can
+		// be scoped: slack targets keep the raw format value off stderr.
+		return outputFormatFailure(module+"."+function, err)
 	}
 
 	rt, code := a.buildRuntime()
@@ -311,7 +342,7 @@ func (a *App) cmdFunction(kind string, argv []string) int {
 	if explicit != "" {
 		format, err = output.ParseFormat(explicit)
 		if err != nil {
-			return failf(ExitInvalidInput, "%v", err)
+			return outputFormatFailure(fullName, err)
 		}
 	}
 
@@ -404,8 +435,22 @@ func (a *App) cmdList(kind, target string, format output.Format) int {
 
 // parseOr parses argv and reports failures with a visible message.
 func parseOr(fs *flag.FlagSet, argv []string) bool {
+	return parseOrArgs(fs, argv, false)
+}
+
+// parseOrArgs parses argv; when valueFree is set (credential-input
+// targets, R10.1 SEC-006) every non-help parse failure reports one
+// fixed value-free category, because flag-package errors quote the
+// offending token and value — a secret pasted as a malformed or
+// unknown flag value must not reach stderr. flag.ErrHelp keeps its
+// own value-free text either way.
+func parseOrArgs(fs *flag.FlagSet, argv []string, valueFree bool) bool {
 	if err := fs.Parse(argv); err != nil {
-		failf(ExitInvalidInput, "%v", err)
+		if errors.Is(err, flag.ErrHelp) || !valueFree {
+			failf(ExitInvalidInput, "%v", err)
+			return false
+		}
+		failf(ExitInvalidInput, "invalid command-line arguments")
 		return false
 	}
 	return true
@@ -436,12 +481,22 @@ func decodeArgs(kind, fullName string, template any, argv []string, base config.
 		}
 		base.MaxBytes = runtime.MaxCommandInputBytes
 	}
+	// Slack inputs are credentials (api keys, webhook identifiers), so
+	// the family's parse and positional diagnostics are value-free
+	// (R10.1 SEC-006). The scope is deliberately slack-only: non-slack
+	// families keep the flag package's name-bearing errors because the
+	// mysql CLI tests assert that flag-name convention — mysql argument
+	// names (for_grants/--for-grants, and the undeclared --table of
+	// mysql.grant_add) are module metadata echoed for usability, not
+	// credentials, so suppressing them repo-wide would break pinned
+	// behavior without a security gain.
+	valueFree := slackTarget(fullName)
 	if template == nil {
 		bare := flag.NewFlagSet("state single", flag.ContinueOnError)
 		bare.SetOutput(io.Discard)
 		addOutputFlags(bare)
 		addChannelFlags(bare)
-		if !parseOr(bare, argv) {
+		if !parseOrArgs(bare, argv, valueFree) {
 			return nil, "", "", ExitInvalidInput
 		}
 		structured, err := mergeChannels(base, bare).Load()
@@ -479,11 +534,16 @@ func decodeArgs(kind, fullName string, template any, argv []string, base config.
 	}
 	addOutputFlags(fnFS)
 	addChannelFlags(fnFS)
-	if !parseOr(fnFS, normalized) {
+	if !parseOrArgs(fnFS, normalized, valueFree) {
 		return nil, "", "", ExitInvalidInput
 	}
 	for _, leftover := range fnFS.Args() {
 		if leftover != "-" {
+			if valueFree {
+				// The positional text is raw caller input and must not
+				// be echoed into slack diagnostics (R10.1 SEC-006).
+				return nil, "", "", failf(ExitInvalidInput, "unexpected positional argument")
+			}
 			return nil, "", "", failf(ExitInvalidInput, "unexpected positional argument %q", leftover)
 		}
 	}
@@ -530,6 +590,23 @@ func decodeArgs(kind, fullName string, template any, argv []string, base config.
 		delete(provided, name)
 	}
 	if err := config.Decode(argsPtr, structured, provided); err != nil {
+		if valueFree {
+			var unknown *config.UnknownArgumentError
+			if errors.As(err, &unknown) {
+				// The rejected structured key is raw caller input — a
+				// secret pasted as a JSON/YAML key must not reach
+				// stderr — so slack targets report the fixed category
+				// without the key. Non-slack families keep Salt's
+				// unknown-kwarg echo (rejected key plus known list):
+				// the slack-scoped suppression is the smallest change
+				// that keeps every other family's diagnostics intact.
+				return nil, "", "", failf(ExitInvalidInput, "unknown argument")
+			}
+		}
+		// Remaining decoder diagnostics are value-free by contract
+		// (R10.1 SEC-006): quoted argument names come from the
+		// function's own template, and scalar-conversion failures
+		// report the failure class without the raw caller value.
 		return nil, "", "", failf(ExitInvalidInput, "%v", err)
 	}
 	return argsPtr, explicit, funKey, ExitOK

@@ -6,9 +6,9 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    source_inventory_count: 1212
-    catalog_intersection_count: 1190
-    implemented: 1190
+    source_inventory_count: 1224
+    catalog_intersection_count: 1202
+    implemented: 1202
 state:
     salt_modules: 132
     salt_functions: 669
@@ -448,15 +448,19 @@ implemented:
         - mysql.db_remove
         - mysql.db_repair
         - mysql.db_tables
+        - mysql.file_query
         - mysql.free_slave
         - mysql.get_master_status
         - mysql.get_slave_status
         - mysql.grant_add
         - mysql.grant_exists
         - mysql.grant_revoke
+        - mysql.plugin_add
+        - mysql.plugin_remove
         - mysql.plugin_status
         - mysql.plugins_list
         - mysql.processlist
+        - mysql.query
         - mysql.quote_identifier
         - mysql.showglobal
         - mysql.showvariables
@@ -698,6 +702,7 @@ implemented:
         - postgres.privileges_grant
         - postgres.privileges_list
         - postgres.privileges_revoke
+        - postgres.psql_query
         - postgres.role_get
         - postgres.schema_create
         - postgres.schema_exists
@@ -912,6 +917,12 @@ implemented:
         - shadow.set_mindays
         - shadow.set_password
         - shadow.set_warndays
+        - slack.call_hook
+        - slack.find_room
+        - slack.find_user
+        - slack.list_rooms
+        - slack.list_users
+        - slack.post_message
         - smbios.get
         - smbios.records
         - softwareupdate.download

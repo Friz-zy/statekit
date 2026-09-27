@@ -99,14 +99,7 @@ functions:
       source:
         path: salt/modules/mysql.py
         symbol: file_query
-      summary: >-
-        Run bounded local SQL from the specified file and return the
-        Salt-compatible aggregate result; no Salt fileserver/cache expansion is
-        performed. The whole operation allows at most 256 statements, 10000
-        positive returned/affected rows, 100000 result items, and 8 MiB of
-        compact-JSON statement results, with one 30-second deadline. Only
-        space, tab, LF, CR, and form feed are permitted SQL control whitespace;
-        limit, cancellation, and deadline failures return no partial aggregate.
+      summary: Run an arbitrary SQL query from the specified file and return the
       parameters:
         - name: database
         - name: file_name
@@ -114,6 +107,7 @@ functions:
           kind: '**'
       execution_dependencies:
         - config.option
+        - cp.cache_file
       tests:
         - path: tests/pytests/unit/modules/test_mysql.py
           functions: 36
@@ -163,16 +157,7 @@ functions:
       source:
         path: salt/modules/mysql.py
         symbol: free_slave
-      summary: >-
-        WIP compatibility surface intentionally unsupported by the current
-        bounded native transport. After value-free connection-argument
-        validation it returns the source-facing empty string without Runner
-        dispatch: no status probe, derived master connection, credential use
-        against a status-controlled host, or destructive replication statement
-        is performed. A future upgrade requires a separately provisioned and
-        authorized master/replica topology, a complete reviewed sequence with
-        phase/unknown-outcome reporting, and human approval; MySQL 8.4 legacy
-        status support and promotion are not claimed.
+      summary: Frees a slave from its master.  This is a WIP, do not use.
       parameters:
         - name: connection_args
           kind: '**'
