@@ -31,7 +31,7 @@ MOUNT_OPTION_ALLOWLIST = frozenset({
     "rw", "exec", "nosuid", "nodev", "relatime", "seclabel", "inode64",
 })
 EXEC_MOUNT_CHILDREN = frozenset({"rootfs", "rootfs-fetch"})
-ROOTFS_PROFILES = frozenset({"live-executable", "dependency-fetch", "mock-only"})
+ROOTFS_PROFILES = frozenset({"live-executable", "dependency-fetch", "mock-only", "dig-contract"})
 MANIFEST_RELATIVE_PATH = "etc/statekit-rootfs.manifest"
 # The staged manifest file is the one node that cannot list itself: the
 # builder records every other node, and the manifest digest pins its bytes.
@@ -998,9 +998,9 @@ class RootfsBuilder:
             if require_full_runtime:
                 if go_root is None:
                     raise RootfsError("required-runtime-source-missing")
-                if profile == "dependency-fetch" and psql_executable is not None:
+                if profile in ("dependency-fetch", "dig-contract") and psql_executable is not None:
                     raise RootfsError("required-runtime-source-missing")
-                if profile != "dependency-fetch" and psql_executable is None:
+                if profile not in ("dependency-fetch", "dig-contract") and psql_executable is None:
                     raise RootfsError("required-runtime-source-missing")
                 self.add_mapping(go_root, Path("/opt/go"), "go-toolchain")
                 if psql_executable is not None:
@@ -1095,7 +1095,7 @@ class RootfsBuilder:
             elif resolv_source is not None or certs_source is not None:
                 raise RootfsError("rootfs-profile-invalid")
 
-            if profile != "dependency-fetch":
+            if profile not in ("dependency-fetch", "dig-contract"):
                 # Only these two reviewed sources enter the closed runtime;
                 # never copy their parent checkout or the host report validator.
                 harness_parent = Path(__file__).resolve().parent
@@ -1199,9 +1199,10 @@ def python_standard_library(python_executable: Path) -> tuple[Path, ...]:
 
 def build_full_rootfs(
     *, destination: Path, uid: int, gid: int, go_root: Path,
-    psql_executable: Path, python_executable: Path,
+    psql_executable: Path | None, python_executable: Path,
     bash_executable: Path, sh_executable: Path, exec_mount: Path,
     test_utilities: tuple[Path, ...] | None = None,
+    runtime_profile: str = "live-executable",
 ) -> Path:
     builder = RootfsBuilder(
         destination, uid=uid, gid=gid, require_exec_mount=True,
@@ -1216,6 +1217,7 @@ def build_full_rootfs(
             Path("/usr/bin") / name for name in TEST_UTILITIES
         ),
         require_full_runtime=True,
+        runtime_profile=runtime_profile,
     )
 
 
@@ -1346,7 +1348,7 @@ def verify_staged_rootfs(
     if not isinstance(manifest, dict) or manifest.get("format") != "statekit-rootfs-v1" \
             or manifest.get("runtime_profile") != profile:
         raise RootfsError("rootfs-manifest-invalid")
-    expected_go = "go1.26.8" if profile in ("live-executable", "dependency-fetch") else None
+    expected_go = "go1.26.8" if profile in ("live-executable", "dependency-fetch", "dig-contract") else None
     expected_pg = "16.15" if profile == "live-executable" else None
     if manifest.get("go_version") != expected_go \
             or manifest.get("postgres_version") != expected_pg:
@@ -1377,14 +1379,14 @@ def verify_staged_rootfs(
                      for name in ("run.py", "psql-probe.sh")}
     actual_harness = {key for key, entry in records.items()
                       if key.startswith(harness_prefix) and entry.get("type") != "directory"}
-    if actual_harness != (set() if profile == "dependency-fetch" else harness_files):
+    if actual_harness != (set() if profile in ("dependency-fetch", "dig-contract") else harness_files):
         raise RootfsError("rootfs-harness-closure-invalid")
     allowed_harness_paths = harness_files | {
         "/opt/statekit/repo", "/opt/statekit/repo/tests",
         "/opt/statekit/repo/tests/live", "/opt/statekit/repo/tests/live/postgres",
     }
     if {key for key in records if key == harness_prefix.rstrip("/") or key.startswith(harness_prefix)} != (
-            set() if profile == "dependency-fetch" else allowed_harness_paths):
+            set() if profile in ("dependency-fetch", "dig-contract") else allowed_harness_paths):
         raise RootfsError("rootfs-harness-closure-invalid")
     for key in actual_harness:
         if records[key].get("type") != "file" or records[key].get("mode") not in ("0644", "0755"):
@@ -1503,7 +1505,7 @@ def main() -> int:
         sub.add_argument("--sh", type=Path, required=True)
         sub.add_argument("--test-utility", action="append", type=Path, default=[])
         if command == "full":
-            sub.add_argument("--profile", choices=("live", "fetch"), default="live")
+            sub.add_argument("--profile", choices=("live", "fetch", "dig-contract"), default="live")
             sub.add_argument("--exec-mount", type=Path, required=True)
             sub.add_argument("--go-root", type=Path, required=True)
             sub.add_argument("--psql", type=Path, required=None)
@@ -1563,13 +1565,16 @@ def main() -> int:
                 resolv_source=args.resolv, certs_source=args.certs,
             )
         elif args.command == "full":
-            if args.python is None or args.psql is None:
+            if args.python is None or (args.profile == "live" and args.psql is None):
                 raise RootfsError("required-runtime-source-missing")
+            if args.profile == "dig-contract" and (args.psql is not None or args.resolv is not None or args.certs is not None):
+                raise RootfsError("rootfs-profile-invalid")
             build_full_rootfs(
                 destination=args.destination, uid=args.uid, gid=args.gid,
                 go_root=args.go_root, psql_executable=args.psql,
                 python_executable=args.python, bash_executable=args.bash,
                 sh_executable=args.sh, exec_mount=args.exec_mount,
+                runtime_profile="dig-contract" if args.profile == "dig-contract" else "live-executable",
                 test_utilities=tuple(args.test_utility) or tuple(
                     Path("/usr/bin") / name for name in TEST_UTILITIES
                 ),

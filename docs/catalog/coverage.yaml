@@ -6,9 +6,9 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    source_inventory_count: 1224
-    catalog_intersection_count: 1202
-    implemented: 1202
+    source_inventory_count: 1240
+    catalog_intersection_count: 1211
+    implemented: 1211
 state:
     salt_modules: 132
     salt_functions: 669
@@ -136,6 +136,22 @@ implemented:
         - devinfo.hwinfo
         - devmap.multipath_flush
         - devmap.multipath_list
+        - dig.A
+        - dig.AAAA
+        - dig.CNAME
+        - dig.MX
+        - dig.NS
+        - dig.PTR
+        - dig.SPF
+        - dig.TXT
+        - dig.a
+        - dig.aaaa
+        - dig.check_ip
+        - dig.cname
+        - dig.mx
+        - dig.ns
+        - dig.ptr
+        - dig.spf
         - disk.percent
         - disk.usage
         - environ.get

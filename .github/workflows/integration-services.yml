@@ -624,6 +624,38 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  dig-contract:
+    name: r10.2 dig dns-contract fake-runner tests (rootless offline podman)
+    # Only main-ref push, dispatch, and schedule events reach this rootless
+    # contract job. Ordinary PR CI still compiles the code; the build-tagged
+    # dns_contract tests run here in isolation after merge. The gate is fully
+    # offline at execution time: recorded-response fake-Runner vectors only,
+    # no dig executable, no DNS resolution, and no live smoke (the R10 plan
+    # keeps any live resolver destination unapproved and deferred).
+    if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      # actions/checkout v5.1.0; refs/tags/v5.1.0 resolved to this full commit SHA.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      - name: fail-closed local rootless Podman preflight
+        env:
+          CONTAINER_RUNTIME: podman
+        run: bash tests/live/dig/run.sh --preflight-only
+
+      # Reuse the runner-tool rootfs and fixed dependency-fetch preflight.
+      # Dig-only mode never enters the PostgreSQL startup/credential/live path;
+      # all compilation, mocks and tagged tests are inspected network=none stages.
+      - name: runner-rootfs offline dns-contract tests
+        env:
+          CONTAINER_RUNTIME: podman
+        run: bash tests/live/postgres/ci.sh --dig-contract-only
+
   postgres-live:
     name: e5 live postgres psql-query production/native gate
     # Only main-ref push, dispatch, and schedule events reach this privileged

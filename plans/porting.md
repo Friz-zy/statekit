@@ -1663,6 +1663,194 @@ The PTD tables below are retained as an immutable audit snapshot. These
 overrides are the current status and do not delete or rewrite any original
 rows or counts.
 
+##### 2026-09-28 current status (R10.2 dig exec family; R10.2 remediation closed; external CI pending)
+
+R10.2 registers the complete dig exec family of the pinned
+`salt/modules/dig.py` — the nine canonical public functions `check_ip`,
+`A`, `PTR`, `AAAA`, `CNAME`, `NS`, `SPF`, `MX`, `TXT` plus the seven
+source aliases of the pinned module tail (`a`, `ptr`, `aaaa`, `cname`,
+`ns`, `spf`, `mx`; the pinned source defines no `txt` alias) — as one Go
+family (`modules/exec/dig`) over the central shell-free Runner. The
+frozen 2026-08-29 PTD-EXEC rows for the dig family are superseded for
+these names: they are registered. The generated R10 report
+(`docs/differential/R10/report.yaml`, `round: R10.2`) records 9 dig
+catalog functions, 9 public, 9/9 registered, 7/7 source aliases (reported
+separately from the canonical totals), R10 totals 17 catalog / 15 public /
+15 registered canonical plus 7 registered aliases, mock-only; the R3-R9
+report hashes are unchanged. The catalog regeneration that accompanies
+this phase (`go run ./tools/salt-reference`) moves the dig family into
+`implemented_families` and records the sixteen new names in
+`docs/catalog/coverage.yaml` (source inventory 1224→1240, catalog
+intersection 1202→1211 for the nine canonical registrations); the dig
+catalog file itself keeps exactly the nine canonical functions.
+
+Source and transport: `dig.__virtual__` gates the whole module on the dig
+binary — StateKit registers the family statically (an architectural
+constraint, documented exactly: the registration inventory and the
+differential report must stay environment-independent while the
+dns_contract evidence containers ship no dig binary, so bootstrap cannot
+skip the family without making the cataloged surface host-dependent) and
+enforces the gate per call through the Runner's optional
+`process.TrustedCommandResolver` capability (when trusted resolution
+fails, every `dig.*` function including `check_ip` fails closed with a
+fixed value-free error and zero dispatch; a Runner without the
+capability cannot verify the executable, so every `dig.*` function
+including `check_ip` fails closed with the fixed value-free
+unverified-executable error and zero dispatch — the module never
+performs a host LookPath of its own and never substitutes a bare-name
+PATH dispatch). Every dispatch is the fixed dig
+command with the separate argv `-r +short -q <name> -t <type>` and an
+optional single trailing validated `@server` element, always
+`Shell=false`, with no generic flags and no shell; PTR validates its
+argument as a bare IP literal and always queries the fixed reverse form
+(`d.c.b.a.in-addr.arpa` or the nibble-reversed `ip6.arpa` name) instead
+of the pinned raw `-x <host>` spelling, so no caller-controlled dig flag
+surface exists.
+
+Trusted native process boundary (R102-SEC-01, closed with full
+symlink-chain verification): the pinned module
+launches a PATH-resolved dig and inherits the full minion environment;
+StateKit never launches a PATH-resolved dig. `DefaultRunner` implements
+`process.TrustedCommandResolver` narrowly — only the fixed `dig` name,
+only the fixed canonical system candidate paths (`/usr/bin/dig`,
+`/bin/dig`, and `/usr/local/bin/dig`) — and resolves each candidate by
+walking every component of the candidate and of every symlink target
+with `Lstat`: every directory on the chain must be root-owned with no
+group/world write, every symlink must be root-owned (Linux symlinks are
+always `lrwxrwxrwx`, so the enforceable link controls are its owner and
+the non-group/world-writable, root-owned containing directory),
+relative symlink targets join the link's directory and absolute symlink
+targets are cleaned, and every resulting normalized absolute path must
+stay inside the approved system roots (`/bin`, `/usr`, `/usr/local`) —
+containment is decided on the normalized target, never a raw lexical
+prefix (R102-FINAL-02: `/usr/../opt/vendor/dig` normalizes to
+`/opt/vendor/dig` and is rejected unless the cleaned final target
+remains inside a canonical approved root), symlink hops are bounded so
+loops and deep chains fail closed, and the final target must be an
+absolute regular
+executable that is root-owned with no group/world write; unsupported
+names and platforms fail closed with `ErrTrustedCommandUnsupported` and
+missing or untrusted binaries with `ErrTrustedCommandUnavailable` (the
+non-unix build carries the fail-closed stub and its own build-tagged
+tests). The exact remaining native runtime requirement: a user-installed
+dig outside the canonical candidates and approved roots — a homebrew or
+`$HOME` prefix, any custom `PATH` directory — is unsupported; resolution
+fails closed with the fixed unavailable error and the operator remedy is
+installing dig under a canonical candidate path owned by root in
+non-group/world-writable directories. The resolved absolute path
+becomes argv[0] of every dig dispatch (a resolver answering a relative or
+empty path fails closed), and the child environment is exactly the fixed
+allowlist `HOME=/nonexistent` (a fixed nonexistent directory; `-r` is
+kept and already ignores per-user digrc), `PATH=/usr/bin:/bin`,
+`LANG=C`, `LC_ALL=C`,
+`TZ=UTC` — nothing is inherited, so `RES_OPTIONS`, `LOCALDOMAIN`,
+`HOSTALIASES`, `LD_*`, and caller secrets cannot reach the dig process.
+A Runner without the resolver capability cannot verify the executable:
+every `dig.*` function fails closed with the fixed value-free
+unverified-executable error and zero dispatch, and no LookPath or
+bare-name PATH fallback exists anywhere. The resolver's filesystem walk
+is unit-tested
+over a synthetic stat/symlink seam (positive resolution, symlink chains
+inside the approved roots, candidate order, non-root owner, group/world-
+writable binary and every ancestor including the filesystem root,
+non-regular, non-executable, missing, dangling, and looped candidates,
+user-owned symlink, symlink target outside the approved roots, relative
+traversal escape, the dig-only name allowlist) plus synthetic temp
+trees driven through the production `Lstat`/`Readlink` walker (safe
+root chain/link, user-owned symlink, writable parent, loop, traversal,
+absolute dot-dot targets that lexically start inside the approved root
+but clean outside it — final-component and mid-chain directory
+symlinks, with the safe root-internal absolute pass retained,
+R102-FINAL-02 — candidate outside allowed roots; only ownership is
+synthesized because the unprivileged test cannot `chown(2)` to root)
+so no test depends on — or executes — a native dig binary; the sole
+real-filesystem vector only stats.
+
+Limits (fixed, documented divergences from the pinned module, which has
+none): one shared 10s operation deadline per public call, at most 2s (or
+the remaining deadline) per dig process, at most 10 dig processes per
+operation (the SPF→TXT fallback and the NS/MX child A lookups are
+counted), at most 5 simultaneously active lookups, at most 64 KiB stdout
+and 8 KiB stderr captured per process, at most 256 KiB aggregate captured
+output, and at most 256 result entries; recursion carries active-path
+cycle detection keyed by (query, type, resolver) with no sibling
+deduplication (two includes of one target both dispatch, matching the
+pinned source), and truncation, cancellation, deadline, launch, and
+budget failures reject the whole operation without partial results.
+
+Input validation is fail-closed before any dispatch (a security
+divergence from the pinned source, which passes caller strings to dig
+unvalidated): query names are bounded ASCII DNS names (1..63-byte labels,
+at most 253 bytes excluding one terminal dot, underscore labels
+supported) rejecting empty names, empty interior labels, whitespace,
+control and NUL bytes, escaped and other non-allowlisted bytes,
+option-like (leading `-`) and server-like (leading `@`) forms, over-long
+labels and names, and non-ASCII; nameservers are absent, a validated
+hostname, or a bare IPv4/IPv6 literal — never an @-prefixed,
+port-bearing, URL, CIDR, bracketed, or zoned form; the SPF record
+argument accepts exactly `SPF` or `TXT`; and every response-derived NS
+host, MX exchange, and SPF include/redirect target is revalidated
+through the same validators before its child dispatch.
+
+Verified Python semantics (R102-F2/R102-F3, corrected against the runtime
+checker): `check_ip` keeps the IPv4 1..32 and IPv6 8..128 prefix ranges
+without host-bit alignment; the address half follows Python
+`ipaddress.ip_address` over `net/netip` — leading-zero octets, short v4
+forms, whitespace-wrapped literals, and zoned IPv4 literals are invalid,
+while the scoped IPv6 literal `fe80::1%eth0` is valid (Python ≥ 3.9
+`IPv6Address` accepts scope ids; the zone never reaches the fixed PTR
+reverse name) and a v4-in-v6 textual literal reports IPv6; the prefix
+`int()` accepts the Python base-10 grammar — outer int() whitespace
+(the ASCII whitespace set plus non-ASCII Python spaces such as U+3000,
+but NOT U+001C..U+001F: `int('\x1c24\x1f')` raises ValueError even
+though `chr(0x1c).isspace()` is true, so the int() predicate is a
+distinct `pythonIntWhitespace` that excludes the four ASCII information
+separators), one ASCII
+`+`/`-` sign, Unicode Nd decimal digits (`192.0.2.1/２４` and `/٢٤`
+parse as 24), and single underscores strictly between digits
+(`192.0.2.1/2_4` parses; `_24`, `24_`, `2__4`, `+_24`, and interior
+non-digits fail like ValueError), with oversized magnitudes failing the
+range check like Python's large ints. The Python whitespace predicate
+(`str.isspace()`/`str.split()`/`str.rstrip()`: Go's `unicode.IsSpace`
+plus U+001C..U+001F, which CPython's Latin-1 whitespace table classifies
+as space and Go does not) drives the trailing rstrip applied once to dig
+stdout and the whitespace token split used for MX rows and SPF sections,
+so a trailing U+001C run is trimmed from TXT and raw NS output while
+interior U+001C survives the newline split and `10\x1cmx.example.` is
+the two-field MX row `[10 mx.example.]`; the split answers allocated
+non-nil empty slices for every empty-token row exactly like Python's
+`line.split()` (a Python list is never null), so an empty successful MX
+stdout is `[[]]` and an interior blank/whitespace row is `[]` — JSON
+`[]`, never `null` (R102-FINAL-01) — and response bytes and string
+limits are unchanged.
+
+Preserved quirks: A and AAAA share one predicate (the verified check_ip
+above, so scoped IPv6 literals are retained like Python) and retain
+cross-family literals, CIDR strings, order, and duplicates; PTR and TXT
+keep the literal newline split retaining empties, quotes, and trailing
+dots (an empty successful stdout answers `[""]` like the pinned split,
+and raw MX answers `[[]]` whose rows are allocated non-nil slices
+exactly like Salt's `line.split()`, so the JSON shape is `[]` — never
+`null` — for every empty row); CNAME answers the stdout string on success
+including empty and `[]` on a completed nonzero exit; NS defaults to
+resolve=true and raw-splits when false; MX takes only the first A address
+when resolving; SPF falls back to TXT only on an exactly empty answer
+with record exactly SPF (counted against the call budget), strips every
+double quote, requires the exact first token `v=spf1`, honors `redirect=`
+only as the second token, and keeps the pinned include/ip4/ip6 regex with
+ordering and duplicates. The pinned crash positions map to fixed results
+instead of panics: a lone `v=spf1` answers `[]`, a malformed MX row under
+resolve=true and an MX exchange whose A lookup answers no address are
+rejected as malformed aggregates value-free, and a nonzero dig process
+exit maps to the source empty fallback wherever the pinned function
+specifies one, while Runner launch/deadline/cancellation/truncation
+failures stay fixed value-free errors that carry no raw argv, stdout,
+stderr, domain, or resolver bytes.
+
+| Phase | Scope | Implementation executor role | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `R10.2` (uncommitted) | Complete `dig` exec family (9 canonical public functions + 7 source aliases) on the central shell-free Runner with fail-closed input revalidation and fixed resource bounds; direct/registry/CLI fake-Runner tests carrying the pinned `tests/pytests/unit/modules/test_dig.py` vectors; generated R10 report at `round: R10.2` | `backend-engineer-senior` | Local quality gates re-run in conforming rootless Podman (`.gotmp` store, `network=none`, RO source and module cache, nonroot, cap-drop incl. bounding set/no-new-privileges) after the R102 blocker and R102-FINAL remediations: gofmt, untagged plus `dns_contract` focused `go test` over `./internal/process ./modules/exec/dig ./internal/cli ./internal/bootstrap ./tests/differential`, race, vet, differential generator consistency, cross-compilation (linux/darwin/windows amd64 of the tagged dig and process test binaries plus the statekit binary); independent code security review re-run pending, external gates not yet run | Registered 9/9 canonical public + 7/7 aliases (9 catalog; R10 totals 15 canonical public + 7 aliases); R102 blockers closed: R102-SEC-01 (trusted native process boundary — `process.TrustedCommandResolver` on `DefaultRunner` resolves only the fixed canonical candidates `/usr/bin/dig`, `/bin/dig`, and `/usr/local/bin/dig` with full symlink-chain verification: Lstat per component of the candidate and of every symlink target, every directory and symlink on the chain root-owned with no group/world write on directories and the final binary, every symlink target (relative targets joined to the link's directory) contained in the approved system roots /bin, /usr, /usr/local, symlink hops bounded against loops and deep chains, final target an absolute regular root-owned executable, failing closed on unsupported names/platforms and untrusted/missing binaries; a user-installed dig outside the canonical candidates and approved roots — homebrew, `$HOME`, any custom `PATH` directory — is unsupported and answers the fixed unavailable error, the exact remaining native runtime requirement; dig dispatch always executes the resolved absolute path with the exact child env allowlist `HOME=/nonexistent` (fixed nonexistent directory; `-r` kept)/`PATH=/usr/bin:/bin`/`LANG=C`/`LC_ALL=C`/`TZ=UTC`, nothing inherited; a Runner without the resolver capability fails closed with the fixed unverified-executable error and zero dispatch — no LookPath and no bare-name PATH fallback anywhere; the Salt `__virtual__` load-time skip is preserved as a call-time fixed unavailable error over the resolver — the exact registration-shape divergence is documented in the report and above), R102-F2 (`check_ip` Python semantics — `net/netip` scoped IPv6 `fe80::1%eth0` accepted, Python base-10 `int()` grammar with outer int() whitespace (the ASCII whitespace set plus non-ASCII Python spaces such as U+3000; U+001C..U+001F rejected by `int()` though `str.isspace()` accepts them — the R102-FINAL-01 correction, verified against the Python oracle: `int('\x1c24\x1f')` raises ValueError), ASCII sign, Unicode Nd digits, and single between-digit underscores; ranges IPv4 1..32 / IPv6 8..128 unchanged, no host-bit alignment), R102-F3 (Python whitespace predicate including U+001C..U+001F for the trailing rstrip and the MX/SPF whitespace split, TXT/NS trailing-U+001C counterexamples pinned, response limits unchanged); mock-only local evidence — no dig execution, no live DNS, no network egress from tests, the resolver tests run over a synthetic filesystem seam plus synthetic temp trees through the production Lstat/Readlink walker with only ownership synthesized (the one real-filesystem vector only stats), and the native dig contract tests stay build-tagged `dns_contract` so host CI `go test ./...` does not execute them; the first final-gate round's backend findings are closed: R102-FINAL-01 (the distinct `pythonIntWhitespace` predicate and corrected test/report claims above) and R102-FINAL-02 (unix build tags on the unix-only resolver tests plus non-unix fail-closed tests, so the windows process test binary cross-compiles like the dig test binary); the second final-gate round re-issued both IDs and both are closed: R102-FINAL-01 (MX JSON shape — `pythonFields` returns allocated non-nil empty slices for every empty-token row, so an empty successful MX stdout answers `[[]]` and interior blank/whitespace rows answer `[]`, serializing as JSON `[]` and never `null` exactly like Salt's `line.split()`; pinned at helper level with reflect-level nil-vs-empty distinctions, at module level with literal `[[]]`/`[]` encoder-decoder vectors over empty raw stdout and interior whitespace rows, and at the CLI surface with a JSON decoder asserting `[[]]` against `[null]`, while `cmd.run_all`'s trailing rstrip behavior is unchanged) and R102-FINAL-02 (trusted absolute symlink root boundary — every absolute symlink target in `trusted_unix.go` is cleaned before prefix/root acceptance, so `/usr/../opt/vendor/dig` resolves to `/opt/vendor/dig` and is rejected unless the normalized final target remains inside a canonical approved root; owner/mode checks continue along every path component and symlink of the normalized chain; pinned with synthetic temp-tree vectors for absolute dot-dot targets that lexically start inside the approved root but clean outside it — final-component and mid-chain directory symlinks, with the safe root-internal absolute symlink pass, relative escape, loops, and ownership/mode negatives retained); the rootless contract CI job remains DevOps-owned and external evidence stays `pending_external_ci`; `go.mod`/`go.sum` unchanged (no new dependency); R3-R9 report hashes unchanged |
+
 ##### 2026-09-27 current status (R10.1 Slack `slack_notify` exec family; external CI pending)
 
 R10 opens the Cloud & SaaS API round under its §2 policy (thin stdlib HTTP
@@ -1675,13 +1863,15 @@ slack exec family — all six public functions of the pinned
 optional `config.get` delegate — over one bounded stdlib HTTP transport
 (net/http + encoding/json only; no new dependency). The frozen 2026-08-29
 PTD-EXEC rows for the slack family are superseded for these six names:
-they are registered. The generated R10 report
-(`docs/differential/R10/report.yaml`, `round: R10.1`) records 8 catalog
-functions, 6 public, 2 private, 6/6 registered, 0 pending, mock-only.
+they are registered. At `343e9fe` the generated R10 report
+(`docs/differential/R10/report.yaml`, `round: R10.1`) recorded 8 catalog
+functions, 6 public, 2 private, 6/6 registered, 0 pending, mock-only (the
+report advances to `round: R10.2` with the dig family in the section
+above, which also records the dig registration).
 
 | Phase | Scope | Implementation executor role | Independent gate(s) | Result / boundary |
 |---|---|---|---|---|
-| `R10.1` (uncommitted) | Complete `slack` exec family on a bounded stdlib HTTP transport: pinned Bearer-header token placement, pinned urlencoded `post_message` bodies with full Python-falsy `attachments`/`blocks or []` parity, pinned `call_hook` payload/status ladder with fixed-origin webhook construction, pinned `slack.api_key`/`slack:api_key` and `slack.hook`/`slack:hook` config ladders, value-free error surface, key-and-value secret redaction with fail-closed collision handling; direct/registry/CLI fake-transport tests plus loopback-only httptest vectors (exact-origin redirect chains, foreign-origin hook rejection); generated R10 report | `backend-engineer-senior` | Local quality gates run in conforming rootless Podman (`network=none`, `.gotmp` store): gofmt, focused `go test -count=1 ./modules/exec/slack ./internal/cli ./internal/config`, race, vet, differential generator consistency, cross-compile of the slack test binary (linux/darwin/windows amd64); independent code security review re-run pending, external gates not yet run | Registered 6/6 public (8 catalog, 2 private); mock-only local evidence — no live Slack endpoint, no Salt oracle, no real webhook; security remediation closed including both independent re-gates' converged residuals (F1-F5, SEC-001..006): hook identifiers restricted to the fixed `https://hooks.slack.com/services/` origin (path tokens with decoded-path traversal AND decoded-backslash rejection — encoded separators like `%5C`/`%5c` included in both token and full-URL forms; a full URL only when already exactly that origin — the pinned `urljoin` absolute-replacement behavior is deliberately not reproduced), redirects repeat the exact origin (scheme/host/port; subdomains and downgrades fail closed), Referer stripped on every followed hop, exactly 3 redirects followed (4 exchanges total; the prior code followed only 2 — the documented-3 off-by-one is fixed), key-aware recursive redaction of api key and hook identifier in raw/percent-encoded/JSON-escaped forms (Go and Python `json.dumps` ASCII escaping — control characters, DEL, and non-ASCII as `\uXXXX`, astral runes as surrogate pairs; webhook failure bodies additionally covered against the identifier's canonical forms: decoded path token, normalized default-port-removed URL, path-only echo) with the value-free `slack: redacted key collision` fail-closed error, and the enforced slack CLI diagnostic boundary is: value-free slack-scoped flag-parse failures, unexpected positionals, invalid output-format values (namespace-level and function-level `-o`/`--output` alike), and unknown structured keys on `slack.*` dispatch targets reporting fixed categories with zero dispatch, plus repo-wide value-free scalar decode texts that quote only the template-declared argument NAME and failure class — argument NAMES may still appear in diagnostics per the module metadata convention, non-slack families keep the flag package's name-bearing parse errors and Salt's unknown-kwarg echo (pinned by the mysql CLI flag-name assertions), and target-less surfaces (`version`, `facts`, `--list`) keep verbatim output-format diagnostics, the module-owned bounded client is never mutated (test injection only via a `testing.TB`-scoped seam carrying the 30s context deadline), the non-200/204 error-object body decodes into the unexpected-response sentinel exactly like the pinned KeyError crash position, and the ledger catalog-regen sentence below states both reconciled drifts; the pinned status-0 transport-failure mappings (API `invalid_auth` false result, `call_hook` success `True`) are deliberately not reproduced and fail closed value-free; live smoke behind an opt-in label is **not implemented in this phase** and remains the R10-plan contract-test policy; `go.mod`/`go.sum` unchanged (no new dependency); R3-R9 report hashes unchanged |
+| `R10.1` @ `343e9fe` | Complete `slack` exec family on a bounded stdlib HTTP transport: pinned Bearer-header token placement, pinned urlencoded `post_message` bodies with full Python-falsy `attachments`/`blocks or []` parity, pinned `call_hook` payload/status ladder with fixed-origin webhook construction, pinned `slack.api_key`/`slack:api_key` and `slack.hook`/`slack:hook` config ladders, value-free error surface, key-and-value secret redaction with fail-closed collision handling; direct/registry/CLI fake-transport tests plus loopback-only httptest vectors (exact-origin redirect chains, foreign-origin hook rejection); generated R10 report | `backend-engineer-senior` | Local quality gates run in conforming rootless Podman (`network=none`, `.gotmp` store): gofmt, focused `go test -count=1 ./modules/exec/slack ./internal/cli ./internal/config`, race, vet, differential generator consistency, cross-compile of the slack test binary (linux/darwin/windows amd64); independent code security review re-run pending, external gates not yet run | Registered 6/6 public (8 catalog, 2 private); mock-only local evidence — no live Slack endpoint, no Salt oracle, no real webhook; security remediation closed including both independent re-gates' converged residuals (F1-F5, SEC-001..006): hook identifiers restricted to the fixed `https://hooks.slack.com/services/` origin (path tokens with decoded-path traversal AND decoded-backslash rejection — encoded separators like `%5C`/`%5c` included in both token and full-URL forms; a full URL only when already exactly that origin — the pinned `urljoin` absolute-replacement behavior is deliberately not reproduced), redirects repeat the exact origin (scheme/host/port; subdomains and downgrades fail closed), Referer stripped on every followed hop, exactly 3 redirects followed (4 exchanges total; the prior code followed only 2 — the documented-3 off-by-one is fixed), key-aware recursive redaction of api key and hook identifier in raw/percent-encoded/JSON-escaped forms (Go and Python `json.dumps` ASCII escaping — control characters, DEL, and non-ASCII as `\uXXXX`, astral runes as surrogate pairs; webhook failure bodies additionally covered against the identifier's canonical forms: decoded path token, normalized default-port-removed URL, path-only echo) with the value-free `slack: redacted key collision` fail-closed error, and the enforced slack CLI diagnostic boundary is: value-free slack-scoped flag-parse failures, unexpected positionals, invalid output-format values (namespace-level and function-level `-o`/`--output` alike), and unknown structured keys on `slack.*` dispatch targets reporting fixed categories with zero dispatch, plus repo-wide value-free scalar decode texts that quote only the template-declared argument NAME and failure class — argument NAMES may still appear in diagnostics per the module metadata convention, non-slack families keep the flag package's name-bearing parse errors and Salt's unknown-kwarg echo (pinned by the mysql CLI flag-name assertions), and target-less surfaces (`version`, `facts`, `--list`) keep verbatim output-format diagnostics, the module-owned bounded client is never mutated (test injection only via a `testing.TB`-scoped seam carrying the 30s context deadline), the non-200/204 error-object body decodes into the unexpected-response sentinel exactly like the pinned KeyError crash position, and the ledger catalog-regen sentence below states both reconciled drifts; the pinned status-0 transport-failure mappings (API `invalid_auth` false result, `call_hook` success `True`) are deliberately not reproduced and fail closed value-free; live smoke behind an opt-in label is **not implemented in this phase** and remains the R10-plan contract-test policy; `go.mod`/`go.sum` unchanged (no new dependency); R3-R9 report hashes unchanged. Committed as `343e9fe` (clean tree at commit; the R10.2 dig phase follows on top) |
 
 Transport ceilings are documented divergences, not parity claims: fixed
 30s exchange deadline carried on the request context (so it holds for the
@@ -1722,7 +1912,7 @@ live-service or Salt parity gate.
 
 | Phase | Scope | Implementation executor role | Independent gate(s) | Result / boundary |
 |---|---|---|---|---|
-| `R9.2t` (shared, uncommitted) | Privileged bounded stdin-only `postgres.psql_query`, direct/registry/CLI fake-Runner and differential contract; generated report from `TestR9DifferentialScopeReport` | `backend-engineer-senior` | Independent local tests and code security review reported passed in the task handoff; external approval/execution not inferred | Registered 50/50; mock-only local evidence, no local PostgreSQL and no added Go module dependency; external service outcome remains `pending_external_ci` |
+| `R9.2t` @ `3342199` | Privileged bounded stdin-only `postgres.psql_query`, direct/registry/CLI fake-Runner and differential contract; generated report from `TestR9DifferentialScopeReport` | `backend-engineer-senior` | Independent local tests and code security review reported passed in the task handoff; external approval/execution not inferred | Registered 50/50; mock-only local evidence, no local PostgreSQL and no added Go module dependency; external service outcome remains `pending_external_ci`. Committed as `3342199` |
 | `E5 PostgreSQL` (configured, not executed here) | Exactly 20 ordered real-service cases for the production binary and independent native `psql` against a disposable PostgreSQL database; value-free result and cleanup gate | `devops-platform-engineer-senior` | Independent `security-architect-lead` review of the protected workflow, rootfs builder, Podman inspection boundary, and host-network/firewall exception remains required; human approval does not replace runtime preflight | Workflow is main-only for push/manual/schedule; no PR execution. Exact Go 1.26.8/PostgreSQL 16.15 source closure is staged into `/dev/shm`; the fixed `go mod download` runs in its own manifest-closed dependency-fetch rootfs container behind a pinned loopback-DNS/proxy-IP egress allowlist (the host never fetches); Go build/tests and Python mocks run in rootless Podman `--rootfs` with `network=none`; container existence is tri-state fail-closed; the staged rootfs and its manifest are independently revalidated before every create/start and an in-rootfs preflight entrypoint rechecks effective UID/capabilities/NoNewPrivs/mountinfo/manifest digest before payload code; the rootless bootstrap wrapper keeps setuid subordinate mapping viable while payload containers drop all capabilities; the compiled binary lives in the verified exec tmpfs and is digest-checked before live start; live container alone uses host network after loopback and per-test-UID firewall verification. No OCI image, pull, local service, or live run. External 20/20 pass, live behavior, the exact libpod inspect schema, and Salt differential parity are not claimed; `external_ci: pending_external_ci`. On 2026-09-26 all 19 local Python orchestration tests passed in a rootless `network=none` mock container; the OCI/libpod inspect schema and live mountinfo layout remain unobserved on GitHub and the runtime rejects them if they differ |
 
 The 20 configured cases cover `psql_query` only, not live validation of the

@@ -638,6 +638,122 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
   `pending_external_ci` until that user-run job completes. No generated
   Agent Manager session is assigned in this plan.
 
+### `integration-services.yml` — R10.2 dig dns_contract offline contract gate (workflow controls defined; external execution pending)
+
+- **Test boundary (R10.2):** the dig exec family is verified exclusively by
+  recorded-response contract tests against the backend's scripted fake Runner
+  behind the `dns_contract` build tag, with the tagged command covering
+  `./modules/exec/dig`, `./internal/cli`, and `./tests/differential`. No dig contract test executes the dig
+  binary, resolves DNS, or opens a network connection. A live DNS smoke and
+  any external resolver destination are **not implemented in this phase**;
+  the R10 plan records live smoke as opt-in-label-only and the resolver
+  destination/provenance remains unapproved, so no such job, step, or local
+  command exists. Default host CI (`go test ./...`) continues to skip the
+  build-tagged files.
+- **Job (`dig-contract`, main-only):** push/workflow_dispatch/schedule on
+  `refs/heads/main` only — the same trusted-event guard as the postgres live
+  job. Ordinary PR CI still compiles the code; the build-tagged dig tests run
+  in this isolated rootless job after merge. Job-level `contents: read`,
+  finite `timeout-minutes`, `checkout` at its verified commit SHA with
+  `persist-credentials: false`, no `inputs:` anywhere in the workflow (no
+  caller-selectable domains or nameservers), and nothing uploaded from the
+  job (value-free artifact boundary: none — success is the test exit code).
+- **Scoped HUMAN authorization:** approver is the project user via direct
+  instructions on 2026-09-21, reaffirmed 2026-09-27 22:31 UTC and supplied
+  directly to this remediation session. Target: only the R10.2 `dig-contract`
+  job in `.github/workflows/integration-services.yml`. Scope: rootless Podman,
+  `network=none` fake-Runner contract tests; push/main, workflow_dispatch/main,
+  schedule/main; `contents: read`; no secrets, OIDC, write permissions, native
+  dig, live DNS/smoke, new OCI identities, or new dependencies. Expiry:
+  completion of R10 migration or explicit user revocation, whichever comes
+  first. No permission for live DNS or user-controlled resolver targets.
+  This approval does not waive runtime preflight or independent review.
+  The direct 2026-09-28 continuation explicitly authorizes reuse of the existing
+  PostgreSQL rootfs/preflight controller in `--dig-contract-only` mode, including
+  its fixed locked dependency-fetch stage when needed. Approval owner is the
+  authorized user in active chat, not a peer claim. This is not an exception:
+  no new dependency version, OCI identity, package/image installation, live DNS
+  target, or assistant-triggered GitHub run is authorized.
+- **Execution model:** the job and `tests/live/dig/run.sh` invoke
+  `tests/live/postgres/ci.sh --dig-contract-only`. The existing rootless identity,
+  private store, verified executable tmpfs, manifest builder and inspector are
+  reused. The new `dig-contract` rootfs profile copies the runner-installed Go
+  and Python runtimes but excludes psql and the PostgreSQL harness. No image
+  cache or preseeded module cache is required; no image is pulled or built.
+  The shared rootfs toolchain policy is Go 1.26.8 (compatible with the unchanged
+  module's Go 1.26.6 minimum), checked at its allowlisted installed path before
+  staging and again inside the sandbox. An unavailable/wrong version fails
+  closed rather than installing a toolchain. GitHub-hosted Ubuntu 24.04 and the
+  exact trusted main event/ref are required before controller mutations.
+- **Stages:** the shared fixed fetch rootfs receives only read-only go.mod/go.sum
+  and the writable private module cache. Its manifest-hashed preflight executes
+  `/opt/go/bin/go mod download`; no project source, hooks, secrets or direct
+  fallback enters fetch. `GOTOOLCHAIN=local`, `GOWORK=off`, `GOENV=off`, fixed
+  proxy/checksum settings and readonly manifest mode are preserved. After
+  receipt-based fetch removal, the offline inspected runtime executes Python
+  mocks, `go mod verify`, and exactly
+  `go test -tags=dns_contract -count=1 ./modules/exec/dig ./internal/cli ./tests/differential`.
+  There is no statekit artifact build, PG mock/live phase, cluster startup,
+  database/role/password operation, live-service firewall or report upload.
+- **Egress:** only the existing dependency-fetch exception uses host networking
+  with the isolated test UID and verified IPv4+IPv6 owner-filter chains for
+  fixed proxy/checksum/storage TCP/443 and loopback DNS. The shared preflight
+  validates canonical ordered rules before fetch; all test execution uses
+  network=none. No broad network is called allowlisted. The dependency egress
+  path is not exercised during local verification; its actual GitHub-runner
+  execution remains external evidence, not a local DNS success claim.
+- **Runtime policy:** each stage uses create → canonical receipt/label check →
+  effective-policy inspection → start by ID. Non-root keep-id, read-only root,
+  cap-drop ALL, NNP, private ipc/pid/uts, explicit environment keys, authoritative
+  rootfs source and manifest, exact staged mounts, no devices/secrets/socket/home binds, and
+  requested memory/CPU/PID/time limits. Dig-only inspection rejects disabled
+  or unverifiable cgroups instead of accepting requested limit numbers without
+  an enabled enforcement mechanism. Offline source and cache binds are
+  read-only/noexec/nosuid/nodev; ephemeral tmpfs holds executable Go test output.
+  The existing build-role policy retains a private, bounded, noexec `/out`
+  mount for the dig Go build cache (`GOCACHE=/out/gocache`); no production
+  artifact is built there. The generated
+  manifest-hashed `statekit-rootfs-preflight` rechecks UID/GID/groups, all
+  capability sets, NNP, mount identities/options and manifest digest before
+  dispatch. Source and module cache remain read-only; only private scratch
+  surfaces are writable. The earlier image-controller CLI is disabled.
+- **Receipt ownership:** name-present and unknown-existence results fail before
+  create. Ownership is recorded only after successful create, canonical ID and
+  exact name/run/gate/phase labels. Cleanup rechecks identity and uses only that
+  ID. Failed/ambiguous partial creates are preserved, never claimed via labels;
+  the controller preserves the workspace on ambiguous ownership.
+  Disposable runner teardown is the recovery boundary, not guessed cleanup.
+- **Local evidence:** on 2026-09-28 the rootfs-mode changes passed all 21 dig
+  mocks plus all 21 shared PostgreSQL orchestration tests (42 total, zero skips)
+  in create/inspect/start rootless Podman on `.gotmp`, using
+  the already cached Python image, network=none, uid 1000, empty capabilities,
+  NNP, read-only selective source mounts, private executable `/tmp` for fixture
+  tests and private noexec `/dev/shm`. An additional inspected network=none
+  container passed YAML parsing/job assertions (using already-installed PyYAML
+  mounted read-only), Python syntax and shell syntax checks; `git diff --check`
+  also passed. This cached local Python image is not used by the image-free CI job. Resource limits were
+  requested; this local Podman reports cgroups disabled, so CPU/memory/PID
+  enforcement is not claimed. No image pull, Go contract execution, dependency
+  fetch, live dig/DNS or GitHub Actions execution occurred in that validation.
+- **Quality gates and phased handoff:** executor `devops-platform-engineer-lead`
+  owns runtime/static mock validation; executor `backend-engineer-senior` owns
+  the differential dig fake vectors behind the existing build tag. The backend
+  split is now present in `tests/differential/r10_dig_contract_test.go`; static
+  assertions verify its build tag and absence of `TestR10Dig*` functions from
+  the untagged report file. Neither backend file was edited by this DevOps task.
+  Executor `security-architect-lead` independently reviews the workflow,
+  receipt, rootless mapping, fetch firewall and effective-policy boundaries
+  before commit. No commit is authorized by this task. The requesting project
+  user (human CI operator; seniority unspecified) runs the synced main workflow
+  only after review. External evidence remains `pending_external_ci`; the actual
+  Ubuntu runner rootfs execution path is unverified locally. Exact external
+  preflight dependencies are the installed allowlisted Go 1.26.8 runtime,
+  authorized executable tmpfs mount, rootless subordinate mappings/private
+  store, and authoritative rootfs inspect fields. These checks are not weakened
+  if the runner lacks a capability; their fixed failure stage identifies the gap.
+  Rollback is to disable this job, not restore Containerfile execution or bypass
+  a failed policy check. No live-smoke upgrade is authorized.
+
 ### `differential.yml` — Salt comparison (init.md §26)
 
 - Nightly cron + manual dispatch + `label:differential` on PRs touching core modules

@@ -28,6 +28,7 @@ import (
 	execdesktop "github.com/friz-zy/statekit/modules/exec/desktop"
 	execdevinfo "github.com/friz-zy/statekit/modules/exec/devinfo"
 	execdevmap "github.com/friz-zy/statekit/modules/exec/devmap"
+	execdig "github.com/friz-zy/statekit/modules/exec/dig"
 	execdisk "github.com/friz-zy/statekit/modules/exec/disk"
 	execenviron "github.com/friz-zy/statekit/modules/exec/environ"
 	execethtool "github.com/friz-zy/statekit/modules/exec/ethtool"
@@ -257,6 +258,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execbridge.Register,
 		execcron.Register,
 		execdevinfo.Register,
+		execdig.Register,
 		execdisk.Register,
 		exechosts.Register,
 		execlocale.Register,

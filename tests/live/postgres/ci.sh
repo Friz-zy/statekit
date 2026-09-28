@@ -9,7 +9,13 @@ set +x
 # remove only their own /dev/shm directories with mocked Podman calls and
 # never reach the live controller.
 self_test_mode=''
+dig_contract_only=0
 case "${1:-}" in
+  --dig-contract-only)
+    [[ "$#" == 1 ]] || exit 1
+    dig_contract_only=1
+    python3 -I tests/live/dig/orchestration.py --runner-preflight
+    ;;
   --preflight-only)
     [[ "$#" == 1 ]] || exit 1
     python3 tests/live/postgres/run.py --preflight-only
@@ -386,6 +392,14 @@ container_receipt_claim_valid() {
   container_id_is_canonical "$canonical_id" || return 1
   [[ -n "$name" && "$phase" =~ ^(fetch|build|mock|live)$ \
      && "$digest" =~ ^[0-9a-f]{64}$ ]] || return 1
+  if (( ${dig_contract_only:-0} == 1 )); then
+    local identity='' gate=''
+    identity="$(container_ownership_identity "$canonical_id")" || return 1
+    [[ "$identity" == "$canonical_id|$name|$nonce|$phase|$digest" \
+       || "$identity" == "$canonical_id|/$name|$nonce|$phase|$digest" ]] || return 1
+    gate="$(podman_as_test_user inspect --format '{{index .Config.Labels "io.statekit.gate"}}' "$canonical_id")" || return 1
+    [[ "$gate" == dig-contract ]] || return 1
+  fi
   for record in "${container_receipt[@]}"; do
     IFS='|' read -r held_id held_name held_phase _ _ <<< "$record"
     [[ "$held_id" != "$canonical_id" && "$held_name" != "$name" \
@@ -443,7 +457,11 @@ cleanup_owned_container() {
   container_id_is_canonical "$seen_id" || { mark_unowned_resource; return 1; }
   [[ -z "$extra" && "$seen_id" == "$canonical_id" && "$seen_name" == "$name" \
      && "$seen_nonce" == "$nonce" && "$seen_phase" == "$phase" \
-     && "$seen_digest" == "$digest" ]] || { mark_unowned_resource; return 1; }
+      && "$seen_digest" == "$digest" ]] || { mark_unowned_resource; return 1; }
+  if (( ${dig_contract_only:-0} == 1 )); then
+    [[ "$(podman_as_test_user inspect --format '{{index .Config.Labels "io.statekit.gate"}}' "$canonical_id")" == dig-contract ]] \
+      || { mark_unowned_resource; return 1; }
+  fi
   podman_as_test_user rm --force "$canonical_id" >/dev/null 2>&1 || return 1
   case "$(container_state "$canonical_id")" in
     absent) return 0 ;;
@@ -484,6 +502,10 @@ reconcile_partial_create() {
 # class.
 create_failed_reconcile() {
   local name="$1" phase="$2" digest="$3" phase_error="$4" status=0
+  if (( ${dig_contract_only:-0} == 1 )); then
+    mark_unowned_resource
+    fixed_error 'podman-create-partial-object-unowned'
+  fi
   reconcile_partial_create "$name" "$phase" "$digest" || status=$?
   case "$status" in
     0|1) fixed_error "$phase_error" ;;
@@ -540,6 +562,11 @@ verify_podman_container() {
   local expected_rootfs="$5" expected_manifest="$6" tmpfs_size="${7:-2g}"
   local -n env_names="$env_names_name" bind_specs="$binds_name"
   local inspect_json='' policy_args=() bind='' env_name=''
+  if (( ${dig_contract_only:-0} == 1 )); then
+    local cgroup_mode=''
+    cgroup_mode="$(podman_as_test_user inspect --format '{{.HostConfig.Cgroups}}' "$name")" || return 1
+    [[ "$cgroup_mode" == enabled ]] || return 1
+  fi
   [[ -n "$expected_rootfs" && "$expected_manifest" =~ ^[0-9a-f]{64}$ ]] || return 1
   verify_exec_mount_identity || return 1
   inspect_json="$(podman_as_test_user inspect --format '{{json .}}' "$name")" || return 1
@@ -596,6 +623,9 @@ verify_rootfs_authoritative() {
   # SEC-02: independently revalidate the manifest and the entire staged tree
   # immediately before create/start. Never executed against labels alone.
   local directory="$1" profile="$2" digest="$3"
+  if (( ${dig_contract_only:-0} == 1 )) && [[ "$profile" == live-executable ]]; then
+    profile=dig-contract
+  fi
   [[ -n "$directory" && -n "$profile" && "$digest" =~ ^[0-9a-f]{64}$ ]] || return 1
   verify_exec_mount_identity || return 1
   run_as_test_user "$ROOT" /usr/bin/python3 tests/live/postgres/rootfs.py verify \
@@ -607,6 +637,9 @@ verify_rootfs_authoritative() {
 # staged manifest profile must match the expected one before any removal.
 remove_rootfs_tree() {
   local tree_dir="$1" expected_profile="$2"
+  if (( ${dig_contract_only:-0} == 1 )) && [[ "$expected_profile" == live-executable ]]; then
+    expected_profile=dig-contract
+  fi
   local metadata='' manifest='' profile=''
   [[ -n "$tree_dir" ]] || return 0
   if ! sudo_bounded test -e "$tree_dir" \
@@ -1177,6 +1210,7 @@ PY
 }
 
 cleanup_database_and_role() {
+  (( ${dig_contract_only:-0} == 0 )) || return 0
   local remaining=''
   (( db_role_reserved == 1 )) || return 0
   if ! admin_psql --quiet --tuples-only --no-align >/dev/null 2>&1 <<SQL
@@ -1209,6 +1243,7 @@ SQL
 # helper is a no-op that reports only the fixed value-free class below and
 # leaves the cluster in its current state for investigation.
 cleanup_cluster() {
+  (( ${dig_contract_only:-0} == 0 )) || return 0
   (( cluster_started == 1 )) || return 0
   if (( destructive_teardown_blocked == 1 || unowned_or_unknown_resource == 1 )); then
     printf '%s\n' 'cluster-stop-skipped-unowned-resource' >&2
@@ -1514,6 +1549,7 @@ container_lifecycle_self_test() {
   local probe_id='' foreign_id='' owned_digest='' foreign_digest=''
   local reconcile_status=0
   local partial_class='' owned_class='' absent_class=''
+  local dig_contract_only=0
   local -a findmnt_records=() rm_log=()
   fixture="$(bounded_timeout 10 mktemp -d "${TMPDIR:-/tmp}/statekit-container-self-test.XXXXXXXX")" || \
     fixed_error 'container-test-fixture-failed'
@@ -1550,6 +1586,11 @@ container_lifecycle_self_test() {
         ;;
       'inspect --format')
         local line=''
+        if [[ "$3" == '{{index .Config.Labels "io.statekit.gate"}}' ]]; then
+          read -r line < "$fixture/gate" || return 1
+          printf '%s\n' "$line"
+          return 0
+        fi
         [[ "$3" == "$CONTAINER_OWNERSHIP_FORMAT" ]] || return 125
         read -r line < "$fixture/identity-$4" || return 1
         printf '%s\n' "$line"
@@ -1907,6 +1948,28 @@ container_lifecycle_self_test() {
   cleanup_cluster && fixed_error 'container-test-cluster-stop-not-attempted'
   cluster_started=0
 
+  # Exercise the production dig-only claim/reconciliation guards, not a
+  # parallel ownership implementation. Same labels on failed create confer
+  # no ownership; even successful receipts require the exact gate label.
+  dig_contract_only=1
+  container_receipt=()
+  container_self_test_seed "$probe_id" "$probe" "$run_nonce" build "$owned_digest"
+  printf 'foreign\n' > "$fixture/gate"
+  if container_receipt_claim "$probe_id" "$probe" build "$owned_digest" "$run_nonce"; then
+    fixed_error 'dig-test-foreign-gate-claimed'
+  fi
+  (( ${#container_receipt[@]} == 0 )) || fixed_error 'dig-test-unowned-receipt'
+  printf 'dig-contract\n' > "$fixture/gate"
+  container_receipt_claim "$probe_id" "$probe" build "$owned_digest" "$run_nonce" || fixed_error 'dig-test-receipt-not-claimed'
+  cleanup_owned_container "$probe_id" "$probe" build "$owned_digest" "$run_nonce" || fixed_error 'dig-test-owned-cleanup-failed'
+  container_receipt=()
+  container_self_test_seed "$probe_id" "$probe" "$run_nonce" fetch "$owned_digest"
+  if partial_class="$(create_failed_reconcile "$probe" fetch "$owned_digest" 'fetch-failed' 2>&1)"; then
+    fixed_error 'dig-test-partial-create-accepted'
+  fi
+  [[ "$partial_class" == podman-create-partial-object-unowned \
+     && "$(container_state "$probe_id")" == present ]] || fixed_error 'dig-test-partial-create-not-preserved'
+  dig_contract_only=0
   container_self_test_bounded 15 rm -rf --one-file-system -- "$fixture" || \
     fixed_error 'container-test-cleanup-failed'
   [[ ! -e "$fixture" && ! -L "$fixture" ]] || \
@@ -1923,21 +1986,28 @@ case "$self_test_mode" in
     exit 0
     ;;
 esac
-[[ "$#" == 0 ]] || fixed_error 'invalid-controller-arguments'
+[[ "$#" == 0 || ( "$#" == 1 && "$dig_contract_only" == 1 ) ]] || fixed_error 'invalid-controller-arguments'
 
 GO_BIN="$(command -v go)" || fixed_error 'go-toolchain-unavailable'
 GO_BIN_DIR="$(dirname "$GO_BIN")"
 PODMAN_BIN="$(command -v podman)" || fixed_error 'rootless-podman-unavailable'
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 preflight_exec_mount_plan || fixed_error 'exec-tmpfs-preflight-failed'
-PG_BINDIR="$(pg_config --bindir)" || fixed_error 'postgres-client-tools-unavailable'
-PSQL_BIN="$PG_BINDIR/psql"
-[[ -x "$PSQL_BIN" && ! -L "$PSQL_BIN" ]] || fixed_error 'postgres-client-unavailable'
+if (( dig_contract_only == 1 )); then
+  PG_BINDIR=/usr/bin
+  [[ "$GO_BIN" == /usr/local/go/bin/go || "$GO_BIN" == /opt/hostedtoolcache/go/1.26.8/x64/bin/go ]] || fixed_error 'dig-runner-go-path-unverified'
+  [[ "$(env -i PATH=/usr/bin:/bin GOTOOLCHAIN=local GOENV=off "$GO_BIN" version)" == 'go version go1.26.8 linux/amd64' ]] || fixed_error 'dig-runner-go-version-mismatch'
+else
+  PG_BINDIR="$(pg_config --bindir)" || fixed_error 'postgres-client-tools-unavailable'
+  PSQL_BIN="$PG_BINDIR/psql"
+  [[ -x "$PSQL_BIN" && ! -L "$PSQL_BIN" ]] || fixed_error 'postgres-client-unavailable'
+fi
 [[ "$PODMAN_BIN" == /usr/bin/podman ]] || fixed_error 'rootless-podman-path-invalid'
 
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+if (( dig_contract_only == 0 )); then
 verify_postgres_admin_preflight || fixed_error 'postgres-admin-preflight-failed'
 
 # Only after preflight: reject unsafe artifact path components, then clear a
@@ -1947,6 +2017,7 @@ mkdir -p "$REPORT_DIR"
 [[ ! -L "$REPORT_DIR" && -d "$REPORT_DIR" ]] || fixed_error 'unsafe-report-path'
 bounded_timeout 15 rm -f -- "$REPORT_PATH"
 [[ ! -e "$REPORT_PATH" && ! -L "$REPORT_PATH" ]] || fixed_error 'stale-report-rejected'
+fi
 
 nonce="$run_nonce"
 [[ "$nonce" =~ ^[0-9a-f]{20}$ ]] || fixed_error 'random-resource-name-failed'
@@ -2026,7 +2097,7 @@ sudo_bounded chown "$RUNNER_UID:$test_gid" "$work_dir/manifests/go.mod" "$work_d
 # writable output: the go-module cache. No checkout source, scripts, hooks,
 # credentials, sockets, or other host paths are present, and the effective
 # configuration is inspected before start.
-GO_ROOT="$("$GO_BIN" env GOROOT)" || fixed_error 'go-root-unavailable'
+GO_ROOT="$(env -i PATH=/usr/bin:/bin HOME=/nonexistent GOTOOLCHAIN=local GOENV=off GOWORK=off "$GO_BIN" env GOROOT)" || fixed_error 'go-root-unavailable'
 run_as_test_user "$ROOT" /usr/bin/python3 \
   tests/live/postgres/rootfs.py full --profile fetch \
   --destination "$fetch_rootfs_dir" --uid "$test_uid" --gid "$test_gid" \
@@ -2107,6 +2178,7 @@ if ! fetch_container_id="$(podman_as_test_user create --rootfs \
   --label "io.statekit.rootfs.manifest-sha256=$fetch_manifest_sha256" \
   --label "io.statekit.run.nonce=$run_nonce" \
   --label "io.statekit.phase=fetch" \
+  --label "io.statekit.gate=$([[ "$dig_contract_only" == 1 ]] && printf dig-contract || printf postgres-live)" \
   "$fetch_rootfs_dir" \
   /usr/bin/statekit-rootfs-preflight /opt/go/bin/go mod download \
   2>/dev/null)"; then
@@ -2118,6 +2190,7 @@ fi
 container_receipt_claim "$fetch_container_id" "$fetch_container" fetch \
   "$fetch_manifest_sha256" "$run_nonce" \
   || fixed_error 'container-ownership-receipt-invalid'
+if (( dig_contract_only == 1 )); then fetch_container="$fetch_container_id"; fi
 verify_podman_container "$fetch_container" host fetch_env_names fetch_binds \
   "$fetch_rootfs_dir" "$fetch_manifest_sha256" || \
   fixed_error 'fetch-container-policy-failed'
@@ -2155,11 +2228,13 @@ fi
 PYTHON_BIN=/usr/bin/python3
 BASH_BIN=/usr/bin/bash
 SH_BIN=/usr/bin/sh
+rootfs_profile_args=(--psql "$PSQL_BIN")
+if (( dig_contract_only == 1 )); then rootfs_profile_args=(--profile dig-contract); fi
 run_as_test_user "$ROOT" /usr/bin/python3 \
   tests/live/postgres/rootfs.py full \
   --destination "$rootfs_dir" --uid "$test_uid" --gid "$test_gid" \
   --exec-mount "$exec_mountpoint" \
-  --go-root "$GO_ROOT" --psql "$PSQL_BIN" --python "$PYTHON_BIN" \
+  --go-root "$GO_ROOT" "${rootfs_profile_args[@]}" --python "$PYTHON_BIN" \
   --bash "$BASH_BIN" --sh "$SH_BIN" || fixed_error 'minimal-rootfs-build-failed'
 verify_exec_mount_identity || fixed_error 'exec-tmpfs-identity-lost'
 [[ "$(run_as_test_user "$ROOT" /usr/bin/stat -c '%u:%g:%a' -- "$rootfs_dir")" == "$test_uid:$test_gid:755" \
@@ -2179,7 +2254,7 @@ import sys
 root = Path(sys.argv[1])
 manifest_path = root / "etc/statekit-rootfs.manifest"
 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-if manifest.get("runtime_profile") != "live-executable":
+if manifest.get("runtime_profile") not in ("live-executable", "dig-contract"):
     raise SystemExit(1)
 directories = manifest.get("library_path")
 allowed = ("/lib", "/lib64", "/usr/lib", "/usr/lib64",
@@ -2217,6 +2292,12 @@ build_command=(
   /usr/bin/statekit-rootfs-preflight /bin/bash -euo pipefail -c
   'python3 -B /workspace/tests/live/postgres/run.py --assert-container-privileges && go mod verify && go build -trimpath -buildvcs=false -o /out/statekit ./cmd/statekit && go test ./...'
 )
+build_go_cache=/tmp/gocache
+if (( dig_contract_only == 1 )); then
+  build_go_cache=/out/gocache
+  build_command=(/usr/bin/statekit-rootfs-preflight /bin/bash -euo pipefail -c
+    '[[ "$(go version)" == "go version go1.26.8 linux/amd64" ]] && python3 -B -m unittest discover -s tests/live/dig -p test_orchestration.py -v && go mod verify && go test -tags=dns_contract -count=1 ./modules/exec/dig ./internal/cli ./tests/differential')
+fi
 test_command_timeout=900
 verify_rootfs_authoritative "$rootfs_dir" live-executable \
   "$rootfs_manifest_sha256" || fixed_error 'minimal-rootfs-verification-failed'
@@ -2232,7 +2313,7 @@ if ! build_container_id="$(podman_as_test_user create --rootfs \
   --env PATH=/opt/go/bin:/usr/lib/postgresql/16/bin:/usr/bin:/bin \
   --env "LD_LIBRARY_PATH=$rootfs_library_path" \
   --env GOROOT=/opt/go --env HOME=/tmp --env TMPDIR=/tmp \
-  --env GOCACHE=/tmp/gocache --env GOMODCACHE=/modules \
+  --env "GOCACHE=$build_go_cache" --env GOMODCACHE=/modules \
   --env GOENV=off --env GOTOOLCHAIN=local --env GOWORK=off \
   --env GOPROXY=off --env GOSUMDB=sum.golang.org --env GOPRIVATE= \
   --env GONOPROXY= --env GONOSUMDB= --env CGO_ENABLED=0 \
@@ -2248,6 +2329,7 @@ if ! build_container_id="$(podman_as_test_user create --rootfs \
   --label "io.statekit.rootfs.manifest-sha256=$rootfs_manifest_sha256" \
   --label "io.statekit.run.nonce=$run_nonce" \
   --label "io.statekit.phase=build" \
+  --label "io.statekit.gate=$([[ "$dig_contract_only" == 1 ]] && printf dig-contract || printf postgres-live)" \
   "$rootfs_dir" "${build_command[@]}" 2>/dev/null)"; then
   create_failed_reconcile "$build_container" build "$rootfs_manifest_sha256" \
     'rootfs-container-create-failed'
@@ -2255,6 +2337,7 @@ fi
 container_receipt_claim "$build_container_id" "$build_container" build \
   "$rootfs_manifest_sha256" "$run_nonce" \
   || fixed_error 'container-ownership-receipt-invalid'
+if (( dig_contract_only == 1 )); then build_container="$build_container_id"; fi
 verify_podman_container "$build_container" none build_env_names build_binds \
   "$rootfs_dir" "$rootfs_manifest_sha256" || \
   fixed_error 'rootfs-container-policy-failed'
@@ -2266,6 +2349,10 @@ fi
 [[ "$(podman_as_test_user inspect --format '{{.State.Status}}' "$build_container")" == exited \
    && "$(podman_as_test_user inspect --format '{{.State.ExitCode}}' "$build_container")" == 0 ]] || \
   fixed_error 'isolated-build-or-mock-tests-failed'
+if (( dig_contract_only == 1 )); then
+  printf '%s\n' 'dig-contract-offline-passed'
+  exit 0
+fi
 statekit_artifact="$exec_artifacts_dir/statekit"
 artifact_metadata="$(sudo_bounded stat -c '%u:%g:%a:%h' "$statekit_artifact")" || \
   fixed_error 'production-binary-artifact-unavailable'

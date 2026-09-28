@@ -886,6 +886,27 @@ set -- --preflight-only
         script = CI_SCRIPT.read_text(encoding="utf-8")
         rootfs_source = (ROOT / "tests/live/postgres/rootfs.py").read_text(encoding="utf-8")
         syntax = subprocess.run(["bash", "-n", str(CI_SCRIPT)], check=False, capture_output=True)
+        self.assertIn('--dig-contract-only)', script)
+        self.assertIn('rootfs_profile_args=(--profile dig-contract)', script)
+        self.assertIn('build_go_cache=/out/gocache', script)
+        self.assertIn('--env "GOCACHE=$build_go_cache"', script)
+        self.assertIn('[[ "$cgroup_mode" == enabled ]] || return 1', script)
+        self.assertIn('go test -tags=dns_contract -count=1 ./modules/exec/dig ./internal/cli ./tests/differential', script)
+        self.assertLess(script.index("'dig-contract-offline-passed'"), script.index('cluster_state="$(bounded_timeout 60 python3'))
+        for helper in ('cleanup_database_and_role', 'cleanup_cluster'):
+            self.assertIn(helper + '() {\n  (( ${dig_contract_only:-0} == 0 )) || return 0', script)
+        with mock.patch.object(rootfs_builder, 'RootfsBuilder') as builder, \
+                mock.patch.object(rootfs_builder, 'python_standard_library', return_value=()):
+            rootfs_builder.build_full_rootfs(
+                destination=Path('/fixture/rootfs'), uid=1000, gid=1000,
+                go_root=Path('/usr/local/go'), psql_executable=None,
+                python_executable=Path('/usr/bin/python3'), bash_executable=Path('/usr/bin/bash'),
+                sh_executable=Path('/usr/bin/sh'), exec_mount=Path('/fixture'),
+                runtime_profile='dig-contract')
+            arguments = builder.return_value.build.call_args.kwargs
+            self.assertEqual(arguments['runtime_profile'], 'dig-contract')
+            self.assertIsNone(arguments['psql_executable'])
+            self.assertTrue(arguments['require_full_runtime'])
         self.assertEqual(syntax.returncode, 0, syntax.stderr.decode(errors="replace"))
         commands = [line.strip() for line in script.splitlines()
                     if line.strip() and not line.lstrip().startswith("#")]
