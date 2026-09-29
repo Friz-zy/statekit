@@ -2,13 +2,14 @@
 
 package differential
 
-// R10.3a dnsutil behavioral differential tests, behind the dns_contract
-// build tag: the dig delegation vectors run over the real dig family
-// with the scripted fake Runner (exact argv, shell-free dispatch, no
-// dig binary, no DNS, no network), the parse vectors run over the
-// bootstrap registry with MemoryFS fixtures, and the pending-ledger
-// vector pins the bounded-slice registration inventory. Every expected
-// parse shape was oracle-verified against the pinned
+// R10.3a+R10.3b dnsutil behavioral differential tests, behind the
+// dns_contract build tag: the dig delegation vectors run over the real
+// dig family with the scripted fake Runner (exact argv, shell-free
+// dispatch, no dig binary, no DNS, no network), the parse vectors run
+// over the bootstrap registry with MemoryFS fixtures, and the
+// pending-ledger vector pins the bounded-slice registration inventory
+// (R10.3b registered hosts_append/hosts_remove; serial stays pending).
+// Every expected parse shape was oracle-verified against the pinned
 // saltstack/salt/modules/dnsutil.py source executed locally.
 
 import (
@@ -562,9 +563,8 @@ func TestR10DNSUtilDelegationArgv(t *testing.T) {
 // TestR10DNSUtilGateAndPendingLedger pins the availability gate matrix
 // and the bounded-slice registration inventory: the gate answers the
 // pinned unavailable string with zero dispatch, the registry-miss
-// class answers the fixed value-free error, and exactly the eight
-// R10.3a public names are registered while hosts_append, hosts_remove,
-// and serial stay absent.
+// class answers the fixed value-free error, and exactly the ten
+// R10.3a+R10.3b public names are registered while serial stays absent.
 func TestR10DNSUtilGateAndPendingLedger(t *testing.T) {
 	reg := runtime.NewExecRegistry()
 	if err := execdnsutil.Register(reg); err != nil {
@@ -605,8 +605,8 @@ func TestR10DNSUtilGateAndPendingLedger(t *testing.T) {
 		t.Fatalf("registry-miss error leaks the query value: %q", err)
 	}
 
-	// Bounded-slice inventory: exactly the eight public names exist;
-	// the three pending names stay unregistered everywhere.
+	// Bounded-slice inventory: exactly the ten public names exist; the
+	// one pending name stays unregistered everywhere.
 	full, err := bootstrap.BuildRuntime()
 	if err != nil {
 		t.Fatal(err)
@@ -614,12 +614,13 @@ func TestR10DNSUtilGateAndPendingLedger(t *testing.T) {
 	for _, name := range []string{
 		"dnsutil.parse_hosts", "dnsutil.parse_zone", "dnsutil.check_ip",
 		"dnsutil.A", "dnsutil.AAAA", "dnsutil.NS", "dnsutil.SPF", "dnsutil.MX",
+		"dnsutil.hosts_append", "dnsutil.hosts_remove",
 	} {
 		if _, ok := full.Exec.Get(name); !ok {
 			t.Fatalf("missing %s", name)
 		}
 	}
-	for _, pending := range []string{"dnsutil.hosts_append", "dnsutil.hosts_remove", "dnsutil.serial"} {
+	for _, pending := range []string{"dnsutil.serial"} {
 		if _, ok := full.Exec.Get(pending); ok {
 			t.Fatalf("pending %s unexpectedly registered", pending)
 		}

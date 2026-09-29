@@ -6,9 +6,9 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    source_inventory_count: 1248
-    catalog_intersection_count: 1219
-    implemented: 1219
+    source_inventory_count: 1250
+    catalog_intersection_count: 1221
+    implemented: 1221
 state:
     salt_modules: 132
     salt_functions: 669
@@ -160,6 +160,8 @@ implemented:
         - dnsutil.NS
         - dnsutil.SPF
         - dnsutil.check_ip
+        - dnsutil.hosts_append
+        - dnsutil.hosts_remove
         - dnsutil.parse_hosts
         - dnsutil.parse_zone
         - environ.get

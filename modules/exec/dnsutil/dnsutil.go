@@ -2,24 +2,34 @@
 // dnsutil execution module (saltstack/salt/modules/dnsutil.py @
 // 8b63e700637e40d76f80a00d95c60471797c73b9, virtual name "dnsutil").
 //
-// Registered public functions (8 of the 11 in the pinned public catalog):
-// parse_hosts, parse_zone, check_ip, A, AAAA, NS, SPF, and MX. The two
-// private helpers of the pinned source stay private here (_to_seconds
-// backs parse_zone; _has_dig backs the delegation gate). Three public
-// functions are deliberately NOT registered in this slice:
+// Registered public functions (10 of the 11 in the pinned public catalog):
+// parse_hosts, parse_zone, check_ip, A, AAAA, NS, SPF, MX, hosts_append,
+// and hosts_remove. The two private helpers of the pinned source stay
+// private here (_to_seconds backs parse_zone; _has_dig backs the
+// delegation gate). One public function is deliberately NOT registered
+// in this slice:
 //
-//   - hosts_append / hosts_remove mutate arbitrary caller-supplied file
-//     paths with no validation, backup, or atomicity in the pinned
-//     source. Upgrade path: a bounded writer over the same
-//     Runtime.FS/ReadFileBounded discipline this slice uses (validated
-//     destination, regular/no-follow, temp-file rename), following the
-//     hosts module's fixture-root override precedent.
 //   - serial reads and writes a persistent grain (dnsserial_<zone>).
 //     No persistent grains store exists in StateKit yet, and a
 //     stateless reimplementation would silently change the pinned
 //     contract (update=True must increment the stored value across
 //     runs). Upgrade path: register it once a persistent local
 //     grains/state store module lands.
+//
+// hosts_append and hosts_remove (R10.3b) mutate hosts files ONLY
+// through the bounded atomic read-modify-publish capability of
+// Runtime.FS (runtime.UpdateFileBounded): the complete replacement is
+// rendered and validated inside a pure transform before anything is
+// staged, publication is one atomic namespace operation (never an
+// in-place truncate or append), pre-publication failures leave the
+// file byte-identical, and the 4096-byte path cap, argument-size
+// ceilings, and NUL/line-break argument rejection all run before the
+// filesystem is touched (the no-follow descriptor walk rejects
+// symlink-redirected destinations). See hosts_rw.go for the exact
+// pinned semantics and the documented safe divergences (fail-closed
+// read errors instead of the pinned write-after-read-error file
+// creation; atomic publication instead of append(2); inherited
+// R10.3a parser ceilings).
 //
 // File reads (parse_hosts, parse_zone) happen only through
 // runtime.ReadFileBounded over Runtime.FS with an explicit 1 MiB ceiling
@@ -1485,14 +1495,17 @@ func (mxFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, 
 	})
 }
 
-// Register installs the bounded R10.3a dnsutil catalog: the eight
-// public functions of this slice. hosts_append, hosts_remove, and
-// serial stay pending (see the package comment for the specific
-// reasons and upgrade paths); the pinned module defines no aliases.
+// Register installs the bounded dnsutil catalog: the ten public
+// functions of this slice (R10.3a parsing/delegation plus the R10.3b
+// hosts mutation surface). serial stays pending (see the package
+// comment for the reason and upgrade path); the pinned module defines
+// no aliases.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{
 		parseHostsFunc{},
 		parseZoneFunc{},
+		hostsAppendFunc{},
+		hostsRemoveFunc{},
 		checkIPFunc{},
 		aFunc{},
 		aaaaFunc{},

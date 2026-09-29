@@ -619,6 +619,9 @@ type MemoryFS struct {
 	mu    sync.Mutex
 	nodes map[string]*memNode
 	seq   int
+	// updateHook is a fault-injection seam for UpdateFileBounded tests
+	// (stages "start", "commit", "durability"); never part of contracts.
+	updateHook func(stage string) error
 }
 
 // NewMemoryFS returns a MemoryFS containing the root directory and /tmp,

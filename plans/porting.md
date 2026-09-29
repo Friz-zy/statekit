@@ -1663,6 +1663,203 @@ The PTD tables below are retained as an immutable audit snapshot. These
 overrides are the current status and do not delete or rewrite any original
 rows or counts.
 
+##### 2026-09-29 current status (R10.3b dnsutil hosts mutation; external CI pending)
+
+R10.3b completes the dnsutil mutation surface of the pinned
+`salt/modules/dnsutil.py`: `hosts_append` and `hosts_remove` are
+registered (10 of the 11 public catalog functions; only `serial`
+stays pending — persistent grains store). The mutation pair runs
+exclusively over a new optional bounded atomic read-modify-publish
+capability of `Runtime.FS` (`runtime.UpdateFileBounded`,
+`internal/runtime`): implemented by `OSFileSystem` and `MemoryFS`
+only, never widening the base `FileSystem` interface, with a fixed
+value-free unavailable error and no `ReadFile`/`WriteFile` fallback
+when the capability is absent (asserted with an interface-embedding
+fake). This is a trusted same-principal local mutation API: the
+caller-selected path is a PRIVILEGED input — beyond the no-follow
+walk, the ORIGINAL-path validation, and the documented bounds there is
+no confinement or authorization (the pinned source performs none
+either); `hosts_append` may create the target (0644, exactly like the
+pinned `fopen(..., "a")`) while `hosts_remove` requires an existing
+file; and publication REPLACES the inode — the ordinary permission
+bits are preserved, but owner and group are NOT (the staged file is
+created by the calling process) and ACLs, extended attributes,
+security labels, and hard links do not carry over.
+
+The ORIGINAL caller path is validated at the dispatcher and inside
+both implementations BEFORE any filesystem or map access
+(R103B-SEC-01): empty paths, NUL bytes, paths over 4096 bytes, any
+`..` component rejected outright (no lexical cancellation — the
+symlink-then-`..`, missing-then-`..`, and non-dir-then-`..` vectors
+never reach resolution), and trailing-slash or terminal `/.`
+directory syntax for a file target; counting filesystems prove the
+rejections happen with zero update dispatches. The OS implementation
+then follows the `bounded_unix.go` descriptor-relative no-follow
+discipline (every parent opened `O_DIRECTORY|O_NOFOLLOW`, the final
+component `O_NOFOLLOW|O_NONBLOCK`, regular-file check, bounded read
+of at most the caller's ceiling plus one sentinel), renders and
+validates the COMPLETE replacement inside a pure transform before
+anything is staged, and answers every transform error at the
+capability boundary with the fixed CAUSE-FREE `ErrUpdateTransform`
+sentinel — constant value-free text, NO `Unwrap`, and NO custom `Is`:
+the boundary never inspects the callback error at all (no `Error`,
+`Is`, `As`, or `Unwrap` call, not even for classification), so no
+callback text, identity chain, or attached value can escape and
+`errors.Is` matches ONLY the fixed sentinel identity — a callback
+error can never make the boundary classify `context.Canceled`, a
+module sentinel, or any arbitrary target, and `errors.As` has no
+chain to walk (R103B-SEC-06 closed: malicious-callback regressions at
+the direct runtime surfaces — `Error`/`Is`/`As`/`Unwrap`/`Formatter`/
+`GoString` all counting invocations and panicking — prove zero method
+invocations, fixed text under `%v`/`%+v`/`%#v`/`%s`, no arbitrary
+sentinel fabrication, and no payload extraction; callbacks must not
+embed secrets). Real context cancellation/deadline is detected
+exclusively by the runtime's independent ctx checks before and after
+the transform, never by a callback-supplied error. Every injected
+stage-hook/fault-seam error (the OS staging,
+revalidate, and publish seams and the MemoryFS start/commit seams) is
+DROPPED without invoking any fault method and answered by the fixed
+cause-free `ErrUpdateStageHook`
+sentinel (R103B-REGATE-01: no fault text, identity, `Unwrap`,
+`errors.As`, formatting, or `errors.Is` classification; the
+publish-stage hook stays a pre-publication abort — with a failing
+staging cleanup it answers `ErrUpdateCleanupFailed` and it is never
+the residue or durability classes). The replacement is staged in the
+target directory
+(`O_CREATE|O_EXCL`, 0600, short-write handling, contents+metadata
+fsync), the existing ordinary permission bits are preserved (0644 for
+a new file), the target identity is revalidated, and publication is
+one atomic namespace operation — rename over the revalidated existing
+target, or an atomic no-replace link publication for an initially
+absent target on the platforms with the atomic primitive (linux plus
+the linkat unix list darwin/dragonfly/freebsd/netbsd/openbsd).
+Solaris creation FAILS CLOSED (R103B-GATE-01/R103B-SEC-01): the
+streaming O_EXCL final form was removed because it published the name
+before its contents completed, so absent-target publication answers
+the fixed `ErrUpdateCreateUnsupported` error before anything is
+staged, while the genuinely-atomic existing-target rename path
+remains (the `GOOS=solaris` compile gate pins the fail-closed build).
+
+Cleanup is a checked contract with distinct fixed outcomes
+(R103B-GATE-03/R103B-SEC-07) — never an unconditional-cleanup claim:
+a pre-publication failure with successful cleanup leaves the target
+byte-identical answering the original error class; a pre-publication
+failure whose staging unlink also fails answers the distinct
+value-free `ErrUpdateCleanupFailed` sentinel with the target still
+unchanged; and a post-publication staging-unlink failure on the
+no-replace path answers the distinct `ErrUpdateStagingResidue`
+sentinel with the new content live — never described as a rollback
+and distinct from the committed-uncertain durability class
+(post-publication parent-directory fsync failure →
+`runtime: update committed but durability uncertain`). All three
+outcomes are wired through unlink-failure seams in the tests.
+Cancellation is checked before staging, before publication, and —
+MemoryFS — after the transform and commit hook immediately before the
+node replacement (R103B-GATE-02/R103B-SEC-03: a deterministic
+transform-cancels-context regression asserts unchanged contents AND
+metadata). Documented concurrency ceiling (R103B-SEC-04): identity
+revalidation detects inode REPLACEMENT only — same-inode in-place
+writes are invisible, so lost updates are possible throughout
+read-transform-stage-publish and the capability is not a CAS; the
+MemoryFS transaction is mutex-serialized (the next transform always
+sees the committed state), which differs from the OS
+last-writer-wins window; the upgrade path is cooperative
+caller-held serialization.
+
+Exact pinned semantics are ported verbatim (oracle-verified family):
+`hosts_append` keeps `entries.split(',')` with no trimming and
+empties preserved, the existing content parsed through the R10.3a
+`parse_hosts` loop, the pinned alias filtering INCLUDING the
+list-mutation-during-iteration skipping quirk (entries `[a,a]`
+against an existing `a` leave one `a` to append; entries `[a,b]` with
+both present never examine `b` because the first removal shrank the
+list past the iterator — deliberately not "fixed" to a clean filter),
+no dedup of new aliases, a `None` ip_addr rendering the literal
+`None` through Python `str.format` while never matching a dict key
+(even a file line whose first token is the literal `None`), the
+always-prefix-LF never-terminal-LF append line (a file with a
+terminal LF gains the pinned blank separator line; an empty or
+missing file gains the leading blank line), and the exact pinned
+result strings. `hosts_remove` keeps the full read before the split,
+alias-only removal via membership in `comps[1:]` with
+`comps.remove` taking the FIRST occurrence in the whole token list
+(the address==alias edge removes the address token and drops the
+line), one occurrence per requested entry, the >1-token survival rule
+rejoined with single spaces plus LF, verbatim blank lines and
+whitespace-prefixed comment lines, the dropping of pre-existing
+address-only and whitespace-only lines even without a match, the
+Python splitlines() boundaries, and the Python `None` success mapped
+to Go nil (the CLI transports it as JSON `null`). `hosts_remove` also
+keeps the pinned source ORDER: the bounded file read precedes every
+entries diagnosis — the `fopen(..., "r")` IOError on a missing file
+answers before the `entries.split(",")` AttributeError position, so
+missing file + nil entries answers the fixed file-read class, never an
+argument class — while the path safety/size bounds intentionally still
+precede the file open (they read no file bytes); the entries presence
+check, argument bounds, and semantic split run INSIDE the pure
+transform after the snapshot is read and before anything is staged or
+published, and `entries=None` stays DISTINCT from the empty string (an
+empty string splits to `[""]` and keeps the pinned normal-rewrite
+semantics). Because the capability boundary is now fully cause-free,
+the module recognizes its own transform classifications (the no-op
+sentinel, the parser ceilings, the argument class) through the
+transform's captured fixed sentinel — direct comparison against
+module-created sentinels, never `errors.Is` on the capability error.
+
+Safe divergences (documented in the R10 report and here): fail-closed
+read errors with the fixed value-free `dnsutil: hosts update failed`
+instead of Salt's accidental write-after-read-error file creation
+(`hosts_append`) and the raw IOError (`hosts_remove`); atomic
+publication instead of append(2)/in-place truncate; path safety and
+size bounds BEFORE any filesystem access (4096-byte hostsfile cap
+proven by a counting filesystem with zero update dispatches), with the
+entries bounds of `hosts_remove` intentionally following the file read
+(exactly the pinned IOError-precedes-AttributeError order; the
+`hosts_append` bounds stay pre-FS because the pinned append splits
+entries before reading) and NUL/line-break bytes rejected value-free
+(`dnsutil: invalid argument`, the same
+class mapping the pinned `entries=None` AttributeError crash; the
+4096-byte ip_addr cap and the 1 MiB entries cap stay); and
+the inherited R10.3a parser ceilings on the `hosts_append` parse of
+the existing file (`hosts_remove` keeps the pinned raw splitlines
+rewrite under the same 1 MiB read ceiling). Every error surface of
+the pair is value-free; the only path-echoing outputs are the two
+pinned success/no-op result strings.
+
+Evidence: direct/registry/CLI tests (untagged — hosts mutation never
+dispatches dig, so the default host CI `go test ./...` is safe:
+MemoryFS carries the module and CLI vectors, `t.TempDir()` carries
+the OS capability vectors — 1 MiB read/write boundaries, ORIGINAL
+path length/NUL/dotdot/trailing-slash/`/.` rejection with
+counting-filesystem zero-dispatch proofs, final+intermediate+dangling
+symlink, directory, and FIFO rejection, short-write/write/fsync/close/
+rename fault injection leaving originals byte-identical, the three
+checked-cleanup outcomes wired through unlink-failure seams
+(clean-abort / cleanup-failure sentinel / post-publication
+staging-residue sentinel with the content live), staging collision
+cleanup, no-replace creation collision and identity-swap conflicts,
+dir-fsync-after-publish = committed-uncertain, mode preservation,
+new-file 0644, capability-absent fail-closed, cause-free transform and
+dropped stage-hook SECRET-MARKER plus MALICIOUS-CALLBACK regressions
+(runtime + module surfaces; `Error`/`Is`/`As`/`Unwrap`/`Formatter`/
+`GoString` count-and-panic proof of zero method invocations, fixed
+text under every format verb, nil `Unwrap`, no `errors.As` extraction,
+no arbitrary sentinel fabrication, no fault identity), the
+deterministic transform-cancels-context regression asserting unchanged
+contents AND metadata, the `hosts_remove` source-order vectors
+(missing file + nil entries answering the file-read class first;
+existing file + nil entries answering the fixed missing-entry class
+with no publish; empty-string entries keeping the pinned rewrite), and
+value-free error assertions). The R10
+generator registers the ten-name subset with `serial` pending
+(grains-store reason); the regenerated R10 report is `round: R10.3b`;
+the R3-R9 report hashes are unchanged. External CI evidence stays
+`pending_external_ci`.
+
+| Phase | Scope | Implementation executor role | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `R10.3b` (uncommitted; continues the R10 line whose last commits are `b09faf6` R10.3a, `d30d3a2` R10.2, `343e9fe` R10.1, `3342199` R9.2t; reworked after the independent backend R103B-BACKEND-GATE-01..03, security R103B-SEC-01..07, and remediation R103B-REGATE-01/02 + SEC-06/07-partial review findings: opaque transform wrapper without `Unwrap` and dropped stage-hook faults; closed by the cause-free fixed-sentinel remediation — every transform callback error (and every stage-hook fault) answered by the fixed cause-free `ErrUpdateTransform`/`ErrUpdateStageHook` sentinels with ZERO callback-method invocations, and `hosts_remove` reordered to the pinned source order: file-read errors precede the entries presence check and the semantic split inside the transform, `entries=None` distinct from the empty string, path/size bounds intentionally preceding the file open) | Bounded atomic update capability `runtime.UpdateFileBounded` (optional `BoundedUpdateFileSystem` interface, no base-interface widening, no silent fallback; ORIGINAL-path validation at the dispatcher and in both implementations before any FS/map access — NUL, 4096-byte cap, `..` rejected outright with no lexical cancellation, trailing-slash and `/.` directory syntax; OS descriptor-relative no-follow read-modify-publish with staging fsync, identity revalidation, atomic rename for an existing target / atomic no-replace link publication for an absent target on linux+linkat unix with solaris creation FAILING CLOSED before staging (streaming O_EXCL final form removed) and windows/other fail-closed; transform errors NEVER INSPECTED at the boundary and answered by the fixed cause-free `ErrUpdateTransform` sentinel (constant text, no `Unwrap`, NO custom `Is` — zero callback-method invocations proven with count-and-panic malicious errors, `errors.Is` matching only the fixed identity) and every stage-hook/fault-seam error DROPPED without invoking a fault method and answered by the fixed `ErrUpdateStageHook` sentinel (R103B-REGATE-01/02: no callback/fault text, value, identity, `Unwrap`, `errors.As`, or formatting escapes); checked cleanup contract with distinct clean-abort / cleanup-failure / post-publication staging-residue sentinels; dir-fsync distinct committed-but-durability-uncertain outcome; cancellation before staging, before publication, and after the MemoryFS transform+commit hook; value-free errors; documented non-CAS ceiling — inode-replacement detection only, mutex-serialized MemoryFS order, cooperative-serialization upgrade path; trusted same-principal mutation API with privileged caller paths, inode replacement semantics — owner/group/ACL/xattr/label/hard-link not preserved, ordinary permission bits preserved) plus `dnsutil.hosts_append`/`dnsutil.hosts_remove` registered (10/11 public; append may create, remove requires existing) with the exact pinned semantics (split-empties, iteration-skip quirk, address==alias first-occurrence removal, alias-only membership, blank/comment preservation, normalization drops, always-prefix-LF append, `None`→nil success) over 1 MiB ceilings with value-free argument bounds in the pinned source order (4096-byte path cap and NUL/linebreak path rejection before the file open; hosts_remove entries presence, size caps, and NUL/linebreak rejection inside the transform AFTER the bounded read, hosts_append bounds before the update like the pinned split-before-read order); direct/registry/CLI tests (untagged, MemoryFS + t.TempDir hermetic) incl. OS fault injection, unlink-failure cleanup seams, marker-leak regressions, and cancellation metadata regressions; R10 generator subset 10 names with `serial` pending; generated R10 report at `round: R10.3b` | `backend-engineer-senior` | Local quality gates in conforming rootless Podman (`.gotmp/r103b-sec67-gate` remediation store, `network=none`, RO source snapshot + RO module cache, nonroot keep-id, cap-drop incl. bounding set/no-new-privileges, bounded pids/memory/cpu, writable work in tmpfs only): preflight (nonroot uid, CapEff/CapBnd zero, NoNewPrivs 1), gofmt, untagged plus `dns_contract` focused `go test` over `./internal/runtime ./internal/process ./modules/exec/dig ./modules/exec/dnsutil ./internal/cli ./internal/config ./internal/bootstrap ./tests/differential`, race (tagged dnsutil/dig/cli/differential plus differential/bootstrap), vet (untagged `./...` plus tagged), differential generator consistency (byte-identical regeneration) and full differential suite, R3-R9 report hashes unchanged, cross-compilation (linux/darwin/windows amd64 dnsutil tagged test binary, linux cli tagged test binary, statekit binary, GOOS=solaris runtime build + test compile proving the fail-closed creation compiles); independent re-review pending, external gates not yet run | Registered 10/11 public (13 catalog, 2 private; R10 totals 25 registered / 26 public / 1 pending); 1 pending with recorded reason/upgrade path (serial: persistent grains store required); no family-complete claim; bounded no-follow 1 MiB reads and writes, atomic no-replace publication on supported platforms with solaris creation fail-closed and pre-publication failures leaving originals byte-identical, checked four-outcome cleanup contract (clean abort / cleanup-failed / staging-residue / committed-uncertain, each its own exported fixed value-free `dnsutil:` sentinel), opaque transform boundary and dropped stage-hook sentinel, ORIGINAL-path traversal rejection (zero-dispatch proofs), distinct committed-uncertain outcome, value-free errors, no host `/etc/hosts` read/write in any test (MemoryFS + t.TempDir only), zero dig dispatch from the mutation pair |
+
 ##### 2026-09-28 current status (R10.3a dnsutil bounded slice; external CI pending)
 
 R10.3a registers the bounded dnsutil slice of the pinned
