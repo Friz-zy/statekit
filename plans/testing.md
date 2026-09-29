@@ -661,21 +661,32 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
   job (value-free artifact boundary: none — success is the test exit code).
 - **Scoped HUMAN authorization:** approver is the project user in active chat,
   via direct instructions at 2026-09-21 12:27 UTC authorizing `.github` changes
-  and phase tests, reaffirmed at 2026-09-28 13:23 UTC to continue the plan with
-  quality gates, GitHub CI and local tests. This record was supplied directly
-  by the user, not inferred from peers. Target: the existing R10.2/R10.3a
-  `dig-contract` job in `.github/workflows/integration-services.yml` and its
-  existing shared rootfs controller. Scope: rootless Podman,
+  and phase tests. Direct instructions at 2026-09-21 19:34 UTC and
+  2026-09-23 14:46 UTC accept GitHub-hosted CI as the outer runner but prohibit
+  assistant-triggered execution. The user reaffirmed continuation with GitHub
+  CI and local Podman tests on 2026-09-29. This record was supplied directly
+  by the user, not inferred from peers. Protected workflow target: only the
+  existing `dig-contract` job in `.github/workflows/integration-services.yml`.
+  This is bounded CI edit authorization, not a quarantine exception. Scope: rootless Podman,
   `network=none` fake-Runner contract tests; push/main, workflow_dispatch/main,
-  schedule/main; `contents: read`; no secrets, OIDC, write permissions, native
-  dig, live DNS/smoke, new OCI identities, or new dependencies. Expiry:
+  schedule/main; `contents: read`; SHA-pinned actions and checkout with
+  `persist-credentials: false`; no secrets, OIDC, write permissions, native
+  dig, live DNS/smoke, new OCI identities, new dependencies or package installation. Expiry:
   completion of R10 migration or explicit user revocation, whichever comes
   first. No permission for live DNS or user-controlled resolver targets.
   This approval does not waive runtime preflight or independent review.
-  R10.3a adds only `./modules/exec/dnsutil` to the fixed tagged package inventory
-  and its mirrors, not live execution or additional registered functions.
-  The catalog remains 8/11 registered: parse_hosts, parse_zone, check_ip, A,
-  AAAA, NS, SPF and MX. hosts_append, hosts_remove and serial remain deferred.
+  R10.3a added only `./modules/exec/dnsutil` to the fixed tagged package
+  inventory and its mirrors, not live execution or additional registered
+  functions at that time; its historical 8/11 boundary covered parse_hosts,
+  parse_zone, check_ip, A, AAAA, NS, SPF and MX (R10.3a, commit `b09faf6`).
+  R10.3b (commit `2ce0fbb`) implements a current 10/11 of the dnsutil public
+  catalog functions: hosts_append and hosts_remove are registered as bounded
+  atomic updates, while serial remains pending because a persistent grains
+  store does not exist yet. The dnsutil side of the separate contract CI
+  coverage includes the temporary-file update tests (hermetic MemoryFS and
+  t.TempDir vectors); no host `/etc/hosts` is read or written. Live DNS
+  remains absent and deferred, no live pass is claimed, and `external_ci`
+  stays `pending_external_ci`.
   No quarantine exception is needed: no new registry image or package is used.
   Both executable command mirrors are preflight-checked as an exact ordered
   package list; missing, extra, duplicate or reordered entries fail closed.
@@ -774,7 +785,9 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
    On 2026-09-29, the ordered-inventory and additional dnsutil CLI/differential
    build-tag checks were revalidated in the same inspected rootless offline
    setup: 22 dig plus 21 shared-controller mocks passed, zero skips. The exact
-   package command and 8/11 registration boundary were unchanged.
+   package command and the R10.3a-phase 8/11 registration boundary were
+   unchanged at that revalidation; R10.3b (commit `2ce0fbb`) has since raised
+   dnsutil registration to 10/11 without changing the package command.
 - **R103A-GATE-01/02 result-budget vectors (2026-09-28, backend-owned in
   the same command):** the dnsutil side of the fixed rootless contract
   command now carries the result-budget regression vectors — the ~17 KiB
