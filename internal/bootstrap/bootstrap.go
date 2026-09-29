@@ -30,6 +30,7 @@ import (
 	execdevmap "github.com/friz-zy/statekit/modules/exec/devmap"
 	execdig "github.com/friz-zy/statekit/modules/exec/dig"
 	execdisk "github.com/friz-zy/statekit/modules/exec/disk"
+	execdnsutil "github.com/friz-zy/statekit/modules/exec/dnsutil"
 	execenviron "github.com/friz-zy/statekit/modules/exec/environ"
 	execethtool "github.com/friz-zy/statekit/modules/exec/ethtool"
 	execextfs "github.com/friz-zy/statekit/modules/exec/extfs"
@@ -260,6 +261,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execdevinfo.Register,
 		execdig.Register,
 		execdisk.Register,
+		execdnsutil.Register,
 		exechosts.Register,
 		execlocale.Register,
 		execgit.Register,

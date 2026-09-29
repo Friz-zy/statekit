@@ -1,27 +1,38 @@
 package differential
 
-// R10 is the cloud & SaaS API round (plans/porting.md §2 R10: thin stdlib
-// HTTP for webhook-style APIs). R10.1 registers the slack family — the
-// complete public catalog of salt/modules/slack_notify.py @ pinned
-// revision (list_rooms, list_users, find_room, find_user, post_message,
-// call_hook over salt/utils/slack.py query and salt/utils/http.py
-// transport semantics) with the two private config ladders (_get_api_key,
-// _get_hook_id) ported as internal helpers over the optional config.get
-// delegate. R10.2 registers the dig family — the complete public catalog
-// of salt/modules/dig.py @ pinned revision (check_ip, A, PTR, AAAA,
-// CNAME, NS, SPF, MX, TXT plus the seven source aliases a, ptr, aaaa,
-// cname, ns, spf, mx; there is no txt alias in the pinned source) over
-// the central shell-free Runner. Every observation in this round is
-// mock-only: the fake HTTP transport, the loopback-only httptest server,
-// and the scripted fake Runner carry the contract — no real Slack
-// endpoint is contacted, no dig binary is executed, no DNS name is
-// resolved, and live smoke remains behind an opt-in label per the R10
-// plan (not implemented in this phase).
+// R10 is the cloud & SaaS API round (plans/porting.md §2 R10: thin
+// stdlib HTTP for webhook-style APIs). R10.1 registers the slack
+// family — the complete public catalog of salt/modules/
+// slack_notify.py @ pinned revision (list_rooms, list_users,
+// find_room, find_user, post_message, call_hook over
+// salt/utils/slack.py query and salt/utils/http.py transport
+// semantics) with the two private config ladders (_get_api_key,
+// _get_hook_id) ported as internal helpers over the optional
+// config.get delegate. R10.2 registers the dig family — the complete
+// public catalog of salt/modules/dig.py @ pinned revision (check_ip,
+// A, PTR, AAAA, CNAME, NS, SPF, MX, TXT plus the seven source aliases
+// a, ptr, aaaa, cname, ns, spf, mx; there is no txt alias in the
+// pinned source) over the central shell-free Runner. R10.3a registers
+// the bounded dnsutil slice — eight of the eleven public functions of
+// salt/modules/dnsutil.py @ pinned revision (parse_hosts, parse_zone,
+// check_ip, A, AAAA, NS, SPF, MX) with _to_seconds/_has_dig kept
+// private; hosts_append, hosts_remove, and serial stay pending with
+// recorded reasons (arbitrary-path mutation and the missing persistent
+// grains store). Every observation in this round is mock-only: the
+// fake HTTP transport, the loopback-only httptest server, the scripted
+// fake Runner, and the MemoryFS file fixtures carry the contract — no
+// real Slack endpoint is contacted, no dig binary is executed, no DNS
+// name is resolved, no host /etc/hosts or zone file is read, and live
+// smoke remains behind an opt-in label per the R10 plan (not
+// implemented in this phase).
 //
 // The three dig behavioral fake-Runner vectors (TestR10DigMockDifferential,
 // TestR10DigTrustedGateAndUnverifiedExecutable, TestR10DigPythonSemantics)
-// live in r10_dig_contract_test.go behind the dns_contract build tag, so the
-// default host CI `go test ./...` never executes them; TestR10DNSContractTagBoundary
+// and the four dnsutil behavioral vectors (TestR10DNSUtilPinnedSourceVectors,
+// TestR10DNSUtilDelegationArgv, TestR10DNSUtilGateAndPendingLedger,
+// TestR10DNSUtilParserBoundsAndMalformedJoins) live
+// behind the dns_contract build tag, so the default host CI
+// `go test ./...` never executes them; TestR10DNSContractTagBoundary
 // below statically pins that tag boundary.
 
 import (
@@ -54,8 +65,12 @@ type r10FamilySpec struct {
 	Scenarios          []string
 	Evidence           []string
 	CompatibilityNotes []string
-	// RegisteredSubset is nil when every public catalog function must be
-	// registered (the R10.1 slack and R10.2 dig families are complete).
+	// RegisteredSubset is nil when every public catalog function must
+	// be registered (the R10.1 slack and R10.2 dig families are
+	// complete). A non-nil subset declares the bounded slice of a
+	// partial family (the R10.3a dnsutil slice): exactly the subset is
+	// registered and every other public name stays pending with
+	// recorded reasons.
 	RegisteredSubset []string
 	// CatalogFile is the concrete catalog file of the family (the slack
 	// file keeps the pinned source module name slack_notify).
@@ -114,6 +129,55 @@ var r10FamilySpecs = map[string]r10FamilySpec{
 			"the native dig contract tests are build-tagged dns_contract so host CI `go test ./...` does not execute them; the rootless contract CI job remains DevOps-owned and external evidence stays pending_external_ci",
 		},
 	},
+	"dnsutil": {
+		Source:      "salt/modules/dnsutil.py @ 8b63e700637e40d76f80a00d95c60471797c73b9",
+		SourceTests: "tests/pytests/unit/modules/test_dnsutil.py @ 8b63e700637e40d76f80a00d95c60471797c73b9",
+		Platform:    "cross-platform local parsing plus dig delegation over the central shell-free Runner",
+		CatalogFile: "dnsutil",
+		// R10.3a is a bounded slice: exactly these eight public
+		// functions are registered; hosts_append, hosts_remove, and
+		// serial stay pending with recorded reasons and upgrade paths.
+		RegisteredSubset: []string{
+			"A", "AAAA", "MX", "NS", "SPF", "check_ip", "parse_hosts", "parse_zone",
+		},
+		Scenarios: []string{
+			"dnsutil.availability-gating",
+			"dnsutil.bounded-file-reads",
+			"dnsutil.delegation-argv-and-defaults",
+			"dnsutil.hosts-parser-quirks",
+			"dnsutil.parser-resource-ceilings",
+			"dnsutil.registry-cli-surfaces",
+			"dnsutil.result-output-budgets",
+			"dnsutil.time-parsing-quirks",
+			"dnsutil.value-free-diagnostics",
+			"dnsutil.zone-parser-quirks",
+		},
+		Evidence: []string{
+			"the bounded R10.3a slice registers exactly eight of the eleven public dnsutil catalog functions — parse_hosts, parse_zone, check_ip, A, AAAA, NS, SPF, MX — with the pinned module's two private helpers (_to_seconds, _has_dig) kept private; hosts_append and hosts_remove stay pending because the pinned implementations mutate arbitrary caller-supplied file paths with no validation, backup, or atomicity (upgrade path: a bounded regular/no-follow writer over the same Runtime.FS discipline this slice uses), and serial stays pending because it requires a persistent grains store that StateKit does not yet have (upgrade path: register once a persistent local grains/state store module lands) — no 100%-or-family-complete claim is made for this family",
+			"parse_hosts is pinned at direct, registry, and CLI surfaces against the pinned tests/pytests/unit/modules/test_dnsutil.py fixture and a local Python oracle over the pinned source: Python-falsy inline input (nil or empty string) triggers the file read, a failed read answers the exact pinned result string 'Error: hosts data was not found', comments are recognized only when '#' is column 0 (an inline '#' becomes an ordinary alias token and a ' # col0' line contributes the '#' IP key exactly like the pinned startswith check), duplicate aliases accumulate per IP in encounter order with duplicates kept, a bare-IP line answers an allocated non-nil empty alias list (JSON [] never null), and the default path is exactly /etc/hosts — never read from the host in any test (MemoryFS fixtures only)",
+			"every parse_hosts/parse_zone file read runs only through runtime.ReadFileBounded over Runtime.FS with an explicit 1 MiB ceiling: regular file required, no symlink following on the final component or any parent, oversized input rejected by the bound — a fixed divergence from the pinned unbounded fopen; the symlink, directory, oversized, and missing-path vectors all answer the pinned compatibility string with no path or content bytes in any result, error, or log",
+			"the documented parse_hosts divergence is pinned: a whitespace-only line raises IndexError in the pinned source and is skipped here (pinned vector), while Python splitlines/split whitespace semantics (\\r, \\r\\n, \\v, \\f, U+001C..U+001E, U+0085, U+2028, U+2029 boundaries; U+001F a split() separator but not a line boundary) are ported exactly",
+			"parse_zone is pinned against the local Python oracle over the pinned source: semicolon comment stripping, $DIRECTIVE capture ($TTL, $ORIGIN), the '(' … ')' multi-line SOA join including the unterminated-parenthesis partial-result quirk, the global '@'→ORIGIN replacement, substring SOA detection, the comps.pop(1) branch for non-IN second tokens, CONTACT's first-dot→'@' replacement, _to_seconds SOA fields, the NS list, the first-MX-only quirk, the A/AAAA TARGET/TTL form for owner-TTL-IN-A/AAAA records beside the generic string bucket for 4-token records, and TXT/CAA through the generic bucket (the naive quoted-value truncation included) — all oracle-verified expected shapes asserted field-exactly",
+			"every pinned parse_zone crash position maps to one fixed value-free malformed-zone error with no partial results (oracle-verified crash classes): short NS/PTR/MX record lines (IndexError), a record before any ORIGIN is known (KeyError), a directive without a value (IndexError), a non-numeric H/D refresh (ValueError), directive/record type collisions over the NS/A/TXT keys (AttributeError/TypeError), and — closed as R103A-FINAL-01 — a multi-line '(' … ')' continuation join that strips every token (the whitespace-only join of the multiline zone \"(\\n)\\n\", an empty token slice after the parenthesis/continuation parsing where the pinned parser reads comps[0] of an empty list), pinned at direct, registry (bootstrap), and CLI surfaces with the exact fixed text 'dnsutil: malformed zone data', no partial result, no panic, and zero dig dispatch; a truthy zonefile is read first through the bounded read and its content REPLACES the inline zone on success (an empty file answers the pinned not-found string even when inline data exists — oracle-verified) while read failures silently keep the inline data exactly like the pinned try/except",
+			"the R10.3A-SEC-01 parser ceilings are pinned with exact boundaries and small inputs (no huge allocations): inline hosts/zone values are capped at the shared 1 MiB source ceiling before processing (exactly 1 MiB of comment parses and one byte over rejects value-free with no partial result), hostsfile/zonefile path arguments over 4096 bytes are rejected BEFORE the filesystem is touched (a counting fake filesystem proves zero bounded reads) answering the pinned read-failure compatibility shapes (the hosts not-found string and the zone inline fallback), a path of exactly 4096 bytes still reaches the filesystem, and a fake bounded filesystem reporting oversize without holding data answers the same compatibility shapes for the file side of the shared ReadFileBounded 1 MiB ceiling",
+			"the R10.3A-SEC-01 in-parser ceilings are pinned with exact boundaries: at most 4096 input records (non-blank, non-comment lines — 4096 unique hosts rows parse and 4097 reject value-free; the $ORIGIN directive plus 4095 zone record lines parses and one more rejects) and at most 4096 bytes per parsed token or derived cell (a token of exactly 4096 parses and one byte over rejects, including directive values), each answering the fixed value-free 'dnsutil: parser limit exceeded', and the '@'→ORIGIN expansion is guarded BEFORE allocation by the exact match-count estimate len(line)+matches*(len(origin)-1) in int64 (a dot-terminated 4096-byte origin with 255 spaced '@' tokens computes 1,044,734 bytes, stays within the 1 MiB ceiling and parses; 256 tokens compute 1,048,831 bytes and reject value-free) — the multi-line continuation join and the expansion are linear builders (no repeated string concatenation), and every slice/index access is length-checked so no input can panic the parser",
+			"the R103A-GATE-01/02 result budgets are pinned with exact boundaries against an encoding/json test oracle: the aggregate ceiling is 4 MiB of the COMPLETE serialized result representation — every map key (including every expanded '@'→ORIGIN generic-bucket key), every value, the exact JSON escaping (quotes, backslash, the \\b\\f\\n\\r\\t short forms, the remaining control bytes, the HTML triplet <, >, &, U+2028/U+2029, and invalid UTF-8), and every nested map/array delimiter, colon, and comma — tracked exactly while the result is built through a jsonStringLength length oracle plus per-insertion structural deltas (the parser never calls json.Marshal and never materializes an encoded result; the overflow-safe counters are compared as delta > ceiling minus current), enforced BEFORE a key/value/row is inserted with one fixed value-free error ('dnsutil: result byte limit exceeded'); the nested TARGET/TTL object of the A/AAAA form contributes exactly 18 structural bytes excluding the encoded values ({, \\\"TARGET\\\", :, ,, \\\"TTL\\\", :, } — R103A-FINAL-BYTES-01 corrected both calculation sites from a one-byte overcount), pinned by an exact-boundary oracle: a nested A/AAAA result whose exact compact encoding is exactly 4,194,304 bytes parses with byte-exact oracle shape while one encoded byte above rejects before insertion with nil result; the item ceiling is 8192 retained result items — every JSON object member across all nested maps plus every list element and duplicate-appended element, so one owner-TTL-IN-A record accounts its owner member and the TARGET and TTL members, and 4095 unique owner-TTL-IN-A rows retain 12,287 items (ORIGIN + the A bucket member + 3 per row; the exact boundary is 2730 rows = 8192 items) — with its own fixed value-free error ('dnsutil: result item limit exceeded'); both counters are exact at every step and REPLACE a key/member's old retained subtree with the new subtree's exact byte and item delta (R103A-GATE-02 closed: a plain-string bucket owner morphing into the TARGET/TTL object gains its two nested members, an object flattened to a string or a directive flattening a whole bucket/list subtree returns every nested item it removes, so a shape-changing replacement reserves exactly new-minus-old and the counters stay monotonic — no sequence of records, overwrites, or duplicate appends can end over a ceiling the counter did not see) while duplicate rows keep Salt order; the gate probes are regression-pinned at direct, registry (bootstrap), and CLI surfaces: the ~17 KiB zone (origin = 3999 'a' chars + dot, 1024 distinct records 'x. IN @<i> @') that previously answered ~8.2 MB of JSON rejects value-free with nil result before the budget is exceeded (the boundary located by bisection against the oracle map: the largest fitting count parses with byte-exact oracle shape and size, one more rejects), 1100 distinct 't<i>@' type keys over a 4081-byte origin reject before the expanded bucket key is inserted, the 4095-row item fanout rejects with nil result, the shape-changing-replacement regression ($ORIGIN + two generic A strings for x0/x1 + the two owner-TTL-IN-A rewrites of those owners + 2729 fresh rows = 8195 final retained items, which the pre-fix zero-delta accounting let escape at a counter reading of 8191) rejects with nil result while the separate exact-8192 2730-row structure parses, the top-level bucket→directive shrink (a 100-owner TXT bucket flattened to one scalar before the exact-8192 fill that the stale counter falsely rejected) parses and its one-row-over variant rejects, control-byte escaping amplification on parse_hosts (each 4096-byte \\x01 alias retains 24,578 JSON bytes) rejects 200 aliases value-free, and under-ceiling distinct buckets carrying quotes/backslash/control/DEL/HTML-triplet/non-ASCII keys and values parse successfully with the measured encoding/json size within the cap (U+2028/U+2029 are pythonSplitlines line boundaries that cannot survive into a parser cell, so their escaping classes are oracle-pinned at the jsonStringLength level); empty containers follow the documented definition — an empty alias list or bucket contributes zero items and only its two delimiter bytes to the byte budget, and null never appears",
+			"_to_seconds is pinned with the pinned unit vectors (4H→14400, 1D→86400, 2W→604800, ''→604800, 604801→604800) plus the oracle-verified quirk set: case-insensitive H/D/W, every 'H'/'D' removed before the parse, the W branch answering one week without any numeric parse ('w', 'abcW'), the else branch answering one week for unparsable values ('abc', U+001C-wrapped digits), zero and negatives passing through (0H→0, -2H→-7200, -1→-1), 168H landing exactly on the cap, and Python base-10 int() grammar — outer int() whitespace (' 12 H '→43200), Unicode Nd digits (２４H→86400, ٢٤H→86400), single between-digit underscores (2_4H→86400; _24H rejects), and one ASCII sign (+2H→7200); positive magnitudes beyond int64 still cap to one week and negative magnitudes saturate to math.MinInt64 (documented divergence from Python's arbitrary-precision ints), and the single-codepoint U+1E96 full-uppercase divergence is documented in the source",
+			"the dig-backed surface delegates to the registered dig family through rt.Exec.Call with exact argument pass-through pinned at direct, registry, and CLI surfaces: nameservers forward as-is, NS forwards resolve with the pinned True default and explicit false, SPF forwards record with the pinned exact 'SPF' default and explicit TXT, MX forwards resolve with the pinned False default, and check_ip forwards addr — the delegated result value and error class propagate unchanged (dig's fixed value-free errors included), the caller's context carries cancellation into the nested call, and the dig module's own budgets and trusted-process boundary apply per delegation",
+			"_has_dig is ported as the trusted-resolution gate through the Runner's optional process.TrustedCommandResolver capability (the dig module's documented PATH divergence): a failing resolver, a capability-less Runner, and no Runner at all answer the pinned result string 'This function requires dig, which is not currently available' with zero dispatch, and the pinned A/AAAA socket.getaddrinfo fallback is an explicitly deferred divergence — no host resolver egress exists (no net.DefaultResolver, no net.LookupIP, no socket use anywhere in the family); when the gate passes but the registry carries no matching dig function (the pinned __salt__ lookup crash position), the call fails closed with one fixed value-free unavailable error",
+			"no dig binary is executed, no DNS name is resolved, no network is touched, and no host /etc/hosts or zone file is read anywhere in the R10 differential suite: the dig delegation vectors run over the real dig family with a scripted fake Runner behind a test trusted resolver, the file vectors run over runtime.MemoryFS, and the native dnsutil contract tests carry the dns_contract build tag so the default host CI `go test ./...` does not execute them",
+		},
+		CompatibilityNotes: []string{
+			"the pinned parse_hosts/parse_zone read caller-named files unbounded through salt.utils.files.fopen; StateKit reads only through runtime.ReadFileBounded with an explicit 1 MiB ceiling, a regular-file requirement, and no symlink following — a security divergence, not a parity claim; the boundary is intended for local trusted same-principal CLI use only",
+			"the pinned parsers have no resource bounds and crash on the empty multi-line join (IndexError on comps[0] of an empty list); StateKit enforces the exact parser ceilings — the shared 1 MiB ceiling on inline hosts/zone values, file reads, and the computed '@'→ORIGIN expansion size, a 4096-byte bound on hostsfile/zonefile path arguments rejected before filesystem use, at most 4096 input records, 8192 retained result items (every nested JSON object member plus every list and duplicate-appended element, so one A/AAAA record accounts owner + TARGET + TTL), 4096-byte cells, and 4 MiB of the COMPLETE serialized result representation (every map key including expanded bucket keys, every value, the exact encoding/json escaping, and every delimiter, colon, and comma — counted exactly while the result is built and enforced BEFORE insertion, never by encoding an oversized result; the nested TARGET/TTL entry contributes its exact 18 structural bytes and every shape-changing replacement reserves the exact new-minus-old subtree delta of both the byte and item budgets) — and maps the empty-join IndexError to the fixed value-free malformed-zone error; every ceiling failure answers one fixed value-free error ('dnsutil: input exceeds limit', 'dnsutil: parser limit exceeded', 'dnsutil: result item limit exceeded', or 'dnsutil: result byte limit exceeded') with no partial results, the joins and expansions are linear builders, and all slice access is length-checked — security divergences (R103A-FINAL-01/R10.3A-SEC-01/R103A-GATE-01/02/R103A-FINAL-BYTES-01 closed), not parity claims",
+			"the pinned parse_hosts raises IndexError on a whitespace-only line; StateKit skips such lines — a documented safe divergence",
+			"the pinned parse_zone crashes on short record lines, missing ORIGIN, malformed SOA fields, a non-numeric H/D time value, and directive/record type collisions; StateKit maps every crash position to one fixed value-free malformed-zone error with no partial results — a safe divergence, not a parity claim",
+			"the pinned parse_zone is a simplistic line parser, and so is this port (parser ceiling, not RFC 1035 complete): no $INCLUDE, no escape/quoting handling, no TTL inheritance, no class negotiation; Python dicts preserve insertion order and Go maps do not, so record-bucket key order is not preserved (list order is)",
+			"the pinned _to_seconds relies on Python's arbitrary-precision int; StateKit saturates magnitudes beyond int64 (positive saturation still caps to one week; negative saturation answers math.MinInt64) and Go's simple ToUpper does not reproduce the single U+1E96 full-uppercase expansion — documented micro-divergences",
+			"the pinned check_ip/A/AAAA/NS/SPF/MX call __salt__['dig.*'] after a PATH which() probe, and the pinned A/AAAA fall back to socket.getaddrinfo when dig is missing; StateKit gates through the Runner's TrustedCommandResolver capability, answers the pinned unavailable string when the gate fails, defers the socket fallback (no host resolver egress), and maps the registry-miss crash position to a fixed value-free error — availability-shape divergences documented here exactly",
+			"hosts_append and hosts_remove stay pending because the pinned implementations mutate arbitrary caller paths with no validation, backup, or atomicity, and serial stays pending because its pinned contract requires a persistent grains store; the upgrade paths are recorded in the family evidence and the porting ledger — no family-complete claim is made",
+		},
+	},
 	"slack": {
 		Source:      "salt/modules/slack_notify.py @ 8b63e700637e40d76f80a00d95c60471797c73b9",
 		SourceTests: "tests/pytests/unit/modules/test_slack.py, tests/pytests/unit/utils/test_slack.py @ 8b63e700637e40d76f80a00d95c60471797c73b9",
@@ -159,7 +223,7 @@ var r10FamilySpecs = map[string]r10FamilySpec{
 }
 
 // r10FamilyOrder keeps generated map emission deterministic.
-var r10FamilyOrder = []string{"dig", "slack"}
+var r10FamilyOrder = []string{"dig", "dnsutil", "slack"}
 
 type r10FamilyReport struct {
 	Catalog         int      `yaml:"catalog_functions"`
@@ -374,12 +438,13 @@ func TestR10DifferentialScopeReport(t *testing.T) {
 	registered := registeredNames(first)
 
 	report := r10Report{
-		Round:    "R10.2",
+		Round:    "R10.3a",
 		Platform: "cross-platform",
 		RuntimeStatus: "mock-only differential contract: no Slack endpoint is contacted, no dig binary is executed, " +
-			"no DNS name is resolved, and no live Salt runs; the testing-scoped fake HTTP transport, the loopback-only " +
-			"httptest vectors (exact-origin redirect chains, foreign-origin hook rejection), and the scripted fake " +
-			"Runner behind the dig family (exact argv, shell-free dispatch) provide the executable contract",
+			"no DNS name is resolved, no host /etc/hosts or zone file is read, and no live Salt runs; the testing-scoped " +
+			"fake HTTP transport, the loopback-only httptest vectors (exact-origin redirect chains, foreign-origin hook " +
+			"rejection), the scripted fake Runner behind the dig and dnsutil families (exact argv, shell-free dispatch), " +
+			"and the MemoryFS fixtures behind the dnsutil file reads provide the executable contract",
 		BehavioralParity: "not claimed: local R10 differential tests do not execute live Salt, Slack, or dig; the R10 plan's opt-in live smoke is not implemented; separately configured external CI is pending_external_ci",
 		ExternalCI:       "pending_external_ci",
 		Families:         map[string]r10FamilyReport{},
@@ -420,11 +485,33 @@ func TestR10DifferentialScopeReport(t *testing.T) {
 
 		// Complete families (R10.1 slack, R10.2 dig) must register
 		// every public catalog function — and every declared source
-		// alias — with nothing pending.
-		if spec.RegisteredSubset == nil &&
-			(family.Registered != family.Public || len(family.PendingPublic) != 0 ||
-				family.RegisteredAliases != family.SourceAliases) {
-			t.Fatalf("R10 %s registration incomplete: %+v", familyName, family)
+		// alias — with nothing pending. A bounded-slice family
+		// (R10.3a dnsutil) must register exactly its declared subset:
+		// every subset name registered, every other public name
+		// pending, and no extra registration.
+		if spec.RegisteredSubset == nil {
+			if family.Registered != family.Public || len(family.PendingPublic) != 0 ||
+				family.RegisteredAliases != family.SourceAliases {
+				t.Fatalf("R10 %s registration incomplete: %+v", familyName, family)
+			}
+		} else {
+			subset := map[string]bool{}
+			for _, name := range spec.RegisteredSubset {
+				subset[name] = true
+				if !registered[catalogModule+"."+name] {
+					t.Fatalf("R10 %s subset name %s not registered", familyName, name)
+				}
+			}
+			for _, pending := range family.PendingPublic {
+				if subset[strings.TrimPrefix(pending, catalogModule+".")] {
+					t.Fatalf("R10 %s subset name %s reported pending", familyName, pending)
+				}
+			}
+			if family.Registered != len(subset) ||
+				len(family.PendingPublic) != family.Public-len(subset) {
+				t.Fatalf("R10 %s slice registration mismatch: %+v subset=%d",
+					familyName, family, len(subset))
+			}
 		}
 
 		report.Totals.Catalog += family.Catalog
@@ -492,7 +579,9 @@ func priorR3R9ReportHashes(t *testing.T) map[string]string {
 
 // Keep the package's R10 platform assertion explicit: no function may
 // acquire a Windows-only or Linux-only gate merely because the Salt
-// source contains platform branching elsewhere.
+// source contains platform branching elsewhere. Complete families
+// assert every public catalog name; a bounded-slice family asserts its
+// registered subset and that the pending names are genuinely absent.
 func TestR10FunctionsArePlatformNeutral(t *testing.T) {
 	rt, err := bootstrap.BuildRuntime()
 	if err != nil {
@@ -501,17 +590,27 @@ func TestR10FunctionsArePlatformNeutral(t *testing.T) {
 	for _, familyName := range r10FamilyOrder {
 		spec := r10FamilySpecs[familyName]
 		module, catalogNames := loadR10CatalogFile(t, spec.CatalogFile, familyName)
+		subset := map[string]bool{}
+		for _, name := range spec.RegisteredSubset {
+			subset[name] = true
+		}
 		for _, name := range catalogNames {
 			if strings.HasPrefix(name, "_") {
 				continue
 			}
 			full := module + "." + name
 			fn, ok := rt.Exec.Get(full)
-			if !ok {
-				t.Fatalf("missing %s", full)
+			if spec.RegisteredSubset == nil || subset[name] {
+				if !ok {
+					t.Fatalf("missing %s", full)
+				}
+				if constrained, ok := fn.(runtime.PlatformConstrained); ok {
+					t.Fatalf("%s unexpectedly constrained to %v", full, constrained.Platforms())
+				}
+				continue
 			}
-			if constrained, ok := fn.(runtime.PlatformConstrained); ok {
-				t.Fatalf("%s unexpectedly constrained to %v", full, constrained.Platforms())
+			if ok {
+				t.Fatalf("pending %s unexpectedly registered", full)
 			}
 		}
 		for _, alias := range spec.Aliases {
@@ -528,19 +627,21 @@ func TestR10FunctionsArePlatformNeutral(t *testing.T) {
 }
 
 // TestR10DNSContractTagBoundary statically pins the dns_contract build
-// tag boundary for the R10 dig behavioral tests: the default untagged
-// host test list (`go test ./...`) must declare no TestR10Dig* function,
-// while the dns_contract-tagged files of this package must declare
-// exactly the three contract tests executed by the rootless contract
-// job (`go test -tags=dns_contract ... ./tests/differential`). The
-// check is a deterministic source scan of this package directory — it
-// executes no dig binary, resolves no DNS name, and touches no network.
+// tag boundary for the R10 behavioral tests: the default untagged
+// host test list (`go test ./...`) must declare no TestR10Dig* or
+// TestR10DNSUtil* function, while the dns_contract-tagged files of
+// this package must declare exactly the contract tests executed by the
+// rootless contract job (`go test -tags=dns_contract ...
+// ./tests/differential`). The check is a deterministic source scan of
+// this package directory — it executes no dig binary, resolves no DNS
+// name, and touches no network.
 func TestR10DNSContractTagBoundary(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
 	}
-	testFunc := regexp.MustCompile(`^func (TestR10Dig\w+)\(t \*testing\.T\) \{`)
+	digTestFunc := regexp.MustCompile(`^func (TestR10Dig\w+)\(t \*testing\.T\) \{`)
+	dnsutilTestFunc := regexp.MustCompile(`^func (TestR10DNSUtil\w+)\(t \*testing\.T\) \{`)
 	untagged := map[string]bool{}
 	tagged := map[string]bool{}
 	for _, entry := range entries {
@@ -567,7 +668,10 @@ func TestR10DNSContractTagBoundary(t *testing.T) {
 			found = tagged
 		}
 		for _, line := range lines {
-			if m := testFunc.FindStringSubmatch(line); m != nil {
+			if m := digTestFunc.FindStringSubmatch(line); m != nil {
+				found[m[1]] = true
+			}
+			if m := dnsutilTestFunc.FindStringSubmatch(line); m != nil {
 				found[m[1]] = true
 			}
 		}
@@ -578,9 +682,13 @@ func TestR10DNSContractTagBoundary(t *testing.T) {
 			names = append(names, name)
 		}
 		sort.Strings(names)
-		t.Fatalf("TestR10Dig functions reachable by the default untagged test list: %v", names)
+		t.Fatalf("dns_contract test functions reachable by the default untagged test list: %v", names)
 	}
 	want := []string{
+		"TestR10DNSUtilDelegationArgv",
+		"TestR10DNSUtilGateAndPendingLedger",
+		"TestR10DNSUtilParserBoundsAndMalformedJoins",
+		"TestR10DNSUtilPinnedSourceVectors",
 		"TestR10DigMockDifferential",
 		"TestR10DigPythonSemantics",
 		"TestR10DigTrustedGateAndUnverifiedExecutable",
@@ -591,7 +699,7 @@ func TestR10DNSContractTagBoundary(t *testing.T) {
 	}
 	sort.Strings(got)
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("dns_contract dig tests = %v, want %v", got, want)
+		t.Fatalf("dns_contract behavioral tests = %v, want %v", got, want)
 	}
 }
 

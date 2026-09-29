@@ -4,9 +4,9 @@ reference:
     version: v3008.2-180-g8b63e70063
 summary:
     families_total: 246
-    implemented: 117
+    implemented: 118
     partial: 0
-    excluded: 50
+    excluded: 49
     planned: 79
 implemented_families:
     - acl
@@ -31,6 +31,7 @@ implemented_families:
     - devmap
     - dig
     - disk
+    - dnsutil
     - environ
     - ethtool
     - extfs
@@ -130,7 +131,6 @@ excluded:
     - 'beacons (excluded: master-minion architecture (StateKit is local-only by design))'
     - 'cassandra_cql (planned: requires database/message-broker client protocol (round R9, services tier))'
     - 'cloud (planned: cloud provider API (round R10))'
-    - 'dnsutil (planned: requires database/message-broker client protocol (round R9, services tier))'
     - 'etcd (planned: requires database/message-broker client protocol (round R9, services tier))'
     - 'event (excluded: master-minion architecture (StateKit is local-only by design))'
     - 'grains (excluded: master-minion architecture (StateKit is local-only by design))'

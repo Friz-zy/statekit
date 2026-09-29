@@ -6,9 +6,9 @@ execution:
     salt_modules: 266
     salt_functions: 4284
     relevant_functions: 1351
-    source_inventory_count: 1240
-    catalog_intersection_count: 1211
-    implemented: 1211
+    source_inventory_count: 1248
+    catalog_intersection_count: 1219
+    implemented: 1219
 state:
     salt_modules: 132
     salt_functions: 669
@@ -154,6 +154,14 @@ implemented:
         - dig.spf
         - disk.percent
         - disk.usage
+        - dnsutil.A
+        - dnsutil.AAAA
+        - dnsutil.MX
+        - dnsutil.NS
+        - dnsutil.SPF
+        - dnsutil.check_ip
+        - dnsutil.parse_hosts
+        - dnsutil.parse_zone
         - environ.get
         - environ.set
         - ethtool.set_coalesce

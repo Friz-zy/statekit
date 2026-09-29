@@ -1,4 +1,4 @@
-"""Exactly 21 offline tests. Runtime/firewall calls are mocked, never dispatched."""
+"""Exactly 22 offline tests. Runtime/firewall calls are mocked, never dispatched."""
 from __future__ import annotations
 
 import copy
@@ -369,17 +369,48 @@ class ContractTests(unittest.TestCase):
 
     def test_20_backend_build_tags(self):
         for path in ('internal/cli/dig_cli_test.go', 'modules/exec/dig/dig_test.go',
-                     'tests/differential/r10_dig_contract_test.go'):
+                      'modules/exec/dnsutil/dnsutil_contract_test.go',
+                      'internal/cli/dnsutil_cli_test.go',
+                      'tests/differential/r10_dnsutil_contract_test.go',
+                      'tests/differential/r10_dig_contract_test.go'):
             self.assertEqual((ROOT / path).read_text().splitlines()[0], '//go:build dns_contract')
         self.assertNotRegex((ROOT / 'tests/differential/r10_test.go').read_text(), r'func TestR10Dig\w*\(')
-        self.assertIn('./tests/differential', c.CONTRACT_ARGV)
+        self.assertEqual(c.CONTRACT_ARGV, ['/usr/local/go/bin/go', 'test', '-tags=dns_contract', '-count=1', *c.PACKAGES])
 
     def test_21_exact_inventory_zero_skips(self):
         suite = unittest.defaultTestLoader.loadTestsFromTestCase(ContractTests)
-        self.assertEqual(suite.countTestCases(), 21)
+        self.assertEqual(suite.countTestCases(), 22)
         source = Path(__file__).read_text()
         for forbidden in ('skip' + 'Test', 'skip' + 'If', 'skip' + 'Unless', 'expected' + 'Failure'):
             self.assertNotIn(forbidden, source)
+
+    def test_22_controller_package_inventory_exact_set(self):
+        # Single fixed inventory: every controller mirror of the tagged
+        # command must carry exactly this package set, so an omitted or
+        # extra package fails instead of silently narrowing coverage.
+        expected = {'./modules/exec/dig', './modules/exec/dnsutil',
+                    './internal/cli', './tests/differential'}
+        self.assertEqual(c.PACKAGES, ['./modules/exec/dig', './internal/cli',
+                                      './tests/differential', './modules/exec/dnsutil'])
+        self.assertEqual(set(c.PACKAGES), expected)
+        self.assertEqual(len(c.PACKAGES), len(expected))
+        mirrors = (Path(__file__).with_name('payload.sh'), ROOT / 'tests/live/postgres/ci.sh')
+        for mirror in mirrors:
+            lines = [line for line in mirror.read_text().splitlines()
+                     if 'go test -tags=dns_contract -count=1' in line]
+            self.assertEqual(len(lines), 1, mirror.name)
+            self.assertEqual(set(re.findall(r'\./[\w./-]+', lines[0])), expected, mirror.name)
+            self.assertEqual(re.findall(r'\./[\w./-]+', lines[0]), c.PACKAGES, mirror.name)
+        c.verify_contract_inventory()
+        for packages in (c.PACKAGES[:-1], c.PACKAGES + ['./modules/exec/slack_notify'],
+                         c.PACKAGES + ['./modules/exec/dnsutil'], list(reversed(c.PACKAGES))):
+            command = 'go test -tags=dns_contract -count=1 ' + ' '.join(packages)
+            for target in ('payload.sh', 'ci.sh'):
+                original = Path.read_text
+                def changed(path, *args, **kwargs):
+                    return command if path.name == target else original(path, *args, **kwargs)
+                with patch.object(Path, 'read_text', changed), self.assertRaises(c.Rejected):
+                    c.verify_contract_inventory()
 
 
 if __name__ == '__main__':

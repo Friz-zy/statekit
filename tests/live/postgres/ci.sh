@@ -2296,7 +2296,7 @@ build_go_cache=/tmp/gocache
 if (( dig_contract_only == 1 )); then
   build_go_cache=/out/gocache
   build_command=(/usr/bin/statekit-rootfs-preflight /bin/bash -euo pipefail -c
-    '[[ "$(go version)" == "go version go1.26.8 linux/amd64" ]] && python3 -B -m unittest discover -s tests/live/dig -p test_orchestration.py -v && go mod verify && go test -tags=dns_contract -count=1 ./modules/exec/dig ./internal/cli ./tests/differential')
+    '[[ "$(go version)" == "go version go1.26.8 linux/amd64" ]] && python3 -B -m unittest discover -s tests/live/dig -p test_orchestration.py -v && go mod verify && go test -tags=dns_contract -count=1 ./modules/exec/dig ./internal/cli ./tests/differential ./modules/exec/dnsutil')
 fi
 test_command_timeout=900
 verify_rootfs_authoritative "$rootfs_dir" live-executable \

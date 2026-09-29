@@ -643,7 +643,8 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
 - **Test boundary (R10.2):** the dig exec family is verified exclusively by
   recorded-response contract tests against the backend's scripted fake Runner
   behind the `dns_contract` build tag, with the tagged command covering
-  `./modules/exec/dig`, `./internal/cli`, and `./tests/differential`. No dig contract test executes the dig
+  `./modules/exec/dig`, `./modules/exec/dnsutil`, `./internal/cli`, and
+  `./tests/differential`. No dig contract test executes the dig
   binary, resolves DNS, or opens a network connection. A live DNS smoke and
   any external resolver destination are **not implemented in this phase**;
   the R10 plan records live smoke as opt-in-label-only and the resolver
@@ -658,16 +659,26 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
   `persist-credentials: false`, no `inputs:` anywhere in the workflow (no
   caller-selectable domains or nameservers), and nothing uploaded from the
   job (value-free artifact boundary: none — success is the test exit code).
-- **Scoped HUMAN authorization:** approver is the project user via direct
-  instructions on 2026-09-21, reaffirmed 2026-09-27 22:31 UTC and supplied
-  directly to this remediation session. Target: only the R10.2 `dig-contract`
-  job in `.github/workflows/integration-services.yml`. Scope: rootless Podman,
+- **Scoped HUMAN authorization:** approver is the project user in active chat,
+  via direct instructions at 2026-09-21 12:27 UTC authorizing `.github` changes
+  and phase tests, reaffirmed at 2026-09-28 13:23 UTC to continue the plan with
+  quality gates, GitHub CI and local tests. This record was supplied directly
+  by the user, not inferred from peers. Target: the existing R10.2/R10.3a
+  `dig-contract` job in `.github/workflows/integration-services.yml` and its
+  existing shared rootfs controller. Scope: rootless Podman,
   `network=none` fake-Runner contract tests; push/main, workflow_dispatch/main,
   schedule/main; `contents: read`; no secrets, OIDC, write permissions, native
   dig, live DNS/smoke, new OCI identities, or new dependencies. Expiry:
   completion of R10 migration or explicit user revocation, whichever comes
   first. No permission for live DNS or user-controlled resolver targets.
   This approval does not waive runtime preflight or independent review.
+  R10.3a adds only `./modules/exec/dnsutil` to the fixed tagged package inventory
+  and its mirrors, not live execution or additional registered functions.
+  The catalog remains 8/11 registered: parse_hosts, parse_zone, check_ip, A,
+  AAAA, NS, SPF and MX. hosts_append, hosts_remove and serial remain deferred.
+  No quarantine exception is needed: no new registry image or package is used.
+  Both executable command mirrors are preflight-checked as an exact ordered
+  package list; missing, extra, duplicate or reordered entries fail closed.
   The direct 2026-09-28 continuation explicitly authorizes reuse of the existing
   PostgreSQL rootfs/preflight controller in `--dig-contract-only` mode, including
   its fixed locked dependency-fetch stage when needed. Approval owner is the
@@ -692,7 +703,7 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
   proxy/checksum settings and readonly manifest mode are preserved. After
   receipt-based fetch removal, the offline inspected runtime executes Python
   mocks, `go mod verify`, and exactly
-  `go test -tags=dns_contract -count=1 ./modules/exec/dig ./internal/cli ./tests/differential`.
+  `go test -tags=dns_contract -count=1 ./modules/exec/dig ./internal/cli ./tests/differential ./modules/exec/dnsutil`.
   There is no statekit artifact build, PG mock/live phase, cluster startup,
   database/role/password operation, live-service firewall or report upload.
 - **Egress:** only the existing dependency-fetch exception uses host networking
@@ -735,6 +746,59 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
   requested; this local Podman reports cgroups disabled, so CPU/memory/PID
   enforcement is not claimed. No image pull, Go contract execution, dependency
   fetch, live dig/DNS or GitHub Actions execution occurred in that validation.
+- **R103A-FINAL-02 / R10.3a-SEC-02 package-inventory closure (2026-09-28):**
+  the rootless contract command now includes `./modules/exec/dnsutil`
+  alongside dig, cli, and differential in every controller mirror: the
+  shared `ci.sh --dig-contract-only` build command, the dig payload's
+  contract phase, the orchestration `PACKAGES`/`CONTRACT_ARGV` constants,
+  the controller preflight build-tag list
+  (`modules/exec/dnsutil/dnsutil_contract_test.go` must carry
+  `//go:build dns_contract`), and this plan. The controller preflight
+  additionally fails closed (`contract-package-inventory-mismatch` /
+   `contract-package-inventory-unverifiable`) unless both the payload and
+   shared controller carry the exact ordered package inventory. Offline mocks
+   mutate each mirror independently to reject missing, extra, duplicate and
+   reordered package entries. The shared PostgreSQL mirror assertion now
+   covers all four packages rather than accepting the old three-package
+   substring. Order is pinned for reproducibility, not Go semantics. Job posture is
+  unchanged: main-only, read-only, rootless, `network=none`, no native
+  dig/DNS, no host files, no secrets, no new image or package, other phases
+  and case IDs preserved, `external_ci` still pending. Local re-run on
+  2026-09-28 in the same inspected rootless `.gotmp` cached launcher
+  (network=none, non-root, capabilities empty, NNP, read-only source
+  mounts): all mocks passed with zero skips — 22 dig orchestration tests
+  (the prior 21 plus the exact-package-inventory test) and the unchanged 21
+  shared PostgreSQL orchestration tests (43 total) — plus bash syntax checks
+  and `git diff --check`. No Go contract execution, image pull, dependency
+   fetch, live dig/DNS, or GitHub Actions run occurred.
+   On 2026-09-29, the ordered-inventory and additional dnsutil CLI/differential
+   build-tag checks were revalidated in the same inspected rootless offline
+   setup: 22 dig plus 21 shared-controller mocks passed, zero skips. The exact
+   package command and 8/11 registration boundary were unchanged.
+- **R103A-GATE-01/02 result-budget vectors (2026-09-28, backend-owned in
+  the same command):** the dnsutil side of the fixed rootless contract
+  command now carries the result-budget regression vectors — the ~17 KiB
+  gate-probe zone (origin 3999 `a` chars + dot, 1024 distinct records
+  `x. IN @<i> @`, previously ~8.2 MB of JSON) rejecting with the fixed
+  value-free `dnsutil: result byte limit exceeded` and nil result at the
+  bootstrap registry surface, 1100 distinct `t<i>@` type keys over a
+  4081-byte origin rejecting before the expanded bucket key is
+  inserted, 4095 unique owner-TTL-IN-A rows retaining 12,287 nested
+  items and rejecting with `dnsutil: result item limit exceeded`
+  (exact boundary 2730 rows = 8192 retained items), and under-ceiling
+  escaping-heavy buckets answering successfully with the measured
+  `encoding/json` size within the 4 MiB cap — beside the module
+  contract and CLI vectors that pin the same nil results, value-free
+  errors, and zero dig dispatch. The intentional ceilings are exact:
+  the aggregate cap covers the COMPLETE serialized result
+  representation (every map key including expanded `'@'`→ORIGIN bucket
+  keys, every value, the exact `encoding/json` escaping, and every
+  delimiter, colon, and comma) and the item cap counts every retained
+  JSON object member across all nested maps plus every list and
+  duplicate-appended element; both are enforced before insertion while
+  the result is built, never by encoding an oversized answer. No
+  command, package inventory, job posture, or network change; external
+  evidence stays `pending_external_ci`.
 - **Quality gates and phased handoff:** executor `devops-platform-engineer-lead`
   owns runtime/static mock validation; executor `backend-engineer-senior` owns
   the differential dig fake vectors behind the existing build tag. The backend

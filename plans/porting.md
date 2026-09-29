@@ -1663,6 +1663,270 @@ The PTD tables below are retained as an immutable audit snapshot. These
 overrides are the current status and do not delete or rewrite any original
 rows or counts.
 
+##### 2026-09-28 current status (R10.3a dnsutil bounded slice; external CI pending)
+
+R10.3a registers the bounded dnsutil slice of the pinned
+`salt/modules/dnsutil.py` — exactly eight of the eleven public catalog
+functions (`parse_hosts`, `parse_zone`, `check_ip`, `A`, `AAAA`, `NS`,
+`SPF`, `MX`) as one Go family (`modules/exec/dnsutil`) with the two
+private helpers of the pinned source kept private (`_to_seconds` backs
+the SOA fields of `parse_zone`; `_has_dig` backs the delegation gate).
+The frozen 2026-08-29 PTD-EXEC rows for these eight names are
+superseded: they are registered. Three public functions stay pending
+with specific reasons and upgrade paths (no 100%-or-family-complete
+claim is made for dnsutil): `hosts_append` and `hosts_remove` because
+the pinned implementations mutate arbitrary caller-supplied file paths
+with no validation, backup, or atomicity — upgrade path: a bounded
+regular/no-follow writer over the same `Runtime.FS`/`ReadFileBounded`
+discipline this slice uses (validated destination, temp-file rename),
+following the hosts module's fixture-root override precedent — and
+`serial` because its pinned contract requires a persistent grains
+store (`dnsserial_<zone>` across runs; `update=True` must increment
+the stored value) that StateKit does not yet have — upgrade path:
+register once a persistent local grains/state store module lands. The
+generated R10 report (`docs/differential/R10/report.yaml`,
+`round: R10.3a`) records 13 dnsutil catalog functions, 11 public, 8
+registered, 3 pending (hosts_append, hosts_remove, serial); R10 totals
+30 catalog / 26 public / 23 registered / 3 pending plus the unchanged
+7 dig aliases, mock-only; the R3-R9 report hashes are unchanged. The
+catalog regeneration that accompanies this phase
+(`go run ./tools/salt-reference`) moves the dnsutil family into
+`implemented_families` and records the eight new names in
+`docs/catalog/coverage.yaml` (source inventory 1240→1248, catalog
+intersection 1211→1219; `compatibility.yaml` implemented 117→118,
+excluded 50→49); the dnsutil catalog file itself is unchanged.
+
+Parsing surface: `parse_hosts` and `parse_zone` read files only
+through `runtime.ReadFileBounded` over `Runtime.FS` with an explicit
+1 MiB ceiling per read — a fixed divergence from the pinned unbounded
+`salt.utils.files.fopen` — and the bounded read requires a regular
+file and never follows symlinks (final component or any parent), so
+devices, FIFOs, and symlink-redirected paths are rejected before any
+content is allocated. The boundary is for local trusted
+same-principal CLI use only, and every error surface is value-free
+(no file content and no caller path travels in a result, error, or
+log; no test reads the host `/etc/hosts` — MemoryFS fixtures only).
+`parse_hosts` keeps the pinned shapes exactly: Python-falsy inline
+input (None or the empty string) triggers the file read, a failed
+read answers the exact pinned result string
+`Error: hosts data was not found`, comments are recognized only when
+`#` is the first character of the line (an inline `#` becomes an
+ordinary alias token; a ` # col0` line contributes the `#` IP key),
+duplicate aliases accumulate per IP in encounter order with
+duplicates kept, a bare-IP line answers an allocated non-nil empty
+alias list (JSON `[]`, never `null`), and the default path is exactly
+`/etc/hosts`. Python `splitlines()`/`split()` whitespace semantics
+are ported exactly (`\r`, `\r\n`, `\v`, `\f`, U+001C..U+001E, U+0085,
+U+2028, U+2029 boundaries; U+001F a `split()` separator but not a
+line boundary — the dig family's verified predicate family). One
+documented safe divergence: a whitespace-only line raises IndexError
+in the pinned source and is skipped here. `parse_zone` ports the
+pinned simplistic line parser (semicolon stripping, `$DIRECTIVE`
+capture, the `(`…`)` multi-line SOA join including the
+unterminated-parenthesis partial-result quirk, the global `@`→ORIGIN
+replacement, substring SOA detection, the `comps.pop(1)` branch for
+non-IN second tokens, CONTACT's first-dot→`@` replacement, the NS
+list, the first-MX-only quirk, the A/AAAA TARGET/TTL form for
+owner-TTL-IN records beside the generic string bucket for 4-token
+records, and TXT/CAA/PTR through the generic bucket) — the parser
+ceiling matches the pinned source (not RFC 1035 complete: no
+$INCLUDE, no escape/quoting, no TTL inheritance), Python dict
+insertion order is not preserved by Go maps (list order is), and
+every pinned crash position (short NS/PTR/MX lines, a record before
+any ORIGIN, a directive without a value, a non-numeric H/D time
+value, and directive/record type collisions over the NS/A/TXT keys)
+maps to one fixed value-free malformed-zone error with no partial
+results. A truthy `zonefile` is read first through the bounded read
+and its content replaces the inline zone on success (an empty file
+answers the pinned `Error: Zone data was not found` even when inline
+data exists — oracle-verified), while read failures silently keep
+the inline data exactly like the pinned `try/except pass`. Every
+expected parse shape was oracle-verified by executing the pinned
+Python source locally (the pinned
+`tests/pytests/unit/modules/test_dnsutil.py` fixture included).
+
+`_to_seconds` (private) keeps the pinned quirks exactly: the pinned
+unit vectors (`4H`→14400, `1D`→86400, `2W`→604800, `""`→604800,
+`604801`→604800), case-insensitive H/D/W, every `H`/`D` removed
+before the parse, the W branch answering one week without any numeric
+parse (`w`, `abcW`), the else branch answering one week for
+unparsable values (`abc`, U+001C-wrapped digits), zero and negatives
+passing through (`0H`→0, `-2H`→-7200, `-1`→-1), `168H` landing
+exactly on the cap, and Python base-10 `int()` grammar — outer
+int() whitespace (` 12 H `→43200), Unicode Nd digits
+(`２４H`→86400, `٢٤H`→86400), single between-digit underscores
+(`2_4H`→86400; `_24H` rejects like the pinned ValueError crash
+position), and one ASCII sign (`+2H`→7200). Two documented
+micro-divergences: magnitudes beyond int64 saturate (positive
+saturation still caps to one week; negative saturation answers
+`math.MinInt64` where Python keeps the exact arbitrary-precision
+negative), and Go's simple ToUpper does not reproduce the single
+U+1E96 full-uppercase expansion (Python takes the H branch there and
+crashes; StateKit answers the else branch's one week).
+
+Delegation surface: `check_ip`, `A`, `AAAA`, `NS`, `SPF`, and `MX`
+delegate to the registered dig family through `rt.Exec.Call` — the
+StateKit nested-invocation boundary (the caller's context carries
+cancellation and deadlines into the nested call; the dig module's own
+trusted-process boundary, budgets, and call-time gates apply per
+delegation) — with exact argument pass-through: nameservers forward
+as-is, `NS` forwards `resolve` with the pinned `True` default, `SPF`
+forwards `record` with the pinned exact `"SPF"` default, `MX`
+forwards `resolve` with the pinned `False` default, and the delegated
+value and error class propagate unchanged. dnsutil never parses
+addresses itself and never dispatches a process: no `netip`, no
+`net.DefaultResolver`, no `net.LookupIP`, and no socket use exist
+anywhere in the family. `_has_dig` is ported as the
+trusted-resolution gate through the Runner's optional
+`process.TrustedCommandResolver` capability (the dig module's
+documented PATH `which()` divergence), so a failing resolver, a
+capability-less Runner, or no Runner at all answers the pinned result
+string `This function requires dig, which is not currently
+available` with zero dispatch; the pinned A/AAAA
+`socket.getaddrinfo` fallback when dig is unavailable is an
+explicitly deferred divergence (no host-resolver egress). When the
+gate passes but the registry carries no matching dig function — the
+pinned `__salt__` lookup crash position — the call fails closed with
+one fixed value-free unavailable error.
+
+Evidence: direct/registry/CLI tests carry the pinned
+`tests/pytests/unit/modules/test_dnsutil.py` vectors and the
+oracle-verified parse shapes; the dig delegation is pinned at direct,
+registry, and CLI surfaces over the real dig family with a scripted
+fake Runner behind a test trusted resolver (exact fixed argv
+`-r +short -q <name> -t <type>` plus one validated `@server`, exact
+child environment allowlist, shell-free); the dnsutil behavioral
+tests carry the `dns_contract` build tag so the default host CI
+`go test ./...` does not execute them, and the tag boundary is
+statically pinned by `TestR10DNSContractTagBoundary` (now covering
+both the three dig and the four dnsutil contract test names). No dig
+binary is executed, no DNS name is resolved, no network is touched,
+and no host `/etc/hosts` or zone file is read by any test.
+
+Remediation (2026-09-28, still within the uncommitted R10.3a phase):
+the final review findings R103A-FINAL-01 and R10.3A-SEC-01 are closed in
+`modules/exec/dnsutil`, and the security-gate follow-up
+R103A-GATE-01/R103A-GATE-02/R103A-SEC-FINAL-01 tightened the result
+budgets to the retained serialized output. R103A-FINAL-01: a
+multi-line `(`…`)` continuation join that strips every token (the
+whitespace-only join of the multiline zone `"(\n)\n"` — an empty token
+slice after the parenthesis/continuation parsing) reached `comps[0]`
+and panicked; the pinned parser raises IndexError in the same position,
+and the port answers the exact fixed value-free `dnsutil: malformed
+zone data` error with no partial result and no panic, pinned at
+direct, registry, and CLI surfaces with zero dig dispatch.
+R10.3A-SEC-01/R103A-GATE-01/02 (exact ceilings, all enforced before or
+during parsing with one fixed value-free error per class —
+`dnsutil: input exceeds limit` for the source-byte ceilings,
+`dnsutil: parser limit exceeded` for the input-record and cell
+ceilings, `dnsutil: result byte limit exceeded` for the serialized
+result representation, `dnsutil: result item limit exceeded` for the
+retained result items — and no partial results): inline `hosts`/`zone`
+values are capped at the shared 1 MiB ceiling of the `ReadFileBounded`
+file reads before any processing (exactly 1 MiB parses; one byte over
+rejects); `hostsfile`/`zonefile` path arguments over 4096 bytes are
+rejected before the filesystem is touched and answer the pinned
+read-failure compatibility shapes; parsing is bounded at at most 4096
+input records (non-blank, non-comment lines), 4096 bytes per parsed
+token or derived cell, 8192 retained result items — every retained
+JSON object member across all nested maps plus every list element and
+duplicate-appended element, so one owner-TTL-IN-A record accounts its
+owner member and the TARGET and TTL members it inserts — and 4 MiB of
+the COMPLETE serialized result representation: every map key
+(including every expanded `'@'`→ORIGIN generic-bucket key), every
+value, the exact `encoding/json` escaping (quotes, backslash, the
+`\b\f\n\r\t` short forms, the remaining control bytes, the HTML
+triplet, U+2028/U+2029, and invalid UTF-8), and every nested
+map/array delimiter, colon, and comma. The result budgets are tracked
+exactly as the retained output while it is built — a `jsonStringLength`
+length oracle plus per-insertion structural deltas, never a
+`json.Marshal` of the result and never a counting walker that buffers
+the encoding — with overflow-safe counters, and each `reserve` runs
+BEFORE the key/value/row is inserted, so a map-key overwrite replaces
+the previous value's bytes per the retained output (monotonic: no
+sequence of records, overwrites, or duplicate appends can end over a
+ceiling the counter did not see) while duplicate rows keep Salt
+order. The `'@'`→ORIGIN expansion is guarded before allocation by the
+exact int64 match-count estimate `len(line)+matches*(len(origin)-1)`
+against the 1 MiB ceiling; the multi-line join and the expansion are
+linear builders; and every slice/index access is length-checked.
+Boundaries are pinned by tests with small inputs: a fake bounded
+filesystem reporting oversize, a counting fake filesystem proving the
+too-long path never reaches `Runtime.FS`, the inline length cap at
+exactly 1 MiB, repeated `@` plus a 4096-byte origin at 255/256 matches
+(1,044,734 bytes parse / 1,048,831 reject), hosts rows at 4096/4097,
+the malformed empty continuation, and the result-budget gate probes —
+the ~17 KiB zone (origin = 3999 `a` chars + dot, 1024 distinct records
+`x. IN @<i> @`) that previously answered ~8.2 MB of JSON rejects with
+the fixed byte error and nil result (the exact boundary located by
+bisection against an `encoding/json` test-oracle map: the largest
+fitting record count parses with byte-exact oracle shape and size, one
+more rejects), 1100 distinct `t<i>@` type keys over a 4081-byte origin
+reject before the expanded bucket key is inserted, 4095 unique
+owner-TTL-IN-A rows retain 12,287 nested items and reject with the
+fixed item error (exact boundary 2730 rows = 8192 items), control-byte
+escaping amplification on parse_hosts (each 4096-byte `\x01` alias
+retains 24,578 JSON bytes) rejects value-free, and under-ceiling
+distinct buckets carrying quotes/backslash/control/DEL/HTML-triplet/
+non-ASCII keys and values parse successfully with the measured
+`encoding/json` size within the cap (U+2028/U+2029 are
+pythonSplitlines line boundaries that cannot survive into a parser
+cell, so their escaping classes are oracle-pinned at the string level)
+— each rejecting with no partial map or slice, and the module contract
+and CLI surfaces preserve the nil results and value-free errors with
+zero dig dispatch. Registration is unchanged: R10.3a stays
+exactly 8 of the 11 public dnsutil catalog functions registered, with
+`hosts_append`, `hosts_remove`, and `serial` pending for the recorded
+reasons and upgrade paths, and external CI evidence stays
+`pending_external_ci`; the R3-R9 report hashes are unchanged.
+
+Remediation follow-up (2026-09-29, still within the uncommitted R10.3a
+phase): the two independent gate findings on the result budgets are
+closed in `modules/exec/dnsutil`.
+R103A-GATE-02 — retained item accounting was wrong on shape-changing
+replacements: a plain-string bucket owner rewritten by the
+owner-TTL-IN-A form gained the TARGET and TTL members but reserved an
+item delta of zero, an object flattened back to a string (and a
+top-level bucket or NS/MX list flattened by a directive) never
+returned its removed descendants, so the item counter drifted off the
+retained output in both directions. The budget now caches every
+top-level member's whole retained subtree item count beside its byte
+size and reserves the exact new-minus-old delta of BOTH budgets on
+every replacement (a per-entry subtree oracle answers 2 items for the
+TARGET/TTL object and 0 for the scalar), positive deltas before
+insertion and negative deltas applied only on the successful
+replacement path — Salt overwrite and duplicate-append order
+semantics untouched. Boundary regressions are independently computed:
+the gate vector ($ORIGIN + two generic A strings for x0/x1 + the two
+owner-TTL-IN-A rewrites of those owners + 2729 fresh
+owner-TTL-IN-A rows) retains 8195 final items and now rejects with
+`dnsutil: result item limit exceeded` and a nil result (the pre-fix
+counter read 8191 and let the 8195-item result escape), the separate
+2730-row structure retains exactly 8192 items and still parses, the
+top-level bucket→directive shrink (101-item TXT subtree → 1) admits
+the exact-8192 fill the stale counter falsely rejected, and the nested
+object→scalar rewrite returns its two items at the same boundary.
+R103A-FINAL-BYTES-01 — the nested TARGET/TTL object contributes
+exactly 18 structural bytes excluding the encoded values
+(`{`, `"TARGET"`, `:`, `,`, `"TTL"`, `:`, `}`), not 19; both
+calculation sites (the insertion path and the overwrite-size oracle)
+are corrected, and an independent `encoding/json` oracle boundary test
+pins a nested A/AAAA result whose exact compact encoding is exactly
+4,194,304 bytes (accepted, byte-exact shape, escape classes and every
+map-member delimiter included) with one encoded byte above rejected
+before insertion and a nil result. All four ceilings (1 MiB
+input/expansion, 4096 records/cells, 8192 items, 4 MiB complete
+result) are unchanged, the counters stay overflow-safe, the parser
+never marshals the result to measure it, and registration, pending
+ledger, and external CI status are unchanged.
+
+| Phase | Scope | Implementation executor role | Independent gate(s) | Result / boundary |
+|---|---|---|---|---|
+| `R10.3a-GATE-BYTES` (uncommitted remediation of R103A-GATE-02 + R103A-FINAL-BYTES-01; same phase, no registration change) | `modules/exec/dnsutil/dnsutil.go` only (plus its tests, the tagged module contract test, the CLI contract test, the differential dnsutil vectors, and the R10 report generator/artifact/porting notes): the budget caches every top-level member's whole retained subtree ITEM count beside its byte size and reserves the exact new-minus-old delta of both budgets on every shape-changing replacement (scalar→TARGET/TTL object +2 nested members, object→scalar −2, a directive flattening a bucket or NS/MX list returns every removed descendant; positive deltas before insertion, negative deltas applied only on the successful replacement; duplicate appends still count individually; Salt overwrite/order semantics untouched); the nested TARGET/TTL object's structural bytes corrected from 19 to the exact 18 at both calculation sites (the A/AAAA insertion path and the overwrite-size oracle `{`, `"TARGET"`, `:`, `,`, `"TTL"`, `:`, `}`) | `backend-engineer-senior` | Local quality gates re-run in conforming rootless Podman (`.gotmp/r103a-gate02-bytes-gate` store, `network=none`, RO source snapshot + RO module cache, nonroot keep-id, cap-drop incl. bounding set/no-new-privileges, bounded pids/memory/cpu, writable work in tmpfs only): preflight (nonroot uid, CapEff/CapBnd zero, NoNewPrivs 1), gofmt, untagged plus `dns_contract` focused `go test` over `./internal/process ./modules/exec/dig ./modules/exec/dnsutil ./internal/cli ./internal/config ./internal/bootstrap ./tests/differential`, race (tagged dnsutil/dig/cli/differential plus differential/bootstrap), vet (untagged `./...` plus tagged), differential generator consistency (byte-identical regeneration) and full differential suite, R3-R9 report hashes unchanged, cross-compilation (linux/darwin/windows amd64 dnsutil tagged test binary, linux cli tagged test binary, statekit binary); independent code security review pending, external gates not yet run | R103A-GATE-02 closed: the gate vector ($ORIGIN + two generic A strings for x0/x1 + the two owner-TTL-IN-A rewrites + 2729 fresh rows = 8195 final retained items) rejects with `dnsutil: result item limit exceeded` and nil result (pre-fix counter read 8191 and let it escape), pinned at direct/registry/CLI with zero dig dispatch and empty CLI stdout; the separate 2730-row structure (exactly 8192 items) parses; the top-level bucket→directive shrink (101→1 items) admits the exact-8192 fill the stale counter falsely rejected and its one-row-over variant rejects; the nested object→scalar rewrite returns its two items at the boundary; R103A-FINAL-BYTES-01 closed: an independent `encoding/json` oracle boundary test (escape classes in keys and values, every map-member delimiter) accepts a nested A/AAAA result whose exact compact encoding is exactly 4,194,304 bytes (byte-exact shape) and rejects one encoded byte above before insertion with `dnsutil: result byte limit exceeded` and nil result, at direct, registry (bootstrap), and differential surfaces, with the CLI surface pinning the one-byte-over rejection (empty stdout, zero dig dispatch) and the byte-exact complete-result framing on a small same-shape zone; all ceilings unchanged (1 MiB input/expansion, 4096 records/cells, 8192 items, 4 MiB complete result), overflow-safe counters, no result marshaled to measure it; registration unchanged (8/11 public; external CI `pending_external_ci`); `go.mod`/`go.sum` unchanged; R3-R9 report hashes unchanged |
+| `R10.3a` (uncommitted) | Bounded `dnsutil` exec slice (8 of 11 public: parse_hosts, parse_zone, check_ip, A, AAAA, NS, SPF, MX; _to_seconds/_has_dig private) over bounded no-follow `Runtime.FS` reads and `rt.Exec.Call` dig delegation with exact argument pass-through and pinned availability shapes; direct/registry/CLI tests carrying the pinned `tests/pytests/unit/modules/test_dnsutil.py` vectors plus oracle-verified parse-zone/`_to_seconds` shapes; R10 generator gains the bounded-slice `RegisteredSubset` assertion; generated R10 report at `round: R10.3a`; catalog regen moves dnsutil to implemented (8 names, source inventory 1240→1248, intersection 1211→1219) | `backend-engineer-senior` | Local quality gates in conforming rootless Podman (`.gotmp` store, `network=none`, RO source snapshot + RO module cache, nonroot keep-id, cap-drop incl. bounding set/no-new-privileges, bounded pids/memory/cpu, writable work in tmpfs only): gofmt, untagged plus `dns_contract` focused `go test` over `./internal/process ./modules/exec/dig ./modules/exec/dnsutil ./internal/cli ./internal/bootstrap ./tests/differential`, race (tagged dnsutil/dig/cli plus differential/bootstrap), vet (untagged `./...` plus tagged), differential generator consistency (byte-identical regeneration) and full differential suite, R3-R9 report hashes unchanged, cross-compilation (linux/darwin/windows amd64 dnsutil+dig tagged test binaries, linux process tagged test binary, statekit binary); independent code security review pending, external gates not yet run | Registered 8/11 public (13 catalog, 2 private; R10 totals 23 registered / 26 public / 3 pending); 3 pending with recorded reasons/upgrade paths (hosts_append+hosts_remove: arbitrary caller-path mutation without validation/backup/atomicity — bounded writer upgrade; serial: persistent grains store required — grains/state store upgrade); no family-complete claim; bounded no-follow 1 MiB file reads, value-free errors, no host `/etc/hosts`/zone reads in tests; deferred divergences documented exactly (A/AAAA socket fallback, whitespace-only hosts line skip, crash→fixed-error mapping, int64 saturation, U+1E96, map key order); `go.mod`/`go.sum` unchanged (no new dependency); R3-R9 report hashes unchanged. Builds on R9.2t `3342199`, R10.1 `343e9fe`, R10.2 `d30d3a2` |
+| `R10.3a-FINAL` (uncommitted remediation of R103A-FINAL-01 + R10.3A-SEC-01; same phase, no registration change) | `modules/exec/dnsutil/dnsutil.go` only (plus its tests, the tagged contract tests, and the R10 report generator/artifact/porting notes): empty multi-line join maps to the fixed value-free malformed-zone error (direct/registry/CLI, zero dig dispatch); shared 1 MiB inline cap before processing; 4096-byte path-argument rejection before FS use; parser ceilings 4096 input records / 8192 result items / 4096-byte cells / 4 MiB aggregate output; pre-allocation `'@'`→ORIGIN expansion guard on the exact int64 estimate; linear join/expansion builders; length-checked slice access; no partial results on any ceiling failure | `backend-engineer-senior` | Local quality gates re-run in conforming rootless Podman (`.gotmp/r103a-final-gate` store, `network=none`, RO source snapshot + RO module cache, nonroot keep-id, cap-drop incl. bounding set/no-new-privileges, bounded pids/memory/cpu, writable work in tmpfs only): preflight (nonroot uid, CapEff/CapBnd zero, NoNewPrivs 1), gofmt, untagged plus `dns_contract` focused `go test` over `./internal/process ./modules/exec/dig ./modules/exec/dnsutil ./internal/cli ./internal/config ./internal/bootstrap ./tests/differential`, race (tagged dnsutil/dig/cli/differential plus differential/bootstrap), vet (untagged `./...` plus tagged), differential generator consistency (byte-identical regeneration) and full differential suite, R3-R9 report hashes unchanged, cross-compilation (linux/darwin/windows amd64 dnsutil tagged test binary, linux cli tagged test binary, statekit binary); independent code security review pending, external gates not yet run | R103A-FINAL-01 closed (no panic, exact fixed value-free error, no partial output, zero dig dispatch at direct/registry/CLI); R10.3A-SEC-01 closed with the exact parser ceilings stated in the R10 report and above; registration unchanged (8/11 public; R10 totals 23 registered / 26 public / 3 pending hosts_append/hosts_remove/serial; external CI `pending_external_ci`); source precedence/defaults and documented semantics preserved (file-read fallbacks, pinned compatibility strings, unterminated-parenthesis partial quirk); native resolver fallback stays deferred; `go.mod`/`go.sum` unchanged; R3-R9 report hashes unchanged |
+| `R10.3a-SEC-FINAL` (uncommitted remediation of R103A-GATE-01 + R103A-GATE-02 + R103A-SEC-FINAL-01; same phase, no registration change) | `modules/exec/dnsutil/dnsutil.go` only (plus its tests, the tagged module contract test, the CLI contract test, the differential dnsutil vectors, and the R10 report generator/artifact/porting notes): aggregate ceiling redefined to 4 MiB of the COMPLETE serialized result representation — every map key (incl. every expanded `'@'`→ORIGIN generic-bucket key), every value, the exact `encoding/json` escaping (quotes, backslash, `\b\f\n\r\t` short forms, remaining control bytes, HTML triplet, U+2028/U+2029, invalid UTF-8), and every nested delimiter, colon, and comma — tracked exactly while the result is built via a `jsonStringLength` length oracle plus per-insertion structural deltas (no `json.Marshal` of the result, no walker that buffers the encoding, overflow-safe `delta > ceiling − current` comparisons), enforced BEFORE insertion; item ceiling redefined to 8192 retained JSON items (every nested object member plus every list/duplicate-appended element; an A/AAAA record accounts owner + TARGET + TTL; empty containers retain zero items and two delimiter bytes; null never appears); map-key overwrites replace the previous value's bytes per the retained output (monotonic, O(1) via a member-size cache); two new fixed value-free errors `dnsutil: result byte limit exceeded` / `dnsutil: result item limit exceeded` with nil results and no partial maps; duplicate rows keep Salt order without bypassing either cap | `backend-engineer-senior` | Local quality gates re-run in conforming rootless Podman (`.gotmp/r103a-sec-final-gate` store, `network=none`, RO source snapshot + RO module cache, nonroot keep-id, cap-drop incl. bounding set/no-new-privileges, bounded pids/memory/cpu, writable work in tmpfs only): preflight (nonroot uid, CapEff/CapBnd zero, NoNewPrivs 1), gofmt, untagged plus `dns_contract` focused `go test` over `./internal/process ./modules/exec/dig ./modules/exec/dnsutil ./internal/cli ./internal/config ./internal/bootstrap ./tests/differential`, race (tagged dnsutil/dig/cli/differential plus differential/bootstrap), vet (untagged `./...` plus tagged), differential generator consistency (byte-identical regeneration) and full differential suite, R3-R9 report hashes unchanged, cross-compilation (linux/darwin/windows amd64 dnsutil tagged test binary, linux cli tagged test binary, statekit binary); independent code security review pending, external gates not yet run | R103A-GATE-01 closed: the ~17 KiB gate probe (origin 3999 `a` + dot, 1024 records `x. IN @<i> @`, previously ~8.2 MB JSON) rejects with `dnsutil: result byte limit exceeded` and nil result, boundary located by bisection against an `encoding/json` oracle map (largest fitting count parses with byte-exact shape/size, one more rejects); 1100 distinct `t<i>@` type keys over a 4081-byte origin reject before the expanded bucket key is inserted; control-byte escaping amplification on parse_hosts rejects value-free; R103A-GATE-02 closed: 4095 unique owner-TTL-IN-A rows retain 12,287 nested items and reject with `dnsutil: result item limit exceeded` (exact boundary 2730 rows = 8192 items); R103A-SEC-FINAL-01 closed: under-ceiling buckets with quotes/backslash/control/DEL/HTML/non-ASCII parse successfully with measured `encoding/json` size ≤ cap (U+2028/U+2029 are splitlines boundaries that cannot enter a parser cell — oracle-pinned at the string-encoding level), and registry/CLI surfaces preserve nil results, value-free errors, and zero dig dispatch; R10 report scenario `dnsutil.result-output-budgets` and evidence/compatibility notes updated to the exact thresholds; registration unchanged (8/11 public; external CI `pending_external_ci`); `go.mod`/`go.sum` unchanged; R3-R9 report hashes unchanged |
+
 ##### 2026-09-28 current status (R10.2 dig exec family; R10.2 remediation closed; external CI pending)
 
 R10.2 registers the complete dig exec family of the pinned
