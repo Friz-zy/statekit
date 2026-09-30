@@ -1663,6 +1663,66 @@ The PTD tables below are retained as an immutable audit snapshot. These
 overrides are the current status and do not delete or rewrite any original
 rows or counts.
 
+##### 2026-09-30 current status (R10.4b private firewall parsing helper; external CI pending)
+
+R10.4b adds the SECOND vsphere-family surface of the pinned
+`salt/modules/vsphere.py` to the existing `modules/exec/vsphere`
+package: the unexported `formatFirewallStdout(cmdRet map[string]any)
+(map[string]any, error)`, a bounded pure port of `_format_firewall_stdout`
+(pinned lines 7685–7702, pinned revision
+`8b63e700637e40d76f80a00d95c60471797c73b9`). Nothing is registered:
+there is no `Name()`, no bootstrap registration, no public catalog
+entry, no registry/counter increment, and no catalog/coverage
+regeneration — R10 public totals are UNCHANGED (15 canonical public + 7
+dig aliases; dnsutil 10/11 public with `serial` pending; generated R10
+report still `round: R10.3b` with 25 registered_public / 1
+pending_public / 7 aliases). Like the R10.4a helper, it is an internal
+source-compatible parsing primitive, NOT a usable vSphere/cloud
+implementation: it holds no credentials, opens no endpoint, calls no
+PyVmomi/govc/vendor CLI, and makes no network or provider call — real
+provider transport remains ADR/decision-gated per the R10 policy
+(§2/R10: vendor CLI wrappers first; provider connections are a separate
+gated decision).
+
+The parser mirrors the pinned source exactly, quirk-inclusive: the
+"Name"/"---" startswith skips run on the RAW unstripped, un-lowercased
+line (unlike the coredump helper, leading whitespace or case never
+produces a skip — "  Name: 1" is stored as data under the exact key
+"Name:" and "NAME" is data), Python `str.split()` whitespace semantics
+(str.isspace(): Go unicode.IsSpace plus U+001C..U+001F, runs collapsed,
+no empty tokens) feed the pinned `rulesets[ruleset_status[0]] =
+bool(ruleset_status[1])` store where nonempty-string truthiness makes
+every stored value true — the token "false" stores true — only tokens
+[0] and [1] are consumed with longer tails discarded, unknown
+headings/rules are stored as data, and duplicate names overwrite in
+encounter order with plain map semantics. The pinned ret_dict shape is
+kept: `{"success": true, "rulesets": {...}}` with success the pinned
+hardcoded True, never derived from `cmd_ret["retcode"]`. Empty stdout
+iterates zero lines and returns the pinned empty dict with an allocated
+ruleset map; a whitespace-only or single-token row raises IndexError in
+the pinned source and answers the fixed malformed-row sentinel here.
+StateKit bounds that the pinned source lacks, fail-closed with fixed
+value-free sentinel errors and no partial result on any failure:
+stdout must be a string (missing key, nil, or any non-string type
+answers a fixed type error), input bytes ≤ 64 KiB (checked before
+UTF-8 validation), stdout must be valid UTF-8, at most 1024 lines
+(this loop has no pinned early exit, so every line is reached), each
+consumed token ≤ 4096 bytes, and at most 256 retained rulesets
+enforced before insertion (duplicates never grow the map). Mechanically,
+the R10.4a coredump loop's inline splitlines scanner was extracted into
+the shared package-private bounded splitter `pythonSplitlinesBounded`
+and rewired behavior-identically (the entire R10.4a tagged suite passes
+unchanged, including its exact line-limit boundaries and the 5001-line
+short-circuit), and the `str.split()` port follows the dig/dnsutil
+`pythonFields` convention. plans/testing.md needed NO change: the
+rootless `r10_contract` command already includes
+`./modules/exec/vsphere`, the contract file inventory is unchanged, and
+no GitHub workflow was touched.
+
+| Phase | Deliverable | Executor | Verification | Scope/notes |
+|---|---|---|---|---|
+| `R10.4b` @ `61c7944`+ (local working tree; continues the R10 line whose prior commits are `61c7944` R10.4a, `2ce0fbb` R10.3b, `b09faf6` R10.3a, `d30d3a2` R10.2, `343e9fe` R10.1; uncommitted at phase time) | `modules/exec/vsphere` package gains the PRIVATE unexported `formatFirewallStdout` bounded pure parser (no `Name()`, no bootstrap registration, no public catalog/counter increment — an internal source-compatible parsing primitive, not a usable vSphere/cloud implementation; real provider transport stays ADR/decision-gated) + `//go:build r10_contract` tagged tests appended to the existing `modules/exec/vsphere/vsphere_contract_test.go`: esxcli-shaped normal rulesets with pinned Go bool types, the "Name"/"---" skip battery (bare headers, prefixed words, dashes rows; two-dash rows as data), raw-prefix negative controls proving a normalized/corrected parser would differ (leading-space "  Name: 1" stored as data and "  Name" failing closed versus a strip-first parser, uppercase "NAME" stored versus a lowercasing parser, the token "false" storing true versus a corrected bool parser), the token-truthiness battery ("false"/"FALSE"/"0"/"no"/"None"/"off"/"-" all true), duplicate overwrite without map growth, unknown names with discarded tail tokens, Python whitespace separators (tabs, NBSP, U+3000, U+001F split-whitespace-not-boundary, U+001C boundary, CRLF one boundary, U+2028), exact unicode names without lowercasing (Cyrillic and U+0130 preserved verbatim), empty stdout returning the allocated empty ruleset dict, malformed rows (empty/whitespace-only/single-token with rows before them never escaping), type errors incl. a nil cmdRet, invalid UTF-8 with the size-before-UTF-8 ordering pin, exact 64 KiB/1024-line/4096-token/256-ruleset boundaries with +1 rejections and nil results (incl. the line-vs-malformed ordering at 1024/1025 rows and a duplicate row accepted over a full map), value-free error assertions over marker-bearing vectors with pairwise-distinct sentinels, the retcode-independence of the hardcoded success flag, and the exact two-key ret_dict shape; the R10.4a splitlines scanner was extracted into the shared bounded splitter `pythonSplitlinesBounded` and rewired behavior-identically, and the `str.split()` port follows the dig/dnsutil `pythonFields` convention | `backend-engineer-senior` | Local quality gates in conforming rootless Podman (fresh `.gotmp/r104b` vfs store populated by a local save/load copy of the already-present `golang:1.26-bookworm` image — no image pull, no registry, no network): preflight (nonroot keep-id uid 1000, CapEff/CapBnd zero, NoNewPrivs 1, `network=none` with an empty IPv4 route table and no non-loopback IPv6 address, source snapshot + module cache mounted RO with write probes rejected, read-only rootfs with tmpfs scratch); gofmt clean on the package and repo (the five pre-existing HEAD-drifted unrelated files excluded and unchanged); vet untagged + `r10_contract` tagged on `./modules/exec/vsphere` and vet on `./tests/differential`; whole-repo default `go build ./...`; default package test compile; focused `go test -tags=r10_contract ./modules/exec/vsphere` (32 top-level tests, 72 subtests, all green incl. the unchanged R10.4a coredump suite), `-race`, full `tests/differential` suite green (R3–R10 report generator consistency, R10 report unchanged at `round: R10.3b`), R2–R10 report sha256 hashes byte-identical before/after; cross-compilation amd64 linux/darwin/windows of the statekit binary and the `r10_contract` tagged vsphere test binaries; no external CI, no live network, no provider, no live service, no PyVmomi/govc/Runner dispatch anywhere; requested pids/memory/cpu limits were passed but this nested rootless runtime leaves the container cgroup unbounded (memory.max=max) — a reported enforcement gap, not a waiver | Executor role `backend-engineer-senior`; local synthetic fixtures only (inline literals; no host file reads, no Runner, no dig/Slack/cloud/vSphere dispatch, no network from any test); no public coverage (no catalog regen, no differential scope entry, no counter move — R10 totals unchanged: 15 canonical public + 7 dig aliases, dnsutil 10/11 public with `serial` pending, report `round: R10.3b` totals 25 registered_public / 1 pending_public / 7 aliases); no testing.md or GitHub workflow change needed (the rootless `r10_contract` command already includes `./modules/exec/vsphere` and the contract file inventory is unchanged); no provider parity claim and no family-complete claim (the vsphere catalog surface — PyVmomi/govc transport — remains unported and ADR/decision-gated); no external CI or live claims (`pending_external_ci`); `go.mod`/`go.sum` unchanged (stdlib only); `tests/live/mysql/Containerfile.go-build` pre-existing local modification preserved; R2–R9 report hashes unchanged |
+
 ##### 2026-09-30 current status (R10.4a private vsphere parsing helper; external CI pending)
 
 R10.4a adds the FIRST vsphere-family surface of the pinned
