@@ -876,14 +876,17 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
   tagged file is excluded without the tag (host `go test ./...` behavior
   unchanged); `vsphere.go` contains no `Name`/registration and
   `internal/bootstrap` references no vsphere. One pre-existing gate defect
-  was exposed, not introduced by this change and not remediated here: with
-  the gate's exact read-only `/workspace` bind and `--workdir /workspace`,
-  the untagged `tests/differential` `TestR43SmokeCalls` fails EROFS because
-  `temp.dir`'s default parent is the relative `.statekit/tmp` under the
-  process working directory (the same command passes all five packages on a
-  writable snapshot); remediation belongs to the backend test owner or a
-  separately authorized build-stage cwd/scratch change before the first
-  external run.
+  was exposed, not introduced by this change: with the gate's exact
+  read-only `/workspace` bind and `--workdir /workspace`, the untagged
+  `tests/differential` `TestR43SmokeCalls` failed EROFS because `temp.dir`'s
+  default parent was the relative `.statekit/tmp` under the process working
+  directory. R10.4a resolved that blocker:
+  `tests/differential/r43_scope_test.go` now passes `scratch := t.TempDir()`
+  as the `temp.dir` parent and asserts the created directory is contained
+  inside it, and the backend-lead independently ran `TestR43SmokeCalls` and
+  all five contract packages from the read-only `/workspace` bind and they
+  passed. Evidence is local rootless only; external GitHub CI evidence
+  remains `pending_external_ci` (no actual GitHub execution is claimed).
 - **Quality gates and phased handoff:** executor `devops-platform-engineer-lead`
   owns runtime/static mock validation; executor `backend-engineer-senior` owns
   the differential dig fake vectors behind the existing build tag. The backend
