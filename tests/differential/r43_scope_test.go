@@ -64,12 +64,18 @@ func TestR43SmokeCalls(t *testing.T) {
 	execdata.SetDataDir(scratch)
 	t.Cleanup(func() { execdata.SetDataDir(savedDir) })
 
-	// temp.dir round trip.
-	dirRes, derr := exectemp.DirFunc{}.Execute(ctx, rt, &exectemp.DirArgs{})
+	// temp.dir round trip. The parent argument points at the per-test
+	// scratch dir: with no parent, the real temp.dir function defaults
+	// to the cwd-relative .statekit/tmp, which is unwritable in the
+	// read-only rootless CI checkout.
+	dirRes, derr := exectemp.DirFunc{}.Execute(ctx, rt, &exectemp.DirArgs{Parent: &scratch})
 	if derr != nil {
 		t.Fatal(derr)
 	}
 	tempDir := dirRes.(string)
+	if !strings.HasPrefix(tempDir, scratch+string(filepath.Separator)) {
+		t.Fatalf("temp.dir = %q; want a directory inside %q", tempDir, scratch)
+	}
 	rt.FS.WriteFile(tempDir+"/marker", []byte("x"), 0o644)
 	defer func() { _ = rt.FS.RemoveAll(tempDir) }()
 

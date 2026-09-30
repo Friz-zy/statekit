@@ -891,7 +891,7 @@ set -- --preflight-only
         self.assertIn('build_go_cache=/out/gocache', script)
         self.assertIn('--env "GOCACHE=$build_go_cache"', script)
         self.assertIn('[[ "$cgroup_mode" == enabled ]] || return 1', script)
-        self.assertIn('go test -tags=dns_contract -count=1 ./modules/exec/dig ./internal/cli ./tests/differential ./modules/exec/dnsutil', script)
+        self.assertIn('go test -tags=dns_contract,r10_contract -count=1 ./modules/exec/dig ./internal/cli ./tests/differential ./modules/exec/dnsutil ./modules/exec/vsphere', script)
         self.assertLess(script.index("'dig-contract-offline-passed'"), script.index('cluster_state="$(bounded_timeout 60 python3'))
         for helper in ('cleanup_database_and_role', 'cleanup_cluster'):
             self.assertIn(helper + '() {\n  (( ${dig_contract_only:-0} == 0 )) || return 0', script)

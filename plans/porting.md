@@ -1663,6 +1663,62 @@ The PTD tables below are retained as an immutable audit snapshot. These
 overrides are the current status and do not delete or rewrite any original
 rows or counts.
 
+##### 2026-09-30 current status (R10.4a private vsphere parsing helper; external CI pending)
+
+R10.4a adds the FIRST vsphere-family surface of the pinned
+`salt/modules/vsphere.py` as a deliberately PRIVATE, source-backed
+parsing primitive: the new `modules/exec/vsphere` package holds only
+the unexported `formatCoredumpStdout(cmdRet map[string]any)
+(map[string]any, error)`, a bounded pure port of
+`_format_coredump_stdout` (pinned lines 7655–7682, pinned revision
+`8b63e700637e40d76f80a00d95c60471797c73b9`). Nothing is registered:
+there is no `Name()`, no bootstrap registration, no public catalog
+entry, no registry/counter increment, and no catalog/coverage
+regeneration — R10 public totals are UNCHANGED (15 canonical public + 7
+dig aliases; dnsutil 10/11 public with `serial` pending; generated R10
+report still `round: R10.3b` with 25 registered_public / 1
+pending_public / 7 aliases). The helper is documented as an internal
+source-compatible parsing primitive, NOT a usable vSphere/cloud
+implementation: it holds no credentials, opens no endpoint, calls no
+PyVmomi/govc/vendor CLI, and makes no network or provider call — real
+provider transport remains ADR/decision-gated per the R10 policy
+(§2/R10: vendor CLI wrappers first; provider connections are a separate
+gated decision).
+
+The parser mirrors the pinned source exactly, quirk-inclusive: Python
+`str.splitlines()` boundaries (\n, \r, \r\n one boundary, \v, \f,
+U+001C..U+001E, U+0085, U+2028, U+2029 — U+001F is strip-whitespace but
+never a boundary), `line.strip().lower()` before the prefix checks so
+stored values are lowercased too (U+0130 lowercased to "i"+U+0307 like
+Python's unconditional SpecialCasing entry; the context-dependent
+final-sigma rule is the one documented lowercasing divergence), the
+four case-insensitive prefixes (`enabled:`, `host vnic:`,
+`network server ip:`, `network server port:`), the SUBSTRING truth test
+`"true" in parts[1]` on the UNSTRIPPED second field ("trueish"/"nottrue"
+both enable), the pinned `break` that stops parsing immediately on a
+false store while keeping all previously stored fields, Python
+`split(":")[1]` colon-field indexing kept verbatim (IPv6 values
+truncate at the first inner colon, adjacent colons store empty values,
+everything past the second colon is discarded — never normalized), and
+duplicate recognized fields overwriting in encounter order while
+unknown labels and blank lines fall through. StateKit bounds the pinned
+source lacks, fail-closed with fixed value-free sentinel errors and no
+partial map on any failure: stdout must be a string (missing key, nil,
+or any non-string type answers a fixed type error instead of the
+pinned KeyError/AttributeError), input bytes ≤ 64 KiB (checked before
+UTF-8 validation), stdout must be valid UTF-8, at most 1024 scanned
+lines (the budget applies to lines the scan actually reaches; the
+pinned `enabled: false` break short-circuits first, matching the
+pinned short-circuit behavior on a 5001-line vector the oracle
+confirms), each retained field value ≤ 4096 bytes, and a defensive
+≤ 4 retained fields guard. Only synthetic stdout is ever parsed; no
+credential/account/host data and no provider call exists in the helper
+or its tests.
+
+| Phase | Deliverable | Executor | Verification | Scope/notes |
+|---|---|---|---|---|
+| `R10.4a` @ `8225022`+ (local working tree; continues the R10 line whose prior commits are `2ce0fbb` R10.3b, `b09faf6` R10.3a, `d30d3a2` R10.2, `343e9fe` R10.1; uncommitted at phase time) | `modules/exec/vsphere` package with the PRIVATE unexported `formatCoredumpStdout` bounded pure parser (no `Name()`, no bootstrap registration, no public catalog/counter increment — an internal source-compatible parsing primitive, not a usable vSphere/cloud implementation; real provider transport stays ADR/decision-gated) + `//go:build r10_contract` tagged test suite: normal fields with pinned Go bool/string result types, mixed case/whitespace (strip-before-startswith pinned: leading Python whitespace never blocks a match, U+200B does), substring-true behavior, early false termination incl. the 5001-line short-circuit, duplicate overwrite, unknown labels, bare/non-matching prefixes, colon-truncated IPv6 and adjacent-colon empties, empty outputs returning an allocated empty map, malformed types (nil map, missing key, non-strings) and invalid UTF-8, all 11 line separators, exact 64 KiB/1024-line/4096-byte boundaries with +1 rejections and nil results, value-free error assertions over marker-bearing vectors, and U+0130 special-casing; local Python-oracle differential harness under `.gotmp/r104a` (sandbox-only, not committed as a repo artifact beyond the ledger) replaying 651 vectors through the pinned source extracted verbatim from the read-only `saltstack/salt/modules/vsphere.py` lines 7655–7682 | `backend-engineer-senior` | Local quality gates in conforming rootless Podman (`.gotmp/r104a` store, `network=none` with 0 non-lo interfaces, RO source snapshot + RO module cache, nonroot keep-id uid 1000, cap-drop ALL incl. bounding set, no-new-privileges, bounded pids/memory/cpu, writable work in tmpfs only, project `.statekit` scratch roots as uid-mapped tmpfs at their exact cwd-relative paths): preflight (nonroot uid, CapEff/CapBnd zero, NoNewPrivs 1, source/modcache RO probes), gofmt clean, vet (untagged + `r10_contract` tagged) on `./modules/exec/vsphere`, whole-repo default `go build ./...`, default `go test ./modules/exec/vsphere` package compile, focused tagged `go test -tags=r10_contract ./modules/exec/vsphere` plus `-race`, full `tests/differential` suite green (R3–R10 report generator consistency, R10 report unchanged at `round: R10.3b`), pinned-source Python oracle differential 651/651 records matching exactly over the byte-hash-verified package copy, cross-compilation amd64 linux/darwin/windows of the vsphere package, the `r10_contract` tagged test binary, and the statekit binary; no external CI, no live network, no provider, no live service, no PyVmomi/govc/Runner dispatch anywhere | Executor role `backend-engineer-senior`; local synthetic fixtures only (inline literals; no host file reads, no Runner, no dig/Slack/cloud dispatch, no network from any test); no public coverage (no catalog regen, no differential scope entry, no counter move — R10 totals unchanged: 15 canonical public + 7 dig aliases, dnsutil 10/11 public with `serial` pending, report `round: R10.3b` totals 25 registered_public / 1 pending_public / 7 aliases); no provider parity claim and no family-complete claim (the vsphere catalog surface — PyVmomi/govc transport — remains unported and ADR/decision-gated); no external CI or live claims (`pending_external_ci`); `go.mod`/`go.sum` unchanged (stdlib only); `tests/live/mysql/Containerfile.go-build` pre-existing local modification preserved; R3–R9 report hashes unchanged |
+
 ##### 2026-09-29 current status (R10.3b dnsutil hosts mutation; external CI pending)
 
 R10.3b completes the dnsutil mutation surface of the pinned
@@ -3788,8 +3844,10 @@ closed for all three provider families (`aptpkg` 34/0, `yumpkg` 39/0,
 
 Follow-up backlog (out of R3.3 scope): lock-respecting zypper runner
 variant for the cache-writing download, BFS walk-order fidelity across
-providers, gofmt `group_install_test.go`, and `TestR43SmokeCalls` temp-dir
-isolation.
+providers, and gofmt `group_install_test.go`. The former
+`TestR43SmokeCalls` temp-dir isolation item is complete: R10.4a
+supplies `t.TempDir()` and the independent read-only contract gate
+passed (not yet committed; no hash recorded).
 
 Execution was Podman-only. The scoped HUMAN exception
 `SDD-SANDBOX-CONTRACT-001` covered noncritical cgroup controls; critical

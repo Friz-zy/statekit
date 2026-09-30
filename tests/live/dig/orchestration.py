@@ -22,9 +22,9 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[3]
 GO_IMAGE = 'docker.io/library/golang:1.26.6@sha256:0d1d3a794be25f809dd2cb3160d8c73276c4056a9f8242a138e908ddeee7b6b6'
 PYTHON_IMAGE = 'docker.io/library/python:3.14.7@sha256:be8ccd085666c34273c9dc5607c9842f8b2e3116128aae45148ce164c07ce09d'
-PACKAGES = ['./modules/exec/dig', './internal/cli', './tests/differential', './modules/exec/dnsutil']
+PACKAGES = ['./modules/exec/dig', './internal/cli', './tests/differential', './modules/exec/dnsutil', './modules/exec/vsphere']
 FETCH_ARGV = ['/usr/local/go/bin/go', 'mod', 'download']
-CONTRACT_ARGV = ['/usr/local/go/bin/go', 'test', '-tags=dns_contract', '-count=1', *PACKAGES]
+CONTRACT_ARGV = ['/usr/local/go/bin/go', 'test', '-tags=dns_contract,r10_contract', '-count=1', *PACKAGES]
 DOMAINS = ('proxy.golang.org', 'sum.golang.org', 'storage.googleapis.com')
 LABEL = 'statekit.r102dig.'
 FETCH_NETWORK = 'slirp4netns:allow_host_loopback=false,enable_ipv6=true'
@@ -301,7 +301,7 @@ def verify_contract_inventory():
     # exact argv order also rejects duplicate package entries.
     for path in ('tests/live/dig/payload.sh', 'tests/live/postgres/ci.sh'):
         commands = [line for line in (ROOT / path).read_text().splitlines()
-                    if 'go test -tags=dns_contract -count=1' in line]
+                    if 'go test -tags=dns_contract,r10_contract -count=1' in line]
         require(len(commands) == 1, 'contract-package-inventory-unverifiable')
         require(re.findall(r'\./[\w./-]+', commands[0]) == PACKAGES,
                 'contract-package-inventory-mismatch')
@@ -325,11 +325,13 @@ def preflight(runtime):
     require('ID=ubuntu\n' in release and 'VERSION_ID="24.04"' in release, 'runner-os-unverified')
     for name, image in (('GO_TOOLCHAIN_IMAGE', GO_IMAGE), ('PYTHON_CHECK_IMAGE', PYTHON_IMAGE)):
         require(os.environ.get(name, image) == image, 'image-override-rejected')
-    for path in ('internal/cli/dig_cli_test.go', 'modules/exec/dig/dig_test.go',
-                 'modules/exec/dnsutil/dnsutil_contract_test.go',
-                 'internal/cli/dnsutil_cli_test.go',
-                 'tests/differential/r10_dnsutil_contract_test.go'):
-        require((ROOT / path).read_text().splitlines()[0] == '//go:build dns_contract', 'contract-build-tag-missing')
+    for path, tag in (('internal/cli/dig_cli_test.go', 'dns_contract'),
+                      ('modules/exec/dig/dig_test.go', 'dns_contract'),
+                      ('modules/exec/dnsutil/dnsutil_contract_test.go', 'dns_contract'),
+                      ('internal/cli/dnsutil_cli_test.go', 'dns_contract'),
+                      ('tests/differential/r10_dnsutil_contract_test.go', 'dns_contract'),
+                      ('modules/exec/vsphere/vsphere_contract_test.go', 'r10_contract')):
+        require((ROOT / path).read_text().splitlines()[0] == '//go:build ' + tag, 'contract-build-tag-missing')
     verify_contract_inventory()
     require(re.search(r'^go 1\.26\.6$', (ROOT / 'go.mod').read_text(), re.M), 'go-version-unlocked')
     require(not re.search(r'^\s*(replace|toolchain)\b', (ROOT / 'go.mod').read_text(), re.M), 'go-manifest-override')

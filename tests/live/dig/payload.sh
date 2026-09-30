@@ -38,7 +38,7 @@ case "${1:-}" in
     case "$1" in
       go-preflight) exit 0 ;;
       verify) exec /usr/local/go/bin/go mod verify ;;
-      contract) exec /usr/local/go/bin/go test -tags=dns_contract -count=1 ./modules/exec/dig ./internal/cli ./tests/differential ./modules/exec/dnsutil ;;
+      contract) exec /usr/local/go/bin/go test -tags=dns_contract,r10_contract -count=1 ./modules/exec/dig ./internal/cli ./tests/differential ./modules/exec/dnsutil ./modules/exec/vsphere ;;
     esac
     ;;
   *) fail ;;

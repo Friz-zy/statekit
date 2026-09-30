@@ -644,8 +644,11 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
   recorded-response contract tests against the backend's scripted fake Runner
   behind the `dns_contract` build tag, with the tagged command covering
   `./modules/exec/dig`, `./modules/exec/dnsutil`, `./internal/cli`, and
-  `./tests/differential`. No dig contract test executes the dig
-  binary, resolves DNS, or opens a network connection. A live DNS smoke and
+  `./tests/differential`; R10.4a additionally runs the private
+  `./modules/exec/vsphere` synthetic parser contract behind the added
+  `r10_contract` build tag (exact command under Stages below). No dig contract test executes the dig
+  binary, resolves DNS, or opens a network connection; no vsphere contract
+  test contacts a vSphere/ESXi endpoint or any provider. A live DNS smoke and
   any external resolver destination are **not implemented in this phase**;
   the R10 plan records live smoke as opt-in-label-only and the resolver
   destination/provenance remains unapproved, so no such job, step, or local
@@ -713,8 +716,8 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
   fallback enters fetch. `GOTOOLCHAIN=local`, `GOWORK=off`, `GOENV=off`, fixed
   proxy/checksum settings and readonly manifest mode are preserved. After
   receipt-based fetch removal, the offline inspected runtime executes Python
-  mocks, `go mod verify`, and exactly
-  `go test -tags=dns_contract -count=1 ./modules/exec/dig ./internal/cli ./tests/differential ./modules/exec/dnsutil`.
+   mocks, `go mod verify`, and exactly
+   `go test -tags=dns_contract,r10_contract -count=1 ./modules/exec/dig ./internal/cli ./tests/differential ./modules/exec/dnsutil ./modules/exec/vsphere`.
   There is no statekit artifact build, PG mock/live phase, cluster startup,
   database/role/password operation, live-service firewall or report upload.
 - **Egress:** only the existing dependency-fetch exception uses host networking
@@ -812,6 +815,75 @@ Each family lists representative case IDs; all map to MVP modules (init.md §49)
   the result is built, never by encoding an oversized answer. No
   command, package inventory, job posture, or network change; external
   evidence stays `pending_external_ci`.
+- **R10.4a private vsphere formatter contract (2026-09-30):** the rootless
+  contract command now also runs the private `./modules/exec/vsphere`
+  synthetic parser contract behind the added `r10_contract` build tag. The
+  exact ordered offline command at every executable mirror becomes
+  `go test -tags=dns_contract,r10_contract -count=1 ./modules/exec/dig
+  ./internal/cli ./tests/differential ./modules/exec/dnsutil
+  ./modules/exec/vsphere`. The payload
+  (`modules/exec/vsphere/vsphere.go`, Go stdlib only — no new dependency, no
+  go.mod/go.sum change) is deliberately private and incomplete: no `Name()`
+  virtual function, no bootstrap registration, no catalog entry, and no
+  registry increment. It is a single bounded, pure parser porting the pinned
+  Salt `_format_coredump_stdout` helper; it holds no credentials, reads and
+  writes no files, opens no endpoint, performs no network or provider call,
+  never invokes a vendor CLI (no Vsphere SDK, no govc), and reshapes only
+  synthetic stdout bytes the caller already holds; its contract tests
+  (`modules/exec/vsphere/vsphere_contract_test.go`, first line
+  `//go:build r10_contract`) are therefore private synthetic parser tests
+  only. Every mirror/assertion was updated together: the dig payload's
+  contract phase, the shared `ci.sh --dig-contract-only` build stage, the
+  orchestration `PACKAGES`/`CONTRACT_ARGV` constants and the
+  `verify_contract_inventory` tag marker, both orchestration suites' pinned
+  assertions, and the controller preflight, which now also fails closed
+  (`contract-build-tag-missing`) unless the vsphere contract file carries
+  `//go:build r10_contract` beside the five `dns_contract` files. No public
+  coverage increment: the payload registers nothing, so the R10 public
+  coverage is unchanged — the established 15 canonical public functions
+  (Slack 6 + dig 9) plus 7 dig source aliases, with dnsutil remaining at its
+  existing 10/11 (serial pending) — and the generated R10 report keeps its
+  round R10.3b totals (25 registered / 1 pending / 7 aliases) with no
+  vsphere increment. No live provider
+  result: no vSphere/ESXi endpoint, credential, govc/esxcli binary, or
+  external DNS is involved anywhere; no native vsphere test exists. Job
+  posture is unchanged: the existing main-only `dig-contract` job
+  (push/workflow_dispatch/schedule on `refs/heads/main`) keeps its
+  `contents: read` permission, SHA-pinned checkout with
+  `persist-credentials: false`, finite timeout, `network=none` execution
+  stages, read-only source and module cache, and the dig-contract rootfs
+  profile that stages only Go and Python — no dig and no provider binary is
+  present in the sandbox. No workflow edit was required this round: the
+  workflow file carries no package inventory, and the trigger/permission set
+  is untouched (the user's active-chat authorization covered GitHub CI
+  changes for all phases; only the controller mirrors and this plan changed).
+  No new OCI image is used, the fixed dependency-fetch stage is unchanged,
+  and the vsphere package requires no module beyond the existing manifest.
+  `external_ci` stays `pending_external_ci`; no live execution is claimed.
+  Local evidence (2026-09-30, rootless Podman `--pull=never`, cached pinned
+  `python:3.14.7`/`golang:1.26.6` images, `network=none`, keep-id non-root,
+  capabilities empty, no-new-privileges, read-only source/module-cache
+  binds, tmpfs scratch, requested memory/CPU/PID limits — local cgroups are
+  disabled so enforcement is not claimed): all 22 dig orchestration mocks
+  and all 21 shared PostgreSQL orchestration mocks passed with zero skips
+  (including the updated exact-inventory, build-tag, mirror and workflow
+  assertions); bash syntax, Python compile, workflow YAML parse with
+  main-only job-posture assertions, and `git diff --check` passed; the exact
+  new five-package `dns_contract,r10_contract` command passed for all five
+  packages offline (`GOPROXY=off`, `-mod=readonly`) on a writable snapshot,
+  and the vsphere package also passed alone with the checkout mounted
+  read-only; untagged `go vet`/compile of the package is clean and the
+  tagged file is excluded without the tag (host `go test ./...` behavior
+  unchanged); `vsphere.go` contains no `Name`/registration and
+  `internal/bootstrap` references no vsphere. One pre-existing gate defect
+  was exposed, not introduced by this change and not remediated here: with
+  the gate's exact read-only `/workspace` bind and `--workdir /workspace`,
+  the untagged `tests/differential` `TestR43SmokeCalls` fails EROFS because
+  `temp.dir`'s default parent is the relative `.statekit/tmp` under the
+  process working directory (the same command passes all five packages on a
+  writable snapshot); remediation belongs to the backend test owner or a
+  separately authorized build-stage cwd/scratch change before the first
+  external run.
 - **Quality gates and phased handoff:** executor `devops-platform-engineer-lead`
   owns runtime/static mock validation; executor `backend-engineer-senior` owns
   the differential dig fake vectors behind the existing build tag. The backend
