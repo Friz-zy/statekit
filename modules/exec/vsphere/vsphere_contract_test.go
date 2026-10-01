@@ -2,7 +2,7 @@
 
 package vsphere
 
-// R10.4a/R10.4b private-helper contract tests (r10_contract build tag).
+// R10.4a/R10.4b/R10.4c private-helper contract tests (r10_contract build tag).
 //
 // Every vector is an inline synthetic stdout literal: the suite is pure
 // and hermetic — no PyVmomi, no govc, no vendor CLI, no Runner, no
@@ -18,6 +18,14 @@ package vsphere
 // overwrite, the pinned {"success": true, "rulesets": {...}} ret_dict
 // shape, the pinned IndexError positions mapped to a fixed malformed-row
 // sentinel, and the 64 KiB / 1024-line / 4096-byte / 256-ruleset bounds.
+// R10.4c adds the same discipline for _format_syslog_config (pinned
+// lines 7704–7723): success DERIVED from cmd_ret["retcode"], the raw
+// verbatim message path on a nonzero retcode, the pre-split
+// line.strip() (so "a: " is malformed and ": x" stores the empty key),
+// the literal ": " delimiter split with third-field discard, duplicate
+// overwrite and the "success" string overwrite, Python
+// whitespace/splitlines semantics with exact case preservation, and
+// the 64 KiB / 1024-line / 4096-byte / 256-key bounds.
 
 import (
 	"errors"
@@ -1302,5 +1310,705 @@ func TestFormatFirewallResultShape(t *testing.T) {
 	}
 	if len(rulesets) != 0 {
 		t.Fatalf("skipped rows must retain no rulesets, got %#v", rulesets)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// R10.4c: _format_syslog_config (pinned lines 7704–7723)
+
+// mustParseSyslog is a test helper: parse or fail the test.
+func mustParseSyslog(t *testing.T, cmdRet map[string]any) map[string]any {
+	t.Helper()
+	ret, err := formatSyslogConfig(cmdRet)
+	if err != nil {
+		t.Fatalf("formatSyslogConfig(%q) returned unexpected error: %v", cmdRet["stdout"], err)
+	}
+	return ret
+}
+
+// syslogRows builds n rows with n distinct keys, each a simple
+// "key: value" pair.
+func syslogRows(n int) string {
+	var b strings.Builder
+	for i := 0; i < n; i++ {
+		b.WriteString("k")
+		b.WriteString(strconv.Itoa(i))
+		b.WriteString(": v\n")
+	}
+	return b.String()
+}
+
+func TestFormatSyslogNonzeroMessage(t *testing.T) {
+	// The pinned message path: retcode != 0 stores the RAW stdout
+	// verbatim (never stripped) and never parses the lines — even rows
+	// that would be malformed on the parsing path are ignored.
+	raw := "  not: a: valid config row\n\nsingleword\n"
+	got := mustParseSyslog(t, map[string]any{"retcode": 1, "stdout": raw})
+	want := wantOf("success", false, "message", raw)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("nonzero message: got %#v, want %#v", got, want)
+	}
+	if v, ok := got["success"].(bool); !ok || v {
+		t.Fatalf("success must be a Go bool false, got %#v", got["success"])
+	}
+	if v, ok := got["message"].(string); !ok || v != raw {
+		t.Fatalf("message must be the RAW stdout string verbatim, got %#v", got["message"])
+	}
+	if len(got) != 2 {
+		t.Fatalf("message path ret_dict must be exactly success+message, got %#v", got)
+	}
+	// Any nonzero retcode takes the message path, negative included.
+	for _, rc := range []int{-1, 2, 255} {
+		got := mustParseSyslog(t, map[string]any{"retcode": rc, "stdout": raw})
+		if got["success"] != false || got["message"] != raw {
+			t.Fatalf("retcode %d: got %#v, want the message dict", rc, got)
+		}
+	}
+}
+
+func TestFormatSyslogTypeErrors(t *testing.T) {
+	// The retcode must be exactly a Go int: the pinned code compares
+	// it to 0; missing/nil/float64/string/bool/int64 all answer the
+	// fixed value-free sentinel (a JSON round-trip float64 must NOT be
+	// coerced into a retcode).
+	badRetcodes := []any{
+		nil,
+		"0",
+		0.0,
+		1.5,
+		int64(0),
+		true,
+		[]int{0},
+		struct{}{},
+	}
+	for _, v := range badRetcodes {
+		cmdRet := map[string]any{"stdout": "k: v\n"}
+		if v != nil {
+			cmdRet["retcode"] = v
+		}
+		got, err := formatSyslogConfig(cmdRet)
+		if !errors.Is(err, errSyslogRetcodeType) {
+			t.Fatalf("non-int retcode %#v: want errSyslogRetcodeType, got %v", v, err)
+		}
+		if got != nil {
+			t.Fatalf("non-int retcode %#v: want nil result, got %#v", v, got)
+		}
+	}
+	// The stdout must be a string on BOTH paths: a valid int retcode
+	// (zero or nonzero) does not exempt it, since both pinned branches
+	// read cmd_ret["stdout"].
+	badStdouts := []any{
+		nil,
+		5,
+		3.14,
+		true,
+		[]byte("k: v"),
+		[]any{"k: v"},
+		map[string]any{"k": "v"},
+		struct{}{},
+	}
+	for _, rc := range []int{0, 1} {
+		for _, v := range badStdouts {
+			cmdRet := map[string]any{"retcode": rc}
+			if v != nil {
+				cmdRet["stdout"] = v
+			}
+			got, err := formatSyslogConfig(cmdRet)
+			if !errors.Is(err, errSyslogStdoutType) {
+				t.Fatalf("retcode %d non-string stdout %#v: want errSyslogStdoutType, got %v", rc, v, err)
+			}
+			if got != nil {
+				t.Fatalf("retcode %d non-string stdout %#v: want nil result, got %#v", rc, v, got)
+			}
+		}
+	}
+	// Order pin: with BOTH members malformed, the retcode sentinel
+	// wins (the pinned source reads retcode first, at line 7711).
+	got, err := formatSyslogConfig(map[string]any{"retcode": "x", "stdout": 5})
+	if !errors.Is(err, errSyslogRetcodeType) || got != nil {
+		t.Fatalf("both malformed: want (nil, errSyslogRetcodeType), got (%#v, %v)", got, err)
+	}
+	// A nil cmdRet map reads like a missing retcode and must not panic.
+	got, err = formatSyslogConfig(nil)
+	if !errors.Is(err, errSyslogRetcodeType) || got != nil {
+		t.Fatalf("nil cmdRet: want (nil, errSyslogRetcodeType), got (%#v, %v)", got, err)
+	}
+	// A missing stdout key with a valid retcode is the stdout sentinel.
+	got, err = formatSyslogConfig(map[string]any{"retcode": 0})
+	if !errors.Is(err, errSyslogStdoutType) || got != nil {
+		t.Fatalf("missing stdout: want (nil, errSyslogStdoutType), got (%#v, %v)", got, err)
+	}
+}
+
+func TestFormatSyslogSuccessEmptyStdout(t *testing.T) {
+	// Empty stdout iterates ZERO lines: exactly the pinned
+	// {"success": True} dict with no other key.
+	got := mustParseSyslog(t, map[string]any{"retcode": 0, "stdout": ""})
+	want := wantOf("success", true)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("empty stdout: got %#v, want %#v", got, want)
+	}
+	if v, ok := got["success"].(bool); !ok || !v {
+		t.Fatalf("success must be a Go bool true, got %#v", got["success"])
+	}
+	// A blank line is NOT empty stdout: splitlines yields one empty
+	// line, which is malformed (the pinned IndexError). Unlike the
+	// coredump helper, blank lines are never skipped here.
+	for _, stdout := range []string{"\n", "\r\n", "   \n", "\v\f", "\u2028"} {
+		got, err := formatSyslogConfig(map[string]any{"retcode": 0, "stdout": stdout})
+		if !errors.Is(err, errSyslogMalformedLine) {
+			t.Fatalf("blank line %q: want errSyslogMalformedLine, got %v", stdout, err)
+		}
+		if got != nil {
+			t.Fatalf("blank line %q: want nil result, got %#v", stdout, got)
+		}
+	}
+}
+
+func TestFormatSyslogNormalFields(t *testing.T) {
+	// esxcli-shaped recorded synthetic stdout: key/value config rows
+	// with interior spaces in keys, exact case preservation (this
+	// helper runs NO lower(), unlike the coredump port), and interior
+	// whitespace runs around the delimiter.
+	stdout := "Satellite Server: vpxa.example.com\n" +
+		"Syslog Default Rotation: 10\n" +
+		"Syslog  Default  Size: 1024\n" +
+		"Syslog Check: True\n" +
+		"   Leading   :   spaced   \n"
+	got := mustParseSyslog(t, map[string]any{"retcode": 0, "stdout": stdout})
+	want := wantOf(
+		"success", true,
+		"Satellite Server", "vpxa.example.com",
+		"Syslog Default Rotation", "10",
+		"Syslog  Default  Size", "1024",
+		"Syslog Check", "True",
+		"Leading", "spaced",
+	)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("normal fields: got %#v, want %#v", got, want)
+	}
+	// Pinned Go types: success is a bool, every parsed value a string
+	// — numeric-looking values ("10") are strings, never numbers.
+	for key, wantStr := range map[string]string{
+		"Satellite Server":        "vpxa.example.com",
+		"Syslog Default Rotation": "10",
+		"Syslog Check":            "True",
+	} {
+		if v, ok := got[key].(string); !ok || v != wantStr {
+			t.Fatalf("%s must be a Go string %q, got %#v", key, wantStr, got[key])
+		}
+	}
+}
+
+func TestFormatSyslogDuplicateOverwrite(t *testing.T) {
+	// Duplicate keys overwrite in encounter order (Python dict
+	// assignment): the last write wins, in any position.
+	stdout := "a: 1\nb: x\na: 2\nb: y\na: 3\n"
+	got := mustParseSyslog(t, map[string]any{"retcode": 0, "stdout": stdout})
+	want := wantOf("success", true, "a", "3", "b", "y")
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("duplicate overwrite: got %#v, want %#v", got, want)
+	}
+	if len(got) != 3 {
+		t.Fatalf("overwrites must not grow the map, got %#v", got)
+	}
+}
+
+func TestFormatSyslogColonSplitQuirks(t *testing.T) {
+	vectors := []struct {
+		name   string
+		stdout string
+		want   map[string]any
+	}{
+		{
+			// The pinned split(": ") runs on ALL occurrences but
+			// consumes only cfgvars[0] and cfgvars[1]: every third
+			// field is discarded data.
+			name:   "third field dropped",
+			stdout: "a: b: c\n",
+			want:   wantOf("success", true, "a", "b"),
+		},
+		{
+			name:   "longer tail dropped",
+			stdout: "a: b: c: d: e\n",
+			want:   wantOf("success", true, "a", "b"),
+		},
+		{
+			// Adjacent delimiters store an empty value: cfgvars[1]
+			// is the (stripped) empty run between them.
+			name:   "adjacent delimiters store an empty value",
+			stdout: "a: : b\n",
+			want:   wantOf("success", true, "a", ""),
+		},
+		{
+			// A delimiter at the very start stores the empty key
+			// (pinned dict assignment under "").
+			name:   "leading delimiter stores the empty key",
+			stdout: ": x\n",
+			want:   wantOf("success", true, "", "x"),
+		},
+		{
+			// The leading colon belongs to the first field when only
+			// its space tail forms the delimiter.
+			name:   "colon-only first field",
+			stdout: ":: x\n",
+			want:   wantOf("success", true, ":", "x"),
+		},
+		{
+			// A value with interior spaces keeps them after strip.
+			name:   "interior value spaces retained",
+			stdout: "a:  x y  z \n",
+			want:   wantOf("success", true, "a", "x y  z"),
+		},
+	}
+	for _, tc := range vectors {
+		t.Run(tc.name, func(t *testing.T) {
+			got := mustParseSyslog(t, map[string]any{"retcode": 0, "stdout": tc.stdout})
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got %#v, want %#v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFormatSyslogMalformedRows(t *testing.T) {
+	// The pinned IndexError positions, each confirmed against the
+	// pinned function: a stripped line without the literal ": "
+	// delimiter — a blank line, a whitespace-only line, a colon with
+	// no trailing space, a colon followed by a tab, and a line whose
+	// only delimiter space is stripped away pre-split ("a: " strips
+	// to "a:"). All answer the fixed malformed sentinel with a nil
+	// result; rows before the bad one never escape.
+	vectors := []string{
+		"\n",          // blank line
+		"   \n",       // whitespace-only line
+		"\v\f",        // only line boundaries: two empty lines
+		"a:b\n",       // colon without a space
+		"a:\tb\n",     // colon followed by a tab: the literal ": " never matches
+		"a :b\n",      // space before but not after the colon
+		"a: \n",       // the delimiter's space is stripped away pre-split
+		"a:\n",        // bare colon
+		"k: v\nbad\n", // valid row followed by a delimiter-less row
+		"k: v\n\n",    // valid row followed by a blank line
+	}
+	var got map[string]any
+	var err error
+	for _, stdout := range vectors {
+		got, err = formatSyslogConfig(map[string]any{"retcode": 0, "stdout": stdout})
+		if !errors.Is(err, errSyslogMalformedLine) {
+			t.Fatalf("malformed row %q: want errSyslogMalformedLine, got %v", stdout, err)
+		}
+		if got != nil {
+			t.Fatalf("malformed row %q: want nil result, got %#v", stdout, got)
+		}
+	}
+	// A valid row BEFORE a malformed row never escapes: the result is
+	// only returned on the success path.
+	got, err = formatSyslogConfig(map[string]any{"retcode": 0, "stdout": "ok: v\nbad\nworse\n"})
+	if !errors.Is(err, errSyslogMalformedLine) || got != nil {
+		t.Fatalf("no partial map: want (nil, errSyslogMalformedLine), got (%#v, %v)", got, err)
+	}
+}
+
+func TestFormatSyslogSuccessKeyOverwrite(t *testing.T) {
+	// A parsed key "success" overwrites the initial boolean true with
+	// the string, exactly like the pinned dict assignment.
+	got := mustParseSyslog(t, map[string]any{"retcode": 0, "stdout": "success: now\n"})
+	want := wantOf("success", "now")
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("success overwrite: got %#v, want %#v", got, want)
+	}
+	if _, ok := got["success"].(string); !ok {
+		t.Fatalf("success must be overwritten with a Go string, got %#v", got["success"])
+	}
+	// The overwrite composes with other keys and with duplicates.
+	got = mustParseSyslog(t, map[string]any{"retcode": 0, "stdout": "k: v\nsuccess: a\nsuccess: b\n"})
+	want = wantOf("success", "b", "k", "v")
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("success overwrite with duplicates: got %#v, want %#v", got, want)
+	}
+	// A nonzero retcode never reaches the parsing path, so its
+	// success false is never overwritten by config rows.
+	got = mustParseSyslog(t, map[string]any{"retcode": 3, "stdout": "success: never\n"})
+	want = wantOf("success", false, "message", "success: never\n")
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("message path success stays false: got %#v, want %#v", got, want)
+	}
+}
+
+func TestFormatSyslogUnicodeWhitespaceAndSplitlines(t *testing.T) {
+	vectors := []struct {
+		name   string
+		stdout string
+		want   map[string]any
+	}{
+		{
+			// NBSP and U+3000 are Python strip whitespace: they are
+			// stripped from key ends and value ends.
+			name:   "NBSP and U+3000 strip at the ends",
+			stdout: "\u00a0k\u3000: v\u00a0\n",
+			want:   wantOf("success", true, "k", "v"),
+		},
+		{
+			// U+001F is Python strip whitespace but never a line
+			// boundary: it strips from the value ends.
+			name:   "U+001F strips as whitespace and is not a boundary",
+			stdout: "k: \x1f v\x1f\n",
+			want:   wantOf("success", true, "k", "v"),
+		},
+		{
+			name:   "U+001F interior retained",
+			stdout: "k: a\x1fb\n",
+			want:   wantOf("success", true, "k", "a\x1fb"),
+		},
+		{
+			// U+001C is a line boundary AND strip whitespace.
+			name:   "U+001C is a line boundary",
+			stdout: "k a: v\x1ck2: v2\n",
+			want:   wantOf("success", true, "k a", "v", "k2", "v2"),
+		},
+		{
+			name:   "CRLF is one boundary",
+			stdout: "k: v\r\nk2: v2\r\n",
+			want:   wantOf("success", true, "k", "v", "k2", "v2"),
+		},
+		{
+			name:   "U+2028 and U+2029 are boundaries",
+			stdout: "k: v\u2028k2: v2\u2029k3: v3",
+			want:   wantOf("success", true, "k", "v", "k2", "v2", "k3", "v3"),
+		},
+		{
+			name:   "U+0085 is a boundary",
+			stdout: "k: v\u0085k2: v2",
+			want:   wantOf("success", true, "k", "v", "k2", "v2"),
+		},
+		{
+			// This helper runs NO lower(): values keep their exact
+			// case (a lowercasing port would differ here).
+			name:   "exact case preservation",
+			stdout: "host: VMK0\n",
+			want:   wantOf("success", true, "host", "VMK0"),
+		},
+		{
+			// Unicode keys/values are stored verbatim: Cyrillic and
+			// the U+0130 capital I survive exactly (no SpecialCasing).
+			name:   "exact unicode preservation",
+			stdout: "\u041a\u043b\u044e\u0447: \u0417\u043d\u0430\u0447\u0414\u0130FF\n",
+			want:   wantOf("success", true, "\u041a\u043b\u044e\u0447", "\u0417\u043d\u0430\u0447\u0414\u0130FF"),
+		},
+	}
+	for _, tc := range vectors {
+		t.Run(tc.name, func(t *testing.T) {
+			got := mustParseSyslog(t, map[string]any{"retcode": 0, "stdout": tc.stdout})
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got %#v, want %#v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFormatSyslogLimits(t *testing.T) {
+	t.Run("input bytes: 64 KiB boundary", func(t *testing.T) {
+		// The parsing path has NO skipped rows, so benign filler must
+		// be well-formed rows: each padded row is exactly 128 bytes
+		// ("k: " + 123 spaces + "v\n"), strips to key "k" value "v",
+		// and 512 rows are exactly 65536 bytes.
+		row := "k: " + strings.Repeat(" ", 123) + "v\n"
+		if len(row) != 128 {
+			t.Fatalf("filler row must be 128 bytes, got %d", len(row))
+		}
+		exact := strings.Repeat(row, 512)
+		got, err := formatSyslogConfig(map[string]any{"retcode": 0, "stdout": exact})
+		if err != nil {
+			t.Fatalf("exactly 65536 bytes must parse, got error %v", err)
+		}
+		if !reflect.DeepEqual(got, wantOf("success", true, "k", "v")) {
+			t.Fatalf("duplicate filler rows must overwrite to one key, got %#v", got)
+		}
+		oversize := exact + "y"
+		got, err = formatSyslogConfig(map[string]any{"retcode": 0, "stdout": oversize})
+		if !errors.Is(err, errSyslogStdoutSize) {
+			t.Fatalf("65537 bytes must reject with errSyslogStdoutSize, got %v", err)
+		}
+		if got != nil {
+			t.Fatalf("oversize input must return nil result, got %#v", got)
+		}
+		// The size budget runs BEFORE the retcode branch: an oversized
+		// message-path stdout is rejected too (the message copy stays
+		// bounded).
+		got, err = formatSyslogConfig(map[string]any{"retcode": 1, "stdout": oversize})
+		if !errors.Is(err, errSyslogStdoutSize) {
+			t.Fatalf("oversize nonzero-retcode stdout must answer the size sentinel, got %v", err)
+		}
+		if got != nil {
+			t.Fatalf("oversize nonzero-retcode stdout must return nil result, got %#v", got)
+		}
+	})
+
+	t.Run("lines: 1024 boundary", func(t *testing.T) {
+		exact := strings.Repeat("a: b\n", 1024)
+		got, err := formatSyslogConfig(map[string]any{"retcode": 0, "stdout": exact})
+		if err != nil {
+			t.Fatalf("exactly 1024 lines must parse, got error %v", err)
+		}
+		if !reflect.DeepEqual(got, wantOf("success", true, "a", "b")) {
+			t.Fatalf("1024 duplicate rows must keep one key, got %#v", got)
+		}
+		// 1025 boundaries, with and without a final unterminated line.
+		for name, over := range map[string]string{
+			"terminated":   strings.Repeat("a: b\n", 1025),
+			"unterminated": strings.Repeat("a: b\n", 1024) + "c: d",
+		} {
+			got, err := formatSyslogConfig(map[string]any{"retcode": 0, "stdout": over})
+			if !errors.Is(err, errSyslogLineLimit) {
+				t.Fatalf("%s: 1025 lines must reject with errSyslogLineLimit, got %v", name, err)
+			}
+			if got != nil {
+				t.Fatalf("%s: over-budget lines must return nil result, got %#v", name, got)
+			}
+		}
+		// Multi-byte boundaries count individually toward the same cap.
+		over := strings.Repeat("a: b\u2028", 1025)
+		if got, err = formatSyslogConfig(map[string]any{"retcode": 0, "stdout": over}); !errors.Is(err, errSyslogLineLimit) {
+			t.Fatalf("1025 U+2028 lines must reject with errSyslogLineLimit, got %v", err)
+		}
+		// Order pin: the line budget is enforced BEFORE the row is
+		// parsed, so a malformed 1025th row answers the LINE sentinel.
+		overMalformed := strings.Repeat("a: b\n", 1024) + "lonetoken"
+		if got, err = formatSyslogConfig(map[string]any{"retcode": 0, "stdout": overMalformed}); !errors.Is(err, errSyslogLineLimit) {
+			t.Fatalf("malformed 1025th row must answer the line limit, got %v", err)
+		}
+		// ...while a malformed 1024th row (still within budget) answers
+		// the malformed sentinel.
+		atLimit := strings.Repeat("a: b\n", 1023) + "lonetoken\n"
+		if got, err = formatSyslogConfig(map[string]any{"retcode": 0, "stdout": atLimit}); !errors.Is(err, errSyslogMalformedLine) {
+			t.Fatalf("malformed 1024th row must answer the malformed sentinel, got %v", err)
+		}
+	})
+
+	t.Run("key/value: 4096 boundary", func(t *testing.T) {
+		exactKey := strings.Repeat("k", 4096) + ": v\n"
+		got, err := formatSyslogConfig(map[string]any{"retcode": 0, "stdout": exactKey})
+		if err != nil {
+			t.Fatalf("exactly 4096-byte key must parse, got error %v", err)
+		}
+		if got[strings.Repeat("k", 4096)] != "v" {
+			t.Fatalf("4096-byte key must be retained, got %#v", got)
+		}
+		overKey := strings.Repeat("k", 4097) + ": v\n"
+		got, err = formatSyslogConfig(map[string]any{"retcode": 0, "stdout": overKey})
+		if !errors.Is(err, errSyslogFieldLimit) {
+			t.Fatalf("4097-byte key must reject with errSyslogFieldLimit, got %v", err)
+		}
+		if got != nil {
+			t.Fatalf("over-budget key must return nil result, got %#v", got)
+		}
+		exactValue := "a: " + strings.Repeat("v", 4096) + "\n"
+		if got, err = formatSyslogConfig(map[string]any{"retcode": 0, "stdout": exactValue}); err != nil {
+			t.Fatalf("exactly 4096-byte value must parse, got error %v", err)
+		}
+		overValue := "a: " + strings.Repeat("v", 4097) + "\n"
+		if got, err = formatSyslogConfig(map[string]any{"retcode": 0, "stdout": overValue}); !errors.Is(err, errSyslogFieldLimit) {
+			t.Fatalf("4097-byte value must reject with errSyslogFieldLimit, got %v", err)
+		}
+		// A huge UNSTRIPPED part whose retained bytes are short parses
+		// (the cap applies to the retained key/value): padding before
+		// the value and between key and colon both vanish in strip.
+		paddedValue := "a: " + strings.Repeat(" ", 60000) + "v\n"
+		got, err = formatSyslogConfig(map[string]any{"retcode": 0, "stdout": paddedValue})
+		if err != nil {
+			t.Fatalf("padded value within input budget must parse, got error %v", err)
+		}
+		if !reflect.DeepEqual(got, wantOf("success", true, "a", "v")) {
+			t.Fatalf("padded value must strip to v, got %#v", got)
+		}
+		paddedKey := "a" + strings.Repeat(" ", 5000) + ": v\n"
+		got, err = formatSyslogConfig(map[string]any{"retcode": 0, "stdout": paddedKey})
+		if err != nil {
+			t.Fatalf("padded key within input budget must parse, got error %v", err)
+		}
+		if !reflect.DeepEqual(got, wantOf("success", true, "a", "v")) {
+			t.Fatalf("padded key must strip to a, got %#v", got)
+		}
+	})
+
+	t.Run("keys: 256 boundary", func(t *testing.T) {
+		// The cap counts the retained ret_dict INCLUDING the initial
+		// success entry: 255 distinct data rows fill it exactly.
+		exact := syslogRows(255)
+		got, err := formatSyslogConfig(map[string]any{"retcode": 0, "stdout": exact})
+		if err != nil {
+			t.Fatalf("exactly 256 ret_dict entries (success + 255) must parse, got error %v", err)
+		}
+		if len(got) != 256 {
+			t.Fatalf("success + 255 distinct keys must retain 256 entries, got %d", len(got))
+		}
+		over := syslogRows(256)
+		got, err = formatSyslogConfig(map[string]any{"retcode": 0, "stdout": over})
+		if !errors.Is(err, errSyslogKeyLimit) {
+			t.Fatalf("a 257th distinct entry must reject with errSyslogKeyLimit, got %v", err)
+		}
+		if got != nil {
+			t.Fatalf("over-budget keys must return nil result, got %#v", got)
+		}
+		// A duplicate row over a full map never grows it: 256 data rows
+		// but only 255 distinct data keys parse, and the duplicate's
+		// value wins.
+		dup := syslogRows(255) + "k0: dup\n"
+		got, err = formatSyslogConfig(map[string]any{"retcode": 0, "stdout": dup})
+		if err != nil {
+			t.Fatalf("duplicate row over a full map must parse, got error %v", err)
+		}
+		if len(got) != 256 {
+			t.Fatalf("duplicate row must not grow the map, got %d", len(got))
+		}
+		if got["k0"] != "dup" {
+			t.Fatalf("duplicate value must overwrite, got %#v", got["k0"])
+		}
+		// The parsed "success" entry is an existing key: overwriting it
+		// over a full map parses too.
+		success := syslogRows(255) + "success: now\n"
+		got, err = formatSyslogConfig(map[string]any{"retcode": 0, "stdout": success})
+		if err != nil {
+			t.Fatalf("success overwrite over a full map must parse, got error %v", err)
+		}
+		if len(got) != 256 {
+			t.Fatalf("success overwrite must not grow the map, got %d", len(got))
+		}
+		if got["success"] != "now" {
+			t.Fatalf("success must be the overwritten string, got %#v", got["success"])
+		}
+	})
+}
+
+func TestFormatSyslogErrorsAreValueFree(t *testing.T) {
+	const marker = "MARKERZQSYS-secret-vector"
+	paths := []struct {
+		name   string
+		cmdRet map[string]any
+		want   error
+	}{
+		{
+			name:   "retcode type",
+			cmdRet: map[string]any{"retcode": marker, "stdout": "k: v\n"},
+			want:   errSyslogRetcodeType,
+		},
+		{
+			name:   "stdout type",
+			cmdRet: map[string]any{"retcode": 0, "stdout": []byte(marker)},
+			want:   errSyslogStdoutType,
+		},
+		{
+			name:   "size",
+			cmdRet: map[string]any{"retcode": 0, "stdout": marker + strings.Repeat("x", 70000)},
+			want:   errSyslogStdoutSize,
+		},
+		{
+			name:   "utf8",
+			cmdRet: map[string]any{"retcode": 0, "stdout": "k: " + marker + "\xff\n"},
+			want:   errSyslogStdoutUTF8,
+		},
+		{
+			name:   "lines",
+			cmdRet: map[string]any{"retcode": 0, "stdout": "k: " + marker + "\n" + strings.Repeat("a: b\n", 1025)},
+			want:   errSyslogLineLimit,
+		},
+		{
+			name:   "field value",
+			cmdRet: map[string]any{"retcode": 0, "stdout": "k: " + marker + strings.Repeat("v", 5000) + "\n"},
+			want:   errSyslogFieldLimit,
+		},
+		{
+			name:   "field key",
+			cmdRet: map[string]any{"retcode": 0, "stdout": marker + strings.Repeat("k", 5000) + ": v\n"},
+			want:   errSyslogFieldLimit,
+		},
+		{
+			name:   "keys",
+			cmdRet: map[string]any{"retcode": 0, "stdout": syslogRows(255) + "zz" + marker + ": v\n"},
+			want:   errSyslogKeyLimit,
+		},
+		{
+			name:   "malformed",
+			cmdRet: map[string]any{"retcode": 0, "stdout": marker + "\n"},
+			want:   errSyslogMalformedLine,
+		},
+	}
+	for _, tc := range paths {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := formatSyslogConfig(tc.cmdRet)
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("want sentinel %v, got %v", tc.want, err)
+			}
+			if got != nil {
+				t.Fatalf("want nil result, got %#v", got)
+			}
+			// Value-free: no vector bytes in the error text.
+			if strings.Contains(err.Error(), "MARKERZQ") || strings.Contains(err.Error(), "vpxa") {
+				t.Fatalf("error must be value-free, got %q", err.Error())
+			}
+			// Fixed identity: exact sentinel text, no wrapping.
+			if err.Error() != tc.want.Error() {
+				t.Fatalf("error text must be the fixed sentinel text, got %q", err.Error())
+			}
+		})
+	}
+	// All sentinels are pairwise distinct fixed values.
+	sentinels := []error{
+		errSyslogRetcodeType,
+		errSyslogStdoutType,
+		errSyslogStdoutSize,
+		errSyslogStdoutUTF8,
+		errSyslogLineLimit,
+		errSyslogFieldLimit,
+		errSyslogKeyLimit,
+		errSyslogMalformedLine,
+	}
+	seen := map[string]bool{}
+	for _, s := range sentinels {
+		if seen[s.Error()] {
+			t.Fatalf("duplicate sentinel text %q", s.Error())
+		}
+		seen[s.Error()] = true
+	}
+}
+
+func TestFormatSyslogIgnoresOtherCmdRetMembers(t *testing.T) {
+	// Only the retcode and stdout members are read; stderr, pid, and
+	// cmd are ignored even when they carry malformed rows.
+	cmdRet := map[string]any{
+		"retcode": 0,
+		"stdout":  "k: v\n",
+		"stderr":  "bad row without delimiter\n\nalso: bad: extra\n",
+		"pid":     1234,
+		"cmd":     []string{"esxcli", "system", "syslog", "config", "get"},
+	}
+	got := mustParseSyslog(t, cmdRet)
+	want := wantOf("success", true, "k", "v")
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("only the stdout member is parsed: got %#v, want %#v", got, want)
+	}
+}
+
+func TestFormatSyslogResultShape(t *testing.T) {
+	// Zero retcode with no parseable rows: exactly the one success key.
+	got := mustParseSyslog(t, map[string]any{"retcode": 0, "stdout": ""})
+	if len(got) != 1 {
+		t.Fatalf("success-only ret_dict must have exactly one key, got %#v", got)
+	}
+	if v, ok := got["success"].(bool); !ok || !v {
+		t.Fatalf("success must be a Go bool true, got %#v", got["success"])
+	}
+	// Nonzero retcode: exactly the success and message keys, and an
+	// empty stdout message is stored verbatim as the empty string.
+	got = mustParseSyslog(t, map[string]any{"retcode": 1, "stdout": ""})
+	if len(got) != 2 {
+		t.Fatalf("message ret_dict must have exactly success and message, got %#v", got)
+	}
+	if _, ok := got["message"]; !ok {
+		t.Fatalf("message ret_dict must carry the message key, got %#v", got)
+	}
+	if v, ok := got["message"].(string); !ok || v != "" {
+		t.Fatalf("message must be the raw stdout string, got %#v", got["message"])
 	}
 }

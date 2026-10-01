@@ -1663,6 +1663,73 @@ The PTD tables below are retained as an immutable audit snapshot. These
 overrides are the current status and do not delete or rewrite any original
 rows or counts.
 
+##### 2026-09-30 current status (R10.4c private syslog config parsing helper; external CI pending)
+
+R10.4c adds the THIRD vsphere-family surface of the pinned
+`salt/modules/vsphere.py` to the existing `modules/exec/vsphere`
+package: the unexported `formatSyslogConfig(cmdRet map[string]any)
+(map[string]any, error)`, a bounded pure port of `_format_syslog_config`
+(pinned lines 7704–7723, `def` through `return`, pinned revision
+`8b63e700637e40d76f80a00d95c60471797c73b9`). Nothing is registered:
+there is no `Name()`, no bootstrap registration, no public catalog
+entry, no registry/counter increment, and no catalog/coverage
+regeneration — R10 public totals are UNCHANGED (15 canonical public + 7
+dig aliases; dnsutil 10/11 public with `serial` pending; generated R10
+report still `round: R10.3b` with 25 registered_public / 1
+pending_public / 7 aliases). Like the R10.4a/R10.4b helpers, it is an
+internal source-compatible parsing primitive, NOT a usable
+vSphere/cloud implementation: it holds no credentials, opens no
+endpoint, calls no PyVmomi/govc/vendor CLI, and makes no network or
+provider call — real provider transport remains ADR/decision-gated per
+the R10 policy (§2/R10: vendor CLI wrappers first; provider connections
+are a separate gated decision).
+
+The parser mirrors the pinned source exactly, quirk-inclusive, with
+every edge vector confirmed by executing the pinned function itself as
+a local oracle: success is DERIVED from `cmd_ret["retcode"] == 0`
+(unlike the firewall helper's hardcoded True) — a nonzero retcode
+stores `ret_dict["message"] = cmd_ret["stdout"]` verbatim and never
+parses lines, a zero retcode starts `{"success": True}` and iterates
+`cmd_ret["stdout"].splitlines()`; each line is stripped BEFORE the
+split, so a whitespace-only line becomes empty and a whitespace-only
+tail disappears before the delimiter search ("a: " strips to "a:" and
+is then malformed); `line.split(": ")` is the Python split on the exact
+two-character literal ": " (colon + ASCII space), all occurrences, so a
+colon followed by a tab or without a trailing space never matches while
+"a : b" does with only the second `cfgvars[0].strip()` removing the
+interior spaces; only cfgvars[0] and cfgvars[1] are consumed with
+longer tails discarded; duplicate keys overwrite in encounter order and
+a parsed key "success" overwrites the boolean true with a string; an
+empty line is MALFORMED (the pinned IndexError — blank lines are never
+skipped, unlike the coredump helper) while empty stdout iterates zero
+lines and returns only {"success": true}; and a leading-empty first
+field is valid data (": x" stores the empty key ""). This helper runs
+no lower(): keys and values keep their exact case and Unicode.
+StateKit bounds that the pinned source lacks, fail-closed with fixed
+value-free sentinel errors and no partial map on any failure: retcode
+must be a Go int (checked first, matching the pinned read order at line
+7711) and stdout a string (missing key, nil, or any other type answers
+a fixed type error — both fields are read on both pinned paths, so both
+types are validated unconditionally before the retcode branch); input
+bytes ≤ 64 KiB (checked before UTF-8 validation) and valid UTF-8, both
+enforced before the branch so the nonzero message copy is as bounded
+and JSON-encodable as the parsed result; at most 1024 lines; each
+retained key/value ≤ 4096 bytes post-strip; at most 256 retained
+ret_dict entries including the initial success entry, enforced before
+insertion (duplicates and the parsed "success" entry overwrite in place
+and never grow the map). Mechanically the slice adds NO new helper
+machinery: it reuses the shared `pythonSplitlinesBounded` bounded
+scanner and the shared `pythonStrip`/`pythonWhitespace` semantics (no
+lower(), no bare split()), and `strings.Split` is the exact Go
+equivalent of the Python `str.split(": ")`. plans/testing.md needed NO
+change: the rootless `r10_contract` command already includes
+`./modules/exec/vsphere`, the contract file inventory is unchanged, and
+no GitHub workflow was touched.
+
+| Phase | Deliverable | Executor | Verification | Scope/notes |
+|---|---|---|---|---|
+| `R10.4c` @ `d1a5126`+ (local working tree; continues the R10 line whose prior commits are `d1a5126` R10.4b, `61c7944` R10.4a, `2ce0fbb` R10.3b, `b09faf6` R10.3a, `d30d3a2` R10.2, `343e9fe` R10.1; uncommitted at phase time) | `modules/exec/vsphere` package gains the PRIVATE unexported `formatSyslogConfig` bounded pure parser (no `Name()`, no bootstrap registration, no public catalog/counter increment — an internal source-compatible parsing primitive, not a usable vSphere/cloud implementation; real provider transport stays ADR/decision-gated) + `//go:build r10_contract` tagged tests appended to the existing `modules/exec/vsphere/vsphere_contract_test.go`: nonzero-retcode message path with the RAW verbatim unstripped message and no line parsing (retcodes -1/1/2/255; config rows never overwrite the message path's success false), type errors on both members (missing/nil/float64/string/int64/bool/slice retcodes; missing/nil/[]byte/[]any/map/struct stdouts on both retcode signs; the retcode sentinel winning when both are malformed, matching the pinned line-7711 read order; a nil cmdRet), empty stdout returning exactly {"success": true} while blank/whitespace-only lines are malformed (the pinned IndexError; blank lines never skipped), esxcli-shaped normal rows with exact case and Unicode preservation (no lower(): "True", Cyrillic, U+0130 verbatim) and interior whitespace retained in keys/values, duplicate overwrite in encounter order without map growth, the literal ": " delimiter battery (third-field discard "a: b: c", adjacent delimiters storing an empty value, the empty key "" from a leading delimiter, the ":" key from ":: x", interior value spaces), the malformed-row battery (colon without space, colon+tab, "a :b", the stripped-away delimiter "a: ", bare colon; valid rows before a bad row never escaping), the success-key string overwrite composing with duplicates and the message path, Python whitespace/splitlines semantics (NBSP/U+3000/U+001F strip-not-boundary, U+001C/U+2028/U+2029/U+0085 boundaries, CRLF one boundary), exact 64 KiB/1024-line/4096-key-value/256-key boundaries with +1 rejections and nil results (incl. the line-vs-malformed ordering at 1024/1025 rows, a duplicate row and a success-overwrite accepted over a full map, oversized-but-strips-clean padded key/value parsing, and the size budget rejecting the nonzero message path too), value-free error assertions over marker-bearing vectors with eight pairwise-distinct sentinels, ignored stderr/pid/cmd members, and the exact success-only and success+message ret_dict shapes | `backend-engineer-middle` | Local quality gates in conforming rootless Podman (fresh `.gotmp/r104c` vfs store populated by a local save/load copy of the already-present `golang:1.26-bookworm` image — no image pull, no registry, no network; `--pull=never`): preflight (nonroot keep-id uid 1000, CapEff/CapBnd zero, NoNewPrivs 1, `network=none` with an empty IPv4 route table and no non-loopback IPv6 address, source snapshot + module cache mounted RO with write probes rejected, read-only rootfs with tmpfs scratch); gofmt clean on the package and repo (the pre-existing HEAD-drifted unrelated files excluded and unchanged); vet untagged + `r10_contract` tagged on `./modules/exec/vsphere`; untagged package compile proving the tagged file stays excluded from default `go test ./...`; focused `go test -tags=r10_contract ./modules/exec/vsphere` (45 top-level tests incl. the unchanged R10.4a/R10.4b suites, 0 failures); no external CI, no live network, no provider, no live service, no PyVmomi/govc/Runner dispatch anywhere; requested pids/memory/cpu limits were passed but this nested rootless runtime leaves the container cgroup unbounded (memory.max=max) — a reported enforcement gap, not a waiver | Executor role `backend-engineer-middle`; local synthetic fixtures only (inline literals; no host file reads, no Runner, no dig/Slack/cloud/vSphere dispatch, no network from any test); no public coverage (no catalog regen, no differential scope entry, no counter move — R10 totals unchanged: 15 canonical public + 7 dig aliases, dnsutil 10/11 public with `serial` pending, report `round: R10.3b` totals 25 registered_public / 1 pending_public / 7 aliases); no testing.md or GitHub workflow change needed (the rootless `r10_contract` command already includes `./modules/exec/vsphere` and the contract file inventory is unchanged); no provider parity claim and no family-complete claim (the vsphere catalog surface — PyVmomi/govc transport — remains unported and ADR/decision-gated); no external CI or live claims (`pending_external_ci`); `go.mod`/`go.sum` unchanged (stdlib only); `tests/live/mysql/Containerfile.go-build` pre-existing local modification preserved |
+
 ##### 2026-09-30 current status (R10.4b private firewall parsing helper; external CI pending)
 
 R10.4b adds the SECOND vsphere-family surface of the pinned

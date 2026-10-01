@@ -1,4 +1,4 @@
-// Package vsphere contains the R10.4a/R10.4b private, source-backed
+// Package vsphere contains the R10.4a/R10.4b/R10.4c private, source-backed
 // parsing primitives for the pinned Salt vsphere execution module
 // (saltstack/salt/modules/vsphere.py @ 8b63e700637e40d76f80a00d95c60471797c73b9,
 // catalog docs/catalog/exec/vsphere.yaml).
@@ -128,6 +128,68 @@
 // bytes; at most 256 retained rulesets, enforced before insertion.
 // Every violation answers one fixed sentinel error carrying no input
 // bytes, no field values, and no caller data. The helper is pure: it
+// reads nothing but the passed map, writes nothing, and calls nothing.
+// # formatSyslogConfig
+//
+// formatSyslogConfig ports _format_syslog_config (pinned lines
+// 7704–7723) as a bounded, pure parser. The pinned source initializes
+// ret_dict = {"success": cmd_ret["retcode"] == 0}: a nonzero retcode
+// stores ret_dict["message"] = cmd_ret["stdout"] verbatim (never
+// stripped), while a zero retcode iterates cmd_ret["stdout"]
+// .splitlines() and stores ret_dict[cfgvars[0].strip()] =
+// cfgvars[1].strip() for cfgvars = line.split(": ") after
+// line = line.strip().
+//
+// Ported source behaviors, quirk-inclusive (each vector confirmed
+// against the pinned function itself):
+//
+//   - success is DERIVED from cmd_ret["retcode"] == 0 here (unlike the
+//     firewall helper, whose success is hardcoded True): a nonzero
+//     retcode yields success false and the message path, a zero
+//     retcode success true and the parsing path;
+//   - the line is stripped BEFORE the delimiter split, so a
+//     whitespace-only line becomes empty and a whitespace-only tail
+//     disappears before the search: the line "a: " strips to "a:",
+//     which then has no delimiter and is malformed;
+//   - split(": ") is the Python split on the exact two-character
+//     literal ": " (colon + ASCII space), ALL occurrences: a colon
+//     followed by a tab ("a:\tb") or without a trailing space
+//     ("a :b") never matches; a colon WITH a leading space and a
+//     trailing space ("a : b") does, and the interior spaces are
+//     removed only by the second cfgvars[0].strip();
+//   - only cfgvars[0] and cfgvars[1] are consumed; a longer row's
+//     tail is discarded data ("a: b: c" stores key "a", value "b"),
+//     exactly like the pinned indexing;
+//   - an empty line yields no delimiter and IS malformed (the pinned
+//     IndexError), so unlike the coredump helper's ignored blank
+//     lines every line here must carry the delimiter; empty stdout
+//     iterates zero lines and returns only {"success": true};
+//   - a leading-empty first field is valid data: ": x" stores the
+//     empty key "" and ":: x" stores the key ":";
+//   - duplicate keys overwrite in encounter order (Python dict
+//     assignment) and a parsed key "success" overwrites the boolean
+//     true with a string, exactly like the pinned dict store.
+//
+// StateKit bounds that the pinned source lacks (fail-closed, fixed
+// value-free errors, no partial map on any failure — the dict is only
+// returned on the success path): retcode must be a Go int (checked
+// first, matching the pinned read order at line 7711) and stdout a
+// string (missing key, nil, or any other type answers a fixed type
+// error — both fields are read on both pinned paths, so both types
+// are validated unconditionally before the retcode branch); input
+// bytes ≤ 64 KiB (checked before UTF-8 validation) and valid UTF-8,
+// both enforced before the branch so the nonzero message copy is as
+// bounded and JSON-encodable as the parsed result; at most 1024
+// splitlines lines (this loop has no pinned early exit, so every line
+// is reached); each retained key and value ≤ 4096 bytes post-strip;
+// at most 256 retained ret_dict entries INCLUDING the initial success
+// entry, enforced before insertion (duplicates and the parsed
+// "success" entry overwrite in place and never grow the map). The
+// bounded result shape (≤256 entries of ≤4096-byte string values
+// beside the fixed success flag and the ≤64 KiB message) keeps any
+// downstream JSON encoding of the returned dict bounded. Every
+// violation answers one fixed sentinel error carrying no input bytes,
+// no key/value bytes, and no caller data. The helper is pure: it
 // reads nothing but the passed map, writes nothing, and calls nothing.
 package vsphere
 
@@ -477,6 +539,187 @@ func firewallParseLine(rulesets map[string]any, raw string) error {
 	// so the token "false" stores true. split() can never yield an
 	// empty token, so the comparison is the faithful bool(token) form.
 	rulesets[tokens[0]] = tokens[1] != ""
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// formatSyslogConfig (pinned lines 7704–7723)
+
+// Fixed parsing budgets for the syslog helper (StateKit bounds; the
+// pinned source is unbounded).
+const (
+	// syslogMaxInput caps the synthetic stdout at 64 KiB.
+	syslogMaxInput = 64 * 1024
+	// syslogMaxLines caps the splitlines count at 1024. The pinned
+	// syslog loop has no early exit (no coredump-style break), so
+	// every line of a within-budget input is reached.
+	syslogMaxLines = 1024
+	// syslogMaxField caps each retained key and value at 4096 bytes.
+	syslogMaxField = 4096
+	// syslogMaxKeys caps the retained ret_dict at 256 keys, including
+	// the initial success entry.
+	syslogMaxKeys = 256
+)
+
+// Fixed value-free sentinel errors. Constant text, no Unwrap, no custom
+// Is — errors.Is matches only the fixed identity, and no input bytes,
+// key/value bytes, or caller data ever travel in an error.
+var (
+	// errSyslogRetcodeType answers a missing "retcode" key (the pinned
+	// KeyError position; the pinned source reads retcode first, at
+	// line 7711) or a present non-int value. The pinned Python raises
+	// KeyError only when retcode is absent and does not explicitly
+	// type-check a present non-int; rejecting a present non-int is an
+	// intentional StateKit fail-closed compatibility ceiling.
+	errSyslogRetcodeType = errors.New("vsphere: syslog retcode is missing or not an int")
+	// errSyslogStdoutType answers a missing "stdout" key or a
+	// non-string value (the pinned KeyError/AttributeError positions
+	// on both the message and the parsing path).
+	errSyslogStdoutType = errors.New("vsphere: syslog stdout is missing or not a string")
+	// errSyslogStdoutSize answers stdout over 64 KiB.
+	errSyslogStdoutSize = errors.New("vsphere: syslog stdout exceeds the 64 KiB input limit")
+	// errSyslogStdoutUTF8 answers stdout that is not valid UTF-8.
+	errSyslogStdoutUTF8 = errors.New("vsphere: syslog stdout is not valid UTF-8")
+	// errSyslogLineLimit answers more than 1024 splitlines lines.
+	errSyslogLineLimit = errors.New("vsphere: syslog stdout exceeds the 1024 line limit")
+	// errSyslogFieldLimit answers a retained key or value over 4096
+	// bytes.
+	errSyslogFieldLimit = errors.New("vsphere: syslog key or value exceeds the 4096 byte limit")
+	// errSyslogKeyLimit answers a retained ret_dict over 256 keys.
+	errSyslogKeyLimit = errors.New("vsphere: syslog result exceeds the 256 key limit")
+	// errSyslogMalformedLine maps the pinned IndexError position: a
+	// stripped line containing no ": " delimiter (including an empty
+	// or whitespace-only line), so cfgvars[1] does not exist.
+	errSyslogMalformedLine = errors.New("vsphere: syslog config row is malformed")
+)
+
+// formatSyslogConfig is the bounded, pure Go port of the pinned Salt
+// _format_syslog_config helper (saltstack/salt/modules/vsphere.py
+// lines 7704–7723). It takes the cmd.run_all-shaped result dictionary
+// and returns the pinned ret_dict: success derived from the retcode
+// plus either the verbatim stdout message (nonzero retcode) or the
+// syslog config key/value pairs parsed from the "stdout" string member
+// (zero retcode).
+//
+// The parser is private by design: it backs no registered function and
+// is an internal source-compatible primitive only. Real vSphere
+// transport remains ADR/decision-gated.
+func formatSyslogConfig(cmdRet map[string]any) (map[string]any, error) {
+	// The pinned source reads cmd_ret["retcode"] FIRST (line 7711);
+	// pinned Python compares retcode != 0 without explicit integer
+	// validation. StateKit rejects non-integers as an intentional
+	// fail-closed compatibility ceiling, answering the fixed value-free
+	// type error instead (nil map reads are safe). Exactly Go int:
+	// cmd.run_all retcodes are ints, and a float64/string retcode (e.g.
+	// from a JSON round-trip) answers the sentinel rather than being
+	// coerced.
+	rawRetcode, ok := cmdRet["retcode"]
+	if !ok {
+		return nil, errSyslogRetcodeType
+	}
+	retcode, ok := rawRetcode.(int)
+	if !ok {
+		return nil, errSyslogRetcodeType
+	}
+	// Both pinned paths read cmd_ret["stdout"] (the verbatim message
+	// copy or the .splitlines() parse), so the string requirement is
+	// checked up front, unconditionally.
+	raw, ok := cmdRet["stdout"]
+	if !ok {
+		return nil, errSyslogStdoutType
+	}
+	stdout, ok := raw.(string)
+	if !ok {
+		return nil, errSyslogStdoutType
+	}
+
+	// Budgets run in a fixed order before any branch: retcode type,
+	// stdout type, size, UTF-8 validity, then the line count during
+	// the split. The size and UTF-8 budgets run BEFORE the retcode
+	// branch, so the nonzero message copy is as bounded and
+	// JSON-encodable as the parsed result. The result map is local;
+	// every error path returns nil so no partial state ever escapes.
+	if len(stdout) > syslogMaxInput {
+		return nil, errSyslogStdoutSize
+	}
+	if !utf8.ValidString(stdout) {
+		return nil, errSyslogStdoutUTF8
+	}
+
+	ret := make(map[string]any, 8)
+
+	if retcode != 0 {
+		// The pinned message path: ret_dict = {"success": False,
+		// "message": cmd_ret["stdout"]} — the message is the RAW
+		// string, never stripped, and the lines are never parsed.
+		ret["success"] = false
+		ret["message"] = stdout
+		return ret, nil
+	}
+
+	// The pinned parsing path: ret_dict = {"success": True} plus one
+	// stripped key/value pair per line.
+	ret["success"] = true
+	over, err := pythonSplitlinesBounded(stdout, syslogMaxLines, func(line string) (bool, error) {
+		// The pinned loop never stops early; only an error aborts it.
+		return false, syslogParseLine(ret, line)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if over {
+		return nil, errSyslogLineLimit
+	}
+	return ret, nil
+}
+
+// syslogParseLine ports one iteration body of the pinned loop: strip,
+// split on the literal ": ", then the key/value store. It answers the
+// fixed malformed-row sentinel for the pinned IndexError position (a
+// stripped line with no ": " delimiter — cfgvars[1] of a one-element
+// split) and the fixed budget sentinels for oversized retained
+// key/value bytes and an over-budget result map; the map is only
+// mutated after every check for the row has passed, and any error
+// makes the caller discard the whole result, so no partial state
+// escapes.
+func syslogParseLine(ret map[string]any, raw string) error {
+	// line = line.strip() — runs BEFORE the delimiter split, so a
+	// whitespace-only line becomes empty and a whitespace-only tail
+	// disappears before the search ("a: " strips to "a:", which then
+	// has no delimiter and is malformed).
+	line := pythonStrip(raw)
+	// cfgvars = line.split(": ") — Python split on the exact
+	// two-character literal ": " (colon + ASCII space), all
+	// occurrences; strings.Split is the exact Go equivalent (it keeps
+	// the leading/trailing empty fields Python keeps).
+	cfgvars := strings.Split(line, ": ")
+	if len(cfgvars) < 2 {
+		// The pinned IndexError position: cfgvars[1] of a split with
+		// fewer than two parts — an empty (or whitespace-only) line
+		// and any stripped line without the delimiter.
+		return errSyslogMalformedLine
+	}
+	// Only cfgvars[0] and cfgvars[1] are consumed; a longer row's tail
+	// is discarded data, exactly like the pinned indexing. The byte
+	// caps cover the two RETAINED (stripped) byte strings; a huge
+	// unstripped part whose retained bytes are short stays within the
+	// 64 KiB input budget and parses.
+	key := pythonStrip(cfgvars[0])
+	value := pythonStrip(cfgvars[1])
+	if len(key) > syslogMaxField || len(value) > syslogMaxField {
+		return errSyslogFieldLimit
+	}
+	// The 256-key cap counts the retained ret_dict INCLUDING the
+	// initial success entry and is enforced BEFORE insertion; a
+	// duplicate key — and the parsed "success" entry itself —
+	// overwrites in place and never grows the map.
+	if _, exists := ret[key]; !exists && len(ret) >= syslogMaxKeys {
+		return errSyslogKeyLimit
+	}
+	// ret_dict[key] = value — duplicate keys overwrite in encounter
+	// order and a key "success" overwrites the boolean true with the
+	// string, exactly like the pinned dict assignment.
+	ret[key] = value
 	return nil
 }
 
