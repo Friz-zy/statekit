@@ -2,6 +2,7 @@ package config
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -495,5 +496,458 @@ func TestAnySliceYAMLStringCoercion(t *testing.T) {
 	}
 	if !reflect.DeepEqual(degenerate.Pkgs, []any{"sources"}) {
 		t.Fatalf("degenerate coercion = %#v", degenerate.Pkgs)
+	}
+}
+
+// TestPointerStringSliceStructuredNullClearsPopulatedTarget pins the reuse
+// contract of the tri-state list: an explicitly null structured value
+// resets the field to nil even when the target already carries a value,
+// while an omitted key leaves any prior value untouched, and an explicit
+// CLI flag still wins over structured null.
+func TestPointerStringSliceStructuredNullClearsPopulatedTarget(t *testing.T) {
+	populated := &optionalListArgs{Subsystems: strPtr("usb", "block")}
+	if err := Decode(populated, map[string]any{"subsystems": nil}, nil); err != nil {
+		t.Fatalf("decode structured null: %v", err)
+	}
+	if populated.Subsystems != nil {
+		t.Fatalf("explicit structured null must clear a populated target, got %v", *populated.Subsystems)
+	}
+
+	emptyPrior := &optionalListArgs{Subsystems: strPtr()}
+	if err := Decode(emptyPrior, map[string]any{"subsystems": nil}, nil); err != nil {
+		t.Fatalf("decode structured null over empty list: %v", err)
+	}
+	if emptyPrior.Subsystems != nil {
+		t.Fatalf("explicit structured null must clear a pointer-to-empty target, got %v", *emptyPrior.Subsystems)
+	}
+
+	omitted := &optionalListArgs{Subsystems: strPtr("usb")}
+	if err := Decode(omitted, map[string]any{}, nil); err != nil {
+		t.Fatalf("decode omitted: %v", err)
+	}
+	if omitted.Subsystems == nil || !reflect.DeepEqual(*omitted.Subsystems, []string{"usb"}) {
+		t.Fatalf("omitted key must leave the prior value untouched, got %v", omitted.Subsystems)
+	}
+
+	precedence := &optionalListArgs{Subsystems: strPtr("usb")}
+	if err := Decode(precedence, map[string]any{"subsystems": nil},
+		map[string]string{"subsystems": "pci"}); err != nil {
+		t.Fatalf("decode flag over null: %v", err)
+	}
+	if precedence.Subsystems == nil || !reflect.DeepEqual(*precedence.Subsystems, []string{"pci"}) {
+		t.Fatalf("explicit CLI flag must beat structured null, got %v", precedence.Subsystems)
+	}
+}
+
+func strPtr(values ...string) *[]string {
+	list := append([]string(nil), values...)
+	return &list
+}
+
+// boundedListArgs carries exportdb's exact filter ceilings on a decoded
+// argument; smallBoundedListArgs uses smaller limits so the total-bytes
+// check is independently reachable (256x256 makes the udev aggregate the
+// exact arithmetic maximum).
+type boundedListArgs struct {
+	Subsystems *[]string `statekit:"name=subsystems,maxentries=256,maxentrybytes=256,maxtotalbytes=65536"`
+}
+
+type smallBoundedListArgs struct {
+	Tags *[]string `statekit:"name=tags,maxentries=8,maxentrybytes=16,maxtotalbytes=32"`
+}
+
+func joinCSV(items ...string) string {
+	return strings.Join(items, ",")
+}
+
+// TestPointerStringSliceBoundedCLILimits proves the CLI comma value is
+// bounded before any destination allocation: entry count, entry bytes,
+// aggregate bytes, and a raw-value ceiling that also rejects
+// delimiter-heavy inputs regardless of how few tokens they keep.
+func TestPointerStringSliceBoundedCLILimits(t *testing.T) {
+	repeat := func(n, l int) []string {
+		out := make([]string, n)
+		for i := range out {
+			out[i] = strings.Repeat("s", l)
+		}
+		return out
+	}
+	for _, tc := range []struct {
+		name    string
+		raw     string
+		wantErr bool
+	}{
+		{"256 entries", joinCSV(repeat(256, 1)...), false},
+		{"257 entries", joinCSV(repeat(257, 1)...), true},
+		{"256 byte entry", strings.Repeat("s", 256), false},
+		{"257 byte entry", strings.Repeat("s", 257), true},
+		{"aggregate 64 KiB", joinCSV(repeat(256, 256)...), false},
+		{"exact 65792-byte raw ceiling", " " + joinCSV(repeat(256, 256)...), false},
+		{"raw ceiling exceeded by padding", joinCSV(repeat(256, 256)...) + "," + strings.Repeat(" ", 300), true},
+		{"delimiter heavy within ceiling", strings.Repeat(",", 65500), false},
+		{"delimiter heavy over ceiling", strings.Repeat(",", 65793), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			args := &boundedListArgs{}
+			err := Decode(args, nil, map[string]string{"subsystems": tc.raw})
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected bounded-list rejection")
+				}
+				if strings.Contains(err.Error(), "SECRET") {
+					t.Fatalf("diagnostic leaked value: %v", err)
+				}
+				if args.Subsystems != nil {
+					t.Fatalf("rejected input must not materialize a list, got %v", *args.Subsystems)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("valid bounded value rejected: %v", err)
+			}
+		})
+	}
+
+	// The valid maxima decode to the exact expected content, not just an
+	// absent error: 256 single-byte entries, the 64 KiB aggregate as 256
+	// entries of 256 bytes, and the exact 65,792-byte raw boundary
+	// (65,791 content bytes plus one trimmable padding byte).
+	maxEntries := &boundedListArgs{}
+	if err := Decode(maxEntries, nil, map[string]string{"subsystems": joinCSV(repeat(256, 1)...)}); err != nil {
+		t.Fatalf("256-entry max: %v", err)
+	}
+	if maxEntries.Subsystems == nil || len(*maxEntries.Subsystems) != 256 || (*maxEntries.Subsystems)[0] != "s" ||
+		(*maxEntries.Subsystems)[255] != "s" {
+		t.Fatalf("256-entry max content = %v", maxEntries.Subsystems)
+	}
+	maxTotal := &boundedListArgs{}
+	maxTotalRaw := joinCSV(repeat(256, 256)...)
+	if err := Decode(maxTotal, nil, map[string]string{"subsystems": maxTotalRaw}); err != nil {
+		t.Fatalf("64 KiB aggregate max: %v", err)
+	}
+	if maxTotal.Subsystems == nil || len(*maxTotal.Subsystems) != 256 ||
+		len((*maxTotal.Subsystems)[42]) != 256 || (*maxTotal.Subsystems)[42] != strings.Repeat("s", 256) {
+		t.Fatalf("64 KiB aggregate content = %v", maxTotal.Subsystems)
+	}
+	exactRaw := &boundedListArgs{}
+	exactRawValue := " " + maxTotalRaw // 1 + 65536 + 255 = 65,792 bytes exactly
+	if len(exactRawValue) != 65792 {
+		t.Fatalf("test construction: raw length = %d, want 65792", len(exactRawValue))
+	}
+	if err := Decode(exactRaw, nil, map[string]string{"subsystems": exactRawValue}); err != nil {
+		t.Fatalf("exact 65792-byte raw boundary: %v", err)
+	}
+	if exactRaw.Subsystems == nil || len(*exactRaw.Subsystems) != 256 {
+		t.Fatalf("exact raw boundary content = %v", exactRaw.Subsystems)
+	}
+
+	// Secret-looking over-limit values never reach the error text.
+	err := Decode(&boundedListArgs{}, nil,
+		map[string]string{"subsystems": strings.Repeat("SECRET-ENTRY", 40)})
+	if err == nil || strings.Contains(err.Error(), "SECRET-ENTRY") {
+		t.Fatalf("value-free bounded error required: %v", err)
+	}
+}
+
+// TestPointerStringSliceBoundedTotalBytes reaches the aggregate check with
+// limits whose count and entry caps alone cannot trigger it.
+func TestPointerStringSliceBoundedTotalBytes(t *testing.T) {
+	ok := &smallBoundedListArgs{}
+	if err := Decode(ok, nil, map[string]string{"tags": joinCSV(strings.Repeat("a", 16), strings.Repeat("b", 16))}); err != nil {
+		t.Fatalf("exact total must pass: %v", err)
+	}
+	if ok.Tags == nil || len(*ok.Tags) != 2 {
+		t.Fatalf("tags = %v", ok.Tags)
+	}
+	over := &smallBoundedListArgs{}
+	err := Decode(over, nil, map[string]string{"tags": joinCSV(
+		strings.Repeat("a", 16), strings.Repeat("b", 16), strings.Repeat("c", 1))})
+	if err == nil {
+		t.Fatal("aggregate over the total cap must fail")
+	}
+	if over.Tags != nil {
+		t.Fatalf("over-total input must not materialize, got %v", *over.Tags)
+	}
+}
+
+// TestPointerStringSliceBoundedStructured applies the same ceilings to
+// structured arrays before the destination copy, keeping the strict
+// element typing and the tri-state semantics.
+func TestPointerStringSliceBoundedStructured(t *testing.T) {
+	repeat := func(n, l int) []any {
+		out := make([]any, n)
+		for i := range out {
+			out[i] = strings.Repeat("s", l)
+		}
+		return out
+	}
+	if err := Decode(&boundedListArgs{}, map[string]any{"subsystems": repeat(256, 1)}, nil); err != nil {
+		t.Fatalf("256 structured entries must pass: %v", err)
+	}
+	if err := Decode(&boundedListArgs{}, map[string]any{"subsystems": repeat(257, 1)}, nil); err == nil {
+		t.Fatal("257 structured entries must fail")
+	}
+	if err := Decode(&boundedListArgs{}, map[string]any{"subsystems": repeat(1, 256)}, nil); err != nil {
+		t.Fatalf("256-byte structured entry must pass: %v", err)
+	}
+	err := Decode(&boundedListArgs{}, map[string]any{"subsystems": repeat(1, 257)}, nil)
+	if err == nil {
+		t.Fatal("257-byte structured entry must fail")
+	}
+	if strings.Contains(err.Error(), "ssss") {
+		t.Fatalf("structured entry diagnostic leaked value bytes: %v", err)
+	}
+	// Custom limits reach the structured aggregate check independently.
+	err = Decode(&smallBoundedListArgs{}, map[string]any{"tags": []any{
+		strings.Repeat("a", 16), strings.Repeat("b", 16), "c"}}, nil)
+	if err == nil {
+		t.Fatal("structured aggregate over the total cap must fail")
+	}
+
+	// Tri-state semantics keep working on bounded fields.
+	omitted := &boundedListArgs{}
+	if err := Decode(omitted, nil, nil); err != nil || omitted.Subsystems != nil {
+		t.Fatalf("omitted bounded list = %v, %v", omitted.Subsystems, err)
+	}
+	nulled := &boundedListArgs{Subsystems: strPtr("usb")}
+	if err := Decode(nulled, map[string]any{"subsystems": nil}, nil); err != nil || nulled.Subsystems != nil {
+		t.Fatalf("structured null bounded list = %v, %v", nulled.Subsystems, err)
+	}
+	emptyList := &boundedListArgs{}
+	if err := Decode(emptyList, map[string]any{"subsystems": []any{}}, nil); err != nil {
+		t.Fatalf("structured empty bounded list: %v", err)
+	}
+	if emptyList.Subsystems == nil || *emptyList.Subsystems == nil || len(*emptyList.Subsystems) != 0 {
+		t.Fatalf("structured empty bounded list = %v", emptyList.Subsystems)
+	}
+	precedence := &boundedListArgs{}
+	if err := Decode(precedence, map[string]any{"subsystems": repeat(2, 1)},
+		map[string]string{"subsystems": "pci"}); err != nil {
+		t.Fatalf("bounded precedence: %v", err)
+	}
+	if precedence.Subsystems == nil || !reflect.DeepEqual(*precedence.Subsystems, []string{"pci"}) {
+		t.Fatalf("bounded precedence = %v", precedence.Subsystems)
+	}
+}
+
+type badListLimitTargets struct {
+	Name string   `statekit:"name=name,maxentries=4"`
+	Tags []string `statekit:"name=tags,maxentries=4"`
+}
+
+type partialListLimitArgs struct {
+	Tags *[]string `statekit:"name=tags,maxentries=4"`
+}
+
+type zeroListLimitArgs struct {
+	Tags *[]string `statekit:"name=tags,maxentries=0,maxentrybytes=0,maxtotalbytes=0"`
+}
+
+// plainBoundedListArgs declares complete, valid limits on an ordinary
+// []string field: the ceiling mechanism is reserved for tri-state pointer
+// lists, so this schema must be rejected.
+type plainBoundedListArgs struct {
+	Tags []string `statekit:"name=tags,maxentries=8,maxentrybytes=16,maxtotalbytes=32"`
+}
+
+type dupEntriesLimitArgs struct {
+	Tags *[]string `statekit:"name=tags,maxentries=4,maxentries=8,maxentrybytes=16,maxtotalbytes=32"`
+}
+
+type dupEntryBytesLimitArgs struct {
+	Tags *[]string `statekit:"name=tags,maxentries=4,maxentrybytes=16,maxentrybytes=8,maxtotalbytes=32"`
+}
+
+type dupTotalLimitArgs struct {
+	Tags *[]string `statekit:"name=tags,maxentries=4,maxentrybytes=16,maxtotalbytes=32,maxtotalbytes=64"`
+}
+
+// dupEntriesMissingTotalArgs evades a pure occurrence count: three option
+// occurrences with maxentries duplicated and maxtotalbytes missing. Only
+// explicit distinct-key tracking rejects it.
+type dupEntriesMissingTotalArgs struct {
+	Tags *[]string `statekit:"name=tags,maxentries=4,maxentries=8,maxentrybytes=16"`
+}
+
+// TestListLimitTagValidation keeps the per-field ceiling mechanism
+// explicit: limits are all-or-nothing (each of the three distinct keys
+// exactly once), positive, and valid only on *[]string tri-state fields —
+// never on ordinary []string or non-list fields.
+func TestListLimitTagValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		target any
+	}{
+		{"non-list field", badListLimitTargets{}},
+		{"incomplete set", partialListLimitArgs{}},
+		{"non-positive values", zeroListLimitArgs{}},
+		{"ordinary slice with limits", plainBoundedListArgs{}},
+		{"duplicate maxentries", dupEntriesLimitArgs{}},
+		{"duplicate maxentrybytes", dupEntryBytesLimitArgs{}},
+		{"duplicate maxtotalbytes", dupTotalLimitArgs{}},
+		{"duplicate displacing missing key", dupEntriesMissingTotalArgs{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := ArgumentNames(tc.target); err == nil {
+				t.Fatalf("invalid list-limit tags must fail spec validation: %T", tc.target)
+			}
+			if _, err := NewFlagSet("bad", tc.target); err == nil {
+				t.Fatalf("invalid list-limit tags must fail flagset construction: %T", tc.target)
+			}
+		})
+	}
+	if _, err := ArgumentNames(boundedListArgs{}); err != nil {
+		t.Fatalf("valid *[]string list-limit tags must pass: %v", err)
+	}
+}
+
+// TestUntaggedPlainSliceCompatibilityStaysCoercing pins the historical
+// ordinary []string semantics now that bounded lists are pointer-only:
+// structured scalars still coerce to a single-element list.
+func TestUntaggedPlainSliceCompatibilityStaysCoercing(t *testing.T) {
+	tags := &sampleArgs{}
+	if err := Decode(tags, map[string]any{"name": "x", "tags": "usb"}, nil); err != nil {
+		t.Fatalf("plain slice scalar coercion: %v", err)
+	}
+	if !reflect.DeepEqual(tags.Tags, []string{"usb"}) {
+		t.Fatalf("plain slice scalar coercion = %#v", tags.Tags)
+	}
+	if err := Decode(tags, map[string]any{"name": "x", "tags": 7}, nil); err != nil {
+		t.Fatalf("plain slice numeric coercion must stay: %v", err)
+	}
+	if !reflect.DeepEqual(tags.Tags, []string{"7"}) {
+		t.Fatalf("plain slice numeric coercion = %#v", tags.Tags)
+	}
+}
+
+type optionalListArgs struct {
+	Subsystems *[]string `statekit:"name=subsystems"`
+}
+
+// TestPointerStringSliceTriState pins the optional-list contract used by
+// tri-state list arguments such as udev.exportdb's subsystems: omitted and
+// structured null stay nil (caller default), structured [] is a pointer to a
+// nonnil empty list (select none), structured lists must be arrays of
+// strings, CLI comma syntax follows splitList, and an explicitly empty CLI
+// value stays a nonnil empty list rather than reverting to nil.
+func TestPointerStringSliceTriState(t *testing.T) {
+	omitted := &optionalListArgs{}
+	if err := Decode(omitted, nil, nil); err != nil {
+		t.Fatalf("decode omitted: %v", err)
+	}
+	if omitted.Subsystems != nil {
+		t.Fatalf("omitted subsystems must stay nil, got %v", *omitted.Subsystems)
+	}
+
+	nullList := &optionalListArgs{}
+	if err := Decode(nullList, map[string]any{"subsystems": nil}, nil); err != nil {
+		t.Fatalf("decode structured null: %v", err)
+	}
+	if nullList.Subsystems != nil {
+		t.Fatalf("structured null subsystems must stay nil, got %v", *nullList.Subsystems)
+	}
+
+	emptyList := &optionalListArgs{}
+	if err := Decode(emptyList, map[string]any{"subsystems": []any{}}, nil); err != nil {
+		t.Fatalf("decode structured empty: %v", err)
+	}
+	if emptyList.Subsystems == nil || *emptyList.Subsystems == nil {
+		t.Fatalf("structured [] must set a pointer to a nonnil empty list, got %v", emptyList.Subsystems)
+	}
+
+	list := &optionalListArgs{}
+	if err := Decode(list, map[string]any{"subsystems": []any{"usb", "block"}}, nil); err != nil {
+		t.Fatalf("decode structured list: %v", err)
+	}
+	if list.Subsystems == nil || !reflect.DeepEqual(*list.Subsystems, []string{"usb", "block"}) {
+		t.Fatalf("structured list = %v", list.Subsystems)
+	}
+
+	flagList := &optionalListArgs{}
+	if err := Decode(flagList, map[string]any{"subsystems": []any{"usb"}},
+		map[string]string{"subsystems": "pci, usb,block"}); err != nil {
+		t.Fatalf("decode flag list: %v", err)
+	}
+	if flagList.Subsystems == nil || !reflect.DeepEqual(*flagList.Subsystems, []string{"pci", "usb", "block"}) {
+		t.Fatalf("flag list = %v, want explicit CLI values to override structured", flagList.Subsystems)
+	}
+
+	emptyFlag := &optionalListArgs{}
+	if err := Decode(emptyFlag, nil, map[string]string{"subsystems": ""}); err != nil {
+		t.Fatalf("decode explicit empty flag: %v", err)
+	}
+	if emptyFlag.Subsystems == nil || *emptyFlag.Subsystems == nil {
+		t.Fatalf("--subsystems= must stay a nonnil empty list, got %v", emptyFlag.Subsystems)
+	}
+
+	names, err := ArgumentNames(optionalListArgs{})
+	if err != nil || !reflect.DeepEqual(names, []string{"subsystems"}) {
+		t.Fatalf("argument names = %v, err = %v", names, err)
+	}
+	fs, err := NewFlagSet("optionallist", optionalListArgs{})
+	if err != nil {
+		t.Fatalf("flagset: %v", err)
+	}
+	if fs.Lookup("subsystems") == nil {
+		t.Fatal("*[]string must generate a CLI flag")
+	}
+}
+
+// TestPointerStringSliceStrictStructured rejects every non-array structured
+// shape before any Runner sees it, with value-free diagnostics.
+func TestPointerStringSliceStrictStructured(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		value any
+	}{
+		{"scalar string", "usb"},
+		{"bool", true},
+		{"number", 3},
+		{"object", map[string]any{"usb": "block"}},
+		{"nested array", []any{[]any{"usb"}}},
+		{"non-string element", []any{"usb", 7}},
+		{"bool element", []any{true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := Decode(&optionalListArgs{}, map[string]any{"subsystems": tc.value}, nil)
+			if err == nil {
+				t.Fatal("expected a conversion error")
+			}
+		})
+	}
+
+	// Diagnostics stay value-free: a secret-looking scalar must never reach
+	// the error text.
+	err := Decode(&optionalListArgs{}, map[string]any{"subsystems": "SUBSYS-SECRET-VALUE"}, nil)
+	if err == nil {
+		t.Fatal("structured scalar must be rejected")
+	}
+	if strings.Contains(err.Error(), "SUBSYS-SECRET-VALUE") {
+		t.Fatalf("diagnostic leaked the rejected value: %v", err)
+	}
+}
+
+type unsupportedPtrSliceArgs struct {
+	Bad *[]int `statekit:"name=bad"`
+}
+
+type unsupportedPtrAnySliceArgs struct {
+	Bad *[]any `statekit:"name=bad"`
+}
+
+// TestPointerSliceSupportIsStringOnly keeps the pointer-slice allowance at
+// exactly *[]string: other element kinds keep failing spec validation.
+func TestPointerSliceSupportIsStringOnly(t *testing.T) {
+	if _, err := ArgumentNames(unsupportedPtrSliceArgs{}); err == nil {
+		t.Fatal("*[]int must stay unsupported")
+	}
+	if _, err := ArgumentNames(unsupportedPtrAnySliceArgs{}); err == nil {
+		t.Fatal("*[]any must stay unsupported")
+	}
+	if _, err := NewFlagSet("bad", unsupportedPtrSliceArgs{}); err == nil {
+		t.Fatal("unsupported pointer slice must fail flagset construction")
+	}
+	if err := Decode(&unsupportedPtrSliceArgs{}, nil, nil); err == nil {
+		t.Fatal("unsupported pointer slice must fail decode")
 	}
 }

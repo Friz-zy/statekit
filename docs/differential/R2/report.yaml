@@ -56,7 +56,13 @@ families:
             - ps.pgrep-pkill-vs-procps
             - ps.top-cpu-sample-sanity
             - ps.active-tcp-vs-proc-net
+    udev:
+        catalog_functions: 9
+        public_functions: 6
+        private_functions: 3
+        registered_public: 6
+        differential_scenarios: []
 totals:
-    catalog_functions: 177
-    public_functions: 119
-    registered_public: 119
+    catalog_functions: 186
+    public_functions: 125
+    registered_public: 125

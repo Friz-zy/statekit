@@ -19,10 +19,24 @@ const tagKey = "statekit"
 
 // fieldSpec is the decoded statekit struct tag for one argument field.
 type fieldSpec struct {
-	index    int
-	name     string // canonical argument name: flag name and structured input key
-	field    string // Go field name for diagnostics
-	required bool
+	index      int
+	name       string // canonical argument name: flag name and structured input key
+	field      string // Go field name for diagnostics
+	required   bool
+	listLimits *listLimits // optional per-field string-list ceilings
+}
+
+// listLimits carries per-field string-list ceilings declared through the
+// maxentries/maxentrybytes/maxtotalbytes tag options, valid only on
+// *[]string tri-state fields. They bound caller input BEFORE any
+// destination list is allocated, so oversized filters are rejected at
+// input-decode time instead of after materialization. Fields without the
+// options — including ordinary []string — keep the historical decoder
+// semantics.
+type listLimits struct {
+	entries    int
+	entryBytes int
+	totalBytes int
 }
 
 // UnknownArgumentError reports an argument that the target function does not
@@ -59,6 +73,8 @@ func specsFor(t reflect.Type) ([]fieldSpec, error) {
 			return nil, fmt.Errorf("field %s: %w", f.Name, err)
 		}
 		spec := fieldSpec{index: i, name: strings.ToLower(f.Name), field: f.Name}
+		var limits listLimits
+		var seenEntries, seenEntryBytes, seenTotalBytes bool
 		if tag := f.Tag.Get(tagKey); tag != "" {
 			for _, part := range strings.Split(tag, ",") {
 				part = strings.TrimSpace(part)
@@ -68,10 +84,49 @@ func specsFor(t reflect.Type) ([]fieldSpec, error) {
 					spec.required = true
 				case strings.HasPrefix(part, "name="):
 					spec.name = strings.TrimPrefix(part, "name=")
+				case strings.HasPrefix(part, "maxentries="),
+					strings.HasPrefix(part, "maxentrybytes="),
+					strings.HasPrefix(part, "maxtotalbytes="):
+					value, perr := strconv.Atoi(part[strings.IndexByte(part, '=')+1:])
+					if perr != nil || value <= 0 {
+						return nil, fmt.Errorf("field %s: invalid list limit option %q", f.Name, part)
+					}
+					// Each of the three distinct keys may appear exactly
+					// once; duplicates are rejected explicitly so a
+					// duplicated key can never displace a missing one.
+					switch {
+					case strings.HasPrefix(part, "maxentries="):
+						if seenEntries {
+							return nil, fmt.Errorf("field %s: duplicate maxentries list limit", f.Name)
+						}
+						seenEntries, limits.entries = true, value
+					case strings.HasPrefix(part, "maxentrybytes="):
+						if seenEntryBytes {
+							return nil, fmt.Errorf("field %s: duplicate maxentrybytes list limit", f.Name)
+						}
+						seenEntryBytes, limits.entryBytes = true, value
+					default:
+						if seenTotalBytes {
+							return nil, fmt.Errorf("field %s: duplicate maxtotalbytes list limit", f.Name)
+						}
+						seenTotalBytes, limits.totalBytes = true, value
+					}
 				default:
 					return nil, fmt.Errorf("field %s: unsupported %s tag option %q", f.Name, tagKey, part)
 				}
 			}
+		}
+		if seenEntries || seenEntryBytes || seenTotalBytes {
+			if !seenEntries || !seenEntryBytes || !seenTotalBytes {
+				return nil, fmt.Errorf("field %s: list limits require maxentries, maxentrybytes, and maxtotalbytes together", f.Name)
+			}
+			// The ceiling mechanism is reserved for tri-state pointer
+			// lists; ordinary []string fields keep their historical
+			// coercing semantics.
+			if f.Type.Kind() != reflect.Pointer || !isStringSliceType(f.Type.Elem()) {
+				return nil, fmt.Errorf("field %s: list limits require a *[]string field", f.Name)
+			}
+			spec.listLimits = &limits
 		}
 		specs = append(specs, spec)
 	}
@@ -94,11 +149,16 @@ func checkSupportedKind(t reflect.Type) error {
 	case reflect.Pointer:
 		// Pointer fields carry tri-state options: nil keeps the Salt
 		// function default when the caller omits the argument entirely.
+		// *[]string additionally distinguishes an explicitly empty list
+		// (select none) from an omitted one (caller default).
 		if t.Elem().Kind() == reflect.Bool || t.Elem().Kind() == reflect.String ||
 			t.Elem().Kind() == reflect.Int || t.Elem().Kind() == reflect.Int64 {
 			return nil
 		}
-		return fmt.Errorf("unsupported pointer type *%s (only *bool, *string, *int, *int64)", t.Elem())
+		if t.Elem().Kind() == reflect.Slice && t.Elem().Elem().Kind() == reflect.String {
+			return nil
+		}
+		return fmt.Errorf("unsupported pointer type *%s (only *bool, *string, *int, *int64, *[]string)", t.Elem())
 	case reflect.Slice:
 		switch t.Elem().Kind() {
 		case reflect.String:
@@ -288,13 +348,13 @@ func Decode(target any, structured map[string]any, provided map[string]string) e
 	for _, s := range specs {
 		field := elem.Field(s.index)
 		if raw, ok := provided[s.name]; ok {
-			if err := assignFromFlag(field, s.name, raw); err != nil {
+			if err := assignFromFlag(field, s, raw); err != nil {
 				return err
 			}
 			continue
 		}
 		if raw, ok := structured[s.name]; ok {
-			if err := assignFromValue(field, s.name, raw); err != nil {
+			if err := assignFromValue(field, s, raw); err != nil {
 				return err
 			}
 		}
@@ -329,9 +389,21 @@ func assignError(name string, value, want any) error {
 	return fmt.Errorf("argument %q: cannot use %T as %T", name, value, want)
 }
 
-func assignFromFlag(field reflect.Value, name, raw string) error {
+func assignFromFlag(field reflect.Value, spec fieldSpec, raw string) error {
+	name := spec.name
 	if field.Kind() != reflect.Pointer {
 		// non-pointer path below
+	} else if isStringSliceType(field.Type().Elem()) {
+		// CLI list syntax follows the shared comma-list convention; an
+		// explicitly empty value stays a nonnil empty list. Declared
+		// list limits are enforced by the bounded scanner before any
+		// destination allocation.
+		list, ok := boundedCLIList(raw, spec.listLimits)
+		if !ok {
+			return fmt.Errorf("argument %q: list exceeds limit", name)
+		}
+		field.Set(reflect.ValueOf(&list))
+		return nil
 	} else if field.Type().Elem().Kind() == reflect.Bool {
 		b, err := strconv.ParseBool(raw)
 		if err != nil {
@@ -388,7 +460,11 @@ func assignFromFlag(field reflect.Value, name, raw string) error {
 		if field.Type().Elem().Kind() == reflect.Interface {
 			return fmt.Errorf("argument %q: list-of-dicts argument must be provided via structured input", name)
 		}
-		field.Set(reflect.ValueOf(splitList(raw)))
+		list, ok := boundedCLIList(raw, spec.listLimits)
+		if !ok {
+			return fmt.Errorf("argument %q: list exceeds limit", name)
+		}
+		field.Set(reflect.ValueOf(list))
 	default:
 		return assignError(name, raw, field.Interface())
 	}
@@ -408,12 +484,76 @@ func splitList(raw string) []string {
 	return out
 }
 
-func assignFromValue(field reflect.Value, name string, v any) error {
+// boundedCLIList applies the per-field list ceilings to a raw comma-list
+// flag value before any destination allocation. With no declared limits it
+// keeps the historical splitList semantics. With limits it never splits
+// the whole input up front: a raw-value ceiling (total kept bytes plus one
+// separator per additional entry — anything longer, including
+// delimiter-heavy padding, cannot decode within the ceilings) is checked
+// first, then comma tokens are scanned incrementally with the entry-count,
+// entry-byte, and aggregate-byte checks ahead of each append. Trimming and
+// empty-token skipping match splitList exactly.
+func boundedCLIList(raw string, limits *listLimits) ([]string, bool) {
+	if limits == nil {
+		return splitList(raw), true
+	}
+	if len(raw) > limits.totalBytes+limits.entries {
+		return nil, false
+	}
+	out := []string{}
+	total := 0
+	rest := raw
+	for {
+		token := rest
+		last := true
+		if i := strings.IndexByte(rest, ','); i >= 0 {
+			token, rest, last = rest[:i], rest[i+1:], false
+		}
+		token = strings.TrimSpace(token)
+		if token != "" {
+			if len(out)+1 > limits.entries || len(token) > limits.entryBytes {
+				return nil, false
+			}
+			total += len(token)
+			if total > limits.totalBytes {
+				return nil, false
+			}
+			out = append(out, token)
+		}
+		if last {
+			return out, true
+		}
+	}
+}
+
+func assignFromValue(field reflect.Value, spec fieldSpec, v any) error {
+	name := spec.name
+	if field.Kind() == reflect.Pointer && isStringSliceType(field.Type().Elem()) {
+		if v == nil {
+			// Structured null is an explicit unset on reused targets too:
+			// reset the field so the function default wins again. An
+			// omitted key (no map entry) never reaches this branch and
+			// leaves any prior value untouched.
+			field.Set(reflect.Zero(field.Type()))
+			return nil
+		}
+		items, ok := boundedStrictStringSlice(v, spec.listLimits)
+		if !ok {
+			// Value-free: structured input must be an array of strings
+			// within any declared list ceilings; scalars, objects,
+			// nested arrays, non-string values, and over-limit arrays
+			// are rejected before any Runner executes — and before a
+			// destination copy is made.
+			return fmt.Errorf("argument %q: expected a list of strings", name)
+		}
+		field.Set(reflect.ValueOf(&items))
+		return nil
+	}
 	if field.Kind() == reflect.Pointer &&
 		(field.Type().Elem().Kind() == reflect.Bool || field.Type().Elem().Kind() == reflect.String ||
 			field.Type().Elem().Kind() == reflect.Int || field.Type().Elem().Kind() == reflect.Int64) {
 		tmp := reflect.New(field.Type().Elem()).Elem()
-		if err := assignFromValue(tmp, name, v); err != nil {
+		if err := assignFromValue(tmp, spec, v); err != nil {
 			return err
 		}
 		ptr := reflect.New(field.Type().Elem())
@@ -514,6 +654,67 @@ func toTypedMap(t reflect.Type, v any) (any, error) {
 		return out, nil
 	default:
 		return nil, fmt.Errorf("unsupported map value type")
+	}
+}
+
+// isStringSliceType reports whether t is []string.
+func isStringSliceType(t reflect.Type) bool {
+	return t.Kind() == reflect.Slice && t.Elem().Kind() == reflect.String
+}
+
+// boundedStrictStringSlice validates the complete structured value —
+// element types, entry count, entry bytes, and aggregate bytes — before
+// building the destination copy, so over-limit structured arrays are
+// rejected without a materialized copy. A nil limits set keeps only the
+// strict typing (unlike the coercing toStringSlice used by plain []string
+// fields, every other shape — scalars, objects, nested arrays, non-string
+// elements — is rejected so a tri-state pointer list cannot silently
+// degrade caller input).
+func boundedStrictStringSlice(v any, limits *listLimits) ([]string, bool) {
+	var out []string
+	switch t := v.(type) {
+	case []string:
+		if limits != nil && len(t) > limits.entries {
+			return nil, false
+		}
+		total := 0
+		for _, item := range t {
+			if limits != nil && len(item) > limits.entryBytes {
+				return nil, false
+			}
+			total += len(item)
+		}
+		if limits != nil && total > limits.totalBytes {
+			return nil, false
+		}
+		out = make([]string, len(t))
+		copy(out, t)
+		return out, true
+	case []any:
+		if limits != nil && len(t) > limits.entries {
+			return nil, false
+		}
+		total := 0
+		for _, item := range t {
+			s, isString := item.(string)
+			if !isString {
+				return nil, false
+			}
+			if limits != nil && len(s) > limits.entryBytes {
+				return nil, false
+			}
+			total += len(s)
+		}
+		if limits != nil && total > limits.totalBytes {
+			return nil, false
+		}
+		out = make([]string, 0, len(t))
+		for _, item := range t {
+			out = append(out, item.(string))
+		}
+		return out, true
+	default:
+		return nil, false
 	}
 }
 

@@ -22,8 +22,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// r2Families lists the execution families ported during round R2.
-var r2Families = []string{"iptables", "ipset", "nftables", "bridge", "ps", "network"}
+// r2Families lists the execution families ported during round R2. udev
+// joined R2 retroactively with exportdb (PTD-EXEC-1639); env/info shipped
+// earlier through the same module.
+var r2Families = []string{"iptables", "ipset", "nftables", "bridge", "ps", "network", "udev"}
 
 // scenarioManifest pins the twin-container scenarios the nightly
 // differential run must execute once Salt runtime containers land
@@ -61,6 +63,12 @@ var scenarioManifest = map[string][]string{
 		"network.interfaces-routes-vs-iproute2",
 		"network.ping-traceroute-dig-wrappers",
 	},
+	// udev has no live twin scenario this round: the
+	// exportdb/env/info/name/path/links contracts are pinned by hermetic
+	// fake-Runner tests; the explicit
+	// nonnil empty slice records the family in the report with an empty
+	// differential_scenarios list rather than omitting it.
+	"udev": {},
 }
 
 type catalogFile struct {

@@ -13,10 +13,13 @@ import (
 	"time"
 
 	"github.com/friz-zy/statekit/internal/bootstrap"
+	"github.com/friz-zy/statekit/internal/config"
 	"github.com/friz-zy/statekit/internal/process"
 	"github.com/friz-zy/statekit/internal/runtime"
 	execfile "github.com/friz-zy/statekit/modules/exec/file"
 	execlogrotate "github.com/friz-zy/statekit/modules/exec/logrotate"
+
+	"gopkg.in/yaml.v3"
 )
 
 type recordingRunner struct {
@@ -301,6 +304,574 @@ func TestStatusTimeRegistersCanonicalSaltAlias(t *testing.T) {
 	rendered, _ = value.(string)
 	if !regexp.MustCompile(`^20\d{2}$`).MatchString(rendered) {
 		t.Fatalf("status.time %%Y = %q, want a 4-digit year", rendered)
+	}
+}
+
+// TestPortingDebtExecUdevExportdbCanonicalRegistrationPTD_EXEC_1639 is the
+// PTD-EXEC-1639 / PTD-TEST-1674 regression: the udev family surface is
+// registered exactly once per canonical name (six names, no superseded
+// aliases; links/name/path landed with PTD-EXEC-1640/1641/1642), the
+// exportdb catalog entry declares exactly
+// the source signature exportdb(subsystems=None), the mapped Salt fixture
+// parses through the registry, the subsystem filter mirrors
+// test_udev_subsystem_filter, and failures keep the fixed value-free
+// error shapes without dispatching on invalid arguments.
+func TestPortingDebtExecUdevExportdbCanonicalRegistrationPTD_EXEC_1639(t *testing.T) {
+	rt, err := bootstrap.BuildRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var udevNames []string
+	counts := map[string]int{}
+	for _, name := range rt.Exec.Names() {
+		if strings.HasPrefix(name, "udev.") {
+			udevNames = append(udevNames, name)
+			counts[name]++
+		}
+	}
+	want := []string{"udev.env", "udev.exportdb", "udev.info", "udev.links", "udev.name", "udev.path"}
+	if !reflect.DeepEqual(udevNames, want) {
+		t.Fatalf("udev.* names = %v, want %v", udevNames, want)
+	}
+	for _, name := range want {
+		if counts[name] != 1 {
+			t.Fatalf("%s registered %d times, want exactly 1", name, counts[name])
+		}
+	}
+
+	// Catalog-declared parameters must match the source signature
+	// exportdb(subsystems=None).
+	catalogData, err := os.ReadFile(filepath.Join("..", "docs", "catalog", "exec", "udev.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var catalog struct {
+		Functions []struct {
+			Function   string `yaml:"function"`
+			Parameters []struct {
+				Name    string  `yaml:"name"`
+				Default *string `yaml:"default"`
+			} `yaml:"parameters"`
+		} `yaml:"functions"`
+	}
+	if err := yaml.Unmarshal(catalogData, &catalog); err != nil {
+		t.Fatal(err)
+	}
+	var exportdbEntry *struct {
+		Function   string `yaml:"function"`
+		Parameters []struct {
+			Name    string  `yaml:"name"`
+			Default *string `yaml:"default"`
+		} `yaml:"parameters"`
+	}
+	for i := range catalog.Functions {
+		if catalog.Functions[i].Function == "exportdb" {
+			exportdbEntry = &catalog.Functions[i]
+		}
+	}
+	if exportdbEntry == nil {
+		t.Fatal("catalog has no exportdb entry")
+	}
+	if len(exportdbEntry.Parameters) != 1 || exportdbEntry.Parameters[0].Name != "subsystems" {
+		t.Fatalf("exportdb parameters = %#v, want exactly subsystems", exportdbEntry.Parameters)
+	}
+	if exportdbEntry.Parameters[0].Default == nil || *exportdbEntry.Parameters[0].Default != "None" {
+		t.Fatalf("subsystems default = %#v, want None", exportdbEntry.Parameters[0].Default)
+	}
+
+	// Registry dispatch over the mapped Salt fixture: the pinned
+	// test_exportdb three-record database parses in order.
+	fixtureRunner := &udevFixtureRunner{stdout: udevExportDBFixture}
+	rt.Runner = fixtureRunner
+	proto, err := rt.Exec.ResolveArgs(rt, "udev.exportdb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := rt.Exec.Call(context.Background(), rt, "udev.exportdb",
+		reflect.New(reflect.TypeOf(proto)).Interface())
+	if err != nil {
+		t.Fatal(err)
+	}
+	records, ok := value.([]map[string]any)
+	if !ok || len(records) != 3 {
+		t.Fatalf("exportdb fixture records = %#v", value)
+	}
+	first, ok := records[0]["E"].(map[string]any)
+	if !ok || first["SUBSYSTEM"] != "acpi" || first["DRIVER"] != "button" {
+		t.Fatalf("first fixture record E = %#v", records[0]["E"])
+	}
+	if records[2]["N"] != "input/event2" {
+		t.Fatalf("third fixture record N = %#v", records[2]["N"])
+	}
+
+	// The subsystem filter mirrors test_udev_subsystem_filter: ["acpi",
+	// "usb"] keeps exactly the first record.
+	args := reflect.New(reflect.TypeOf(proto)).Interface()
+	filter := []string{"acpi", "usb"}
+	reflect.ValueOf(args).Elem().FieldByName("Subsystems").Set(reflect.ValueOf(&filter))
+	value, err = rt.Exec.Call(context.Background(), rt, "udev.exportdb", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records, ok = value.([]map[string]any)
+	if !ok || len(records) != 1 || records[0]["P"] != "/devices/LNXSYSTM:00/LNXPWRBN:00" {
+		t.Fatalf("filtered fixture records = %#v", value)
+	}
+	if fixtureRunner.calls != 2 {
+		t.Fatalf("runner calls = %d, want one per registry dispatch", fixtureRunner.calls)
+	}
+
+	// Failure shape: a nonzero udevadm exit surfaces the fixed value-free
+	// error, not udevadm's stderr.
+	fixtureRunner = &udevFixtureRunner{result: process.CommandResult{
+		ExitCode: 1, Stderr: []byte("secret-udevadm-stderr")}}
+	rt.Runner = fixtureRunner
+	_, err = rt.Exec.Call(context.Background(), rt, "udev.exportdb",
+		reflect.New(reflect.TypeOf(proto)).Interface())
+	if err == nil || err.Error() != "udev.exportdb: command failed" {
+		t.Fatalf("nonzero exit err = %v", err)
+	}
+	if strings.Contains(err.Error(), "secret-udevadm-stderr") {
+		t.Fatal("nonzero exit error leaked udevadm stderr")
+	}
+
+	// Validation before dispatch: an over-ceiling filter never starts a
+	// process.
+	fixtureRunner = &udevFixtureRunner{stdout: udevExportDBFixture}
+	rt.Runner = fixtureRunner
+	tooMany := make([]string, 257)
+	for i := range tooMany {
+		tooMany[i] = "x"
+	}
+	args = reflect.New(reflect.TypeOf(proto)).Interface()
+	reflect.ValueOf(args).Elem().FieldByName("Subsystems").Set(reflect.ValueOf(&tooMany))
+	if _, err := rt.Exec.Call(context.Background(), rt, "udev.exportdb", args); err == nil {
+		t.Fatal("over-ceiling filter must fail")
+	}
+	if fixtureRunner.calls != 0 {
+		t.Fatalf("invalid filter dispatched %d commands, want 0", fixtureRunner.calls)
+	}
+}
+
+// udevFixtureRunner answers every dispatch with the same fixed result.
+type udevFixtureRunner struct {
+	calls  int
+	stdout string
+	result process.CommandResult
+}
+
+func (r *udevFixtureRunner) Run(_ context.Context, _ process.Command) process.CommandResult {
+	r.calls++
+	if r.result.ExitCode != 0 || r.result.Stdout != nil {
+		return r.result
+	}
+	return process.CommandResult{ExitCode: 0, Stdout: []byte(r.stdout)}
+}
+
+// udevExportDBFixture is the pinned three-record database from
+// saltstack/tests/pytests/unit/modules/test_udev.py.
+const udevExportDBFixture = `
+P: /devices/LNXSYSTM:00/LNXPWRBN:00
+E: DEVPATH=/devices/LNXSYSTM:00/LNXPWRBN:00
+E: DRIVER=button
+E: MODALIAS=acpi:LNXPWRBN:
+E: SUBSYSTEM=acpi
+
+P: /devices/LNXSYSTM:00/LNXPWRBN:00/input/input2
+E: DEVPATH=/devices/LNXSYSTM:00/LNXPWRBN:00/input/input2
+E: EV=3
+E: ID_INPUT=1
+E: SUBSYSTEM=input
+
+P: /devices/LNXSYSTM:00/LNXPWRBN:00/input/input2/event2
+N: input/event2
+E: DEVNAME=/dev/input/event2
+E: MAJOR=13
+E: MINOR=66
+E: SUBSYSTEM=input
+`
+
+// udevNamePathLinksFixture is a single-record `udevadm info --export`
+// payload in the pinned upstream fixture style — scalar P and N, a
+// multi-value S list, and an E map — covering every section the
+// name/path/links wrappers extract via Salt's .get(section, None).
+const udevNamePathLinksFixture = `P: /devices/LNXSYSTM:00/LNXPWRBN:00/input/input2/event2
+N: input/event2
+S: input/by-path/platform-LNXPWRBN:00-event
+S: input/by-id/usb-LNXPWRBN-event
+E: DEVNAME=/dev/input/event2
+E: MAJOR=13
+E: MINOR=66
+E: SUBSYSTEM=input
+`
+
+// udevAbsentSectionsFixture carries only an E section: the record is
+// valid through its E section while N, P, and S are absent, so each
+// wrapper's .get(section, None) maps to nil.
+const udevAbsentSectionsFixture = "E: SUBSYSTEM=input\n"
+
+// udevRecordingRunner answers every dispatch like udevFixtureRunner and
+// additionally records each dispatched argv so the wrappers' exact fixed
+// `udevadm info` command shape is asserted.
+type udevRecordingRunner struct {
+	udevFixtureRunner
+	argv [][]string
+}
+
+func (r *udevRecordingRunner) Run(ctx context.Context, cmd process.Command) process.CommandResult {
+	r.argv = append(r.argv, append([]string{cmd.Name}, cmd.Args...))
+	return r.udevFixtureRunner.Run(ctx, cmd)
+}
+
+// udevCatalogParam is one declared parameter of a catalog function entry.
+type udevCatalogParam struct {
+	Name    string  `yaml:"name"`
+	Default *string `yaml:"default"`
+}
+
+// udevCatalogParameters returns the declared parameters of one function
+// entry in docs/catalog/exec/udev.yaml, failing the test when the entry
+// is missing.
+func udevCatalogParameters(t *testing.T, function string) []udevCatalogParam {
+	t.Helper()
+	catalogData, err := os.ReadFile(filepath.Join("..", "docs", "catalog", "exec", "udev.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var catalog struct {
+		Functions []struct {
+			Function   string             `yaml:"function"`
+			Parameters []udevCatalogParam `yaml:"parameters"`
+		} `yaml:"functions"`
+	}
+	if err := yaml.Unmarshal(catalogData, &catalog); err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range catalog.Functions {
+		if entry.Function == function {
+			return entry.Parameters
+		}
+	}
+	t.Fatalf("catalog has no %s entry", function)
+	return nil
+}
+
+// TestPortingDebtExecUdevLinksCanonicalRegistrationPTD_EXEC_1640 is the
+// PTD-EXEC-1640 / PTD-TEST-1675 regression: the udev.links loader name is
+// registered exactly once (no superseded udev.links_ alias), the args
+// schema is exactly the source signature links(dev) with required dev and
+// no default, and registry dispatch answers the source contract over a
+// fake runner: a multi-value S section stays an ordered []any, an absent
+// S maps to nil (Salt .get("S", None)), empty udevadm output keeps info's
+// "no device found for <dev>" failure, and missing dev is rejected by the
+// decode gate before any Runner dispatch. No dedicated upstream unit test
+// exists for this wrapper; coverage here is statekit regression, not an
+// upstream test port.
+func TestPortingDebtExecUdevLinksCanonicalRegistrationPTD_EXEC_1640(t *testing.T) {
+	rt, err := bootstrap.BuildRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := countName(rt.Exec.Names(), "udev.links"); got != 1 {
+		t.Fatalf("udev.links registered %d times, want exactly 1", got)
+	}
+	if got := countName(rt.Exec.Names(), "udev.links_"); got != 0 {
+		t.Fatalf("superseded alias udev.links_ registered %d times, want 0", got)
+	}
+
+	// Catalog signature: links(dev) with exactly one parameter and no
+	// declared default, matching the pinned source.
+	params := udevCatalogParameters(t, "links")
+	if len(params) != 1 || params[0].Name != "dev" || params[0].Default != nil {
+		t.Fatalf("catalog links parameters = %#v, want exactly dev with no default", params)
+	}
+
+	// Args schema: exactly one required string dev field with no default
+	// and no optional fields; the canonical argument name is proven by
+	// the missing-required error text.
+	proto, err := rt.Exec.ResolveArgs(rt, "udev.links")
+	if err != nil {
+		t.Fatal(err)
+	}
+	argsType := reflect.TypeOf(proto)
+	if argsType.Kind() != reflect.Struct || argsType.NumField() != 1 {
+		t.Fatalf("udev.links args type = %s with %d fields, want a one-field struct", argsType, argsType.NumField())
+	}
+	devField := argsType.Field(0)
+	if devField.Name != "Dev" || devField.Type.Kind() != reflect.String || devField.Tag.Get("statekit") != "required" {
+		t.Fatalf("udev.links dev field = %s %s tag %q, want string Dev tagged exactly required", devField.Name, devField.Type, devField.Tag.Get("statekit"))
+	}
+	uncalled := &udevFixtureRunner{}
+	rt.Runner = uncalled
+	if err := config.ValidateRequired(reflect.New(argsType).Interface()); err == nil || err.Error() != `missing required argument "dev"` {
+		t.Fatalf("missing dev err = %v, want missing required argument \"dev\"", err)
+	}
+	if uncalled.calls != 0 {
+		t.Fatalf("missing dev gate dispatched %d commands, want 0", uncalled.calls)
+	}
+
+	// Value dispatch through the registry over the fake runner: a sys
+	// dev switches the shared info dispatch to the path query, and the
+	// multi-value S section stays an ordered []any.
+	rec := &udevRecordingRunner{udevFixtureRunner: udevFixtureRunner{stdout: udevNamePathLinksFixture}}
+	rt.Runner = rec
+	args := reflect.New(argsType).Interface()
+	reflect.ValueOf(args).Elem().FieldByName("Dev").SetString("/sys/class/input/event2")
+	value, err := rt.Exec.Call(context.Background(), rt, "udev.links", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantArgv := []string{"udevadm", "info", "--export", "--query=all", "--path=/sys/class/input/event2"}
+	if rec.calls != 1 || len(rec.argv) != 1 || !reflect.DeepEqual(rec.argv[0], wantArgv) {
+		t.Fatalf("udev.links argv = %v (calls %d), want exactly %v", rec.argv, rec.calls, wantArgv)
+	}
+	links, ok := value.([]any)
+	if !ok || !reflect.DeepEqual(links, []any{"input/by-path/platform-LNXPWRBN:00-event", "input/by-id/usb-LNXPWRBN-event"}) {
+		t.Fatalf("udev.links = %#v, want the two S values as an ordered []any", value)
+	}
+
+	// Absent section: .get("S", None) maps to nil, not an error or an
+	// empty string.
+	absent := &udevFixtureRunner{stdout: udevAbsentSectionsFixture}
+	rt.Runner = absent
+	args = reflect.New(argsType).Interface()
+	reflect.ValueOf(args).Elem().FieldByName("Dev").SetString("/sys/class/input/event2")
+	value, err = rt.Exec.Call(context.Background(), rt, "udev.links", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != nil {
+		t.Fatalf("udev.links without S = %#v, want nil", value)
+	}
+	if absent.calls != 1 {
+		t.Fatalf("absent dispatch ran %d commands, want 1", absent.calls)
+	}
+
+	// Empty udevadm output keeps info's fixed failure shape.
+	empty := &udevFixtureRunner{}
+	rt.Runner = empty
+	args = reflect.New(argsType).Interface()
+	reflect.ValueOf(args).Elem().FieldByName("Dev").SetString("/sys/class/input/event2")
+	_, err = rt.Exec.Call(context.Background(), rt, "udev.links", args)
+	if err == nil || err.Error() != "no device found for /sys/class/input/event2" {
+		t.Fatalf("empty stdout err = %v, want no device found for /sys/class/input/event2", err)
+	}
+	if empty.calls != 1 {
+		t.Fatalf("empty dispatch ran %d commands, want 1", empty.calls)
+	}
+}
+
+// TestPortingDebtExecUdevNameCanonicalRegistrationPTD_EXEC_1641 is the
+// PTD-EXEC-1641 / PTD-TEST-1676 regression: the udev.name loader name is
+// registered exactly once (no superseded udev.name_ alias), the args
+// schema is exactly the source signature name(dev) with required dev and
+// no default, and registry dispatch answers the source contract over a
+// fake runner: a single-value N section collapses to the scalar name, an
+// absent N maps to nil (Salt .get("N", None)), empty udevadm output
+// keeps info's "no device found for <dev>" failure, and missing dev is
+// rejected by the decode gate before any Runner dispatch. No dedicated
+// upstream unit test exists for this wrapper; coverage here is statekit
+// regression, not an upstream test port.
+func TestPortingDebtExecUdevNameCanonicalRegistrationPTD_EXEC_1641(t *testing.T) {
+	rt, err := bootstrap.BuildRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := countName(rt.Exec.Names(), "udev.name"); got != 1 {
+		t.Fatalf("udev.name registered %d times, want exactly 1", got)
+	}
+	if got := countName(rt.Exec.Names(), "udev.name_"); got != 0 {
+		t.Fatalf("superseded alias udev.name_ registered %d times, want 0", got)
+	}
+
+	// Catalog signature: name(dev) with exactly one parameter and no
+	// declared default, matching the pinned source.
+	params := udevCatalogParameters(t, "name")
+	if len(params) != 1 || params[0].Name != "dev" || params[0].Default != nil {
+		t.Fatalf("catalog name parameters = %#v, want exactly dev with no default", params)
+	}
+
+	// Args schema: exactly one required string dev field with no default
+	// and no optional fields; the canonical argument name is proven by
+	// the missing-required error text.
+	proto, err := rt.Exec.ResolveArgs(rt, "udev.name")
+	if err != nil {
+		t.Fatal(err)
+	}
+	argsType := reflect.TypeOf(proto)
+	if argsType.Kind() != reflect.Struct || argsType.NumField() != 1 {
+		t.Fatalf("udev.name args type = %s with %d fields, want a one-field struct", argsType, argsType.NumField())
+	}
+	devField := argsType.Field(0)
+	if devField.Name != "Dev" || devField.Type.Kind() != reflect.String || devField.Tag.Get("statekit") != "required" {
+		t.Fatalf("udev.name dev field = %s %s tag %q, want string Dev tagged exactly required", devField.Name, devField.Type, devField.Tag.Get("statekit"))
+	}
+	uncalled := &udevFixtureRunner{}
+	rt.Runner = uncalled
+	if err := config.ValidateRequired(reflect.New(argsType).Interface()); err == nil || err.Error() != `missing required argument "dev"` {
+		t.Fatalf("missing dev err = %v, want missing required argument \"dev\"", err)
+	}
+	if uncalled.calls != 0 {
+		t.Fatalf("missing dev gate dispatched %d commands, want 0", uncalled.calls)
+	}
+
+	// Value dispatch through the registry over the fake runner: a plain
+	// dev queries through the name query type and the single-value N
+	// section collapses to the scalar name.
+	rec := &udevRecordingRunner{udevFixtureRunner: udevFixtureRunner{stdout: udevNamePathLinksFixture}}
+	rt.Runner = rec
+	args := reflect.New(argsType).Interface()
+	reflect.ValueOf(args).Elem().FieldByName("Dev").SetString("input/event2")
+	value, err := rt.Exec.Call(context.Background(), rt, "udev.name", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantArgv := []string{"udevadm", "info", "--export", "--query=all", "--name=input/event2"}
+	if rec.calls != 1 || len(rec.argv) != 1 || !reflect.DeepEqual(rec.argv[0], wantArgv) {
+		t.Fatalf("udev.name argv = %v (calls %d), want exactly %v", rec.argv, rec.calls, wantArgv)
+	}
+	name, ok := value.(string)
+	if !ok || name != "input/event2" {
+		t.Fatalf("udev.name = %#v, want the scalar N value input/event2", value)
+	}
+
+	// Absent section: .get("N", None) maps to nil, not an error or an
+	// empty string.
+	absent := &udevFixtureRunner{stdout: udevAbsentSectionsFixture}
+	rt.Runner = absent
+	args = reflect.New(argsType).Interface()
+	reflect.ValueOf(args).Elem().FieldByName("Dev").SetString("input/event2")
+	value, err = rt.Exec.Call(context.Background(), rt, "udev.name", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != nil {
+		t.Fatalf("udev.name without N = %#v, want nil", value)
+	}
+	if absent.calls != 1 {
+		t.Fatalf("absent dispatch ran %d commands, want 1", absent.calls)
+	}
+
+	// Empty udevadm output keeps info's fixed failure shape.
+	empty := &udevFixtureRunner{}
+	rt.Runner = empty
+	args = reflect.New(argsType).Interface()
+	reflect.ValueOf(args).Elem().FieldByName("Dev").SetString("input/event2")
+	_, err = rt.Exec.Call(context.Background(), rt, "udev.name", args)
+	if err == nil || err.Error() != "no device found for input/event2" {
+		t.Fatalf("empty stdout err = %v, want no device found for input/event2", err)
+	}
+	if empty.calls != 1 {
+		t.Fatalf("empty dispatch ran %d commands, want 1", empty.calls)
+	}
+}
+
+// TestPortingDebtExecUdevPathCanonicalRegistrationPTD_EXEC_1642 is the
+// PTD-EXEC-1642 / PTD-TEST-1677 regression: the udev.path loader name is
+// registered exactly once (no superseded udev.path_ alias), the args
+// schema is exactly the source signature path(dev) with required dev and
+// no default, and registry dispatch answers the source contract over a
+// fake runner: a single-value P section collapses to the scalar device
+// path, an absent P maps to nil (Salt .get("P", None)), empty udevadm
+// output keeps info's "no device found for <dev>" failure, and missing
+// dev is rejected by the decode gate before any Runner dispatch. No
+// dedicated upstream unit test exists for this wrapper; coverage here is
+// statekit regression, not an upstream test port.
+func TestPortingDebtExecUdevPathCanonicalRegistrationPTD_EXEC_1642(t *testing.T) {
+	rt, err := bootstrap.BuildRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := countName(rt.Exec.Names(), "udev.path"); got != 1 {
+		t.Fatalf("udev.path registered %d times, want exactly 1", got)
+	}
+	if got := countName(rt.Exec.Names(), "udev.path_"); got != 0 {
+		t.Fatalf("superseded alias udev.path_ registered %d times, want 0", got)
+	}
+
+	// Catalog signature: path(dev) with exactly one parameter and no
+	// declared default, matching the pinned source.
+	params := udevCatalogParameters(t, "path")
+	if len(params) != 1 || params[0].Name != "dev" || params[0].Default != nil {
+		t.Fatalf("catalog path parameters = %#v, want exactly dev with no default", params)
+	}
+
+	// Args schema: exactly one required string dev field with no default
+	// and no optional fields; the canonical argument name is proven by
+	// the missing-required error text.
+	proto, err := rt.Exec.ResolveArgs(rt, "udev.path")
+	if err != nil {
+		t.Fatal(err)
+	}
+	argsType := reflect.TypeOf(proto)
+	if argsType.Kind() != reflect.Struct || argsType.NumField() != 1 {
+		t.Fatalf("udev.path args type = %s with %d fields, want a one-field struct", argsType, argsType.NumField())
+	}
+	devField := argsType.Field(0)
+	if devField.Name != "Dev" || devField.Type.Kind() != reflect.String || devField.Tag.Get("statekit") != "required" {
+		t.Fatalf("udev.path dev field = %s %s tag %q, want string Dev tagged exactly required", devField.Name, devField.Type, devField.Tag.Get("statekit"))
+	}
+	uncalled := &udevFixtureRunner{}
+	rt.Runner = uncalled
+	if err := config.ValidateRequired(reflect.New(argsType).Interface()); err == nil || err.Error() != `missing required argument "dev"` {
+		t.Fatalf("missing dev err = %v, want missing required argument \"dev\"", err)
+	}
+	if uncalled.calls != 0 {
+		t.Fatalf("missing dev gate dispatched %d commands, want 0", uncalled.calls)
+	}
+
+	// Value dispatch through the registry over the fake runner: a plain
+	// dev queries through the name query type and the single-value P
+	// section collapses to the scalar device path.
+	rec := &udevRecordingRunner{udevFixtureRunner: udevFixtureRunner{stdout: udevNamePathLinksFixture}}
+	rt.Runner = rec
+	args := reflect.New(argsType).Interface()
+	reflect.ValueOf(args).Elem().FieldByName("Dev").SetString("input/event2")
+	value, err := rt.Exec.Call(context.Background(), rt, "udev.path", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantArgv := []string{"udevadm", "info", "--export", "--query=all", "--name=input/event2"}
+	if rec.calls != 1 || len(rec.argv) != 1 || !reflect.DeepEqual(rec.argv[0], wantArgv) {
+		t.Fatalf("udev.path argv = %v (calls %d), want exactly %v", rec.argv, rec.calls, wantArgv)
+	}
+	path, ok := value.(string)
+	if !ok || path != "/devices/LNXSYSTM:00/LNXPWRBN:00/input/input2/event2" {
+		t.Fatalf("udev.path = %#v, want the scalar P value /devices/LNXSYSTM:00/LNXPWRBN:00/input/input2/event2", value)
+	}
+
+	// Absent section: .get("P", None) maps to nil, not an error or an
+	// empty string.
+	absent := &udevFixtureRunner{stdout: udevAbsentSectionsFixture}
+	rt.Runner = absent
+	args = reflect.New(argsType).Interface()
+	reflect.ValueOf(args).Elem().FieldByName("Dev").SetString("input/event2")
+	value, err = rt.Exec.Call(context.Background(), rt, "udev.path", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != nil {
+		t.Fatalf("udev.path without P = %#v, want nil", value)
+	}
+	if absent.calls != 1 {
+		t.Fatalf("absent dispatch ran %d commands, want 1", absent.calls)
+	}
+
+	// Empty udevadm output keeps info's fixed failure shape.
+	empty := &udevFixtureRunner{}
+	rt.Runner = empty
+	args = reflect.New(argsType).Interface()
+	reflect.ValueOf(args).Elem().FieldByName("Dev").SetString("input/event2")
+	_, err = rt.Exec.Call(context.Background(), rt, "udev.path", args)
+	if err == nil || err.Error() != "no device found for input/event2" {
+		t.Fatalf("empty stdout err = %v, want no device found for input/event2", err)
+	}
+	if empty.calls != 1 {
+		t.Fatalf("empty dispatch ran %d commands, want 1", empty.calls)
 	}
 }
 
