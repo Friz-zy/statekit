@@ -13,7 +13,11 @@ import (
 	"path"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
+	"github.com/friz-zy/statekit/internal/config"
+	"github.com/friz-zy/statekit/internal/process"
 	"github.com/friz-zy/statekit/internal/runtime"
 )
 
@@ -324,6 +328,140 @@ func (zoneCompareFunc) Execute(_ context.Context, rt *runtime.Runtime, args any)
 	return bytes.Equal(current, requested), nil
 }
 
+// macZoneCompareArgs is the mac_timezone.zone_compare argument
+// contract. The required POINTER distinguishes an omitted time_zone
+// (nil, rejected by the required gate before any dispatch) from an
+// explicit empty string, which is valid and compares exactly.
+type macZoneCompareArgs struct {
+	TimeZone *string `statekit:"required,name=time_zone"`
+}
+
+// macZoneCompareFunc implements timezone.zone_compare for the pinned
+// mac_timezone.py contract: get_zone (lines 151-165) shells out to
+// `systemsetup -gettimezone` through mac_utils, and zone_compare
+// (lines 247-260) answers an exact, case-sensitive string equality
+// against the parsed output.
+type macZoneCompareFunc struct{}
+
+func (macZoneCompareFunc) Name() string { return "timezone.zone_compare" }
+
+// Platforms restricts the mac variant to darwin; the Windows, Solaris,
+// AIX, and NILinuxRT rows of PTD-EXEC-1638 stay open.
+func (macZoneCompareFunc) Platforms() []string { return []string{"darwin"} }
+
+func (macZoneCompareFunc) Args() any { return macZoneCompareArgs{} }
+
+// Fixed mac zone_compare invocation controls: the absolute
+// admin-controlled systemsetup path (no PATH lookup), exactly one argv
+// flag, a locale-only child environment, a bounded wall clock, and
+// equal 64 KiB capture ceilings per stream.
+const (
+	macZoneSystemsetup = "/usr/sbin/systemsetup"
+	macZoneTimeout     = 30 * time.Second
+	macZoneStreamMax   = 64 << 10
+)
+
+// pythonSpace reports whether r is Python str.isspace whitespace:
+// unicode.IsSpace plus the U+001C..U+001F file/group/record/unit
+// separators, which Python strips but Go's unicode.IsSpace does not.
+func pythonSpace(r rune) bool {
+	return unicode.IsSpace(r) || (r >= 0x1c && r <= 0x1f)
+}
+
+// pythonRStrip strips trailing Python whitespace only, mirroring the
+// str.rstrip() that mac_utils._run_all applies to stdout and stderr;
+// leading whitespace is never touched.
+func pythonRStrip(s string) string {
+	end := len(s)
+	for end > 0 {
+		r, size := utf8.DecodeLastRuneInString(s[:end])
+		if !pythonSpace(r) {
+			break
+		}
+		end -= size
+	}
+	return s[:end]
+}
+
+// macParseReturn ports mac_utils.parse_return source-exactly: the
+// first ": " delimiter wins and returns the segment after its first
+// occurrence (later segments are discarded), then ":\n", otherwise the
+// whole raw string returns with no further trimming.
+func macParseReturn(data string) string {
+	if strings.Contains(data, ": ") {
+		return strings.Split(data, ": ")[1]
+	}
+	if strings.Contains(data, ":\n") {
+		return strings.Split(data, ":\n")[1]
+	}
+	return data
+}
+
+// errMacZoneInvalidArgs is the fixed, value-free invocation error for
+// arguments that cannot be the mac zone_compare contract at all (a
+// wrong dynamic type or a typed-nil pointer); it never formats or
+// echoes the raw args value or an underlying cause.
+var errMacZoneInvalidArgs = errors.New("invalid zone_compare arguments")
+
+// Execute ports mac_timezone.zone_compare for the macOS variant
+// (PTD-EXEC-1638 Mac partial): one fixed, shell-free
+// `/usr/sbin/systemsetup -gettimezone` dispatch with LC_ALL=C, a 30s
+// timeout, and 64 KiB capture ceilings per stream. Boundary guards
+// first (architecture gate): direct callers bypassing the registry's
+// required-args gate fail safely before any Runner dispatch — a wrong
+// argument type or typed-nil pointer returns errMacZoneInvalidArgs, a
+// nonnil struct with a nil TimeZone reuses the decoder's fixed
+// missing-required error, and a nil Runtime or Runner returns
+// ErrCannotDetermineZone — never a panic, never a filesystem access,
+// never raw args formatted into the error. Then any Runner error,
+// nonzero exit, truncation flag, or over-cap stream — and any rstripped
+// stdout containing case-insensitive "not supported", mirroring Salt's
+// execute_return_result — fails with the single fixed
+// ErrCannotDetermineZone; no raw cause, output, stderr, or exit status
+// travels in the error and nothing is logged. Successful output is
+// parsed source-exactly (Python trailing-rstrip, then parse_return)
+// and compared exactly against the requested time_zone; empty or
+// malformed output simply compares, with no added input validation.
+// Residual trust assumption: /usr/sbin and systemsetup are
+// admin-controlled; binary authenticity is out of scope.
+func (macZoneCompareFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, ok := args.(*macZoneCompareArgs)
+	if !ok || a == nil {
+		return nil, errMacZoneInvalidArgs
+	}
+	if a.TimeZone == nil {
+		// Reuse the decoder's fixed required-argument error so direct
+		// callers see the same missing-time_zone failure the registry
+		// gate produces; the defensive fallback keeps a future tag
+		// change from re-opening a nil dereference.
+		if err := config.ValidateRequired(a); err != nil {
+			return nil, err
+		}
+		return nil, errMacZoneInvalidArgs
+	}
+	if rt == nil || rt.Runner == nil {
+		return nil, ErrCannotDetermineZone
+	}
+	res := rt.Runner.Run(ctx, process.Command{
+		Name:           macZoneSystemsetup,
+		Args:           []string{"-gettimezone"},
+		Env:            []string{"LC_ALL=C"},
+		Timeout:        macZoneTimeout,
+		MaxStdoutBytes: macZoneStreamMax,
+		MaxStderrBytes: macZoneStreamMax,
+	})
+	if res.Err != nil || res.ExitCode != 0 ||
+		res.StdoutTruncated || res.StderrTruncated ||
+		len(res.Stdout) > macZoneStreamMax || len(res.Stderr) > macZoneStreamMax {
+		return nil, ErrCannotDetermineZone
+	}
+	stdout := pythonRStrip(string(res.Stdout))
+	if strings.Contains(strings.ToLower(stdout), "not supported") {
+		return nil, ErrCannotDetermineZone
+	}
+	return *a.TimeZone == macParseReturn(stdout), nil
+}
+
 type getZoneArgs struct{}
 
 type getZoneFunc struct{}
@@ -433,12 +571,31 @@ func (setHwclockFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any
 	return true, nil
 }
 
-// Register installs all timezone-module execution functions.
+// Register installs all timezone-module execution functions. The
+// zone_compare variant is selected per GOOS: the Linux generic
+// filesystem contract on linux, the mac systemsetup contract on darwin.
 func Register(reg *runtime.ExecRegistry) error {
-	for _, fn := range []runtime.ExecFunction{getZoneFunc{}, setZoneFunc{}, getOffsetFunc{}, getHwclockFunc{}, setHwclockFunc{}, zoneCompareFunc{}} {
+	for _, fn := range []runtime.ExecFunction{getZoneFunc{}, setZoneFunc{}, getOffsetFunc{}, getHwclockFunc{}, setHwclockFunc{}} {
 		if err := reg.Register(fn); err != nil {
 			return err
 		}
+	}
+	return registerZoneCompareForGOOS(reg, runtime.CurrentGOOS())
+}
+
+// registerZoneCompareForGOOS installs exactly one
+// timezone.zone_compare implementation for the given GOOS — the Linux
+// generic filesystem contract on linux, the mac systemsetup contract on
+// darwin — and nothing on any other GOOS, where the name stays
+// unregistered rather than registered-but-unsupported. The registry
+// keys by name, so registering a second variant onto one registry
+// fails as a duplicate.
+func registerZoneCompareForGOOS(reg *runtime.ExecRegistry, goos string) error {
+	switch goos {
+	case "linux":
+		return reg.Register(zoneCompareFunc{})
+	case "darwin":
+		return reg.Register(macZoneCompareFunc{})
 	}
 	return nil
 }

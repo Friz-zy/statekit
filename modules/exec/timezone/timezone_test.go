@@ -1,6 +1,7 @@
 package timezone
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/friz-zy/statekit/internal/config"
 	"github.com/friz-zy/statekit/internal/facts"
 	"github.com/friz-zy/statekit/internal/process"
 	"github.com/friz-zy/statekit/internal/runtime"
@@ -864,50 +866,78 @@ func TestZoneCompareFailsClosedWithoutBoundedReadSupport(t *testing.T) {
 	}
 }
 
-// TZC-16: the function is registered Linux-only across every registry
-// layer: the raw entry exists on every platform (Register and Get never
-// filter), while Names visibility and the ResolveArgs/Call dispatch
-// gate follow SupportsPlatform and therefore include the name on linux
-// and omit/reject it everywhere else.
-func TestZoneCompareIsLinuxOnlyRegistration(t *testing.T) {
-	var fn runtime.ExecFunction = zoneCompareFunc{}
-	constrained, ok := fn.(runtime.PlatformConstrained)
+// TZC-16: zone_compare registration is selected per GOOS at Register
+// time through registerZoneCompareForGOOS(runtime.CurrentGOOS()): the
+// Linux generic filesystem contract on linux, the mac systemsetup
+// contract on darwin, and no entry anywhere else. On supported GOOS
+// the raw entry exists after Register (Get never filters) with its
+// platform constraint intact, while Names visibility and the
+// ResolveArgs/Call dispatch gate follow SupportsPlatform on every
+// platform.
+func TestZoneCompareRegistrationSelectsPerGOOS(t *testing.T) {
+	var linuxFn runtime.ExecFunction = zoneCompareFunc{}
+	constrained, ok := linuxFn.(runtime.PlatformConstrained)
 	if !ok {
 		t.Fatal("zoneCompareFunc must be platform-constrained")
 	}
 	if !reflect.DeepEqual(constrained.Platforms(), []string{"linux"}) {
-		t.Fatalf("platforms = %v, want [linux]", constrained.Platforms())
+		t.Fatalf("linux platforms = %v, want [linux]", constrained.Platforms())
 	}
-	if !runtime.SupportsPlatform(fn, "linux") {
-		t.Fatal("zone_compare must support linux")
+	if !runtime.SupportsPlatform(linuxFn, "linux") {
+		t.Fatal("linux zone_compare must support linux")
 	}
 	for _, goos := range []string{"darwin", "windows", "freebsd", "solaris", "aix"} {
-		if runtime.SupportsPlatform(fn, goos) {
-			t.Fatalf("zone_compare must not support %s", goos)
+		if runtime.SupportsPlatform(linuxFn, goos) {
+			t.Fatalf("linux zone_compare must not support %s", goos)
 		}
 	}
+
+	var macFn runtime.ExecFunction = macZoneCompareFunc{}
+	macConstrained, ok := macFn.(runtime.PlatformConstrained)
+	if !ok {
+		t.Fatal("macZoneCompareFunc must be platform-constrained")
+	}
+	if !reflect.DeepEqual(macConstrained.Platforms(), []string{"darwin"}) {
+		t.Fatalf("mac platforms = %v, want [darwin]", macConstrained.Platforms())
+	}
+	if !runtime.SupportsPlatform(macFn, "darwin") {
+		t.Fatal("mac zone_compare must support darwin")
+	}
+	for _, goos := range []string{"linux", "windows", "freebsd", "solaris", "aix"} {
+		if runtime.SupportsPlatform(macFn, goos) {
+			t.Fatalf("mac zone_compare must not support %s", goos)
+		}
+	}
+
 	reg := runtime.NewExecRegistry()
 	if err := Register(reg); err != nil {
 		t.Fatal(err)
 	}
+	goos := runtime.CurrentGOOS()
+	supported := goos == "linux" || goos == "darwin"
 
-	// Raw layer: registration is unconditional, so the entry (with its
-	// platform constraint intact) is present regardless of GOOS.
+	// Raw layer: registration happens only on the supported GOOS, so
+	// the entry (with its platform constraint intact) exists there and
+	// nowhere else.
 	raw, ok := reg.Get("timezone.zone_compare")
-	if !ok {
-		t.Fatal("raw registry entry timezone.zone_compare missing")
-	}
-	if _, constrained := raw.(runtime.PlatformConstrained); !constrained {
-		t.Fatal("raw registry entry lost the platform constraint")
+	if supported {
+		if !ok {
+			t.Fatalf("raw registry entry timezone.zone_compare missing on %s", goos)
+		}
+		if _, constrained := raw.(runtime.PlatformConstrained); !constrained {
+			t.Fatal("raw registry entry lost the platform constraint")
+		}
+	} else if ok {
+		t.Fatalf("timezone.zone_compare registered on unsupported GOOS %s", goos)
 	}
 
 	// Visible layer: Names filters through SupportsPlatform.
-	wantTotal := 6
-	if runtime.CurrentGOOS() != "linux" {
-		wantTotal = 5
+	wantTotal := 5
+	if supported {
+		wantTotal = 6
 	}
 	if got := len(reg.Names()); got != wantTotal {
-		t.Fatalf("module registration exposes %d names, want %d", got, wantTotal)
+		t.Fatalf("module registration exposes %d names on %s, want %d", got, goos, wantTotal)
 	}
 	visible := 0
 	for _, name := range reg.Names() {
@@ -915,40 +945,51 @@ func TestZoneCompareIsLinuxOnlyRegistration(t *testing.T) {
 			visible++
 		}
 	}
-	if runtime.CurrentGOOS() == "linux" {
+	if supported {
 		if visible != 1 {
-			t.Fatalf("Names listed timezone.zone_compare %d times on linux, want exactly 1", visible)
+			t.Fatalf("Names listed timezone.zone_compare %d times on %s, want exactly 1", visible, goos)
 		}
 	} else if visible != 0 {
-		t.Fatalf("Names listed timezone.zone_compare %d times on %s, want 0", visible, runtime.CurrentGOOS())
+		t.Fatalf("Names listed timezone.zone_compare %d times on %s, want 0", visible, goos)
 	}
 
 	// Dispatch layer: ResolveArgs and Call apply the same filter,
-	// surfacing the function as unsupported off linux. On linux both
-	// traverse the gate into the contract itself.
+	// surfacing the function as unsupported off its variant platform.
+	// On supported GOOS both traverse the gate into the variant
+	// contract itself.
 	var unsupported *runtime.UnsupportedError
 	_, err := reg.ResolveArgs(nil, "timezone.zone_compare")
-	if runtime.CurrentGOOS() == "linux" {
+	if supported {
 		if err != nil {
-			t.Fatalf("ResolveArgs on linux = %v, want nil", err)
+			t.Fatalf("ResolveArgs on %s = %v, want nil", goos, err)
 		}
 	} else if !errors.As(err, &unsupported) || unsupported.Kind != "function" {
-		t.Fatalf("ResolveArgs off linux = %v, want unsupported function", err)
+		t.Fatalf("ResolveArgs on %s = %v, want unsupported function", goos, err)
 	}
 	rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: runtime.NewMemoryFS(), Runner: &scriptRunner{}}
-	if err := rt.FS.MkdirAll("/etc", 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := rt.FS.WriteFile("/etc/timezone", []byte("UTC\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	value, err := reg.Call(context.Background(), rt, "timezone.zone_compare", &zoneCompareArgs{TimeZone: "UTC"})
-	if runtime.CurrentGOOS() == "linux" {
-		if err != nil || value != true {
-			t.Fatalf("Call on linux = %v, %v; want true, nil", value, err)
+	switch goos {
+	case "linux":
+		if err := rt.FS.MkdirAll("/etc", 0o755); err != nil {
+			t.Fatal(err)
 		}
-	} else if !errors.As(err, &unsupported) || unsupported.Kind != "function" {
-		t.Fatalf("Call off linux = %v, want unsupported function", err)
+		if err := rt.FS.WriteFile("/etc/timezone", []byte("UTC\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		value, err := reg.Call(context.Background(), rt, "timezone.zone_compare", &zoneCompareArgs{TimeZone: "UTC"})
+		if err != nil || value != true {
+			t.Fatalf("Call on linux = %v, %v, want true, nil", value, err)
+		}
+	case "darwin":
+		rt.Runner = &scriptRunner{script: []process.CommandResult{{Stdout: []byte("Time Zone: America/Denver\n"), ExitCode: 0}}}
+		zone := "America/Denver"
+		value, err := reg.Call(context.Background(), rt, "timezone.zone_compare", &macZoneCompareArgs{TimeZone: &zone})
+		if err != nil || value != true {
+			t.Fatalf("Call on darwin = %v, %v, want true, nil", value, err)
+		}
+	default:
+		if _, err := reg.Call(context.Background(), rt, "timezone.zone_compare", &zoneCompareArgs{TimeZone: "UTC"}); !errors.As(err, &unsupported) || unsupported.Kind != "function" {
+			t.Fatalf("Call on %s = %v, want unsupported function", goos, err)
+		}
 	}
 }
 
@@ -1008,5 +1049,686 @@ func TestZoneCompareSymlinkBudgetBoundaries(t *testing.T) {
 	_, err = zoneCompareExec(t, rt, name)
 	if !errors.Is(err, ErrUnknownUnsafeZone) {
 		t.Fatalf("65-component zone err = %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// macOS zone_compare (PTD-EXEC-1638 Mac partial): MZC-01..18 pin the
+// pinned mac_timezone.py contract hermetically. Every test uses the
+// fake macZoneRunner only — never process.NewRunner, never
+// /usr/sbin/systemsetup, never a host filesystem — and the suite makes
+// no native Darwin claim.
+
+// macZoneRunner is the fake Runner for the mac zone_compare contract:
+// it records the exact process.Command (and context error) of every
+// dispatch and replies with one scripted CommandResult.
+type macZoneRunner struct {
+	cmds   []process.Command
+	ctxErr []error
+	reply  process.CommandResult
+}
+
+func (m *macZoneRunner) Run(ctx context.Context, cmd process.Command) process.CommandResult {
+	m.cmds = append(m.cmds, cmd)
+	if ctx != nil {
+		m.ctxErr = append(m.ctxErr, ctx.Err())
+	} else {
+		m.ctxErr = append(m.ctxErr, errNoContext)
+	}
+	return m.reply
+}
+
+var errNoContext = errors.New("timezone test: nil context")
+
+// wantMacZoneCommand is the fixed, complete systemsetup invocation:
+// absolute admin-controlled path, exactly one argv flag, no shell,
+// locale-only child environment, 30s wall clock, equal 64 KiB capture
+// ceilings per stream, and nothing else.
+func wantMacZoneCommand() process.Command {
+	return process.Command{
+		Name:           "/usr/sbin/systemsetup",
+		Args:           []string{"-gettimezone"},
+		Env:            []string{"LC_ALL=C"},
+		Timeout:        30 * time.Second,
+		MaxStdoutBytes: 64 << 10,
+		MaxStderrBytes: 64 << 10,
+	}
+}
+
+func newMacZoneRuntime(reply process.CommandResult) (*runtime.Runtime, *macZoneRunner) {
+	runner := &macZoneRunner{reply: reply}
+	return &runtime.Runtime{
+		Facts:  facts.ForTesting(facts.Overrides{}),
+		FS:     runtime.NewMemoryFS(),
+		Runner: runner,
+	}, runner
+}
+
+func macZoneCompareExec(t *testing.T, rt *runtime.Runtime, zone string) (any, error) {
+	t.Helper()
+	return (macZoneCompareFunc{}).Execute(context.Background(), rt, &macZoneCompareArgs{TimeZone: &zone})
+}
+
+// requireMacZoneError pins the single fixed execution-category error:
+// the errors.Is sentinel, the exact value-free text, and no markers of
+// any underlying cause, output, stream, or exit status.
+func requireMacZoneError(t *testing.T, err error) {
+	t.Helper()
+	if !errors.Is(err, ErrCannotDetermineZone) {
+		t.Fatalf("err = %v, want ErrCannotDetermineZone", err)
+	}
+	if err == nil || err.Error() != "cannot determine current zone" {
+		t.Fatalf("err text = %v, want cannot determine current zone", err)
+	}
+	for _, marker := range []string{
+		"systemsetup", "Denver", "Wake", "failing", "warning", "13", "exit",
+		"stdout", "stderr", "timed out", "canceled", "not supported", "no such file",
+	} {
+		if err != nil && strings.Contains(err.Error(), marker) {
+			t.Fatalf("err text %q leaks marker %q", err.Error(), marker)
+		}
+	}
+}
+
+// MZC-01: Execute dispatches exactly one shell-free systemsetup
+// -gettimezone with the fixed argv, environment, timeout, and capture
+// ceilings — deep-equal over the whole process.Command, with the live
+// context forwarded to the Runner.
+func TestMacZoneCompareDispatchesFixedCommand(t *testing.T) {
+	rt, runner := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("America/Denver\n")})
+	if _, err := macZoneCompareExec(t, rt, "America/Denver"); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.cmds) != 1 {
+		t.Fatalf("dispatched %d commands, want exactly 1", len(runner.cmds))
+	}
+	if !reflect.DeepEqual(runner.cmds[0], wantMacZoneCommand()) {
+		t.Fatalf("command = %#v, want %#v", runner.cmds[0], wantMacZoneCommand())
+	}
+	if len(runner.ctxErr) != 1 || runner.ctxErr[0] != nil {
+		t.Fatalf("runner context errors = %v, want one nil (live context forwarded)", runner.ctxErr)
+	}
+}
+
+// MZC-02: the mac contract never touches the filesystem on success or
+// failure — every path stays inside the hermetic MemoryFS with zero
+// recorded operations.
+func TestMacZoneCompareNeverTouchesFilesystem(t *testing.T) {
+	fsys := &zoneRecordingFS{FileSystem: runtime.NewMemoryFS()}
+	runner := &macZoneRunner{reply: process.CommandResult{ExitCode: 0, Stdout: []byte("America/Denver\n")}}
+	rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: fsys, Runner: runner}
+	if _, err := macZoneCompareExec(t, rt, "America/Denver"); err != nil {
+		t.Fatal(err)
+	}
+	runner.reply = process.CommandResult{ExitCode: 1}
+	if _, err := macZoneCompareExec(t, rt, "America/Denver"); !errors.Is(err, ErrCannotDetermineZone) {
+		t.Fatalf("nonzero err = %v", err)
+	}
+	if len(fsys.calls) != 0 {
+		t.Fatalf("filesystem touched: %v", fsys.calls)
+	}
+}
+
+// MZC-03: stdout is trailing-rstripped with Python str.rstrip
+// semantics — unicode.IsSpace plus U+001C..U+001F (Python isspace
+// includes the file/group/record/unit separators; Go's IsSpace alone
+// does not) — with no leading trim, before any parsing.
+func TestMacZoneComparePythonTrailingRStrip(t *testing.T) {
+	for _, tail := range []string{
+		"\n", "\r\n", "\t", " \t\r\n", "\v\f",
+		"\u00a0", "\u0085", "\u2028", "\u3000",
+		"\u001c", "\u001d", "\u001e", "\u001f",
+		" \u001c\u001d\u001e\u001f\u00a0\u2028\t\r\n",
+	} {
+		rt, _ := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("America/Denver" + tail)})
+		value, err := macZoneCompareExec(t, rt, "America/Denver")
+		if err != nil || value != true {
+			t.Fatalf("trailing %q: zone_compare = %v, %v; want true, nil", tail, value, err)
+		}
+	}
+
+	// Leading whitespace is never stripped: the raw value keeps it and
+	// the exact comparison answers false.
+	rt, _ := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(" America/Denver\n")})
+	value, err := macZoneCompareExec(t, rt, "America/Denver")
+	if err != nil || value != false {
+		t.Fatalf("leading-space zone_compare = %v, %v; want false, nil", value, err)
+	}
+
+	// Interior whitespace survives untouched.
+	rt, _ = newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Bad/ Zone\n")})
+	value, err = macZoneCompareExec(t, rt, "Bad/ Zone")
+	if err != nil || value != true {
+		t.Fatalf("interior-space zone_compare = %v, %v; want true, nil", value, err)
+	}
+}
+
+// MZC-04: the parse_return port: the first ": " delimiter wins and
+// yields the segment after its first occurrence (later segments are
+// discarded), then ":\n", else the whole raw string with no further
+// trimming.
+func TestMacZoneCompareParseReturnDelimiterPriority(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		stdout string
+		zone   string
+		want   bool
+	}{
+		{"colon-space", "Time Zone: America/Denver\n", "America/Denver", true},
+		{"colon-space repeats discard later segments", "Time Zone: America/Denver: Extra: More\n", "America/Denver", true},
+		{"colon-newline fallback", "Time Zone:\nAmerica/Denver\n", "America/Denver", true},
+		{"colon-space wins over colon-newline", "Head:\nTime Zone: America/Denver\n", "America/Denver", true},
+		{"colon-newline would answer differently", "Head:\nTime Zone: America/Denver\n", "Time Zone: America/Denver", false},
+		{"raw passthrough", "America/Denver", "America/Denver", true},
+		{"raw value never trimmed", "America/Denver", "America/Denver ", false},
+	} {
+		rt, _ := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(tc.stdout)})
+		value, err := macZoneCompareExec(t, rt, tc.zone)
+		if err != nil || value != tc.want {
+			t.Fatalf("%s: zone_compare(%q) = %v, %v; want %v, nil", tc.name, tc.zone, value, err, tc.want)
+		}
+	}
+}
+
+// MZC-05: mapped Salt mac result shapes — America/Denver compares
+// true, another zone false, and the comparison stays exact and
+// case-sensitive in both bare and "Time Zone: " output forms.
+func TestMacZoneCompareSaltResultShapes(t *testing.T) {
+	for _, tc := range []struct {
+		stdout string
+		zone   string
+		want   bool
+	}{
+		{"Time Zone: America/Denver\n", "America/Denver", true},
+		{"Time Zone: America/Denver\n", "Pacific/Wake", false},
+		{"Time Zone: America/Denver\n", "america/denver", false},
+		{"America/Denver\n", "America/Denver", true},
+		{"America/Denver\n", "Pacific/Wake", false},
+	} {
+		rt, _ := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(tc.stdout)})
+		value, err := macZoneCompareExec(t, rt, tc.zone)
+		if err != nil || value != tc.want {
+			t.Fatalf("stdout %q zone %q = %v, %v; want %v, nil", tc.stdout, tc.zone, value, err, tc.want)
+		}
+	}
+}
+
+// MZC-06: exit-0 stdout containing case-insensitive "not supported"
+// fails with the fixed execution error before parsing (Salt's
+// execute_return_result contract).
+func TestMacZoneCompareNotSupportedTextFails(t *testing.T) {
+	for _, stdout := range []string{
+		"Time Zone: not supported\n",
+		"NOT SUPPORTED\n",
+		"Not Supported\n",
+		"Error: this operation is not supported on this system\n",
+	} {
+		rt, runner := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(stdout)})
+		_, err := macZoneCompareExec(t, rt, "America/Denver")
+		requireMacZoneError(t, err)
+		if len(runner.cmds) != 1 {
+			t.Fatalf("stdout %q dispatched %d commands, want 1", stdout, len(runner.cmds))
+		}
+	}
+}
+
+// MZC-07: "not supported" in stderr alone does not fail — only the
+// rstripped stdout participates in the not-supported gate.
+func TestMacZoneCompareStderrNotSupportedAloneDoesNotFail(t *testing.T) {
+	rt, _ := newMacZoneRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte("Time Zone: America/Denver\n"),
+		Stderr:   []byte("warning: something not supported \n"),
+	})
+	value, err := macZoneCompareExec(t, rt, "America/Denver")
+	if err != nil || value != true {
+		t.Fatalf("stderr-only not supported = %v, %v; want true, nil", value, err)
+	}
+}
+
+// MZC-08: a nonzero exit maps to the single fixed error with no
+// exit-code, stdout, or stderr markers.
+func TestMacZoneCompareNonzeroExitMapsToFixedError(t *testing.T) {
+	rt, _ := newMacZoneRuntime(process.CommandResult{
+		ExitCode: 13,
+		Stdout:   []byte("Time Zone: America/Denver\n"),
+		Stderr:   []byte("systemsetup: failing\n"),
+	})
+	_, err := macZoneCompareExec(t, rt, "America/Denver")
+	requireMacZoneError(t, err)
+}
+
+// MZC-09: a Runner error (start failure: Started false, Err set) maps
+// to the same fixed error with no wrapped cause.
+func TestMacZoneCompareRunnerErrorMapsToFixedError(t *testing.T) {
+	rt, _ := newMacZoneRuntime(process.CommandResult{
+		ExitCode: -1,
+		Err:      fmt.Errorf(`exec: "/usr/sbin/systemsetup": stat /usr/sbin/systemsetup: no such file or directory`),
+	})
+	_, err := macZoneCompareExec(t, rt, "America/Denver")
+	requireMacZoneError(t, err)
+	if errors.Is(err, fs.ErrNotExist) || errors.Unwrap(err) != nil {
+		t.Fatalf("runner error leaked its cause: %v", err)
+	}
+}
+
+// MZC-10: context cancellation and command timeout both surface as
+// Runner errors and map to the same fixed error with no markers, and
+// Execute forwards the live context to the Runner.
+func TestMacZoneCompareContextAndTimeoutMapToFixedError(t *testing.T) {
+	for _, runnerErr := range []error{
+		fmt.Errorf("/usr/sbin/systemsetup -gettimezone canceled: %w", context.Canceled),
+		fmt.Errorf("/usr/sbin/systemsetup -gettimezone timed out after 30s: %w", context.DeadlineExceeded),
+	} {
+		rt, _ := newMacZoneRuntime(process.CommandResult{ExitCode: -1, Err: runnerErr})
+		_, err := macZoneCompareExec(t, rt, "America/Denver")
+		requireMacZoneError(t, err)
+	}
+
+	// The caller's context reaches the Runner unchanged.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runner := &macZoneRunner{reply: process.CommandResult{ExitCode: 0, Stdout: []byte("America/Denver\n")}}
+	rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: runtime.NewMemoryFS(), Runner: runner}
+	zone := "America/Denver"
+	if _, err := (macZoneCompareFunc{}).Execute(ctx, rt, &macZoneCompareArgs{TimeZone: &zone}); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.ctxErr) != 1 || !errors.Is(runner.ctxErr[0], context.Canceled) {
+		t.Fatalf("runner context errors = %v, want one context.Canceled", runner.ctxErr)
+	}
+}
+
+// MZC-11: per-stream truncation flags map to the fixed error even
+// with a zero exit.
+func TestMacZoneCompareTruncationFlagsMapToFixedError(t *testing.T) {
+	for _, reply := range []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("Time Zone: America/Denver\n"), StdoutTruncated: true},
+		{ExitCode: 0, Stdout: []byte("Time Zone: America/Denver\n"), Stderr: []byte("x"), StderrTruncated: true},
+	} {
+		rt, _ := newMacZoneRuntime(reply)
+		_, err := macZoneCompareExec(t, rt, "America/Denver")
+		requireMacZoneError(t, err)
+	}
+}
+
+// MZC-12: streams longer than the 64 KiB cap fail closed even without
+// truncation flags (a fake Runner can be inconsistent); exactly-at-cap
+// streams still parse.
+func TestMacZoneCompareStreamCapsFailClosed(t *testing.T) {
+	atCap := bytes.Repeat([]byte("x"), 64<<10)
+	over := bytes.Repeat([]byte("x"), (64<<10)+1)
+
+	rt, _ := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: over})
+	_, err := macZoneCompareExec(t, rt, "no-match")
+	requireMacZoneError(t, err)
+
+	rt, _ = newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("America/Denver\n"), Stderr: over})
+	_, err = macZoneCompareExec(t, rt, "America/Denver")
+	requireMacZoneError(t, err)
+
+	rt, _ = newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: atCap, Stderr: atCap})
+	value, err := macZoneCompareExec(t, rt, "no-match")
+	if err != nil || value != false {
+		t.Fatalf("at-cap streams = %v, %v; want false, nil", value, err)
+	}
+
+	padded := append([]byte("America/Denver"), bytes.Repeat([]byte(" "), (64<<10)-len("America/Denver"))...)
+	if len(padded) != 64<<10 {
+		t.Fatalf("padded fixture is %d bytes, want exactly the cap", len(padded))
+	}
+	rt, _ = newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: padded})
+	value, err = macZoneCompareExec(t, rt, "America/Denver")
+	if err != nil || value != true {
+		t.Fatalf("at-cap padded stdout = %v, %v; want true, nil", value, err)
+	}
+}
+
+// MZC-13: the required-args gate tested directly on both Args
+// prototypes — Linux demands the value string `timezone`, Mac demands
+// the pointer `time_zone` — so an omitted (nil) mac argument fails
+// the gate before any dispatch while the gate itself never dispatches.
+func TestMacZoneCompareRequiredArgsGate(t *testing.T) {
+	var linuxProto any = (zoneCompareFunc{}).Args()
+	if _, ok := linuxProto.(zoneCompareArgs); !ok {
+		t.Fatalf("linux Args prototype = %T, want zoneCompareArgs", linuxProto)
+	}
+	linuxType := reflect.TypeOf(linuxProto)
+	linuxField := linuxType.Field(0)
+	if linuxField.Name != "TimeZone" || linuxField.Type.Kind() != reflect.String || linuxField.Tag.Get("statekit") != "required,name=timezone" {
+		t.Fatalf("linux schema = %s %s tag %q", linuxField.Name, linuxField.Type, linuxField.Tag.Get("statekit"))
+	}
+	if err := config.ValidateRequired(&zoneCompareArgs{}); err == nil || err.Error() != `missing required argument "timezone"` {
+		t.Fatalf("linux missing timezone err = %v", err)
+	}
+
+	var macProto any = (macZoneCompareFunc{}).Args()
+	if _, ok := macProto.(macZoneCompareArgs); !ok {
+		t.Fatalf("mac Args prototype = %T, want macZoneCompareArgs", macProto)
+	}
+	missing := config.ValidateRequired(&macZoneCompareArgs{})
+	if missing == nil || missing.Error() != `missing required argument "time_zone"` {
+		t.Fatalf("mac missing time_zone err = %v", missing)
+	}
+	empty := ""
+	if err := config.ValidateRequired(&macZoneCompareArgs{TimeZone: &empty}); err != nil {
+		t.Fatalf("mac explicit empty time_zone err = %v, want nil", err)
+	}
+
+	// The gate precedes dispatch: a rejected argument never reaches the
+	// Runner.
+	runner := &macZoneRunner{}
+	if missing == nil {
+		t.Fatal("nil time_zone passed the required gate")
+	}
+	if len(runner.cmds) != 0 {
+		t.Fatalf("required gate dispatched %d commands, want 0", len(runner.cmds))
+	}
+}
+
+// MZC-14: an explicit empty time_zone is valid and compares exactly —
+// empty successful output yields true, nonempty output false.
+func TestMacZoneCompareExplicitEmptyTimeZone(t *testing.T) {
+	rt, runner := newMacZoneRuntime(process.CommandResult{ExitCode: 0})
+	value, err := macZoneCompareExec(t, rt, "")
+	if err != nil || value != true {
+		t.Fatalf("empty output, empty zone = %v, %v; want true, nil", value, err)
+	}
+	if len(runner.cmds) != 1 {
+		t.Fatalf("explicit-empty zone dispatched %d commands, want 1", len(runner.cmds))
+	}
+
+	rt, _ = newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("America/Denver\n")})
+	value, err = macZoneCompareExec(t, rt, "")
+	if err != nil || value != false {
+		t.Fatalf("nonempty output, empty zone = %v, %v; want false, nil", value, err)
+	}
+
+	// Whitespace-only successful output rstrips to empty and compares
+	// equal to the explicit empty zone.
+	rt, _ = newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(" \r\n\u001f")})
+	value, err = macZoneCompareExec(t, rt, "")
+	if err != nil || value != true {
+		t.Fatalf("whitespace-only output, empty zone = %v, %v; want true, nil", value, err)
+	}
+}
+
+// MZC-15: registerZoneCompareForGOOS selects exactly one variant per
+// supported GOOS — the Linux filesystem contract on linux, the mac
+// systemsetup contract on darwin, nothing anywhere else — with the
+// matching platform constraints and args schema.
+func TestMacZoneCompareRegistrationHelperSelectsPerGOOS(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := registerZoneCompareForGOOS(reg, "linux"); err != nil {
+		t.Fatal(err)
+	}
+	fn, ok := reg.Get("timezone.zone_compare")
+	if !ok {
+		t.Fatal("linux helper registered nothing")
+	}
+	if _, isLinux := fn.(zoneCompareFunc); !isLinux {
+		t.Fatalf("linux helper registered %T, want zoneCompareFunc", fn)
+	}
+	linuxConstrained, isConstrained := fn.(runtime.PlatformConstrained)
+	if !isConstrained || !reflect.DeepEqual(linuxConstrained.Platforms(), []string{"linux"}) {
+		t.Fatalf("linux helper platforms = %v", linuxConstrained.Platforms())
+	}
+	if !runtime.SupportsPlatform(fn, "linux") || runtime.SupportsPlatform(fn, "darwin") {
+		t.Fatal("linux helper must support linux only")
+	}
+	linuxProto := fn.Args()
+	if _, ok := linuxProto.(zoneCompareArgs); !ok {
+		t.Fatalf("linux helper prototype = %T", linuxProto)
+	}
+
+	reg = runtime.NewExecRegistry()
+	if err := registerZoneCompareForGOOS(reg, "darwin"); err != nil {
+		t.Fatal(err)
+	}
+	fn, ok = reg.Get("timezone.zone_compare")
+	if !ok {
+		t.Fatal("darwin helper registered nothing")
+	}
+	if _, isMac := fn.(macZoneCompareFunc); !isMac {
+		t.Fatalf("darwin helper registered %T, want macZoneCompareFunc", fn)
+	}
+	macConstrained, isConstrained := fn.(runtime.PlatformConstrained)
+	if !isConstrained || !reflect.DeepEqual(macConstrained.Platforms(), []string{"darwin"}) {
+		t.Fatalf("darwin helper platforms = %v", macConstrained.Platforms())
+	}
+	if !runtime.SupportsPlatform(fn, "darwin") || runtime.SupportsPlatform(fn, "linux") {
+		t.Fatal("darwin helper must support darwin only")
+	}
+	macType := reflect.TypeOf(fn.Args())
+	if macType.Kind() != reflect.Struct || macType.NumField() != 1 {
+		t.Fatalf("darwin schema = %s with %d fields", macType, macType.NumField())
+	}
+	macField := macType.Field(0)
+	if macField.Name != "TimeZone" || macField.Type.Kind() != reflect.Pointer || macField.Type.Elem().Kind() != reflect.String {
+		t.Fatalf("darwin schema field = %s %s", macField.Name, macField.Type)
+	}
+	if macField.Tag.Get("statekit") != "required,name=time_zone" {
+		t.Fatalf("darwin schema tag = %q", macField.Tag.Get("statekit"))
+	}
+
+	for _, goos := range []string{"windows", "freebsd", "openbsd", "netbsd", "solaris", "illumos", "aix", "plan9"} {
+		unsupported := runtime.NewExecRegistry()
+		if err := registerZoneCompareForGOOS(unsupported, goos); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := unsupported.Get("timezone.zone_compare"); ok {
+			t.Fatalf("helper registered zone_compare for unsupported GOOS %s", goos)
+		}
+		if unsupported.Len() != 0 {
+			t.Fatalf("helper registered %d functions for unsupported GOOS %s", unsupported.Len(), goos)
+		}
+	}
+}
+
+// MZC-16: off its variant platform the registration is invisible and
+// dispatch fails as an unsupported function (ResolveArgs and Call),
+// whichever variant is off-host.
+func TestMacZoneCompareUnsupportedCallRejected(t *testing.T) {
+	host := runtime.CurrentGOOS()
+	for _, goos := range []string{"linux", "darwin"} {
+		if goos == host {
+			continue // on-platform dispatch is covered by TZC-16 and MZC-17
+		}
+		reg := runtime.NewExecRegistry()
+		if err := registerZoneCompareForGOOS(reg, goos); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := reg.Get("timezone.zone_compare"); !ok {
+			t.Fatalf("%s helper registered nothing", goos)
+		}
+		for _, name := range reg.Names() {
+			if name == "timezone.zone_compare" {
+				t.Fatalf("Names exposed timezone.zone_compare for %s registration on host %s", goos, host)
+			}
+		}
+		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: runtime.NewMemoryFS(), Runner: &macZoneRunner{}}
+		var unsupported *runtime.UnsupportedError
+		if _, err := reg.ResolveArgs(rt, "timezone.zone_compare"); !errors.As(err, &unsupported) || unsupported.Kind != "function" {
+			t.Fatalf("ResolveArgs for %s registration on %s = %v, want unsupported function", goos, host, err)
+		}
+		zone := "America/Denver"
+		if _, err := reg.Call(context.Background(), rt, "timezone.zone_compare", &macZoneCompareArgs{TimeZone: &zone}); !errors.As(err, &unsupported) || unsupported.Kind != "function" {
+			t.Fatalf("Call for %s registration on %s = %v, want unsupported function", goos, host, err)
+		}
+	}
+}
+
+// MZC-17: no duplicate zone_compare entry can exist on any registry:
+// the registry keys by name so a second variant fails, the helper
+// registers at most one variant, and production Register exposes the
+// name exactly once on supported GOOS and not at all elsewhere.
+func TestMacZoneCompareNoDuplicateRegistration(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := registerZoneCompareForGOOS(reg, "linux"); err != nil {
+		t.Fatal(err)
+	}
+	if err := registerZoneCompareForGOOS(reg, "darwin"); err == nil {
+		t.Fatal("registering the darwin variant over the linux entry must fail as a duplicate")
+	}
+	if err := reg.Register(macZoneCompareFunc{}); err == nil {
+		t.Fatal("registering the mac variant directly over the linux entry must fail as a duplicate")
+	}
+
+	prod := runtime.NewExecRegistry()
+	if err := Register(prod); err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, name := range prod.Names() {
+		if name == "timezone.zone_compare" {
+			count++
+		}
+	}
+	goos := runtime.CurrentGOOS()
+	if goos == "linux" || goos == "darwin" {
+		if count != 1 {
+			t.Fatalf("zone_compare visible %d times on %s, want exactly 1", count, goos)
+		}
+		if prod.Len() != 6 {
+			t.Fatalf("production registration holds %d functions on %s, want 6", prod.Len(), goos)
+		}
+	} else {
+		if count != 0 {
+			t.Fatalf("zone_compare visible %d times on %s, want 0", count, goos)
+		}
+		if prod.Len() != 5 {
+			t.Fatalf("production registration holds %d functions on %s, want 5", prod.Len(), goos)
+		}
+	}
+}
+
+// MZC-18: the Execute boundary fails safe for direct callers that
+// bypass the registry's required-args gate (architecture-gate fix):
+// wrong argument types, typed-nil pointers, a nonnil struct with a nil
+// required TimeZone, a nil Runtime, and a nil Runner all return fixed
+// value-free errors before any Runner dispatch or filesystem access —
+// never a panic and never raw args or an underlying cause formatted
+// into the error — while an explicit pointer-to-empty time_zone stays
+// valid, dispatches exactly once, and compares exactly.
+func TestMacZoneCompareExecuteFailsSafeOnMalformedInvocation(t *testing.T) {
+	check := func(label string, rt *runtime.Runtime, args any, verify func(t *testing.T, err error)) {
+		t.Helper()
+		var (
+			value    any
+			err      error
+			panicked bool
+		)
+		func() {
+			defer func() {
+				if recover() != nil {
+					panicked = true
+				}
+			}()
+			value, err = (macZoneCompareFunc{}).Execute(context.Background(), rt, args)
+		}()
+		if panicked {
+			t.Fatalf("%s: Execute panicked, want a fixed safe error", label)
+		}
+		if err == nil {
+			t.Fatalf("%s: Execute err = nil, want a fixed safe error", label)
+		}
+		if value != nil {
+			t.Fatalf("%s: Execute value = %#v, want nil on error", label, value)
+		}
+		verify(t, err)
+	}
+
+	fixedValueFree := func(marker ...string) func(t *testing.T, err error) {
+		return func(t *testing.T, err error) {
+			t.Helper()
+			if err.Error() == "" {
+				t.Fatal("fixed error text is empty")
+			}
+			for _, secret := range marker {
+				if strings.Contains(err.Error(), secret) {
+					t.Fatalf("error text %q leaks raw argument material %q", err.Error(), secret)
+				}
+			}
+		}
+	}
+
+	// Malformed args scenarios share one recording runtime whose Runner
+	// and filesystem must stay untouched.
+	fsys := &zoneRecordingFS{FileSystem: runtime.NewMemoryFS()}
+	runner := &macZoneRunner{reply: process.CommandResult{ExitCode: 0, Stdout: []byte("America/Denver\n")}}
+	rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: fsys, Runner: runner}
+
+	var malformedErrs []error
+	for _, tc := range []struct {
+		label string
+		args  any
+	}{
+		{"wrong-type string", "Secret/Zone-Marker"},
+		{"wrong-type linux args", &zoneCompareArgs{TimeZone: "Secret/Linux-Args"}},
+		{"typed-nil mac args", (*macZoneCompareArgs)(nil)},
+	} {
+		args := tc.args
+		check(tc.label, rt, args, func(t *testing.T, err error) {
+			fixedValueFree("Secret", "Marker", "Linux", "Denver")(t, err)
+			malformedErrs = append(malformedErrs, err)
+		})
+	}
+	for i := 1; i < len(malformedErrs); i++ {
+		if malformedErrs[i].Error() != malformedErrs[0].Error() {
+			t.Fatalf("malformed-args error %q differs from %q, want one fixed error", malformedErrs[i].Error(), malformedErrs[0].Error())
+		}
+	}
+
+	// A nonnil struct with a nil required TimeZone reuses the
+	// decoder's fixed missing-required error — the same failure the
+	// registry gate produces.
+	check("nil TimeZone", rt, &macZoneCompareArgs{}, func(t *testing.T, err error) {
+		fixedValueFree("Secret", "Denver")(t, err)
+		var missing *config.MissingRequiredError
+		if !errors.As(err, &missing) || missing.Name != "time_zone" {
+			t.Fatalf("nil TimeZone err = %v, want config.MissingRequiredError time_zone", err)
+		}
+	})
+
+	// No malformed invocation may dispatch or touch the filesystem.
+	if len(runner.cmds) != 0 {
+		t.Fatalf("malformed invocations dispatched %d commands, want 0", len(runner.cmds))
+	}
+	if len(fsys.calls) != 0 {
+		t.Fatalf("malformed invocations touched the filesystem: %v", fsys.calls)
+	}
+
+	// Unavailable runtime: nil Runtime and nil Runner map to the fixed
+	// execution-category error before any dispatch.
+	zone := "America/Denver"
+	check("nil Runtime", nil, &macZoneCompareArgs{TimeZone: &zone}, func(t *testing.T, err error) {
+		fixedValueFree("Denver")(t, err)
+		if !errors.Is(err, ErrCannotDetermineZone) || err.Error() != "cannot determine current zone" {
+			t.Fatalf("nil Runtime err = %v, want fixed ErrCannotDetermineZone", err)
+		}
+	})
+	nilRunnerFS := &zoneRecordingFS{FileSystem: runtime.NewMemoryFS()}
+	nilRunnerRT := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: nilRunnerFS, Runner: nil}
+	check("nil Runner", nilRunnerRT, &macZoneCompareArgs{TimeZone: &zone}, func(t *testing.T, err error) {
+		fixedValueFree("Denver")(t, err)
+		if !errors.Is(err, ErrCannotDetermineZone) || err.Error() != "cannot determine current zone" {
+			t.Fatalf("nil Runner err = %v, want fixed ErrCannotDetermineZone", err)
+		}
+	})
+	if len(nilRunnerFS.calls) != 0 {
+		t.Fatalf("nil Runner touched the filesystem: %v", nilRunnerFS.calls)
+	}
+
+	// Preservation: the explicit pointer-to-empty time_zone stays valid
+	// — it passes the boundary guards, dispatches exactly once, and
+	// compares exactly against empty output.
+	emptyRT, emptyRunner := newMacZoneRuntime(process.CommandResult{ExitCode: 0})
+	empty := ""
+	value, err := (macZoneCompareFunc{}).Execute(context.Background(), emptyRT, &macZoneCompareArgs{TimeZone: &empty})
+	if err != nil || value != true {
+		t.Fatalf("explicit empty time_zone = %v, %v; want true, nil", value, err)
+	}
+	if len(emptyRunner.cmds) != 1 {
+		t.Fatalf("explicit empty time_zone dispatched %d commands, want 1", len(emptyRunner.cmds))
 	}
 }
