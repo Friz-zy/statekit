@@ -4,6 +4,7 @@ package tests
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -18,6 +19,7 @@ import (
 	"github.com/friz-zy/statekit/internal/runtime"
 	execfile "github.com/friz-zy/statekit/modules/exec/file"
 	execlogrotate "github.com/friz-zy/statekit/modules/exec/logrotate"
+	executimezone "github.com/friz-zy/statekit/modules/exec/timezone"
 
 	"gopkg.in/yaml.v3"
 )
@@ -910,5 +912,205 @@ func TestWindowsFileMakedirsListsCanonicalAliasOnly(t *testing.T) {
 		if got := countName(reg.Names(), "file.makedirs_"); got != 0 {
 			t.Fatalf("windows file registration exposes superseded file.makedirs_ %d times, want 0", got)
 		}
+	}
+}
+
+// TestPortingDebtExecTimezoneZoneCompareCanonicalRegistrationPTD_EXEC_1638 is
+// the PTD-EXEC-1638 / PTD-TEST-1673 regression for the PARTIAL
+// Linux-generic sub-slice of timezone.zone_compare: the loader name is
+// registered exactly once with no superseded alias and Linux-only
+// platform gating, the catalog entry declares exactly the source
+// signature zone_compare(timezone), and registry dispatch answers the
+// pinned Salt fixtures (test_zone_compare_arch equal by name,
+// test_zone_compare_unequal, test_zone_compare_equal bytes, and the
+// test_zone_compare_nonexistent / test_missing_localtime error
+// categories) over a hermetic MemoryFS without Runner dispatch. The
+// Mac/Windows/Solaris/AIX zone_compare rows remain open; this test
+// pins only the Linux filesystem contract.
+func TestPortingDebtExecTimezoneZoneCompareCanonicalRegistrationPTD_EXEC_1638(t *testing.T) {
+	if runtime.CurrentGOOS() != "linux" {
+		t.Skip("timezone.zone_compare landed as the Linux-generic sub-slice only")
+	}
+	rt, err := bootstrap.BuildRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Canonical registration: the family surface gains exactly
+	// timezone.zone_compare, once, with no superseded alias.
+	var timezoneNames []string
+	for _, name := range rt.Exec.Names() {
+		if strings.HasPrefix(name, "timezone.") {
+			timezoneNames = append(timezoneNames, name)
+		}
+	}
+	want := []string{
+		"timezone.get_hwclock", "timezone.get_offset", "timezone.get_zone",
+		"timezone.set_hwclock", "timezone.set_zone", "timezone.zone_compare",
+	}
+	if !reflect.DeepEqual(timezoneNames, want) {
+		t.Fatalf("timezone.* names = %v, want %v", timezoneNames, want)
+	}
+	if got := countName(rt.Exec.Names(), "timezone.zone_compare"); got != 1 {
+		t.Fatalf("timezone.zone_compare registered %d times, want exactly 1", got)
+	}
+	if got := countName(rt.Exec.Names(), "timezone.zone_compare_"); got != 0 {
+		t.Fatalf("superseded alias timezone.zone_compare_ registered %d times, want 0", got)
+	}
+
+	// Catalog signature: zone_compare(timezone) with exactly one
+	// parameter and no declared default, matching the pinned source.
+	catalogData, err := os.ReadFile(filepath.Join("..", "docs", "catalog", "exec", "timezone.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var catalog struct {
+		Functions []struct {
+			Function   string `yaml:"function"`
+			Parameters []struct {
+				Name    string  `yaml:"name"`
+				Default *string `yaml:"default"`
+			} `yaml:"parameters"`
+		} `yaml:"functions"`
+	}
+	if err := yaml.Unmarshal(catalogData, &catalog); err != nil {
+		t.Fatal(err)
+	}
+	var zoneCompareEntry *struct {
+		Function   string `yaml:"function"`
+		Parameters []struct {
+			Name    string  `yaml:"name"`
+			Default *string `yaml:"default"`
+		} `yaml:"parameters"`
+	}
+	for i := range catalog.Functions {
+		if catalog.Functions[i].Function == "zone_compare" {
+			zoneCompareEntry = &catalog.Functions[i]
+		}
+	}
+	if zoneCompareEntry == nil {
+		t.Fatal("catalog has no zone_compare entry")
+	}
+	if len(zoneCompareEntry.Parameters) != 1 || zoneCompareEntry.Parameters[0].Name != "timezone" {
+		t.Fatalf("zone_compare parameters = %#v, want exactly timezone", zoneCompareEntry.Parameters)
+	}
+	if zoneCompareEntry.Parameters[0].Default != nil {
+		t.Fatalf("timezone default = %#v, want none", zoneCompareEntry.Parameters[0].Default)
+	}
+
+	// Args schema: exactly one required string timezone field; the
+	// canonical argument name is proven by the missing-required error
+	// text, and the gate rejects before any filesystem access or
+	// dispatch.
+	proto, err := rt.Exec.ResolveArgs(rt, "timezone.zone_compare")
+	if err != nil {
+		t.Fatal(err)
+	}
+	argsType := reflect.TypeOf(proto)
+	if argsType.Kind() != reflect.Struct || argsType.NumField() != 1 {
+		t.Fatalf("zone_compare args type = %s with %d fields, want a one-field struct", argsType, argsType.NumField())
+	}
+	zoneField := argsType.Field(0)
+	if zoneField.Name != "TimeZone" || zoneField.Type.Kind() != reflect.String || zoneField.Tag.Get("statekit") != "required,name=timezone" {
+		t.Fatalf("zone_compare timezone field = %s %s tag %q, want string TimeZone tagged required,name=timezone", zoneField.Name, zoneField.Type, zoneField.Tag.Get("statekit"))
+	}
+	uncalled := &recordingRunner{}
+	rt.Runner = uncalled
+	if err := config.ValidateRequired(reflect.New(argsType).Interface()); err == nil || err.Error() != `missing required argument "timezone"` {
+		t.Fatalf("missing timezone err = %v, want missing required argument \"timezone\"", err)
+	}
+	if len(uncalled.calls) != 0 {
+		t.Fatalf("missing timezone gate dispatched %d commands, want 0", len(uncalled.calls))
+	}
+
+	// test_zone_compare_arch (get_zone succeeds): exact name equality
+	// answers true; unequal answers false without a byte fallback.
+	rt.FS = runtime.NewMemoryFS()
+	if err := rt.FS.MkdirAll("/etc", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := rt.FS.WriteFile("/etc/timezone", []byte("Europe/Berlin\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	args := reflect.New(argsType).Interface()
+	reflect.ValueOf(args).Elem().FieldByName("TimeZone").SetString("Europe/Berlin")
+	value, err := rt.Exec.Call(context.Background(), rt, "timezone.zone_compare", args)
+	if err != nil || value != true {
+		t.Fatalf("zone_compare name-equal = %v, %v, want true, nil", value, err)
+	}
+	args = reflect.New(argsType).Interface()
+	reflect.ValueOf(args).Elem().FieldByName("TimeZone").SetString("europe/berlin")
+	value, err = rt.Exec.Call(context.Background(), rt, "timezone.zone_compare", args)
+	if err != nil || value != false {
+		t.Fatalf("zone_compare name-unequal = %v, %v, want false, nil", value, err)
+	}
+
+	// test_zone_compare_equal / test_zone_compare_unequal (get_zone
+	// fails, deep byte compare): regular /etc/localtime versus the
+	// zoneinfo file.
+	rt.FS = runtime.NewMemoryFS()
+	if err := rt.FS.MkdirAll("/etc", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := rt.FS.MkdirAll("/usr/share/zoneinfo/Region", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := rt.FS.WriteFile("/etc/localtime", []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := rt.FS.WriteFile("/usr/share/zoneinfo/Region/City", []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	args = reflect.New(argsType).Interface()
+	reflect.ValueOf(args).Elem().FieldByName("TimeZone").SetString("Region/City")
+	value, err = rt.Exec.Call(context.Background(), rt, "timezone.zone_compare", args)
+	if err != nil || value != true {
+		t.Fatalf("zone_compare byte-equal = %v, %v, want true, nil", value, err)
+	}
+	if err := rt.FS.WriteFile("/usr/share/zoneinfo/Region/City", []byte("b"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	args = reflect.New(argsType).Interface()
+	reflect.ValueOf(args).Elem().FieldByName("TimeZone").SetString("Region/City")
+	value, err = rt.Exec.Call(context.Background(), rt, "timezone.zone_compare", args)
+	if err != nil || value != false {
+		t.Fatalf("zone_compare byte-unequal = %v, %v, want false, nil", value, err)
+	}
+
+	// test_zone_compare_nonexistent: the requested zone file is the
+	// invocation-category failure (SaltInvocationError analog) with a
+	// fixed value-free text.
+	args = reflect.New(argsType).Interface()
+	reflect.ValueOf(args).Elem().FieldByName("TimeZone").SetString("Secret/Nonexistent")
+	_, err = rt.Exec.Call(context.Background(), rt, "timezone.zone_compare", args)
+	if !errors.Is(err, executimezone.ErrUnknownUnsafeZone) {
+		t.Fatalf("nonexistent zone err = %v, want executimezone.ErrUnknownUnsafeZone", err)
+	}
+	if err.Error() != "unknown/unsafe zone" || strings.Contains(err.Error(), "Secret") {
+		t.Fatalf("nonexistent zone err text = %q", err.Error())
+	}
+
+	// test_missing_localtime: the unreadable current localtime is the
+	// execution-category failure (CommandExecutionError analog).
+	rt.FS = runtime.NewMemoryFS()
+	if err := rt.FS.MkdirAll("/usr/share/zoneinfo/Region", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := rt.FS.WriteFile("/usr/share/zoneinfo/Region/City", []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	args = reflect.New(argsType).Interface()
+	reflect.ValueOf(args).Elem().FieldByName("TimeZone").SetString("Region/City")
+	_, err = rt.Exec.Call(context.Background(), rt, "timezone.zone_compare", args)
+	if !errors.Is(err, executimezone.ErrCannotDetermineZone) {
+		t.Fatalf("missing localtime err = %v, want executimezone.ErrCannotDetermineZone", err)
+	}
+	if err.Error() != "cannot determine current zone" {
+		t.Fatalf("missing localtime err text = %q", err.Error())
+	}
+
+	// The whole contract is filesystem-only: no Runner dispatch.
+	if len(uncalled.calls) != 0 {
+		t.Fatalf("zone_compare dispatched %v", uncalled.calls)
 	}
 }

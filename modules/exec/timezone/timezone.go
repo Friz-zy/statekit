@@ -5,9 +5,12 @@
 package timezone
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
+	"path"
 	"strings"
 	"time"
 
@@ -29,6 +32,297 @@ const (
 	localtimePath  = "/etc/localtime"
 	zoneinfoPrefix = "/usr/share/zoneinfo/"
 )
+
+// Fixed, value-free zone_compare errors (PTD-EXEC-1638 contract): no
+// raw input, path, error, or errno travels in the text.
+var (
+	// ErrUnknownUnsafeZone is the invocation-category failure (the
+	// SaltInvocationError analog): the requested zone name is invalid,
+	// or no regular zoneinfo file resolves from it.
+	ErrUnknownUnsafeZone = errors.New("unknown/unsafe zone")
+	// ErrCannotDetermineZone is the execution-category failure (the
+	// CommandExecutionError analog): the current zone cannot be
+	// detected or its localtime content cannot be read.
+	ErrCannotDetermineZone = errors.New("cannot determine current zone")
+)
+
+type zoneCompareArgs struct {
+	TimeZone string `statekit:"required,name=timezone"`
+}
+
+// zoneCompareFunc implements timezone.zone_compare for the Linux
+// generic filesystem contract.
+type zoneCompareFunc struct{}
+
+func (zoneCompareFunc) Name() string { return "timezone.zone_compare" }
+
+// Platforms restricts zone_compare to linux: the reviewed contract is
+// the Linux generic filesystem slice only (nilrt, mac, win, Solaris and
+// AIX variants stay open rows).
+func (zoneCompareFunc) Platforms() []string { return []string{"linux"} }
+
+func (zoneCompareFunc) Args() any { return zoneCompareArgs{} }
+
+// Finite zone_compare controls. These are explicit compatibility and
+// safety ceilings, not fleet capacity guarantees; every limit fails
+// closed with a fixed value-free error and no partial reads.
+const (
+	// zoneCompareReadLimit bounds each timezone content read (1 MiB).
+	zoneCompareReadLimit = 1 << 20
+	// zoneCompareMaxHops bounds total symlink hops per resolution.
+	zoneCompareMaxHops = 8
+	// zoneCompareMaxComponents bounds cumulative path components
+	// processed per resolution, including the zoneinfo prefix.
+	zoneCompareMaxComponents = 64
+	// zoneNameMaxBytes bounds the requested zone name.
+	zoneNameMaxBytes = 1024
+	// zoneNameMaxSegmentBytes bounds one requested name segment.
+	zoneNameMaxSegmentBytes = 255
+	// zoneNameMaxComponents bounds requested name segments.
+	zoneNameMaxComponents = 64
+	// zoneinfoDir is the fixed, admin-controlled zone database root.
+	zoneinfoDir = "/usr/share/zoneinfo"
+)
+
+// zoneNameByte reports whether b is an allowed zone-name byte:
+// [A-Za-z0-9_+-]. Everything else — including separators, whitespace,
+// controls, NUL, backslash, and any non-ASCII byte — is rejected.
+func zoneNameByte(b byte) bool {
+	switch {
+	case b >= 'a' && b <= 'z', b >= 'A' && b <= 'Z', b >= '0' && b <= '9':
+		return true
+	case b == '_' || b == '+' || b == '-':
+		return true
+	}
+	return false
+}
+
+// validateZoneName accepts only a nonempty relative name of slash-
+// separated ASCII components (UTC, Etc/GMT+5, Etc/GMT-14, US/Eastern,
+// America/Argentina/Buenos_Aires, EST5EDT). Absolute names, empty or
+// dot components (repeated/trailing slash, ".", ".."), backslashes,
+// controls, NUL, non-ASCII bytes, and over-ceiling names are rejected
+// before any filesystem operation. The input is never trimmed or
+// normalized into validity.
+func validateZoneName(zone string) error {
+	reject := func() error { return ErrUnknownUnsafeZone }
+	if zone == "" || len(zone) > zoneNameMaxBytes || strings.HasPrefix(zone, "/") {
+		return reject()
+	}
+	segments := strings.Split(zone, "/")
+	if len(segments) > zoneNameMaxComponents {
+		return reject()
+	}
+	for _, segment := range segments {
+		if segment == "" || segment == "." || segment == ".." || len(segment) > zoneNameMaxSegmentBytes {
+			return reject()
+		}
+		for i := 0; i < len(segment); i++ {
+			if !zoneNameByte(segment[i]) {
+				return reject()
+			}
+		}
+	}
+	return nil
+}
+
+// underZoneinfoDir reports whether the resolved component stack (a
+// clean absolute path split on "/") is inside the zoneinfo root.
+func underZoneinfoDir(cur []string) bool {
+	if len(cur) < 3 || cur[0] != "usr" || cur[1] != "share" || cur[2] != "zoneinfo" {
+		return false
+	}
+	return true
+}
+
+// errZoneResolution is the internal resolution failure: dangling,
+// looping, escaping, special, and over-budget chains all collapse to
+// this sentinel and never carry the offending path or errno.
+var errZoneResolution = errors.New("timezone: zone file resolution failed")
+
+// resolveZoneinfoFile resolves start (an absolute path, either
+// /etc/localtime or inside the zoneinfo root) to a regular file,
+// following symlinks component-wise with Lstat/Readlink only. Every
+// symlink target must resolve under the fixed zoneinfo root: absolute
+// targets are lexically prechecked against it, and ".." may never pop
+// above the root once the walk is inside it (kernel ".."-at-root
+// semantics apply outside it). Resolution is bounded by
+// zoneCompareMaxHops total symlink hops and zoneCompareMaxComponents
+// cumulative components. Dangling links, non-directory intermediates,
+// special files, and directories as the final component are rejected.
+// The parent directories /etc and /usr/share/zoneinfo are assumed
+// admin-controlled; no atomic snapshot across the walk is guaranteed.
+func resolveZoneinfoFile(fsys runtime.FileSystem, start string) (string, error) {
+	queue := strings.Split(strings.TrimPrefix(start, "/"), "/")
+	cur := make([]string, 0, zoneCompareMaxComponents)
+	hops, processed := 0, 0
+	for len(queue) > 0 {
+		component := queue[0]
+		queue = queue[1:]
+		processed++
+		if processed > zoneCompareMaxComponents {
+			return "", errZoneResolution
+		}
+		switch component {
+		case "", ".":
+			continue
+		case "..":
+			if len(cur) == 0 {
+				continue // "/.." resolves to "/" (kernel semantics)
+			}
+			if underZoneinfoDir(cur) && len(cur) == 3 {
+				return "", errZoneResolution // would leave the zoneinfo root
+			}
+			cur = cur[:len(cur)-1]
+		default:
+			cur = append(cur, component)
+			pathName := "/" + strings.Join(cur, "/")
+			info, err := fsys.Lstat(pathName)
+			if err != nil {
+				return "", errZoneResolution
+			}
+			mode := info.Mode()
+			switch {
+			case mode&fs.ModeSymlink != 0:
+				hops++
+				if hops > zoneCompareMaxHops {
+					return "", errZoneResolution
+				}
+				target, err := fsys.Readlink(pathName)
+				if err != nil {
+					return "", errZoneResolution
+				}
+				if strings.HasPrefix(target, "/") {
+					clean := path.Clean(target)
+					if !strings.HasPrefix(clean, zoneinfoDir+"/") {
+						return "", errZoneResolution
+					}
+					cur = cur[:0]
+					queue = append(strings.Split(strings.TrimPrefix(target, "/"), "/"), queue...)
+				} else {
+					// Relative target: relative to the link's directory.
+					cur = cur[:len(cur)-1]
+					queue = append(strings.Split(target, "/"), queue...)
+				}
+			case mode.IsDir():
+				// Intermediate directory; keep descending.
+			default:
+				if len(queue) != 0 {
+					// Regular or special file used as an intermediate
+					// component: nothing can live below it.
+					return "", errZoneResolution
+				}
+				if !mode.IsRegular() || !underZoneinfoDir(cur) {
+					return "", errZoneResolution
+				}
+				return pathName, nil
+			}
+		}
+	}
+	// The queue exhausted on a directory (or the root): not a file.
+	return "", errZoneResolution
+}
+
+// detectCurrentZone mirrors the Linux filesystem zone detectors of the
+// pinned get_zone: /etc/timezone participates only as a regular file
+// read through the bounded no-follow API (symlinks, special files, and
+// oversize contents are skipped), and a contained /etc/localtime
+// symlink yields the exact zone name from the initial target —
+// preserving aliases like US/Eastern — once the full chain resolves to
+// a regular file under the zoneinfo root. ok=false means detection
+// failed and the caller must fall back to the bounded byte comparison.
+func detectCurrentZone(fsys runtime.FileSystem) (string, bool) {
+	if info, err := fsys.Lstat(timezoneFile); err == nil && info.Mode().IsRegular() {
+		if data, err := runtime.ReadFileBounded(fsys, timezoneFile, zoneCompareReadLimit); err == nil {
+			return strings.TrimSpace(string(data)), true
+		}
+	}
+	info, err := fsys.Lstat(localtimePath)
+	if err != nil || info.Mode().IsRegular() || info.Mode()&fs.ModeSymlink == 0 {
+		return "", false
+	}
+	target, err := fsys.Readlink(localtimePath)
+	if err != nil {
+		return "", false
+	}
+	lexical := target
+	if !strings.HasPrefix(lexical, "/") {
+		lexical = path.Join("/etc", lexical)
+	}
+	lexical = path.Clean(lexical)
+	if !strings.HasPrefix(lexical, zoneinfoDir+"/") {
+		return "", false
+	}
+	name := strings.TrimPrefix(lexical, zoneinfoDir+"/")
+	if name == "" {
+		return "", false
+	}
+	if _, err := resolveZoneinfoFile(fsys, localtimePath); err != nil {
+		return "", false
+	}
+	return name, true
+}
+
+// currentZoneBytes reads the current zone content for the byte
+// fallback: /etc/localtime directly when regular, otherwise through
+// the contained bounded symlink resolution. The current file is read
+// before the requested zone so its failure category wins.
+func currentZoneBytes(fsys runtime.FileSystem) ([]byte, error) {
+	info, err := fsys.Lstat(localtimePath)
+	if err != nil {
+		return nil, errZoneResolution
+	}
+	if info.Mode().IsRegular() {
+		return runtime.ReadFileBounded(fsys, localtimePath, zoneCompareReadLimit)
+	}
+	if info.Mode()&fs.ModeSymlink == 0 {
+		return nil, errZoneResolution
+	}
+	resolved, err := resolveZoneinfoFile(fsys, localtimePath)
+	if err != nil {
+		return nil, err
+	}
+	return runtime.ReadFileBounded(fsys, resolved, zoneCompareReadLimit)
+}
+
+// zoneinfoZoneBytes reads the requested zone's file for the byte
+// fallback through the contained bounded symlink resolution.
+func zoneinfoZoneBytes(fsys runtime.FileSystem, zone string) ([]byte, error) {
+	resolved, err := resolveZoneinfoFile(fsys, zoneinfoDir+"/"+zone)
+	if err != nil {
+		return nil, err
+	}
+	return runtime.ReadFileBounded(fsys, resolved, zoneCompareReadLimit)
+}
+
+// Execute ports timezone.zone_compare (pinned revision lines 331-372)
+// for the Linux generic filesystem contract: an exact, case-sensitive
+// name comparison against the detected current zone when detection
+// succeeds (unequal names answer false with no byte fallback), and only
+// on detection failure a bounded byte comparison of /etc/localtime
+// (read first) against /usr/share/zoneinfo/<timezone>. An unusable
+// requested zone fails with ErrUnknownUnsafeZone (SaltInvocationError
+// analog); an unreadable current zone fails with
+// ErrCannotDetermineZone (CommandExecutionError analog). The function
+// issues no commands, no Runner calls, and no writes.
+func (zoneCompareFunc) Execute(_ context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a := args.(*zoneCompareArgs)
+	if err := validateZoneName(a.TimeZone); err != nil {
+		return nil, err
+	}
+	if name, ok := detectCurrentZone(rt.FS); ok {
+		return a.TimeZone == name, nil
+	}
+	current, err := currentZoneBytes(rt.FS)
+	if err != nil {
+		return nil, ErrCannotDetermineZone
+	}
+	requested, err := zoneinfoZoneBytes(rt.FS, a.TimeZone)
+	if err != nil {
+		return nil, ErrUnknownUnsafeZone
+	}
+	return bytes.Equal(current, requested), nil
+}
 
 type getZoneArgs struct{}
 
@@ -141,7 +435,7 @@ func (setHwclockFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any
 
 // Register installs all timezone-module execution functions.
 func Register(reg *runtime.ExecRegistry) error {
-	for _, fn := range []runtime.ExecFunction{getZoneFunc{}, setZoneFunc{}, getOffsetFunc{}, getHwclockFunc{}, setHwclockFunc{}} {
+	for _, fn := range []runtime.ExecFunction{getZoneFunc{}, setZoneFunc{}, getOffsetFunc{}, getHwclockFunc{}, setHwclockFunc{}, zoneCompareFunc{}} {
 		if err := reg.Register(fn); err != nil {
 			return err
 		}
