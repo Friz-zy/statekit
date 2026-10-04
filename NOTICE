@@ -1,0 +1,44 @@
+StateKit NOTICE
+================
+
+This repository ports and adapts source from Salt (SaltStack), pinned
+as the git submodule saltstack/ per references/salt.lock.
+
+Upstream NOTICE, retained verbatim (saltstack/NOTICE, 13 lines):
+
+-----BEGIN saltstack/NOTICE (verbatim)-----
+Copyright 2012-2022 VMware, Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-----END saltstack/NOTICE (verbatim)-----
+
+Additional attribution lines, each preserved separately with its own
+date range exactly as it appears upstream; the date ranges are never
+merged:
+
+- "Copyright (c) 2011-2022 VMware, Inc. All rights reserved."
+  Origin: saltstack/LICENSE, Apache-2.0 appendix "How to apply the
+  Apache License to your work" boilerplate notice.
+
+- "Copyright: 2014 SaltStack Team"
+  Origin: the Debian copyright-format 1.0 "Files: *" entry embedded in
+  the saltstack/LICENSE appendix summary.
+
+Ported-code provenance is recorded at each port site. Example: the
+Windows timezone table in modules/exec/timezone/winzone_table.go is
+transcribed/adapted from saltstack/salt/modules/win_timezone.py lines
+46-183 at pinned revision 8b63e700637e40d76f80a00d95c60471797c73b9
+(Apache-2.0), per references/salt.lock.
+
+Binary releases built from this repository must bundle the LICENSE and
+this NOTICE file.

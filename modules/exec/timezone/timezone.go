@@ -48,6 +48,12 @@ var (
 	// CommandExecutionError analog): the current zone cannot be
 	// detected or its localtime content cannot be read.
 	ErrCannotDetermineZone = errors.New("cannot determine current zone")
+	// ErrInvalidWindowsZone is the Windows execution-category
+	// invalid-requested-name failure (the analog of win_timezone.py's
+	// CommandExecutionError for an unlisted timezone, kept value-free):
+	// the requested name is missing, empty, or absent from the pinned
+	// 134-pair table.
+	ErrInvalidWindowsZone = errors.New("invalid Windows timezone")
 )
 
 type zoneCompareArgs struct {
@@ -464,6 +470,203 @@ func (macZoneCompareFunc) Execute(ctx context.Context, rt *runtime.Runtime, args
 
 type getZoneArgs struct{}
 
+// winZoneCompareArgs is the win_timezone.zone_compare argument
+// contract: one required *string timezone (docs/catalog/exec/
+// win_timezone.yaml declares zone_compare(timezone) with no default).
+// The required POINTER (WZC-BACKEND-01) makes a missing argument (nil,
+// rejected by the required-Args gate before the function runs)
+// distinguishable from an explicit empty string (nonnil, gate passes,
+// rejected by Execute's name gate with the invalid-zone sentinel).
+type winZoneCompareArgs struct {
+	TimeZone *string `statekit:"required,name=timezone"`
+}
+
+// winZoneCompareFunc implements timezone.zone_compare for the pinned
+// win_timezone.py contract (lines 305-337): the requested name is
+// resolved case-insensitively in the 134-pair table (Windows or IANA
+// form, never trimmed), the current zone is queried with exactly one
+// shell-free `tzutil.exe /g` from the API-derived system directory,
+// and the answer compares the two canonical IANA names; an unknown
+// nonempty current zone answers false.
+type winZoneCompareFunc struct{}
+
+func (winZoneCompareFunc) Name() string { return "timezone.zone_compare" }
+
+// Platforms restricts the windows variant to windows; the Linux, mac,
+// Solaris, and AIX rows of PTD-EXEC-1638 stay tracked separately.
+func (winZoneCompareFunc) Platforms() []string { return []string{"windows"} }
+
+func (winZoneCompareFunc) Args() any { return winZoneCompareArgs{} }
+
+// Execute ports win_timezone.zone_compare for the Windows variant
+// (PTD-EXEC-1638 Windows partial). Boundary guards first: a wrong
+// argument type or typed-nil argument returns the fixed value-free
+// ErrInvalidWindowsZone, and a nonnil struct with a nil timezone
+// pointer reuses the decoder's fixed missing-required error — both
+// before any dereference, resolver work, Lstat precheck, or dispatch
+// (WZC-BACKEND-01). The requested-name gate then runs strictly first
+// once the pointer is nonnil: an explicit empty string or any nonempty
+// name without a case-insensitive match in the pinned 134-pair table
+// (input never trimmed or normalized) returns only the fixed
+// value-free ErrInvalidWindowsZone before any resolver work, Lstat
+// precheck, or dispatch. Every query/execution failure — resolver API
+// error, malformed system tree, precheck failure, Runner error, nonzero
+// exit, cancellation/deadline, truncation, over-cap, or an
+// empty-after-rstrip current-zone answer — returns only the fixed
+// value-free ErrCannotDetermineZone with zero retry. A successful
+// query rstrips Python-trailing whitespace from stdout, lowercases,
+// strips exactly one terminal _dstoff, and answers whether the
+// current zone maps to the same canonical IANA name as the request;
+// an unknown nonempty current zone answers false.
+func (winZoneCompareFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, ok := args.(*winZoneCompareArgs)
+	if !ok || a == nil {
+		return nil, ErrInvalidWindowsZone
+	}
+	if a.TimeZone == nil {
+		// Registry gate parity: a direct caller bypassing the decoder
+		// sees the same fixed missing-required failure; the defensive
+		// fallback keeps a future tag change from re-opening a nil
+		// dereference.
+		if err := config.ValidateRequired(a); err != nil {
+			return nil, err
+		}
+		return nil, ErrInvalidWindowsZone
+	}
+	// Requested-name gate, strictly before any resolver API call,
+	// Lstat precheck, or dispatch (WZC-01): the input is matched
+	// case-insensitively in the 134-pair table without trimming or
+	// normalization, so an explicit empty or unlisted name fails with
+	// only the invalid-zone sentinel and zero work.
+	canonical, ok := winZoneCanonicalUnix(*a.TimeZone)
+	if !ok {
+		return nil, ErrInvalidWindowsZone
+	}
+	if rt == nil || rt.Runner == nil || rt.FS == nil {
+		return nil, ErrCannotDetermineZone
+	}
+	sysdir, windir, err := winSystemTree()
+	if err != nil || !validateWindowsSystemTree(sysdir, windir) {
+		return nil, ErrCannotDetermineZone
+	}
+	// Exact-executable precheck immediately before dispatch (WZC-09):
+	// Go still consults the parent PATHEXT even for an absolute
+	// executable name, so the exact regular non-reparse file must be
+	// present at that instant or nothing dispatches. This defeats
+	// PATHEXT suffix fallback only under the stable
+	// administrator-controlled-system-tree assumption (no
+	// unprivileged replacement); the TOCTOU window between this Lstat
+	// and process start remains and is accepted as documented — no
+	// unconditional exact-exec claim is made.
+	exe := sysdir + `\` + winZoneExeName
+	info, err := rt.FS.Lstat(exe)
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, ErrCannotDetermineZone
+	}
+	res := rt.Runner.Run(ctx, process.Command{
+		Name:           exe,
+		Args:           []string{"/g"},
+		Dir:            sysdir,
+		Env:            []string{"SYSTEMROOT=" + windir, "WINDIR=" + windir},
+		Timeout:        winZoneTimeout,
+		MaxStdoutBytes: winZoneStreamMax,
+		MaxStderrBytes: winZoneStreamMax,
+	})
+	if res.Err != nil || res.ExitCode != 0 ||
+		res.StdoutTruncated || res.StderrTruncated ||
+		len(res.Stdout) > winZoneStreamMax || len(res.Stderr) > winZoneStreamMax {
+		return nil, ErrCannotDetermineZone
+	}
+	// Output processing ports the pinned get_zone (lines 197-223):
+	// Python str.rstrip trailing whitespace (leading preserved),
+	// lowercase, then exactly one terminal _dstoff strip. An
+	// empty-after-rstrip answer is an execution failure, and an
+	// unlisted nonempty answer is the mapper's "Unknown" default —
+	// unequal to any canonical name, so the comparison answers false.
+	current := strings.ToLower(pythonRStrip(string(res.Stdout)))
+	if current == "" {
+		return nil, ErrCannotDetermineZone
+	}
+	current = strings.TrimSuffix(current, "_dstoff")
+	currentUnix, ok := winZoneToUnix[current]
+	if !ok {
+		return false, nil
+	}
+	return currentUnix == canonical, nil
+}
+
+// winSystemTree resolves the machine system tree through the platform
+// resolver: GetSystemDirectory plus machine-wide
+// GetSystemWindowsDirectory on windows, a fail-closed stub anywhere
+// else. The var is the injection seam for hermetic tests faking the OS
+// path API; production code never mutates it.
+var winSystemTree = defaultWinSystemTree
+
+// winZone invocation controls (WZC-11/WZC-13): one shell-free tzutil
+// dispatch with a 30s cancellation deadline (not a strict end-to-end
+// cap: the Runner's WaitDelay grace extends past it) and equal 64 KiB
+// capture ceilings per stream.
+const (
+	winZoneTimeout   = 30 * time.Second
+	winZoneStreamMax = 64 << 10
+)
+
+// winZoneExeName is the only executable this variant may dispatch.
+const winZoneExeName = "tzutil.exe"
+
+// isASCIILetter reports whether b is an ASCII drive-letter byte.
+func isASCIILetter(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+}
+
+// validWindowsDrivePath reports whether p is an absolute, lexically
+// clean local drive path: an ASCII drive letter, `:\`, then nonempty
+// backslash-separated components free of ".", "..", colons (NTFS
+// alternate data streams), and control characters, with no forward
+// slashes, repeated separators, or trailing separator. Volume roots
+// (`C:\`), UNC/device/extended-length prefixes, drive-relative
+// (`C:x`), root-relative (`\x`), and relative forms are rejected.
+func validWindowsDrivePath(p string) bool {
+	if len(p) < 4 || !isASCIILetter(p[0]) || p[1] != ':' || p[2] != '\\' {
+		return false
+	}
+	rest := p[3:]
+	if strings.ContainsRune(rest, '/') || rest == "" {
+		return false
+	}
+	for _, comp := range strings.Split(rest, `\`) {
+		if comp == "" || comp == "." || comp == ".." {
+			return false
+		}
+		for i := 0; i < len(comp); i++ {
+			if comp[i] < 0x20 || comp[i] == ':' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// validateWindowsSystemTree enforces the WZC-07/WZC-08 resolver
+// contract: both API answers must be absolute, lexically clean local
+// drive paths, and the system directory must be exactly the
+// case-insensitive System32/SysWOW64 immediate child of the
+// machine-wide windows directory — rejecting UNC, device,
+// extended-length, drive-relative, root-relative, traversal, sibling,
+// deeper, ADS, and control-character answers. Malformed results fail
+// closed at the caller with ErrCannotDetermineZone.
+func validateWindowsSystemTree(sysdir, windir string) bool {
+	if !validWindowsDrivePath(sysdir) || !validWindowsDrivePath(windir) {
+		return false
+	}
+	sep := strings.LastIndexByte(sysdir, '\\')
+	child := sysdir[sep+1:]
+	if !strings.EqualFold(child, "System32") && !strings.EqualFold(child, "SysWOW64") {
+		return false
+	}
+	return strings.EqualFold(sysdir, windir+`\`+child)
+}
+
 type getZoneFunc struct{}
 
 func (getZoneFunc) Name() string { return "timezone.get_zone" }
@@ -573,7 +776,8 @@ func (setHwclockFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any
 
 // Register installs all timezone-module execution functions. The
 // zone_compare variant is selected per GOOS: the Linux generic
-// filesystem contract on linux, the mac systemsetup contract on darwin.
+// filesystem contract on linux, the mac systemsetup contract on darwin,
+// the windows tzutil contract on windows.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{getZoneFunc{}, setZoneFunc{}, getOffsetFunc{}, getHwclockFunc{}, setHwclockFunc{}} {
 		if err := reg.Register(fn); err != nil {
@@ -586,16 +790,18 @@ func Register(reg *runtime.ExecRegistry) error {
 // registerZoneCompareForGOOS installs exactly one
 // timezone.zone_compare implementation for the given GOOS — the Linux
 // generic filesystem contract on linux, the mac systemsetup contract on
-// darwin — and nothing on any other GOOS, where the name stays
-// unregistered rather than registered-but-unsupported. The registry
-// keys by name, so registering a second variant onto one registry
-// fails as a duplicate.
+// darwin, the windows tzutil contract on windows — and nothing on any
+// other GOOS, where the name stays unregistered rather than
+// registered-but-unsupported. The registry keys by name, so registering
+// a second variant onto one registry fails as a duplicate.
 func registerZoneCompareForGOOS(reg *runtime.ExecRegistry, goos string) error {
 	switch goos {
 	case "linux":
 		return reg.Register(zoneCompareFunc{})
 	case "darwin":
 		return reg.Register(macZoneCompareFunc{})
+	case "windows":
+		return reg.Register(winZoneCompareFunc{})
 	}
 	return nil
 }

@@ -5,6 +5,9 @@ package tests
 import (
 	"context"
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -925,8 +928,9 @@ func TestWindowsFileMakedirsListsCanonicalAliasOnly(t *testing.T) {
 // test_zone_compare_unequal, test_zone_compare_equal bytes, and the
 // test_zone_compare_nonexistent / test_missing_localtime error
 // categories) over a hermetic MemoryFS without Runner dispatch. The
-// Mac/Windows/Solaris/AIX zone_compare rows remain open; this test
-// pins only the Linux filesystem contract.
+// mac/windows partial variants and the Solaris/AIX rows are tracked by
+// their own phase records; this test pins the Linux filesystem
+// contract.
 func TestPortingDebtExecTimezoneZoneCompareCanonicalRegistrationPTD_EXEC_1638(t *testing.T) {
 	if runtime.CurrentGOOS() != "linux" {
 		t.Skip("timezone.zone_compare landed as the Linux-generic sub-slice only")
@@ -1112,5 +1116,144 @@ func TestPortingDebtExecTimezoneZoneCompareCanonicalRegistrationPTD_EXEC_1638(t 
 	// The whole contract is filesystem-only: no Runner dispatch.
 	if len(uncalled.calls) != 0 {
 		t.Fatalf("zone_compare dispatched %v", uncalled.calls)
+	}
+}
+
+// TestPortingDebtExecTimezoneZoneCompareWindowsPartialPTD_EXEC_1638 is
+// the PTD-EXEC-1638 / PTD-TEST-1673 canonical partial evidence for the
+// Windows slice of timezone.zone_compare (win_timezone.py). It is a
+// host-independent regression pin: the catalog entry declares exactly
+// the source signature zone_compare(timezone), and the canonical
+// family registration through BuildRuntime still exposes exactly six
+// timezone.* names with timezone.zone_compare once and no superseded
+// alias on every variant host (linux/darwin/windows). The behavioral
+// contract of the windows variant — the 134-pair source-parity oracle
+// against pinned saltstack/salt/modules/win_timezone.py, the mapped
+// test_win_timezone.py fixture shapes (India/Calcutta true,
+// Mountain/Denver with _dstoff true, FLE/Kiev, unknown-current false,
+// tzutil error categories), the WZC-01..16 acceptance matrix, and the
+// zero-mutation/single-dispatch invariants — is pinned hermetically in
+// modules/exec/timezone/winzone_test.go, where the unexported variant
+// and its resolver seam are reachable; the aggregate rows stay
+// PARTIAL/OPEN (Solaris/AIX and native/CI validation remain).
+func TestPortingDebtExecTimezoneZoneCompareWindowsPartialPTD_EXEC_1638(t *testing.T) {
+	// Catalog signature: docs/catalog/exec/win_timezone.yaml declares
+	// zone_compare with exactly one timezone parameter and no default,
+	// matching the pinned source signature.
+	catalogData, err := os.ReadFile(filepath.Join("..", "docs", "catalog", "exec", "win_timezone.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var catalog struct {
+		Functions []struct {
+			Function   string `yaml:"function"`
+			Parameters []struct {
+				Name    string  `yaml:"name"`
+				Default *string `yaml:"default"`
+			} `yaml:"parameters"`
+		} `yaml:"functions"`
+	}
+	if err := yaml.Unmarshal(catalogData, &catalog); err != nil {
+		t.Fatal(err)
+	}
+	var entry *struct {
+		Function   string `yaml:"function"`
+		Parameters []struct {
+			Name    string  `yaml:"name"`
+			Default *string `yaml:"default"`
+		} `yaml:"parameters"`
+	}
+	for i := range catalog.Functions {
+		if catalog.Functions[i].Function == "zone_compare" {
+			entry = &catalog.Functions[i]
+		}
+	}
+	if entry == nil {
+		t.Fatal("win_timezone catalog has no zone_compare entry")
+	}
+	if len(entry.Parameters) != 1 || entry.Parameters[0].Name != "timezone" {
+		t.Fatalf("win zone_compare parameters = %#v, want exactly timezone", entry.Parameters)
+	}
+	if entry.Parameters[0].Default != nil {
+		t.Fatalf("win timezone default = %#v, want none", entry.Parameters[0].Default)
+	}
+
+	// Args schema (WZC-BACKEND-01): the windows variant prototype is
+	// the unexported winZoneCompareArgs, unreachable from this package
+	// off a windows host (the QA-MZC-BLOCK-01 lesson forbids a
+	// GOOS-gated duplicate), so the schema is pinned from the module
+	// source itself: exactly one TimeZone field of type *string tagged
+	// required,name=timezone — the required pointer making a missing
+	// argument (nil, rejected by the required gate before any
+	// resolver/Runner work) differ from an explicit empty string
+	// (nonnil, gate passes, Execute answers the fixed invalid-zone
+	// sentinel) — with the tag name matching the catalog parameter.
+	sourcePath := filepath.Join("..", "modules", "exec", "timezone", "timezone.go")
+	file, err := parser.ParseFile(token.NewFileSet(), sourcePath, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	ast.Inspect(file, func(n ast.Node) bool {
+		spec, ok := n.(*ast.TypeSpec)
+		if !ok || spec.Name.Name != "winZoneCompareArgs" {
+			return true
+		}
+		found = true
+		strct, ok := spec.Type.(*ast.StructType)
+		if !ok || strct.Fields.NumFields() != 1 {
+			t.Fatalf("winZoneCompareArgs is not a one-field struct")
+		}
+		field := strct.Fields.List[0]
+		star, ok := field.Type.(*ast.StarExpr)
+		if !ok || len(field.Names) != 1 || field.Names[0].Name != "TimeZone" {
+			t.Fatalf("winZoneCompareArgs field = %v, want TimeZone *string", field.Type)
+		}
+		if elem, ok := star.X.(*ast.Ident); !ok || elem.Name != "string" {
+			t.Fatalf("winZoneCompareArgs TimeZone element = %v, want string", star.X)
+		}
+		if field.Tag == nil || strings.Trim(field.Tag.Value, "`") != `statekit:"required,name=timezone"` {
+			t.Fatalf("winZoneCompareArgs TimeZone tag = %v, want statekit:\"required,name=timezone\"", field.Tag)
+		}
+		if entry.Parameters[0].Name != "timezone" {
+			t.Fatalf("tag name timezone does not match catalog parameter %q", entry.Parameters[0].Name)
+		}
+		return false
+	})
+	if !found {
+		t.Fatalf("%s declares no winZoneCompareArgs type", sourcePath)
+	}
+
+	// Canonical registration: the windows variant lands through the
+	// same single timezone.zone_compare name, so the family surface on
+	// every variant host is exactly the six canonical names — never a
+	// windows alias and never a duplicate.
+	switch runtime.CurrentGOOS() {
+	case "linux", "darwin", "windows":
+	default:
+		t.Skip("timezone.zone_compare variants register on linux/darwin/windows hosts only")
+	}
+	rt, err := bootstrap.BuildRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var timezoneNames []string
+	for _, name := range rt.Exec.Names() {
+		if strings.HasPrefix(name, "timezone.") {
+			timezoneNames = append(timezoneNames, name)
+		}
+	}
+	want := []string{
+		"timezone.get_hwclock", "timezone.get_offset", "timezone.get_zone",
+		"timezone.set_hwclock", "timezone.set_zone", "timezone.zone_compare",
+	}
+	if !reflect.DeepEqual(timezoneNames, want) {
+		t.Fatalf("timezone.* names = %v, want %v", timezoneNames, want)
+	}
+	if got := countName(rt.Exec.Names(), "timezone.zone_compare"); got != 1 {
+		t.Fatalf("timezone.zone_compare registered %d times, want exactly 1", got)
+	}
+	if got := countName(rt.Exec.Names(), "timezone.zone_compare_"); got != 0 {
+		t.Fatalf("superseded alias timezone.zone_compare_ registered %d times, want 0", got)
 	}
 }

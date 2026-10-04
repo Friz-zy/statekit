@@ -1626,6 +1626,407 @@ state). Aggregate PTD-EXEC-1638/PTD-TEST-1673 and the R6
 native/Darwin report remain PARTIAL/OPEN; external GitHub CI remains
 pending_external_ci.
 
+R6 Windows partial plan addendum (timezone.zone_compare Windows
+variant, PTD-EXEC-1638/PTD-TEST-1673; both rows REMAIN open/partial —
+PLAN-ONLY record for QA-gate re-review, nothing is implemented,
+registered, or claimed): the Linux TZC and Mac MZC phases above are
+already committed; this subsection records the detailed Windows-only
+plan so the QA gate can re-review it before any implementation phase
+opens. This revision resolves the four blocking QA re-gate gaps:
+pinned sentinel categories with the errors.Is contract, explicit
+zero-exit truncation and exact-cap cases, the WZC-GAP-01..09
+source-gap crosswalk, and the named mandatory implementation/commit
+gates. No code, tests, catalog regeneration, or workflow change
+accompanies this record; `.github`, go.mod/go.sum, LICENSE/NOTICE,
+ADR 0004, and the MySQL Containerfile are explicitly out of scope for
+the plan phase.
+
+Plan of record (Windows-only; executor per item):
+
+1. Source contract (backend-engineer-senior): the full static
+   timezone-name map of exactly 134 Windows/IANA pairs is ported
+   verbatim from pinned `saltstack/salt/modules/win_timezone.py`
+   lines 46–183 (pinned revision per `references/salt.lock`); no
+   CLDR data, no new Go module dependency, no generated catalog.
+   Do-not-trim is normative: user input is never trimmed or
+   normalized; the source invalid-timezone error is execution-
+   category but the StateKit message stays value-free; an unknown
+   nonempty current tzutil answer yields false, not an error.
+2. Windows resolution path (backend-engineer-senior; plan/security
+   review by solution-architect-lead and security-architect-lead):
+   the existing golang.org/x/sys v0.47.0 (`x/sys/windows`)
+    `GetSystemDirectory` plus machine-wide `GetSystemWindowsDirectory`
+    supply the system tree — per-user `GetWindowsDirectory` is never
+    used — and any API error or malformed result fails closed with
+    `ErrCannotDetermineZone`; the returned systemdir must be an
+    absolute, lexically clean local
+   drive path whose immediate child is exactly System32 or SysWOW64
+   (case-insensitive); UNC, device, extended-length, drive-relative,
+   root-relative, traversal, sibling, and deeper paths are rejected.
+   Dispatch reuses the existing central Runner unchanged.
+3. Exact-exec boundary (security-architect-lead, concurred by
+   solution-architect-lead): Go 1.26.6 still consults the parent
+    PATHEXT even for an absolute executable path, so an exact `Lstat`
+    of `tzutil.exe` runs immediately before Runner dispatch and
+    requires a regular, non-reparse file; absent, inaccessible,
+    reparse, or non-regular answers `ErrCannotDetermineZone` with
+    zero dispatch. This defeats PATHEXT suffix fallback ONLY under the
+   explicit assumption of an admin-controlled system tree with no
+   unprivileged replacement; the plan must NOT claim unconditional
+   exact exec, and the admin-controlled-tree/TOCTOU residual is
+   documented as accepted.
+4. Dispatch shape (backend-engineer-senior): exactly one shell-free
+   `tzutil.exe /g` per invocation — absolute executable name, argv
+   exactly [/g], Dir=systemdir, Env only API-derived SYSTEMROOT/
+   WINDIR, Shell=false, empty WindowsCmdLine, no user input in argv
+   or env; stdout/stderr capped at 64 KiB each; the 30s timeout is
+    the cancellation deadline, not a strict end-to-end cap (Runner
+    WaitDelay); nonzero exit, Runner error, cancellation, deadline,
+    truncation, or over-cap each fail closed with
+    `ErrCannotDetermineZone`. State output never
+    mutates the filesystem or registry.
+5. Sentinel contract (backend-engineer-senior): the Windows variant
+   exposes exactly two distinct fixed execution-category sentinels
+   with exact value-free messages, and the required gate is
+   three-way. First the required-argument gate: an omitted `timezone`
+   key or a nil `winZoneCompareArgs.TimeZone` pointer fails args
+   decoding with `config.MissingRequiredError` before any resolver/
+   Lstat/Runner work — never `ErrInvalidWindowsZone`.
+   `ErrInvalidWindowsZone` (exact message "invalid Windows timezone")
+   is returned only for: a wrong dynamic argument type or a typed-nil
+   args value reaching direct `Execute` (safety guards), an explicit
+   nonnil empty string, or any nonempty name with no case-insensitive
+   match in the 134-pair table in the requested-name gate (input is
+   never trimmed or normalized before the match).
+   `ErrCannotDetermineZone` (the existing package
+   sentinel, exact message "cannot determine current zone") covers
+   every query/execution failure: resolver API error or malformed
+   systemdir, precheck failure (tzutil.exe absent/inaccessible/
+   reparse/non-regular), Runner error, nonzero retcode,
+   cancellation/deadline, truncation or over-cap, and an
+   empty-after-rstrip current-query stdout. `errors.Is` contract:
+   each returned error matches exactly its intended sentinel and
+   never the other — every invalid-input error (wrong/typed-nil
+   direct-call args, explicit empty string, unlisted requested name)
+   satisfies errors.Is(err, ErrInvalidWindowsZone) and NOT
+   errors.Is(err, ErrCannotDetermineZone), and query/execution
+   failures satisfy errors.Is(err, ErrCannotDetermineZone) and NOT
+   errors.Is(err, ErrInvalidWindowsZone); neither sentinel ever
+   wraps a raw cause, and no returned error text includes the
+   timezone name, systemdir path, command output, stderr, underlying
+   error text, or exit code. Ordering: the required-argument gate
+   runs before any resolver/Lstat/Runner work, and the requested-name
+   gate runs strictly before the resolver API calls and before the
+   Lstat precheck, so invalid input never dispatches and never
+   touches the resolver; query failures issue at most the single
+   `/g` dispatch and are never retried.
+6. Output processing (backend-engineer-senior): Python `str.rstrip()`
+   whitespace semantics (CRLF, tab, U+00A0, U+0085, U+2028, U+3000,
+   U+001C..U+001F), leading whitespace preserved; the empty-after-
+   rstrip check is defined as: after stripping every trailing
+   character in the rstrip whitespace set, the captured stdout is
+   zero-length (an empty or whitespace-only answer) and returns
+   `ErrCannotDetermineZone`. The value is lowercased then exactly one
+   terminal `_dstoff` suffix is removed (repeated-suffix input pinned
+   by test). Zero-exit truncation fails closed even when the capture
+   is otherwise valid: with exit code 0 and a valid zone name in
+   stdout, `StdoutTruncated=true` must return only
+   `ErrCannotDetermineZone`, and `StderrTruncated=true` with an
+   otherwise valid stdout must also return only
+   `ErrCannotDetermineZone` — never the parsed value, never
+   `ErrInvalidWindowsZone`. The cap boundary is exact: a stdout
+   capture of exactly 65536 bytes (64 KiB) is accepted when its
+   rstripped content is a valid zone, and 65537 bytes is rejected
+   with `ErrCannotDetermineZone`.
+7. Notice/licensing item (compliance-officer-senior check;
+   release-manager-senior follow-up): the root NOTICE is a required
+   deliverable of the implementation phase — retain saltstack/NOTICE
+   verbatim, separately retain `Copyright (c) 2011-2022 VMware, Inc.`
+   and `Copyright: 2014 SaltStack Team` with their origins (date
+   ranges are never merged), and add the exact source path/commit/
+   adaptation note; the root LICENSE is unchanged; actual binary
+   release packages must ship LICENSE/NOTICE before any release.
+8. Registration (backend-engineer-senior): Linux and Darwin variant
+   arguments/behavior are unchanged; the Windows variant is selected
+   exactly once; an unsupported GOOS leaves the name unregistered
+   (never registered-but-unsupported); duplicate registration is
+   rejected.
+9. Verification gates (qa-engineer-senior): the WZC-01..18 acceptance
+   matrix and the WZC-GAP crosswalk below pin source/acceptance;
+   compile-only `GOOS=windows GOARCH={amd64,386,arm64}` builds plus
+   the other existing cross-build variants gate the phase —
+   compile-only, never native execution.
+
+WZC acceptance matrix (numbered, concise, testable;
+qa-engineer-senior owns the gate):
+
+- WZC-01 Required-gate boundary: an omitted `timezone` key or nil
+  required `*string` pointer fails with `config.MissingRequiredError`
+  before resolver/Lstat/Runner; explicit nonnil empty and unlisted
+  names return only `ErrInvalidWindowsZone` (not
+  `ErrCannotDetermineZone`) before resolver/dispatch, zero calls.
+- WZC-02 Exact case-insensitive match of valid input in both Windows
+  and IANA forms; input is never trimmed.
+- WZC-03 All 134 pinned pairs exactly match source with no duplicate
+  lowercase keys or values, round-trip in both directions, full sweep
+  in both input forms; anchors: India/Calcutta, Mountain/Denver_dstoff,
+  FLE/Kiev, and the UTC sign mapping.
+- WZC-04 Unknown nonempty current zone output returns false.
+- WZC-05 Output matrix: Python str.rstrip whitespace set (CRLF, tab,
+  U+00A0, U+0085, U+2028, U+3000, U+001C..U+001F), leading whitespace
+  preserved, empty-after-rstrip errors (defined as: after stripping
+  all trailing rstrip-whitespace characters the captured stdout is
+  zero-length — empty or whitespace-only — and returns
+  `ErrCannotDetermineZone`), lowercase-then-strip of
+  exactly one terminal `_dstoff` including a repeated suffix.
+- WZC-06 Direct wrong dynamic args type or typed-nil args returns
+  fixed `ErrInvalidWindowsZone` with no panic/resolver/Lstat/Runner;
+  the missing required field is the separate
+  `config.MissingRequiredError` from WZC-01; a counting Runner
+  verifies zero calls.
+- WZC-07 Only GetSystemDirectory + machine-wide
+  GetSystemWindowsDirectory are used (never per-user
+  GetWindowsDirectory); errors/malformed results fail closed with
+  `ErrCannotDetermineZone`.
+- WZC-08 Systemdir validation: absolute clean local drive paths with
+  the exact case-insensitive System32/SysWOW64 immediate child;
+  UNC/device/extended/drive-relative/root-relative/traversal/sibling/
+  deeper paths rejected.
+- WZC-09 Exact `Lstat` of `tzutil.exe` immediately before Runner
+  dispatch, requiring regular/non-reparse; absent/inaccessible/
+  reparse/non-regular yield `ErrCannotDetermineZone` with zero
+  dispatch.
+- WZC-10 Hostile PATHEXT: with the exact executable present the path
+  stays exact; with the exact file missing but `tzutil.exe.com`/
+  `tzutil.exe.cmd` siblings present the precheck fails with zero
+  dispatch; admin-controlled-tree/TOCTOU residual explicitly
+  documented (no unconditional exact-exec claim).
+- WZC-11 Exact command fields: absolute name, argv [/g],
+  Dir=systemdir, Env only API-derived SYSTEMROOT/WINDIR, Shell=false,
+  empty WindowsCmdLine, no input in argv/env.
+- WZC-12 Fixed errors only, two distinct sentinels: an
+  invalid/empty/unlisted requested name returns only
+  `ErrInvalidWindowsZone` and every query/execution failure returns
+  only `ErrCannotDetermineZone`; each returned error satisfies
+  errors.Is for its intended sentinel and errors.Is false for the
+  other; no wrapped raw cause; no timezone name, path, output, error
+  text, or retcode leakage in any message.
+- WZC-13 Nonzero exit, Runner error, cancellation, deadline,
+  truncation, and over-cap each fail closed with
+  `ErrCannotDetermineZone`; zero-exit truncation with otherwise
+  valid output returns only `ErrCannotDetermineZone` for
+  `StdoutTruncated=true` and separately for `StderrTruncated=true`;
+  the cap boundary is exact: stdout of exactly 65536 bytes is
+  accepted when the rstripped content is a valid zone, 65537 bytes
+  is rejected; stdout/stderr cap 64 KiB; the 30s timeout is a
+  cancellation deadline, not a strict end-to-end cap because of
+  WaitDelay.
+- WZC-14 State output never mutates the filesystem/registry, and
+  exactly one `/g` call is issued.
+- WZC-15 Linux and Mac variants/args unchanged; Windows selected
+  once; unsupported GOOS absent; duplicate registration rejected.
+- WZC-16 Direct-call guards: wrong type, nil args, nil Runtime, nil
+  Runner each fail closed.
+- WZC-17 Compile-only Windows amd64/386/arm64 plus the other
+  variants; never native execution.
+- WZC-18 License/source NOTICE evidence recorded; root binary-release
+  bundling follow-up tracked.
+
+Prior source-QA gap crosswalk (qa-engineer-senior verifies at the
+gate that each prior source gap is closed by exactly these WZC rows;
+the WZC-GAP labels are crosswalk references only, not new task IDs):
+
+- WZC-GAP-01 rstrip whitespace set and empty-after-rstrip → WZC-05.
+- WZC-GAP-02 exactly one terminal `_dstoff` strip plus the FLE
+  no-suffix anchor → WZC-05 and WZC-03.
+- WZC-GAP-03 mixed-case match with never-trim input → WZC-02.
+- WZC-GAP-04 fake system-directory resolver validation → WZC-07 and
+  WZC-08.
+- WZC-GAP-05 separate sentinel categories (invalid-input vs
+  cannot-determine) → WZC-12.
+- WZC-GAP-06 direct wrong/nil argument/runtime/Runner guards →
+  WZC-16.
+- WZC-GAP-07 zero-exit truncation/context cancellation/timeout →
+  WZC-13.
+- WZC-GAP-08 lockstep registration updates — when the Windows variant
+  lands, TZC-16, MZC-15, and MZC-17 are updated in the same phase →
+  WZC-15.
+- WZC-GAP-09 lowercased machine output plus the full 134-pair table
+  sweep → WZC-05 and WZC-03.
+
+CI/evidence posture: existing hosted GitHub CI untagged tests and
+cross-builds are unchanged — no workflow edit and no remote run is
+requested; native Windows validation remains pending_external_ci.
+When the implementation phase runs assistant-side tests, they execute
+in the rootless Podman sandbox (`network=none`, read-only source and
+module cache, private `.gotmp` scratch); requested resource cgroup
+limits are NOT enforced in the nested Podman environment, so no
+memory/CPU/PID enforcement claim may be made for those runs.
+
+Mandatory implementation and commit gates (every gate PASS is a
+precondition of the implementation commit; qa-engineer-senior owns
+the gate ledger; any single blocking finding leaves the phase open
+and requires targeted remediation plus re-review of the affected
+gate before any commit):
+
+- Source-vs-Go parity over all 134 pairs, verified independently:
+  expected values are read from the pinned Salt source
+  (`saltstack/salt/modules/win_timezone.py` lines 46–183 per
+  `references/salt.lock`), never derived from the Go map under test.
+- backend-engineer-lead code review: PASS required.
+- security-engineer-senior code review: PASS required.
+- qa-engineer-senior acceptance (WZC-01..18 plus the WZC-GAP
+  crosswalk above): PASS required.
+- compliance-officer-senior NOTICE/source-distribution check (the
+  Notice/licensing item deliverables): PASS required.
+- Rootless local gates with the established runtime preflight (same
+  verified-isolation controls as prior local runs: verified cached
+  image with `--pull=never`, rootless nonroot, `network=none`,
+  read-only source/module-cache mounts with rejected write probes,
+  caps dropped, no-new-privileges, private scratch, no credential/
+  socket/device bind-mounts): tests, build, vet, and compile-only
+  cross-build (`GOOS=windows GOARCH={amd64,386,arm64}` plus the
+  other existing variants) all green.
+- Commit scope: only the scoped Windows code/table, its tests, the
+  root NOTICE, and plan/ledger updates; `.github`, `go.mod`, and
+  `go.sum` are never touched. Native Windows execution and external
+  GitHub CI results remain pending_external_ci and gate nothing in
+  this phase.
+
+Aggregate PTD-EXEC-1638/PTD-TEST-1673 and the R6 native/Darwin report
+remain open/partial after this record; nothing here marks any Windows
+slice implemented.
+
+R6 Windows partial implementation record (timezone.zone_compare
+Windows variant, PTD-EXEC-1638/PTD-TEST-1673; both rows REMAIN
+open/partial — this is the local hermetic slice only, no native
+Windows execution and no external CI run): the plan-of-record above is
+now implemented in `modules/exec/timezone`. The static table landed as
+`winzone_table.go` — the 134 Windows/IANA pairs transcribed/adapted
+from pinned `saltstack/salt/modules/win_timezone.py` lines 46–183
+(revision per `references/salt.lock`; provenance comment in-file; no
+CLDR, no new dependency, no generated catalog) — with an independent
+source-parity oracle (`TestWinZoneTableMatchesPinnedSourceExactly`)
+that first checks the `references/salt.lock` pin, then parses the pairs
+from the pinned Python source and asserts exact 134-pair equality in
+count, order, and both values, never a checksum or any value derived
+from the Go table; the parsed source is the saltstack submodule
+checkout, and read-only observation of the existing
+`.github/workflows/ci.yml` shows the `catalog determinism` job checks
+out `submodules: recursive` while the Go `unit tests (race, coverage)`
+job does not request submodules, so the oracle would take its
+documented submodule-unavailable skip path there (winzone_test.go
+skip on unavailable pinned source) — workflow file observed only, no
+workflow change, no claim any Actions run occurred;
+`TestWinZoneTableInvariants` adds the no-duplicate
+lowercase keys/values, both-direction round-trip, and the
+India/Calcutta, Mountain/Denver, FLE/Kiev, and UTC-sign anchors. The
+variant `winZoneCompareFunc` (canonical loader name
+`timezone.zone_compare`, `Platforms() [windows]`, required `*string`
+argument field tagged `name=timezone` per
+`docs/catalog/exec/win_timezone.yaml`) registers
+through the existing `registerZoneCompareForGOOS` switch; TZC-16,
+MZC-15, and MZC-17 were updated in lockstep in this phase (GAP-08 /
+WZC-15), and the new `TestPortingDebtExecTimezoneZoneCompare
+WindowsPartialPTD_EXEC_1638` porting-debt evidence pins the win-catalog
+zone_compare(timezone) signature and the unchanged six-name family
+surface on every variant host. The resolution path uses only the
+existing `golang.org/x/sys` v0.47.0 `GetSystemDirectory` plus
+machine-wide `GetSystemWindowsDirectory` (never per-user
+`GetWindowsDirectory`) behind the injectable `winSystemTree` seam
+(`resolver_windows.go` / fail-closed `resolver_other.go` stub; no
+go.mod/go.sum change — the dependency already exists for other
+build-tagged files). Both answers must be absolute, lexically clean
+local drive paths and the systemdir must be exactly the
+case-insensitive System32/SysWOW64 immediate child of the windows dir;
+UNC, device, extended-length, drive-relative, root-relative,
+traversal, sibling, deeper, ADS, control-character, forward-slash, and
+empty-component answers fail closed. Immediately before the single
+dispatch, an exact `Lstat` of `<systemdir>\tzutil.exe` requires a
+regular non-reparse file (missing/error/reparse/non-regular → fixed
+`ErrCannotDetermineZone`, zero dispatch). Go 1.26.6 may still consult
+the parent PATHEXT even for an absolute executable; this exact-regular
+precheck prevents suffix fallback only under the explicit stable
+administrator-controlled-system-tree/no-unprivileged-replacement
+assumption, and the TOCTOU window between Lstat and process start
+remains — no unconditional exact-exec claim is made. The one dispatch
+is shell-free with absolute name, argv exactly `[/g]`, `Dir=systemdir`,
+child `Env` exactly the two API-derived `SYSTEMROOT`/`WINDIR` entries,
+empty `WindowsCmdLine`, a 30s cancellation deadline (not a strict
+end-to-end cap: Runner WaitDelay), and 64 KiB per-stream ceilings.
+Output processing ports the pinned `get_zone` (lines 197–223):
+Python `str.rstrip` trailing whitespace (leading preserved),
+empty-after-rstrip → `ErrCannotDetermineZone`, lowercase, then exactly
+one terminal `_dstoff` strip, table lookup with the "Unknown" default;
+an unknown nonempty current zone answers false. Sentinel contract
+(WZC-12, corrected by WZC-BACKEND-01): the required gate is three-way —
+the omitted `timezone` key or nil `*string` pointer fails args
+decoding with `config.MissingRequiredError` before any resolver/Lstat/
+Runner work (a direct gate-bypassing caller hits the same
+`config.ValidateRequired` guard in Execute); an explicit empty nonnil
+pointer and any nonempty unlisted name return only the fixed
+value-free `ErrInvalidWindowsZone` ("invalid Windows timezone",
+execution category mirroring the source CommandExecutionError
+classification with the value stripped) before resolver/precheck/
+Runner; a valid pointer follows the 134-pair mapping — the boundary is
+pinned by `TestWinZoneCompareRequiredGateBoundary` in
+`modules/exec/timezone/winzone_test.go`. Every query/execution failure
+(resolver API error, malformed tree, precheck failure, Runner error,
+nonzero exit, cancel/deadline, truncation flags, over-cap length, or
+empty-after-rstrip) returns only the existing `ErrCannotDetermineZone`
+— distinct `errors.Is`, no cross-match, no Unwrap, and no zone name,
+path, output, raw cause, or retcode in any message. Notice/licensing
+deliverable: the root `NOTICE` landed with the 13 lines of
+`saltstack/NOTICE` retained verbatim and the two attribution lines
+`Copyright (c) 2011-2022 VMware, Inc. All rights reserved.` (LICENSE
+appendix) and `Copyright: 2014 SaltStack Team` (dep5-format `Files: *`
+entry embedded in the LICENSE appendix) preserved separately with
+their origins labeled and dates never merged; the root LICENSE is
+unchanged, and binary releases must bundle LICENSE/NOTICE (follow-up
+tracked for the release packaging round — no packaging change now);
+compliance review of the actual NOTICE remains a required later gate.
+Tests: WZC-01..16 pinned hermetically in
+`modules/exec/timezone/winzone_test.go` over the fake resolver seam,
+MemoryFS, and a deep-recording fake Runner (never the real
+`tzutil`/registry/host timezone), including the full 134-pair sweep in
+both input forms, the exact 65536/65537-byte cap boundary, zero-exit
+truncation on each stream, hostile-PATHEXT siblings, and the
+fail-safe Execute boundary. TDD evidence (nested rootless Podman,
+`.gotmp/p1638-wzc`, same verified isolation controls as prior runs —
+rootless nonroot uid 65532, caps=0, no-new-privileges, `network=none`,
+read-only source/module-cache binds, private tmpfs scratch, no
+credential/socket/device mounts, cached image only `--pull=never`):
+Phase A table RED = undefined `winZonePair`/`winZonePairs`/
+`winZoneToUnix`/`unixZoneToWin` build failure → GREEN with the
+transcribed table and a passing source oracle; Phase B RED = undefined
+`winZoneCompareFunc`/`winZoneCompareArgs`/`ErrInvalidWindowsZone` →
+GREEN with sentinel, schema, routing, and the MZC-15/MZC-17 lockstep
+edits; Phase C RED = undefined
+`validateWindowsSystemTree`/`winSystemTree`/`defaultWinSystemTree` →
+GREEN with the validation matrix and resolver files; Phase D RED =
+eight failing WZC behavior tests against the stub Execute (gate leak
+assertion, dispatch shape, precheck calls, output matrix, unknown
+current zone, full sweep, cap boundary, mutation/single-dispatch) →
+GREEN with the full Execute. Phase E porting-debt evidence is a
+host-independent regression pin whose behavioral RED/GREEN evidence is
+the module suite. Gates in the same sandbox: gofmt, focused
+timezone/porting tests, `go test -race ./...`, `go vet ./...`,
+`go mod verify`, and compile-only GOOS=windows
+GOARCH={amd64,386,arm64} plus linux/darwin/freebsd `go build` and
+test-binary compiles — never native execution. Requested cgroup
+CPU/memory/PID limits are known-unenforced in the nested Podman
+environment (`memory.max=max`, `pids.max` far above the request,
+`cpu.max=max` observed in prior QA preflights) and are reported here,
+not claimed; core isolation (rootless, caps=0, NNP, network=none,
+read-only binds) is verified per invocation by the fail-closed
+preflight. GitHub CI remains pending_external_ci; `.github`,
+go.mod/go.sum, docs/catalog, the R6 report, ADR 0004, and the MySQL
+Containerfile are untouched. The phase's commit is intentionally NOT
+created (the working tree carries unrelated dirty files that must not
+be swept in); the changed files remain working-tree only. Aggregate
+PTD-EXEC-1638/PTD-TEST-1673 and the R6 native/Darwin report remain
+PARTIAL/OPEN.
+
 R5.9 ported the local ssh_pki surface (11 cataloged execution functions,
 plus the upstream create_certificate_ssh alias) onto golang.org/x/crypto/ssh
 (already approved by ADR 0002): create_certificate builds and signs
@@ -6032,7 +6433,7 @@ R8.1 update: after `e6e1ccd` every GOOS in {linux, darwin, windows, freebsd} car
 | [ ] | PTD-EXEC-1635 | `timezone.set_time` | actionable | software-engineer-senior | catalog `docs/catalog/exec/mac_timezone.yaml#set_time`; Salt `saltstack/salt/modules/mac_timezone.py#set_time`; tests none mapped | `modules/exec/timezone` (extend); R6 / native Darwin and E1-E4 dependency; dependencies: none catalogued | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
 | [ ] | PTD-EXEC-1636 | `timezone.set_time_server` | actionable | software-engineer-senior | catalog `docs/catalog/exec/mac_timezone.yaml#set_time_server`; Salt `saltstack/salt/modules/mac_timezone.py#set_time_server`; tests none mapped | `modules/exec/timezone` (extend); R6 / native Darwin and E1-E4 dependency; dependencies: none catalogued | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
 | [ ] | PTD-EXEC-1637 | `timezone.set_using_network_time` | actionable | software-engineer-senior | catalog `docs/catalog/exec/mac_timezone.yaml#set_using_network_time`; Salt `saltstack/salt/modules/mac_timezone.py#set_using_network_time`; tests none mapped | `modules/exec/timezone` (extend); R6 / native Darwin and E1-E4 dependency; dependencies: none catalogued | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
-| [ ] | PTD-EXEC-1638 | `timezone.zone_compare` | partial (Linux-generic sub-slice + Mac partial; row open) | software-engineer-senior | catalog `docs/catalog/exec/mac_timezone.yaml#zone_compare`; Salt `saltstack/salt/modules/mac_timezone.py#zone_compare`; tests none mapped; catalog `docs/catalog/exec/timezone.yaml#zone_compare`; Salt `saltstack/salt/modules/timezone.py#zone_compare`; tests saltstack/tests/pytests/unit/modules/test_timezone.py; catalog `docs/catalog/exec/win_timezone.yaml#zone_compare`; Salt `saltstack/salt/modules/win_timezone.py#zone_compare`; tests saltstack/tests/pytests/unit/modules/test_win_timezone.py | `modules/exec/timezone` (extend); R6 / native Darwin and E1-E4 dependency; dependencies: cmd.retcode, cmd.run, cmd.run_all, file.sed, util:path.which, util:platform.is_windows | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime`. Partial (Linux-generic sub-slice, R6 partial addendum): Linux-only PlatformConstrained registration in `modules/exec/timezone` with validate-before-any-FS zone-name rules (relative ASCII `[A-Za-z0-9_+-]`, 1024/255/64 ceilings, never trimmed/normalized), fast detection (/etc/timezone regular+bounded only, /etc/localtime contained symlink name from initial target, alias preserved) with exact case-sensitive compare and unequal=>false without fallback, detection-error-only byte fallback reading current localtime first (1 MiB bounded no-follow `runtime.ReadFileBounded`, fail closed if unsupported, never raw `FS.ReadFile`), component-wise contained symlink resolution under fixed `/usr/share/zoneinfo` (max 8 hops / 64 cumulative components incl. the prefix; escape/loop/dangling/special/directory rejected), fixed value-free category errors (`unknown/unsafe zone` invocation / `cannot determine current zone` execution, errors.Is sentinels), zero Runner/writes/dependencies; TZC-01..18 hermetic module tests plus PTD-TEST-1673 porting-debt evidence landed. Mac partial (R6 Mac partial addendum; Linux behavior unchanged, `Register` selects per GOOS via unexported `registerZoneCompareForGOOS`): separate `macZoneCompareFunc` (same canonical name, `Platforms() [darwin]`, required `*string time_zone` args so omitted nil fails the gate before dispatch while explicit `&""` compares exactly) dispatching one fixed shell-free `/usr/sbin/systemsetup -gettimezone` (absolute path, no PATH lookup, Env exactly `LC_ALL=C`, 30s timeout, 64KiB per-stream caps) with Python `str.rstrip` on stdout (`unicode.IsSpace` + U+001C..U+001F, no leading trim), nonzero-exit or case-insensitive "not supported" in rstripped stdout (stderr alone never fails) and any Runner/truncation/over-cap/cancellation failure mapping to the single fixed value-free `ErrCannotDetermineZone` (no wrapped cause, no logging), then parse_return (`: ` priority over `:\n`, element 1, later segments discarded, else raw) and exact case-sensitive comparison; MZC-01..18 hermetic fake-Runner module tests including the GOOS selector seam landed on source-functional fixtures and local mocks (no porting-debt integration test for the mac slice: the darwin-gated duplicate was removed in QA-MZC-BLOCK-01 remediation; pinned Salt ships only a functional test fixture, no dedicated mac_timezone unit test) — native Darwin not run, no binary-authenticity claim, `/usr/sbin` assumed admin-controlled. NILinuxRT `_get_localtime_path` ceiling plus Windows/Solaris/AIX variants and the R6 native/Darwin report remain open; GitHub CI result remains `pending_external_ci` |
+| [ ] | PTD-EXEC-1638 | `timezone.zone_compare` | partial (Linux-generic sub-slice + Mac partial + Windows partial; row open) | software-engineer-senior | catalog `docs/catalog/exec/mac_timezone.yaml#zone_compare`; Salt `saltstack/salt/modules/mac_timezone.py#zone_compare`; tests none mapped; catalog `docs/catalog/exec/timezone.yaml#zone_compare`; Salt `saltstack/salt/modules/timezone.py#zone_compare`; tests saltstack/tests/pytests/unit/modules/test_timezone.py; catalog `docs/catalog/exec/win_timezone.yaml#zone_compare`; Salt `saltstack/salt/modules/win_timezone.py#zone_compare`; tests saltstack/tests/pytests/unit/modules/test_win_timezone.py | `modules/exec/timezone` (extend); R6 / native Darwin and E1-E4 dependency; dependencies: cmd.retcode, cmd.run, cmd.run_all, file.sed, util:path.which, util:platform.is_windows | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime`. Partial (Linux-generic sub-slice, R6 partial addendum): Linux-only PlatformConstrained registration in `modules/exec/timezone` with validate-before-any-FS zone-name rules (relative ASCII `[A-Za-z0-9_+-]`, 1024/255/64 ceilings, never trimmed/normalized), fast detection (/etc/timezone regular+bounded only, /etc/localtime contained symlink name from initial target, alias preserved) with exact case-sensitive compare and unequal=>false without fallback, detection-error-only byte fallback reading current localtime first (1 MiB bounded no-follow `runtime.ReadFileBounded`, fail closed if unsupported, never raw `FS.ReadFile`), component-wise contained symlink resolution under fixed `/usr/share/zoneinfo` (max 8 hops / 64 cumulative components incl. the prefix; escape/loop/dangling/special/directory rejected), fixed value-free category errors (`unknown/unsafe zone` invocation / `cannot determine current zone` execution, errors.Is sentinels), zero Runner/writes/dependencies; TZC-01..18 hermetic module tests plus PTD-TEST-1673 porting-debt evidence landed. Mac partial (R6 Mac partial addendum; Linux behavior unchanged, `Register` selects per GOOS via unexported `registerZoneCompareForGOOS`): separate `macZoneCompareFunc` (same canonical name, `Platforms() [darwin]`, required `*string time_zone` args so omitted nil fails the gate before dispatch while explicit `&""` compares exactly) dispatching one fixed shell-free `/usr/sbin/systemsetup -gettimezone` (absolute path, no PATH lookup, Env exactly `LC_ALL=C`, 30s timeout, 64KiB per-stream caps) with Python `str.rstrip` on stdout (`unicode.IsSpace` + U+001C..U+001F, no leading trim), nonzero-exit or case-insensitive "not supported" in rstripped stdout (stderr alone never fails) and any Runner/truncation/over-cap/cancellation failure mapping to the single fixed value-free `ErrCannotDetermineZone` (no wrapped cause, no logging), then parse_return (`: ` priority over `:\n`, element 1, later segments discarded, else raw) and exact case-sensitive comparison; MZC-01..18 hermetic fake-Runner module tests including the GOOS selector seam landed on source-functional fixtures and local mocks (no porting-debt integration test for the mac slice: the darwin-gated duplicate was removed in QA-MZC-BLOCK-01 remediation; pinned Salt ships only a functional test fixture, no dedicated mac_timezone unit test) — native Darwin not run, no binary-authenticity claim, `/usr/sbin` assumed admin-controlled. Windows partial (R6 Windows partial implementation record; Linux and Mac behavior unchanged, the same `registerZoneCompareForGOOS` switch adds `winZoneCompareFunc` with `Platforms() [windows]` and the required `*string` argument field tagged `name=timezone` per catalog `docs/catalog/exec/win_timezone.yaml#zone_compare`): the 134-pair table from pinned `win_timezone.py` lines 46-183 transcribed/adapted into `modules/exec/timezone/winzone_table.go` (provenance comment in-file, no CLDR, no new dependency) with an independent source-parity oracle that checks `references/salt.lock` then parses the pinned Python source and asserts exact pair equality (never a Go-derived checksum; the parsed source is the saltstack submodule checkout — read-only observation of the existing `.github/workflows/ci.yml`: the `catalog determinism` job checks out `submodules: recursive` while the Go `unit tests (race, coverage)` job does not request submodules, so the oracle would take its documented submodule-unavailable skip path there; workflow file observed only, no workflow change, no claim any Actions run occurred); resolution through `golang.org/x/sys` v0.47.0 `GetSystemDirectory` + machine-wide `GetSystemWindowsDirectory` only (injectable `winSystemTree` seam, fail-closed `!windows` stub), both answers validated as absolute clean local drive paths with the exact System32/SysWOW64 immediate child (UNC/device/extended/drive-relative/root-relative/traversal/sibling/deeper/ADS/control rejected), an exact regular non-reparse `Lstat` of `<systemdir>\tzutil.exe` immediately before one shell-free `tzutil.exe /g` (absolute name, `Dir=systemdir`, child Env exactly API-derived SYSTEMROOT/WINDIR, 30s cancellation deadline, 64KiB per-stream caps) — Go 1.26.6 may still consult parent PATHEXT, so the precheck prevents suffix fallback only under the documented admin-controlled-tree assumption with an accepted TOCTOU residual and no unconditional exact-exec claim; output Python-rstripped (leading preserved), empty-after-rstrip and every API/precheck/Runner/nonzero/truncation/over-cap/cancel/deadline failure fixed value-free `ErrCannotDetermineZone`, lowercased with exactly one terminal `_dstoff` strip, unknown nonempty current zone → false, and the required gate pinned three-way (WZC-BACKEND-01 correction): the omitted `timezone` key or nil `*string` pointer fails with `config.MissingRequiredError` before any resolver/Lstat/Runner work, an explicit empty nonnil pointer and nonempty unlisted names return the fixed value-free `ErrInvalidWindowsZone` ("invalid Windows timezone") execution sentinel before resolver/precheck/Runner, and a valid pointer follows the 134-pair mapping — the boundary is pinned by `TestWinZoneCompareRequiredGateBoundary`; sentinels remain distinct `errors.Is`, no cross-match, no Unwrap, no value leakage; WZC-01..16 hermetic module tests over the fake resolver/MemoryFS/fake Runner plus TZC-16/MZC-15/MZC-17 lockstep, root NOTICE with verbatim upstream notice and separately-preserved attribution lines; native Windows execution and external CI not run (`pending_external_ci`). NILinuxRT `_get_localtime_path` ceiling plus Solaris/AIX variants and the R6 native/Darwin report remain open; GitHub CI result remains `pending_external_ci` |
 | [x] | PTD-EXEC-1639 | `udev.exportdb` | implemented | software-engineer-senior | catalog `docs/catalog/exec/udev.yaml#exportdb`; Salt `saltstack/salt/modules/udev.py#exportdb`; tests saltstack/tests/pytests/unit/modules/test_udev.py | `modules/exec/udev` (extend); R2; dependencies: cmd.run_all | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime`. Implemented: one fixed shell-free dispatch `udevadm info --export-db` (Env `LC_ALL=C`, 30s timeout, 16MiB/64KiB stdout/stderr budgets; the parent Runner resolves the bare executable via the caller/deployment's parent `PATH` — callers/deployments must ensure both that `PATH` and the selected `udevadm` helper are trusted; `Env` pins locale only, not executable identity; no resolver/authenticator added by design), strict optional `subsystems *[]string` filter with per-field decode-time ceilings (maxentries=256/maxentrybytes=256/maxtotalbytes=65536, each key required exactly once and valid only on `*[]string`, enforced before destination materialization incl. raw comma-value and delimiter-heavy rejection) re-checked in-module as an explicit invariant before dispatch, client-side exact/case-sensitive filtering after complete incremental single-pass parsing (raw line length checked pre-trim, no upfront line split, section separator and key=value inspected without split allocations, record ceiling checked on the first valid field of a new record before it is built), fixed value-free errors with errors.Is preserved only for context.Canceled/DeadlineExceeded/process.ErrOutputLimit, finite parser ceilings (16MiB input, 64KiB raw line, 65,536 records, 1,024 field occurrences per record) with no partial results; `parseInfo` returns (records, error), E-lines-without-'=' fail the whole parse, structured null clears a populated target. Output sensitivity: successful results enumerate hardware/device identifiers; the filter is not minimization or authorization. Documented divergences: fixed value-free errors vs Salt's stderr echo, int64/float64 numeric coercion vs Python unbounded int, LF-only line splitting vs splitlines, singleton-E map kept vs upstream `_normalize_info` KeyError, limits absent upstream. Hermetic fake-Runner tests (PTD-TEST-1674) + CLI matrix + R2 report 9/6/3/3; GitHub CI result remains `pending_external_ci` |
 | [x] | PTD-EXEC-1640 | `udev.links` | implemented | software-engineer-senior | catalog `docs/catalog/exec/udev.yaml#links`; Salt `saltstack/salt/modules/udev.py#links`; tests saltstack/tests/pytests/unit/modules/test_udev.py | `modules/exec/udev` (extend); R2; dependencies: cmd.run_all | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime`. Implemented: thin wrapper over info(dev) returning devices[0]["S"] — multi-value S stays `[]any`, a single-element section collapses per `_normalize_info` — or nil when the section is absent (Salt `.get("S", None)`; never an empty string); dispatch reuses info's exact shell-free `udevadm info --export --query=all --{name|path}={dev}` with qtype switched to path when dev contains "sys" and keeps info's existing error policy unchanged (Runner error passthrough, stderr echo on nonzero exit, strict parseInfo error propagation, "no device found for %s" on empty parse). No upstream unit test exists for this wrapper (test_udev.py covers info/exportdb/_normalize_info/_filter_subsystems); behavior pinned by local mock tests. R2 report udev 6/6 public registered; GitHub CI result remains `pending_external_ci` |
 | [x] | PTD-EXEC-1641 | `udev.name` | implemented | software-engineer-senior | catalog `docs/catalog/exec/udev.yaml#name`; Salt `saltstack/salt/modules/udev.py#name`; tests saltstack/tests/pytests/unit/modules/test_udev.py | `modules/exec/udev` (extend); R2; dependencies: cmd.run_all | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime`. Implemented: thin wrapper over info(dev) returning devices[0]["N"] (scalar after `_normalize_info` collapse) or nil when the section is absent (Salt `.get("N", None)`; never an empty string); dispatch reuses info's exact shell-free `udevadm info --export --query=all --{name|path}={dev}` with qtype switched to path when dev contains "sys" and keeps info's existing error policy unchanged (Runner error passthrough, stderr echo on nonzero exit, strict parseInfo error propagation, "no device found for %s" on empty parse). No upstream unit test exists for this wrapper (test_udev.py covers info/exportdb/_normalize_info/_filter_subsystems); behavior pinned by local mock tests. R2 report udev 6/6 public registered; GitHub CI result remains `pending_external_ci` |
@@ -8437,7 +8838,7 @@ R8.1 update: after `e6e1ccd` every GOOS in {linux, darwin, windows, freebsd} car
 | [ ] | PTD-TEST-1670 | `TestPortingDebtExecTimezoneSetTimeCanonicalRegistrationPTD_EXEC_1635` | actionable | qa-engineer-senior | `tests/porting_debt_test.go` (planned) | PTD-EXEC-1635 | contract/registration | `saltstack/salt/modules/mac_timezone.py#set_time`; tests none mapped | For `timezone.set_time`, assert canonical registration and rejection of superseded aliases; assert catalog-declared parameters/defaults from `docs/catalog/exec/mac_timezone.yaml#set_time` against source signature(s) `saltstack/salt/modules/mac_timezone.py#set_time`; execute source-derived success and failure fixtures because no Salt test is mapped; assert the source-defined success and failure return/error shapes, declared side effects, and no mutation after validation or execution error. |
 | [ ] | PTD-TEST-1671 | `TestPortingDebtExecTimezoneSetTimeServerCanonicalRegistrationPTD_EXEC_1636` | actionable | qa-engineer-senior | `tests/porting_debt_test.go` (planned) | PTD-EXEC-1636 | contract/registration | `saltstack/salt/modules/mac_timezone.py#set_time_server`; tests none mapped | For `timezone.set_time_server`, assert canonical registration and rejection of superseded aliases; assert catalog-declared parameters/defaults from `docs/catalog/exec/mac_timezone.yaml#set_time_server` against source signature(s) `saltstack/salt/modules/mac_timezone.py#set_time_server`; execute source-derived success and failure fixtures because no Salt test is mapped; assert the source-defined success and failure return/error shapes, declared side effects, and no mutation after validation or execution error. |
 | [ ] | PTD-TEST-1672 | `TestPortingDebtExecTimezoneSetUsingNetworkTimeCanonicalRegistrationPTD_EXEC_1637` | actionable | qa-engineer-senior | `tests/porting_debt_test.go` (planned) | PTD-EXEC-1637 | contract/registration | `saltstack/salt/modules/mac_timezone.py#set_using_network_time`; tests none mapped | For `timezone.set_using_network_time`, assert canonical registration and rejection of superseded aliases; assert catalog-declared parameters/defaults from `docs/catalog/exec/mac_timezone.yaml#set_using_network_time` against source signature(s) `saltstack/salt/modules/mac_timezone.py#set_using_network_time`; execute source-derived success and failure fixtures because no Salt test is mapped; assert the source-defined success and failure return/error shapes, declared side effects, and no mutation after validation or execution error. |
-| [ ] | PTD-TEST-1673 | `TestPortingDebtExecTimezoneZoneCompareCanonicalRegistrationPTD_EXEC_1638` | actionable (partial evidence landed; row open) | qa-engineer-senior | `tests/porting_debt_test.go` (landed partial with the PTD-EXEC-1638 Linux-generic sub-slice) | PTD-EXEC-1638 | contract/registration | `saltstack/salt/modules/mac_timezone.py#zone_compare`; tests none mapped; `saltstack/salt/modules/timezone.py#zone_compare`; tests saltstack/tests/pytests/unit/modules/test_timezone.py; `saltstack/salt/modules/win_timezone.py#zone_compare`; tests saltstack/tests/pytests/unit/modules/test_win_timezone.py | For `timezone.zone_compare`, assert canonical registration and rejection of superseded aliases; assert catalog-declared parameters/defaults from `docs/catalog/exec/mac_timezone.yaml#zone_compare; docs/catalog/exec/timezone.yaml#zone_compare; docs/catalog/exec/win_timezone.yaml#zone_compare` against source signature(s) `saltstack/salt/modules/mac_timezone.py#zone_compare; saltstack/salt/modules/timezone.py#zone_compare; saltstack/salt/modules/win_timezone.py#zone_compare`; execute mapped Salt fixture(s) none mapped, saltstack/tests/pytests/unit/modules/test_timezone.py, saltstack/tests/pytests/unit/modules/test_win_timezone.py; assert the source-defined success and failure return/error shapes, declared side effects, and no mutation after validation or execution error. Landed (Linux-generic sub-slice): `timezone.zone_compare` registered exactly once via BuildRuntime with zero `timezone.zone_compare_` alias and the family surface at six names; catalog `docs/catalog/exec/timezone.yaml#zone_compare` declares exactly one `timezone` parameter with no default; args schema exactly required string `timezone` (canonical argument name proven by the `missing required argument "timezone"` gate error with zero dispatch); registry `ResolveArgs`+`Call` over hermetic MemoryFS (never host /etc or zoneinfo, fake recording Runner with zero calls) pins the mapped test_timezone.py shapes — name-equal true (test_zone_compare_arch analog), case-unequal false, byte-equal true / byte-unequal false (test_zone_compare_equal/unequal), `unknown/unsafe zone` for the missing requested zone (test_zone_compare_nonexistent SaltInvocationError analog) and `cannot determine current zone` for the missing localtime (test_missing_localtime CommandExecutionError analog), both errors.Is sentinels with fixed value-free text. TDD evidence: RED run (dispatch assertions failed against the registered nil stub) then GREEN after the implementation landed; module-level TZC-01..18 in `modules/exec/timezone/timezone_test.go` cover the symlink/budget/boundary matrices the porting-debt row does not re-run. Mac/Windows fixture ports and the native-platform rows remain open; GitHub-hosted untagged `go test ./... -race` picks this file up and remains `pending_external_ci`. Mac partial addendum remediated (QA-MZC-BLOCK-01): the darwin-gated porting-debt test `TestPortingDebtExecTimezoneZoneCompareMacPartialPTD_EXEC_1638` and its `macZonePTDRunner` fake were removed from `tests/porting_debt_test.go` — darwin-only (skipped on hosted Linux CI, never executed on CI) and a duplicate of the module suite; its aggregate dispatch-count assertion miscounted its own calls (8 expected, 7 dispatched), and it is NOT claimed as executed porting-debt evidence: this row's landed evidence remains the Linux-generic sub-slice test named above. Mac local evidence is the module-level MZC-01..18 hermetic fake-Runner suite in `modules/exec/timezone/timezone_test.go` plus the GOOS selector seam `registerZoneCompareForGOOS`: MZC-15 pins per-GOOS variant selection (linux→`zoneCompareFunc`, darwin→`macZoneCompareFunc`, nothing elsewhere) with `Platforms() [darwin]` and the required `*string` time_zone schema matching catalog `docs/catalog/exec/mac_timezone.yaml#zone_compare` (exactly one `time_zone` parameter, no default); MZC-01..14 pin the mac contract (one fixed shell-free `/usr/sbin/systemsetup -gettimezone`, no filesystem access, Python rstrip, parse_return delimiters, exact case-sensitive equal/unequal, explicit-empty time_zone, required-gate zero dispatch, not-supported/nonzero/runner-error/cancellation/timeout/truncation/over-cap failures all mapping to the fixed `cannot determine current zone` errors.Is sentinel with value-free text); MZC-16 off-platform unsupported rejection; MZC-17 no-duplicate invariant; MZC-18 fail-safe Execute boundary for gate-bypassing callers. Pinned Salt ships only the functional fixture `saltstack/tests/pytests/functional/modules/test_mac_timezone.py` — no dedicated mac_timezone unit test — so the mac shapes are pinned by source-derived hermetic fixtures, not an upstream unit-test port. Aggregate PTD-EXEC-1638/PTD-TEST-1673 remain partial/open: native Darwin execution, the R6 native report, and the Windows/Solaris/AIX/NILinuxRT variants remain open; external GitHub CI remains `pending_external_ci` |
+| [ ] | PTD-TEST-1673 | `TestPortingDebtExecTimezoneZoneCompareCanonicalRegistrationPTD_EXEC_1638` | actionable (partial evidence + Windows partial evidence landed; row open) | qa-engineer-senior | `tests/porting_debt_test.go` (landed partial with the PTD-EXEC-1638 Linux-generic sub-slice, then the Windows partial evidence test) | PTD-EXEC-1638 | contract/registration | `saltstack/salt/modules/mac_timezone.py#zone_compare`; tests none mapped; `saltstack/salt/modules/timezone.py#zone_compare`; tests saltstack/tests/pytests/unit/modules/test_timezone.py; `saltstack/salt/modules/win_timezone.py#zone_compare`; tests saltstack/tests/pytests/unit/modules/test_win_timezone.py | For `timezone.zone_compare`, assert canonical registration and rejection of superseded aliases; assert catalog-declared parameters/defaults from `docs/catalog/exec/mac_timezone.yaml#zone_compare; docs/catalog/exec/timezone.yaml#zone_compare; docs/catalog/exec/win_timezone.yaml#zone_compare` against source signature(s) `saltstack/salt/modules/mac_timezone.py#zone_compare; saltstack/salt/modules/timezone.py#zone_compare; saltstack/salt/modules/win_timezone.py#zone_compare`; execute mapped Salt fixture(s) none mapped, saltstack/tests/pytests/unit/modules/test_timezone.py, saltstack/tests/pytests/unit/modules/test_win_timezone.py; assert the source-defined success and failure return/error shapes, declared side effects, and no mutation after validation or execution error. Landed (Linux-generic sub-slice): `timezone.zone_compare` registered exactly once via BuildRuntime with zero `timezone.zone_compare_` alias and the family surface at six names; catalog `docs/catalog/exec/timezone.yaml#zone_compare` declares exactly one `timezone` parameter with no default; args schema exactly required string `timezone` (canonical argument name proven by the `missing required argument "timezone"` gate error with zero dispatch); registry `ResolveArgs`+`Call` over hermetic MemoryFS (never host /etc or zoneinfo, fake recording Runner with zero calls) pins the mapped test_timezone.py shapes — name-equal true (test_zone_compare_arch analog), case-unequal false, byte-equal true / byte-unequal false (test_zone_compare_equal/unequal), `unknown/unsafe zone` for the missing requested zone (test_zone_compare_nonexistent SaltInvocationError analog) and `cannot determine current zone` for the missing localtime (test_missing_localtime CommandExecutionError analog), both errors.Is sentinels with fixed value-free text. TDD evidence: RED run (dispatch assertions failed against the registered nil stub) then GREEN after the implementation landed; module-level TZC-01..18 in `modules/exec/timezone/timezone_test.go` cover the symlink/budget/boundary matrices the porting-debt row does not re-run. Mac/Windows fixture ports and the native-platform rows remain open; GitHub-hosted untagged `go test ./... -race` picks this file up and remains `pending_external_ci`. Windows partial addendum (R6 Windows partial implementation record): the host-independent `TestPortingDebtExecTimezoneZoneCompareWindowsPartialPTD_EXEC_1638` pins the win-catalog signature (exactly one `timezone` parameter, no default, per `docs/catalog/exec/win_timezone.yaml#zone_compare`) and the unchanged six-name canonical family surface with zero alias on every variant host; the windows behavioral evidence — the 134-pair source-parity oracle over pinned `win_timezone.py` lines 46-183 after checking `references/salt.lock`, the mapped `test_win_timezone.py` fixture shapes (India/Calcutta true, Mountain Standard Time_dstoff→America/Denver true, FLE Standard Time→Europe/Kiev, unknown nonempty `Indian Standard Time` current zone false, tzutil error categories), the WZC-01..16 acceptance matrix, and zero-mutation/single-dispatch — is pinned hermetically in `modules/exec/timezone/winzone_test.go`, where the unexported variant and its resolver seam are reachable (the mac QA-MZC-BLOCK-01 lesson is applied: no GOOS-gated porting-debt duplicate that hosted Linux CI would skip). Mac partial addendum remediated (QA-MZC-BLOCK-01): the darwin-gated porting-debt test `TestPortingDebtExecTimezoneZoneCompareMacPartialPTD_EXEC_1638` and its `macZonePTDRunner` fake were removed from `tests/porting_debt_test.go` — darwin-only (skipped on hosted Linux CI, never executed on CI) and a duplicate of the module suite; its aggregate dispatch-count assertion miscounted its own calls (8 expected, 7 dispatched), and it is NOT claimed as executed porting-debt evidence: this row's landed evidence remains the Linux-generic sub-slice test named above. Mac local evidence is the module-level MZC-01..18 hermetic fake-Runner suite in `modules/exec/timezone/timezone_test.go` plus the GOOS selector seam `registerZoneCompareForGOOS`: MZC-15 pins per-GOOS variant selection (linux→`zoneCompareFunc`, darwin→`macZoneCompareFunc`, nothing elsewhere) with `Platforms() [darwin]` and the required `*string` time_zone schema matching catalog `docs/catalog/exec/mac_timezone.yaml#zone_compare` (exactly one `time_zone` parameter, no default); MZC-01..14 pin the mac contract (one fixed shell-free `/usr/sbin/systemsetup -gettimezone`, no filesystem access, Python rstrip, parse_return delimiters, exact case-sensitive equal/unequal, explicit-empty time_zone, required-gate zero dispatch, not-supported/nonzero/runner-error/cancellation/timeout/truncation/over-cap failures all mapping to the fixed `cannot determine current zone` errors.Is sentinel with value-free text); MZC-16 off-platform unsupported rejection; MZC-17 no-duplicate invariant; MZC-18 fail-safe Execute boundary for gate-bypassing callers. Pinned Salt ships only the functional fixture `saltstack/tests/pytests/functional/modules/test_mac_timezone.py` — no dedicated mac_timezone unit test — so the mac shapes are pinned by source-derived hermetic fixtures, not an upstream unit-test port. Aggregate PTD-EXEC-1638/PTD-TEST-1673 remain partial/open: native Darwin/Windows execution, the R6 native report, and the Solaris/AIX/NILinuxRT variants remain open; external GitHub CI remains `pending_external_ci` |
 | [x] | PTD-TEST-1674 | `TestPortingDebtExecUdevExportdbCanonicalRegistrationPTD_EXEC_1639` | actionable | qa-engineer-senior | `tests/porting_debt_test.go` (landed with PTD-EXEC-1639) | PTD-EXEC-1639 | contract/registration | `saltstack/salt/modules/udev.py#exportdb`; tests saltstack/tests/pytests/unit/modules/test_udev.py | For `udev.exportdb`, assert canonical registration and rejection of superseded aliases; assert catalog-declared parameters/defaults from `docs/catalog/exec/udev.yaml#exportdb` against source signature(s) `saltstack/salt/modules/udev.py#exportdb`; execute mapped Salt fixture(s) saltstack/tests/pytests/unit/modules/test_udev.py; assert the source-defined success and failure return/error shapes, declared side effects, and no mutation after validation or execution error. Landed: exact `udev.*` surface `env`/`exportdb`/`info`/`links`/`name`/`path` (the full six-name family; reconciled from the earlier three-name wording after PTD-EXEC-1640/1641/1642 landed), catalog signature `subsystems` default `None`, pinned three-record fixture through the registry, `test_udev_subsystem_filter` shape via `["acpi","usb"]`, fixed value-free nonzero-exit error (stderr never echoed), over-ceiling filter fails with zero dispatch |
 | [x] | PTD-TEST-1675 | `TestPortingDebtExecUdevLinksCanonicalRegistrationPTD_EXEC_1640` | actionable | qa-engineer-senior | `tests/porting_debt_test.go` (landed with PTD-EXEC-1640) | PTD-EXEC-1640 | contract/registration | `saltstack/salt/modules/udev.py#links`; tests saltstack/tests/pytests/unit/modules/test_udev.py | For `udev.links`, assert canonical registration and rejection of superseded aliases; assert catalog-declared parameters/defaults from `docs/catalog/exec/udev.yaml#links` against source signature(s) `saltstack/salt/modules/udev.py#links`; execute mapped Salt fixture(s) saltstack/tests/pytests/unit/modules/test_udev.py; assert the source-defined success and failure return/error shapes, declared side effects, and no mutation after validation or execution error. Landed: `udev.links` registered exactly once via BuildRuntime with zero `udev.links_` alias; catalog signature exactly one `dev` parameter with no declared default; args schema exactly required string `dev` (canonical argument name proven by the `missing required argument "dev"` gate error with zero dispatch); registry `ResolveArgs`+`Call` dispatch through a fake `udevFixtureRunner` (never a real process) with runner count 1 and exact fixed argv `udevadm info --export --query=all --path=/sys/class/input/event2` (sys→path switch), the multi-value S section returned as an ordered `[]any`, absent S mapped to nil per `.get("S", None)` through the shared E-only fixture, and empty stdout keeping info's `no device found for <dev>` shape; TDD evidence: RED run (links value nil against the pre-fixture harness) then GREEN after the dedicated single-record P/N/S×2/E and absent-section fixtures plus the argv-recording runner landed in `tests/porting_debt_test.go`. No upstream wrapper unit test exists (statekit regression coverage, not an upstream test port); mock-only, no live udevadm behavior; local gates green in conforming rootless Podman (`.gotmp` snapshot, `network=none`, RO source/module cache, nonroot, cap-drop ALL, no-new-privileges); GitHub-hosted untagged `go test ./... -race` picks this file up and remains `pending_external_ci` |
 | [x] | PTD-TEST-1676 | `TestPortingDebtExecUdevNameCanonicalRegistrationPTD_EXEC_1641` | actionable | qa-engineer-senior | `tests/porting_debt_test.go` (landed with PTD-EXEC-1641) | PTD-EXEC-1641 | contract/registration | `saltstack/salt/modules/udev.py#name`; tests saltstack/tests/pytests/unit/modules/test_udev.py | For `udev.name`, assert canonical registration and rejection of superseded aliases; assert catalog-declared parameters/defaults from `docs/catalog/exec/udev.yaml#name` against source signature(s) `saltstack/salt/modules/udev.py#name`; execute mapped Salt fixture(s) saltstack/tests/pytests/unit/modules/test_udev.py; assert the source-defined success and failure return/error shapes, declared side effects, and no mutation after validation or execution error. Landed: `udev.name` registered exactly once via BuildRuntime with zero `udev.name_` alias; catalog signature exactly one `dev` parameter with no declared default; args schema exactly required string `dev` (canonical argument name proven by the `missing required argument "dev"` gate error with zero dispatch); registry `ResolveArgs`+`Call` dispatch through a fake `udevFixtureRunner` (never a real process) with runner count 1 and exact fixed argv `udevadm info --export --query=all --name=input/event2` (plain dev keeps the name query type), the single-value N section returned as the collapsed scalar `input/event2`, absent N mapped to nil per `.get("N", None)` through the shared E-only fixture, and empty stdout keeping info's `no device found for <dev>` shape; TDD evidence: RED run (name value nil against the pre-fixture harness) then GREEN after the dedicated single-record P/N/S×2/E and absent-section fixtures plus the argv-recording runner landed in `tests/porting_debt_test.go`. No upstream wrapper unit test exists (statekit regression coverage, not an upstream test port); mock-only, no live udevadm behavior; local gates green in conforming rootless Podman (`.gotmp` snapshot, `network=none`, RO source/module cache, nonroot, cap-drop ALL, no-new-privileges); GitHub-hosted untagged `go test ./... -race` picks this file up and remains `pending_external_ci` |

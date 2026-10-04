@@ -909,12 +909,29 @@ func TestZoneCompareRegistrationSelectsPerGOOS(t *testing.T) {
 		}
 	}
 
+	var winFn runtime.ExecFunction = winZoneCompareFunc{}
+	winConstrained, ok := winFn.(runtime.PlatformConstrained)
+	if !ok {
+		t.Fatal("winZoneCompareFunc must be platform-constrained")
+	}
+	if !reflect.DeepEqual(winConstrained.Platforms(), []string{"windows"}) {
+		t.Fatalf("windows platforms = %v, want [windows]", winConstrained.Platforms())
+	}
+	if !runtime.SupportsPlatform(winFn, "windows") {
+		t.Fatal("windows zone_compare must support windows")
+	}
+	for _, goos := range []string{"linux", "darwin", "freebsd", "solaris", "aix"} {
+		if runtime.SupportsPlatform(winFn, goos) {
+			t.Fatalf("windows zone_compare must not support %s", goos)
+		}
+	}
+
 	reg := runtime.NewExecRegistry()
 	if err := Register(reg); err != nil {
 		t.Fatal(err)
 	}
 	goos := runtime.CurrentGOOS()
-	supported := goos == "linux" || goos == "darwin"
+	supported := goos == "linux" || goos == "darwin" || goos == "windows"
 
 	// Raw layer: registration happens only on the supported GOOS, so
 	// the entry (with its platform constraint intact) exists there and
@@ -985,6 +1002,17 @@ func TestZoneCompareRegistrationSelectsPerGOOS(t *testing.T) {
 		value, err := reg.Call(context.Background(), rt, "timezone.zone_compare", &macZoneCompareArgs{TimeZone: &zone})
 		if err != nil || value != true {
 			t.Fatalf("Call on darwin = %v, %v, want true, nil", value, err)
+		}
+	case "windows":
+		overrideWinSystemTree(t, `C:\Windows\System32`, `C:\Windows`, nil)
+		if err := rt.FS.WriteFile(`C:\Windows\System32\tzutil.exe`, []byte("MZ fake tzutil"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		rt.Runner = &scriptRunner{script: []process.CommandResult{{Stdout: []byte("Mountain Standard Time_dstoff\r\n"), ExitCode: 0}}}
+		denver := "America/Denver"
+		value, err := reg.Call(context.Background(), rt, "timezone.zone_compare", &winZoneCompareArgs{TimeZone: &denver})
+		if err != nil || value != true {
+			t.Fatalf("Call on windows = %v, %v, want true, nil", value, err)
 		}
 	default:
 		if _, err := reg.Call(context.Background(), rt, "timezone.zone_compare", &zoneCompareArgs{TimeZone: "UTC"}); !errors.As(err, &unsupported) || unsupported.Kind != "function" {
@@ -1455,7 +1483,8 @@ func TestMacZoneCompareExplicitEmptyTimeZone(t *testing.T) {
 
 // MZC-15: registerZoneCompareForGOOS selects exactly one variant per
 // supported GOOS — the Linux filesystem contract on linux, the mac
-// systemsetup contract on darwin, nothing anywhere else — with the
+// systemsetup contract on darwin, the windows tzutil contract on
+// windows (WZC-15/GAP-08 lockstep), nothing anywhere else — with the
 // matching platform constraints and args schema.
 func TestMacZoneCompareRegistrationHelperSelectsPerGOOS(t *testing.T) {
 	reg := runtime.NewExecRegistry()
@@ -1511,7 +1540,36 @@ func TestMacZoneCompareRegistrationHelperSelectsPerGOOS(t *testing.T) {
 		t.Fatalf("darwin schema tag = %q", macField.Tag.Get("statekit"))
 	}
 
-	for _, goos := range []string{"windows", "freebsd", "openbsd", "netbsd", "solaris", "illumos", "aix", "plan9"} {
+	// WZC-15/GAP-08 lockstep: the windows variant registers through the
+	// same helper with its own platform constraint and schema.
+	reg = runtime.NewExecRegistry()
+	if err := registerZoneCompareForGOOS(reg, "windows"); err != nil {
+		t.Fatal(err)
+	}
+	fn, ok = reg.Get("timezone.zone_compare")
+	if !ok {
+		t.Fatal("windows helper registered nothing")
+	}
+	if _, isWin := fn.(winZoneCompareFunc); !isWin {
+		t.Fatalf("windows helper registered %T, want winZoneCompareFunc", fn)
+	}
+	winConstrained, isConstrained := fn.(runtime.PlatformConstrained)
+	if !isConstrained || !reflect.DeepEqual(winConstrained.Platforms(), []string{"windows"}) {
+		t.Fatalf("windows helper platforms = %v", winConstrained.Platforms())
+	}
+	if !runtime.SupportsPlatform(fn, "windows") || runtime.SupportsPlatform(fn, "linux") || runtime.SupportsPlatform(fn, "darwin") {
+		t.Fatal("windows helper must support windows only")
+	}
+	winType := reflect.TypeOf(fn.Args())
+	if winType.Kind() != reflect.Struct || winType.NumField() != 1 {
+		t.Fatalf("windows schema = %s with %d fields", winType, winType.NumField())
+	}
+	winField := winType.Field(0)
+	if winField.Name != "TimeZone" || winField.Type.Kind() != reflect.Pointer || winField.Type.Elem().Kind() != reflect.String || winField.Tag.Get("statekit") != "required,name=timezone" {
+		t.Fatalf("windows schema field = %s %s tag %q, want *string TimeZone tagged required,name=timezone", winField.Name, winField.Type, winField.Tag.Get("statekit"))
+	}
+
+	for _, goos := range []string{"freebsd", "openbsd", "netbsd", "solaris", "illumos", "aix", "plan9"} {
 		unsupported := runtime.NewExecRegistry()
 		if err := registerZoneCompareForGOOS(unsupported, goos); err != nil {
 			t.Fatal(err)
@@ -1570,8 +1628,14 @@ func TestMacZoneCompareNoDuplicateRegistration(t *testing.T) {
 	if err := registerZoneCompareForGOOS(reg, "darwin"); err == nil {
 		t.Fatal("registering the darwin variant over the linux entry must fail as a duplicate")
 	}
+	if err := registerZoneCompareForGOOS(reg, "windows"); err == nil {
+		t.Fatal("registering the windows variant over the linux entry must fail as a duplicate")
+	}
 	if err := reg.Register(macZoneCompareFunc{}); err == nil {
 		t.Fatal("registering the mac variant directly over the linux entry must fail as a duplicate")
+	}
+	if err := reg.Register(winZoneCompareFunc{}); err == nil {
+		t.Fatal("registering the windows variant directly over the linux entry must fail as a duplicate")
 	}
 
 	prod := runtime.NewExecRegistry()
@@ -1585,7 +1649,7 @@ func TestMacZoneCompareNoDuplicateRegistration(t *testing.T) {
 		}
 	}
 	goos := runtime.CurrentGOOS()
-	if goos == "linux" || goos == "darwin" {
+	if goos == "linux" || goos == "darwin" || goos == "windows" {
 		if count != 1 {
 			t.Fatalf("zone_compare visible %d times on %s, want exactly 1", count, goos)
 		}
