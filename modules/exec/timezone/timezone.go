@@ -470,6 +470,165 @@ func (macZoneCompareFunc) Execute(ctx context.Context, rt *runtime.Runtime, args
 
 type getZoneArgs struct{}
 
+// ErrMacSystemsetupQuery is the fixed, value-free execution failure
+// for the Mac systemsetup getters (the mac_timezone get_date/get_time
+// CommandExecutionError analog): the query could not be completed. It
+// is distinct from ErrCannotDetermineZone; errors.Is matches only this
+// sentinel and no raw cause, output, stderr, or exit status ever
+// travels in the error.
+var ErrMacSystemsetupQuery = errors.New("macOS systemsetup query failed")
+
+// errMacGetterInvalidArgs is the fixed, value-free invocation error
+// for getter arguments that cannot be the contract at all (a wrong
+// dynamic type or a typed-nil pointer); it never formats or echoes the
+// raw args value or an underlying cause.
+var errMacGetterInvalidArgs = errors.New("invalid timezone getter arguments")
+
+// errMacSystemsetupUnknownGetter is the fixed, value-free internal
+// rejection for a macSystemsetupGetter value outside the closed enum.
+var errMacSystemsetupUnknownGetter = errors.New("unknown systemsetup getter")
+
+// macSystemsetupGetter is the private closed selector for the only two
+// read-only systemsetup queries the module may run. Values never come
+// from user input: each maps to exactly one fixed argv flag, and any
+// other value is rejected before the Runner is touched — arbitrary
+// argv, zone flags, and setter flags cannot be expressed through it.
+type macSystemsetupGetter int
+
+const (
+	macSystemsetupGetDate macSystemsetupGetter = iota
+	macSystemsetupGetTime
+)
+
+// flag returns the single fixed argv flag for the closed enum value:
+// -getdate for the date query, -gettime for the time query, and the
+// fixed unknown-getter rejection for anything else.
+func (g macSystemsetupGetter) flag() (string, error) {
+	switch g {
+	case macSystemsetupGetDate:
+		return "-getdate", nil
+	case macSystemsetupGetTime:
+		return "-gettime", nil
+	}
+	return "", errMacSystemsetupUnknownGetter
+}
+
+// Fixed Mac getter invocation controls: the absolute admin-controlled
+// systemsetup path (no PATH lookup), exactly one argv flag, a
+// locale-only child environment, a bounded wall clock, and equal 64
+// KiB capture ceilings per stream.
+const (
+	macSystemsetupPath = "/usr/sbin/systemsetup"
+	macGetterTimeout   = 30 * time.Second
+	macGetterStreamMax = 64 << 10
+)
+
+// macSystemsetupQuery runs the one fixed shell-free systemsetup query
+// selected by the closed enum (pinned mac_timezone.py get_date lines
+// 60-74 / get_time lines 107-121 through mac_utils): an unknown enum
+// value is rejected before the Runner, a nil Runtime or Runner fails
+// fixed with ErrMacSystemsetupQuery, and any Runner error, nonzero
+// exit, truncation flag, or over-cap stream — and any rstripped stdout
+// containing case-insensitive "not supported", mirroring Salt's
+// execute_return_result — fails with the same single fixed
+// ErrMacSystemsetupQuery; no raw cause, output, stderr, or exit status
+// travels in the error and nothing is logged. Successful output is
+// parsed source-exactly (Python trailing-rstrip, then parse_return) —
+// an empty or whitespace-rstripped stdout yields the empty string.
+// Residual trust assumption: /usr/sbin and systemsetup are
+// admin-controlled; binary authenticity is out of scope.
+func macSystemsetupQuery(ctx context.Context, rt *runtime.Runtime, getter macSystemsetupGetter) (string, error) {
+	flag, err := getter.flag()
+	if err != nil {
+		return "", err
+	}
+	if rt == nil || rt.Runner == nil {
+		return "", ErrMacSystemsetupQuery
+	}
+	res := rt.Runner.Run(ctx, process.Command{
+		Name:           macSystemsetupPath,
+		Args:           []string{flag},
+		Env:            []string{"LC_ALL=C"},
+		Timeout:        macGetterTimeout,
+		MaxStdoutBytes: macGetterStreamMax,
+		MaxStderrBytes: macGetterStreamMax,
+	})
+	if res.Err != nil || res.ExitCode != 0 ||
+		res.StdoutTruncated || res.StderrTruncated ||
+		len(res.Stdout) > macGetterStreamMax || len(res.Stderr) > macGetterStreamMax {
+		return "", ErrMacSystemsetupQuery
+	}
+	stdout := pythonRStrip(string(res.Stdout))
+	if strings.Contains(strings.ToLower(stdout), "not supported") {
+		return "", ErrMacSystemsetupQuery
+	}
+	return macParseReturn(stdout), nil
+}
+
+// macGetDateArgs is the zero-field Mac get_date argument contract: the
+// catalog declares no parameters for get_date.
+type macGetDateArgs struct{}
+
+// macGetTimeArgs is the zero-field Mac get_time argument contract: the
+// catalog declares no parameters for get_time.
+type macGetTimeArgs struct{}
+
+// macGetDateFunc implements timezone.get_date for the pinned
+// mac_timezone.py contract.
+type macGetDateFunc struct{}
+
+func (macGetDateFunc) Name() string        { return "timezone.get_date" }
+func (macGetDateFunc) Platforms() []string { return []string{"darwin"} }
+func (macGetDateFunc) Args() any           { return macGetDateArgs{} }
+
+// Execute ports mac_timezone.get_date (pinned revision lines 60-74):
+// boundary guards first (architecture gate) — a wrong argument type or
+// typed-nil pointer returns the fixed errMacGetterInvalidArgs before
+// any dispatch, never a panic and never raw args formatted into the
+// error — then exactly one fixed shell-free
+// `/usr/sbin/systemsetup -getdate` dispatch through the shared closed
+// enum query; the date string (or "" for empty successful output) is
+// returned with a nil value on every error, and every query failure
+// maps to ErrMacSystemsetupQuery.
+func (macGetDateFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	if a, ok := args.(*macGetDateArgs); !ok || a == nil {
+		return nil, errMacGetterInvalidArgs
+	}
+	value, err := macSystemsetupQuery(ctx, rt, macSystemsetupGetDate)
+	if err != nil {
+		return nil, err
+	}
+	return value, nil
+}
+
+// macGetTimeFunc implements timezone.get_time for the pinned
+// mac_timezone.py contract.
+type macGetTimeFunc struct{}
+
+func (macGetTimeFunc) Name() string        { return "timezone.get_time" }
+func (macGetTimeFunc) Platforms() []string { return []string{"darwin"} }
+func (macGetTimeFunc) Args() any           { return macGetTimeArgs{} }
+
+// Execute ports mac_timezone.get_time (pinned revision lines 107-121):
+// boundary guards first (architecture gate) — a wrong argument type or
+// typed-nil pointer returns the fixed errMacGetterInvalidArgs before
+// any dispatch, never a panic and never raw args formatted into the
+// error — then exactly one fixed shell-free
+// `/usr/sbin/systemsetup -gettime` dispatch through the shared closed
+// enum query; the time string (or "" for empty successful output) is
+// returned with a nil value on every error, and every query failure
+// maps to ErrMacSystemsetupQuery.
+func (macGetTimeFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	if a, ok := args.(*macGetTimeArgs); !ok || a == nil {
+		return nil, errMacGetterInvalidArgs
+	}
+	value, err := macSystemsetupQuery(ctx, rt, macSystemsetupGetTime)
+	if err != nil {
+		return nil, err
+	}
+	return value, nil
+}
+
 // winZoneCompareArgs is the win_timezone.zone_compare argument
 // contract: one required *string timezone (docs/catalog/exec/
 // win_timezone.yaml declares zone_compare(timezone) with no default).
@@ -777,14 +936,35 @@ func (setHwclockFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any
 // Register installs all timezone-module execution functions. The
 // zone_compare variant is selected per GOOS: the Linux generic
 // filesystem contract on linux, the mac systemsetup contract on darwin,
-// the windows tzutil contract on windows.
+// the windows tzutil contract on windows. The Mac systemsetup getters
+// timezone.get_date and timezone.get_time are darwin-only.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{getZoneFunc{}, setZoneFunc{}, getOffsetFunc{}, getHwclockFunc{}, setHwclockFunc{}} {
 		if err := reg.Register(fn); err != nil {
 			return err
 		}
 	}
-	return registerZoneCompareForGOOS(reg, runtime.CurrentGOOS())
+	if err := registerZoneCompareForGOOS(reg, runtime.CurrentGOOS()); err != nil {
+		return err
+	}
+	return registerMacGettersForGOOS(reg, runtime.CurrentGOOS())
+}
+
+// registerMacGettersForGOOS installs the Mac-only systemsetup getters
+// timezone.get_date and timezone.get_time on darwin only, and nothing
+// on any other GOOS, where the names stay unregistered rather than
+// registered-but-unsupported. The registry keys by name, so registering
+// a getter onto one registry twice fails as a duplicate.
+func registerMacGettersForGOOS(reg *runtime.ExecRegistry, goos string) error {
+	if goos != "darwin" {
+		return nil
+	}
+	for _, fn := range []runtime.ExecFunction{macGetDateFunc{}, macGetTimeFunc{}} {
+		if err := reg.Register(fn); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // registerZoneCompareForGOOS installs exactly one

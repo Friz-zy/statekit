@@ -948,9 +948,16 @@ func TestZoneCompareRegistrationSelectsPerGOOS(t *testing.T) {
 		t.Fatalf("timezone.zone_compare registered on unsupported GOOS %s", goos)
 	}
 
-	// Visible layer: Names filters through SupportsPlatform.
+	// Visible layer: Names filters through SupportsPlatform. The
+	// surface is 8 names on darwin (base 5 + zone_compare + the two
+	// Mac systemsetup getters), 6 on linux/windows (base 5 +
+	// zone_compare), and 5 everywhere else (no getters, no
+	// zone_compare).
 	wantTotal := 5
-	if supported {
+	switch goos {
+	case "darwin":
+		wantTotal = 8
+	case "linux", "windows":
 		wantTotal = 6
 	}
 	if got := len(reg.Names()); got != wantTotal {
@@ -1649,20 +1656,25 @@ func TestMacZoneCompareNoDuplicateRegistration(t *testing.T) {
 		}
 	}
 	goos := runtime.CurrentGOOS()
+	// The production surface is 8 functions on darwin (base 5 +
+	// zone_compare + the two Mac systemsetup getters), 6 on
+	// linux/windows, 5 elsewhere.
+	wantLen := 5
+	switch goos {
+	case "darwin":
+		wantLen = 8
+	case "linux", "windows":
+		wantLen = 6
+	}
 	if goos == "linux" || goos == "darwin" || goos == "windows" {
 		if count != 1 {
 			t.Fatalf("zone_compare visible %d times on %s, want exactly 1", count, goos)
 		}
-		if prod.Len() != 6 {
-			t.Fatalf("production registration holds %d functions on %s, want 6", prod.Len(), goos)
-		}
-	} else {
-		if count != 0 {
-			t.Fatalf("zone_compare visible %d times on %s, want 0", count, goos)
-		}
-		if prod.Len() != 5 {
-			t.Fatalf("production registration holds %d functions on %s, want 5", prod.Len(), goos)
-		}
+	} else if count != 0 {
+		t.Fatalf("zone_compare visible %d times on %s, want 0", count, goos)
+	}
+	if prod.Len() != wantLen {
+		t.Fatalf("production registration holds %d functions on %s, want %d", prod.Len(), goos, wantLen)
 	}
 }
 
@@ -1794,5 +1806,640 @@ func TestMacZoneCompareExecuteFailsSafeOnMalformedInvocation(t *testing.T) {
 	}
 	if len(emptyRunner.cmds) != 1 {
 		t.Fatalf("explicit empty time_zone dispatched %d commands, want 1", len(emptyRunner.cmds))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// macOS get_date / get_time (PTD-EXEC-1627/1628): MGT-01..12 pin the
+// pinned mac_timezone.py getter contracts hermetically. Every test uses
+// the fake macZoneRunner only — never process.NewRunner, never
+// /usr/sbin/systemsetup, never a host filesystem — and the suite makes
+// no native Darwin claim. The mapped Salt tests are the functional
+// test_get_set_date / test_get_time fixtures (root/destructive/
+// Darwin-gated in Salt): they were inspected as source only, never
+// executed, and the shapes below are source-derived synthetic
+// fixtures.
+
+// wantMacGetterCommand is the fixed, complete systemsetup invocation
+// for either Mac getter: absolute admin-controlled path, exactly one
+// argv flag, no shell, locale-only child environment, 30s wall clock,
+// equal 64 KiB capture ceilings per stream, and nothing else.
+func wantMacGetterCommand(flag string) process.Command {
+	return process.Command{
+		Name:           "/usr/sbin/systemsetup",
+		Args:           []string{flag},
+		Env:            []string{"LC_ALL=C"},
+		Timeout:        30 * time.Second,
+		MaxStdoutBytes: 64 << 10,
+		MaxStderrBytes: 64 << 10,
+	}
+}
+
+// requireMacGetterError pins the single fixed execution-category error
+// for both getters: the errors.Is sentinel, the exact value-free text,
+// and no markers of any underlying cause, output, stream, flag, or
+// exit status. (The fixed text itself contains the word "systemsetup",
+// so the raw-path marker is the full "/usr/sbin" prefix instead.)
+func requireMacGetterError(t *testing.T, err error) {
+	t.Helper()
+	if !errors.Is(err, ErrMacSystemsetupQuery) {
+		t.Fatalf("err = %v, want ErrMacSystemsetupQuery", err)
+	}
+	if err == nil || err.Error() != "macOS systemsetup query failed" {
+		t.Fatalf("err text = %v, want macOS systemsetup query failed", err)
+	}
+	for _, marker := range []string{
+		"/usr/sbin", "-getdate", "-gettime", "2/20/2011", "9:48:16",
+		"failing", "warning", "13", "exit", "stdout", "stderr",
+		"timed out", "canceled", "not supported", "no such file",
+	} {
+		if err != nil && strings.Contains(err.Error(), marker) {
+			t.Fatalf("err text %q leaks marker %q", err.Error(), marker)
+		}
+	}
+}
+
+// MGT-01: each getter Execute dispatches exactly one shell-free
+// systemsetup query with its single fixed argv flag, the fixed
+// environment, timeout, and capture ceilings — deep-equal over the
+// whole process.Command, with the live context forwarded to the
+// Runner — and returns the parsed date/time string.
+func TestMacGettersDispatchFixedCommand(t *testing.T) {
+	rt, runner := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Date: 2/20/2011\n")})
+	value, err := (macGetDateFunc{}).Execute(context.Background(), rt, &macGetDateArgs{})
+	if err != nil || value != "2/20/2011" {
+		t.Fatalf("get_date = %v, %v; want 2/20/2011, nil", value, err)
+	}
+	if len(runner.cmds) != 1 {
+		t.Fatalf("get_date dispatched %d commands, want exactly 1", len(runner.cmds))
+	}
+	if !reflect.DeepEqual(runner.cmds[0], wantMacGetterCommand("-getdate")) {
+		t.Fatalf("get_date command = %#v, want %#v", runner.cmds[0], wantMacGetterCommand("-getdate"))
+	}
+	if len(runner.ctxErr) != 1 || runner.ctxErr[0] != nil {
+		t.Fatalf("get_date runner context errors = %v, want one nil (live context forwarded)", runner.ctxErr)
+	}
+
+	rt, runner = newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Time: 9:48:16\n")})
+	value, err = (macGetTimeFunc{}).Execute(context.Background(), rt, &macGetTimeArgs{})
+	if err != nil || value != "9:48:16" {
+		t.Fatalf("get_time = %v, %v; want 9:48:16, nil", value, err)
+	}
+	if len(runner.cmds) != 1 {
+		t.Fatalf("get_time dispatched %d commands, want exactly 1", len(runner.cmds))
+	}
+	if !reflect.DeepEqual(runner.cmds[0], wantMacGetterCommand("-gettime")) {
+		t.Fatalf("get_time command = %#v, want %#v", runner.cmds[0], wantMacGetterCommand("-gettime"))
+	}
+	if len(runner.ctxErr) != 1 || runner.ctxErr[0] != nil {
+		t.Fatalf("get_time runner context errors = %v, want one nil (live context forwarded)", runner.ctxErr)
+	}
+}
+
+// MGT-02: the getter contract never touches the filesystem on success
+// or failure — every path stays inside the hermetic MemoryFS with zero
+// recorded operations.
+func TestMacGettersNeverTouchesFilesystem(t *testing.T) {
+	fsys := &zoneRecordingFS{FileSystem: runtime.NewMemoryFS()}
+	runner := &macZoneRunner{reply: process.CommandResult{ExitCode: 0, Stdout: []byte("Date: 2/20/2011\n")}}
+	rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: fsys, Runner: runner}
+	if _, err := (macGetDateFunc{}).Execute(context.Background(), rt, &macGetDateArgs{}); err != nil {
+		t.Fatal(err)
+	}
+	runner.reply = process.CommandResult{ExitCode: 1}
+	if _, err := (macGetTimeFunc{}).Execute(context.Background(), rt, &macGetTimeArgs{}); !errors.Is(err, ErrMacSystemsetupQuery) {
+		t.Fatalf("nonzero err = %v, want ErrMacSystemsetupQuery", err)
+	}
+	if len(fsys.calls) != 0 {
+		t.Fatalf("filesystem touched: %v", fsys.calls)
+	}
+}
+
+// MGT-03: stdout is trailing-rstripped with Python str.rstrip
+// semantics — unicode.IsSpace plus U+001C..U+001F — with no leading
+// trim, before any parsing; interior whitespace survives.
+func TestMacGettersPythonTrailingRStrip(t *testing.T) {
+	for _, tail := range []string{
+		"\n", "\r\n", "\t", " \t\r\n", "\v\f",
+		"\u00a0", "\u0085", "\u2028", "\u3000",
+		"\u001c", "\u001d", "\u001e", "\u001f",
+		" \u001c\u001d\u001e\u001f\u00a0\u2028\t\r\n",
+	} {
+		rt, _ := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Date: 6/15/2024" + tail)})
+		value, err := (macGetDateFunc{}).Execute(context.Background(), rt, &macGetDateArgs{})
+		if err != nil || value != "6/15/2024" {
+			t.Fatalf("trailing %q: get_date = %v, %v; want 6/15/2024, nil", tail, value, err)
+		}
+	}
+
+	// Leading whitespace after the delimiter is never stripped; the
+	// raw value keeps it.
+	rt, _ := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Date:  6/15/2024\n")})
+	value, err := (macGetDateFunc{}).Execute(context.Background(), rt, &macGetDateArgs{})
+	if err != nil || value != " 6/15/2024" {
+		t.Fatalf("leading-space get_date = %v, %v; want \" 6/15/2024\", nil", value, err)
+	}
+
+	// Interior whitespace survives untouched (a value-internal ": "
+	// would itself be the parse delimiter — pinned by MZC-04 — so the
+	// interior-space fixture carries no ": " inside the value).
+	rt, _ = newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Date: 6/ 15/2024\n")})
+	value, err = (macGetDateFunc{}).Execute(context.Background(), rt, &macGetDateArgs{})
+	if err != nil || value != "6/ 15/2024" {
+		t.Fatalf("interior-space get_date = %v, %v; want \"6/ 15/2024\", nil", value, err)
+	}
+	rt, _ = newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Time: 9 48\n")})
+	value, err = (macGetTimeFunc{}).Execute(context.Background(), rt, &macGetTimeArgs{})
+	if err != nil || value != "9 48" {
+		t.Fatalf("interior-space get_time = %v, %v; want \"9 48\", nil", value, err)
+	}
+}
+
+// MGT-04: the shared parse_return port through the getters: the first
+// ": " delimiter wins and yields the segment after its first
+// occurrence (later segments are discarded), then ":\n", else the
+// whole raw string with no further trimming.
+func TestMacGettersParseReturnDelimiterPriority(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		stdout string
+		want   string
+	}{
+		{"colon-space", "Date: 2/20/2011\n", "2/20/2011"},
+		{"colon-space repeats discard later segments", "Date: 2/20/2011: Extra: More\n", "2/20/2011"},
+		{"colon-newline fallback", "Date:\n2/20/2011\n", "2/20/2011"},
+		{"colon-space wins over colon-newline", "Head:\nDate: 2/20/2011\n", "2/20/2011"},
+		{"raw passthrough", "2/20/2011", "2/20/2011"},
+		{"raw value keeps leading whitespace", " 2/20/2011", " 2/20/2011"},
+		{"time colon-space", "Time: 9:48:16\n", "9:48:16"},
+		{"time raw passthrough", "9:48:16", "9:48:16"},
+	} {
+		for _, exec := range []struct {
+			label string
+			run   func(rt *runtime.Runtime) (any, error)
+		}{
+			{"date", func(rt *runtime.Runtime) (any, error) {
+				return (macGetDateFunc{}).Execute(context.Background(), rt, &macGetDateArgs{})
+			}},
+			{"time", func(rt *runtime.Runtime) (any, error) {
+				return (macGetTimeFunc{}).Execute(context.Background(), rt, &macGetTimeArgs{})
+			}},
+		} {
+			rt, _ := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(tc.stdout)})
+			value, err := exec.run(rt)
+			if err != nil || value != tc.want {
+				t.Fatalf("%s/%s: stdout %q = %v, %v; want %q, nil", exec.label, tc.name, tc.stdout, value, err, tc.want)
+			}
+		}
+	}
+}
+
+// MGT-05: source-derived shapes of the mapped functional fixtures —
+// inspected, never executed (the Salt suite is root/destructive/
+// Darwin-gated). test_get_set_date asserts get_date() == "2/20/2011"
+// after set_date; test_get_time parses get_time() with "%H:%M:%S".
+func TestMacGettersSaltFunctionalShapes(t *testing.T) {
+	rt, _ := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Date: 2/20/2011\n")})
+	value, err := (macGetDateFunc{}).Execute(context.Background(), rt, &macGetDateArgs{})
+	if err != nil || value != "2/20/2011" {
+		t.Fatalf("functional date shape = %v, %v; want 2/20/2011, nil", value, err)
+	}
+
+	for _, clock := range []string{"9:48:16", "14:03:59", "23:59:59"} {
+		rt, _ = newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Time: " + clock + "\n")})
+		value, err = (macGetTimeFunc{}).Execute(context.Background(), rt, &macGetTimeArgs{})
+		if err != nil || value != clock {
+			t.Fatalf("functional time shape = %v, %v; want %q, nil", value, err, clock)
+		}
+		if _, perr := time.Parse("15:04:05", value.(string)); perr != nil {
+			t.Fatalf("get_time %q does not parse with %%H:%%M:%%S: %v", value, perr)
+		}
+	}
+}
+
+// MGT-06: a successful empty or whitespace-rstripped stdout returns
+// the empty string (the source getters return parse_return of
+// whatever came back), and at-cap streams still parse.
+func TestMacGettersEmptyOutputReturnsEmptyString(t *testing.T) {
+	for _, reply := range []process.CommandResult{
+		{ExitCode: 0},
+		{ExitCode: 0, Stdout: []byte(" \r\n\t\u001f")},
+	} {
+		rt, runner := newMacZoneRuntime(reply)
+		value, err := (macGetDateFunc{}).Execute(context.Background(), rt, &macGetDateArgs{})
+		if err != nil || value != "" {
+			t.Fatalf("empty-output get_date = %v, %v; want \"\", nil", value, err)
+		}
+		if len(runner.cmds) != 1 {
+			t.Fatalf("empty-output get_date dispatched %d commands, want 1", len(runner.cmds))
+		}
+	}
+
+	atCap := bytes.Repeat([]byte("x"), 64<<10)
+	padded := append([]byte("Time: 9:48:16"), bytes.Repeat([]byte(" "), (64<<10)-len("Time: 9:48:16"))...)
+	if len(padded) != 64<<10 {
+		t.Fatalf("padded fixture is %d bytes, want exactly the cap", len(padded))
+	}
+	rt, _ := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: padded, Stderr: atCap})
+	value, err := (macGetTimeFunc{}).Execute(context.Background(), rt, &macGetTimeArgs{})
+	if err != nil || value != "9:48:16" {
+		t.Fatalf("at-cap get_time = %v, %v; want 9:48:16, nil", value, err)
+	}
+}
+
+// MGT-07: exit-0 stdout containing case-insensitive "not supported"
+// fails with the fixed getter error before parsing (Salt's
+// execute_return_result contract); the phrase in stderr alone does
+// not fail.
+func TestMacGettersNotSupportedTextFails(t *testing.T) {
+	for _, stdout := range []string{
+		"Date: not supported\n",
+		"NOT SUPPORTED\n",
+		"Not Supported\n",
+		"Error: this operation is not supported on this system\n",
+	} {
+		rt, runner := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(stdout)})
+		_, err := (macGetDateFunc{}).Execute(context.Background(), rt, &macGetDateArgs{})
+		requireMacGetterError(t, err)
+		if len(runner.cmds) != 1 {
+			t.Fatalf("stdout %q dispatched %d commands, want 1", stdout, len(runner.cmds))
+		}
+	}
+
+	rt, _ := newMacZoneRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte("Time: 9:48:16\n"),
+		Stderr:   []byte("warning: something not supported \n"),
+	})
+	value, err := (macGetTimeFunc{}).Execute(context.Background(), rt, &macGetTimeArgs{})
+	if err != nil || value != "9:48:16" {
+		t.Fatalf("stderr-only not supported = %v, %v; want 9:48:16, nil", value, err)
+	}
+}
+
+// MGT-08: nonzero exit, Runner start errors, context cancellation and
+// timeout, truncation flags, and over-cap streams all map to the one
+// fixed getter error with no wrapped cause.
+func TestMacGettersFailureCategoriesMapToFixedError(t *testing.T) {
+	for _, reply := range []process.CommandResult{
+		{ExitCode: 13, Stdout: []byte("Date: 2/20/2011\n"), Stderr: []byte("systemsetup: failing\n")},
+		{ExitCode: -1, Err: fmt.Errorf(`exec: "/usr/sbin/systemsetup": stat /usr/sbin/systemsetup: no such file or directory`)},
+		{ExitCode: -1, Err: fmt.Errorf("/usr/sbin/systemsetup -getdate canceled: %w", context.Canceled)},
+		{ExitCode: -1, Err: fmt.Errorf("/usr/sbin/systemsetup -getdate timed out after 30s: %w", context.DeadlineExceeded)},
+		{ExitCode: 0, Stdout: []byte("Date: 2/20/2011\n"), StdoutTruncated: true},
+		{ExitCode: 0, Stdout: []byte("Date: 2/20/2011\n"), Stderr: []byte("x"), StderrTruncated: true},
+		{ExitCode: 0, Stdout: bytes.Repeat([]byte("x"), (64<<10)+1)},
+		{ExitCode: 0, Stdout: []byte("Date: 2/20/2011\n"), Stderr: bytes.Repeat([]byte("x"), (64<<10)+1)},
+	} {
+		rt, _ := newMacZoneRuntime(reply)
+		_, err := (macGetDateFunc{}).Execute(context.Background(), rt, &macGetDateArgs{})
+		requireMacGetterError(t, err)
+		if errors.Is(err, fs.ErrNotExist) || errors.Unwrap(err) != nil {
+			t.Fatalf("getter error leaked its cause: %v", err)
+		}
+
+		rt, _ = newMacZoneRuntime(reply)
+		_, err = (macGetTimeFunc{}).Execute(context.Background(), rt, &macGetTimeArgs{})
+		requireMacGetterError(t, err)
+	}
+
+	// The caller's context reaches the Runner unchanged.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runner := &macZoneRunner{reply: process.CommandResult{ExitCode: 0, Stdout: []byte("Date: 2/20/2011\n")}}
+	rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: runtime.NewMemoryFS(), Runner: runner}
+	if _, err := (macGetDateFunc{}).Execute(ctx, rt, &macGetDateArgs{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.ctxErr) != 1 || !errors.Is(runner.ctxErr[0], context.Canceled) {
+		t.Fatalf("runner context errors = %v, want one context.Canceled", runner.ctxErr)
+	}
+}
+
+// MGT-09: the getter sentinel is its own fixed category — errors.Is
+// matches only ErrMacSystemsetupQuery, never the zone_compare or
+// Windows sentinels, with no Unwrap chain.
+func TestMacGettersErrorSentinelIsDistinct(t *testing.T) {
+	rt, _ := newMacZoneRuntime(process.CommandResult{ExitCode: 1})
+	_, err := (macGetDateFunc{}).Execute(context.Background(), rt, &macGetDateArgs{})
+	requireMacGetterError(t, err)
+	for _, other := range []error{ErrCannotDetermineZone, ErrUnknownUnsafeZone, ErrInvalidWindowsZone, errMacZoneInvalidArgs, errMacGetterInvalidArgs} {
+		if errors.Is(err, other) {
+			t.Fatalf("getter err %v matches foreign sentinel %v", err, other)
+		}
+	}
+	if errors.Unwrap(err) != nil {
+		t.Fatalf("getter err unwraps to %v, want no cause", errors.Unwrap(err))
+	}
+	if errors.Is(ErrCannotDetermineZone, ErrMacSystemsetupQuery) || errors.Is(ErrMacSystemsetupQuery, ErrCannotDetermineZone) {
+		t.Fatal("ErrMacSystemsetupQuery and ErrCannotDetermineZone must not cross-match")
+	}
+	if errors.Is(ErrInvalidWindowsZone, ErrMacSystemsetupQuery) || errors.Is(ErrMacSystemsetupQuery, ErrInvalidWindowsZone) {
+		t.Fatal("ErrMacSystemsetupQuery and ErrInvalidWindowsZone must not cross-match")
+	}
+	if ErrMacSystemsetupQuery.Error() != "macOS systemsetup query failed" {
+		t.Fatalf("sentinel text = %q", ErrMacSystemsetupQuery.Error())
+	}
+}
+
+// MGT-10: the Execute boundary fails safe for direct callers that
+// bypass the registry gate: wrong argument types (including the other
+// getter's args), typed-nil pointers, a nil Runtime, and a nil Runner
+// all return fixed value-free errors before any Runner dispatch or
+// filesystem access — never a panic — while valid zero-field args
+// dispatch exactly once.
+func TestMacGettersExecuteFailsSafeOnMalformedInvocation(t *testing.T) {
+	exec := func(label string, rt *runtime.Runtime, args any, verify func(t *testing.T, err error)) {
+		t.Helper()
+		var (
+			value    any
+			err      error
+			panicked bool
+		)
+		func() {
+			defer func() {
+				if recover() != nil {
+					panicked = true
+				}
+			}()
+			value, err = (macGetDateFunc{}).Execute(context.Background(), rt, args)
+		}()
+		if panicked {
+			t.Fatalf("%s: Execute panicked, want a fixed safe error", label)
+		}
+		if err == nil {
+			t.Fatalf("%s: Execute err = nil, want a fixed safe error", label)
+		}
+		if value != nil {
+			t.Fatalf("%s: Execute value = %#v, want nil on error", label, value)
+		}
+		verify(t, err)
+	}
+
+	fixedValueFree := func(marker ...string) func(t *testing.T, err error) {
+		return func(t *testing.T, err error) {
+			t.Helper()
+			if err.Error() == "" {
+				t.Fatal("fixed error text is empty")
+			}
+			for _, secret := range marker {
+				if strings.Contains(err.Error(), secret) {
+					t.Fatalf("error text %q leaks raw argument material %q", err.Error(), secret)
+				}
+			}
+		}
+	}
+
+	fsys := &zoneRecordingFS{FileSystem: runtime.NewMemoryFS()}
+	runner := &macZoneRunner{reply: process.CommandResult{ExitCode: 0, Stdout: []byte("Date: 2/20/2011\n")}}
+	rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: fsys, Runner: runner}
+
+	var malformedErrs []error
+	secretZone := "Secret/Zone-Args"
+	for _, tc := range []struct {
+		label string
+		args  any
+	}{
+		{"wrong-type string", "Secret/Getter-Marker"},
+		{"wrong-type zone_compare args", &macZoneCompareArgs{TimeZone: &secretZone}},
+		{"wrong-type time args on date func", &macGetTimeArgs{}},
+		{"typed-nil date args", (*macGetDateArgs)(nil)},
+		{"nil args", nil},
+	} {
+		args := tc.args
+		exec(tc.label, rt, args, func(t *testing.T, err error) {
+			fixedValueFree("Secret", "Marker", "Zone", "2/20/2011")(t, err)
+			malformedErrs = append(malformedErrs, err)
+		})
+	}
+	for i := 1; i < len(malformedErrs); i++ {
+		if malformedErrs[i].Error() != malformedErrs[0].Error() {
+			t.Fatalf("malformed-args error %q differs from %q, want one fixed error", malformedErrs[i].Error(), malformedErrs[0].Error())
+		}
+	}
+	if malformedErrs[0].Error() != "invalid timezone getter arguments" {
+		t.Fatalf("malformed-args error = %q, want invalid timezone getter arguments", malformedErrs[0].Error())
+	}
+
+	// The time getter enforces the same boundary on its own args type.
+	_, err := (macGetTimeFunc{}).Execute(context.Background(), rt, &macGetDateArgs{})
+	if err == nil || err.Error() != "invalid timezone getter arguments" {
+		t.Fatalf("cross-getter args err = %v, want invalid timezone getter arguments", err)
+	}
+
+	// No malformed invocation may dispatch or touch the filesystem.
+	if len(runner.cmds) != 0 {
+		t.Fatalf("malformed invocations dispatched %d commands, want 0", len(runner.cmds))
+	}
+	if len(fsys.calls) != 0 {
+		t.Fatalf("malformed invocations touched the filesystem: %v", fsys.calls)
+	}
+
+	// Unavailable runtime: nil Runtime and nil Runner map to the fixed
+	// execution-category error before any dispatch.
+	exec("nil Runtime", nil, &macGetDateArgs{}, func(t *testing.T, err error) {
+		fixedValueFree("2/20/2011")(t, err)
+		requireMacGetterError(t, err)
+	})
+	nilRunnerFS := &zoneRecordingFS{FileSystem: runtime.NewMemoryFS()}
+	nilRunnerRT := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: nilRunnerFS, Runner: nil}
+	exec("nil Runner", nilRunnerRT, &macGetDateArgs{}, func(t *testing.T, err error) {
+		fixedValueFree("2/20/2011")(t, err)
+		requireMacGetterError(t, err)
+	})
+	if len(nilRunnerFS.calls) != 0 {
+		t.Fatalf("nil Runner touched the filesystem: %v", nilRunnerFS.calls)
+	}
+
+	// Preservation: valid zero-field args dispatch exactly once.
+	validRT, validRunner := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Time: 9:48:16\n")})
+	value, err := (macGetTimeFunc{}).Execute(context.Background(), validRT, &macGetTimeArgs{})
+	if err != nil || value != "9:48:16" {
+		t.Fatalf("valid get_time = %v, %v; want 9:48:16, nil", value, err)
+	}
+	if len(validRunner.cmds) != 1 {
+		t.Fatalf("valid get_time dispatched %d commands, want 1", len(validRunner.cmds))
+	}
+}
+
+// MGT-11: the closed macSystemsetupGetter enum maps only to -getdate
+// and -gettime; any other value is rejected with a fixed error before
+// the Runner is touched — arbitrary argv, zone flags, and setter flags
+// cannot be expressed through the enum at all.
+func TestMacGettersUnknownEnumRejectedBeforeRunner(t *testing.T) {
+	for _, unknown := range []macSystemsetupGetter{macSystemsetupGetter(2), macSystemsetupGetter(-1)} {
+		rt, runner := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Date: 2/20/2011\n")})
+		_, err := macSystemsetupQuery(context.Background(), rt, unknown)
+		if err == nil || err.Error() != "unknown systemsetup getter" {
+			t.Fatalf("unknown enum %d err = %v, want unknown systemsetup getter", unknown, err)
+		}
+		if errors.Is(err, ErrMacSystemsetupQuery) {
+			t.Fatalf("unknown enum %d err = %v, want the distinct unknown-getter error", unknown, err)
+		}
+		if len(runner.cmds) != 0 {
+			t.Fatalf("unknown enum %d dispatched %d commands, want 0", unknown, len(runner.cmds))
+		}
+	}
+
+	// The two closed values map to their single fixed flags.
+	for _, tc := range []struct {
+		getter macSystemsetupGetter
+		flag   string
+	}{
+		{macSystemsetupGetDate, "-getdate"},
+		{macSystemsetupGetTime, "-gettime"},
+	} {
+		flag, err := tc.getter.flag()
+		if err != nil || flag != tc.flag {
+			t.Fatalf("enum %d flag = %q, %v; want %q, nil", tc.getter, flag, err, tc.flag)
+		}
+	}
+}
+
+// MGT-12: registration selects the Mac getters per GOOS through the
+// unexported registerMacGettersForGOOS helper (the Darwin selector
+// seam, exercised from any host): both getters on darwin only, with
+// zero-field args prototypes, no superseded aliases, off-host dispatch
+// rejected as unsupported, and the production Register surface at 8
+// names on darwin / 6 on linux and windows / 5 elsewhere.
+func TestMacGettersRegistrationSelectsPerGOOS(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := registerMacGettersForGOOS(reg, "darwin"); err != nil {
+		t.Fatal(err)
+	}
+	if reg.Len() != 2 {
+		t.Fatalf("darwin helper registered %d functions, want 2", reg.Len())
+	}
+	for _, tc := range []struct {
+		name string
+		fn   runtime.ExecFunction
+	}{
+		{"timezone.get_date", macGetDateFunc{}},
+		{"timezone.get_time", macGetTimeFunc{}},
+	} {
+		fn, ok := reg.Get(tc.name)
+		if !ok {
+			t.Fatalf("darwin helper did not register %s", tc.name)
+		}
+		if _, isDate := fn.(macGetDateFunc); tc.name == "timezone.get_date" && !isDate {
+			t.Fatalf("%s registered %T", tc.name, fn)
+		}
+		if _, isTime := fn.(macGetTimeFunc); tc.name == "timezone.get_time" && !isTime {
+			t.Fatalf("%s registered %T", tc.name, fn)
+		}
+		constrained, isConstrained := fn.(runtime.PlatformConstrained)
+		if !isConstrained || !reflect.DeepEqual(constrained.Platforms(), []string{"darwin"}) {
+			t.Fatalf("%s platforms = %v, want [darwin]", tc.name, constrained.Platforms())
+		}
+		if !runtime.SupportsPlatform(fn, "darwin") {
+			t.Fatalf("%s must support darwin", tc.name)
+		}
+		for _, goos := range []string{"linux", "windows", "freebsd", "solaris", "aix"} {
+			if runtime.SupportsPlatform(fn, goos) {
+				t.Fatalf("%s must not support %s", tc.name, goos)
+			}
+		}
+		// Zero-field args contract (catalog declares no parameters) and
+		// no required gate to trip.
+		argsType := reflect.TypeOf(tc.fn.Args())
+		if argsType.Kind() != reflect.Struct || argsType.NumField() != 0 {
+			t.Fatalf("%s args prototype = %s with %d fields, want a zero-field struct", tc.name, argsType, argsType.NumField())
+		}
+		if err := config.ValidateRequired(reflect.New(argsType).Interface()); err != nil {
+			t.Fatalf("%s zero-field args failed the required gate: %v", tc.name, err)
+		}
+		// The two prototypes are distinct concrete types.
+		if reflect.TypeOf((macGetDateFunc{}).Args()) == reflect.TypeOf((macGetTimeFunc{}).Args()) {
+			t.Fatal("get_date and get_time must declare distinct args types")
+		}
+	}
+	// No duplicate getter entry can exist.
+	if err := reg.Register(macGetDateFunc{}); err == nil {
+		t.Fatal("registering get_date twice must fail as a duplicate")
+	}
+	if err := reg.Register(macGetTimeFunc{}); err == nil {
+		t.Fatal("registering get_time twice must fail as a duplicate")
+	}
+
+	// Every non-darwin GOOS registers no getter at all.
+	for _, goos := range []string{"linux", "windows", "freebsd", "openbsd", "netbsd", "solaris", "illumos", "aix", "plan9"} {
+		other := runtime.NewExecRegistry()
+		if err := registerMacGettersForGOOS(other, goos); err != nil {
+			t.Fatal(err)
+		}
+		if other.Len() != 0 {
+			t.Fatalf("helper registered %d functions for %s, want 0", other.Len(), goos)
+		}
+		if _, ok := other.Get("timezone.get_date"); ok {
+			t.Fatalf("helper registered get_date for %s", goos)
+		}
+		if _, ok := other.Get("timezone.get_time"); ok {
+			t.Fatalf("helper registered get_time for %s", goos)
+		}
+	}
+
+	// Production Register: the surface is 8 names on darwin, 6 on
+	// linux/windows, 5 elsewhere; the getters are visible exactly on
+	// darwin; no superseded alias is ever registered; the raw alias
+	// lookup fails on every host.
+	prod := runtime.NewExecRegistry()
+	if err := Register(prod); err != nil {
+		t.Fatal(err)
+	}
+	goos := runtime.CurrentGOOS()
+	wantLen := 5
+	switch goos {
+	case "darwin":
+		wantLen = 8
+	case "linux", "windows":
+		wantLen = 6
+	}
+	if prod.Len() != wantLen {
+		t.Fatalf("production registration holds %d functions on %s, want %d", prod.Len(), goos, wantLen)
+	}
+	visible := 0
+	for _, name := range prod.Names() {
+		if name == "timezone.get_date" || name == "timezone.get_time" {
+			visible++
+		}
+		if strings.HasPrefix(name, "timezone.get_date_") || strings.HasPrefix(name, "timezone.get_time_") {
+			t.Fatalf("superseded alias %q registered on %s", name, goos)
+		}
+	}
+	if goos == "darwin" && visible != 2 {
+		t.Fatalf("getters visible %d times on darwin, want 2", visible)
+	}
+	if goos != "darwin" && visible != 0 {
+		t.Fatalf("getters visible %d times on %s, want 0", visible, goos)
+	}
+	for _, alias := range []string{"timezone.get_date_", "timezone.get_time_"} {
+		if _, ok := prod.Get(alias); ok {
+			t.Fatalf("raw alias %q registered on %s", alias, goos)
+		}
+	}
+
+	// Off-host dispatch: the darwin registration surfaced through a
+	// non-darwin host is invisible and rejected as unsupported
+	// (ResolveArgs and Call); on darwin itself the raw entry exists.
+	if goos != "darwin" {
+		darwinReg := runtime.NewExecRegistry()
+		if err := registerMacGettersForGOOS(darwinReg, "darwin"); err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range darwinReg.Names() {
+			if name == "timezone.get_date" || name == "timezone.get_time" {
+				t.Fatalf("Names exposed %s for darwin registration on host %s", name, goos)
+			}
+		}
+		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: runtime.NewMemoryFS(), Runner: &macZoneRunner{}}
+		var unsupported *runtime.UnsupportedError
+		for _, name := range []string{"timezone.get_date", "timezone.get_time"} {
+			if _, err := darwinReg.ResolveArgs(rt, name); !errors.As(err, &unsupported) || unsupported.Kind != "function" {
+				t.Fatalf("ResolveArgs %s on %s = %v, want unsupported function", name, goos, err)
+			}
+			if _, err := darwinReg.Call(context.Background(), rt, name, &macGetDateArgs{}); !errors.As(err, &unsupported) || unsupported.Kind != "function" {
+				t.Fatalf("Call %s on %s = %v, want unsupported function", name, goos, err)
+			}
+		}
 	}
 }
