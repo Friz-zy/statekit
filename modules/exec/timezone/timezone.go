@@ -471,9 +471,11 @@ func (macZoneCompareFunc) Execute(ctx context.Context, rt *runtime.Runtime, args
 type getZoneArgs struct{}
 
 // ErrMacSystemsetupQuery is the fixed, value-free execution failure
-// for the Mac systemsetup getters (the mac_timezone get_date/get_time
+// for the Mac systemsetup getters (the mac_timezone
+// get_date/get_time/get_using_network_time/get_time_server
 // CommandExecutionError analog): the query could not be completed. It
-// is distinct from ErrCannotDetermineZone; errors.Is matches only this
+// is distinct from ErrCannotDetermineZone and from
+// ErrMacNetworkTimeStateInvalid; errors.Is matches only this
 // sentinel and no raw cause, output, stderr, or exit status ever
 // travels in the error.
 var ErrMacSystemsetupQuery = errors.New("macOS systemsetup query failed")
@@ -488,27 +490,35 @@ var errMacGetterInvalidArgs = errors.New("invalid timezone getter arguments")
 // rejection for a macSystemsetupGetter value outside the closed enum.
 var errMacSystemsetupUnknownGetter = errors.New("unknown systemsetup getter")
 
-// macSystemsetupGetter is the private closed selector for the only two
-// read-only systemsetup queries the module may run. Values never come
-// from user input: each maps to exactly one fixed argv flag, and any
-// other value is rejected before the Runner is touched — arbitrary
+// macSystemsetupGetter is the private closed selector for the only
+// four read-only systemsetup queries the module may run. Values never
+// come from user input: each maps to exactly one fixed argv flag, and
+// any other value is rejected before the Runner is touched — arbitrary
 // argv, zone flags, and setter flags cannot be expressed through it.
 type macSystemsetupGetter int
 
 const (
 	macSystemsetupGetDate macSystemsetupGetter = iota
 	macSystemsetupGetTime
+	macSystemsetupGetUsingNetworkTime
+	macSystemsetupGetTimeServer
 )
 
 // flag returns the single fixed argv flag for the closed enum value:
-// -getdate for the date query, -gettime for the time query, and the
-// fixed unknown-getter rejection for anything else.
+// -getdate for the date query, -gettime for the time query,
+// -getusingnetworktime for the network-time state query,
+// -getnetworktimeserver for the time-server query, and the fixed
+// unknown-getter rejection for anything else.
 func (g macSystemsetupGetter) flag() (string, error) {
 	switch g {
 	case macSystemsetupGetDate:
 		return "-getdate", nil
 	case macSystemsetupGetTime:
 		return "-gettime", nil
+	case macSystemsetupGetUsingNetworkTime:
+		return "-getusingnetworktime", nil
+	case macSystemsetupGetTimeServer:
+		return "-getnetworktimeserver", nil
 	}
 	return "", errMacSystemsetupUnknownGetter
 }
@@ -623,6 +633,103 @@ func (macGetTimeFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any
 		return nil, errMacGetterInvalidArgs
 	}
 	value, err := macSystemsetupQuery(ctx, rt, macSystemsetupGetTime)
+	if err != nil {
+		return nil, err
+	}
+	return value, nil
+}
+
+// ErrMacNetworkTimeStateInvalid is the fixed, value-free invocation
+// failure for the network-time state getter (the SaltInvocationError
+// analog of mac_utils.validate_enabled): the parsed systemsetup answer
+// is not one of the case-insensitive on/yes/off/no aliases. It is
+// distinct from ErrMacSystemsetupQuery; errors.Is matches only this
+// sentinel and the raw parsed value never travels in the error.
+var ErrMacNetworkTimeStateInvalid = errors.New("macOS network time state invalid")
+
+// macValidateEnabled ports the string branch of
+// mac_utils.validate_enabled source-exactly over the already-parsed
+// getter answer: case-insensitive on/yes => true, off/no => false, and
+// every other string — including the empty string — fails with the
+// fixed ErrMacNetworkTimeStateInvalid (the SaltInvocationError
+// analog). No trimming happens here; the value is exactly what
+// parse_return produced after the command's Python stdout rstrip.
+func macValidateEnabled(value string) (bool, error) {
+	switch strings.ToLower(value) {
+	case "on", "yes":
+		return true, nil
+	case "off", "no":
+		return false, nil
+	}
+	return false, ErrMacNetworkTimeStateInvalid
+}
+
+// macGetUsingNetworkTimeArgs is the zero-field argument contract: the
+// catalog declares no parameters for get_using_network_time.
+type macGetUsingNetworkTimeArgs struct{}
+
+// macGetTimeServerArgs is the zero-field argument contract: the
+// catalog declares no parameters for get_time_server.
+type macGetTimeServerArgs struct{}
+
+// macGetUsingNetworkTimeFunc implements timezone.get_using_network_time
+// for the pinned mac_timezone.py contract.
+type macGetUsingNetworkTimeFunc struct{}
+
+func (macGetUsingNetworkTimeFunc) Name() string        { return "timezone.get_using_network_time" }
+func (macGetUsingNetworkTimeFunc) Platforms() []string { return []string{"darwin"} }
+func (macGetUsingNetworkTimeFunc) Args() any           { return macGetUsingNetworkTimeArgs{} }
+
+// Execute ports mac_timezone.get_using_network_time (pinned revision
+// lines 263-281): boundary guards first (architecture gate) — a wrong
+// argument type or typed-nil pointer returns the fixed
+// errMacGetterInvalidArgs before any dispatch, never a panic and never
+// raw args formatted into the error — then exactly one fixed
+// shell-free `/usr/sbin/systemsetup -getusingnetworktime` dispatch
+// through the shared closed enum query; the parsed answer is validated
+// exactly like the string branch of mac_utils.validate_enabled —
+// case-insensitive on/yes => true, off/no => false, anything else
+// (including the empty string) fails with the fixed value-free
+// ErrMacNetworkTimeStateInvalid, never false — and no raw value,
+// output, or cause travels in any error. Every query failure maps to
+// ErrMacSystemsetupQuery with a nil result value.
+func (macGetUsingNetworkTimeFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	if a, ok := args.(*macGetUsingNetworkTimeArgs); !ok || a == nil {
+		return nil, errMacGetterInvalidArgs
+	}
+	value, err := macSystemsetupQuery(ctx, rt, macSystemsetupGetUsingNetworkTime)
+	if err != nil {
+		return nil, err
+	}
+	enabled, err := macValidateEnabled(value)
+	if err != nil {
+		return nil, err
+	}
+	return enabled, nil
+}
+
+// macGetTimeServerFunc implements timezone.get_time_server for the
+// pinned mac_timezone.py contract.
+type macGetTimeServerFunc struct{}
+
+func (macGetTimeServerFunc) Name() string        { return "timezone.get_time_server" }
+func (macGetTimeServerFunc) Platforms() []string { return []string{"darwin"} }
+func (macGetTimeServerFunc) Args() any           { return macGetTimeServerArgs{} }
+
+// Execute ports mac_timezone.get_time_server (pinned revision lines
+// 310-326): boundary guards first (architecture gate) — a wrong
+// argument type or typed-nil pointer returns the fixed
+// errMacGetterInvalidArgs before any dispatch, never a panic and never
+// raw args formatted into the error — then exactly one fixed
+// shell-free `/usr/sbin/systemsetup -getnetworktimeserver` dispatch
+// through the shared closed enum query; the parsed server text (or ""
+// for empty successful output) is returned with a nil value on every
+// error, and every query failure maps to ErrMacSystemsetupQuery.
+func (macGetTimeServerFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	if a, ok := args.(*macGetTimeServerArgs); !ok || a == nil {
+		return nil, errMacGetterInvalidArgs
+	}
+	value, err := macSystemsetupQuery(ctx, rt, macSystemsetupGetTimeServer)
 	if err != nil {
 		return nil, err
 	}
@@ -937,7 +1044,8 @@ func (setHwclockFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any
 // zone_compare variant is selected per GOOS: the Linux generic
 // filesystem contract on linux, the mac systemsetup contract on darwin,
 // the windows tzutil contract on windows. The Mac systemsetup getters
-// timezone.get_date and timezone.get_time are darwin-only.
+// timezone.get_date, timezone.get_time, timezone.get_using_network_time,
+// and timezone.get_time_server are darwin-only.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{getZoneFunc{}, setZoneFunc{}, getOffsetFunc{}, getHwclockFunc{}, setHwclockFunc{}} {
 		if err := reg.Register(fn); err != nil {
@@ -951,15 +1059,16 @@ func Register(reg *runtime.ExecRegistry) error {
 }
 
 // registerMacGettersForGOOS installs the Mac-only systemsetup getters
-// timezone.get_date and timezone.get_time on darwin only, and nothing
-// on any other GOOS, where the names stay unregistered rather than
+// timezone.get_date, timezone.get_time, timezone.get_using_network_time,
+// and timezone.get_time_server on darwin only, and nothing on any
+// other GOOS, where the names stay unregistered rather than
 // registered-but-unsupported. The registry keys by name, so registering
 // a getter onto one registry twice fails as a duplicate.
 func registerMacGettersForGOOS(reg *runtime.ExecRegistry, goos string) error {
 	if goos != "darwin" {
 		return nil
 	}
-	for _, fn := range []runtime.ExecFunction{macGetDateFunc{}, macGetTimeFunc{}} {
+	for _, fn := range []runtime.ExecFunction{macGetDateFunc{}, macGetTimeFunc{}, macGetUsingNetworkTimeFunc{}, macGetTimeServerFunc{}} {
 		if err := reg.Register(fn); err != nil {
 			return err
 		}

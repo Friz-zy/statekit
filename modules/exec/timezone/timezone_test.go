@@ -949,14 +949,15 @@ func TestZoneCompareRegistrationSelectsPerGOOS(t *testing.T) {
 	}
 
 	// Visible layer: Names filters through SupportsPlatform. The
-	// surface is 8 names on darwin (base 5 + zone_compare + the two
-	// Mac systemsetup getters), 6 on linux/windows (base 5 +
+	// surface is 10 names on darwin (base 5 + zone_compare + the four
+	// Mac systemsetup getters get_date, get_time, get_time_server,
+	// get_using_network_time), 6 on linux/windows (base 5 +
 	// zone_compare), and 5 everywhere else (no getters, no
 	// zone_compare).
 	wantTotal := 5
 	switch goos {
 	case "darwin":
-		wantTotal = 8
+		wantTotal = 10
 	case "linux", "windows":
 		wantTotal = 6
 	}
@@ -1656,13 +1657,14 @@ func TestMacZoneCompareNoDuplicateRegistration(t *testing.T) {
 		}
 	}
 	goos := runtime.CurrentGOOS()
-	// The production surface is 8 functions on darwin (base 5 +
-	// zone_compare + the two Mac systemsetup getters), 6 on
+	// The production surface is 10 functions on darwin (base 5 +
+	// zone_compare + the four Mac systemsetup getters get_date,
+	// get_time, get_time_server, get_using_network_time), 6 on
 	// linux/windows, 5 elsewhere.
 	wantLen := 5
 	switch goos {
 	case "darwin":
-		wantLen = 8
+		wantLen = 10
 	case "linux", "windows":
 		wantLen = 6
 	}
@@ -2262,12 +2264,13 @@ func TestMacGettersExecuteFailsSafeOnMalformedInvocation(t *testing.T) {
 	}
 }
 
-// MGT-11: the closed macSystemsetupGetter enum maps only to -getdate
-// and -gettime; any other value is rejected with a fixed error before
-// the Runner is touched — arbitrary argv, zone flags, and setter flags
-// cannot be expressed through the enum at all.
+// MGT-11: the closed macSystemsetupGetter enum maps the date/time half
+// of the read-only getters to -getdate and -gettime; any other value
+// is rejected with a fixed error before the Runner is touched —
+// arbitrary argv, zone flags, and setter flags cannot be expressed
+// through the enum at all (MNT-11 pins the full four-flag closure).
 func TestMacGettersUnknownEnumRejectedBeforeRunner(t *testing.T) {
-	for _, unknown := range []macSystemsetupGetter{macSystemsetupGetter(2), macSystemsetupGetter(-1)} {
+	for _, unknown := range []macSystemsetupGetter{macSystemsetupGetter(4), macSystemsetupGetter(-1)} {
 		rt, runner := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Date: 2/20/2011\n")})
 		_, err := macSystemsetupQuery(context.Background(), rt, unknown)
 		if err == nil || err.Error() != "unknown systemsetup getter" {
@@ -2298,17 +2301,18 @@ func TestMacGettersUnknownEnumRejectedBeforeRunner(t *testing.T) {
 
 // MGT-12: registration selects the Mac getters per GOOS through the
 // unexported registerMacGettersForGOOS helper (the Darwin selector
-// seam, exercised from any host): both getters on darwin only, with
+// seam, exercised from any host): the getters on darwin only, with
 // zero-field args prototypes, no superseded aliases, off-host dispatch
-// rejected as unsupported, and the production Register surface at 8
-// names on darwin / 6 on linux and windows / 5 elsewhere.
+// rejected as unsupported, and the production Register surface at 10
+// names on darwin / 6 on linux and windows / 5 elsewhere (the count
+// includes the network-time getters pinned by MNT-12).
 func TestMacGettersRegistrationSelectsPerGOOS(t *testing.T) {
 	reg := runtime.NewExecRegistry()
 	if err := registerMacGettersForGOOS(reg, "darwin"); err != nil {
 		t.Fatal(err)
 	}
-	if reg.Len() != 2 {
-		t.Fatalf("darwin helper registered %d functions, want 2", reg.Len())
+	if reg.Len() != 4 {
+		t.Fatalf("darwin helper registered %d functions, want 4", reg.Len())
 	}
 	for _, tc := range []struct {
 		name string
@@ -2378,7 +2382,7 @@ func TestMacGettersRegistrationSelectsPerGOOS(t *testing.T) {
 		}
 	}
 
-	// Production Register: the surface is 8 names on darwin, 6 on
+	// Production Register: the surface is 10 names on darwin, 6 on
 	// linux/windows, 5 elsewhere; the getters are visible exactly on
 	// darwin; no superseded alias is ever registered; the raw alias
 	// lookup fails on every host.
@@ -2390,7 +2394,7 @@ func TestMacGettersRegistrationSelectsPerGOOS(t *testing.T) {
 	wantLen := 5
 	switch goos {
 	case "darwin":
-		wantLen = 8
+		wantLen = 10
 	case "linux", "windows":
 		wantLen = 6
 	}
@@ -2438,6 +2442,772 @@ func TestMacGettersRegistrationSelectsPerGOOS(t *testing.T) {
 				t.Fatalf("ResolveArgs %s on %s = %v, want unsupported function", name, goos, err)
 			}
 			if _, err := darwinReg.Call(context.Background(), rt, name, &macGetDateArgs{}); !errors.As(err, &unsupported) || unsupported.Kind != "function" {
+				t.Fatalf("Call %s on %s = %v, want unsupported function", name, goos, err)
+			}
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// macOS get_using_network_time / get_time_server (PTD-EXEC-1629/1630):
+// MNT-01..12 pin the pinned mac_timezone.py network-time getter
+// contracts hermetically. Every test uses the fake macZoneRunner only
+// — never process.NewRunner, never /usr/sbin/systemsetup, never a host
+// filesystem — and the suite makes no native Darwin claim. The mapped
+// Salt tests are the functional test_get_set_using_network_time and
+// test_get_set_time_server fixtures (they mutate global host settings
+// through the setters under root/destructive/Darwin gates in Salt):
+// they were inspected as source only, never executed, every shape
+// below is a source-derived synthetic fixture, and the only server
+// literal used is the synthetic time.example.invalid (the Salt
+// fixture's own server literal is deliberately not reproduced).
+
+// requireMacNetworkTimeStateError pins the fixed value-free
+// invocation-category error for the network-time state: the errors.Is
+// sentinel, the exact text, and no markers of the raw parsed value or
+// of any query-failure cause.
+func requireMacNetworkTimeStateError(t *testing.T, err error) {
+	t.Helper()
+	if !errors.Is(err, ErrMacNetworkTimeStateInvalid) {
+		t.Fatalf("err = %v, want ErrMacNetworkTimeStateInvalid", err)
+	}
+	if err == nil || err.Error() != "macOS network time state invalid" {
+		t.Fatalf("err text = %v, want macOS network time state invalid", err)
+	}
+	for _, marker := range []string{
+		"/usr/sbin", "-getusingnetworktime", "-getnetworktimeserver",
+		"maybe", "flurgendorf", "on off", "true", "False", "enable",
+		"exit", "stdout", "stderr",
+	} {
+		if err != nil && strings.Contains(err.Error(), marker) {
+			t.Fatalf("err text %q leaks marker %q", err.Error(), marker)
+		}
+	}
+}
+
+// MNT-01: each network-time getter Execute dispatches exactly one
+// shell-free systemsetup query with its single fixed argv flag, the
+// fixed environment, timeout, and capture ceilings — deep-equal over
+// the whole process.Command, with the live context forwarded to the
+// Runner — and returns the source-shaped answer.
+func TestMacNetworkTimeGettersDispatchFixedCommand(t *testing.T) {
+	rt, runner := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Network Time: On\n")})
+	value, err := (macGetUsingNetworkTimeFunc{}).Execute(context.Background(), rt, &macGetUsingNetworkTimeArgs{})
+	if err != nil || value != true {
+		t.Fatalf("get_using_network_time = %v, %v; want true, nil", value, err)
+	}
+	if len(runner.cmds) != 1 {
+		t.Fatalf("get_using_network_time dispatched %d commands, want exactly 1", len(runner.cmds))
+	}
+	if !reflect.DeepEqual(runner.cmds[0], wantMacGetterCommand("-getusingnetworktime")) {
+		t.Fatalf("get_using_network_time command = %#v, want %#v", runner.cmds[0], wantMacGetterCommand("-getusingnetworktime"))
+	}
+	if len(runner.ctxErr) != 1 || runner.ctxErr[0] != nil {
+		t.Fatalf("get_using_network_time runner context errors = %v, want one nil (live context forwarded)", runner.ctxErr)
+	}
+
+	rt, runner = newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Time Server: time.example.invalid\n")})
+	value, err = (macGetTimeServerFunc{}).Execute(context.Background(), rt, &macGetTimeServerArgs{})
+	if err != nil || value != "time.example.invalid" {
+		t.Fatalf("get_time_server = %v, %v; want time.example.invalid, nil", value, err)
+	}
+	if len(runner.cmds) != 1 {
+		t.Fatalf("get_time_server dispatched %d commands, want exactly 1", len(runner.cmds))
+	}
+	if !reflect.DeepEqual(runner.cmds[0], wantMacGetterCommand("-getnetworktimeserver")) {
+		t.Fatalf("get_time_server command = %#v, want %#v", runner.cmds[0], wantMacGetterCommand("-getnetworktimeserver"))
+	}
+	if len(runner.ctxErr) != 1 || runner.ctxErr[0] != nil {
+		t.Fatalf("get_time_server runner context errors = %v, want one nil (live context forwarded)", runner.ctxErr)
+	}
+}
+
+// MNT-02: the network-time getter contract never touches the
+// filesystem on success, query failure, or invalid state — every path
+// stays inside the hermetic MemoryFS with zero recorded operations, so
+// no mutation is possible at all.
+func TestMacNetworkTimeGettersNeverTouchesFilesystem(t *testing.T) {
+	fsys := &zoneRecordingFS{FileSystem: runtime.NewMemoryFS()}
+	runner := &macZoneRunner{reply: process.CommandResult{ExitCode: 0, Stdout: []byte("Network Time: On\n")}}
+	rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: fsys, Runner: runner}
+	if _, err := (macGetUsingNetworkTimeFunc{}).Execute(context.Background(), rt, &macGetUsingNetworkTimeArgs{}); err != nil {
+		t.Fatal(err)
+	}
+	runner.reply = process.CommandResult{ExitCode: 0, Stdout: []byte("Time Server: time.example.invalid\n")}
+	if _, err := (macGetTimeServerFunc{}).Execute(context.Background(), rt, &macGetTimeServerArgs{}); err != nil {
+		t.Fatal(err)
+	}
+	runner.reply = process.CommandResult{ExitCode: 1}
+	if _, err := (macGetUsingNetworkTimeFunc{}).Execute(context.Background(), rt, &macGetUsingNetworkTimeArgs{}); !errors.Is(err, ErrMacSystemsetupQuery) {
+		t.Fatalf("nonzero err = %v, want ErrMacSystemsetupQuery", err)
+	}
+	runner.reply = process.CommandResult{ExitCode: 0, Stdout: []byte("Network Time: maybe\n")}
+	if _, err := (macGetUsingNetworkTimeFunc{}).Execute(context.Background(), rt, &macGetUsingNetworkTimeArgs{}); !errors.Is(err, ErrMacNetworkTimeStateInvalid) {
+		t.Fatalf("invalid-state err = %v, want ErrMacNetworkTimeStateInvalid", err)
+	}
+	if len(fsys.calls) != 0 {
+		t.Fatalf("filesystem touched: %v", fsys.calls)
+	}
+}
+
+// MNT-03: stdout is trailing-rstripped with Python str.rstrip
+// semantics — unicode.IsSpace plus U+001C..U+001F — with no leading
+// trim, before any parsing; interior whitespace survives.
+func TestMacNetworkTimeGettersPythonTrailingRStrip(t *testing.T) {
+	for _, tail := range []string{
+		"\n", "\r\n", "\t", " \t\r\n", "\v\f",
+		"\u00a0", "\u0085", "\u2028", "\u3000",
+		"\u001c", "\u001d", "\u001e", "\u001f",
+		" \u001c\u001d\u001e\u001f\u00a0\u2028\t\r\n",
+	} {
+		rt, _ := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Network Time: on" + tail)})
+		value, err := (macGetUsingNetworkTimeFunc{}).Execute(context.Background(), rt, &macGetUsingNetworkTimeArgs{})
+		if err != nil || value != true {
+			t.Fatalf("trailing %q: get_using_network_time = %v, %v; want true, nil", tail, value, err)
+		}
+		rt, _ = newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Time Server: time.example.invalid" + tail)})
+		value, err = (macGetTimeServerFunc{}).Execute(context.Background(), rt, &macGetTimeServerArgs{})
+		if err != nil || value != "time.example.invalid" {
+			t.Fatalf("trailing %q: get_time_server = %v, %v; want time.example.invalid, nil", tail, value, err)
+		}
+	}
+
+	// Leading whitespace after the delimiter is never stripped: the
+	// server value keeps it, and the state value stays invalid — the
+	// source validate_enabled applies no trim of its own.
+	rt, _ := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Time Server:  time.example.invalid\n")})
+	value, err := (macGetTimeServerFunc{}).Execute(context.Background(), rt, &macGetTimeServerArgs{})
+	if err != nil || value != " time.example.invalid" {
+		t.Fatalf("leading-space get_time_server = %v, %v; want \" time.example.invalid\", nil", value, err)
+	}
+	rt, _ = newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Network Time:  on\n")})
+	_, err = (macGetUsingNetworkTimeFunc{}).Execute(context.Background(), rt, &macGetUsingNetworkTimeArgs{})
+	requireMacNetworkTimeStateError(t, err)
+
+	// Interior whitespace survives untouched (the fixture carries no
+	// ": " inside the value, which would itself be the delimiter).
+	rt, _ = newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Time Server: time.example.invalid extra\n")})
+	value, err = (macGetTimeServerFunc{}).Execute(context.Background(), rt, &macGetTimeServerArgs{})
+	if err != nil || value != "time.example.invalid extra" {
+		t.Fatalf("interior-space get_time_server = %v, %v; want \"time.example.invalid extra\", nil", value, err)
+	}
+}
+
+// MNT-04: the shared parse_return port through the network-time
+// getters: the first ": " delimiter wins and yields the segment after
+// its first occurrence (later segments are discarded), then ":\n",
+// else the whole raw string with no further trimming. A successful
+// empty or whitespace-only stdout — empty after the Python rstrip —
+// is a success shape: it parses to the empty string with a nil error,
+// never a failure category (QA MNT-04 evidence gap).
+func TestMacNetworkTimeGettersParseReturnDelimiterPriority(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		stdout string
+		want   any
+	}{
+		{"state colon-space", "Network Time: on\n", true},
+		{"state colon-space repeats discard later segments", "Network Time: on: Extra: More\n", true},
+		{"state colon-newline fallback", "Network Time:\noff\n", false},
+		{"state colon-space wins over colon-newline", "Head:\nNetwork Time: no\n", false},
+		{"state raw passthrough", "yes", true},
+		{"state raw off", "off", false},
+		{"server colon-space", "Time Server: time.example.invalid\n", "time.example.invalid"},
+		{"server repeats discard later segments", "Time Server: time.example.invalid: Pool: 2\n", "time.example.invalid"},
+		{"server colon-newline fallback", "Time Server:\ntime.example.invalid\n", "time.example.invalid"},
+		{"server raw passthrough", "time.example.invalid", "time.example.invalid"},
+		{"server empty stdout", "", ""},
+		{"server whitespace-only stdout", " \t\r\n", ""},
+	} {
+		rt, _ := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(tc.stdout)})
+		if want, ok := tc.want.(bool); ok {
+			value, err := (macGetUsingNetworkTimeFunc{}).Execute(context.Background(), rt, &macGetUsingNetworkTimeArgs{})
+			if err != nil || value != want {
+				t.Fatalf("%s: stdout %q = %v, %v; want %v, nil", tc.name, tc.stdout, value, err, want)
+			}
+			continue
+		}
+		value, err := (macGetTimeServerFunc{}).Execute(context.Background(), rt, &macGetTimeServerArgs{})
+		if err != nil || value != tc.want.(string) {
+			t.Fatalf("%s: stdout %q = %v, %v; want %q, nil", tc.name, tc.stdout, value, err, tc.want)
+		}
+	}
+
+	// Empty-after-rstrip success evidence for the two rows above: the
+	// getter answers "" with a nil error — neither the query-failure
+	// sentinel nor the state sentinel — with exactly one fixed
+	// -getnetworktimeserver dispatch, the full fixed command, the live
+	// context forwarded to the Runner, and zero filesystem operations.
+	for _, stdout := range []string{"", " \t\r\n"} {
+		fsys := &zoneRecordingFS{FileSystem: runtime.NewMemoryFS()}
+		runner := &macZoneRunner{reply: process.CommandResult{ExitCode: 0, Stdout: []byte(stdout)}}
+		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: fsys, Runner: runner}
+		value, err := (macGetTimeServerFunc{}).Execute(context.Background(), rt, &macGetTimeServerArgs{})
+		if errors.Is(err, ErrMacSystemsetupQuery) {
+			t.Fatalf("empty-after-rstrip stdout %q mislabeled as ErrMacSystemsetupQuery", stdout)
+		}
+		if errors.Is(err, ErrMacNetworkTimeStateInvalid) {
+			t.Fatalf("empty-after-rstrip stdout %q mislabeled as ErrMacNetworkTimeStateInvalid", stdout)
+		}
+		if err != nil || value != "" {
+			t.Fatalf("empty-after-rstrip stdout %q: get_time_server = %v, %v; want \"\", nil", stdout, value, err)
+		}
+		if len(runner.cmds) != 1 {
+			t.Fatalf("empty-after-rstrip stdout %q dispatched %d commands, want exactly 1", stdout, len(runner.cmds))
+		}
+		if !reflect.DeepEqual(runner.cmds[0], wantMacGetterCommand("-getnetworktimeserver")) {
+			t.Fatalf("empty-after-rstrip stdout %q command = %#v, want %#v", stdout, runner.cmds[0], wantMacGetterCommand("-getnetworktimeserver"))
+		}
+		if len(runner.ctxErr) != 1 || runner.ctxErr[0] != nil {
+			t.Fatalf("empty-after-rstrip stdout %q runner context errors = %v, want one nil (live context forwarded)", stdout, runner.ctxErr)
+		}
+		if len(fsys.calls) != 0 {
+			t.Fatalf("empty-after-rstrip stdout %q touched the filesystem: %v", stdout, fsys.calls)
+		}
+	}
+}
+
+// MNT-05: source-derived shapes of the mapped functional fixtures —
+// inspected, never executed (the Salt suite mutates global host state
+// through the setters under root/destructive/Darwin gates).
+// test_get_set_using_network_time asserts get_using_network_time()
+// truthy after set_using_network_time(True) and falsy after False;
+// test_get_set_time_server asserts get_time_server() equals the server
+// it set. The synthetic server below is time.example.invalid only: the
+// Salt fixture's own server literal is deliberately not reproduced.
+func TestMacNetworkTimeGettersSaltFunctionalShapes(t *testing.T) {
+	rt, _ := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Network Time: On\n")})
+	value, err := (macGetUsingNetworkTimeFunc{}).Execute(context.Background(), rt, &macGetUsingNetworkTimeArgs{})
+	if err != nil || value != true {
+		t.Fatalf("functional enabled shape = %v, %v; want true, nil", value, err)
+	}
+
+	rt, _ = newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Network Time: Off\n")})
+	value, err = (macGetUsingNetworkTimeFunc{}).Execute(context.Background(), rt, &macGetUsingNetworkTimeArgs{})
+	if err != nil || value != false {
+		t.Fatalf("functional disabled shape = %v, %v; want false, nil", value, err)
+	}
+
+	rt, _ = newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Time Server: time.example.invalid\n")})
+	value, err = (macGetTimeServerFunc{}).Execute(context.Background(), rt, &macGetTimeServerArgs{})
+	if err != nil || value != "time.example.invalid" {
+		t.Fatalf("functional server shape = %v, %v; want time.example.invalid, nil", value, err)
+	}
+}
+
+// MNT-06: the validate_enabled string branch accepts exactly the
+// case-insensitive on/yes/off/no aliases over the parsed answer —
+// nothing more — with exactly one dispatch per call.
+func TestMacGetUsingNetworkTimeEnabledAliases(t *testing.T) {
+	for _, tc := range []struct {
+		answer string
+		want   bool
+	}{
+		{"on", true}, {"ON", true}, {"On", true}, {"oN", true},
+		{"yes", true}, {"YES", true}, {"Yes", true}, {"yEs", true},
+		{"off", false}, {"OFF", false}, {"Off", false}, {"oFf", false},
+		{"no", false}, {"NO", false}, {"No", false}, {"nO", false},
+	} {
+		rt, runner := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Network Time: " + tc.answer + "\n")})
+		value, err := (macGetUsingNetworkTimeFunc{}).Execute(context.Background(), rt, &macGetUsingNetworkTimeArgs{})
+		if err != nil || value != tc.want {
+			t.Fatalf("answer %q = %v, %v; want %v, nil", tc.answer, value, err, tc.want)
+		}
+		if len(runner.cmds) != 1 {
+			t.Fatalf("answer %q dispatched %d commands, want 1", tc.answer, len(runner.cmds))
+		}
+	}
+
+	// A raw (delimiter-free) alias parses to itself.
+	rt, _ := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("YES\n")})
+	value, err := (macGetUsingNetworkTimeFunc{}).Execute(context.Background(), rt, &macGetUsingNetworkTimeArgs{})
+	if err != nil || value != true {
+		t.Fatalf("raw YES = %v, %v; want true, nil", value, err)
+	}
+}
+
+// MNT-07: malformed parsed answers are invocation failures, never
+// false: the empty string (including whitespace-only stdout), unknown
+// words, multi-line leftovers, numeric strings, and Go-style boolean
+// words all fail with the fixed value-free state sentinel — mirroring
+// the SaltInvocationError of mac_utils.validate_enabled — with a nil
+// result value and exactly one dispatch.
+func TestMacGetUsingNetworkTimeMalformedOutputErrorsNotFalse(t *testing.T) {
+	for _, stdout := range []string{
+		"",
+		" \r\n\t\u001f",
+		"Network Time: \n",
+		"Network Time: maybe\n",
+		"Network Time: on\nextra line\n",
+		"Network Time: 1\n",
+		"Network Time: 0\n",
+		"Network Time: true\n",
+		"Network Time: False\n",
+		"Network Time: enable\n",
+		"flurgendorf",
+	} {
+		rt, runner := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(stdout)})
+		value, err := (macGetUsingNetworkTimeFunc{}).Execute(context.Background(), rt, &macGetUsingNetworkTimeArgs{})
+		if err == nil || value != nil {
+			t.Fatalf("stdout %q = %v, %v; want nil value and the fixed error", stdout, value, err)
+		}
+		requireMacNetworkTimeStateError(t, err)
+		if errors.Is(err, ErrMacSystemsetupQuery) {
+			t.Fatalf("stdout %q mislabeled as a query failure: %v", stdout, err)
+		}
+		if len(runner.cmds) != 1 {
+			t.Fatalf("stdout %q dispatched %d commands, want 1", stdout, len(runner.cmds))
+		}
+	}
+}
+
+// MNT-08: nonzero exit, Runner start errors, context cancellation and
+// timeout, a not-supported stdout, truncation flags, and over-cap
+// streams all map to the one fixed query error for both network-time
+// getters — the query-failure category, never the state sentinel —
+// with no wrapped cause; at-cap streams still parse; the phrase in
+// stderr alone does not fail; the caller's context reaches the Runner.
+func TestMacNetworkTimeGettersFailureCategoriesMapToFixedError(t *testing.T) {
+	for _, reply := range []process.CommandResult{
+		{ExitCode: 13, Stdout: []byte("Network Time: on\n"), Stderr: []byte("systemsetup: failing\n")},
+		{ExitCode: -1, Err: fmt.Errorf(`exec: "/usr/sbin/systemsetup": stat /usr/sbin/systemsetup: no such file or directory`)},
+		{ExitCode: -1, Err: fmt.Errorf("/usr/sbin/systemsetup -getusingnetworktime canceled: %w", context.Canceled)},
+		{ExitCode: -1, Err: fmt.Errorf("/usr/sbin/systemsetup -getnetworktimeserver timed out after 30s: %w", context.DeadlineExceeded)},
+		{ExitCode: 0, Stdout: []byte("Network Time: not supported on this machine\n")},
+		{ExitCode: 0, Stdout: []byte("Network Time: on\n"), StdoutTruncated: true},
+		{ExitCode: 0, Stdout: []byte("Time Server: time.example.invalid\n"), Stderr: []byte("x"), StderrTruncated: true},
+		{ExitCode: 0, Stdout: bytes.Repeat([]byte("x"), (64<<10)+1)},
+		{ExitCode: 0, Stdout: []byte("Network Time: on\n"), Stderr: bytes.Repeat([]byte("x"), (64<<10)+1)},
+	} {
+		rt, _ := newMacZoneRuntime(reply)
+		_, err := (macGetUsingNetworkTimeFunc{}).Execute(context.Background(), rt, &macGetUsingNetworkTimeArgs{})
+		requireMacGetterError(t, err)
+		if errors.Is(err, ErrMacNetworkTimeStateInvalid) {
+			t.Fatalf("query failure mislabeled as invalid state: %v", err)
+		}
+		if errors.Is(err, fs.ErrNotExist) || errors.Unwrap(err) != nil {
+			t.Fatalf("getter error leaked its cause: %v", err)
+		}
+
+		rt, _ = newMacZoneRuntime(reply)
+		_, err = (macGetTimeServerFunc{}).Execute(context.Background(), rt, &macGetTimeServerArgs{})
+		requireMacGetterError(t, err)
+	}
+
+	// At-cap streams still parse (the limits fail closed only above
+	// the cap).
+	padded := append([]byte("Time Server: time.example.invalid"), bytes.Repeat([]byte(" "), (64<<10)-len("Time Server: time.example.invalid"))...)
+	if len(padded) != 64<<10 {
+		t.Fatalf("padded fixture is %d bytes, want exactly the cap", len(padded))
+	}
+	rt, _ := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: padded, Stderr: bytes.Repeat([]byte("x"), 64<<10)})
+	value, err := (macGetTimeServerFunc{}).Execute(context.Background(), rt, &macGetTimeServerArgs{})
+	if err != nil || value != "time.example.invalid" {
+		t.Fatalf("at-cap get_time_server = %v, %v; want time.example.invalid, nil", value, err)
+	}
+
+	// The not-supported phrase in stderr alone does not fail.
+	rt, _ = newMacZoneRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte("Network Time: off\n"),
+		Stderr:   []byte("warning: something not supported \n"),
+	})
+	value, err = (macGetUsingNetworkTimeFunc{}).Execute(context.Background(), rt, &macGetUsingNetworkTimeArgs{})
+	if err != nil || value != false {
+		t.Fatalf("stderr-only not supported = %v, %v; want false, nil", value, err)
+	}
+
+	// The caller's context reaches the Runner unchanged.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runner := &macZoneRunner{reply: process.CommandResult{ExitCode: 0, Stdout: []byte("Network Time: on\n")}}
+	rt = &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: runtime.NewMemoryFS(), Runner: runner}
+	if _, err := (macGetUsingNetworkTimeFunc{}).Execute(ctx, rt, &macGetUsingNetworkTimeArgs{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.ctxErr) != 1 || !errors.Is(runner.ctxErr[0], context.Canceled) {
+		t.Fatalf("runner context errors = %v, want one context.Canceled", runner.ctxErr)
+	}
+}
+
+// MNT-09: the two network-time error categories are distinct fixed
+// sentinels: errors.Is matches only its own sentinel, never the
+// zone_compare, Windows, getter-args, unknown-getter, or sibling
+// query/state sentinels, with no Unwrap chain.
+func TestMacNetworkTimeErrorSentinelsAreDistinct(t *testing.T) {
+	rt, _ := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Network Time: maybe\n")})
+	_, stateErr := (macGetUsingNetworkTimeFunc{}).Execute(context.Background(), rt, &macGetUsingNetworkTimeArgs{})
+	requireMacNetworkTimeStateError(t, stateErr)
+
+	rt, _ = newMacZoneRuntime(process.CommandResult{ExitCode: 1})
+	_, queryErr := (macGetUsingNetworkTimeFunc{}).Execute(context.Background(), rt, &macGetUsingNetworkTimeArgs{})
+	requireMacGetterError(t, queryErr)
+
+	if errors.Is(stateErr, ErrMacSystemsetupQuery) || errors.Is(queryErr, ErrMacNetworkTimeStateInvalid) {
+		t.Fatal("state and query categories must not cross-match")
+	}
+	for _, other := range []error{ErrCannotDetermineZone, ErrUnknownUnsafeZone, ErrInvalidWindowsZone, errMacZoneInvalidArgs, errMacGetterInvalidArgs, errMacSystemsetupUnknownGetter} {
+		if errors.Is(stateErr, other) {
+			t.Fatalf("state err %v matches foreign sentinel %v", stateErr, other)
+		}
+		if errors.Is(queryErr, other) {
+			t.Fatalf("query err %v matches foreign sentinel %v", queryErr, other)
+		}
+	}
+	if errors.Unwrap(stateErr) != nil || errors.Unwrap(queryErr) != nil {
+		t.Fatalf("errors unwrap: state=%v query=%v, want no causes", errors.Unwrap(stateErr), errors.Unwrap(queryErr))
+	}
+	for _, pair := range [][2]error{
+		{ErrMacNetworkTimeStateInvalid, ErrCannotDetermineZone},
+		{ErrMacNetworkTimeStateInvalid, ErrInvalidWindowsZone},
+		{ErrMacNetworkTimeStateInvalid, ErrUnknownUnsafeZone},
+		{ErrMacNetworkTimeStateInvalid, ErrMacSystemsetupQuery},
+	} {
+		if errors.Is(pair[0], pair[1]) || errors.Is(pair[1], pair[0]) {
+			t.Fatalf("sentinels %v and %v must not cross-match", pair[0], pair[1])
+		}
+	}
+	if ErrMacNetworkTimeStateInvalid.Error() != "macOS network time state invalid" {
+		t.Fatalf("sentinel text = %q", ErrMacNetworkTimeStateInvalid.Error())
+	}
+}
+
+// MNT-10: the Execute boundary fails safe for direct callers that
+// bypass the registry gate: wrong argument types (including the other
+// getters' args), typed-nil pointers, nil args, a nil Runtime, and a
+// nil Runner all return fixed value-free errors before any Runner
+// dispatch or filesystem access — never a panic — while valid
+// zero-field args dispatch exactly once.
+func TestMacNetworkTimeGettersExecuteFailsSafeOnMalformedInvocation(t *testing.T) {
+	exec := func(label string, fn runtime.ExecFunction, rt *runtime.Runtime, args any, verify func(t *testing.T, err error)) {
+		t.Helper()
+		var (
+			value    any
+			err      error
+			panicked bool
+		)
+		func() {
+			defer func() {
+				if recover() != nil {
+					panicked = true
+				}
+			}()
+			value, err = fn.Execute(context.Background(), rt, args)
+		}()
+		if panicked {
+			t.Fatalf("%s: Execute panicked, want a fixed safe error", label)
+		}
+		if err == nil {
+			t.Fatalf("%s: Execute err = nil, want a fixed safe error", label)
+		}
+		if value != nil {
+			t.Fatalf("%s: Execute value = %#v, want nil on error", label, value)
+		}
+		verify(t, err)
+	}
+
+	fixedValueFree := func(marker ...string) func(t *testing.T, err error) {
+		return func(t *testing.T, err error) {
+			t.Helper()
+			if err.Error() == "" {
+				t.Fatal("fixed error text is empty")
+			}
+			for _, secret := range marker {
+				if strings.Contains(err.Error(), secret) {
+					t.Fatalf("error text %q leaks raw argument material %q", err.Error(), secret)
+				}
+			}
+		}
+	}
+
+	fsys := &zoneRecordingFS{FileSystem: runtime.NewMemoryFS()}
+	runner := &macZoneRunner{reply: process.CommandResult{ExitCode: 0, Stdout: []byte("Network Time: On\n")}}
+	rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: fsys, Runner: runner}
+
+	secretZone := "Secret/Zone-Args"
+	var malformedErrs []error
+	for _, tc := range []struct {
+		label string
+		fn    runtime.ExecFunction
+		args  any
+	}{
+		{"wrong-type string on state", macGetUsingNetworkTimeFunc{}, "Secret/Network-Marker"},
+		{"wrong-type string on server", macGetTimeServerFunc{}, "Secret/Network-Marker"},
+		{"wrong-type zone_compare args", macGetUsingNetworkTimeFunc{}, &macZoneCompareArgs{TimeZone: &secretZone}},
+		{"wrong-type date args", macGetUsingNetworkTimeFunc{}, &macGetDateArgs{}},
+		{"cross-getter server args on state", macGetUsingNetworkTimeFunc{}, &macGetTimeServerArgs{}},
+		{"cross-getter state args on server", macGetTimeServerFunc{}, &macGetUsingNetworkTimeArgs{}},
+		{"typed-nil state args", macGetUsingNetworkTimeFunc{}, (*macGetUsingNetworkTimeArgs)(nil)},
+		{"typed-nil server args", macGetTimeServerFunc{}, (*macGetTimeServerArgs)(nil)},
+		{"nil args", macGetUsingNetworkTimeFunc{}, nil},
+	} {
+		exec(tc.label, tc.fn, rt, tc.args, func(t *testing.T, err error) {
+			fixedValueFree("Secret", "Marker", "Zone", "Network")(t, err)
+			malformedErrs = append(malformedErrs, err)
+		})
+	}
+	for i := 1; i < len(malformedErrs); i++ {
+		if malformedErrs[i].Error() != malformedErrs[0].Error() {
+			t.Fatalf("malformed-args error %q differs from %q, want one fixed error", malformedErrs[i].Error(), malformedErrs[0].Error())
+		}
+	}
+	if malformedErrs[0].Error() != "invalid timezone getter arguments" {
+		t.Fatalf("malformed-args error = %q, want invalid timezone getter arguments", malformedErrs[0].Error())
+	}
+
+	// No malformed invocation may dispatch or touch the filesystem.
+	if len(runner.cmds) != 0 {
+		t.Fatalf("malformed invocations dispatched %d commands, want 0", len(runner.cmds))
+	}
+	if len(fsys.calls) != 0 {
+		t.Fatalf("malformed invocations touched the filesystem: %v", fsys.calls)
+	}
+
+	// Unavailable runtime: nil Runtime and nil Runner map to the fixed
+	// execution-category error before any dispatch.
+	exec("nil Runtime", macGetUsingNetworkTimeFunc{}, nil, &macGetUsingNetworkTimeArgs{}, func(t *testing.T, err error) {
+		fixedValueFree("On")(t, err)
+		requireMacGetterError(t, err)
+	})
+	nilRunnerFS := &zoneRecordingFS{FileSystem: runtime.NewMemoryFS()}
+	nilRunnerRT := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: nilRunnerFS, Runner: nil}
+	exec("nil Runner", macGetTimeServerFunc{}, nilRunnerRT, &macGetTimeServerArgs{}, func(t *testing.T, err error) {
+		fixedValueFree("On")(t, err)
+		requireMacGetterError(t, err)
+	})
+	if len(nilRunnerFS.calls) != 0 {
+		t.Fatalf("nil Runner touched the filesystem: %v", nilRunnerFS.calls)
+	}
+
+	// Preservation: valid zero-field args dispatch exactly once on
+	// both getters.
+	validRT, validRunner := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Network Time: On\n")})
+	value, err := (macGetUsingNetworkTimeFunc{}).Execute(context.Background(), validRT, &macGetUsingNetworkTimeArgs{})
+	if err != nil || value != true {
+		t.Fatalf("valid get_using_network_time = %v, %v; want true, nil", value, err)
+	}
+	if len(validRunner.cmds) != 1 {
+		t.Fatalf("valid get_using_network_time dispatched %d commands, want 1", len(validRunner.cmds))
+	}
+	validRT, validRunner = newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Time Server: time.example.invalid\n")})
+	value, err = (macGetTimeServerFunc{}).Execute(context.Background(), validRT, &macGetTimeServerArgs{})
+	if err != nil || value != "time.example.invalid" {
+		t.Fatalf("valid get_time_server = %v, %v; want time.example.invalid, nil", value, err)
+	}
+	if len(validRunner.cmds) != 1 {
+		t.Fatalf("valid get_time_server dispatched %d commands, want 1", len(validRunner.cmds))
+	}
+}
+
+// MNT-11: the closed macSystemsetupGetter enum maps only to the four
+// read-only flags; the two network-time values map to
+// -getusingnetworktime and -getnetworktimeserver, and any other value
+// is rejected with the fixed unknown-getter error before the Runner is
+// touched — no setter flag (or zone flag) can be expressed through the
+// enum at all.
+func TestMacNetworkTimeGettersClosedEnumRejectsSettersBeforeRunner(t *testing.T) {
+	for _, unknown := range []macSystemsetupGetter{macSystemsetupGetter(4), macSystemsetupGetter(99), macSystemsetupGetter(-1)} {
+		rt, runner := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Network Time: on\n")})
+		_, err := macSystemsetupQuery(context.Background(), rt, unknown)
+		if err == nil || err.Error() != "unknown systemsetup getter" {
+			t.Fatalf("unknown enum %d err = %v, want unknown systemsetup getter", unknown, err)
+		}
+		if errors.Is(err, ErrMacSystemsetupQuery) || errors.Is(err, ErrMacNetworkTimeStateInvalid) {
+			t.Fatalf("unknown enum %d err = %v, want the distinct unknown-getter error", unknown, err)
+		}
+		if len(runner.cmds) != 0 {
+			t.Fatalf("unknown enum %d dispatched %d commands, want 0", unknown, len(runner.cmds))
+		}
+	}
+
+	// The four closed values map to exactly their single fixed flags.
+	flags := map[macSystemsetupGetter]string{}
+	for _, tc := range []struct {
+		getter macSystemsetupGetter
+		flag   string
+	}{
+		{macSystemsetupGetDate, "-getdate"},
+		{macSystemsetupGetTime, "-gettime"},
+		{macSystemsetupGetUsingNetworkTime, "-getusingnetworktime"},
+		{macSystemsetupGetTimeServer, "-getnetworktimeserver"},
+	} {
+		flag, err := tc.getter.flag()
+		if err != nil || flag != tc.flag {
+			t.Fatalf("enum %d flag = %q, %v; want %q, nil", tc.getter, flag, err, tc.flag)
+		}
+		flags[tc.getter] = flag
+	}
+
+	// No closed value can express a setter or zone flag: the closed
+	// answer set is exactly the four read-only getters.
+	for _, forbidden := range []string{
+		"-setdate", "-settime", "-settimezone",
+		"-setusingnetworktime", "-setnetworktimeserver",
+		"-gettimezone", "setusingnetworktime", "",
+	} {
+		for g, flag := range flags {
+			if flag == forbidden {
+				t.Fatalf("closed enum value %d maps to forbidden flag %q", g, flag)
+			}
+		}
+	}
+}
+
+// MNT-12: registration selects the two network-time getters per GOOS
+// through the unexported registerMacGettersForGOOS helper (the Darwin
+// selector seam, exercised from any host): all four Mac getters on
+// darwin only, with zero-field args prototypes matching the catalog's
+// zero parameters, no superseded aliases, off-host dispatch rejected
+// as unsupported, and the production Register surface at 10 names on
+// darwin / 6 on linux and windows / 5 elsewhere.
+func TestMacNetworkTimeGettersRegistrationSelectsPerGOOS(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := registerMacGettersForGOOS(reg, "darwin"); err != nil {
+		t.Fatal(err)
+	}
+	if reg.Len() != 4 {
+		t.Fatalf("darwin helper registered %d functions, want 4", reg.Len())
+	}
+	for _, tc := range []struct {
+		name string
+		fn   runtime.ExecFunction
+	}{
+		{"timezone.get_using_network_time", macGetUsingNetworkTimeFunc{}},
+		{"timezone.get_time_server", macGetTimeServerFunc{}},
+	} {
+		fn, ok := reg.Get(tc.name)
+		if !ok {
+			t.Fatalf("darwin helper did not register %s", tc.name)
+		}
+		if _, isState := fn.(macGetUsingNetworkTimeFunc); tc.name == "timezone.get_using_network_time" && !isState {
+			t.Fatalf("%s registered %T", tc.name, fn)
+		}
+		if _, isServer := fn.(macGetTimeServerFunc); tc.name == "timezone.get_time_server" && !isServer {
+			t.Fatalf("%s registered %T", tc.name, fn)
+		}
+		constrained, isConstrained := fn.(runtime.PlatformConstrained)
+		if !isConstrained || !reflect.DeepEqual(constrained.Platforms(), []string{"darwin"}) {
+			t.Fatalf("%s platforms = %v, want [darwin]", tc.name, constrained.Platforms())
+		}
+		if !runtime.SupportsPlatform(fn, "darwin") {
+			t.Fatalf("%s must support darwin", tc.name)
+		}
+		for _, goos := range []string{"linux", "windows", "freebsd", "solaris", "aix"} {
+			if runtime.SupportsPlatform(fn, goos) {
+				t.Fatalf("%s must not support %s", tc.name, goos)
+			}
+		}
+		// Zero-field args contract (catalog declares no parameters)
+		// and no required gate to trip.
+		argsType := reflect.TypeOf(tc.fn.Args())
+		if argsType.Kind() != reflect.Struct || argsType.NumField() != 0 {
+			t.Fatalf("%s args prototype = %s with %d fields, want a zero-field struct", tc.name, argsType, argsType.NumField())
+		}
+		if err := config.ValidateRequired(reflect.New(argsType).Interface()); err != nil {
+			t.Fatalf("%s zero-field args failed the required gate: %v", tc.name, err)
+		}
+	}
+
+	// The four getter prototypes are pairwise distinct concrete types.
+	argTypes := []reflect.Type{
+		reflect.TypeOf((macGetDateFunc{}).Args()),
+		reflect.TypeOf((macGetTimeFunc{}).Args()),
+		reflect.TypeOf((macGetUsingNetworkTimeFunc{}).Args()),
+		reflect.TypeOf((macGetTimeServerFunc{}).Args()),
+	}
+	for i := range argTypes {
+		for j := i + 1; j < len(argTypes); j++ {
+			if argTypes[i] == argTypes[j] {
+				t.Fatalf("args types %d and %d must be distinct", i, j)
+			}
+		}
+	}
+
+	// No duplicate getter entry can exist.
+	if err := reg.Register(macGetUsingNetworkTimeFunc{}); err == nil {
+		t.Fatal("registering get_using_network_time twice must fail as a duplicate")
+	}
+	if err := reg.Register(macGetTimeServerFunc{}); err == nil {
+		t.Fatal("registering get_time_server twice must fail as a duplicate")
+	}
+
+	// Every non-darwin GOOS registers no getter at all.
+	for _, goos := range []string{"linux", "windows", "freebsd", "openbsd", "netbsd", "solaris", "illumos", "aix", "plan9"} {
+		other := runtime.NewExecRegistry()
+		if err := registerMacGettersForGOOS(other, goos); err != nil {
+			t.Fatal(err)
+		}
+		if other.Len() != 0 {
+			t.Fatalf("helper registered %d functions for %s, want 0", other.Len(), goos)
+		}
+		if _, ok := other.Get("timezone.get_using_network_time"); ok {
+			t.Fatalf("helper registered get_using_network_time for %s", goos)
+		}
+		if _, ok := other.Get("timezone.get_time_server"); ok {
+			t.Fatalf("helper registered get_time_server for %s", goos)
+		}
+	}
+
+	// Production Register: the surface is 10 names on darwin, 6 on
+	// linux/windows, 5 elsewhere; the network-time getters are visible
+	// exactly on darwin; no superseded alias is ever registered; the
+	// raw alias lookup fails on every host.
+	prod := runtime.NewExecRegistry()
+	if err := Register(prod); err != nil {
+		t.Fatal(err)
+	}
+	goos := runtime.CurrentGOOS()
+	wantLen := 5
+	switch goos {
+	case "darwin":
+		wantLen = 10
+	case "linux", "windows":
+		wantLen = 6
+	}
+	if prod.Len() != wantLen {
+		t.Fatalf("production registration holds %d functions on %s, want %d", prod.Len(), goos, wantLen)
+	}
+	visible := 0
+	for _, name := range prod.Names() {
+		if name == "timezone.get_using_network_time" || name == "timezone.get_time_server" {
+			visible++
+		}
+		if strings.HasPrefix(name, "timezone.get_using_network_time_") || strings.HasPrefix(name, "timezone.get_time_server_") {
+			t.Fatalf("superseded alias %q registered on %s", name, goos)
+		}
+	}
+	if goos == "darwin" && visible != 2 {
+		t.Fatalf("network-time getters visible %d times on darwin, want 2", visible)
+	}
+	if goos != "darwin" && visible != 0 {
+		t.Fatalf("network-time getters visible %d times on %s, want 0", visible, goos)
+	}
+	for _, alias := range []string{"timezone.get_using_network_time_", "timezone.get_time_server_"} {
+		if _, ok := prod.Get(alias); ok {
+			t.Fatalf("raw alias %q registered on %s", alias, goos)
+		}
+	}
+
+	// Off-host dispatch: the darwin registration surfaced through a
+	// non-darwin host is invisible and rejected as unsupported
+	// (ResolveArgs and Call); on darwin itself the raw entry exists.
+	if goos != "darwin" {
+		darwinReg := runtime.NewExecRegistry()
+		if err := registerMacGettersForGOOS(darwinReg, "darwin"); err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range darwinReg.Names() {
+			if name == "timezone.get_using_network_time" || name == "timezone.get_time_server" {
+				t.Fatalf("Names exposed %s for darwin registration on host %s", name, goos)
+			}
+		}
+		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: runtime.NewMemoryFS(), Runner: &macZoneRunner{}}
+		var unsupported *runtime.UnsupportedError
+		for _, name := range []string{"timezone.get_using_network_time", "timezone.get_time_server"} {
+			if _, err := darwinReg.ResolveArgs(rt, name); !errors.As(err, &unsupported) || unsupported.Kind != "function" {
+				t.Fatalf("ResolveArgs %s on %s = %v, want unsupported function", name, goos, err)
+			}
+			if _, err := darwinReg.Call(context.Background(), rt, name, &macGetUsingNetworkTimeArgs{}); !errors.As(err, &unsupported) || unsupported.Kind != "function" {
 				t.Fatalf("Call %s on %s = %v, want unsupported function", name, goos, err)
 			}
 		}
