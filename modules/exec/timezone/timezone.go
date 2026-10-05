@@ -1039,19 +1039,19 @@ func (getZonecodeFunc) Name() string { return "timezone.get_zonecode" }
 
 // Platforms restricts get_zonecode to linux: the reviewed contract is
 // the Linux generic slice of the pinned timezone.py only (the mac
-// `date` variant and the Windows ZoneInfo/TzMapper variant stay open
-// rows).
+// `date` variant is its own darwin-only macZonecodeFunc registration;
+// the Windows ZoneInfo/TzMapper variant stays an open row).
 func (getZonecodeFunc) Platforms() []string { return []string{"linux"} }
 
 func (getZonecodeFunc) Args() any { return getZonecodeArgs{} }
 
-// Fixed Linux get_zonecode invocation controls: one shell-free date
-// dispatch whose executable name is resolved by the Runner through the
-// parent PATH (explicitly authorized by the user for exactly this
-// read-only fixed call — caller/deployment trust, no binary identity
-// verification and no TrustedCommandResolver entry), the fixed root
-// working directory, a bounded wall clock, and equal 64 KiB capture
-// ceilings per stream.
+// Fixed get_zonecode invocation controls shared by the Linux generic
+// and Mac variants: one shell-free date dispatch whose executable name
+// is resolved by the Runner through the parent PATH (explicitly
+// authorized by the user for exactly this read-only fixed call —
+// caller/deployment trust, no binary identity verification and no
+// TrustedCommandResolver entry), the fixed root working directory, a
+// bounded wall clock, and equal 64 KiB capture ceilings per stream.
 const (
 	zonecodeTimeout   = 30 * time.Second
 	zonecodeStreamMax = 64 << 10
@@ -1103,6 +1103,96 @@ func (getZonecodeFunc) Execute(ctx context.Context, rt *runtime.Runtime, args an
 		return nil, ErrZonecodeQuery
 	}
 	return pythonRStrip(string(res.Stdout)), nil
+}
+
+// macZonecodeArgs is the zero-field Mac get_zonecode argument
+// contract: docs/catalog/exec/mac_timezone.yaml declares get_zonecode
+// with no parameters.
+type macZonecodeArgs struct{}
+
+// ErrMacZoneCodeQuery is the fixed, value-free execution failure for
+// the Mac get_zonecode: the `date +%Z` query could not be completed.
+// It is distinct from the Linux ErrZonecodeQuery and from every other
+// module sentinel; errors.Is matches only this sentinel and no raw
+// cause, output, stderr, or exit status ever travels in the error.
+var ErrMacZoneCodeQuery = errors.New("macOS zonecode query failed")
+
+// errMacZonecodeInvalidArgs is the fixed, value-free invocation error
+// for Mac get_zonecode arguments that cannot be the contract at all
+// (a wrong dynamic type or a typed-nil pointer); it never formats or
+// echoes the raw args value or an underlying cause.
+var errMacZonecodeInvalidArgs = errors.New("invalid macOS zonecode arguments")
+
+// macZonecodeFunc implements timezone.get_zonecode for the pinned
+// mac_timezone.py contract.
+type macZonecodeFunc struct{}
+
+func (macZonecodeFunc) Name() string { return "timezone.get_zonecode" }
+
+// Platforms restricts the mac variant to darwin; the Windows
+// ZoneInfo/TzMapper variant and the other GOOS rows of PTD-EXEC-1631
+// stay open.
+func (macZonecodeFunc) Platforms() []string { return []string{"darwin"} }
+
+func (macZonecodeFunc) Args() any { return macZonecodeArgs{} }
+
+// Execute ports mac_timezone.get_zonecode (pinned revision lines
+// 168-182: `return mac_utils.execute_return_result("date +%Z")` with
+// NO parse_return) for the macOS variant (PTD-EXEC-1631 Mac partial):
+// exactly one fixed shell-free `date +%Z` dispatch whose executable
+// name resolves through the Runner and the parent PATH per the user's
+// caller-PATH authorization for exactly this read-only query (no
+// resolver, no identity check — caller/deployment trust). Boundary
+// guards first (architecture gate): a wrong argument type or typed-nil
+// pointer returns the fixed errMacZonecodeInvalidArgs before any
+// dispatch, and a nil Runtime or Runner fails fixed with
+// ErrMacZoneCodeQuery — never a panic. The child environment is
+// exactly LC_ALL=C plus the caller's TZ only when os.LookupEnv
+// reports it set (a set-but-empty TZ forwards as `TZ=`); nothing else
+// is inherited, TZDIR is never set, and there is no user input
+// anywhere in the command. Documented fail-closed divergences from
+// Salt's mac_utils._run_all: any Runner error, nonzero exit,
+// truncation flag, over-cap stream, cancellation, or deadline returns
+// only the fixed value-free ErrMacZoneCodeQuery with a nil value and
+// no wrapped cause — Salt raises CommandExecutionError with the full
+// command, output, and stderr in the message, runs through the
+// DEFAULT_SHELL, inherits the whole os.environ, and sets no timeout.
+// Mirroring execute_return_result exactly: any rstripped stdout
+// containing case-insensitive "not supported" fails with the same
+// single sentinel (a marker on stderr alone never fails), and success
+// returns the raw Python-rstripped stdout with no parse_return —
+// leading whitespace, numeric offsets, the empty value, and any
+// abbreviation text pass through with no normalization or validation.
+func (macZonecodeFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	if a, ok := args.(*macZonecodeArgs); !ok || a == nil {
+		return nil, errMacZonecodeInvalidArgs
+	}
+	if rt == nil || rt.Runner == nil {
+		return nil, ErrMacZoneCodeQuery
+	}
+	env := []string{"LC_ALL=C"}
+	if tz, ok := os.LookupEnv("TZ"); ok {
+		env = append(env, "TZ="+tz)
+	}
+	res := rt.Runner.Run(ctx, process.Command{
+		Name:           "date",
+		Args:           []string{"+%Z"},
+		Dir:            zonecodeDir,
+		Env:            env,
+		Timeout:        zonecodeTimeout,
+		MaxStdoutBytes: zonecodeStreamMax,
+		MaxStderrBytes: zonecodeStreamMax,
+	})
+	if res.Err != nil || res.ExitCode != 0 ||
+		res.StdoutTruncated || res.StderrTruncated ||
+		len(res.Stdout) > zonecodeStreamMax || len(res.Stderr) > zonecodeStreamMax {
+		return nil, ErrMacZoneCodeQuery
+	}
+	stdout := pythonRStrip(string(res.Stdout))
+	if strings.Contains(strings.ToLower(stdout), "not supported") {
+		return nil, ErrMacZoneCodeQuery
+	}
+	return stdout, nil
 }
 
 type getZoneFunc struct{}
@@ -1217,7 +1307,8 @@ func (setHwclockFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any
 // filesystem contract on linux, the mac systemsetup contract on darwin,
 // the windows tzutil contract on windows. The Mac systemsetup getters
 // timezone.get_date, timezone.get_time, timezone.get_using_network_time,
-// and timezone.get_time_server are darwin-only; the Linux generic
+// and timezone.get_time_server plus the Mac date-getter variant of
+// timezone.get_zonecode are darwin-only; the Linux generic
 // getter timezone.get_zonecode is linux-only; the Windows static-table
 // lister timezone.list is windows-only.
 func Register(reg *runtime.ExecRegistry) error {
@@ -1266,15 +1357,16 @@ func registerWindowsGettersForGOOS(reg *runtime.ExecRegistry, goos string) error
 
 // registerMacGettersForGOOS installs the Mac-only systemsetup getters
 // timezone.get_date, timezone.get_time, timezone.get_using_network_time,
-// and timezone.get_time_server on darwin only, and nothing on any
-// other GOOS, where the names stay unregistered rather than
+// and timezone.get_time_server plus the Mac-only date-getter variant of
+// timezone.get_zonecode on darwin only, and nothing on any other GOOS,
+// where the names stay unregistered rather than
 // registered-but-unsupported. The registry keys by name, so registering
 // a getter onto one registry twice fails as a duplicate.
 func registerMacGettersForGOOS(reg *runtime.ExecRegistry, goos string) error {
 	if goos != "darwin" {
 		return nil
 	}
-	for _, fn := range []runtime.ExecFunction{macGetDateFunc{}, macGetTimeFunc{}, macGetUsingNetworkTimeFunc{}, macGetTimeServerFunc{}} {
+	for _, fn := range []runtime.ExecFunction{macGetDateFunc{}, macGetTimeFunc{}, macGetUsingNetworkTimeFunc{}, macGetTimeServerFunc{}, macZonecodeFunc{}} {
 		if err := reg.Register(fn); err != nil {
 			return err
 		}

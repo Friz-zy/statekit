@@ -950,16 +950,17 @@ func TestZoneCompareRegistrationSelectsPerGOOS(t *testing.T) {
 	}
 
 	// Visible layer: Names filters through SupportsPlatform. The
-	// surface is 10 names on darwin (base 5 + zone_compare + the four
+	// surface is 11 names on darwin (base 5 + zone_compare + the four
 	// Mac systemsetup getters get_date, get_time, get_time_server,
-	// get_using_network_time), 7 on linux (base 5 + zone_compare +
+	// get_using_network_time + the Mac timezone.get_zonecode of
+	// PTD-EXEC-1631), 7 on linux (base 5 + zone_compare +
 	// get_zonecode), 7 on windows (base 5 + zone_compare + the Windows
 	// timezone.list of PTD-EXEC-1632), and 5 everywhere else (no
 	// getters, no zone_compare).
 	wantTotal := 5
 	switch goos {
 	case "darwin":
-		wantTotal = 10
+		wantTotal = 11
 	case "linux":
 		wantTotal = 7
 	case "windows":
@@ -1661,15 +1662,16 @@ func TestMacZoneCompareNoDuplicateRegistration(t *testing.T) {
 		}
 	}
 	goos := runtime.CurrentGOOS()
-	// The production surface is 10 functions on darwin (base 5 +
+	// The production surface is 11 functions on darwin (base 5 +
 	// zone_compare + the four Mac systemsetup getters get_date,
-	// get_time, get_time_server, get_using_network_time), 7 on linux
+	// get_time, get_time_server, get_using_network_time + the Mac
+	// get_zonecode of PTD-EXEC-1631), 7 on linux
 	// (base 5 + zone_compare + get_zonecode), 7 on windows (base 5 +
 	// zone_compare + the Windows timezone.list), 5 elsewhere.
 	wantLen := 5
 	switch goos {
 	case "darwin":
-		wantLen = 10
+		wantLen = 11
 	case "linux":
 		wantLen = 7
 	case "windows":
@@ -2310,17 +2312,17 @@ func TestMacGettersUnknownEnumRejectedBeforeRunner(t *testing.T) {
 // unexported registerMacGettersForGOOS helper (the Darwin selector
 // seam, exercised from any host): the getters on darwin only, with
 // zero-field args prototypes, no superseded aliases, off-host dispatch
-// rejected as unsupported, and the production Register surface at 10
-// names on darwin / 7 on linux (with the Linux get_zonecode) / 6 on
-// windows / 5 elsewhere (the count includes the network-time getters
-// pinned by MNT-12).
+// rejected as unsupported, and the production Register surface at 11
+// names on darwin (with the Mac timezone.get_zonecode) / 7 on linux
+// (with the Linux get_zonecode) / 7 on windows / 5 elsewhere (the
+// count includes the network-time getters pinned by MNT-12).
 func TestMacGettersRegistrationSelectsPerGOOS(t *testing.T) {
 	reg := runtime.NewExecRegistry()
 	if err := registerMacGettersForGOOS(reg, "darwin"); err != nil {
 		t.Fatal(err)
 	}
-	if reg.Len() != 4 {
-		t.Fatalf("darwin helper registered %d functions, want 4", reg.Len())
+	if reg.Len() != 5 {
+		t.Fatalf("darwin helper registered %d functions, want 5", reg.Len())
 	}
 	for _, tc := range []struct {
 		name string
@@ -2390,7 +2392,9 @@ func TestMacGettersRegistrationSelectsPerGOOS(t *testing.T) {
 		}
 	}
 
-	// Production Register: the surface is 10 names on darwin, 7 on
+	// Production Register: the surface is 11 names on darwin (base 5 +
+	// zone_compare + the four Mac systemsetup getters + the Mac
+	// get_zonecode of PTD-EXEC-1631), 7 on
 	// linux (base 5 + zone_compare + get_zonecode), 7 on windows (base
 	// 5 + zone_compare + the Windows timezone.list), 5 elsewhere; the
 	// getters are visible exactly on darwin; no superseded alias is
@@ -2403,7 +2407,7 @@ func TestMacGettersRegistrationSelectsPerGOOS(t *testing.T) {
 	wantLen := 5
 	switch goos {
 	case "darwin":
-		wantLen = 10
+		wantLen = 11
 	case "linux":
 		wantLen = 7
 	case "windows":
@@ -3069,16 +3073,17 @@ func TestMacNetworkTimeGettersClosedEnumRejectsSettersBeforeRunner(t *testing.T)
 // selector seam, exercised from any host): all four Mac getters on
 // darwin only, with zero-field args prototypes matching the catalog's
 // zero parameters, no superseded aliases, off-host dispatch rejected
-// as unsupported, and the production Register surface at 10 names on
-// darwin / 7 on linux (with the Linux get_zonecode) / 7 on windows
-// (with the Windows timezone.list) / 5 elsewhere.
+// as unsupported, and the production Register surface at 11 names on
+// darwin (with the Mac timezone.get_zonecode) / 7 on linux (with the
+// Linux get_zonecode) / 7 on windows (with the Windows timezone.list) /
+// 5 elsewhere.
 func TestMacNetworkTimeGettersRegistrationSelectsPerGOOS(t *testing.T) {
 	reg := runtime.NewExecRegistry()
 	if err := registerMacGettersForGOOS(reg, "darwin"); err != nil {
 		t.Fatal(err)
 	}
-	if reg.Len() != 4 {
-		t.Fatalf("darwin helper registered %d functions, want 4", reg.Len())
+	if reg.Len() != 5 {
+		t.Fatalf("darwin helper registered %d functions, want 5", reg.Len())
 	}
 	for _, tc := range []struct {
 		name string
@@ -3160,7 +3165,9 @@ func TestMacNetworkTimeGettersRegistrationSelectsPerGOOS(t *testing.T) {
 		}
 	}
 
-	// Production Register: the surface is 10 names on darwin, 7 on
+	// Production Register: the surface is 11 names on darwin (base 5 +
+	// zone_compare + the four Mac systemsetup getters + the Mac
+	// get_zonecode of PTD-EXEC-1631), 7 on
 	// linux (base 5 + zone_compare + get_zonecode), 7 on windows (base
 	// 5 + zone_compare + the Windows timezone.list), 5 elsewhere; the
 	// network-time getters are visible exactly on darwin; no
@@ -3174,7 +3181,7 @@ func TestMacNetworkTimeGettersRegistrationSelectsPerGOOS(t *testing.T) {
 	wantLen := 5
 	switch goos {
 	case "darwin":
-		wantLen = 10
+		wantLen = 11
 	case "linux":
 		wantLen = 7
 	case "windows":
@@ -3744,8 +3751,8 @@ func TestZonecodeExecuteFailsSafeOnMalformedInvocation(t *testing.T) {
 // with a zero-field args prototype matching the catalog's zero
 // parameters, no superseded alias, off-host dispatch rejected as
 // unsupported, and the production Register surface at 7 names on
-// linux / 10 on darwin / 7 on windows (with the Windows
-// timezone.list) / 5 elsewhere.
+// linux / 11 on darwin (with the Mac timezone.get_zonecode) / 7 on
+// windows (with the Windows timezone.list) / 5 elsewhere.
 func TestZonecodeRegistrationSelectsPerGOOS(t *testing.T) {
 	reg := runtime.NewExecRegistry()
 	if err := registerLinuxGettersForGOOS(reg, "linux"); err != nil {
@@ -3805,11 +3812,13 @@ func TestZonecodeRegistrationSelectsPerGOOS(t *testing.T) {
 		}
 	}
 
-	// Production Register: the surface is 7 names on linux, 10 on
-	// darwin, 7 on windows (base 5 + zone_compare + the Windows
+	// Production Register: the surface is 7 names on linux, 11 on
+	// darwin (base 5 + zone_compare + the four Mac systemsetup getters
+	// + the Mac get_zonecode of PTD-EXEC-1631),
+	// 7 on windows (base 5 + zone_compare + the Windows
 	// timezone.list), 5 elsewhere; get_zonecode is visible exactly on
-	// linux; no superseded alias is ever registered; the raw alias
-	// lookup fails on every host.
+	// linux and darwin (one variant each); no superseded alias is ever
+	// registered; the raw alias lookup fails on every host.
 	prod := runtime.NewExecRegistry()
 	if err := Register(prod); err != nil {
 		t.Fatal(err)
@@ -3820,7 +3829,7 @@ func TestZonecodeRegistrationSelectsPerGOOS(t *testing.T) {
 	case "linux":
 		wantLen = 7
 	case "darwin":
-		wantLen = 10
+		wantLen = 11
 	case "windows":
 		wantLen = 7
 	}
@@ -3836,10 +3845,10 @@ func TestZonecodeRegistrationSelectsPerGOOS(t *testing.T) {
 			t.Fatalf("superseded alias %q registered on %s", name, goos)
 		}
 	}
-	if goos == "linux" && visible != 1 {
-		t.Fatalf("get_zonecode visible %d times on linux, want 1", visible)
+	if (goos == "linux" || goos == "darwin") && visible != 1 {
+		t.Fatalf("get_zonecode visible %d times on %s, want 1", visible, goos)
 	}
-	if goos != "linux" && visible != 0 {
+	if goos != "linux" && goos != "darwin" && visible != 0 {
 		t.Fatalf("get_zonecode visible %d times on %s, want 0", visible, goos)
 	}
 	if _, ok := prod.Get("timezone.get_zonecode_"); ok {
@@ -3865,6 +3874,599 @@ func TestZonecodeRegistrationSelectsPerGOOS(t *testing.T) {
 			t.Fatalf("ResolveArgs timezone.get_zonecode on %s = %v, want unsupported function", goos, err)
 		}
 		if _, err := linuxReg.Call(context.Background(), rt, "timezone.get_zonecode", &getZonecodeArgs{}); !errors.As(err, &unsupported) || unsupported.Kind != "function" {
+			t.Fatalf("Call timezone.get_zonecode on %s = %v, want unsupported function", goos, err)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// macOS get_zonecode (PTD-EXEC-1631 Mac partial): MZC-MAC-01..08 pin the
+// pinned mac_timezone.py get_zonecode contract hermetically. Source of
+// record at the pinned 8b63e70063 revision: mac_timezone.py:168-182 is
+// exactly `return salt.utils.mac_utils.execute_return_result("date +%Z")`
+// with NO parse_return, and mac_utils (_run_all/execute_return_result)
+// rstrips Python trailing whitespace from stdout, raises on a nonzero
+// retcode or on case-insensitive "not supported" anywhere in the
+// rstripped stdout, and otherwise returns the rstripped stdout raw.
+// Upstream ships only the functional root/Darwin/destructive
+// test_get_set_zonecode fixture
+// (saltstack/tests/pytests/functional/modules/test_mac_timezone.py:179-196),
+// whose body calls set_zone/get_zone and never get_zonecode; it was
+// inspected as source only, never executed — every shape below is a
+// source-derived synthetic fixture, not a ported Salt test. Every test
+// uses the fake macZoneRunner only — never process.NewRunner, never the
+// real date binary, never a host filesystem or host timezone — and the
+// suite makes no native Darwin claim.
+
+// requireMacZonecodeError pins the single fixed execution-category error
+// for the Mac get_zonecode: the errors.Is sentinel, the exact value-free
+// text, and no markers of the command, environment, output, streams,
+// marker phrase, or exit status. (The fixed text itself contains the
+// word "zonecode", so raw-command markers are the executable/flag text.)
+func requireMacZonecodeError(t *testing.T, err error) {
+	t.Helper()
+	if !errors.Is(err, ErrMacZoneCodeQuery) {
+		t.Fatalf("err = %v, want ErrMacZoneCodeQuery", err)
+	}
+	if err == nil || err.Error() != "macOS zonecode query failed" {
+		t.Fatalf("err text = %v, want macOS zonecode query failed", err)
+	}
+	for _, marker := range []string{
+		"date", "+%Z", "Zonecode", "Sentinel", "PST", "CEST", "+03", "0330",
+		"failing", "warning", "13", "exit", "stdout", "stderr",
+		"timed out", "canceled", "no such file", "TZ", "not supported",
+	} {
+		if err != nil && strings.Contains(err.Error(), marker) {
+			t.Fatalf("err text %q leaks marker %q", err.Error(), marker)
+		}
+	}
+}
+
+// MZC-MAC-01: Execute dispatches exactly one shell-free `date +%Z` with
+// the fixed argv, working directory, timeout, and capture ceilings —
+// deep-equal over the whole process.Command (the same fixed shape the
+// Linux generic variant pins, executable name "date" resolved by the
+// Runner through the parent PATH per the user's caller-PATH
+// authorization), with the live context forwarded to the Runner — and
+// the child environment is exactly LC_ALL=C plus the caller's TZ only
+// when it is set: unset TZ yields LC_ALL=C alone, a set-but-empty TZ
+// forwards the empty `TZ=` value, and a set TZ forwards it verbatim.
+func TestMacZonecodeDispatchesFixedCommand(t *testing.T) {
+	t.Setenv("TZ", "Zonecode/Sentinel")
+	rt, runner := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("PST\n")})
+	value, err := (macZonecodeFunc{}).Execute(context.Background(), rt, &macZonecodeArgs{})
+	if err != nil || value != "PST" {
+		t.Fatalf("set TZ mac get_zonecode = %v, %v; want PST, nil", value, err)
+	}
+	if len(runner.cmds) != 1 {
+		t.Fatalf("set TZ dispatched %d commands, want exactly 1", len(runner.cmds))
+	}
+	want := wantZonecodeCommand([]string{"LC_ALL=C", "TZ=Zonecode/Sentinel"})
+	if !reflect.DeepEqual(runner.cmds[0], want) {
+		t.Fatalf("set TZ command = %#v, want %#v", runner.cmds[0], want)
+	}
+	if len(runner.ctxErr) != 1 || runner.ctxErr[0] != nil {
+		t.Fatalf("set TZ runner context errors = %v, want one nil (live context forwarded)", runner.ctxErr)
+	}
+
+	zonecodeUnsetTZ(t)
+	rt, runner = newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("PST\n")})
+	value, err = (macZonecodeFunc{}).Execute(context.Background(), rt, &macZonecodeArgs{})
+	if err != nil || value != "PST" {
+		t.Fatalf("unset TZ mac get_zonecode = %v, %v; want PST, nil", value, err)
+	}
+	if len(runner.cmds) != 1 {
+		t.Fatalf("unset TZ dispatched %d commands, want exactly 1", len(runner.cmds))
+	}
+	if want := wantZonecodeCommand([]string{"LC_ALL=C"}); !reflect.DeepEqual(runner.cmds[0], want) {
+		t.Fatalf("unset TZ command = %#v, want %#v", runner.cmds[0], want)
+	}
+
+	t.Setenv("TZ", "")
+	rt, runner = newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("PST\n")})
+	value, err = (macZonecodeFunc{}).Execute(context.Background(), rt, &macZonecodeArgs{})
+	if err != nil || value != "PST" {
+		t.Fatalf("set-empty TZ mac get_zonecode = %v, %v; want PST, nil", value, err)
+	}
+	if len(runner.cmds) != 1 {
+		t.Fatalf("set-empty TZ dispatched %d commands, want exactly 1", len(runner.cmds))
+	}
+	if want := wantZonecodeCommand([]string{"LC_ALL=C", "TZ="}); !reflect.DeepEqual(runner.cmds[0], want) {
+		t.Fatalf("set-empty TZ command = %#v, want %#v", runner.cmds[0], want)
+	}
+}
+
+// MZC-MAC-02: the mac_utils execute_return_result content gate —
+// case-insensitive "not supported" anywhere in the rstripped stdout
+// (ASCII case variants, mid-string, on a later line, with trailing
+// whitespace the rstrip removes first, and as a pure substring of
+// "xnot supported") fails with the one fixed ErrMacZoneCodeQuery, while
+// the near misses "not supporte" and double-spaced "not  supported"
+// succeed exactly like any other value. A marker on stderr alone never
+// fails a successful call, and a nonzero exit with the marker collapses
+// to the same single sentinel as every other failure.
+func TestMacZonecodeNotSupportedDetection(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		stdout string
+	}{
+		{"lowercase", "not supported\n"},
+		{"uppercase", "NOT SUPPORTED\n"},
+		{"mixed case", "Not Supported\n"},
+		{"mid-string", "date: feature not supported here\n"},
+		{"later line", "PST\nTime Zone: not supported\n"},
+		{"trailing whitespace before rstrip", "not supported \t\r\n"},
+		{"pure substring xnot supported", "xnot supported\n"},
+		{"substring after other text", "zone not supportedable\n"},
+	} {
+		rt, runner := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(tc.stdout)})
+		value, err := (macZonecodeFunc{}).Execute(context.Background(), rt, &macZonecodeArgs{})
+		requireMacZonecodeError(t, err)
+		if value != nil {
+			t.Fatalf("%s: value = %#v, want nil", tc.name, value)
+		}
+		if len(runner.cmds) != 1 {
+			t.Fatalf("%s dispatched %d commands, want exactly 1 (never retried)", tc.name, len(runner.cmds))
+		}
+	}
+
+	// Near misses: the marker phrase is a substring match, so a missing
+	// terminal letter and a doubled internal space stay successful
+	// values returned exactly after the rstrip.
+	for _, tc := range []struct {
+		name   string
+		stdout string
+		want   string
+	}{
+		{"missing terminal letter", "not supporte\n", "not supporte"},
+		{"double space", "not  supported\n", "not  supported"},
+		{"double space mixed case", "NOT  SUPPORTED\n", "NOT  SUPPORTED"},
+	} {
+		rt, _ := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(tc.stdout)})
+		value, err := (macZonecodeFunc{}).Execute(context.Background(), rt, &macZonecodeArgs{})
+		if err != nil || value != tc.want {
+			t.Fatalf("%s: mac get_zonecode = %v, %v; want %q, nil", tc.name, value, err, tc.want)
+		}
+	}
+
+	// Stderr-only marker on success does not fail: the gate reads the
+	// rstripped stdout only, and no stderr text leaks anywhere.
+	rt, _ := newMacZoneRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte("CEST\n"),
+		Stderr:   []byte("this operation is not supported\n"),
+	})
+	value, err := (macZonecodeFunc{}).Execute(context.Background(), rt, &macZonecodeArgs{})
+	if err != nil || value != "CEST" {
+		t.Fatalf("stderr-only marker: mac get_zonecode = %v, %v; want CEST, nil", value, err)
+	}
+
+	// Nonzero exit with the stdout marker: the same single fixed
+	// sentinel as every other failure category, nil value.
+	rt, _ = newMacZoneRuntime(process.CommandResult{
+		ExitCode: 13,
+		Stdout:   []byte("not supported\n"),
+		Stderr:   []byte("date: failing\n"),
+	})
+	value, err = (macZonecodeFunc{}).Execute(context.Background(), rt, &macZonecodeArgs{})
+	requireMacZonecodeError(t, err)
+	if value != nil {
+		t.Fatalf("nonzero+marker value = %#v, want nil", value)
+	}
+}
+
+// MZC-MAC-03: the Mac zonecode sentinel is its own fixed category —
+// errors.Is matches only ErrMacZoneCodeQuery (never the Linux
+// ErrZonecodeQuery or any other module sentinel), with no Unwrap chain
+// and byte-exact value-free text.
+func TestMacZonecodeErrorSentinelIsDistinct(t *testing.T) {
+	rt, _ := newMacZoneRuntime(process.CommandResult{ExitCode: 1})
+	_, err := (macZonecodeFunc{}).Execute(context.Background(), rt, &macZonecodeArgs{})
+	requireMacZonecodeError(t, err)
+	for _, other := range []error{
+		ErrZonecodeQuery, ErrCannotDetermineZone, ErrUnknownUnsafeZone,
+		ErrInvalidWindowsZone, ErrMacSystemsetupQuery, ErrMacNetworkTimeStateInvalid,
+		errMacZoneInvalidArgs, errMacGetterInvalidArgs, errZonecodeInvalidArgs,
+	} {
+		if errors.Is(err, other) {
+			t.Fatalf("mac zonecode err %v matches foreign sentinel %v", err, other)
+		}
+	}
+	if errors.Unwrap(err) != nil {
+		t.Fatalf("mac zonecode err unwraps to %v, want no cause", errors.Unwrap(err))
+	}
+	for _, other := range []error{ErrZonecodeQuery, ErrCannotDetermineZone, ErrMacSystemsetupQuery} {
+		if errors.Is(other, ErrMacZoneCodeQuery) || errors.Is(ErrMacZoneCodeQuery, other) {
+			t.Fatalf("ErrMacZoneCodeQuery cross-matches %v", other)
+		}
+	}
+	if ErrMacZoneCodeQuery.Error() != "macOS zonecode query failed" {
+		t.Fatalf("sentinel text = %q", ErrMacZoneCodeQuery.Error())
+	}
+}
+
+// MZC-MAC-04: exact per-stream 64 KiB cap boundaries, over-cap lengths,
+// and truncation flags independent of one another — a fake Runner can
+// report over-cap lengths without ever setting the truncation flags, so
+// the length checks alone must fail closed. stdout exactly 64 KiB with
+// exit 0 and no flags returns the full string; stdout 64 KiB + 1, either
+// truncation flag at exit 0, or stderr 64 KiB + 1 return a nil value and
+// exactly the fixed sentinel; stderr exactly 64 KiB with good stdout
+// leaves the answer untouched. No partial output, raw fixture material,
+// or wrapped cause may travel in any error; the fixtures are pure
+// in-memory 64 KiB strings with zero host I/O.
+func TestMacZonecodeStreamCapsExactBoundaries(t *testing.T) {
+	atCap := strings.Repeat("x", 64<<10)
+	overCap := strings.Repeat("x", (64<<10)+1)
+	if len(atCap) != 64<<10 || len(overCap) != (64<<10)+1 {
+		t.Fatalf("cap fixtures are %d/%d bytes, want 65536/65537", len(atCap), len(overCap))
+	}
+
+	// stdout exactly 64 KiB, exit 0, no truncation flags: the full
+	// string returns unchanged (no trailing whitespace to rstrip).
+	rt, runner := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(atCap)})
+	value, err := (macZonecodeFunc{}).Execute(context.Background(), rt, &macZonecodeArgs{})
+	got, ok := value.(string)
+	if err != nil || !ok || got != atCap || len(got) != 64<<10 {
+		t.Fatalf("at-cap stdout = (%T) %#v, %v; want the full %d-byte string, nil", value, value, err, len(atCap))
+	}
+	if len(runner.cmds) != 1 {
+		t.Fatalf("at-cap stdout dispatched %d commands, want 1", len(runner.cmds))
+	}
+
+	// stdout 64 KiB + 1: nil value and exactly the fixed sentinel.
+	rt, _ = newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(overCap)})
+	value, err = (macZonecodeFunc{}).Execute(context.Background(), rt, &macZonecodeArgs{})
+	requireMacZonecodeError(t, err)
+	if value != nil {
+		t.Fatalf("over-cap stdout value = %#v, want nil", value)
+	}
+
+	// Either truncation flag at exit 0 fails closed the same way.
+	for _, reply := range []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("PST\n"), StdoutTruncated: true},
+		{ExitCode: 0, Stdout: []byte("PST\n"), Stderr: []byte("x"), StderrTruncated: true},
+	} {
+		rt, _ := newMacZoneRuntime(reply)
+		value, err = (macZonecodeFunc{}).Execute(context.Background(), rt, &macZonecodeArgs{})
+		requireMacZonecodeError(t, err)
+		if value != nil {
+			t.Fatalf("truncation-flag value = %#v, want nil", value)
+		}
+	}
+
+	// stderr exactly 64 KiB with good stdout: stderr stays dropped and
+	// the stdout answer returns.
+	rt, _ = newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("CEST\n"), Stderr: []byte(atCap)})
+	value, err = (macZonecodeFunc{}).Execute(context.Background(), rt, &macZonecodeArgs{})
+	if err != nil || value != "CEST" {
+		t.Fatalf("at-cap stderr = %#v, %v; want CEST, nil", value, err)
+	}
+
+	// stderr 64 KiB + 1 with good stdout: nil value and exactly the
+	// fixed sentinel; neither the dropped stderr nor the stdout answer
+	// may leak into the error.
+	rt, _ = newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("CEST\n"), Stderr: []byte(overCap)})
+	value, err = (macZonecodeFunc{}).Execute(context.Background(), rt, &macZonecodeArgs{})
+	requireMacZonecodeError(t, err)
+	if value != nil {
+		t.Fatalf("over-cap stderr value = %#v, want nil", value)
+	}
+}
+
+// MZC-MAC-05: successful answers are the raw rstripped stdout with no
+// parse_return, no normalization, and no content gate on the
+// abbreviation: leading and interior whitespace survive, numeric
+// offsets (+03), exotic abbreviation text (<+0330>-3), the empty value,
+// and colon-shaped systemsetup-style output all return verbatim, and
+// stderr content never leaks into the value.
+func TestMacZonecodeValueShapesNeverNormalized(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		stdout string
+		want   string
+	}{
+		{"alphabetic", "UTC\n", "UTC"},
+		{"no trailing newline", "PST", "PST"},
+		{"numeric positive offset", "+03\n", "+03"},
+		{"numeric negative offset", "-05\n", "-05"},
+		{"exotic abbreviation text", "<+0330>-3\n", "<+0330>-3"},
+		{"empty output", "", ""},
+		{"whitespace-only output", " \r\n\t\u001f", ""},
+		{"leading whitespace preserved", " PST\n", " PST"},
+		{"interior whitespace preserved", "P ST\n", "P ST"},
+		{"no parse_return colon split", "Time Zone: UTC\n", "Time Zone: UTC"},
+		{"no parse_return newline split", "Time Zone:\nUTC\n", "Time Zone:\nUTC"},
+	} {
+		rt, runner := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(tc.stdout)})
+		value, err := (macZonecodeFunc{}).Execute(context.Background(), rt, &macZonecodeArgs{})
+		if err != nil || value != tc.want {
+			t.Fatalf("%s: mac get_zonecode = %v, %v; want %q, nil", tc.name, value, err, tc.want)
+		}
+		if len(runner.cmds) != 1 {
+			t.Fatalf("%s dispatched %d commands, want 1", tc.name, len(runner.cmds))
+		}
+	}
+
+	// Stderr never leaks into the returned value on success.
+	rt, _ := newMacZoneRuntime(process.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte("+03\n"),
+		Stderr:   []byte("secret-mac-zonecode-stderr\n"),
+	})
+	value, err := (macZonecodeFunc{}).Execute(context.Background(), rt, &macZonecodeArgs{})
+	if err != nil || value != "+03" {
+		t.Fatalf("stderr leak: mac get_zonecode = %v, %v; want +03, nil", value, err)
+	}
+}
+
+// MZC-MAC-06: the Execute boundary fails safe for direct callers that
+// bypass the registry gate: wrong argument types (including the Linux
+// zonecode zero-field args and other functions' args), typed-nil
+// pointers, nil args, a nil Runtime, and a nil Runner all return fixed
+// value-free errors before any Runner dispatch or filesystem access —
+// never a panic — while valid zero-field args dispatch exactly once.
+func TestMacZonecodeExecuteFailsSafeOnMalformedInvocation(t *testing.T) {
+	exec := func(label string, rt *runtime.Runtime, args any, verify func(t *testing.T, err error)) {
+		t.Helper()
+		var (
+			value    any
+			err      error
+			panicked bool
+		)
+		func() {
+			defer func() {
+				if recover() != nil {
+					panicked = true
+				}
+			}()
+			value, err = (macZonecodeFunc{}).Execute(context.Background(), rt, args)
+		}()
+		if panicked {
+			t.Fatalf("%s: Execute panicked, want a fixed safe error", label)
+		}
+		if err == nil {
+			t.Fatalf("%s: Execute err = nil, want a fixed safe error", label)
+		}
+		if value != nil {
+			t.Fatalf("%s: Execute value = %#v, want nil on error", label, value)
+		}
+		verify(t, err)
+	}
+
+	fixedValueFree := func(marker ...string) func(t *testing.T, err error) {
+		return func(t *testing.T, err error) {
+			t.Helper()
+			if err.Error() == "" {
+				t.Fatal("fixed error text is empty")
+			}
+			for _, secret := range marker {
+				if strings.Contains(err.Error(), secret) {
+					t.Fatalf("error text %q leaks raw argument material %q", err.Error(), secret)
+				}
+			}
+		}
+	}
+
+	fsys := &zoneRecordingFS{FileSystem: runtime.NewMemoryFS()}
+	runner := &macZoneRunner{reply: process.CommandResult{ExitCode: 0, Stdout: []byte("PST\n")}}
+	rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: fsys, Runner: runner}
+
+	var malformedErrs []error
+	secretZone := "Secret/Zonecode-Marker"
+	for _, tc := range []struct {
+		label string
+		args  any
+	}{
+		{"wrong-type string", "Secret/Zonecode-Marker"},
+		{"wrong-type linux zonecode args", &getZonecodeArgs{}},
+		{"wrong-type linux zone_compare args", &zoneCompareArgs{TimeZone: secretZone}},
+		{"wrong-type mac getter args", &macGetDateArgs{}},
+		{"typed-nil mac zonecode args", (*macZonecodeArgs)(nil)},
+		{"nil args", nil},
+	} {
+		args := tc.args
+		exec(tc.label, rt, args, func(t *testing.T, err error) {
+			fixedValueFree("Secret", "Marker", "Zone", "PST")(t, err)
+			malformedErrs = append(malformedErrs, err)
+		})
+	}
+	for i := 1; i < len(malformedErrs); i++ {
+		if malformedErrs[i].Error() != malformedErrs[0].Error() {
+			t.Fatalf("malformed-args error %q differs from %q, want one fixed error", malformedErrs[i].Error(), malformedErrs[0].Error())
+		}
+	}
+	if malformedErrs[0].Error() != "invalid macOS zonecode arguments" {
+		t.Fatalf("malformed-args error = %q, want invalid macOS zonecode arguments", malformedErrs[0].Error())
+	}
+
+	// No malformed invocation may dispatch or touch the filesystem.
+	if len(runner.cmds) != 0 {
+		t.Fatalf("malformed invocations dispatched %d commands, want 0", len(runner.cmds))
+	}
+	if len(fsys.calls) != 0 {
+		t.Fatalf("malformed invocations touched the filesystem: %v", fsys.calls)
+	}
+
+	// Unavailable runtime: nil Runtime and nil Runner map to the fixed
+	// execution-category error before any dispatch.
+	exec("nil Runtime", nil, &macZonecodeArgs{}, func(t *testing.T, err error) {
+		fixedValueFree("PST")(t, err)
+		requireMacZonecodeError(t, err)
+	})
+	nilRunnerFS := &zoneRecordingFS{FileSystem: runtime.NewMemoryFS()}
+	nilRunnerRT := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: nilRunnerFS, Runner: nil}
+	exec("nil Runner", nilRunnerRT, &macZonecodeArgs{}, func(t *testing.T, err error) {
+		fixedValueFree("PST")(t, err)
+		requireMacZonecodeError(t, err)
+	})
+	if len(nilRunnerFS.calls) != 0 {
+		t.Fatalf("nil Runner touched the filesystem: %v", nilRunnerFS.calls)
+	}
+
+	// Preservation: valid zero-field args dispatch exactly once.
+	validRT, validRunner := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("PST\n")})
+	value, err := (macZonecodeFunc{}).Execute(context.Background(), validRT, &macZonecodeArgs{})
+	if err != nil || value != "PST" {
+		t.Fatalf("valid mac get_zonecode = %v, %v; want PST, nil", value, err)
+	}
+	if len(validRunner.cmds) != 1 {
+		t.Fatalf("valid mac get_zonecode dispatched %d commands, want 1", len(validRunner.cmds))
+	}
+}
+
+// MZC-MAC-07: registration selects the Mac zonecode getter per GOOS
+// through the unexported registerMacGettersForGOOS helper (the Mac
+// selector seam, exercised from any host): timezone.get_zonecode is the
+// fifth darwin-only entry with a zero-field args prototype matching the
+// catalog's zero parameters, distinct from the Linux getZonecodeFunc
+// prototype, with no duplicate entry and nothing registered on any
+// non-darwin GOOS.
+func TestMacZonecodeRegistrationSelectsPerGOOS(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := registerMacGettersForGOOS(reg, "darwin"); err != nil {
+		t.Fatal(err)
+	}
+	if reg.Len() != 5 {
+		t.Fatalf("darwin helper registered %d functions, want 5", reg.Len())
+	}
+	fn, ok := reg.Get("timezone.get_zonecode")
+	if !ok {
+		t.Fatal("darwin helper did not register timezone.get_zonecode")
+	}
+	if _, isMacZonecode := fn.(macZonecodeFunc); !isMacZonecode {
+		t.Fatalf("timezone.get_zonecode registered %T", fn)
+	}
+	constrained, isConstrained := fn.(runtime.PlatformConstrained)
+	if !isConstrained || !reflect.DeepEqual(constrained.Platforms(), []string{"darwin"}) {
+		t.Fatalf("timezone.get_zonecode platforms = %v, want [darwin]", constrained.Platforms())
+	}
+	if !runtime.SupportsPlatform(fn, "darwin") {
+		t.Fatal("timezone.get_zonecode must support darwin")
+	}
+	for _, goos := range []string{"linux", "windows", "freebsd", "solaris", "aix"} {
+		if runtime.SupportsPlatform(fn, goos) {
+			t.Fatalf("timezone.get_zonecode must not support %s", goos)
+		}
+	}
+	// Zero-field args contract (catalog declares no parameters) and no
+	// required gate to trip; the prototype stays distinct from the
+	// Linux zonecode prototype and from the other Mac getter
+	// prototypes.
+	argsType := reflect.TypeOf((macZonecodeFunc{}).Args())
+	if argsType.Kind() != reflect.Struct || argsType.NumField() != 0 {
+		t.Fatalf("timezone.get_zonecode args prototype = %s with %d fields, want a zero-field struct", argsType, argsType.NumField())
+	}
+	if err := config.ValidateRequired(reflect.New(argsType).Interface()); err != nil {
+		t.Fatalf("timezone.get_zonecode zero-field args failed the required gate: %v", err)
+	}
+	if argsType == reflect.TypeOf((getZonecodeFunc{}).Args()) {
+		t.Fatal("the mac and Linux zonecode variants must declare distinct args types")
+	}
+	if argsType == reflect.TypeOf((macGetDateFunc{}).Args()) {
+		t.Fatal("mac zonecode and get_date must declare distinct args types")
+	}
+	// No duplicate entry can exist.
+	if err := reg.Register(macZonecodeFunc{}); err == nil {
+		t.Fatal("registering the mac get_zonecode twice must fail as a duplicate")
+	}
+	// The Linux variant over the darwin entry is the same duplicate
+	// name: exactly one timezone.get_zonecode per registry.
+	if err := reg.Register(getZonecodeFunc{}); err == nil {
+		t.Fatal("registering the Linux get_zonecode over the darwin entry must fail as a duplicate")
+	}
+
+	// Every non-darwin GOOS registers no getter at all.
+	for _, goos := range []string{"linux", "windows", "freebsd", "openbsd", "netbsd", "solaris", "illumos", "aix", "plan9"} {
+		other := runtime.NewExecRegistry()
+		if err := registerMacGettersForGOOS(other, goos); err != nil {
+			t.Fatal(err)
+		}
+		if other.Len() != 0 {
+			t.Fatalf("helper registered %d functions for %s, want 0", other.Len(), goos)
+		}
+		if _, ok := other.Get("timezone.get_zonecode"); ok {
+			t.Fatalf("helper registered the mac get_zonecode for %s", goos)
+		}
+	}
+}
+
+// MZC-MAC-08: the production Register surface is 11 names on darwin
+// (base 5 + zone_compare + the four Mac systemsetup getters + the Mac
+// get_zonecode), 7 on linux, 7 on windows, 5 elsewhere; exactly one
+// timezone.get_zonecode variant is visible per supported GOOS (the
+// Linux variant on linux, the mac variant on darwin, none on windows
+// and elsewhere); no superseded alias is ever registered; and the
+// darwin registration surfaced through a non-darwin host is invisible
+// and rejected as unsupported (ResolveArgs and Call).
+func TestMacZonecodeProductionSurface(t *testing.T) {
+	prod := runtime.NewExecRegistry()
+	if err := Register(prod); err != nil {
+		t.Fatal(err)
+	}
+	goos := runtime.CurrentGOOS()
+	wantLen := 5
+	switch goos {
+	case "darwin":
+		wantLen = 11
+	case "linux":
+		wantLen = 7
+	case "windows":
+		wantLen = 7
+	}
+	if prod.Len() != wantLen {
+		t.Fatalf("production registration holds %d functions on %s, want %d", prod.Len(), goos, wantLen)
+	}
+	visible := 0
+	for _, name := range prod.Names() {
+		if name == "timezone.get_zonecode" {
+			visible++
+		}
+		if strings.HasPrefix(name, "timezone.get_zonecode_") {
+			t.Fatalf("superseded alias %q registered on %s", name, goos)
+		}
+	}
+	if (goos == "linux" || goos == "darwin") && visible != 1 {
+		t.Fatalf("get_zonecode visible %d times on %s, want 1", visible, goos)
+	}
+	if goos != "linux" && goos != "darwin" && visible != 0 {
+		t.Fatalf("get_zonecode visible %d times on %s, want 0", visible, goos)
+	}
+	if _, ok := prod.Get("timezone.get_zonecode_"); ok {
+		t.Fatalf("raw alias timezone.get_zonecode_ registered on %s", goos)
+	}
+	// The visible variant is the host's own: the mac prototype on
+	// darwin, the Linux prototype on linux.
+	if fn, ok := prod.Get("timezone.get_zonecode"); ok && goos == "darwin" {
+		if _, isMac := fn.(macZonecodeFunc); !isMac {
+			t.Fatalf("timezone.get_zonecode on darwin registered %T, want macZonecodeFunc", fn)
+		}
+	}
+	if fn, ok := prod.Get("timezone.get_zonecode"); ok && goos == "linux" {
+		if _, isLinux := fn.(getZonecodeFunc); !isLinux {
+			t.Fatalf("timezone.get_zonecode on linux registered %T, want getZonecodeFunc", fn)
+		}
+	}
+
+	// Off-host dispatch: the darwin registration surfaced through a
+	// non-darwin host is invisible and rejected as unsupported
+	// (ResolveArgs and Call); on darwin itself the raw entry exists.
+	if goos != "darwin" {
+		darwinReg := runtime.NewExecRegistry()
+		if err := registerMacGettersForGOOS(darwinReg, "darwin"); err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range darwinReg.Names() {
+			if name == "timezone.get_zonecode" {
+				t.Fatalf("Names exposed %s for darwin registration on host %s", name, goos)
+			}
+		}
+		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: runtime.NewMemoryFS(), Runner: &macZoneRunner{}}
+		var unsupported *runtime.UnsupportedError
+		if _, err := darwinReg.ResolveArgs(rt, "timezone.get_zonecode"); !errors.As(err, &unsupported) || unsupported.Kind != "function" {
+			t.Fatalf("ResolveArgs timezone.get_zonecode on %s = %v, want unsupported function", goos, err)
+		}
+		if _, err := darwinReg.Call(context.Background(), rt, "timezone.get_zonecode", &macZonecodeArgs{}); !errors.As(err, &unsupported) || unsupported.Kind != "function" {
 			t.Fatalf("Call timezone.get_zonecode on %s = %v, want unsupported function", goos, err)
 		}
 	}
