@@ -3495,6 +3495,84 @@ func TestZonecodeFailureCategoriesMapToFixedError(t *testing.T) {
 	}
 }
 
+// GZC-10: exact per-stream 64 KiB cap boundaries independent of the
+// truncation flags — a fake Runner can report over-cap lengths without
+// ever setting StdoutTruncated/StderrTruncated, so the length checks
+// alone must fail closed. stdout exactly 64 KiB with exit 0 and no
+// flags returns the full string; stdout 64 KiB + 1 returns a nil value
+// and exactly the fixed sentinel; stderr exactly 64 KiB with good
+// stdout leaves the answer untouched; stderr 64 KiB + 1 fails the same
+// way. No partial output, raw fixture material, or wrapped cause may
+// travel in any error; the fixtures are pure in-memory 64 KiB strings
+// with zero host I/O.
+func TestZonecodeStreamCapsExactBoundaries(t *testing.T) {
+	atCap := strings.Repeat("x", 64<<10)
+	overCap := strings.Repeat("x", (64<<10)+1)
+	if len(atCap) != 64<<10 || len(overCap) != (64<<10)+1 {
+		t.Fatalf("cap fixtures are %d/%d bytes, want 65536/65537", len(atCap), len(overCap))
+	}
+
+	// stdout exactly 64 KiB, exit 0, no truncation flags: the full
+	// string returns unchanged (no trailing whitespace to rstrip).
+	rt, runner := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(atCap)})
+	value, err := (getZonecodeFunc{}).Execute(context.Background(), rt, &getZonecodeArgs{})
+	got, ok := value.(string)
+	if err != nil || !ok || got != atCap || len(got) != 64<<10 {
+		t.Fatalf("at-cap stdout = (%T) %#v, %v; want the full %d-byte string, nil", value, value, err, len(atCap))
+	}
+	if len(runner.cmds) != 1 {
+		t.Fatalf("at-cap stdout dispatched %d commands, want 1", len(runner.cmds))
+	}
+
+	// stdout 64 KiB + 1: nil value and exactly the fixed sentinel.
+	rt, _ = newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte(overCap)})
+	value, err = (getZonecodeFunc{}).Execute(context.Background(), rt, &getZonecodeArgs{})
+	requireZonecodeQueryOnly(t, err, "xxxxx")
+	if value != nil {
+		t.Fatalf("over-cap stdout value = %#v, want nil", value)
+	}
+
+	// stderr exactly 64 KiB with good stdout: stderr stays dropped and
+	// the stdout answer returns.
+	rt, _ = newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("CEST\n"), Stderr: []byte(atCap)})
+	value, err = (getZonecodeFunc{}).Execute(context.Background(), rt, &getZonecodeArgs{})
+	if err != nil || value != "CEST" {
+		t.Fatalf("at-cap stderr = %#v, %v; want CEST, nil", value, err)
+	}
+
+	// stderr 64 KiB + 1 with good stdout: nil value and exactly the
+	// fixed sentinel; neither the dropped stderr nor the stdout answer
+	// may leak into the error.
+	rt, _ = newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("CEST\n"), Stderr: []byte(overCap)})
+	value, err = (getZonecodeFunc{}).Execute(context.Background(), rt, &getZonecodeArgs{})
+	requireZonecodeQueryOnly(t, err, "xxxxx", "CEST")
+	if value != nil {
+		t.Fatalf("over-cap stderr value = %#v, want nil", value)
+	}
+}
+
+// requireZonecodeQueryOnly pins an over-cap failure to exactly the
+// fixed sentinel: errors.Is on ErrZonecodeQuery only (never a foreign
+// sentinel), the byte-exact value-free text containing no partial
+// output or raw fixture material, and no wrapped cause.
+func requireZonecodeQueryOnly(t *testing.T, err error, markers ...string) {
+	t.Helper()
+	requireZonecodeError(t, err)
+	for _, other := range []error{ErrCannotDetermineZone, ErrUnknownUnsafeZone, ErrInvalidWindowsZone, ErrMacSystemsetupQuery, ErrMacNetworkTimeStateInvalid} {
+		if errors.Is(err, other) {
+			t.Fatalf("over-cap err %v matches foreign sentinel %v", err, other)
+		}
+	}
+	if errors.Unwrap(err) != nil {
+		t.Fatalf("over-cap err unwraps to %v, want no cause", errors.Unwrap(err))
+	}
+	for _, marker := range markers {
+		if strings.Contains(err.Error(), marker) {
+			t.Fatalf("err text %q leaks raw output or fixture material %q", err.Error(), marker)
+		}
+	}
+}
+
 // LGZ-06: the zonecode sentinel is its own fixed category — errors.Is
 // matches only ErrZonecodeQuery, never any other module sentinel,
 // with no Unwrap chain.
