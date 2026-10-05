@@ -941,7 +941,9 @@ func TestPortingDebtExecTimezoneZoneCompareCanonicalRegistrationPTD_EXEC_1638(t 
 	}
 
 	// Canonical registration: the family surface gains exactly
-	// timezone.zone_compare, once, with no superseded alias.
+	// timezone.zone_compare, once, with no superseded alias (the
+	// surface grew to seven names with PTD-EXEC-1631's
+	// timezone.get_zonecode, mirrored in the want list below).
 	var timezoneNames []string
 	for _, name := range rt.Exec.Names() {
 		if strings.HasPrefix(name, "timezone.") {
@@ -950,7 +952,8 @@ func TestPortingDebtExecTimezoneZoneCompareCanonicalRegistrationPTD_EXEC_1638(t 
 	}
 	want := []string{
 		"timezone.get_hwclock", "timezone.get_offset", "timezone.get_zone",
-		"timezone.set_hwclock", "timezone.set_zone", "timezone.zone_compare",
+		"timezone.get_zonecode", "timezone.set_hwclock", "timezone.set_zone",
+		"timezone.zone_compare",
 	}
 	if !reflect.DeepEqual(timezoneNames, want) {
 		t.Fatalf("timezone.* names = %v, want %v", timezoneNames, want)
@@ -1124,9 +1127,9 @@ func TestPortingDebtExecTimezoneZoneCompareCanonicalRegistrationPTD_EXEC_1638(t 
 // Windows slice of timezone.zone_compare (win_timezone.py). It is a
 // host-independent regression pin: the catalog entry declares exactly
 // the source signature zone_compare(timezone), and the canonical
-// family registration through BuildRuntime still exposes exactly six
-// timezone.* names with timezone.zone_compare once and no superseded
-// alias on every variant host (linux/darwin/windows). The behavioral
+// family registration through BuildRuntime keeps exactly one entry per
+// canonical timezone.* name on every variant host (linux/darwin/
+// windows) with timezone.zone_compare once and no superseded alias. The behavioral
 // contract of the windows variant — the 134-pair source-parity oracle
 // against pinned saltstack/salt/modules/win_timezone.py, the mapped
 // test_win_timezone.py fixture shapes (India/Calcutta true,
@@ -1226,8 +1229,12 @@ func TestPortingDebtExecTimezoneZoneCompareWindowsPartialPTD_EXEC_1638(t *testin
 
 	// Canonical registration: the windows variant lands through the
 	// same single timezone.zone_compare name, so the family surface on
-	// every variant host is exactly the six canonical names — never a
-	// windows alias and never a duplicate.
+	// every variant host keeps exactly one entry per canonical name —
+	// never a windows alias and never a duplicate. The surface is
+	// GOOS-dependent: seven names on linux (base 5 + zone_compare +
+	// the Linux get_zonecode of PTD-EXEC-1631), ten on darwin (base 5
+	// + zone_compare + the four Mac systemsetup getters), six on
+	// windows (base 5 + zone_compare).
 	switch runtime.CurrentGOOS() {
 	case "linux", "darwin", "windows":
 	default:
@@ -1247,6 +1254,21 @@ func TestPortingDebtExecTimezoneZoneCompareWindowsPartialPTD_EXEC_1638(t *testin
 		"timezone.get_hwclock", "timezone.get_offset", "timezone.get_zone",
 		"timezone.set_hwclock", "timezone.set_zone", "timezone.zone_compare",
 	}
+	switch runtime.CurrentGOOS() {
+	case "linux":
+		want = []string{
+			"timezone.get_hwclock", "timezone.get_offset", "timezone.get_zone",
+			"timezone.get_zonecode", "timezone.set_hwclock", "timezone.set_zone",
+			"timezone.zone_compare",
+		}
+	case "darwin":
+		want = []string{
+			"timezone.get_date", "timezone.get_time", "timezone.get_time_server",
+			"timezone.get_using_network_time", "timezone.get_hwclock",
+			"timezone.get_offset", "timezone.get_zone", "timezone.set_hwclock",
+			"timezone.set_zone", "timezone.zone_compare",
+		}
+	}
 	if !reflect.DeepEqual(timezoneNames, want) {
 		t.Fatalf("timezone.* names = %v, want %v", timezoneNames, want)
 	}
@@ -1255,5 +1277,176 @@ func TestPortingDebtExecTimezoneZoneCompareWindowsPartialPTD_EXEC_1638(t *testin
 	}
 	if got := countName(rt.Exec.Names(), "timezone.zone_compare_"); got != 0 {
 		t.Fatalf("superseded alias timezone.zone_compare_ registered %d times, want 0", got)
+	}
+}
+
+// zonecodeRunner is the fake Runner for the get_zonecode registration
+// evidence: it records the exact process.Command of every dispatch and
+// replies with one fixed CommandResult. The real date binary is never
+// invoked.
+type zonecodeRunner struct {
+	cmds  []process.Command
+	reply process.CommandResult
+}
+
+func (r *zonecodeRunner) Run(_ context.Context, cmd process.Command) process.CommandResult {
+	r.cmds = append(r.cmds, cmd)
+	return r.reply
+}
+
+// TestPortingDebtExecTimezoneGetZonecodeCanonicalRegistrationPTD_EXEC_1631
+// is the PTD-EXEC-1631 / PTD-TEST-1666 regression for the Linux-generic
+// slice of timezone.get_zonecode: the loader name is registered exactly
+// once with no superseded alias and Linux-only platform gating, the
+// catalog entry declares the zero-parameter source signature
+// get_zonecode(), the args schema is a zero-field struct with no
+// required gate, and registry dispatch answers the pinned source
+// contract over a fake Runner with the exact fixed `date +%Z` command
+// (parent-PATH executable name, Dir "/", LC_ALL=C plus caller TZ only
+// when set, 30s deadline, 64 KiB per-stream caps) and the Python
+// stdout rstrip, failing closed with the fixed value-free
+// ErrZonecodeQuery on nonzero exit. The mac date and Windows
+// ZoneInfo/TzMapper variants stay tracked by their own open rows; this
+// test pins the Linux generic contract. Upstream ships no
+// get_zonecode unit test, so the fixtures are transcribed from the
+// pinned source, not ported Salt tests.
+func TestPortingDebtExecTimezoneGetZonecodeCanonicalRegistrationPTD_EXEC_1631(t *testing.T) {
+	if runtime.CurrentGOOS() != "linux" {
+		t.Skip("timezone.get_zonecode landed as the Linux-generic slice only")
+	}
+	// Deterministic child-env expectation: TZ set to a sentinel means
+	// the dispatch Env must be exactly LC_ALL=C plus TZ=<sentinel>.
+	t.Setenv("TZ", "Zonecode/Sentinel")
+	rt, err := bootstrap.BuildRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Canonical registration: exactly once, no superseded alias, with
+	// the Linux family surface at seven names.
+	if got := countName(rt.Exec.Names(), "timezone.get_zonecode"); got != 1 {
+		t.Fatalf("timezone.get_zonecode registered %d times, want exactly 1", got)
+	}
+	if got := countName(rt.Exec.Names(), "timezone.get_zonecode_"); got != 0 {
+		t.Fatalf("superseded alias timezone.get_zonecode_ registered %d times, want 0", got)
+	}
+	var timezoneNames []string
+	for _, name := range rt.Exec.Names() {
+		if strings.HasPrefix(name, "timezone.") {
+			timezoneNames = append(timezoneNames, name)
+		}
+	}
+	want := []string{
+		"timezone.get_hwclock", "timezone.get_offset", "timezone.get_zone",
+		"timezone.get_zonecode", "timezone.set_hwclock", "timezone.set_zone",
+		"timezone.zone_compare",
+	}
+	if !reflect.DeepEqual(timezoneNames, want) {
+		t.Fatalf("timezone.* names = %v, want %v", timezoneNames, want)
+	}
+
+	// Catalog signature: docs/catalog/exec/timezone.yaml declares
+	// get_zonecode with zero parameters, matching the pinned
+	// zero-argument source signature.
+	catalogData, err := os.ReadFile(filepath.Join("..", "docs", "catalog", "exec", "timezone.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var catalog struct {
+		Functions []struct {
+			Function   string `yaml:"function"`
+			Parameters []struct {
+				Name    string  `yaml:"name"`
+				Default *string `yaml:"default"`
+			} `yaml:"parameters"`
+		} `yaml:"functions"`
+	}
+	if err := yaml.Unmarshal(catalogData, &catalog); err != nil {
+		t.Fatal(err)
+	}
+	var zonecodeEntry *struct {
+		Function   string `yaml:"function"`
+		Parameters []struct {
+			Name    string  `yaml:"name"`
+			Default *string `yaml:"default"`
+		} `yaml:"parameters"`
+	}
+	for i := range catalog.Functions {
+		if catalog.Functions[i].Function == "get_zonecode" {
+			zonecodeEntry = &catalog.Functions[i]
+		}
+	}
+	if zonecodeEntry == nil {
+		t.Fatal("catalog has no get_zonecode entry")
+	}
+	if len(zonecodeEntry.Parameters) != 0 {
+		t.Fatalf("get_zonecode parameters = %#v, want none", zonecodeEntry.Parameters)
+	}
+
+	// Args schema: a zero-field struct prototype with no required
+	// gate; the canonical zero-argument call decodes through it.
+	proto, err := rt.Exec.ResolveArgs(rt, "timezone.get_zonecode")
+	if err != nil {
+		t.Fatal(err)
+	}
+	argsType := reflect.TypeOf(proto)
+	if argsType.Kind() != reflect.Struct || argsType.NumField() != 0 {
+		t.Fatalf("get_zonecode args type = %s with %d fields, want a zero-field struct", argsType, argsType.NumField())
+	}
+	if err := config.ValidateRequired(reflect.New(argsType).Interface()); err != nil {
+		t.Fatalf("zero-field args failed the required gate: %v", err)
+	}
+
+	// Registry dispatch over the fake Runner: the exact fixed `date
+	// +%Z` command — parent-PATH executable name (user-authorized,
+	// caller-owned trust), shell-free, Dir "/", child Env exactly
+	// LC_ALL=C plus the caller's TZ, 30s cancellation deadline, and
+	// equal 64 KiB capture ceilings — with the Python stdout rstrip.
+	rec := &zonecodeRunner{reply: process.CommandResult{ExitCode: 0, Stdout: []byte("PST\n")}}
+	rt.Runner = rec
+	value, err := rt.Exec.Call(context.Background(), rt, "timezone.get_zonecode",
+		reflect.New(argsType).Interface())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != "PST" {
+		t.Fatalf("get_zonecode = %v, want PST", value)
+	}
+	if len(rec.cmds) != 1 {
+		t.Fatalf("get_zonecode dispatched %d commands, want exactly 1", len(rec.cmds))
+	}
+	wantCmd := process.Command{
+		Name:           "date",
+		Args:           []string{"+%Z"},
+		Dir:            "/",
+		Env:            []string{"LC_ALL=C", "TZ=Zonecode/Sentinel"},
+		Timeout:        30 * time.Second,
+		MaxStdoutBytes: 64 << 10,
+		MaxStderrBytes: 64 << 10,
+	}
+	if !reflect.DeepEqual(rec.cmds[0], wantCmd) {
+		t.Fatalf("get_zonecode command = %#v, want %#v", rec.cmds[0], wantCmd)
+	}
+
+	// Failure shape: a nonzero date exit fails closed with the fixed
+	// value-free sentinel — no stdout, stderr, or exit status in the
+	// error (Salt's cmd.run would return the stdout; StateKit fails
+	// closed instead).
+	failing := &zonecodeRunner{reply: process.CommandResult{
+		ExitCode: 1, Stdout: []byte("PST\n"), Stderr: []byte("secret-zonecode-stderr")}}
+	rt.Runner = failing
+	_, err = rt.Exec.Call(context.Background(), rt, "timezone.get_zonecode",
+		reflect.New(argsType).Interface())
+	if !errors.Is(err, executimezone.ErrZonecodeQuery) {
+		t.Fatalf("nonzero exit err = %v, want executimezone.ErrZonecodeQuery", err)
+	}
+	if err.Error() != "timezone zonecode query failed" {
+		t.Fatalf("nonzero exit err text = %q", err.Error())
+	}
+	if strings.Contains(err.Error(), "secret-zonecode-stderr") {
+		t.Fatal("nonzero exit error leaked date stderr")
+	}
+	if len(failing.cmds) != 1 {
+		t.Fatalf("failing get_zonecode dispatched %d commands, want 1 (never retried)", len(failing.cmds))
 	}
 }
