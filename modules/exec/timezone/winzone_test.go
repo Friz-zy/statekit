@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -36,10 +37,47 @@ func repoRoot(t *testing.T) string {
 	return root
 }
 
+// errWinZoneSubmoduleAbsent is the explicit skip classification of the
+// source-parity oracle (WZC-03/WZL-05): the Salt submodule content
+// root saltstack/salt is entirely absent — an uninitialized checkout.
+// It is the only condition that may skip the oracle; every other
+// source lookup or read failure must fail the test.
+var errWinZoneSubmoduleAbsent = errors.New("pinned salt submodule content root saltstack/salt absent (uninitialized checkout)")
+
+// readPinnedWinTimezoneSource reads saltstack/salt/modules/
+// win_timezone.py for the repository layout rooted at root. The
+// returned error wraps errWinZoneSubmoduleAbsent only when the content
+// root itself is absent; a present root whose source file is missing
+// or unreadable — like any other stat or read failure — returns an
+// ordinary error so the oracle fails instead of skipping.
+func readPinnedWinTimezoneSource(root string) (data []byte, sourcePath string, err error) {
+	contentRoot := filepath.Join(root, "saltstack", "salt")
+	info, statErr := os.Stat(contentRoot)
+	if statErr != nil {
+		if errors.Is(statErr, fs.ErrNotExist) {
+			return nil, "", fmt.Errorf("%w at %s", errWinZoneSubmoduleAbsent, contentRoot)
+		}
+		return nil, "", fmt.Errorf("stat salt submodule content root: %w", statErr)
+	}
+	if !info.IsDir() {
+		return nil, "", fmt.Errorf("salt submodule content root %s is not a directory", contentRoot)
+	}
+	sourcePath = filepath.Join(contentRoot, "modules", "win_timezone.py")
+	data, readErr := os.ReadFile(sourcePath)
+	if readErr != nil {
+		return nil, sourcePath, fmt.Errorf("read pinned win_timezone.py: %w", readErr)
+	}
+	return data, sourcePath, nil
+}
+
 // parsePinnedWinTimezonePairs reads the pinned Salt source and extracts
 // the static TzMapper table exactly as source lines 46-183 define it:
 // every `"windows": "unix",` entry in file order. Expected values come
-// from the source, never from the Go table under test.
+// from the source, never from the Go table under test. It skips only
+// when the saltstack/salt submodule content root is absent entirely
+// (uninitialized checkout); a present root with a missing, unreadable,
+// or unparseable source — like a missing or unpinned salt.lock —
+// fails.
 func parsePinnedWinTimezonePairs(t *testing.T) []winZonePair {
 	t.Helper()
 	lockData, err := os.ReadFile(filepath.Join(repoRoot(t), "references", "salt.lock"))
@@ -60,10 +98,12 @@ func parsePinnedWinTimezonePairs(t *testing.T) []winZonePair {
 	if lock.Commit != pinnedSaltCommit {
 		t.Fatalf("references/salt.lock commit = %q, want the pinned %q: the Windows zone table oracle must be re-verified against the new source before the table can be trusted", lock.Commit, pinnedSaltCommit)
 	}
-	sourcePath := filepath.Join(repoRoot(t), "saltstack", "salt", "modules", "win_timezone.py")
-	data, err := os.ReadFile(sourcePath)
+	data, sourcePath, err := readPinnedWinTimezoneSource(repoRoot(t))
 	if err != nil {
-		t.Skipf("pinned salt submodule source unavailable (%v); source-parity oracle not run", err)
+		if errors.Is(err, errWinZoneSubmoduleAbsent) {
+			t.Skipf("%v; source-parity oracle not run", err)
+		}
+		t.Fatalf("pinned salt source unavailable: %v", err)
 	}
 	lines := strings.Split(string(data), "\n")
 	start := -1
@@ -929,5 +969,784 @@ func TestWinZoneCompareRequiredGateBoundary(t *testing.T) {
 	}
 	if len(env.runner.cmds) != 1 {
 		t.Fatalf("valid pointer dispatched %d commands, want 1", len(env.runner.cmds))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Windows timezone.list (PTD-EXEC-1632): WZL-01..12 pin the pinned
+// win_timezone.py list contract (lines 340-372 over the TzMapper dicts
+// of lines 21-43 at references/salt.lock
+// 8b63e700637e40d76f80a00d95c60471797c73b9) hermetically. Every call
+// goes through the nil-Runtime direct Execute or a recording fake
+// environment — never a real Runner, never tzutil, never a host
+// filesystem — and the suite makes no native Windows claim. Upstream
+// ships no list() unit test (the 15 functions of
+// tests/pytests/unit/modules/test_win_timezone.py include none;
+// test_get_zone_all consumes mapper.list_win() as parametrization
+// adjacency only), so fixtures are transcribed from the pinned source
+// and the full 134-pair oracle is the pinned-source parity test
+// (WZL-05). WZL-12 of the acceptance matrix — external CI stays
+// pending and the ledger rows stay partial — is a ledger statement,
+// pinned here only by the untagged host-independent suite below.
+
+// winZoneListExec is the shared direct-Execute helper: a nil Runtime on
+// every call, pinning the no-Runtime property on every path (the
+// function is static table output with no Runner/FS dependency).
+func winZoneListExec(args any) (any, error) {
+	return (winZoneListFunc{}).Execute(context.Background(), nil, args)
+}
+
+// winZoneListColumn returns the sorted expected values of one table
+// column, derived from the verbatim Go pair slice (the WZC-03
+// source-parity-tested transcription); the pinned-source-file oracle
+// independent of the Go table is WZL-05.
+func winZoneListColumn(unix bool) []string {
+	out := make([]string, 0, len(winZonePairs))
+	for _, pair := range winZonePairs {
+		if unix {
+			out = append(out, pair.Unix)
+		} else {
+			out = append(out, pair.Windows)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// requireWinZoneList requires a successful list answer equal to want
+// element for element. Lengths are guarded before any element access:
+// an empty or different-length answer reports the counts alone, and
+// elements are compared only over the matched length.
+func requireWinZoneList(t *testing.T, value any, err error, want []string) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("timezone.list err = %v, want nil", err)
+	}
+	got, ok := value.([]string)
+	if !ok {
+		t.Fatalf("timezone.list value = %T, want []string", value)
+	}
+	if len(got) != len(want) {
+		t.Fatalf("timezone.list = %d entries, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("timezone.list[%d] = %q, want %q (of %d entries)", i, got[i], want[i], len(want))
+		}
+	}
+}
+
+// listStringValue asserts a successful answer is a []string and
+// returns it (test shorthand for comparing the two list forms).
+func listStringValue(t *testing.T, value any) []string {
+	t.Helper()
+	list, ok := value.([]string)
+	if !ok {
+		t.Fatalf("timezone.list value = %T, want []string", value)
+	}
+	return list
+}
+
+// WZL-01: an omitted unix_style (nil pointer — the argument key absent
+// entirely) selects the pinned source default true: the sorted unique
+// IANA values (mapper.list_unix, the Windows->IANA dict values).
+func TestWinZoneListOmittedDefaultsToIANA(t *testing.T) {
+	want := winZoneListColumn(true)
+	if len(want) != 134 {
+		t.Fatalf("expected IANA column has %d entries, want 134", len(want))
+	}
+	value, err := winZoneListExec(&winZoneListArgs{})
+	requireWinZoneList(t, value, err, want)
+
+	// The decoder leaves an omitted tri-state pointer nil and the
+	// optional contract trips no required gate.
+	var args winZoneListArgs
+	if err := config.Decode(&args, nil, nil); err != nil {
+		t.Fatalf("decode with omitted unix_style: %v", err)
+	}
+	if args.UnixStyle != nil {
+		t.Fatalf("omitted unix_style decoded to %v, want a nil pointer", *args.UnixStyle)
+	}
+	if err := config.ValidateRequired(&args); err != nil {
+		t.Fatalf("omitted optional argument failed the required gate: %v", err)
+	}
+	value, err = winZoneListExec(&args)
+	requireWinZoneList(t, value, err, want)
+}
+
+// WZL-02: an explicit true answers exactly the omitted-default list.
+func TestWinZoneListExplicitTrueMatchesOmitted(t *testing.T) {
+	tr := true
+	omitted, err := winZoneListExec(&winZoneListArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	explicit, err := winZoneListExec(&winZoneListArgs{UnixStyle: &tr})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(omitted, explicit) {
+		t.Fatal("explicit true list differs from the omitted-default list")
+	}
+	requireWinZoneList(t, explicit, nil, winZoneListColumn(true))
+}
+
+// WZL-03: an explicit false answers the sorted Windows names
+// (mapper.list_win, the IANA->Windows dict values) — anchored against
+// the IANA form so a swapped dict cannot pass.
+func TestWinZoneListExplicitFalseReturnsWindowsNames(t *testing.T) {
+	fl := false
+	value, err := winZoneListExec(&winZoneListArgs{UnixStyle: &fl})
+	requireWinZoneList(t, value, err, winZoneListColumn(false))
+	windows := listStringValue(t, value)
+	set := make(map[string]bool, len(windows))
+	for _, name := range windows {
+		set[name] = true
+	}
+	for _, anchor := range []string{"Central Standard Time", "UTC", "W. Australia Standard Time", "Russia Time Zone 3"} {
+		if !set[anchor] {
+			t.Fatalf("Windows list is missing the exact-spelling anchor %q", anchor)
+		}
+	}
+	for _, ianaOnly := range []string{"America/Chicago", "Etc/GMT"} {
+		if set[ianaOnly] {
+			t.Fatalf("Windows list leaks the IANA name %q", ianaOnly)
+		}
+	}
+	iana, err := winZoneListExec(&winZoneListArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reflect.DeepEqual(windows, listStringValue(t, iana)) {
+		t.Fatal("explicit false returned the IANA list")
+	}
+}
+
+// WZL-04: output order and wording are exactly the source sorted dict
+// values — strictly ascending (a duplicate would break strictness),
+// 134 entries per form, and every original spelling preserved (dots,
+// parenthesized or suffixed Windows IDs, underscores and +N offsets in
+// IANA names).
+func TestWinZoneListPreservesSourceValueSpellingOrder(t *testing.T) {
+	tr, fl := true, false
+	forms := []struct {
+		label string
+		args  *winZoneListArgs
+	}{
+		{"unix", &winZoneListArgs{}},
+		{"unix explicit", &winZoneListArgs{UnixStyle: &tr}},
+		{"windows", &winZoneListArgs{UnixStyle: &fl}},
+	}
+	lists := map[string][]string{}
+	for _, form := range forms {
+		value, err := winZoneListExec(form.args)
+		if err != nil {
+			t.Fatalf("%s form err = %v", form.label, err)
+		}
+		got := listStringValue(t, value)
+		if len(got) != 134 {
+			t.Fatalf("%s form has %d entries, want 134", form.label, len(got))
+		}
+		if !sort.StringsAreSorted(got) {
+			t.Fatalf("%s form is not sorted", form.label)
+		}
+		for i := 1; i < len(got); i++ {
+			if got[i-1] >= got[i] {
+				t.Fatalf("%s form not strictly ascending at %d: %q then %q (duplicate values would survive the source dict semantics)", form.label, i, got[i-1], got[i])
+			}
+		}
+		lists[form.label] = got
+	}
+
+	// Exact-spelling anchors from the pinned table (values keep their
+	// original casing and punctuation, never lowercased or
+	// re-formatted) on both forms, plus proof no lowercased variant
+	// slipped in.
+	mustContain := func(list []string, anchors ...string) {
+		t.Helper()
+		set := make(map[string]bool, len(list))
+		for _, name := range list {
+			set[name] = true
+		}
+		for _, anchor := range anchors {
+			if !set[anchor] {
+				t.Fatalf("list is missing the exact-spelling anchor %q", anchor)
+			}
+		}
+	}
+	mustContain(lists["unix"], "America/Denver", "Australia/Lord_Howe", "Etc/GMT+12", "Pacific/Port_Moresby")
+	mustContain(lists["windows"], "W. Australia Standard Time", "Cen. Australia Standard Time", "Central Standard Time (Mexico)", "UTC+13")
+	for _, list := range [][]string{lists["unix"], lists["windows"]} {
+		set := make(map[string]bool, len(list))
+		for _, name := range list {
+			set[name] = true
+		}
+		for _, absent := range []string{"utc", "america/denver", "w. australia standard time"} {
+			if set[absent] {
+				t.Fatalf("list contains the re-formatted (lowercased) value %q", absent)
+			}
+		}
+	}
+}
+
+// WZL-05: the complete pinned-source oracle — expected values are
+// parsed from saltstack/salt/modules/win_timezone.py after the
+// references/salt.lock pin check, never from the Go table under test;
+// both list forms match the source pair-for-pair. Skips only where the
+// pinned submodule checkout is absent (the hosted unit job); the local
+// gate requires it to run.
+func TestWinZoneListMatchesPinnedSourceOracle(t *testing.T) {
+	pairs := parsePinnedWinTimezonePairs(t)
+	if len(pairs) != 134 {
+		t.Fatalf("pinned source table has %d pairs, want 134", len(pairs))
+	}
+	wantUnix := make([]string, 0, len(pairs))
+	wantWin := make([]string, 0, len(pairs))
+	for _, pair := range pairs {
+		wantUnix = append(wantUnix, pair.Unix)
+		wantWin = append(wantWin, pair.Windows)
+	}
+	sort.Strings(wantUnix)
+	sort.Strings(wantWin)
+
+	value, err := winZoneListExec(&winZoneListArgs{})
+	requireWinZoneList(t, value, err, wantUnix)
+	fl := false
+	value, err = winZoneListExec(&winZoneListArgs{UnixStyle: &fl})
+	requireWinZoneList(t, value, err, wantWin)
+}
+
+// TestWinZoneSourceOracleSkipBoundary pins the skip boundary shared by
+// the WZC-03 and WZL-05 oracle consumers with throwaway tempdir trees:
+// only an absent saltstack/salt content root classifies as the explicit
+// submodule-absent skip, while a present root whose win_timezone.py is
+// missing or unreadable (where permission bits are enforceable) is an
+// ordinary error that must fail the oracle, and a present readable tree
+// yields the file content. The repository's own oracle runs against
+// repoRoot; this test proves the classification logic itself against
+// synthetic trees, so an uninitialized checkout skips while a broken
+// checkout fails.
+func TestWinZoneSourceOracleSkipBoundary(t *testing.T) {
+	newTree := func(t *testing.T) string {
+		t.Helper()
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, "saltstack", "salt", "modules"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return root
+	}
+
+	// Absent submodule: the explicit skip classification, no data, no
+	// ordinary error.
+	root := t.TempDir()
+	data, _, err := readPinnedWinTimezoneSource(root)
+	if !errors.Is(err, errWinZoneSubmoduleAbsent) {
+		t.Fatalf("absent content root err = %v, want errWinZoneSubmoduleAbsent", err)
+	}
+	if data != nil {
+		t.Fatalf("absent content root returned %d bytes of data, want nil", len(data))
+	}
+
+	// Present tree, missing source file: an ordinary error, never the
+	// skip classification.
+	root = newTree(t)
+	data, sourcePath, err := readPinnedWinTimezoneSource(root)
+	if err == nil || errors.Is(err, errWinZoneSubmoduleAbsent) {
+		t.Fatalf("missing win_timezone.py err = %v, want a non-skip error", err)
+	}
+	if data != nil {
+		t.Fatalf("missing win_timezone.py returned %d bytes of data, want nil", len(data))
+	}
+	if !strings.HasSuffix(sourcePath, filepath.Join("saltstack", "salt", "modules", "win_timezone.py")) {
+		t.Fatalf("failure names %q, want the pinned source path", sourcePath)
+	}
+
+	// Present tree, unreadable source file: an ordinary error, never
+	// the skip classification. Permission bits are enforceable only for
+	// nonroot POSIX users, so the leg is confined to that deterministic
+	// case.
+	if runtime.CurrentGOOS() != "windows" && os.Getuid() != 0 {
+		root = newTree(t)
+		target := filepath.Join(root, "saltstack", "salt", "modules", "win_timezone.py")
+		if err := os.WriteFile(target, []byte("mapper = TzMapper(\n)\n"), 0o000); err != nil {
+			t.Fatal(err)
+		}
+		data, _, err = readPinnedWinTimezoneSource(root)
+		if err == nil || errors.Is(err, errWinZoneSubmoduleAbsent) {
+			t.Fatalf("unreadable win_timezone.py err = %v, want a non-skip error", err)
+		}
+		if data != nil {
+			t.Fatalf("unreadable win_timezone.py returned %d bytes of data, want nil", len(data))
+		}
+	}
+
+	// Present readable tree: the file content comes back with no skip
+	// and no error.
+	root = newTree(t)
+	const body = "mapper = TzMapper(\n    {\"UTC\": \"Etc/GMT\"},\n)\n"
+	if err := os.WriteFile(filepath.Join(root, "saltstack", "salt", "modules", "win_timezone.py"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	data, _, err = readPinnedWinTimezoneSource(root)
+	if err != nil {
+		t.Fatalf("readable tree err = %v, want nil", err)
+	}
+	if string(data) != body {
+		t.Fatalf("readable tree data = %q, want the written content", data)
+	}
+}
+
+// WZL-06: canonical Windows registration only — the selector helper
+// registers timezone.list on windows only (never an alias, never a
+// duplicate), every other GOOS registers nothing, the production
+// Register surface is 7 on windows (base 5 + zone_compare + the list),
+// 7 on linux, 10 on darwin, 5 elsewhere, and off-host dispatch of the
+// windows registration is rejected as unsupported. The helper is the
+// seam, exercised from any host (mirroring LGZ-09/MGT-12).
+func TestWinZoneListRegistrationSelectsPerGOOS(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := registerWindowsGettersForGOOS(reg, "windows"); err != nil {
+		t.Fatal(err)
+	}
+	if reg.Len() != 1 {
+		t.Fatalf("windows helper registered %d functions, want 1", reg.Len())
+	}
+	fn, ok := reg.Get("timezone.list")
+	if !ok {
+		t.Fatal("windows helper did not register timezone.list")
+	}
+	if _, isList := fn.(winZoneListFunc); !isList {
+		t.Fatalf("timezone.list registered %T", fn)
+	}
+	if fn.Name() != "timezone.list" {
+		t.Fatalf("canonical name = %q, want timezone.list", fn.Name())
+	}
+	constrained, isConstrained := fn.(runtime.PlatformConstrained)
+	if !isConstrained || constrained == nil {
+		t.Fatalf("timezone.list registered %T, which must implement runtime.PlatformConstrained", fn)
+	}
+	if platforms := constrained.Platforms(); !reflect.DeepEqual(platforms, []string{"windows"}) {
+		t.Fatalf("timezone.list platforms = %v, want [windows]", platforms)
+	}
+	if !runtime.SupportsPlatform(fn, "windows") {
+		t.Fatal("timezone.list must support windows")
+	}
+	for _, goos := range []string{"linux", "darwin", "freebsd", "solaris", "aix"} {
+		if runtime.SupportsPlatform(fn, goos) {
+			t.Fatalf("timezone.list must not support %s", goos)
+		}
+	}
+	if argsType := reflect.TypeOf(fn.Args()); argsType != reflect.TypeOf(winZoneListArgs{}) {
+		t.Fatalf("timezone.list args prototype = %s, want winZoneListArgs", argsType)
+	}
+	if err := config.ValidateRequired(&winZoneListArgs{}); err != nil {
+		t.Fatalf("optional list args failed the required gate: %v", err)
+	}
+	if err := reg.Register(winZoneListFunc{}); err == nil {
+		t.Fatal("registering timezone.list twice must fail as a duplicate")
+	}
+
+	// Every non-windows GOOS registers nothing at all.
+	for _, goos := range []string{"linux", "darwin", "freebsd", "openbsd", "netbsd", "solaris", "illumos", "aix", "plan9"} {
+		other := runtime.NewExecRegistry()
+		if err := registerWindowsGettersForGOOS(other, goos); err != nil {
+			t.Fatal(err)
+		}
+		if other.Len() != 0 {
+			t.Fatalf("helper registered %d functions for %s, want 0", other.Len(), goos)
+		}
+		if _, ok := other.Get("timezone.list"); ok {
+			t.Fatalf("helper registered timezone.list for %s", goos)
+		}
+	}
+
+	// Production Register: the surface is 7 names on linux, 10 on
+	// darwin, 7 on windows (base 5 + zone_compare + the Windows list),
+	// 5 elsewhere; timezone.list is visible exactly on windows; no
+	// superseded alias is ever registered; the raw alias lookup fails
+	// on every host.
+	prod := runtime.NewExecRegistry()
+	if err := Register(prod); err != nil {
+		t.Fatal(err)
+	}
+	goos := runtime.CurrentGOOS()
+	wantLen := 5
+	switch goos {
+	case "linux":
+		wantLen = 7
+	case "darwin":
+		wantLen = 10
+	case "windows":
+		wantLen = 7
+	}
+	if prod.Len() != wantLen {
+		t.Fatalf("production registration holds %d functions on %s, want %d", prod.Len(), goos, wantLen)
+	}
+	visible := 0
+	for _, name := range prod.Names() {
+		if name == "timezone.list" {
+			visible++
+		}
+		if strings.HasPrefix(name, "timezone.list_") {
+			t.Fatalf("superseded alias %q registered on %s", name, goos)
+		}
+	}
+	if goos == "windows" && visible != 1 {
+		t.Fatalf("timezone.list visible %d times on windows, want 1", visible)
+	}
+	if goos != "windows" && visible != 0 {
+		t.Fatalf("timezone.list visible %d times on %s, want 0", visible, goos)
+	}
+	if _, ok := prod.Get("timezone.list_"); ok {
+		t.Fatalf("raw alias timezone.list_ registered on %s", goos)
+	}
+
+	// Off-host dispatch: the windows registration surfaced through a
+	// non-windows host is invisible and rejected as unsupported
+	// (ResolveArgs and Call); on windows itself the raw entry exists.
+	if goos != "windows" {
+		winReg := runtime.NewExecRegistry()
+		if err := registerWindowsGettersForGOOS(winReg, "windows"); err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range winReg.Names() {
+			if name == "timezone.list" {
+				t.Fatalf("Names exposed %s for windows registration on host %s", name, goos)
+			}
+		}
+		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: runtime.NewMemoryFS(), Runner: &macZoneRunner{}}
+		var unsupported *runtime.UnsupportedError
+		if _, err := winReg.ResolveArgs(rt, "timezone.list"); !errors.As(err, &unsupported) || unsupported.Kind != "function" {
+			t.Fatalf("ResolveArgs timezone.list on %s = %v, want unsupported function", goos, err)
+		}
+		if _, err := winReg.Call(context.Background(), rt, "timezone.list", &winZoneListArgs{}); !errors.As(err, &unsupported) || unsupported.Kind != "function" {
+			t.Fatalf("Call timezone.list on %s = %v, want unsupported function", goos, err)
+		}
+	}
+}
+
+// winZoneCatalogListEntry scans docs/catalog/exec/win_timezone.yaml
+// (line-oriented, keeping the yaml dependency out of the module test
+// binary) for the list function's declared parameter names and
+// defaults.
+func winZoneCatalogListEntry(t *testing.T) (names []string, defaults map[string]string) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(repoRoot(t), "docs", "catalog", "exec", "win_timezone.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaults = map[string]string{}
+	inList := false
+	lastName := ""
+	for _, line := range strings.Split(string(data), "\n") {
+		switch {
+		case strings.HasPrefix(line, "    - function: "):
+			inList = strings.TrimSpace(strings.TrimPrefix(line, "    - function: ")) == "list"
+		case inList && strings.HasPrefix(line, "        - name: "):
+			lastName = strings.TrimSpace(strings.TrimPrefix(line, "        - name: "))
+			names = append(names, lastName)
+		case inList && strings.HasPrefix(line, "          default: "):
+			value := strings.Trim(strings.TrimSpace(strings.TrimPrefix(line, "          default: ")), `"`)
+			defaults[lastName] = value
+		}
+	}
+	return names, defaults
+}
+
+// WZL-07: the Args signature matches the catalog and the pinned source
+// signature list(unix_style=True) — exactly one optional *bool
+// unix_style field with no required tag, exposed as a real bool CLI
+// flag, with docs/catalog/exec/win_timezone.yaml declaring exactly the
+// unix_style parameter defaulting to True.
+func TestWinZoneListArgsSignatureAndCatalogDefault(t *testing.T) {
+	argsType := reflect.TypeOf(winZoneListArgs{})
+	if argsType.Kind() != reflect.Struct || argsType.NumField() != 1 {
+		t.Fatalf("winZoneListArgs = %s with %d fields, want a one-field struct", argsType, argsType.NumField())
+	}
+	field := argsType.Field(0)
+	if field.Name != "UnixStyle" || field.Type.Kind() != reflect.Pointer || field.Type.Elem().Kind() != reflect.Bool {
+		t.Fatalf("unix_style field = %s %s, want *bool UnixStyle", field.Name, field.Type)
+	}
+	if tag := field.Tag.Get("statekit"); tag != "name=unix_style" {
+		t.Fatalf("unix_style tag = %q, want name=unix_style with no required option", tag)
+	}
+	names, err := config.ArgumentNames(winZoneListArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(names, []string{"unix_style"}) {
+		t.Fatalf("argument names = %v, want [unix_style]", names)
+	}
+	flags, err := config.NewFlagSet("timezone.list", winZoneListArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if flags.Lookup("unix_style") == nil {
+		t.Fatal("CLI flag set declares no unix_style flag")
+	}
+
+	catalogNames, defaults := winZoneCatalogListEntry(t)
+	if !reflect.DeepEqual(catalogNames, []string{"unix_style"}) {
+		t.Fatalf("catalog list parameters = %v, want exactly [unix_style]", catalogNames)
+	}
+	if defaults["unix_style"] != "True" {
+		t.Fatalf("catalog unix_style default = %q, want True (the pinned source signature list(unix_style=True))", defaults["unix_style"])
+	}
+}
+
+// WZL-08: bool vs null/error behavior at the decoder boundary. The
+// existing config.Decode coercions accept structured true/false,
+// ParseBool-able strings, numeric 1/0, and the same shapes from flags;
+// structured null, non-boolean-coercible scalars, arrays, and maps
+// fail decode before any function call (dispatch runs only after a
+// successful decode, so a failed decode means zero Runner/FS/network
+// I/O by construction, and nothing materializes into the target).
+// Documented divergences from Python truthiness: Salt would accept
+// unix_style=None (falsey -> Windows list) and treat non-empty strings
+// like "false" or "yes" and numbers like 2 as truthy; StateKit rejects
+// null, "yes", "", and 2 outright and decodes the string "false" to
+// false.
+func TestWinZoneListDecodeTriStateCoercionAndRejection(t *testing.T) {
+	tr, fl := true, false
+	decode := func(structured map[string]any, provided map[string]string) (*winZoneListArgs, error) {
+		var args winZoneListArgs
+		err := config.Decode(&args, structured, provided)
+		return &args, err
+	}
+	accepted := []struct {
+		label      string
+		structured map[string]any
+		provided   map[string]string
+		want       *bool
+		unix       bool
+	}{
+		{"structured bool true", map[string]any{"unix_style": true}, nil, &tr, true},
+		{"structured bool false", map[string]any{"unix_style": false}, nil, &fl, false},
+		{"structured string true", map[string]any{"unix_style": "true"}, nil, &tr, true},
+		{"structured string false", map[string]any{"unix_style": "false"}, nil, &fl, false},
+		{"structured int 1", map[string]any{"unix_style": 1}, nil, &tr, true},
+		{"structured int 0", map[string]any{"unix_style": 0}, nil, &fl, false},
+		{"flag true", nil, map[string]string{"unix_style": "true"}, &tr, true},
+		{"flag false", nil, map[string]string{"unix_style": "false"}, &fl, false},
+		{"flag 1", nil, map[string]string{"unix_style": "1"}, &tr, true},
+		{"flag 0", nil, map[string]string{"unix_style": "0"}, &fl, false},
+	}
+	for _, tc := range accepted {
+		args, err := decode(tc.structured, tc.provided)
+		if err != nil {
+			t.Fatalf("%s: decode err = %v, want nil", tc.label, err)
+		}
+		if args.UnixStyle == nil || *args.UnixStyle != *tc.want {
+			t.Fatalf("%s: unix_style = %v, want %v", tc.label, args.UnixStyle, *tc.want)
+		}
+		value, err := winZoneListExec(args)
+		requireWinZoneList(t, value, err, winZoneListColumn(tc.unix))
+	}
+
+	rejected := []struct {
+		label string
+		value any
+	}{
+		{"structured null", nil},
+		{"string yes", "yes"},
+		{"string empty", ""},
+		{"int 2", 2},
+		{"int -1", -1},
+		{"float 0.5", 0.5},
+		{"array", []any{"true"}},
+		{"map", map[string]any{"unix_style": "true"}},
+	}
+	for _, tc := range rejected {
+		var args winZoneListArgs
+		err := config.Decode(&args, map[string]any{"unix_style": tc.value}, nil)
+		if err == nil {
+			t.Fatalf("%s: decode err = nil, want rejection", tc.label)
+		}
+		if args.UnixStyle != nil {
+			t.Fatalf("%s: rejected decode still materialized unix_style=%v", tc.label, *args.UnixStyle)
+		}
+	}
+
+	// A non-boolean flag value is rejected value-free (the raw flag
+	// text never travels in the error), and an unknown structured key
+	// is rejected as an unknown argument.
+	_, err := decode(nil, map[string]string{"unix_style": "maybe-if-you-insist"})
+	if err == nil {
+		t.Fatal("garbage flag value decoded, want rejection")
+	}
+	if strings.Contains(err.Error(), "maybe-if-you-insist") {
+		t.Fatalf("flag rejection text %q leaks the raw value", err.Error())
+	}
+	var unknown *config.UnknownArgumentError
+	if _, err := decode(map[string]any{"style": "unix"}, nil); !errors.As(err, &unknown) || unknown.Name != "style" {
+		t.Fatalf("unknown key err = %v, want UnknownArgumentError style", err)
+	}
+}
+
+// WZL-09: every call returns a fresh slice — no shared or
+// caller-mutable backing array, and caller mutations of a returned
+// slice never reach the shared dicts or later answers.
+func TestWinZoneListFreshSlicePerCall(t *testing.T) {
+	want := winZoneListColumn(true)
+	first, err := winZoneListExec(&winZoneListArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := winZoneListExec(&winZoneListArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(first, second) {
+		t.Fatal("two identical calls answered different lists")
+	}
+	firstList, secondList := listStringValue(t, first), listStringValue(t, second)
+	// Length guard before indexing: a regression returning empty output
+	// must fail here with this deliberate message, never panic on [0].
+	if len(firstList) == 0 || len(secondList) == 0 {
+		t.Fatalf("list answers have %d and %d entries, want non-empty before the backing-array identity check; empty output must fail this guard, not panic indexing [0]", len(firstList), len(secondList))
+	}
+	if &firstList[0] == &secondList[0] {
+		t.Fatal("two calls share one backing array")
+	}
+
+	// Corrupt the first answer past the call boundary, then require
+	// later answers (both forms) to be unaffected.
+	firstList[0] = "MUTATED-BY-CALLER"
+	firstList = append(firstList, "EXTRA")
+	third, err := winZoneListExec(&winZoneListArgs{})
+	requireWinZoneList(t, third, err, want)
+	if listStringValue(t, third)[0] == "MUTATED-BY-CALLER" {
+		t.Fatal("caller mutation of a returned slice leaked into a later answer")
+	}
+	fl := false
+	value, err := winZoneListExec(&winZoneListArgs{UnixStyle: &fl})
+	requireWinZoneList(t, value, err, winZoneListColumn(false))
+	fourth, err := winZoneListExec(&winZoneListArgs{})
+	requireWinZoneList(t, fourth, err, want)
+}
+
+// WZL-10: zero process, filesystem, or Runner calls on every path —
+// the omitted/default, explicit-true, and explicit-false answers run
+// against a recording filesystem and recording Runner that must stay
+// untouched, and a nil Runtime succeeds because the function needs no
+// runtime at all (the catalogued cmd.run_all/path.which/
+// platform.is_windows dependencies are not exercised; tzutil is never
+// invoked by list, whose availability does not depend on it).
+func TestWinZoneListNoRunnerOrFilesystemUse(t *testing.T) {
+	fsys := &zoneRecordingFS{FileSystem: runtime.NewMemoryFS()}
+	runner := &winZoneRunner{}
+	rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: fsys, Runner: runner}
+	tr, fl := true, false
+	for _, args := range []any{
+		&winZoneListArgs{},
+		&winZoneListArgs{UnixStyle: &tr},
+		&winZoneListArgs{UnixStyle: &fl},
+	} {
+		value, err := (winZoneListFunc{}).Execute(context.Background(), rt, args)
+		if err != nil {
+			t.Fatalf("Execute err = %v, want nil", err)
+		}
+		if got := listStringValue(t, value); len(got) != 134 {
+			t.Fatalf("answer has %d entries, want 134", len(got))
+		}
+	}
+	if len(fsys.calls) != 0 {
+		t.Fatalf("list touched the filesystem: %v", fsys.calls)
+	}
+	if len(runner.cmds) != 0 {
+		t.Fatalf("list dispatched %d commands, want 0", len(runner.cmds))
+	}
+
+	// The nil-Runtime helper leg (used by every behavioral WZL test)
+	// already proves the strongest form of this pin.
+	value, err := winZoneListExec(&winZoneListArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := listStringValue(t, value); len(got) != 134 {
+		t.Fatalf("nil-Runtime answer has %d entries, want 134", len(got))
+	}
+}
+
+// WZL-11: invalid-type direct guards — a wrong dynamic type (string,
+// non-pointer struct, wrong args pointer, nil) and a typed-nil pointer
+// each return only the fixed value-free errWinZoneListInvalidArgs with
+// a nil value, never a panic, never raw argument material in the
+// error, and zero filesystem/Runner work.
+func TestWinZoneListInvalidArgsFixedValueFreeGuard(t *testing.T) {
+	fsys := &zoneRecordingFS{FileSystem: runtime.NewMemoryFS()}
+	runner := &winZoneRunner{}
+	rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: fsys, Runner: runner}
+	denver := "America/Denver"
+	for _, tc := range []struct {
+		label string
+		args  any
+	}{
+		{"wrong-type string", "Secret/Zone-Marker"},
+		{"typed-nil list args", (*winZoneListArgs)(nil)},
+		{"non-pointer struct value", winZoneListArgs{}},
+		{"nil args", nil},
+		{"wrong pointer type zone compare", &winZoneCompareArgs{TimeZone: &denver}},
+		{"wrong pointer type linux compare", &zoneCompareArgs{TimeZone: "UTC"}},
+	} {
+		var (
+			value    any
+			err      error
+			panicked bool
+		)
+		func() {
+			defer func() {
+				if recover() != nil {
+					panicked = true
+				}
+			}()
+			value, err = (winZoneListFunc{}).Execute(context.Background(), rt, tc.args)
+		}()
+		if panicked {
+			t.Fatalf("%s: Execute panicked, want the fixed safe error", tc.label)
+		}
+		if value != nil {
+			t.Fatalf("%s: value = %#v, want nil on error", tc.label, value)
+		}
+		if !errors.Is(err, errWinZoneListInvalidArgs) || err.Error() != "invalid timezone list arguments" {
+			t.Fatalf("%s: err = %v, want the fixed errWinZoneListInvalidArgs", tc.label, err)
+		}
+		for _, marker := range []string{"Secret", "Marker", "Denver", "UTC"} {
+			if strings.Contains(err.Error(), marker) {
+				t.Fatalf("%s: error text %q leaks raw argument material", tc.label, err.Error())
+			}
+		}
+	}
+	if len(fsys.calls) != 0 {
+		t.Fatalf("guard paths touched the filesystem: %v", fsys.calls)
+	}
+	if len(runner.cmds) != 0 {
+		t.Fatalf("guard paths dispatched %d commands, want 0", len(runner.cmds))
+	}
+}
+
+// WZL-12: the list contract and its evidence stay untagged and
+// host-independent — the production file, the pinned table, and this
+// test file carry no //go:build constraint (the resolver seam files
+// that legitimately carry GOOS tags are out of scope by design), so
+// the existing hosted CI compiles and runs them on every platform with
+// no .github change. The suite executing on this host — whatever it is
+// — is the pin; external CI and native Windows evidence remain open
+// ledger items, not claims.
+func TestWinZoneListSuiteIsUntaggedAndHostIndependent(t *testing.T) {
+	for _, name := range []string{"timezone.go", "winzone_table.go", "winzone_test.go"} {
+		data, err := os.ReadFile(filepath.Join(repoRoot(t), "modules", "exec", "timezone", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "package ") {
+				break
+			}
+			if strings.HasPrefix(trimmed, "//go:build") || strings.HasPrefix(trimmed, "// +build") {
+				t.Fatalf("%s carries a build constraint (%q); the list contract must stay untagged and host-independent", name, trimmed)
+			}
+		}
 	}
 }

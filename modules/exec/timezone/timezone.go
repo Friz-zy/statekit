@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -934,6 +935,86 @@ func validateWindowsSystemTree(sysdir, windir string) bool {
 	return strings.EqualFold(sysdir, windir+`\`+child)
 }
 
+// winZoneListArgs is the win_timezone.list argument contract: exactly
+// one optional tri-state unix_style pointer (docs/catalog/exec/
+// win_timezone.yaml declares list(unix_style) with default "True").
+// A nil pointer — the key omitted entirely — selects the pinned source
+// default true; an explicit nonnil pointer follows the caller. The
+// field is deliberately NOT required: an omitted argument is valid.
+//
+// Structured null is not nil: config.Decode's *bool branch has no null
+// early-out (only *[]string clears on null), so unix_style:null fails
+// fixed decoder validation before this function can run — a safe,
+// documented divergence from Salt, where Python's falsey None would
+// select the Windows list.
+type winZoneListArgs struct {
+	UnixStyle *bool `statekit:"name=unix_style"`
+}
+
+// winZoneListFunc implements timezone.list for the pinned
+// win_timezone.py contract (lines 340-372 over the TzMapper dicts of
+// lines 21-43): a static, read-only enumeration of the pinned
+// 134-pair table — mapper.list_unix() (sorted Windows->IANA dict
+// values) for true/omitted unix_style, mapper.list_win() (sorted
+// IANA->Windows dict values) for false.
+type winZoneListFunc struct{}
+
+func (winZoneListFunc) Name() string { return "timezone.list" }
+
+// Platforms restricts the list variant to windows, matching the
+// win_timezone.py source module this contract is transcribed from
+// (PTD-EXEC-1632 Windows partial; other platform variants stay open
+// rows).
+func (winZoneListFunc) Platforms() []string { return []string{"windows"} }
+
+func (winZoneListFunc) Args() any { return winZoneListArgs{} }
+
+// errWinZoneListInvalidArgs is the fixed, value-free invocation error
+// for list arguments that cannot be the contract at all (a wrong
+// dynamic type or a typed-nil pointer); it never formats or echoes
+// the raw args value or an underlying cause.
+var errWinZoneListInvalidArgs = errors.New("invalid timezone list arguments")
+
+// Execute ports win_timezone.list (pinned revision lines 340-372) for
+// the Windows variant (PTD-EXEC-1632 Windows partial). Boundary guard
+// first (architecture gate): a wrong argument type or typed-nil
+// argument returns the fixed value-free errWinZoneListInvalidArgs —
+// never a panic, never raw args formatted into the error. The answer
+// is static table output: nil/unix_style-omitted and explicit true
+// return the sorted values of the Windows->IANA dict (the IANA list),
+// explicit false the sorted values of the IANA->Windows dict (the
+// Windows list), exactly like the pinned mapper.list_unix/list_win —
+// original spelling preserved, source dict-value duplicates preserved
+// as the dict semantics dictate (the pinned table has none). A fresh
+// []string is allocated per call and the shared lookup maps are never
+// mutated. The catalogued dependencies (cmd.run_all, path.which,
+// platform.is_windows) are not exercised: there is no Runner,
+// filesystem, registry, network, or tzutil access on any path — the
+// Runtime argument is unused and may be nil.
+func (winZoneListFunc) Execute(_ context.Context, _ *runtime.Runtime, args any) (any, error) {
+	a, ok := args.(*winZoneListArgs)
+	if !ok || a == nil {
+		return nil, errWinZoneListInvalidArgs
+	}
+	// Pinned list() branch: truthy (true or the omitted default) takes
+	// mapper.list_unix() — sorted(win_to_unix.values()) — and false
+	// takes mapper.list_win() — sorted(unix_to_win.values()). The Go
+	// dicts are the tested transcription of exactly those dicts, so
+	// their VALUES (original spelling, duplicates as the dict
+	// semantics dictate) are enumerated fresh into a per-call slice,
+	// sorted, and returned; the shared maps are never written.
+	dict := unixZoneToWin
+	if a.UnixStyle == nil || *a.UnixStyle {
+		dict = winZoneToUnix
+	}
+	out := make([]string, 0, len(dict))
+	for _, name := range dict {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
 // getZonecodeArgs is the zero-field Linux get_zonecode argument
 // contract: docs/catalog/exec/timezone.yaml declares get_zonecode with
 // no parameters.
@@ -1137,7 +1218,8 @@ func (setHwclockFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any
 // the windows tzutil contract on windows. The Mac systemsetup getters
 // timezone.get_date, timezone.get_time, timezone.get_using_network_time,
 // and timezone.get_time_server are darwin-only; the Linux generic
-// getter timezone.get_zonecode is linux-only.
+// getter timezone.get_zonecode is linux-only; the Windows static-table
+// lister timezone.list is windows-only.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{getZoneFunc{}, setZoneFunc{}, getOffsetFunc{}, getHwclockFunc{}, setHwclockFunc{}} {
 		if err := reg.Register(fn); err != nil {
@@ -1150,7 +1232,10 @@ func Register(reg *runtime.ExecRegistry) error {
 	if err := registerMacGettersForGOOS(reg, runtime.CurrentGOOS()); err != nil {
 		return err
 	}
-	return registerLinuxGettersForGOOS(reg, runtime.CurrentGOOS())
+	if err := registerLinuxGettersForGOOS(reg, runtime.CurrentGOOS()); err != nil {
+		return err
+	}
+	return registerWindowsGettersForGOOS(reg, runtime.CurrentGOOS())
 }
 
 // registerLinuxGettersForGOOS installs the Linux-only generic getter
@@ -1163,6 +1248,20 @@ func registerLinuxGettersForGOOS(reg *runtime.ExecRegistry, goos string) error {
 		return nil
 	}
 	return reg.Register(getZonecodeFunc{})
+}
+
+// registerWindowsGettersForGOOS installs the Windows-only static-table
+// lister timezone.list on windows only, and nothing on any other GOOS,
+// where the name stays unregistered rather than
+// registered-but-unsupported (the established
+// registerLinuxGettersForGOOS/registerMacGettersForGOOS pattern). The
+// registry keys by name, so registering the lister onto one registry
+// twice fails as a duplicate.
+func registerWindowsGettersForGOOS(reg *runtime.ExecRegistry, goos string) error {
+	if goos != "windows" {
+		return nil
+	}
+	return reg.Register(winZoneListFunc{})
 }
 
 // registerMacGettersForGOOS installs the Mac-only systemsetup getters

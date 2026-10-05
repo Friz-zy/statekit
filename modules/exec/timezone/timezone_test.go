@@ -953,8 +953,9 @@ func TestZoneCompareRegistrationSelectsPerGOOS(t *testing.T) {
 	// surface is 10 names on darwin (base 5 + zone_compare + the four
 	// Mac systemsetup getters get_date, get_time, get_time_server,
 	// get_using_network_time), 7 on linux (base 5 + zone_compare +
-	// get_zonecode), 6 on windows (base 5 + zone_compare), and 5
-	// everywhere else (no getters, no zone_compare).
+	// get_zonecode), 7 on windows (base 5 + zone_compare + the Windows
+	// timezone.list of PTD-EXEC-1632), and 5 everywhere else (no
+	// getters, no zone_compare).
 	wantTotal := 5
 	switch goos {
 	case "darwin":
@@ -962,7 +963,7 @@ func TestZoneCompareRegistrationSelectsPerGOOS(t *testing.T) {
 	case "linux":
 		wantTotal = 7
 	case "windows":
-		wantTotal = 6
+		wantTotal = 7
 	}
 	if got := len(reg.Names()); got != wantTotal {
 		t.Fatalf("module registration exposes %d names on %s, want %d", got, goos, wantTotal)
@@ -1663,8 +1664,8 @@ func TestMacZoneCompareNoDuplicateRegistration(t *testing.T) {
 	// The production surface is 10 functions on darwin (base 5 +
 	// zone_compare + the four Mac systemsetup getters get_date,
 	// get_time, get_time_server, get_using_network_time), 7 on linux
-	// (base 5 + zone_compare + get_zonecode), 6 on windows, 5
-	// elsewhere.
+	// (base 5 + zone_compare + get_zonecode), 7 on windows (base 5 +
+	// zone_compare + the Windows timezone.list), 5 elsewhere.
 	wantLen := 5
 	switch goos {
 	case "darwin":
@@ -1672,7 +1673,7 @@ func TestMacZoneCompareNoDuplicateRegistration(t *testing.T) {
 	case "linux":
 		wantLen = 7
 	case "windows":
-		wantLen = 6
+		wantLen = 7
 	}
 	if goos == "linux" || goos == "darwin" || goos == "windows" {
 		if count != 1 {
@@ -2390,10 +2391,10 @@ func TestMacGettersRegistrationSelectsPerGOOS(t *testing.T) {
 	}
 
 	// Production Register: the surface is 10 names on darwin, 7 on
-	// linux (base 5 + zone_compare + get_zonecode), 6 on windows, 5
-	// elsewhere; the getters are visible exactly on darwin; no
-	// superseded alias is ever registered; the raw alias lookup fails
-	// on every host.
+	// linux (base 5 + zone_compare + get_zonecode), 7 on windows (base
+	// 5 + zone_compare + the Windows timezone.list), 5 elsewhere; the
+	// getters are visible exactly on darwin; no superseded alias is
+	// ever registered; the raw alias lookup fails on every host.
 	prod := runtime.NewExecRegistry()
 	if err := Register(prod); err != nil {
 		t.Fatal(err)
@@ -2406,7 +2407,7 @@ func TestMacGettersRegistrationSelectsPerGOOS(t *testing.T) {
 	case "linux":
 		wantLen = 7
 	case "windows":
-		wantLen = 6
+		wantLen = 7
 	}
 	if prod.Len() != wantLen {
 		t.Fatalf("production registration holds %d functions on %s, want %d", prod.Len(), goos, wantLen)
@@ -3069,8 +3070,8 @@ func TestMacNetworkTimeGettersClosedEnumRejectsSettersBeforeRunner(t *testing.T)
 // darwin only, with zero-field args prototypes matching the catalog's
 // zero parameters, no superseded aliases, off-host dispatch rejected
 // as unsupported, and the production Register surface at 10 names on
-// darwin / 7 on linux (with the Linux get_zonecode) / 6 on windows /
-// 5 elsewhere.
+// darwin / 7 on linux (with the Linux get_zonecode) / 7 on windows
+// (with the Windows timezone.list) / 5 elsewhere.
 func TestMacNetworkTimeGettersRegistrationSelectsPerGOOS(t *testing.T) {
 	reg := runtime.NewExecRegistry()
 	if err := registerMacGettersForGOOS(reg, "darwin"); err != nil {
@@ -3160,10 +3161,11 @@ func TestMacNetworkTimeGettersRegistrationSelectsPerGOOS(t *testing.T) {
 	}
 
 	// Production Register: the surface is 10 names on darwin, 7 on
-	// linux (base 5 + zone_compare + get_zonecode), 6 on windows, 5
-	// elsewhere; the network-time getters are visible exactly on
-	// darwin; no superseded alias is ever registered; the raw alias
-	// lookup fails on every host.
+	// linux (base 5 + zone_compare + get_zonecode), 7 on windows (base
+	// 5 + zone_compare + the Windows timezone.list), 5 elsewhere; the
+	// network-time getters are visible exactly on darwin; no
+	// superseded alias is ever registered; the raw alias lookup fails
+	// on every host.
 	prod := runtime.NewExecRegistry()
 	if err := Register(prod); err != nil {
 		t.Fatal(err)
@@ -3176,7 +3178,7 @@ func TestMacNetworkTimeGettersRegistrationSelectsPerGOOS(t *testing.T) {
 	case "linux":
 		wantLen = 7
 	case "windows":
-		wantLen = 6
+		wantLen = 7
 	}
 	if prod.Len() != wantLen {
 		t.Fatalf("production registration holds %d functions on %s, want %d", prod.Len(), goos, wantLen)
@@ -3742,7 +3744,8 @@ func TestZonecodeExecuteFailsSafeOnMalformedInvocation(t *testing.T) {
 // with a zero-field args prototype matching the catalog's zero
 // parameters, no superseded alias, off-host dispatch rejected as
 // unsupported, and the production Register surface at 7 names on
-// linux / 10 on darwin / 6 on windows / 5 elsewhere.
+// linux / 10 on darwin / 7 on windows (with the Windows
+// timezone.list) / 5 elsewhere.
 func TestZonecodeRegistrationSelectsPerGOOS(t *testing.T) {
 	reg := runtime.NewExecRegistry()
 	if err := registerLinuxGettersForGOOS(reg, "linux"); err != nil {
@@ -3803,9 +3806,10 @@ func TestZonecodeRegistrationSelectsPerGOOS(t *testing.T) {
 	}
 
 	// Production Register: the surface is 7 names on linux, 10 on
-	// darwin, 6 on windows, 5 elsewhere; get_zonecode is visible
-	// exactly on linux; no superseded alias is ever registered; the
-	// raw alias lookup fails on every host.
+	// darwin, 7 on windows (base 5 + zone_compare + the Windows
+	// timezone.list), 5 elsewhere; get_zonecode is visible exactly on
+	// linux; no superseded alias is ever registered; the raw alias
+	// lookup fails on every host.
 	prod := runtime.NewExecRegistry()
 	if err := Register(prod); err != nil {
 		t.Fatal(err)
@@ -3818,7 +3822,7 @@ func TestZonecodeRegistrationSelectsPerGOOS(t *testing.T) {
 	case "darwin":
 		wantLen = 10
 	case "windows":
-		wantLen = 6
+		wantLen = 7
 	}
 	if prod.Len() != wantLen {
 		t.Fatalf("production registration holds %d functions on %s, want %d", prod.Len(), goos, wantLen)

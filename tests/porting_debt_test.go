@@ -1233,8 +1233,9 @@ func TestPortingDebtExecTimezoneZoneCompareWindowsPartialPTD_EXEC_1638(t *testin
 	// never a windows alias and never a duplicate. The surface is
 	// GOOS-dependent: seven names on linux (base 5 + zone_compare +
 	// the Linux get_zonecode of PTD-EXEC-1631), ten on darwin (base 5
-	// + zone_compare + the four Mac systemsetup getters), six on
-	// windows (base 5 + zone_compare).
+	// + zone_compare + the four Mac systemsetup getters), seven on
+	// windows (base 5 + zone_compare + the Windows timezone.list of
+	// PTD-EXEC-1632).
 	switch runtime.CurrentGOOS() {
 	case "linux", "darwin", "windows":
 	default:
@@ -1252,7 +1253,8 @@ func TestPortingDebtExecTimezoneZoneCompareWindowsPartialPTD_EXEC_1638(t *testin
 	}
 	want := []string{
 		"timezone.get_hwclock", "timezone.get_offset", "timezone.get_zone",
-		"timezone.set_hwclock", "timezone.set_zone", "timezone.zone_compare",
+		"timezone.list", "timezone.set_hwclock", "timezone.set_zone",
+		"timezone.zone_compare",
 	}
 	switch runtime.CurrentGOOS() {
 	case "linux":
