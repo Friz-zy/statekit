@@ -950,17 +950,18 @@ func TestZoneCompareRegistrationSelectsPerGOOS(t *testing.T) {
 	}
 
 	// Visible layer: Names filters through SupportsPlatform. The
-	// surface is 11 names on darwin (base 5 + zone_compare + the four
+	// surface is 12 names on darwin (base 5 + zone_compare + the four
 	// Mac systemsetup getters get_date, get_time, get_time_server,
 	// get_using_network_time + the Mac timezone.get_zonecode of
-	// PTD-EXEC-1631), 7 on linux (base 5 + zone_compare +
+	// PTD-EXEC-1631 + the Mac timezone.list_zones of PTD-EXEC-1633),
+	// 7 on linux (base 5 + zone_compare +
 	// get_zonecode), 7 on windows (base 5 + zone_compare + the Windows
 	// timezone.list of PTD-EXEC-1632), and 5 everywhere else (no
 	// getters, no zone_compare).
 	wantTotal := 5
 	switch goos {
 	case "darwin":
-		wantTotal = 11
+		wantTotal = 12
 	case "linux":
 		wantTotal = 7
 	case "windows":
@@ -1662,16 +1663,17 @@ func TestMacZoneCompareNoDuplicateRegistration(t *testing.T) {
 		}
 	}
 	goos := runtime.CurrentGOOS()
-	// The production surface is 11 functions on darwin (base 5 +
+	// The production surface is 12 functions on darwin (base 5 +
 	// zone_compare + the four Mac systemsetup getters get_date,
 	// get_time, get_time_server, get_using_network_time + the Mac
-	// get_zonecode of PTD-EXEC-1631), 7 on linux
+	// get_zonecode of PTD-EXEC-1631 + the Mac list_zones of
+	// PTD-EXEC-1633), 7 on linux
 	// (base 5 + zone_compare + get_zonecode), 7 on windows (base 5 +
 	// zone_compare + the Windows timezone.list), 5 elsewhere.
 	wantLen := 5
 	switch goos {
 	case "darwin":
-		wantLen = 11
+		wantLen = 12
 	case "linux":
 		wantLen = 7
 	case "windows":
@@ -2312,8 +2314,9 @@ func TestMacGettersUnknownEnumRejectedBeforeRunner(t *testing.T) {
 // unexported registerMacGettersForGOOS helper (the Darwin selector
 // seam, exercised from any host): the getters on darwin only, with
 // zero-field args prototypes, no superseded aliases, off-host dispatch
-// rejected as unsupported, and the production Register surface at 11
-// names on darwin (with the Mac timezone.get_zonecode) / 7 on linux
+// rejected as unsupported, and the production Register surface at 12
+// names on darwin (with the Mac timezone.get_zonecode and
+// timezone.list_zones) / 7 on linux
 // (with the Linux get_zonecode) / 7 on windows / 5 elsewhere (the
 // count includes the network-time getters pinned by MNT-12).
 func TestMacGettersRegistrationSelectsPerGOOS(t *testing.T) {
@@ -2321,8 +2324,8 @@ func TestMacGettersRegistrationSelectsPerGOOS(t *testing.T) {
 	if err := registerMacGettersForGOOS(reg, "darwin"); err != nil {
 		t.Fatal(err)
 	}
-	if reg.Len() != 5 {
-		t.Fatalf("darwin helper registered %d functions, want 5", reg.Len())
+	if reg.Len() != 6 {
+		t.Fatalf("darwin helper registered %d functions, want 6", reg.Len())
 	}
 	for _, tc := range []struct {
 		name string
@@ -2392,9 +2395,10 @@ func TestMacGettersRegistrationSelectsPerGOOS(t *testing.T) {
 		}
 	}
 
-	// Production Register: the surface is 11 names on darwin (base 5 +
+	// Production Register: the surface is 12 names on darwin (base 5 +
 	// zone_compare + the four Mac systemsetup getters + the Mac
-	// get_zonecode of PTD-EXEC-1631), 7 on
+	// get_zonecode of PTD-EXEC-1631 + the Mac list_zones of
+	// PTD-EXEC-1633), 7 on
 	// linux (base 5 + zone_compare + get_zonecode), 7 on windows (base
 	// 5 + zone_compare + the Windows timezone.list), 5 elsewhere; the
 	// getters are visible exactly on darwin; no superseded alias is
@@ -2407,7 +2411,7 @@ func TestMacGettersRegistrationSelectsPerGOOS(t *testing.T) {
 	wantLen := 5
 	switch goos {
 	case "darwin":
-		wantLen = 11
+		wantLen = 12
 	case "linux":
 		wantLen = 7
 	case "windows":
@@ -3014,12 +3018,13 @@ func TestMacNetworkTimeGettersExecuteFailsSafeOnMalformedInvocation(t *testing.T
 	}
 }
 
-// MNT-11: the closed macSystemsetupGetter enum maps only to the four
-// read-only flags; the two network-time values map to
-// -getusingnetworktime and -getnetworktimeserver, and any other value
-// is rejected with the fixed unknown-getter error before the Runner is
-// touched — no setter flag (or zone flag) can be expressed through the
-// enum at all.
+// MNT-11: the closed macSystemsetupGetter enum maps only to the five
+// read-only selector values (the four Mac systemsetup getters plus the
+// timezone.list_zones -listtimezones value); the two network-time
+// values map to -getusingnetworktime and -getnetworktimeserver, and
+// any other value is rejected with the fixed unknown-getter error
+// before the Runner is touched — no setter flag (or zone flag) can be
+// expressed through the enum at all.
 func TestMacNetworkTimeGettersClosedEnumRejectsSettersBeforeRunner(t *testing.T) {
 	for _, unknown := range []macSystemsetupGetter{macSystemsetupGetter(4), macSystemsetupGetter(99), macSystemsetupGetter(-1)} {
 		rt, runner := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Network Time: on\n")})
@@ -3054,7 +3059,8 @@ func TestMacNetworkTimeGettersClosedEnumRejectsSettersBeforeRunner(t *testing.T)
 	}
 
 	// No closed value can express a setter or zone flag: the closed
-	// answer set is exactly the four read-only getters.
+	// answer set is exactly the five read-only selector values (the
+	// four Mac getters plus the list_zones -listtimezones value).
 	for _, forbidden := range []string{
 		"-setdate", "-settime", "-settimezone",
 		"-setusingnetworktime", "-setnetworktimeserver",
@@ -3070,20 +3076,22 @@ func TestMacNetworkTimeGettersClosedEnumRejectsSettersBeforeRunner(t *testing.T)
 
 // MNT-12: registration selects the two network-time getters per GOOS
 // through the unexported registerMacGettersForGOOS helper (the Darwin
-// selector seam, exercised from any host): all four Mac getters on
-// darwin only, with zero-field args prototypes matching the catalog's
+// selector seam, exercised from any host): all five Mac systemsetup
+// query functions (the four getters plus list_zones) on darwin only,
+// with zero-field args prototypes matching the catalog's
 // zero parameters, no superseded aliases, off-host dispatch rejected
-// as unsupported, and the production Register surface at 11 names on
-// darwin (with the Mac timezone.get_zonecode) / 7 on linux (with the
-// Linux get_zonecode) / 7 on windows (with the Windows timezone.list) /
+// as unsupported, and the production Register surface at 12 names on
+// darwin (with the Mac timezone.get_zonecode and timezone.list_zones) /
+// 7 on linux (with the Linux get_zonecode) / 7 on windows (with the
+// Windows timezone.list) /
 // 5 elsewhere.
 func TestMacNetworkTimeGettersRegistrationSelectsPerGOOS(t *testing.T) {
 	reg := runtime.NewExecRegistry()
 	if err := registerMacGettersForGOOS(reg, "darwin"); err != nil {
 		t.Fatal(err)
 	}
-	if reg.Len() != 5 {
-		t.Fatalf("darwin helper registered %d functions, want 5", reg.Len())
+	if reg.Len() != 6 {
+		t.Fatalf("darwin helper registered %d functions, want 6", reg.Len())
 	}
 	for _, tc := range []struct {
 		name string
@@ -3165,9 +3173,10 @@ func TestMacNetworkTimeGettersRegistrationSelectsPerGOOS(t *testing.T) {
 		}
 	}
 
-	// Production Register: the surface is 11 names on darwin (base 5 +
+	// Production Register: the surface is 12 names on darwin (base 5 +
 	// zone_compare + the four Mac systemsetup getters + the Mac
-	// get_zonecode of PTD-EXEC-1631), 7 on
+	// get_zonecode of PTD-EXEC-1631 + the Mac list_zones of
+	// PTD-EXEC-1633), 7 on
 	// linux (base 5 + zone_compare + get_zonecode), 7 on windows (base
 	// 5 + zone_compare + the Windows timezone.list), 5 elsewhere; the
 	// network-time getters are visible exactly on darwin; no
@@ -3181,7 +3190,7 @@ func TestMacNetworkTimeGettersRegistrationSelectsPerGOOS(t *testing.T) {
 	wantLen := 5
 	switch goos {
 	case "darwin":
-		wantLen = 11
+		wantLen = 12
 	case "linux":
 		wantLen = 7
 	case "windows":
@@ -3751,7 +3760,8 @@ func TestZonecodeExecuteFailsSafeOnMalformedInvocation(t *testing.T) {
 // with a zero-field args prototype matching the catalog's zero
 // parameters, no superseded alias, off-host dispatch rejected as
 // unsupported, and the production Register surface at 7 names on
-// linux / 11 on darwin (with the Mac timezone.get_zonecode) / 7 on
+// linux / 12 on darwin (with the Mac timezone.get_zonecode and
+// timezone.list_zones) / 7 on
 // windows (with the Windows timezone.list) / 5 elsewhere.
 func TestZonecodeRegistrationSelectsPerGOOS(t *testing.T) {
 	reg := runtime.NewExecRegistry()
@@ -3812,9 +3822,10 @@ func TestZonecodeRegistrationSelectsPerGOOS(t *testing.T) {
 		}
 	}
 
-	// Production Register: the surface is 7 names on linux, 11 on
+	// Production Register: the surface is 7 names on linux, 12 on
 	// darwin (base 5 + zone_compare + the four Mac systemsetup getters
-	// + the Mac get_zonecode of PTD-EXEC-1631),
+	// + the Mac get_zonecode of PTD-EXEC-1631 + the Mac list_zones of
+	// PTD-EXEC-1633),
 	// 7 on windows (base 5 + zone_compare + the Windows
 	// timezone.list), 5 elsewhere; get_zonecode is visible exactly on
 	// linux and darwin (one variant each); no superseded alias is ever
@@ -3829,7 +3840,7 @@ func TestZonecodeRegistrationSelectsPerGOOS(t *testing.T) {
 	case "linux":
 		wantLen = 7
 	case "darwin":
-		wantLen = 11
+		wantLen = 12
 	case "windows":
 		wantLen = 7
 	}
@@ -4327,8 +4338,8 @@ func TestMacZonecodeRegistrationSelectsPerGOOS(t *testing.T) {
 	if err := registerMacGettersForGOOS(reg, "darwin"); err != nil {
 		t.Fatal(err)
 	}
-	if reg.Len() != 5 {
-		t.Fatalf("darwin helper registered %d functions, want 5", reg.Len())
+	if reg.Len() != 6 {
+		t.Fatalf("darwin helper registered %d functions, want 6", reg.Len())
 	}
 	fn, ok := reg.Get("timezone.get_zonecode")
 	if !ok {
@@ -4391,9 +4402,10 @@ func TestMacZonecodeRegistrationSelectsPerGOOS(t *testing.T) {
 	}
 }
 
-// MZC-MAC-08: the production Register surface is 11 names on darwin
+// MZC-MAC-08: the production Register surface is 12 names on darwin
 // (base 5 + zone_compare + the four Mac systemsetup getters + the Mac
-// get_zonecode), 7 on linux, 7 on windows, 5 elsewhere; exactly one
+// get_zonecode + the Mac list_zones of PTD-EXEC-1633), 7 on linux,
+// 7 on windows, 5 elsewhere; exactly one
 // timezone.get_zonecode variant is visible per supported GOOS (the
 // Linux variant on linux, the mac variant on darwin, none on windows
 // and elsewhere); no superseded alias is ever registered; and the
@@ -4408,7 +4420,7 @@ func TestMacZonecodeProductionSurface(t *testing.T) {
 	wantLen := 5
 	switch goos {
 	case "darwin":
-		wantLen = 11
+		wantLen = 12
 	case "linux":
 		wantLen = 7
 	case "windows":
@@ -4469,5 +4481,349 @@ func TestMacZonecodeProductionSurface(t *testing.T) {
 		if _, err := darwinReg.Call(context.Background(), rt, "timezone.get_zonecode", &macZonecodeArgs{}); !errors.As(err, &unsupported) || unsupported.Kind != "function" {
 			t.Fatalf("Call timezone.get_zonecode on %s = %v, want unsupported function", goos, err)
 		}
+	}
+}
+
+// MLZ-01: the fifth closed enum value macSystemsetupListTimezones is
+// pinned to the explicit 5 and maps to the single read-only
+// -listtimezones flag; the historically invalid value 4 stays rejected
+// with the fixed unknown-getter error before the Runner is touched
+// (the MGT-11/MNT-11 -1, 4, 99 rejection pins do not move).
+func TestMacListZonesEnumValuePinnedAwayFromFour(t *testing.T) {
+	if macSystemsetupListTimezones != 5 {
+		t.Fatalf("macSystemsetupListTimezones = %d, want the explicit 5 so 4 stays invalid", int(macSystemsetupListTimezones))
+	}
+	getter := macSystemsetupListTimezones
+	flag, err := getter.flag()
+	if err != nil || flag != "-listtimezones" {
+		t.Fatalf("listtimezones flag = %q, %v; want -listtimezones, nil", flag, err)
+	}
+	rt, runner := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Time Zone: UTC\n")})
+	_, queryErr := macSystemsetupQuery(context.Background(), rt, macSystemsetupGetter(4))
+	if queryErr == nil || queryErr.Error() != "unknown systemsetup getter" {
+		t.Fatalf("enum 4 err = %v, want unknown systemsetup getter", queryErr)
+	}
+	if errors.Is(queryErr, ErrMacSystemsetupQuery) {
+		t.Fatal("enum 4 must not fail with the query sentinel")
+	}
+	if len(runner.cmds) != 0 {
+		t.Fatalf("enum 4 dispatched %d commands, want 0", len(runner.cmds))
+	}
+}
+
+// MLZ-02: list_zones Execute dispatches exactly one shell-free
+// systemsetup -listtimezones with the fixed argv, environment, timeout,
+// and capture ceilings — deep-equal over the whole process.Command —
+// and returns the parsed zone list.
+func TestMacListZonesDispatchesFixedCommand(t *testing.T) {
+	rt, runner := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Time Zone: UTC\n")})
+	value, err := (macListZonesFunc{}).Execute(context.Background(), rt, &macListZonesArgs{})
+	if err != nil {
+		t.Fatalf("list_zones err = %v, want nil", err)
+	}
+	zones, ok := value.([]string)
+	if !ok {
+		t.Fatalf("list_zones value type = %T, want []string", value)
+	}
+	if len(zones) != 1 || zones[0] != "UTC" {
+		t.Fatalf("list_zones = %#v, want [UTC]", zones)
+	}
+	if len(runner.cmds) != 1 {
+		t.Fatalf("list_zones dispatched %d commands, want 1", len(runner.cmds))
+	}
+	if !reflect.DeepEqual(runner.cmds[0], wantMacGetterCommand("-listtimezones")) {
+		t.Fatalf("list_zones command = %#v, want %#v", runner.cmds[0], wantMacGetterCommand("-listtimezones"))
+	}
+}
+
+// MLZ-03: successful output follows the pinned list_zones pipeline —
+// execute_return_result + parse_return (through the shared
+// macSystemsetupQuery) then splitlines + per-line str.strip. Output
+// order, duplicates, and interior empty values are preserved; a
+// trailing boundary yields no trailing empty element; each line is
+// stripped on both ends only.
+func TestMacListZonesParsesSplitlinesAndStrip(t *testing.T) {
+	// Source-derived synthetic fixture (no real systemsetup output was
+	// captured or executed): the pinned pipeline's parse_return ": "
+	// delimiter consumes the "Time Zone: " prefix of the first line.
+	rt, _ := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Time Zone: Africa/Abidjan\nAfrica/Accra\n\nAfrica/Accra\n  Europe/Zurich  \n")})
+	value, err := (macListZonesFunc{}).Execute(context.Background(), rt, &macListZonesArgs{})
+	if err != nil {
+		t.Fatalf("list_zones err = %v, want nil", err)
+	}
+	want := []string{"Africa/Abidjan", "Africa/Accra", "", "Africa/Accra", "Europe/Zurich"}
+	if !reflect.DeepEqual(value, want) {
+		t.Fatalf("list_zones = %#v, want %#v", value, want)
+	}
+}
+
+// MLZ-04: the line-boundary set is exactly Python str.splitlines for
+// this contract — LF, CR, CRLF as one boundary, VT, FF, U+001C..U+001E,
+// NEL, LS, PS — while U+001F is Python strip whitespace but NEVER a
+// line boundary; the strip set is pythonSpace (U+001C..U+001F included)
+// applied to both line ends only.
+func TestMacListZonesSplitlinesBoundaries(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want []string
+	}{
+		{"lf", "a\nb", []string{"a", "b"}},
+		{"cr", "a\rb", []string{"a", "b"}},
+		{"crlf is one boundary", "a\r\nb", []string{"a", "b"}},
+		{"crlf chain", "a\r\nb\r\nc", []string{"a", "b", "c"}},
+		{"crlf then lf", "a\r\nb\nc", []string{"a", "b", "c"}},
+		{"lone cr then crlf", "a\rb\r\nc", []string{"a", "b", "c"}},
+		{"crlf at start", "\r\na", []string{"", "a"}},
+		{"trailing crlf", "a\r\n", []string{"a"}},
+		{"vt", "a\vb", []string{"a", "b"}},
+		{"ff", "a\fb", []string{"a", "b"}},
+		{"u001c", "a\x1cb", []string{"a", "b"}},
+		{"u001d", "a\x1db", []string{"a", "b"}},
+		{"u001e", "a\x1eb", []string{"a", "b"}},
+		{"nel", "a\u0085b", []string{"a", "b"}},
+		{"ls", "a\u2028b", []string{"a", "b"}},
+		{"ps", "a\u2029b", []string{"a", "b"}},
+		{"u001f is not a boundary", "a\x1fb", []string{"a\x1fb"}},
+		{"interior empties preserved", "a\n\nb", []string{"a", "", "b"}},
+		{"trailing boundary no empty", "a\n", []string{"a"}},
+		{"leading boundary keeps empty first", "\na", []string{"", "a"}},
+		{"no boundary single line", "abc", []string{"abc"}},
+	}
+	for _, tc := range cases {
+		if got := pythonSplitlines(tc.in); !reflect.DeepEqual(got, tc.want) {
+			t.Fatalf("%s: pythonSplitlines(%q) = %#v, want %#v", tc.name, tc.in, got, tc.want)
+		}
+	}
+
+	// Belt-and-braces over the RAW helper output — asserted BEFORE any
+	// strip runs: no split element may retain a boundary byte. The F-01
+	// CRLF bug (slicing after advancing over the LF) shows up here as a
+	// trailing "\r" inside the preceding line; U+001F is deliberately
+	// absent from the guard because it is not a boundary.
+	for _, tc := range cases {
+		for _, line := range pythonSplitlines(tc.in) {
+			if strings.ContainsAny(line, "\r\n\v\f\x1c\x1d\x1e\u0085\u2028\u2029") {
+				t.Fatalf("%s: split element %q retained a boundary byte", tc.name, line)
+			}
+		}
+	}
+
+	// The strip set covers both ends with pythonSpace semantics,
+	// including U+001C..U+001F, and never touches interior whitespace.
+	strips := []struct{ in, want string }{
+		{"  a  ", "a"},
+		{"\x1ca\x1f", "a"},
+		{"\t a \t", "a"},
+		{"a\x1fb", "a\x1fb"},
+		{"", ""},
+		{"\x1c\x1f", ""},
+	}
+	for _, tc := range strips {
+		if got := pythonStrip(tc.in); got != tc.want {
+			t.Fatalf("pythonStrip(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+
+	// U+001F inside Execute output stays within its line (no split) and
+	// is stripped only at line edges.
+	rt, _ := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Time Zone: a\x1fb\n")})
+	value, err := (macListZonesFunc{}).Execute(context.Background(), rt, &macListZonesArgs{})
+	if err != nil {
+		t.Fatalf("list_zones err = %v, want nil", err)
+	}
+	if !reflect.DeepEqual(value, []string{"a\x1fb"}) {
+		t.Fatalf("u001f interior value = %#v, want [a\\x1fb]", value)
+	}
+}
+
+// MLZ-05: empty successful stdout returns a nonnil empty []string —
+// nil stdout, the empty string, and whitespace-only stdout all rstrip
+// to the empty parse answer.
+func TestMacListZonesEmptyStdoutNonnilEmpty(t *testing.T) {
+	for _, stdout := range [][]byte{nil, []byte(""), []byte("\n"), []byte("   ")} {
+		rt, _ := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: stdout})
+		value, err := (macListZonesFunc{}).Execute(context.Background(), rt, &macListZonesArgs{})
+		if err != nil {
+			t.Fatalf("stdout %q err = %v, want nil", stdout, err)
+		}
+		zones, ok := value.([]string)
+		if !ok {
+			t.Fatalf("stdout %q value type = %T, want []string", stdout, value)
+		}
+		if zones == nil {
+			t.Fatalf("stdout %q returned a nil slice, want nonnil empty", stdout)
+		}
+		if len(zones) != 0 {
+			t.Fatalf("stdout %q returned %d zones, want 0", stdout, len(zones))
+		}
+	}
+}
+
+// MLZ-06: every failure stays fixed and value-free — malformed args
+// fail before any dispatch, and nil Runtime/Runner plus every
+// query-category failure (Runner error, nonzero exit, truncation,
+// "not supported" stdout) maps to ErrMacSystemsetupQuery with a nil
+// value and no leaked marker.
+func TestMacListZonesFailsFixedValueFree(t *testing.T) {
+	rt, runner := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("Time Zone: UTC\n")})
+	for _, malformed := range []any{"timezone.list_zones", (*macListZonesArgs)(nil), &macGetDateArgs{}} {
+		value, err := (macListZonesFunc{}).Execute(context.Background(), rt, malformed)
+		if err == nil || err.Error() != "invalid timezone getter arguments" {
+			t.Fatalf("malformed args %T err = %v, want invalid timezone getter arguments", malformed, err)
+		}
+		if value != nil {
+			t.Fatalf("malformed args %T returned a value", malformed)
+		}
+	}
+	if len(runner.cmds) != 0 {
+		t.Fatalf("malformed invocations dispatched %d commands, want 0", len(runner.cmds))
+	}
+
+	failures := []struct {
+		name   string
+		reply  process.CommandResult
+		nilRT  bool
+		nilRun bool
+	}{
+		{"nil Runtime", process.CommandResult{}, true, false},
+		{"nil Runner", process.CommandResult{}, false, true},
+		{"runner error", process.CommandResult{Err: errors.New("boom")}, false, false},
+		{"nonzero exit", process.CommandResult{ExitCode: 1, Stdout: []byte("Time Zone: UTC\n")}, false, false},
+		{"stdout truncated", process.CommandResult{ExitCode: 0, StdoutTruncated: true}, false, false},
+		{"stderr truncated", process.CommandResult{ExitCode: 0, StderrTruncated: true}, false, false},
+		{"not supported stdout", process.CommandResult{ExitCode: 0, Stdout: []byte("Not Supported\n")}, false, false},
+	}
+	for _, tc := range failures {
+		var rt *runtime.Runtime
+		var runner *macZoneRunner
+		if tc.nilRT {
+			rt = nil
+		} else {
+			rt, runner = newMacZoneRuntime(tc.reply)
+			if tc.nilRun {
+				rt.Runner = nil
+			}
+		}
+		value, err := (macListZonesFunc{}).Execute(context.Background(), rt, &macListZonesArgs{})
+		requireMacGetterError(t, err)
+		if value != nil {
+			t.Fatalf("%s returned a nonnil value", tc.name)
+		}
+		if runner != nil && len(runner.cmds) > 1 {
+			t.Fatalf("%s dispatched %d commands, want at most 1", tc.name, len(runner.cmds))
+		}
+	}
+}
+
+// MLZ-07: registration selects timezone.list_zones per GOOS through
+// the unexported registerMacGettersForGOOS helper (the Darwin selector
+// seam, exercised from any host): darwin only, a zero-field args
+// prototype matching the catalog's zero parameters and distinct from
+// every other Mac getter and the Windows lister prototype, no
+// duplicate entry, nothing on any non-darwin GOOS, and the production
+// Register surface at 12 names on darwin (with the Mac
+// timezone.get_zonecode of PTD-EXEC-1631 and timezone.list_zones of
+// PTD-EXEC-1633) / 7 on linux / 7 on windows / 5 elsewhere with
+// list_zones visible exactly on darwin.
+func TestMacListZonesRegistrationSelectsPerGOOS(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := registerMacGettersForGOOS(reg, "darwin"); err != nil {
+		t.Fatal(err)
+	}
+	if reg.Len() != 6 {
+		t.Fatalf("darwin helper registered %d functions, want 6", reg.Len())
+	}
+	fn, ok := reg.Get("timezone.list_zones")
+	if !ok {
+		t.Fatal("darwin helper did not register timezone.list_zones")
+	}
+	if _, isListZones := fn.(macListZonesFunc); !isListZones {
+		t.Fatalf("timezone.list_zones registered %T", fn)
+	}
+	constrained, isConstrained := fn.(runtime.PlatformConstrained)
+	if !isConstrained || !reflect.DeepEqual(constrained.Platforms(), []string{"darwin"}) {
+		t.Fatalf("timezone.list_zones platforms = %v, want [darwin]", constrained.Platforms())
+	}
+	if !runtime.SupportsPlatform(fn, "darwin") {
+		t.Fatal("timezone.list_zones must support darwin")
+	}
+	for _, goos := range []string{"linux", "windows", "freebsd", "solaris", "aix"} {
+		if runtime.SupportsPlatform(fn, goos) {
+			t.Fatalf("timezone.list_zones must not support %s", goos)
+		}
+	}
+	// Zero-field args contract (catalog declares no parameters) and no
+	// required gate to trip; the prototype stays distinct from every
+	// other Mac getter prototype and from the Windows lister.
+	argsType := reflect.TypeOf((macListZonesFunc{}).Args())
+	if argsType.Kind() != reflect.Struct || argsType.NumField() != 0 {
+		t.Fatalf("timezone.list_zones args prototype = %s with %d fields, want a zero-field struct", argsType, argsType.NumField())
+	}
+	if err := config.ValidateRequired(reflect.New(argsType).Interface()); err != nil {
+		t.Fatalf("timezone.list_zones zero-field args failed the required gate: %v", err)
+	}
+	for _, other := range []runtime.ExecFunction{macGetDateFunc{}, macGetTimeFunc{}, macGetUsingNetworkTimeFunc{}, macGetTimeServerFunc{}, macZonecodeFunc{}, winZoneListFunc{}} {
+		if argsType == reflect.TypeOf(other.Args()) {
+			t.Fatalf("timezone.list_zones args type must stay distinct from %T", other)
+		}
+	}
+	// No duplicate entry can exist.
+	if err := reg.Register(macListZonesFunc{}); err == nil {
+		t.Fatal("registering timezone.list_zones twice must fail as a duplicate")
+	}
+
+	// Every non-darwin GOOS registers nothing at all.
+	for _, goos := range []string{"linux", "windows", "freebsd", "openbsd", "netbsd", "solaris", "illumos", "aix", "plan9"} {
+		other := runtime.NewExecRegistry()
+		if err := registerMacGettersForGOOS(other, goos); err != nil {
+			t.Fatal(err)
+		}
+		if other.Len() != 0 {
+			t.Fatalf("helper registered %d functions for %s, want 0", other.Len(), goos)
+		}
+		if _, ok := other.Get("timezone.list_zones"); ok {
+			t.Fatalf("helper registered timezone.list_zones for %s", goos)
+		}
+	}
+
+	// Production Register: the surface is 12 names on darwin (base 5 +
+	// zone_compare + the four Mac systemsetup getters + the Mac
+	// get_zonecode of PTD-EXEC-1631 + list_zones of PTD-EXEC-1633),
+	// 7 on linux (base 5 + zone_compare + get_zonecode), 7 on windows
+	// (base 5 + zone_compare + the Windows timezone.list), 5 elsewhere;
+	// list_zones is visible exactly on darwin; no superseded alias is
+	// ever registered.
+	prod := runtime.NewExecRegistry()
+	if err := Register(prod); err != nil {
+		t.Fatal(err)
+	}
+	goos := runtime.CurrentGOOS()
+	wantLen := 5
+	switch goos {
+	case "darwin":
+		wantLen = 12
+	case "linux":
+		wantLen = 7
+	case "windows":
+		wantLen = 7
+	}
+	if prod.Len() != wantLen {
+		t.Fatalf("production registration holds %d functions on %s, want %d", prod.Len(), goos, wantLen)
+	}
+	visible := 0
+	for _, name := range prod.Names() {
+		if name == "timezone.list_zones" {
+			visible++
+		}
+		if strings.HasPrefix(name, "timezone.list_zones_") {
+			t.Fatalf("superseded alias %q registered on %s", name, goos)
+		}
+	}
+	if goos == "darwin" && visible != 1 {
+		t.Fatalf("list_zones visible %d times on %s, want 1", visible, goos)
+	}
+	if goos != "darwin" && visible != 0 {
+		t.Fatalf("list_zones visible %d times on %s, want 0", visible, goos)
 	}
 }

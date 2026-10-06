@@ -405,6 +405,62 @@ func macParseReturn(data string) string {
 	return data
 }
 
+// pythonStrip strips leading and trailing Python whitespace only
+// (pythonSpace: unicode.IsSpace plus U+001C..U+001F), mirroring the
+// str.strip() that each mac_timezone.list_zones splitlines line
+// applies; interior whitespace is never touched. The trailing half
+// reuses pythonRStrip.
+func pythonStrip(s string) string {
+	start := 0
+	for start < len(s) {
+		r, size := utf8.DecodeRuneInString(s[start:])
+		if !pythonSpace(r) {
+			break
+		}
+		start += size
+	}
+	return pythonRStrip(s[start:])
+}
+
+// pythonSplitlines splits on the exact Python str.splitlines()
+// boundaries needed by mac_timezone.list_zones: \n, \r, \r\n (one
+// boundary), \v, \f, U+001C..U+001E, U+0085, and U+2028/U+2029.
+// U+001F is Python strip whitespace but NOT a line boundary. A
+// trailing boundary yields no trailing empty element; interior
+// boundaries preserve interior empty lines in order. Each line is
+// sliced at the SOURCE boundary index — for CRLF at the CR — so the
+// boundary bytes never leak into the preceding line.
+func pythonSplitlines(s string) []string {
+	var lines []string
+	start := 0
+	runes := []rune(s)
+	for i := 0; i < len(runes); i++ {
+		boundaryEnd := 0
+		switch runes[i] {
+		case '\n', '\v', '\f', '\x1c', '\x1d', '\x1e', '\x85', '\u2028', '\u2029':
+			boundaryEnd = i + 1
+		case '\r':
+			boundaryEnd = i + 1
+			if i+1 < len(runes) && runes[i+1] == '\n' {
+				boundaryEnd = i + 2 // CRLF is one boundary
+			}
+		default:
+			continue
+		}
+		// The slice always ends at the source boundary index i (the CR
+		// itself for CRLF); only `start` advances over the whole
+		// boundary, so a preceding line can never retain the CR
+		// (F-01: slicing after advancing i kept the CR).
+		lines = append(lines, string(runes[start:i]))
+		start = boundaryEnd
+		i = boundaryEnd - 1 // the loop's i++ resumes after the boundary
+	}
+	if start < len(runes) {
+		lines = append(lines, string(runes[start:]))
+	}
+	return lines
+}
+
 // errMacZoneInvalidArgs is the fixed, value-free invocation error for
 // arguments that cannot be the mac zone_compare contract at all (a
 // wrong dynamic type or a typed-nil pointer); it never formats or
@@ -474,7 +530,7 @@ type getZoneArgs struct{}
 
 // ErrMacSystemsetupQuery is the fixed, value-free execution failure
 // for the Mac systemsetup getters (the mac_timezone
-// get_date/get_time/get_using_network_time/get_time_server
+// get_date/get_time/get_using_network_time/get_time_server/list_zones
 // CommandExecutionError analog): the query could not be completed. It
 // is distinct from ErrCannotDetermineZone and from
 // ErrMacNetworkTimeStateInvalid; errors.Is matches only this
@@ -493,10 +549,13 @@ var errMacGetterInvalidArgs = errors.New("invalid timezone getter arguments")
 var errMacSystemsetupUnknownGetter = errors.New("unknown systemsetup getter")
 
 // macSystemsetupGetter is the private closed selector for the only
-// four read-only systemsetup queries the module may run. Values never
+// five read-only systemsetup queries the module may run. Values never
 // come from user input: each maps to exactly one fixed argv flag, and
 // any other value is rejected before the Runner is touched — arbitrary
 // argv, zone flags, and setter flags cannot be expressed through it.
+// macSystemsetupListTimezones is pinned to the explicit value 5 so the
+// historically invalid out-of-enum value 4 stays invalid (the -1, 4,
+// and 99 rejection pins do not move).
 type macSystemsetupGetter int
 
 const (
@@ -504,13 +563,15 @@ const (
 	macSystemsetupGetTime
 	macSystemsetupGetUsingNetworkTime
 	macSystemsetupGetTimeServer
+	macSystemsetupListTimezones macSystemsetupGetter = 5
 )
 
 // flag returns the single fixed argv flag for the closed enum value:
 // -getdate for the date query, -gettime for the time query,
 // -getusingnetworktime for the network-time state query,
-// -getnetworktimeserver for the time-server query, and the fixed
-// unknown-getter rejection for anything else.
+// -getnetworktimeserver for the time-server query, -listtimezones for
+// the read-only zone-list query, and the fixed unknown-getter
+// rejection for anything else (including the unassigned value 4).
 func (g macSystemsetupGetter) flag() (string, error) {
 	switch g {
 	case macSystemsetupGetDate:
@@ -521,6 +582,8 @@ func (g macSystemsetupGetter) flag() (string, error) {
 		return "-getusingnetworktime", nil
 	case macSystemsetupGetTimeServer:
 		return "-getnetworktimeserver", nil
+	case macSystemsetupListTimezones:
+		return "-listtimezones", nil
 	}
 	return "", errMacSystemsetupUnknownGetter
 }
@@ -736,6 +799,61 @@ func (macGetTimeServerFunc) Execute(ctx context.Context, rt *runtime.Runtime, ar
 		return nil, err
 	}
 	return value, nil
+}
+
+// macListZonesArgs is the zero-field Mac list_zones argument contract:
+// docs/catalog/exec/mac_timezone.yaml declares list_zones with no
+// parameters.
+type macListZonesArgs struct{}
+
+// macListZonesFunc implements timezone.list_zones for the pinned
+// mac_timezone.py contract.
+type macListZonesFunc struct{}
+
+func (macListZonesFunc) Name() string { return "timezone.list_zones" }
+
+// Platforms restricts the zone list to darwin; the Windows
+// ZoneInfo/TzMapper timezone.list of PTD-EXEC-1632 is its own
+// windows-only registration.
+func (macListZonesFunc) Platforms() []string { return []string{"darwin"} }
+
+func (macListZonesFunc) Args() any { return macListZonesArgs{} }
+
+// Execute ports mac_timezone.list_zones (pinned revision lines 200-217)
+// for the macOS variant (PTD-EXEC-1633 Mac partial): boundary guards
+// first (architecture gate) — a wrong argument type or typed-nil
+// pointer returns the fixed errMacGetterInvalidArgs before any
+// dispatch, never a panic and never raw args formatted into the error
+// — then exactly one fixed shell-free
+// `/usr/sbin/systemsetup -listtimezones` dispatch through the shared
+// closed enum query, the existing macSystemsetupQuery (the
+// execute_return_result + parse_return analog); no second systemsetup
+// invocation contract is added. Successful output is split on the
+// exact Python str.splitlines() boundaries (LF, CR, CRLF as one
+// boundary, VT, FF, U+001C..U+001E, NEL, LS, PS — U+001F is never a
+// boundary) and each line is str.strip()ped on both ends
+// (pythonSpace: unicode.IsSpace plus U+001C..U+001F); output order,
+// duplicates, and interior empty values are preserved, a trailing
+// boundary yields no trailing element, and empty successful output
+// returns a nonnil empty []string. Every query failure maps to
+// ErrMacSystemsetupQuery with a nil value; no raw cause, output,
+// stderr, or exit status travels in any error and nothing is logged.
+// Residual trust assumption: /usr/sbin and systemsetup are
+// admin-controlled; binary authenticity is out of scope.
+func (macListZonesFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	if a, ok := args.(*macListZonesArgs); !ok || a == nil {
+		return nil, errMacGetterInvalidArgs
+	}
+	parsed, err := macSystemsetupQuery(ctx, rt, macSystemsetupListTimezones)
+	if err != nil {
+		return nil, err
+	}
+	zones := pythonSplitlines(parsed)
+	out := make([]string, 0, len(zones))
+	for _, zone := range zones {
+		out = append(out, pythonStrip(zone))
+	}
+	return out, nil
 }
 
 // winZoneCompareArgs is the win_timezone.zone_compare argument
@@ -1307,8 +1425,9 @@ func (setHwclockFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any
 // filesystem contract on linux, the mac systemsetup contract on darwin,
 // the windows tzutil contract on windows. The Mac systemsetup getters
 // timezone.get_date, timezone.get_time, timezone.get_using_network_time,
-// and timezone.get_time_server plus the Mac date-getter variant of
-// timezone.get_zonecode are darwin-only; the Linux generic
+// and timezone.get_time_server, the Mac date-getter variant of
+// timezone.get_zonecode, and the Mac zone lister timezone.list_zones
+// are darwin-only; the Linux generic
 // getter timezone.get_zonecode is linux-only; the Windows static-table
 // lister timezone.list is windows-only.
 func Register(reg *runtime.ExecRegistry) error {
@@ -1357,8 +1476,9 @@ func registerWindowsGettersForGOOS(reg *runtime.ExecRegistry, goos string) error
 
 // registerMacGettersForGOOS installs the Mac-only systemsetup getters
 // timezone.get_date, timezone.get_time, timezone.get_using_network_time,
-// and timezone.get_time_server plus the Mac-only date-getter variant of
-// timezone.get_zonecode on darwin only, and nothing on any other GOOS,
+// and timezone.get_time_server, the Mac-only date-getter variant of
+// timezone.get_zonecode, and the Mac-only zone lister
+// timezone.list_zones on darwin only, and nothing on any other GOOS,
 // where the names stay unregistered rather than
 // registered-but-unsupported. The registry keys by name, so registering
 // a getter onto one registry twice fails as a duplicate.
@@ -1366,7 +1486,7 @@ func registerMacGettersForGOOS(reg *runtime.ExecRegistry, goos string) error {
 	if goos != "darwin" {
 		return nil
 	}
-	for _, fn := range []runtime.ExecFunction{macGetDateFunc{}, macGetTimeFunc{}, macGetUsingNetworkTimeFunc{}, macGetTimeServerFunc{}, macZonecodeFunc{}} {
+	for _, fn := range []runtime.ExecFunction{macGetDateFunc{}, macGetTimeFunc{}, macGetUsingNetworkTimeFunc{}, macGetTimeServerFunc{}, macZonecodeFunc{}, macListZonesFunc{}} {
 		if err := reg.Register(fn); err != nil {
 			return err
 		}
