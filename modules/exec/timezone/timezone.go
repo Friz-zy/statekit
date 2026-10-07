@@ -856,6 +856,571 @@ func (macListZonesFunc) Execute(ctx context.Context, rt *runtime.Runtime, args a
 	return out, nil
 }
 
+// ErrMacDateTimeInvalid is the fixed, value-free invocation failure
+// shared by the Mac date/time setters (the SaltInvocationError analog
+// of mac_timezone._get_date_time_format): no format in the pinned
+// ordered family parses the input, or a matched shape cannot
+// construct a datetime (calendar validity, leap-second seconds, year
+// range). It is distinct from ErrMacSystemsetupSet and from every
+// other module sentinel; errors.Is matches only this sentinel, the
+// raw input never travels in the error, and Python's message that
+// embeds the input ("Invalid Date/Time Format: <input>") is
+// deliberately not reproduced.
+var ErrMacDateTimeInvalid = errors.New("macOS date/time format invalid")
+
+// ErrMacSystemsetupSet is the fixed, value-free execution failure for
+// the Mac systemsetup setters (the mac_utils.execute_return_success
+// CommandExecutionError analog): the single set attempt could not be
+// completed. It is distinct from ErrMacDateTimeInvalid,
+// ErrMacSystemsetupQuery, and every other module sentinel; errors.Is
+// matches only this sentinel and no raw cause, output, stderr, or
+// exit status ever travels in the error.
+var ErrMacSystemsetupSet = errors.New("macOS systemsetup set failed")
+
+// errMacSetterInvalidArgs is the fixed, value-free invocation error
+// for setter arguments that cannot be the contract at all (a wrong
+// dynamic type or a typed-nil pointer); it never formats or echoes
+// the raw args value or an underlying cause.
+var errMacSetterInvalidArgs = errors.New("invalid timezone setter arguments")
+
+// errMacSystemsetupUnknownSetter is the fixed, value-free internal
+// rejection for a macSystemsetupSetter value outside the closed enum.
+var errMacSystemsetupUnknownSetter = errors.New("unknown systemsetup setter")
+
+// macASCIIDigit returns the numeric value of ASCII digit b, or -1 for
+// any other byte. It backs only the ASCII-literal digit classes of
+// the _strptime branches below (2[0-3], [0-1], [0-5], 6[0-1], 1[0-2],
+// 0[1-9], [1-9], [01], and the space-prefixed " [1-9]"); the \d
+// positions go through macDigitAt.
+func macASCIIDigit(b byte) int {
+	if b >= '0' && b <= '9' {
+		return int(b - '0')
+	}
+	return -1
+}
+
+// macUnicodeDigit returns the decimal value of a Unicode Nd digit,
+// mirroring the proven pythonDecimalDigit mapping of
+// modules/exec/dig/dig.go over the same stdlib tables: every Nd
+// range in the Unicode data is a contiguous run of exactly ten code
+// points ordered by digit value and starting at the digit-zero code
+// point, so the value is the offset within the run. No new
+// dependency or vendored table is introduced.
+func macUnicodeDigit(r rune) (int, bool) {
+	if r >= '0' && r <= '9' {
+		return int(r - '0'), true
+	}
+	table := unicode.Categories["Nd"]
+	for _, rng := range table.R16 {
+		if r >= rune(rng.Lo) && r <= rune(rng.Hi) {
+			if rng.Stride != 1 {
+				return 0, false
+			}
+			return int((uint32(r) - uint32(rng.Lo)) % 10), true
+		}
+	}
+	for _, rng := range table.R32 {
+		if uint32(r) >= rng.Lo && uint32(r) <= rng.Hi {
+			if rng.Stride != 1 {
+				return 0, false
+			}
+			return int((uint32(r) - uint32(rng.Lo)) % 10), true
+		}
+	}
+	return 0, false
+}
+
+// macDigitAt decodes the rune at byte offset i of s and returns its
+// Nd decimal value together with the rune's UTF-8 byte length — the
+// CPython \d semantics of the _strptime branches, where any Unicode
+// Nd decimal digit matches and int() converts it positionally.
+// Invalid UTF-8 and every non-Nd rune answer ok=false, so such input
+// fails closed.
+func macDigitAt(s string, i int) (value, width int, ok bool) {
+	if i < 0 || i >= len(s) {
+		return 0, 0, false
+	}
+	r, size := utf8.DecodeRuneInString(s[i:])
+	v, isDigit := macUnicodeDigit(r)
+	if !isDigit {
+		return 0, 0, false
+	}
+	return v, size, true
+}
+
+// macFieldAlt is one ordered alternative of a CPython _strptime
+// numeric field regex: the field value it contributes and the number
+// of input bytes it consumes.
+type macFieldAlt struct {
+	value int
+	n     int
+}
+
+// macFieldAlternatives enumerates the ordered regex alternatives of
+// one field at s[i:], transcribing the CPython _strptime base
+// patterns exactly — hour 2[0-3]|[0-1]\d|\d, minute [0-5]\d|\d,
+// second 6[0-1]|[0-5]\d|\d, month 1[0-2]|0[1-9]|[1-9], day
+// 3[01]|[12]\d|0[1-9]|[1-9]| [1-9]. The \d positions — and only
+// those — accept any Unicode Nd decimal digit exactly as CPython's
+// Unicode \d does, consuming the rune's UTF-8 byte length, and the
+// digits combine positionally like Python int() ("17:3４" is minute
+// 34, "1/1٢/16" is day 12). The bracketed ASCII literals (2[0-3],
+// [0-1], [0-5], 6[0-1], 1[0-2], 0[1-9], [1-9], [01], and the
+// space-prefixed " [1-9]") match ASCII bytes only, so a fullwidth
+// month or a two-rune fullwidth hour can enter through no literal
+// branch and the single-\d alternative leaves the extra rune
+// unconverted.
+func macFieldAlternatives(s string, i int, field byte) []macFieldAlt {
+	// lit decodes the ASCII-literal digit at byte offset i+k.
+	lit := func(k int) int {
+		if i+k < len(s) {
+			return macASCIIDigit(s[i+k])
+		}
+		return -1
+	}
+	// uni decodes the Unicode Nd digit at byte offset i+k (a \d
+	// position), returning its value and byte width.
+	uni := func(k int) (int, int) {
+		if v, w, ok := macDigitAt(s, i+k); ok {
+			return v, w
+		}
+		return -1, 0
+	}
+	var alts []macFieldAlt
+	add2 := func(d0, d1, w1 int) { alts = append(alts, macFieldAlt{value: d0*10 + d1, n: 1 + w1}) }
+	switch field {
+	case 'H': // 2[0-3]|[0-1]\d|\d
+		if d0, d1 := lit(0), lit(1); d0 == 2 && d1 >= 0 && d1 <= 3 {
+			add2(d0, d1, 1)
+		}
+		if d0 := lit(0); d0 == 0 || d0 == 1 {
+			if d1, w1 := uni(1); d1 >= 0 {
+				add2(d0, d1, w1)
+			}
+		}
+		if d0, w0 := uni(0); d0 >= 0 {
+			alts = append(alts, macFieldAlt{value: d0, n: w0})
+		}
+	case 'M': // [0-5]\d|\d
+		if d0 := lit(0); d0 >= 0 && d0 <= 5 {
+			if d1, w1 := uni(1); d1 >= 0 {
+				add2(d0, d1, w1)
+			}
+		}
+		if d0, w0 := uni(0); d0 >= 0 {
+			alts = append(alts, macFieldAlt{value: d0, n: w0})
+		}
+	case 'S': // 6[0-1]|[0-5]\d|\d
+		if d0, d1 := lit(0), lit(1); d0 == 6 && (d1 == 0 || d1 == 1) {
+			add2(d0, d1, 1)
+		}
+		if d0 := lit(0); d0 >= 0 && d0 <= 5 {
+			if d1, w1 := uni(1); d1 >= 0 {
+				add2(d0, d1, w1)
+			}
+		}
+		if d0, w0 := uni(0); d0 >= 0 {
+			alts = append(alts, macFieldAlt{value: d0, n: w0})
+		}
+	case 'm': // 1[0-2]|0[1-9]|[1-9]
+		if d0, d1 := lit(0), lit(1); d0 == 1 && d1 >= 0 && d1 <= 2 {
+			add2(d0, d1, 1)
+		}
+		if d0, d1 := lit(0), lit(1); d0 == 0 && d1 >= 1 {
+			add2(d0, d1, 1)
+		}
+		if d0 := lit(0); d0 >= 1 {
+			alts = append(alts, macFieldAlt{value: d0, n: 1})
+		}
+	case 'd': // 3[01]|[12]\d|0[1-9]|[1-9]| [1-9]
+		if d0, d1 := lit(0), lit(1); d0 == 3 && (d1 == 0 || d1 == 1) {
+			add2(d0, d1, 1)
+		}
+		if d0 := lit(0); d0 == 1 || d0 == 2 {
+			if d1, w1 := uni(1); d1 >= 0 {
+				add2(d0, d1, w1)
+			}
+		}
+		if d0, d1 := lit(0), lit(1); d0 == 0 && d1 >= 1 {
+			add2(d0, d1, 1)
+		}
+		if d0 := lit(0); d0 >= 1 {
+			alts = append(alts, macFieldAlt{value: d0, n: 1})
+		}
+		if i+1 < len(s) && s[i] == ' ' && macASCIIDigit(s[i+1]) >= 1 {
+			// The " [1-9]" alternative _strptime keeps for %c
+			// compatibility: the space is part of the match and
+			// Python int() strips it.
+			alts = append(alts, macFieldAlt{value: macASCIIDigit(s[i+1]), n: 2})
+		}
+	}
+	return alts
+}
+
+// macMatchField selects the first alternative whose consumed length
+// leaves exactly the expected next separator (or the end of the
+// input when wantSep is zero), mirroring Python regex backtracking
+// across the fixed single-separator patterns of the six-format
+// family: no alternative can consume a separator byte — including
+// the multi-byte Unicode Nd digits, whose UTF-8 encodings contain no
+// ASCII bytes — so the one-character lookahead is the whole
+// remainder constraint for the field and per-field ordered choice is
+// equivalent to the engine's cross-field backtracking. next is the
+// index after the separator (after the field itself when wantSep is
+// zero).
+func macMatchField(s string, i int, field, wantSep byte) (value, next int, ok bool) {
+	for _, alt := range macFieldAlternatives(s, i, field) {
+		j := i + alt.n
+		if wantSep == 0 {
+			if j == len(s) {
+				return alt.value, j, true
+			}
+			continue
+		}
+		if j < len(s) && s[j] == wantSep {
+			return alt.value, j + 1, true
+		}
+	}
+	return 0, 0, false
+}
+
+// macMatchDigits consumes exactly n Unicode Nd digits (the \d\d of
+// %y and \d\d\d\d of %Y), each contributing its UTF-8 byte length;
+// value combines them positionally like Python int(), so mixed
+// decimal scripts are accepted. Invalid UTF-8 fails like any
+// non-digit.
+func macMatchDigits(s string, i, n int) (value, next int, ok bool) {
+	value = 0
+	j := i
+	for k := 0; k < n; k++ {
+		d, w, isDigit := macDigitAt(s, j)
+		if !isDigit {
+			return 0, 0, false
+		}
+		value = value*10 + d
+		j += w
+	}
+	return value, j, true
+}
+
+// macDaysInMonth answers the proleptic-Gregorian day count of month,
+// the same calendar Python's datetime.date construction enforces
+// (century years are leap only when divisible by 400).
+func macDaysInMonth(year, month int) int {
+	switch month {
+	case 1, 3, 5, 7, 8, 10, 12:
+		return 31
+	case 4, 6, 9, 11:
+		return 30
+	}
+	if year%4 == 0 && (year%100 != 0 || year%400 == 0) {
+		return 29
+	}
+	return 28
+}
+
+// macDateTime is the datetime analog the setters dispatch from: the
+// six components with the Python strptime defaults already applied —
+// 1900-01-01 for time-only formats, midnight for date-only formats.
+type macDateTime struct {
+	year, month, day     int
+	hour, minute, second int
+}
+
+// dateCanonical renders the set_date dispatch value: the exact
+// strftime("%m:%d:%Y") of the parsed datetime. Years are always four
+// zero-padded digits — deterministic in Go where CPython's strftime
+// is platform-dependent below year 1000 (documented boundary; the
+// family never produces years outside 1..9999).
+func (dt macDateTime) dateCanonical() string {
+	return fmt.Sprintf("%02d:%02d:%04d", dt.month, dt.day, dt.year)
+}
+
+// timeCanonical renders the set_time dispatch value: the exact
+// strftime("%H:%M:%S") of the parsed datetime.
+func (dt macDateTime) timeCanonical() string {
+	return fmt.Sprintf("%02d:%02d:%02d", dt.hour, dt.minute, dt.second)
+}
+
+// macParseDateTime ports mac_timezone._get_date_time_format (pinned
+// revision lines 42-60) together with the strptime construction both
+// setters perform: the six ordered formats %H:%M, %H:%M:%S,
+// %m:%d:%y, %m:%d:%Y, %m/%d/%y, and %m/%d/%Y are tried in order
+// with first-success-wins; the input is
+// never trimmed or normalized; and BOTH setters accept all six
+// formats — cross-kind inputs are source behavior and keep Python's
+// default components (a time-only input to set_date targets
+// 1900-01-01, a date-only input to set_time targets midnight; the
+// setters' docstrings understate the shared code). Construction
+// mirrors CPython exactly: leap-second seconds 60/61 match the %S
+// regex shape but fail time construction, so detection falls through
+// to the date formats (12:31:60 => 2060-12-31, 12:31:61 =>
+// 2061-12-31, while 12:31:59 succeeds as a time); two-digit years
+// pivot 00-68 => 2000-2068 and 69-99 => 1969-1999; %Y is exactly
+// four digits with year 0 out of datetime range; calendar validity
+// is proleptic Gregorian; and any unconverted remainder rejects the
+// format.
+//
+// Unicode semantics, nuanced per branch: CPython compiles the
+// _strptime patterns with Unicode \d, so every \d position — the
+// trailing digit of [0-1]\d, [0-5]\d, and [12]\d, every
+// single-digit alternative, and the all-\d %y/%Y year fields —
+// matches any Unicode Nd decimal digit, and int() converts such
+// matches positionally ("１:３" parses as 01:03, "01/01/２０１６"
+// as January 1st 2016, and mixed decimal scripts combine). The
+// bracketed ASCII literals (2[0-3], [0-1], [0-5], 6[0-1], 1[0-2],
+// 0[1-9], [1-9], [01], and the " [1-9]" day alternative) and the
+// fixed separators stay ASCII exactly as written, so a fullwidth
+// month ("２/1/16") or a two-rune fullwidth hour ("２３:01")
+// matches nothing, and invalid UTF-8 fails closed like any
+// non-digit. macUnicodeDigit reads Go's stdlib unicode tables, so
+// Nd scripts newly assigned in later Unicode versions track the Go
+// release rather than the CPython build's unicodedata — the one
+// residual difference.
+func macParseDateTime(s string) (macDateTime, bool) {
+	// %H:%M
+	if h, i, ok := macMatchField(s, 0, 'H', ':'); ok {
+		if m, _, ok := macMatchField(s, i, 'M', 0); ok {
+			return macDateTime{year: 1900, month: 1, day: 1, hour: h, minute: m}, true
+		}
+	}
+	// %H:%M:%S — seconds 60/61 match the %S shape but fail time
+	// construction, falling through to the date formats below.
+	if h, i, ok := macMatchField(s, 0, 'H', ':'); ok {
+		if m, j, ok := macMatchField(s, i, 'M', ':'); ok {
+			if sec, _, ok := macMatchField(s, j, 'S', 0); ok && sec <= 59 {
+				return macDateTime{year: 1900, month: 1, day: 1, hour: h, minute: m, second: sec}, true
+			}
+		}
+	}
+	// %m:%d:%y, %m:%d:%Y, %m/%d/%y, %m/%d/%Y — colon pair first,
+	// preserving the pinned format order.
+	for _, sep := range []byte{':', '/'} {
+		if mo, i, ok := macMatchField(s, 0, 'm', sep); ok {
+			if d, j, ok := macMatchField(s, i, 'd', sep); ok {
+				if yy, end, ok := macMatchDigits(s, j, 2); ok && end == len(s) {
+					year := 2000 + yy
+					if yy > 68 {
+						year = 1900 + yy
+					}
+					if d <= macDaysInMonth(year, mo) {
+						return macDateTime{year: year, month: mo, day: d}, true
+					}
+				}
+				if yyyy, end, ok := macMatchDigits(s, j, 4); ok && end == len(s) && yyyy >= 1 {
+					if d <= macDaysInMonth(yyyy, mo) {
+						return macDateTime{year: yyyy, month: mo, day: d}, true
+					}
+				}
+			}
+		}
+	}
+	return macDateTime{}, false
+}
+
+// macSystemsetupSetter is the private closed selector for the only
+// two systemsetup mutations the module may run (PTD-EXEC-1634/1635).
+// Values never come from user input: each maps to exactly one fixed
+// argv flag, and any other value is rejected before the Runner is
+// touched — arbitrary argv, zone flags, and every read-only getter
+// flag are inexpressible through it. The read-only
+// macSystemsetupGetter enum is untouched by this type: its
+// historically invalid value 4 remains invalid and no getter flag is
+// a setter flag.
+type macSystemsetupSetter int
+
+const (
+	macSystemsetupSetDate macSystemsetupSetter = iota
+	macSystemsetupSetTime
+)
+
+// flag returns the single fixed argv flag for the closed enum value:
+// -setdate for the date mutation and -settime for the time mutation,
+// and the fixed unknown-setter rejection for anything else.
+func (s macSystemsetupSetter) flag() (string, error) {
+	switch s {
+	case macSystemsetupSetDate:
+		return "-setdate", nil
+	case macSystemsetupSetTime:
+		return "-settime", nil
+	}
+	return "", errMacSystemsetupUnknownSetter
+}
+
+// Fixed Mac setter invocation controls (mirroring the getter
+// contract): the absolute admin-controlled systemsetup path (no PATH
+// lookup, no sudo, no elevation change), exactly two argv entries
+// (the fixed setter flag and the canonical parser output), a
+// locale-only child environment, a bounded wall clock, and equal
+// 64 KiB capture ceilings per stream.
+const (
+	macSetterSystemsetup = "/usr/sbin/systemsetup"
+	macSetterTimeout     = 30 * time.Second
+	macSetterStreamMax   = 64 << 10
+)
+
+// macSystemsetupSet runs the one fixed shell-free systemsetup
+// mutation selected by the closed enum (pinned mac_timezone.py
+// set_date lines 77-104 / set_time lines 124-148 through
+// mac_utils.execute_return_success): an unknown enum value is
+// rejected before the Runner, a nil Runtime or Runner fails fixed
+// with ErrMacSystemsetupSet, and exactly one dispatch happens with
+// the canonical parser output — never the raw user string — as the
+// only variable. Any Runner error, nonzero exit, truncation flag, or
+// over-cap stream, and any rstripped stdout containing
+// case-insensitive "not supported" (the execute_return_success gate;
+// a marker on stderr alone never fails), returns the single fixed
+// value-free ErrMacSystemsetupSet; no raw cause, output, stderr, or
+// exit status travels in the error and nothing is logged. After any
+// post-dispatch failure the system clock state is unknown: no retry,
+// readback, rollback, or follow-up is attempted. Residual trust
+// assumption: /usr/sbin and systemsetup are admin-controlled;
+// binary authenticity is out of scope.
+func macSystemsetupSet(ctx context.Context, rt *runtime.Runtime, setter macSystemsetupSetter, canonical string) error {
+	flag, err := setter.flag()
+	if err != nil {
+		return err
+	}
+	if rt == nil || rt.Runner == nil {
+		return ErrMacSystemsetupSet
+	}
+	res := rt.Runner.Run(ctx, process.Command{
+		Name:           macSetterSystemsetup,
+		Args:           []string{flag, canonical},
+		Env:            []string{"LC_ALL=C"},
+		Timeout:        macSetterTimeout,
+		MaxStdoutBytes: macSetterStreamMax,
+		MaxStderrBytes: macSetterStreamMax,
+	})
+	if res.Err != nil || res.ExitCode != 0 ||
+		res.StdoutTruncated || res.StderrTruncated ||
+		len(res.Stdout) > macSetterStreamMax || len(res.Stderr) > macSetterStreamMax {
+		return ErrMacSystemsetupSet
+	}
+	if strings.Contains(strings.ToLower(pythonRStrip(string(res.Stdout))), "not supported") {
+		return ErrMacSystemsetupSet
+	}
+	return nil
+}
+
+// macSetDateArgs is the Mac set_date argument contract: exactly one
+// required *string date (docs/catalog/exec/mac_timezone.yaml declares
+// set_date(date) with no default). The required POINTER makes a
+// missing argument (nil, rejected by the required gate before any
+// dispatch) distinguishable from an explicit empty string (nonnil,
+// gate passes, rejected by the format family with the fixed invalid
+// sentinel and zero dispatch).
+type macSetDateArgs struct {
+	Date *string `statekit:"required,name=date"`
+}
+
+// macSetTimeArgs is the Mac set_time argument contract: exactly one
+// required *string time (docs/catalog/exec/mac_timezone.yaml declares
+// set_time(time) with no default), with the same missing-vs-explicit
+// distinction as macSetDateArgs.
+type macSetTimeArgs struct {
+	Time *string `statekit:"required,name=time"`
+}
+
+// macSetDateFunc implements timezone.set_date for the pinned
+// mac_timezone.py contract.
+type macSetDateFunc struct{}
+
+func (macSetDateFunc) Name() string        { return "timezone.set_date" }
+func (macSetDateFunc) Platforms() []string { return []string{"darwin"} }
+func (macSetDateFunc) Args() any           { return macSetDateArgs{} }
+
+// Execute ports mac_timezone.set_date (pinned revision lines 77-104):
+// boundary guards first (architecture gate) — a wrong argument type
+// or typed-nil pointer returns the fixed errMacSetterInvalidArgs
+// before any dispatch, never a panic and never raw args formatted
+// into the error, and a nonnil struct with a nil Date reuses the
+// decoder's fixed missing-required error. The shared parser family
+// then validates the input completely (format shape, calendar, year
+// range) BEFORE the single dispatch, so every invalid input makes
+// zero Runner calls; both setters accept all six pinned formats, and
+// a time-only input canonically targets 1900-01-01 (preserved
+// cross-kind source behavior). A valid input dispatches exactly one
+// fixed shell-free `/usr/sbin/systemsetup -setdate <canonical>` whose
+// only variable is the canonical %m:%d:%Y parser rendering — never
+// the raw user string — and success answers true. The two failure
+// categories are fixed, value-free, and distinct:
+// ErrMacDateTimeInvalid for invalid inputs and ErrMacSystemsetupSet
+// for execution failures. If an execution error occurs after
+// dispatch the system clock state is unknown; no retry, readback,
+// rollback, or follow-up happens.
+func (macSetDateFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, ok := args.(*macSetDateArgs)
+	if !ok || a == nil {
+		return nil, errMacSetterInvalidArgs
+	}
+	if a.Date == nil {
+		// Registry gate parity: a direct caller bypassing the
+		// decoder sees the same fixed missing-required failure; the
+		// defensive fallback keeps a future tag change from
+		// re-opening a nil dereference.
+		if err := config.ValidateRequired(a); err != nil {
+			return nil, err
+		}
+		return nil, errMacSetterInvalidArgs
+	}
+	dt, ok := macParseDateTime(*a.Date)
+	if !ok {
+		return nil, ErrMacDateTimeInvalid
+	}
+	if err := macSystemsetupSet(ctx, rt, macSystemsetupSetDate, dt.dateCanonical()); err != nil {
+		return nil, err
+	}
+	return true, nil
+}
+
+// macSetTimeFunc implements timezone.set_time for the pinned
+// mac_timezone.py contract.
+type macSetTimeFunc struct{}
+
+func (macSetTimeFunc) Name() string        { return "timezone.set_time" }
+func (macSetTimeFunc) Platforms() []string { return []string{"darwin"} }
+func (macSetTimeFunc) Args() any           { return macSetTimeArgs{} }
+
+// Execute ports mac_timezone.set_time (pinned revision lines
+// 124-148) with the same boundary-guard, validate-before-dispatch,
+// and fixed-failure contracts as macSetDateFunc.Execute: a wrong
+// argument type or typed-nil pointer returns the fixed
+// errMacSetterInvalidArgs before any dispatch, a nonnil struct with
+// a nil Time reuses the decoder's fixed missing-required error, the
+// shared parser family validates completely before the single
+// dispatch (invalid input => zero Runner calls; both setters accept
+// all six pinned formats, a date-only input canonically targets
+// midnight — preserved cross-kind source behavior), and a valid
+// input dispatches exactly one fixed shell-free
+// `/usr/sbin/systemsetup -settime <canonical>` whose only variable
+// is the canonical %H:%M:%S parser rendering. Success answers true;
+// failures use the distinct fixed value-free ErrMacDateTimeInvalid
+// and ErrMacSystemsetupSet; an execution error after dispatch leaves
+// the system clock state unknown with no retry, readback, rollback,
+// or follow-up.
+func (macSetTimeFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, ok := args.(*macSetTimeArgs)
+	if !ok || a == nil {
+		return nil, errMacSetterInvalidArgs
+	}
+	if a.Time == nil {
+		// Registry gate parity, as in macSetDateFunc.Execute.
+		if err := config.ValidateRequired(a); err != nil {
+			return nil, err
+		}
+		return nil, errMacSetterInvalidArgs
+	}
+	dt, ok := macParseDateTime(*a.Time)
+	if !ok {
+		return nil, ErrMacDateTimeInvalid
+	}
+	if err := macSystemsetupSet(ctx, rt, macSystemsetupSetTime, dt.timeCanonical()); err != nil {
+		return nil, err
+	}
+	return true, nil
+}
+
 // winZoneCompareArgs is the win_timezone.zone_compare argument
 // contract: one required *string timezone (docs/catalog/exec/
 // win_timezone.yaml declares zone_compare(timezone) with no default).
@@ -1427,9 +1992,10 @@ func (setHwclockFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any
 // timezone.get_date, timezone.get_time, timezone.get_using_network_time,
 // and timezone.get_time_server, the Mac date-getter variant of
 // timezone.get_zonecode, and the Mac zone lister timezone.list_zones
-// are darwin-only; the Linux generic
-// getter timezone.get_zonecode is linux-only; the Windows static-table
-// lister timezone.list is windows-only.
+// are darwin-only; the Mac systemsetup setters timezone.set_date and
+// timezone.set_time are darwin-only through their own seam; the Linux
+// generic getter timezone.get_zonecode is linux-only; the Windows
+// static-table lister timezone.list is windows-only.
 func Register(reg *runtime.ExecRegistry) error {
 	for _, fn := range []runtime.ExecFunction{getZoneFunc{}, setZoneFunc{}, getOffsetFunc{}, getHwclockFunc{}, setHwclockFunc{}} {
 		if err := reg.Register(fn); err != nil {
@@ -1440,6 +2006,9 @@ func Register(reg *runtime.ExecRegistry) error {
 		return err
 	}
 	if err := registerMacGettersForGOOS(reg, runtime.CurrentGOOS()); err != nil {
+		return err
+	}
+	if err := registerMacSettersForGOOS(reg, runtime.CurrentGOOS()); err != nil {
 		return err
 	}
 	if err := registerLinuxGettersForGOOS(reg, runtime.CurrentGOOS()); err != nil {
@@ -1487,6 +2056,26 @@ func registerMacGettersForGOOS(reg *runtime.ExecRegistry, goos string) error {
 		return nil
 	}
 	for _, fn := range []runtime.ExecFunction{macGetDateFunc{}, macGetTimeFunc{}, macGetUsingNetworkTimeFunc{}, macGetTimeServerFunc{}, macZonecodeFunc{}, macListZonesFunc{}} {
+		if err := reg.Register(fn); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// registerMacSettersForGOOS installs the Mac-only systemsetup setters
+// timezone.set_date and timezone.set_time on darwin only, and nothing
+// on any other GOOS, where the names stay unregistered rather than
+// registered-but-unsupported (the established
+// registerMacGettersForGOOS pattern, kept as a separate seam so the
+// read-only getter helper and the mutation helper stay distinct).
+// The registry keys by name, so registering a setter onto one
+// registry twice fails as a duplicate.
+func registerMacSettersForGOOS(reg *runtime.ExecRegistry, goos string) error {
+	if goos != "darwin" {
+		return nil
+	}
+	for _, fn := range []runtime.ExecFunction{macSetDateFunc{}, macSetTimeFunc{}} {
 		if err := reg.Register(fn); err != nil {
 			return err
 		}

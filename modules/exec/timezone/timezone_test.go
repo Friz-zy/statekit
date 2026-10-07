@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -950,10 +951,11 @@ func TestZoneCompareRegistrationSelectsPerGOOS(t *testing.T) {
 	}
 
 	// Visible layer: Names filters through SupportsPlatform. The
-	// surface is 12 names on darwin (base 5 + zone_compare + the four
+	// surface is 14 names on darwin (base 5 + zone_compare + the four
 	// Mac systemsetup getters get_date, get_time, get_time_server,
 	// get_using_network_time + the Mac timezone.get_zonecode of
-	// PTD-EXEC-1631 + the Mac timezone.list_zones of PTD-EXEC-1633),
+	// PTD-EXEC-1631 + the Mac timezone.list_zones of PTD-EXEC-1633 +
+	// the Mac timezone.set_date/set_time setters of PTD-EXEC-1634/1635),
 	// 7 on linux (base 5 + zone_compare +
 	// get_zonecode), 7 on windows (base 5 + zone_compare + the Windows
 	// timezone.list of PTD-EXEC-1632), and 5 everywhere else (no
@@ -961,7 +963,7 @@ func TestZoneCompareRegistrationSelectsPerGOOS(t *testing.T) {
 	wantTotal := 5
 	switch goos {
 	case "darwin":
-		wantTotal = 12
+		wantTotal = 14
 	case "linux":
 		wantTotal = 7
 	case "windows":
@@ -1663,17 +1665,18 @@ func TestMacZoneCompareNoDuplicateRegistration(t *testing.T) {
 		}
 	}
 	goos := runtime.CurrentGOOS()
-	// The production surface is 12 functions on darwin (base 5 +
+	// The production surface is 14 functions on darwin (base 5 +
 	// zone_compare + the four Mac systemsetup getters get_date,
 	// get_time, get_time_server, get_using_network_time + the Mac
 	// get_zonecode of PTD-EXEC-1631 + the Mac list_zones of
-	// PTD-EXEC-1633), 7 on linux
+	// PTD-EXEC-1633 + the Mac set_date/set_time setters of
+	// PTD-EXEC-1634/1635), 7 on linux
 	// (base 5 + zone_compare + get_zonecode), 7 on windows (base 5 +
 	// zone_compare + the Windows timezone.list), 5 elsewhere.
 	wantLen := 5
 	switch goos {
 	case "darwin":
-		wantLen = 12
+		wantLen = 14
 	case "linux":
 		wantLen = 7
 	case "windows":
@@ -2314,9 +2317,10 @@ func TestMacGettersUnknownEnumRejectedBeforeRunner(t *testing.T) {
 // unexported registerMacGettersForGOOS helper (the Darwin selector
 // seam, exercised from any host): the getters on darwin only, with
 // zero-field args prototypes, no superseded aliases, off-host dispatch
-// rejected as unsupported, and the production Register surface at 12
-// names on darwin (with the Mac timezone.get_zonecode and
-// timezone.list_zones) / 7 on linux
+// rejected as unsupported, and the production Register surface at 14
+// names on darwin (with the Mac timezone.get_zonecode,
+// timezone.list_zones, and the set_date/set_time setters of
+// PTD-EXEC-1634/1635) / 7 on linux
 // (with the Linux get_zonecode) / 7 on windows / 5 elsewhere (the
 // count includes the network-time getters pinned by MNT-12).
 func TestMacGettersRegistrationSelectsPerGOOS(t *testing.T) {
@@ -2395,10 +2399,11 @@ func TestMacGettersRegistrationSelectsPerGOOS(t *testing.T) {
 		}
 	}
 
-	// Production Register: the surface is 12 names on darwin (base 5 +
+	// Production Register: the surface is 14 names on darwin (base 5 +
 	// zone_compare + the four Mac systemsetup getters + the Mac
 	// get_zonecode of PTD-EXEC-1631 + the Mac list_zones of
-	// PTD-EXEC-1633), 7 on
+	// PTD-EXEC-1633 + the Mac set_date/set_time setters of
+	// PTD-EXEC-1634/1635), 7 on
 	// linux (base 5 + zone_compare + get_zonecode), 7 on windows (base
 	// 5 + zone_compare + the Windows timezone.list), 5 elsewhere; the
 	// getters are visible exactly on darwin; no superseded alias is
@@ -2411,7 +2416,7 @@ func TestMacGettersRegistrationSelectsPerGOOS(t *testing.T) {
 	wantLen := 5
 	switch goos {
 	case "darwin":
-		wantLen = 12
+		wantLen = 14
 	case "linux":
 		wantLen = 7
 	case "windows":
@@ -3079,9 +3084,10 @@ func TestMacNetworkTimeGettersClosedEnumRejectsSettersBeforeRunner(t *testing.T)
 // selector seam, exercised from any host): all five Mac systemsetup
 // query functions (the four getters plus list_zones) on darwin only,
 // with zero-field args prototypes matching the catalog's
-// zero parameters, no superseded aliases, off-host dispatch rejected
-// as unsupported, and the production Register surface at 12 names on
-// darwin (with the Mac timezone.get_zonecode and timezone.list_zones) /
+// zero parameters, no superseded aliases, off-host dispatch rejected as
+// unsupported, and the production Register surface at 14 names on
+// darwin (with the Mac timezone.get_zonecode, timezone.list_zones, and
+// the set_date/set_time setters of PTD-EXEC-1634/1635) /
 // 7 on linux (with the Linux get_zonecode) / 7 on windows (with the
 // Windows timezone.list) /
 // 5 elsewhere.
@@ -3173,15 +3179,16 @@ func TestMacNetworkTimeGettersRegistrationSelectsPerGOOS(t *testing.T) {
 		}
 	}
 
-	// Production Register: the surface is 12 names on darwin (base 5 +
+	// Production Register: the surface is 14 names on darwin (base 5 +
 	// zone_compare + the four Mac systemsetup getters + the Mac
 	// get_zonecode of PTD-EXEC-1631 + the Mac list_zones of
-	// PTD-EXEC-1633), 7 on
+	// PTD-EXEC-1633 + the Mac set_date/set_time setters of
+	// PTD-EXEC-1634/1635), 7 on
 	// linux (base 5 + zone_compare + get_zonecode), 7 on windows (base
 	// 5 + zone_compare + the Windows timezone.list), 5 elsewhere; the
-	// network-time getters are visible exactly on darwin; no
-	// superseded alias is ever registered; the raw alias lookup fails
-	// on every host.
+	// network-time getters are visible exactly on darwin; no superseded
+	// alias is ever registered; the raw alias lookup fails on every
+	// host.
 	prod := runtime.NewExecRegistry()
 	if err := Register(prod); err != nil {
 		t.Fatal(err)
@@ -3190,7 +3197,7 @@ func TestMacNetworkTimeGettersRegistrationSelectsPerGOOS(t *testing.T) {
 	wantLen := 5
 	switch goos {
 	case "darwin":
-		wantLen = 12
+		wantLen = 14
 	case "linux":
 		wantLen = 7
 	case "windows":
@@ -3760,8 +3767,9 @@ func TestZonecodeExecuteFailsSafeOnMalformedInvocation(t *testing.T) {
 // with a zero-field args prototype matching the catalog's zero
 // parameters, no superseded alias, off-host dispatch rejected as
 // unsupported, and the production Register surface at 7 names on
-// linux / 12 on darwin (with the Mac timezone.get_zonecode and
-// timezone.list_zones) / 7 on
+// linux / 14 on darwin (with the Mac timezone.get_zonecode,
+// timezone.list_zones, and the set_date/set_time setters of
+// PTD-EXEC-1634/1635) / 7 on
 // windows (with the Windows timezone.list) / 5 elsewhere.
 func TestZonecodeRegistrationSelectsPerGOOS(t *testing.T) {
 	reg := runtime.NewExecRegistry()
@@ -3822,10 +3830,11 @@ func TestZonecodeRegistrationSelectsPerGOOS(t *testing.T) {
 		}
 	}
 
-	// Production Register: the surface is 7 names on linux, 12 on
+	// Production Register: the surface is 7 names on linux, 14 on
 	// darwin (base 5 + zone_compare + the four Mac systemsetup getters
 	// + the Mac get_zonecode of PTD-EXEC-1631 + the Mac list_zones of
-	// PTD-EXEC-1633),
+	// PTD-EXEC-1633 + the Mac set_date/set_time setters of
+	// PTD-EXEC-1634/1635),
 	// 7 on windows (base 5 + zone_compare + the Windows
 	// timezone.list), 5 elsewhere; get_zonecode is visible exactly on
 	// linux and darwin (one variant each); no superseded alias is ever
@@ -3840,7 +3849,7 @@ func TestZonecodeRegistrationSelectsPerGOOS(t *testing.T) {
 	case "linux":
 		wantLen = 7
 	case "darwin":
-		wantLen = 12
+		wantLen = 14
 	case "windows":
 		wantLen = 7
 	}
@@ -4402,9 +4411,10 @@ func TestMacZonecodeRegistrationSelectsPerGOOS(t *testing.T) {
 	}
 }
 
-// MZC-MAC-08: the production Register surface is 12 names on darwin
+// MZC-MAC-08: the production Register surface is 14 names on darwin
 // (base 5 + zone_compare + the four Mac systemsetup getters + the Mac
-// get_zonecode + the Mac list_zones of PTD-EXEC-1633), 7 on linux,
+// get_zonecode + the Mac list_zones of PTD-EXEC-1633 + the Mac
+// set_date/set_time setters of PTD-EXEC-1634/1635), 7 on linux,
 // 7 on windows, 5 elsewhere; exactly one
 // timezone.get_zonecode variant is visible per supported GOOS (the
 // Linux variant on linux, the mac variant on darwin, none on windows
@@ -4420,7 +4430,7 @@ func TestMacZonecodeProductionSurface(t *testing.T) {
 	wantLen := 5
 	switch goos {
 	case "darwin":
-		wantLen = 12
+		wantLen = 14
 	case "linux":
 		wantLen = 7
 	case "windows":
@@ -4722,9 +4732,10 @@ func TestMacListZonesFailsFixedValueFree(t *testing.T) {
 // prototype matching the catalog's zero parameters and distinct from
 // every other Mac getter and the Windows lister prototype, no
 // duplicate entry, nothing on any non-darwin GOOS, and the production
-// Register surface at 12 names on darwin (with the Mac
-// timezone.get_zonecode of PTD-EXEC-1631 and timezone.list_zones of
-// PTD-EXEC-1633) / 7 on linux / 7 on windows / 5 elsewhere with
+// Register surface at 14 names on darwin (with the Mac
+// timezone.get_zonecode of PTD-EXEC-1631, timezone.list_zones of
+// PTD-EXEC-1633, and the set_date/set_time setters of
+// PTD-EXEC-1634/1635) / 7 on linux / 7 on windows / 5 elsewhere with
 // list_zones visible exactly on darwin.
 func TestMacListZonesRegistrationSelectsPerGOOS(t *testing.T) {
 	reg := runtime.NewExecRegistry()
@@ -4787,9 +4798,10 @@ func TestMacListZonesRegistrationSelectsPerGOOS(t *testing.T) {
 		}
 	}
 
-	// Production Register: the surface is 12 names on darwin (base 5 +
+	// Production Register: the surface is 14 names on darwin (base 5 +
 	// zone_compare + the four Mac systemsetup getters + the Mac
-	// get_zonecode of PTD-EXEC-1631 + list_zones of PTD-EXEC-1633),
+	// get_zonecode of PTD-EXEC-1631 + list_zones of PTD-EXEC-1633 +
+	// the Mac set_date/set_time setters of PTD-EXEC-1634/1635),
 	// 7 on linux (base 5 + zone_compare + get_zonecode), 7 on windows
 	// (base 5 + zone_compare + the Windows timezone.list), 5 elsewhere;
 	// list_zones is visible exactly on darwin; no superseded alias is
@@ -4802,7 +4814,7 @@ func TestMacListZonesRegistrationSelectsPerGOOS(t *testing.T) {
 	wantLen := 5
 	switch goos {
 	case "darwin":
-		wantLen = 12
+		wantLen = 14
 	case "linux":
 		wantLen = 7
 	case "windows":
@@ -4825,5 +4837,917 @@ func TestMacListZonesRegistrationSelectsPerGOOS(t *testing.T) {
 	}
 	if goos != "darwin" && visible != 0 {
 		t.Fatalf("list_zones visible %d times on %s, want 0", visible, goos)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// macOS set_date / set_time (PTD-EXEC-1634/1635): MSP-01..02 pin the
+// shared _get_date_time_format parser family and MSD/MST-01..08 pin
+// the two setter contracts hermetically. Every test uses the fake
+// macZoneRunner only — never process.NewRunner, never
+// /usr/sbin/systemsetup, never a host filesystem — and the suite
+// makes no native Darwin claim. The mapped Salt tests are the
+// functional test_get_set_date / test_set_time fixtures (they mutate
+// the live host date/time under root/destructive/Darwin gates in
+// Salt): they were inspected as source only, never executed, and
+// every fixture below is source-derived synthetic.
+
+// wantMacSetCommand is the fixed, complete systemsetup setter
+// invocation for one flag/value pair: absolute admin-controlled path,
+// exactly two argv entries (the fixed setter flag and the canonical
+// parser output, never the raw user string), no shell, locale-only
+// child environment, 30s wall clock, equal 64 KiB capture ceilings
+// per stream, and nothing else.
+func wantMacSetCommand(flag, value string) process.Command {
+	return process.Command{
+		Name:           "/usr/sbin/systemsetup",
+		Args:           []string{flag, value},
+		Env:            []string{"LC_ALL=C"},
+		Timeout:        30 * time.Second,
+		MaxStdoutBytes: 64 << 10,
+		MaxStderrBytes: 64 << 10,
+	}
+}
+
+// macSetDateExec runs set_date with a nonnil date pointer over the
+// fake Runner runtime.
+func macSetDateExec(t *testing.T, rt *runtime.Runtime, date string) (any, error) {
+	t.Helper()
+	return (macSetDateFunc{}).Execute(context.Background(), rt, &macSetDateArgs{Date: &date})
+}
+
+// macSetTimeExec runs set_time with a nonnil time pointer over the
+// fake Runner runtime.
+func macSetTimeExec(t *testing.T, rt *runtime.Runtime, timeArg string) (any, error) {
+	t.Helper()
+	return (macSetTimeFunc{}).Execute(context.Background(), rt, &macSetTimeArgs{Time: &timeArg})
+}
+
+// requireMacSetterInvalidFormat pins the fixed value-free
+// invalid-format failure: the errors.Is sentinel, the exact text, no
+// leak of the rejected input, distinctness from the execution and
+// getter sentinels, and no wrapped cause.
+func requireMacSetterInvalidFormat(t *testing.T, err error, input string) {
+	t.Helper()
+	if !errors.Is(err, ErrMacDateTimeInvalid) {
+		t.Fatalf("err = %v, want ErrMacDateTimeInvalid", err)
+	}
+	if err == nil || err.Error() != "macOS date/time format invalid" {
+		t.Fatalf("err text = %v, want macOS date/time format invalid", err)
+	}
+	for _, other := range []error{ErrMacSystemsetupSet, ErrMacSystemsetupQuery, ErrCannotDetermineZone, ErrMacNetworkTimeStateInvalid} {
+		if errors.Is(err, other) {
+			t.Fatalf("invalid-format err %v also matches %v", err, other)
+		}
+	}
+	if input != "" && err != nil && strings.Contains(err.Error(), input) {
+		t.Fatalf("err text %q leaks the rejected input %q", err.Error(), input)
+	}
+	if errors.Unwrap(err) != nil {
+		t.Fatalf("invalid-format err wraps a cause: %v", err)
+	}
+}
+
+// requireMacSetterExecError pins the fixed value-free execution
+// failure of the setters: the errors.Is sentinel, the exact text, no
+// input/command/output/exit markers, distinctness from the
+// invalid-format and getter sentinels, and no wrapped cause.
+func requireMacSetterExecError(t *testing.T, err error) {
+	t.Helper()
+	if !errors.Is(err, ErrMacSystemsetupSet) {
+		t.Fatalf("err = %v, want ErrMacSystemsetupSet", err)
+	}
+	if err == nil || err.Error() != "macOS systemsetup set failed" {
+		t.Fatalf("err text = %v, want macOS systemsetup set failed", err)
+	}
+	for _, other := range []error{ErrMacDateTimeInvalid, ErrMacSystemsetupQuery, ErrCannotDetermineZone} {
+		if errors.Is(err, other) {
+			t.Fatalf("setter exec err %v also matches %v", err, other)
+		}
+	}
+	for _, marker := range []string{
+		"-setdate", "-settime", "2016", "2011", "17:34", "3:14", "13",
+		"exit", "stdout", "stderr", "timed out", "canceled", "not supported",
+		"no such file",
+	} {
+		if err != nil && strings.Contains(err.Error(), marker) {
+			t.Fatalf("err text %q leaks marker %q", err.Error(), marker)
+		}
+	}
+	if errors.Unwrap(err) != nil {
+		t.Fatalf("setter exec err wraps a cause: %v", err)
+	}
+}
+
+// isMissingRequired reports whether err is the decoder's fixed
+// missing-required failure for the named argument.
+func isMissingRequired(t *testing.T, err error, name string) bool {
+	t.Helper()
+	missing, ok := err.(*config.MissingRequiredError)
+	return ok && missing.Name == name
+}
+
+// macTimezoneCatalogSetterEntry scans docs/catalog/exec/
+// mac_timezone.yaml (line-oriented, keeping the yaml dependency out
+// of the module test binary) for the declared parameter names and
+// defaults of one function, mirroring the winZoneCatalogListEntry
+// pattern.
+func macTimezoneCatalogSetterEntry(t *testing.T, function string) (names []string, defaults map[string]string) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(repoRoot(t), "docs", "catalog", "exec", "mac_timezone.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaults = map[string]string{}
+	inFunction := false
+	lastName := ""
+	for _, line := range strings.Split(string(data), "\n") {
+		switch {
+		case strings.HasPrefix(line, "    - function: "):
+			inFunction = strings.TrimSpace(strings.TrimPrefix(line, "    - function: ")) == function
+		case inFunction && strings.HasPrefix(line, "        - name: "):
+			lastName = strings.TrimSpace(strings.TrimPrefix(line, "        - name: "))
+			names = append(names, lastName)
+		case inFunction && strings.HasPrefix(line, "          default: "):
+			value := strings.Trim(strings.TrimSpace(strings.TrimPrefix(line, "          default: ")), `"`)
+			defaults[lastName] = value
+		}
+	}
+	return names, defaults
+}
+
+// MSP-01: the shared parser family ports
+// mac_timezone._get_date_time_format source-exactly: the six ordered
+// formats %H:%M, %H:%M:%S, %m:%d:%y, %m:%d:%Y, %m/%d/%y, and %m/%d/%Y
+// with first-success-wins over the CPython _strptime field shapes
+// (single digits, 2[0-3] hours, 6[0-1] seconds falling through on
+// 60/61, 1[0-2] months, the " [1-9]" space-prefixed day alternative,
+// two-digit %y pivot 00-68 => 2000+ and 69-99 => 1900+, exactly four
+// %Y digits) plus datetime construction (calendar validity, year
+// range). Cross-kind inputs keep Python's default components —
+// 1900-01-01 for time-only parses, midnight for date-only parses —
+// and canonical years are Go-deterministic four digits including
+// sub-1000. The \d positions carry CPython's Unicode semantics — any
+// Nd decimal digit, converted positionally like int() — while the
+// bracketed ASCII literals stay ASCII, pinned by the fullwidth and
+// mixed-script rows below and the rejection boundaries.
+func TestMacSettersParseFamilyTable(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		in       string
+		wantDate string
+		wantTime string
+	}{
+		// %H:%M wins first for time-only shapes.
+		{"hour-minute", "17:34", "01:01:1900", "17:34:00"},
+		{"single digits", "1:2", "01:01:1900", "01:02:00"},
+		{"zero hour zero minute", "0:0", "01:01:1900", "00:00:00"},
+		{"zero-padded hour", "00:30", "01:01:1900", "00:30:00"},
+		// %H:%M:%S wins before every date format.
+		{"hour-minute-second", "12:31:59", "01:01:1900", "12:31:59"},
+		{"twenty-three fifty-nine fifty-nine", "23:59:59", "01:01:1900", "23:59:59"},
+		{"single-digit second", "12:31:5", "01:01:1900", "12:31:05"},
+		// A two-digit minute cannot misalign into validity: 12:345
+		// rejects outright (minute 34 leaves 5, minute 3 leaves 45),
+		// while the one-digit minute 12:3:45 parses with seconds 45.
+		{"one-digit minute two-digit second", "12:3:45", "01:01:1900", "12:03:45"},
+		// Leap-second shapes match the %S regex, fail time
+		// construction, and fall through to the colon date formats.
+		{"second 60 falls to date", "12:31:60", "12:31:2060", "00:00:00"},
+		{"second 61 falls to date", "12:31:61", "12:31:2061", "00:00:00"},
+		{"second 62 is a plain date shape", "12:31:62", "12:31:2062", "00:00:00"},
+		{"date-shaped 11:12:60", "11:12:60", "11:12:2060", "00:00:00"},
+		// %m:%d:%y and %m:%d:%Y colon forms. Any colon date whose
+		// whole shape is also a valid time parses as the time first
+		// (01:02:33 is 01:02:33), so the colon two-digit-year rows
+		// need seconds the %S construction rejects.
+		{"colon two-digit year", "01:02:99", "01:02:1999", "00:00:00"},
+		{"colon four-digit year", "01:13:2016", "01:13:2016", "00:00:00"},
+		{"sub-1000 deterministic canonical year", "01:01:0999", "01:01:0999", "00:00:00"},
+		{"year 1000", "01:01:1000", "01:01:1000", "00:00:00"},
+		// Slash forms.
+		{"slash two-digit year", "2/29/16", "02:29:2016", "00:00:00"},
+		{"slash pivot 68", "12/31/68", "12:31:2068", "00:00:00"},
+		{"slash pivot 69", "12/31/69", "12:31:1969", "00:00:00"},
+		{"slash single digits", "1/3/16", "01:03:2016", "00:00:00"},
+		{"slash four-digit year", "1/13/2016", "01:13:2016", "00:00:00"},
+		{"salt fixture date", "2/20/2011", "02:20:2011", "00:00:00"},
+		{"leap day", "2/29/2016", "02:29:2016", "00:00:00"},
+		{"century leap day", "2/29/2000", "02:29:2000", "00:00:00"},
+		// The _strptime " [1-9]" alternative (kept for %c)
+		// accepts a space-prefixed day; Python int() strips it.
+		{"space-prefixed day", "1/ 2/2016", "01:02:2016", "00:00:00"},
+		{"space-prefixed day two-digit year", "1/ 2/16", "01:02:2016", "00:00:00"},
+		// The \d positions match any Unicode Nd decimal digit and
+		// int() combines them positionally, so fullwidth digits and
+		// mixed decimal scripts parse wherever \d appears (the
+		// trailing digit of [0-1]\d/[0-5]\d/[12]\d, the single-digit
+		// alternatives, and the all-\d %y/%Y year fields); the
+		// ASCII-literal slots stay ASCII (see the rejection table).
+		{"fullwidth hour and minute", "１:３", "01:01:1900", "01:03:00"},
+		{"mixed-script minute", "17:3４", "01:01:1900", "17:34:00"},
+		{"fullwidth four-digit year", "01/01/２０１６", "01:01:2016", "00:00:00"},
+		{"mixed-script day second digit", "1/1٢/16", "01:12:2016", "00:00:00"},
+		{"mixed-script two-digit year", "1/1/２９", "01:01:2029", "00:00:00"},
+	} {
+		dt, ok := macParseDateTime(tc.in)
+		if !ok {
+			t.Fatalf("%s: macParseDateTime(%q) rejected, want accepted", tc.name, tc.in)
+		}
+		if got := dt.dateCanonical(); got != tc.wantDate {
+			t.Fatalf("%s: date canonical = %q, want %q", tc.name, got, tc.wantDate)
+		}
+		if got := dt.timeCanonical(); got != tc.wantTime {
+			t.Fatalf("%s: time canonical = %q, want %q", tc.name, got, tc.wantTime)
+		}
+	}
+}
+
+// macSetterInvalidInputs is the shared rejection table for MSP-02
+// (parser rejections) and the MSD-02/MST-02 zero-dispatch boundary:
+// shapes no format in the pinned family accepts.
+var macSetterInvalidInputs = []string{
+	// Empty and truncated.
+	"",
+	":30",
+	"1:",
+	"12:",
+	"12:31:",
+	"12/31/",
+	"12/31",
+	// Whitespace is never trimmed — boundary or interior.
+	" 1:30",
+	"1:30 ",
+	"1:30\n",
+	"\t1:30",
+	"1 :30",
+	"12: 31",
+	// Remainder and separator overflow. 12:345 looks parseable but
+	// rejects in Python too: the two-digit minute 34 leaves a 5 and
+	// the one-digit minute 3 leaves 45, and the day field cannot
+	// match the remainder either.
+	"12:345",
+	"1:3:0:4",
+	"1//2/2016",
+	"1/2//2016",
+	"2016-01-01",
+	"12:31:5x",
+	"12:3x:50",
+	"x",
+	"2016",
+	"12/31/2016 extra",
+	// Component shapes the _strptime regexes exclude, including
+	// Salt's own inspected boundaries 3:71 and 13/12/2014. The
+	// 23:59:60 / 12:59:60 pair pins that a leap-second shape only
+	// survives when the date fall-through lands on a valid date
+	// (12:31:60 does; month 23 and day 59 do not).
+	"24:00",
+	"12:60",
+	"3:71",
+	"23:59:60",
+	"12:59:60",
+	"13/12/2014",
+	// Calendar-invalid dates.
+	"2/29/2015",
+	"2/29/1900",
+	"2/30/2016",
+	"4/31/2016",
+	"11:31:2015",
+	// Year range: 0000 is out of datetime range; five digits cannot
+	// match %Y and never trim to it.
+	"01:01:0000",
+	"01:01:10000",
+	// Unicode boundaries: the \d slots accept Unicode Nd digits (see
+	// the acceptance table), but the ASCII-literal slots do not — a
+	// fullwidth month matches none of 1[0-2]|0[1-9]|[1-9], and a
+	// two-rune fullwidth hour matches neither 2[0-3] nor [0-1]\d
+	// while the single-\d alternative consumes one rune and leaves
+	// the rest unconverted. Invalid UTF-8 fails closed like any
+	// non-digit.
+	"２/1/16",
+	"２３:01",
+	"1:\xff0",
+	"12:31:\x80",
+}
+
+// MSP-02: every rejected shape fails the whole family — no format
+// matches, or the matched shape cannot construct a datetime — with
+// no trimming anywhere.
+func TestMacSettersParseFamilyRejections(t *testing.T) {
+	for _, in := range macSetterInvalidInputs {
+		if dt, ok := macParseDateTime(in); ok {
+			t.Fatalf("macParseDateTime(%q) = %v, want rejection", in, dt.dateCanonical())
+		}
+	}
+}
+
+// MSD-01: set_date dispatches exactly one shell-free systemsetup
+// -setdate whose only variable is the canonical %m:%d:%Y parser
+// rendering — deep-equal over the whole process.Command — answers
+// true on the exit-0 path, and forwards the live context to the
+// Runner. The cross-kind rows pin the preserved source behavior: a
+// time-only input targets 1900-01-01.
+func TestMacSetDateDispatchesFixedCommand(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		date      string
+		canonical string
+	}{
+		{"salt cli example", "1/13/2016", "01:13:2016"},
+		{"salt fixture date", "2/20/2011", "02:20:2011"},
+		{"cross-kind time-only input", "17:34", "01:01:1900"},
+		{"time-first 12:31:59", "12:31:59", "01:01:1900"},
+		{"leap-second fallthrough 60", "12:31:60", "12:31:2060"},
+		{"leap-second fallthrough 61", "12:31:61", "12:31:2061"},
+		{"pivot 68", "12/31/68", "12:31:2068"},
+		{"pivot 69", "12/31/69", "12:31:1969"},
+		{"sub-1000 deterministic year", "01:01:0999", "01:01:0999"},
+		{"leap day", "2/29/16", "02:29:2016"},
+		{"space-prefixed day", "1/ 2/2016", "01:02:2016"},
+		// Unicode Nd \d positions: the canonical argv stays ASCII —
+		// only the parser input carries the non-ASCII digits.
+		{"fullwidth time-only input", "１:３", "01:01:1900"},
+		{"fullwidth four-digit year", "01/01/２０１６", "01:01:2016"},
+		{"mixed-script day digit", "1/1٢/16", "01:12:2016"},
+	} {
+		rt, runner := newMacZoneRuntime(process.CommandResult{ExitCode: 0, Stdout: []byte("\n")})
+		value, err := macSetDateExec(t, rt, tc.date)
+		if err != nil || value != true {
+			t.Fatalf("%s: set_date(%q) = %v, %v; want true, nil", tc.name, tc.date, value, err)
+		}
+		if len(runner.cmds) != 1 {
+			t.Fatalf("%s: dispatched %d commands, want exactly 1", tc.name, len(runner.cmds))
+		}
+		want := wantMacSetCommand("-setdate", tc.canonical)
+		if !reflect.DeepEqual(runner.cmds[0], want) {
+			t.Fatalf("%s: command = %#v, want %#v", tc.name, runner.cmds[0], want)
+		}
+		if len(runner.ctxErr) != 1 || runner.ctxErr[0] != nil {
+			t.Fatalf("%s: runner context errors = %v, want one nil (live context forwarded)", tc.name, runner.ctxErr)
+		}
+	}
+}
+
+// MST-01: set_time dispatches exactly one shell-free systemsetup
+// -settime whose only variable is the canonical %H:%M:%S parser
+// rendering, answers true on the exit-0 path, and forwards the live
+// context. The cross-kind rows pin the preserved source behavior: a
+// date-only input targets midnight, including the leap-second
+// fall-through dates.
+func TestMacSetTimeDispatchesFixedCommand(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		timeArg   string
+		canonical string
+	}{
+		{"hour-minute", "17:34", "17:34:00"},
+		{"salt fixture time", "3:14", "03:14:00"},
+		{"cross-kind date-only input", "1/13/2016", "00:00:00"},
+		{"time-first 12:31:59", "12:31:59", "12:31:59"},
+		{"leap-second fallthrough 60 midnight", "12:31:60", "00:00:00"},
+		{"leap-second fallthrough 61 midnight", "12:31:61", "00:00:00"},
+		{"one-digit minute two-digit second", "12:3:45", "12:03:45"},
+		{"leap day midnight", "2/29/2016", "00:00:00"},
+		{"sub-1000 year midnight", "01:01:0999", "00:00:00"},
+		{"single digits", "9:8", "09:08:00"},
+		// Unicode Nd \d positions: the canonical argv stays ASCII —
+		// only the parser input carries the non-ASCII digits.
+		{"fullwidth hour-minute", "１:３", "01:03:00"},
+		{"fullwidth-year date input midnight", "01/01/２０１６", "00:00:00"},
+		{"mixed-script day digit midnight", "1/1٢/16", "00:00:00"},
+	} {
+		rt, runner := newMacZoneRuntime(process.CommandResult{ExitCode: 0})
+		value, err := macSetTimeExec(t, rt, tc.timeArg)
+		if err != nil || value != true {
+			t.Fatalf("%s: set_time(%q) = %v, %v; want true, nil", tc.name, tc.timeArg, value, err)
+		}
+		if len(runner.cmds) != 1 {
+			t.Fatalf("%s: dispatched %d commands, want exactly 1", tc.name, len(runner.cmds))
+		}
+		want := wantMacSetCommand("-settime", tc.canonical)
+		if !reflect.DeepEqual(runner.cmds[0], want) {
+			t.Fatalf("%s: command = %#v, want %#v", tc.name, runner.cmds[0], want)
+		}
+		if len(runner.ctxErr) != 1 || runner.ctxErr[0] != nil {
+			t.Fatalf("%s: runner context errors = %v, want one nil (live context forwarded)", tc.name, runner.ctxErr)
+		}
+	}
+}
+
+// MSD-02/MST-02: invalid inputs validate before dispatch — zero
+// Runner calls and zero filesystem operations for both setters, the
+// fixed value-free invalid-format sentinel, a nil result value, and
+// no wrapped cause.
+func TestMacSettersInvalidInputZeroDispatch(t *testing.T) {
+	for _, input := range macSetterInvalidInputs {
+		for _, tc := range []struct {
+			name string
+			run  func(rt *runtime.Runtime, in string) (any, error)
+		}{
+			{"set_date", func(rt *runtime.Runtime, in string) (any, error) { return macSetDateExec(t, rt, in) }},
+			{"set_time", func(rt *runtime.Runtime, in string) (any, error) { return macSetTimeExec(t, rt, in) }},
+		} {
+			fsys := &zoneRecordingFS{FileSystem: runtime.NewMemoryFS()}
+			runner := &macZoneRunner{reply: process.CommandResult{ExitCode: 0}}
+			rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: fsys, Runner: runner}
+			value, err := tc.run(rt, input)
+			requireMacSetterInvalidFormat(t, err, input)
+			if value != nil {
+				t.Fatalf("%s %q: value = %v, want nil", tc.name, input, value)
+			}
+			if len(runner.cmds) != 0 {
+				t.Fatalf("%s %q dispatched %v, want zero", tc.name, input, runner.cmds)
+			}
+			if len(fsys.calls) != 0 {
+				t.Fatalf("%s %q touched the filesystem: %v", tc.name, input, fsys.calls)
+			}
+		}
+	}
+}
+
+// MSD-03/MST-03: the required pointer gate — a missing argument
+// (nil pointer) fails with the decoder's fixed missing-required error
+// before any dispatch and stays distinguishable from an explicit
+// empty string, which passes the gate and fails the format family
+// with the invalid sentinel. The args schema matches the catalog
+// (exactly date/time, required, no default) and the decoder's
+// structured and flag paths land in the same contract.
+func TestMacSettersRequiredGateAndArgsSchema(t *testing.T) {
+	// Direct-call boundary: a nonnil struct with a nil pointer
+	// reuses the decoder's fixed missing-required error.
+	for _, tc := range []struct {
+		name  string
+		args  any
+		field string
+	}{
+		{"set_date", &macSetDateArgs{}, "date"},
+		{"set_time", &macSetTimeArgs{}, "time"},
+	} {
+		rt, runner := newMacZoneRuntime(process.CommandResult{ExitCode: 0})
+		var value any
+		var err error
+		if tc.name == "set_date" {
+			value, err = (macSetDateFunc{}).Execute(context.Background(), rt, tc.args)
+		} else {
+			value, err = (macSetTimeFunc{}).Execute(context.Background(), rt, tc.args)
+		}
+		if !isMissingRequired(t, err, tc.field) {
+			t.Fatalf("%s missing-arg err = %v, want MissingRequiredError{%s}", tc.name, err, tc.field)
+		}
+		if value != nil {
+			t.Fatalf("%s missing-arg value = %v, want nil", tc.name, value)
+		}
+		if len(runner.cmds) != 0 {
+			t.Fatalf("%s missing-arg dispatched %v", tc.name, runner.cmds)
+		}
+	}
+
+	// Decoder path: empty structured and flag inputs fail the same
+	// required gate; provided values land as nonnil pointers.
+	for _, decode := range []struct {
+		name       string
+		structured map[string]any
+		provided   map[string]string
+	}{
+		{"empty structured", map[string]any{}, nil},
+		{"no flags", nil, map[string]string{}},
+	} {
+		var dateArgs macSetDateArgs
+		if err := config.Decode(&dateArgs, decode.structured, decode.provided); !isMissingRequired(t, err, "date") {
+			t.Fatalf("%s: set_date decode err = %v, want missing date", decode.name, err)
+		}
+		var timeArgs macSetTimeArgs
+		if err := config.Decode(&timeArgs, decode.structured, decode.provided); !isMissingRequired(t, err, "time") {
+			t.Fatalf("%s: set_time decode err = %v, want missing time", decode.name, err)
+		}
+	}
+	var dateArgs macSetDateArgs
+	if err := config.Decode(&dateArgs, map[string]any{"date": "2/20/2011"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if dateArgs.Date == nil || *dateArgs.Date != "2/20/2011" {
+		t.Fatalf("decoded date = %v, want 2/20/2011", dateArgs.Date)
+	}
+	var timeArgs macSetTimeArgs
+	if err := config.Decode(&timeArgs, nil, map[string]string{"time": "3:14"}); err != nil {
+		t.Fatal(err)
+	}
+	if timeArgs.Time == nil || *timeArgs.Time != "3:14" {
+		t.Fatalf("decoded time = %v, want 3:14", timeArgs.Time)
+	}
+
+	// Explicit empty string: the gate passes (nonnil pointer) and
+	// the format family rejects it — a different failure category
+	// than the missing argument.
+	rt, runner := newMacZoneRuntime(process.CommandResult{ExitCode: 0})
+	empty := ""
+	if _, err := (macSetDateFunc{}).Execute(context.Background(), rt, &macSetDateArgs{Date: &empty}); !errors.Is(err, ErrMacDateTimeInvalid) {
+		t.Fatalf("set_date empty-string err = %v, want ErrMacDateTimeInvalid", err)
+	}
+	if _, err := (macSetTimeFunc{}).Execute(context.Background(), rt, &macSetTimeArgs{Time: &empty}); !errors.Is(err, ErrMacDateTimeInvalid) {
+		t.Fatalf("set_time empty-string err = %v, want ErrMacDateTimeInvalid", err)
+	}
+	if len(runner.cmds) != 0 {
+		t.Fatalf("empty-string inputs dispatched %v", runner.cmds)
+	}
+
+	// Reflection schema: one required *string field per setter.
+	for _, tc := range []struct {
+		argsType reflect.Type
+		field    string
+	}{
+		{reflect.TypeOf(macSetDateArgs{}), "Date"},
+		{reflect.TypeOf(macSetTimeArgs{}), "Time"},
+	} {
+		if tc.argsType.Kind() != reflect.Struct || tc.argsType.NumField() != 1 {
+			t.Fatalf("setter args = %s with %d fields, want one field", tc.argsType, tc.argsType.NumField())
+		}
+		field := tc.argsType.Field(0)
+		if field.Name != tc.field || field.Type.Kind() != reflect.Pointer || field.Type.Elem().Kind() != reflect.String {
+			t.Fatalf("setter field = %s %s, want *string %s", field.Name, field.Type, tc.field)
+		}
+	}
+	names, err := config.ArgumentNames(macSetDateArgs{})
+	if err != nil || !reflect.DeepEqual(names, []string{"date"}) {
+		t.Fatalf("set_date argument names = %v, %v; want [date]", names, err)
+	}
+	names, err = config.ArgumentNames(macSetTimeArgs{})
+	if err != nil || !reflect.DeepEqual(names, []string{"time"}) {
+		t.Fatalf("set_time argument names = %v, %v; want [time]", names, err)
+	}
+	flags, err := config.NewFlagSet("timezone.set_date", macSetDateArgs{})
+	if err != nil || flags.Lookup("date") == nil {
+		t.Fatalf("set_date flag set = %v, %v; want a date flag", flags, err)
+	}
+	flags, err = config.NewFlagSet("timezone.set_time", macSetTimeArgs{})
+	if err != nil || flags.Lookup("time") == nil {
+		t.Fatalf("set_time flag set = %v, %v; want a time flag", flags, err)
+	}
+
+	// Catalog: exactly one parameter each, no default.
+	dateNames, dateDefaults := macTimezoneCatalogSetterEntry(t, "set_date")
+	if !reflect.DeepEqual(dateNames, []string{"date"}) || dateDefaults["date"] != "" {
+		t.Fatalf("catalog set_date parameters = %v %v, want [date] with no default", dateNames, dateDefaults)
+	}
+	timeNames, timeDefaults := macTimezoneCatalogSetterEntry(t, "set_time")
+	if !reflect.DeepEqual(timeNames, []string{"time"}) || timeDefaults["time"] != "" {
+		t.Fatalf("catalog set_time parameters = %v %v, want [time] with no default", timeNames, timeDefaults)
+	}
+}
+
+// MSD-04/MST-04: fail-safe boundary for gate-bypassing callers — a
+// wrong argument dynamic type (including the other setter's args and
+// a typed-nil pointer) returns the fixed value-free
+// errMacSetterInvalidArgs, a nil Runtime or nil Runner with an
+// otherwise-valid input returns ErrMacSystemsetupSet, and no path
+// panics, dispatches, or formats raw args into the error.
+func TestMacSettersFailSafeOnMalformedInvocation(t *testing.T) {
+	rt, runner := newMacZoneRuntime(process.CommandResult{ExitCode: 0})
+	badArgs := []any{
+		nil,
+		(*macSetDateArgs)(nil),
+		(*macSetTimeArgs)(nil),
+		&macGetDateArgs{},
+		&macZoneCompareArgs{},
+		macSetDateArgs{},
+		macSetTimeArgs{},
+		"2/20/2011",
+		map[string]any{"date": "2/20/2011"},
+	}
+	for _, tc := range []struct {
+		name string
+		run  func(args any) (any, error)
+	}{
+		{"set_date", func(args any) (any, error) { return (macSetDateFunc{}).Execute(context.Background(), rt, args) }},
+		{"set_time", func(args any) (any, error) { return (macSetTimeFunc{}).Execute(context.Background(), rt, args) }},
+	} {
+		for _, args := range badArgs {
+			value, err := tc.run(args)
+			if err == nil || err.Error() != "invalid timezone setter arguments" {
+				t.Fatalf("%s args %T: err = %v, want the fixed invalid-args error", tc.name, args, err)
+			}
+			if errors.Is(err, ErrMacDateTimeInvalid) || errors.Is(err, ErrMacSystemsetupSet) {
+				t.Fatalf("%s args %T: err = %v classified as a contract failure", tc.name, args, err)
+			}
+			if value != nil {
+				t.Fatalf("%s args %T: value = %v, want nil", tc.name, args, value)
+			}
+		}
+	}
+	if len(runner.cmds) != 0 {
+		t.Fatalf("malformed invocations dispatched %v", runner.cmds)
+	}
+
+	// Nil Runtime / nil Runner with a valid input: the parse still
+	// completes first (validation order), the execution sentinel
+	// answers, and nothing dispatches. The system clock state is
+	// unknown after such a failure and is never probed further here.
+	valid := "2/20/2011"
+	if _, err := (macSetDateFunc{}).Execute(context.Background(), nil, &macSetDateArgs{Date: &valid}); !errors.Is(err, ErrMacSystemsetupSet) {
+		t.Fatalf("set_date nil runtime err = %v, want ErrMacSystemsetupSet", err)
+	}
+	if _, err := (macSetTimeFunc{}).Execute(context.Background(), nil, &macSetTimeArgs{Time: &valid}); !errors.Is(err, ErrMacSystemsetupSet) {
+		t.Fatalf("set_time nil runtime err = %v, want ErrMacSystemsetupSet", err)
+	}
+	nilRunnerRT := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: runtime.NewMemoryFS(), Runner: nil}
+	if _, err := (macSetDateFunc{}).Execute(context.Background(), nilRunnerRT, &macSetDateArgs{Date: &valid}); !errors.Is(err, ErrMacSystemsetupSet) {
+		t.Fatalf("nil Runner err = %v, want ErrMacSystemsetupSet", err)
+	}
+}
+
+// MSD-05/MST-05: the execute_return_success port — nonzero exit OR
+// case-insensitive "not supported" in the Python-rstripped stdout
+// fails with the single fixed execution sentinel; a stderr-only
+// marker with clean stdout and exit 0 succeeds; every failure family
+// (runner error, cancellation, deadline, truncation flags, over-cap
+// streams) answers the same sentinel with exactly one dispatch and
+// no retry; exactly-at-cap and empty successful outputs succeed.
+func TestMacSettersExecutionFailureLadder(t *testing.T) {
+	over := bytes.Repeat([]byte("x"), (64<<10)+1)
+	failures := []struct {
+		name  string
+		reply process.CommandResult
+	}{
+		{"nonzero exit", process.CommandResult{ExitCode: 13, Stdout: []byte("setting date\n"), Stderr: []byte("systemsetup: failing\n")}},
+		{"runner start error", process.CommandResult{ExitCode: -1, Err: fmt.Errorf(`exec: "/usr/sbin/systemsetup": stat /usr/sbin/systemsetup: no such file or directory`)}},
+		{"canceled context", process.CommandResult{ExitCode: -1, Err: fmt.Errorf("systemsetup -setdate canceled: %w", context.Canceled)}},
+		{"deadline exceeded", process.CommandResult{ExitCode: -1, Err: fmt.Errorf("systemsetup -settime timed out after 30s: %w", context.DeadlineExceeded)}},
+		{"stdout truncated", process.CommandResult{ExitCode: 0, Stdout: []byte("ok"), StdoutTruncated: true}},
+		{"stderr truncated", process.CommandResult{ExitCode: 0, Stderr: []byte("x"), StderrTruncated: true}},
+		{"over-cap stdout", process.CommandResult{ExitCode: 0, Stdout: over}},
+		{"over-cap stderr", process.CommandResult{ExitCode: 0, Stderr: over}},
+		{"not supported stdout", process.CommandResult{ExitCode: 0, Stdout: []byte("this operation is not supported\n")}},
+		{"not supported mixed case", process.CommandResult{ExitCode: 0, Stdout: []byte("NOT SUPPORTED")}},
+		{"not supported mid-line", process.CommandResult{ExitCode: 0, Stdout: []byte("Error: Not Supported on this system\n")}},
+		{"not supported trailing whitespace", process.CommandResult{ExitCode: 0, Stdout: []byte("not supported \t\n")}},
+	}
+	for _, tc := range failures {
+		for _, setter := range []struct {
+			name string
+			run  func(rt *runtime.Runtime) (any, error)
+		}{
+			{"set_date", func(rt *runtime.Runtime) (any, error) { return macSetDateExec(t, rt, "2/20/2011") }},
+			{"set_time", func(rt *runtime.Runtime) (any, error) { return macSetTimeExec(t, rt, "3:14") }},
+		} {
+			rt, runner := newMacZoneRuntime(tc.reply)
+			value, err := setter.run(rt)
+			requireMacSetterExecError(t, err)
+			if value != nil {
+				t.Fatalf("%s %s: value = %v, want nil", tc.name, setter.name, value)
+			}
+			if len(runner.cmds) != 1 {
+				t.Fatalf("%s %s: dispatched %d commands, want exactly 1 (no retry)", tc.name, setter.name, len(runner.cmds))
+			}
+		}
+	}
+
+	// Success edges: a stderr-only marker with clean stdout and
+	// exit 0 succeeds (only rstripped stdout participates in the
+	// not-supported gate), and so do empty and exactly-at-cap
+	// successful outputs.
+	atCap := bytes.Repeat([]byte("x"), 64<<10)
+	for _, reply := range []process.CommandResult{
+		{ExitCode: 0, Stdout: []byte("\n"), Stderr: []byte("warning: not supported on some models \n")},
+		{ExitCode: 0, Stdout: atCap},
+		{ExitCode: 0},
+	} {
+		rt, runner := newMacZoneRuntime(reply)
+		if value, err := macSetDateExec(t, rt, "2/20/2011"); err != nil || value != true {
+			t.Fatalf("success reply %+v: set_date = %v, %v; want true, nil", reply, value, err)
+		}
+		if len(runner.cmds) != 1 {
+			t.Fatalf("success reply dispatched %d commands, want 1", len(runner.cmds))
+		}
+	}
+
+	// Live-context forwarding: the caller's context reaches the
+	// Runner unchanged.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runner := &macZoneRunner{reply: process.CommandResult{ExitCode: 0}}
+	rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: runtime.NewMemoryFS(), Runner: runner}
+	date := "2/20/2011"
+	if _, err := (macSetDateFunc{}).Execute(ctx, rt, &macSetDateArgs{Date: &date}); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.ctxErr) != 1 || !errors.Is(runner.ctxErr[0], context.Canceled) {
+		t.Fatalf("runner context errors = %v, want one context.Canceled", runner.ctxErr)
+	}
+}
+
+// MSD-06/MST-06: the closed macSystemsetupSetter enum maps exactly
+// -setdate and -settime; any other value is rejected with the fixed
+// unknown-setter error before the Runner is touched, and the
+// read-only getter enum is unchanged (its historically invalid value
+// 4 stays invalid; no getter flag is a setter flag).
+func TestMacSystemsetupSetterClosedEnum(t *testing.T) {
+	for _, tc := range []struct {
+		setter macSystemsetupSetter
+		flag   string
+	}{
+		{macSystemsetupSetDate, "-setdate"},
+		{macSystemsetupSetTime, "-settime"},
+	} {
+		flag, err := tc.setter.flag()
+		if err != nil || flag != tc.flag {
+			t.Fatalf("setter %d flag = %q, %v; want %q", tc.setter, flag, err, tc.flag)
+		}
+	}
+	rt, runner := newMacZoneRuntime(process.CommandResult{ExitCode: 0})
+	for _, unknown := range []macSystemsetupSetter{macSystemsetupSetter(2), macSystemsetupSetter(-1)} {
+		err := macSystemsetupSet(context.Background(), rt, unknown, "01:01:2016")
+		if err == nil || err.Error() != "unknown systemsetup setter" {
+			t.Fatalf("unknown setter %d err = %v, want unknown systemsetup setter", unknown, err)
+		}
+		if errors.Is(err, ErrMacSystemsetupSet) {
+			t.Fatalf("unknown setter %d err = %v, want the distinct unknown-setter error", unknown, err)
+		}
+		if len(runner.cmds) != 0 {
+			t.Fatalf("unknown setter %d dispatched %v, want 0", unknown, runner.cmds)
+		}
+	}
+
+	// The read-only getter enum is untouched by the setter addition.
+	if flag, err := macSystemsetupGetter(4).flag(); err == nil || flag != "" {
+		t.Fatalf("getter value 4 flag = %q, %v; want the fixed rejection", flag, err)
+	}
+	for _, getter := range []macSystemsetupGetter{macSystemsetupGetDate, macSystemsetupGetTime, macSystemsetupGetUsingNetworkTime, macSystemsetupGetTimeServer, macSystemsetupListTimezones} {
+		getterFlag, err := getter.flag()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if getterFlag == "-setdate" || getterFlag == "-settime" {
+			t.Fatalf("getter flag %q collides with a setter flag", getterFlag)
+		}
+	}
+
+	// A nil Runtime with a known setter still fails fixed with the
+	// execution sentinel.
+	if err := macSystemsetupSet(context.Background(), nil, macSystemsetupSetDate, "01:01:2016"); !errors.Is(err, ErrMacSystemsetupSet) {
+		t.Fatalf("nil runtime err = %v, want ErrMacSystemsetupSet", err)
+	}
+}
+
+// MSD-07/MST-07: the setter contracts never touch the filesystem on
+// any path — success, execution failure, and invalid input all stay
+// inside the hermetic MemoryFS with zero recorded operations.
+func TestMacSettersNeverTouchesFilesystem(t *testing.T) {
+	fsys := &zoneRecordingFS{FileSystem: runtime.NewMemoryFS()}
+	runner := &macZoneRunner{reply: process.CommandResult{ExitCode: 0}}
+	rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: fsys, Runner: runner}
+	if value, err := macSetDateExec(t, rt, "2/20/2011"); err != nil || value != true {
+		t.Fatalf("set_date = %v, %v; want true, nil", value, err)
+	}
+	runner.reply = process.CommandResult{ExitCode: 1}
+	if _, err := macSetTimeExec(t, rt, "3:14"); !errors.Is(err, ErrMacSystemsetupSet) {
+		t.Fatalf("nonzero err = %v", err)
+	}
+	runner.reply = process.CommandResult{ExitCode: 0}
+	if _, err := macSetDateExec(t, rt, "13/12/2014"); !errors.Is(err, ErrMacDateTimeInvalid) {
+		t.Fatalf("invalid-input err = %v", err)
+	}
+	if len(fsys.calls) != 0 {
+		t.Fatalf("filesystem touched: %v", fsys.calls)
+	}
+}
+
+// MSD-08/MST-08: registration selects the Mac setters per GOOS
+// through the unexported registerMacSettersForGOOS helper (a seam
+// separate from the read-only registerMacGettersForGOOS, exercised
+// from any host): exactly the two setters on darwin only, with the
+// required args prototypes, no superseded aliases, off-host dispatch
+// rejected as unsupported, and the production Register surface at 14
+// names on darwin / 7 on linux / 7 on windows / 5 elsewhere.
+func TestMacSettersRegistrationSelectsPerGOOS(t *testing.T) {
+	reg := runtime.NewExecRegistry()
+	if err := registerMacSettersForGOOS(reg, "darwin"); err != nil {
+		t.Fatal(err)
+	}
+	if reg.Len() != 2 {
+		t.Fatalf("darwin helper registered %d functions, want 2", reg.Len())
+	}
+	for _, tc := range []struct {
+		name string
+		fn   runtime.ExecFunction
+	}{
+		{"timezone.set_date", macSetDateFunc{}},
+		{"timezone.set_time", macSetTimeFunc{}},
+	} {
+		fn, ok := reg.Get(tc.name)
+		if !ok {
+			t.Fatalf("darwin helper did not register %s", tc.name)
+		}
+		if reflect.TypeOf(fn) != reflect.TypeOf(tc.fn) {
+			t.Fatalf("%s registered %T", tc.name, fn)
+		}
+		if fn.Name() != tc.name {
+			t.Fatalf("canonical name = %q, want %s", fn.Name(), tc.name)
+		}
+		constrained, isConstrained := fn.(runtime.PlatformConstrained)
+		if !isConstrained || !reflect.DeepEqual(constrained.Platforms(), []string{"darwin"}) {
+			t.Fatalf("%s platforms = %v, want [darwin]", tc.name, constrained.Platforms())
+		}
+		if !runtime.SupportsPlatform(fn, "darwin") {
+			t.Fatalf("%s must support darwin", tc.name)
+		}
+		for _, goos := range []string{"linux", "windows", "freebsd", "solaris", "aix"} {
+			if runtime.SupportsPlatform(fn, goos) {
+				t.Fatalf("%s must not support %s", tc.name, goos)
+			}
+		}
+		if reflect.TypeOf(fn.Args()) != reflect.TypeOf(tc.fn.Args()) {
+			t.Fatalf("%s args prototype = %s", tc.name, reflect.TypeOf(fn.Args()))
+		}
+	}
+	// No duplicate setter entry can exist.
+	if err := reg.Register(macSetDateFunc{}); err == nil {
+		t.Fatal("registering set_date twice must fail as a duplicate")
+	}
+	if err := reg.Register(macSetTimeFunc{}); err == nil {
+		t.Fatal("registering set_time twice must fail as a duplicate")
+	}
+
+	// Every non-darwin GOOS registers nothing at all.
+	for _, goos := range []string{"linux", "windows", "freebsd", "openbsd", "netbsd", "solaris", "illumos", "aix", "plan9"} {
+		other := runtime.NewExecRegistry()
+		if err := registerMacSettersForGOOS(other, goos); err != nil {
+			t.Fatal(err)
+		}
+		if other.Len() != 0 {
+			t.Fatalf("setter helper registered %d functions for %s, want 0", other.Len(), goos)
+		}
+		if _, ok := other.Get("timezone.set_date"); ok {
+			t.Fatalf("setter helper registered set_date for %s", goos)
+		}
+		if _, ok := other.Get("timezone.set_time"); ok {
+			t.Fatalf("setter helper registered set_time for %s", goos)
+		}
+	}
+
+	// Production Register: the surface is 14 names on darwin (base 5 +
+	// zone_compare + the four Mac systemsetup getters + the Mac
+	// get_zonecode + list_zones + the two setters), 7 on linux, 7 on
+	// windows, 5 elsewhere; the setters are visible exactly on
+	// darwin; no superseded alias is ever registered; the raw alias
+	// lookup fails on every host.
+	prod := runtime.NewExecRegistry()
+	if err := Register(prod); err != nil {
+		t.Fatal(err)
+	}
+	goos := runtime.CurrentGOOS()
+	wantLen := 5
+	switch goos {
+	case "darwin":
+		wantLen = 14
+	case "linux", "windows":
+		wantLen = 7
+	}
+	if prod.Len() != wantLen {
+		t.Fatalf("production registration holds %d functions on %s, want %d", prod.Len(), goos, wantLen)
+	}
+	visible := 0
+	for _, name := range prod.Names() {
+		if name == "timezone.set_date" || name == "timezone.set_time" {
+			visible++
+		}
+		if strings.HasPrefix(name, "timezone.set_date_") || strings.HasPrefix(name, "timezone.set_time_") {
+			t.Fatalf("superseded alias %q registered on %s", name, goos)
+		}
+	}
+	if goos == "darwin" && visible != 2 {
+		t.Fatalf("setters visible %d times on darwin, want 2", visible)
+	}
+	if goos != "darwin" && visible != 0 {
+		t.Fatalf("setters visible %d times on %s, want 0", visible, goos)
+	}
+	for _, alias := range []string{"timezone.set_date_", "timezone.set_time_"} {
+		if _, ok := prod.Get(alias); ok {
+			t.Fatalf("raw alias %q registered on %s", alias, goos)
+		}
+	}
+
+	// Off-host dispatch: the darwin registration surfaced through a
+	// non-darwin host is invisible and rejected as unsupported
+	// (ResolveArgs and Call); on darwin itself the raw entry exists.
+	if goos != "darwin" {
+		darwinReg := runtime.NewExecRegistry()
+		if err := registerMacSettersForGOOS(darwinReg, "darwin"); err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range darwinReg.Names() {
+			if name == "timezone.set_date" || name == "timezone.set_time" {
+				t.Fatalf("Names exposed %s for darwin registration on host %s", name, goos)
+			}
+		}
+		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: runtime.NewMemoryFS(), Runner: &macZoneRunner{}}
+		var unsupported *runtime.UnsupportedError
+		for _, name := range []string{"timezone.set_date", "timezone.set_time"} {
+			if _, err := darwinReg.ResolveArgs(rt, name); !errors.As(err, &unsupported) || unsupported.Kind != "function" {
+				t.Fatalf("ResolveArgs %s on %s = %v, want unsupported function", name, goos, err)
+			}
+			if _, err := darwinReg.Call(context.Background(), rt, name, &macSetDateArgs{}); !errors.As(err, &unsupported) || unsupported.Kind != "function" {
+				t.Fatalf("Call %s on %s = %v, want unsupported function", name, goos, err)
+			}
+		}
 	}
 }

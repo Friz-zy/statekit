@@ -1300,9 +1300,10 @@ func TestWinZoneSourceOracleSkipBoundary(t *testing.T) {
 // registers timezone.list on windows only (never an alias, never a
 // duplicate), every other GOOS registers nothing, the production
 // Register surface is 7 on windows (base 5 + zone_compare + the list),
-// 7 on linux, 12 on darwin (base 5 + zone_compare + four Mac systemsetup
+// 7 on linux, 14 on darwin (base 5 + zone_compare + four Mac systemsetup
 // getters + macZonecodeFunc + the Mac timezone.list_zones of
-// PTD-EXEC-1633), 5 elsewhere, and off-host dispatch of the
+// PTD-EXEC-1633 + the Mac set_date/set_time setters of
+// PTD-EXEC-1634/1635), 5 elsewhere, and off-host dispatch of the
 // windows registration is rejected as unsupported. The helper is the
 // seam, exercised from any host (mirroring LGZ-09/MGT-12).
 func TestWinZoneListRegistrationSelectsPerGOOS(t *testing.T) {
@@ -1362,10 +1363,11 @@ func TestWinZoneListRegistrationSelectsPerGOOS(t *testing.T) {
 		}
 	}
 
-	// Production Register: the surface is 7 names on linux, 12 on
+	// Production Register: the surface is 7 names on linux, 14 on
 	// darwin (base 5 + zone_compare + four Mac systemsetup getters +
 	// the Mac timezone.get_zonecode + the Mac timezone.list_zones of
-	// PTD-EXEC-1633), 7 on windows (base 5 +
+	// PTD-EXEC-1633 + the Mac set_date/set_time setters of
+	// PTD-EXEC-1634/1635), 7 on windows (base 5 +
 	// zone_compare + the Windows list), 5 elsewhere; timezone.list is
 	// visible exactly on windows; no superseded alias is ever
 	// registered; the raw alias lookup fails on every host.
@@ -1379,7 +1381,7 @@ func TestWinZoneListRegistrationSelectsPerGOOS(t *testing.T) {
 	case "linux":
 		wantLen = 7
 	case "darwin":
-		wantLen = 12
+		wantLen = 14
 	case "windows":
 		wantLen = 7
 	}
