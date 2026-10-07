@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -1218,8 +1219,8 @@ func macParseDateTime(s string) (macDateTime, bool) {
 	return macDateTime{}, false
 }
 
-// macSystemsetupSetter is the private closed selector for the only
-// two systemsetup mutations the module may run (PTD-EXEC-1634/1635).
+// macSystemsetupSetter is the private closed selector for the three
+// systemsetup mutations the module may run (PTD-EXEC-1634/1635/1637).
 // Values never come from user input: each maps to exactly one fixed
 // argv flag, and any other value is rejected before the Runner is
 // touched — arbitrary argv, zone flags, and every read-only getter
@@ -1232,17 +1233,20 @@ type macSystemsetupSetter int
 const (
 	macSystemsetupSetDate macSystemsetupSetter = iota
 	macSystemsetupSetTime
+	macSystemsetupSetUsingNetworkTime
 )
 
-// flag returns the single fixed argv flag for the closed enum value:
-// -setdate for the date mutation and -settime for the time mutation,
-// and the fixed unknown-setter rejection for anything else.
+// flag returns one of the closed flags -setdate, -settime, or
+// -setusingnetworktime; the latter takes the canonical on/off operand.
+// Unknown enum values are rejected.
 func (s macSystemsetupSetter) flag() (string, error) {
 	switch s {
 	case macSystemsetupSetDate:
 		return "-setdate", nil
 	case macSystemsetupSetTime:
 		return "-settime", nil
+	case macSystemsetupSetUsingNetworkTime:
+		return "-setusingnetworktime", nil
 	}
 	return "", errMacSystemsetupUnknownSetter
 }
@@ -1250,7 +1254,7 @@ func (s macSystemsetupSetter) flag() (string, error) {
 // Fixed Mac setter invocation controls (mirroring the getter
 // contract): the absolute admin-controlled systemsetup path (no PATH
 // lookup, no sudo, no elevation change), exactly two argv entries
-// (the fixed setter flag and the canonical parser output), a
+// (the fixed setter flag and canonical operand), a
 // locale-only child environment, a bounded wall clock, and equal
 // 64 KiB capture ceilings per stream.
 const (
@@ -1261,18 +1265,19 @@ const (
 
 // macSystemsetupSet runs the one fixed shell-free systemsetup
 // mutation selected by the closed enum (pinned mac_timezone.py
-// set_date lines 77-104 / set_time lines 124-148 through
+// set_date lines 77-104 / set_time lines 124-148 /
+// set_using_network_time lines 284-307 through
 // mac_utils.execute_return_success): an unknown enum value is
 // rejected before the Runner, a nil Runtime or Runner fails fixed
 // with ErrMacSystemsetupSet, and exactly one dispatch happens with
-// the canonical parser output — never the raw user string — as the
+// the canonical setter operand — never the raw user value — as the
 // only variable. Any Runner error, nonzero exit, truncation flag, or
 // over-cap stream, and any rstripped stdout containing
 // case-insensitive "not supported" (the execute_return_success gate;
 // a marker on stderr alone never fails), returns the single fixed
 // value-free ErrMacSystemsetupSet; no raw cause, output, stderr, or
 // exit status travels in the error and nothing is logged. After any
-// post-dispatch failure the system clock state is unknown: no retry,
+// post-dispatch failure the requested system state is unknown: no retry,
 // readback, rollback, or follow-up is attempted. Residual trust
 // assumption: /usr/sbin and systemsetup are admin-controlled;
 // binary authenticity is out of scope.
@@ -1419,6 +1424,93 @@ func (macSetTimeFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any
 		return nil, err
 	}
 	return true, nil
+}
+
+// macSetUsingNetworkTimeArgs is the Mac set_using_network_time
+// argument contract: one required union-valued enable argument. The
+// empty interface preserves decoder-supported Python truthiness inputs;
+// because the interface itself is nonnil when it contains bool(false),
+// false still passes the required gate. Omitted and structured-null
+// inputs leave the interface nil and fail that gate before Execute.
+type macSetUsingNetworkTimeArgs struct {
+	Enable any `statekit:"required,name=enable"`
+}
+
+// macNetworkTimeEnabled ports mac_utils.validate_enabled for the setter:
+// strings accept only exact case-insensitive on/off/yes/no tokens (never
+// trimmed), while decoder-supported non-string booleans, numbers, arrays,
+// slices, and maps use Python-compatible truthiness. Unsupported direct
+// Go values fail with the fixed setter-arguments sentinel rather than
+// invoking arbitrary methods or panicking.
+func macNetworkTimeEnabled(value any) (bool, error) {
+	if value == nil {
+		return false, errMacSetterInvalidArgs
+	}
+	v := reflect.ValueOf(value)
+	switch v.Kind() {
+	case reflect.String:
+		return macValidateEnabled(v.String())
+	case reflect.Bool:
+		return v.Bool(), nil
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return v.Int() != 0, nil
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return v.Uint() != 0, nil
+	case reflect.Float32, reflect.Float64:
+		// NaN compares unequal to zero, matching Python's truthy float.
+		return v.Float() != 0, nil
+	case reflect.Complex64, reflect.Complex128:
+		return v.Complex() != 0, nil
+	case reflect.Array, reflect.Slice, reflect.Map:
+		return v.Len() != 0, nil
+	default:
+		return false, errMacSetterInvalidArgs
+	}
+}
+
+// macSetUsingNetworkTimeFunc implements timezone.set_using_network_time
+// for mac_timezone.py (pinned revision lines 284-307).
+type macSetUsingNetworkTimeFunc struct{}
+
+func (macSetUsingNetworkTimeFunc) Name() string        { return "timezone.set_using_network_time" }
+func (macSetUsingNetworkTimeFunc) Platforms() []string { return []string{"darwin"} }
+func (macSetUsingNetworkTimeFunc) Args() any           { return macSetUsingNetworkTimeArgs{} }
+
+// Execute validates enable before dispatch and maps only canonical on/off
+// values to one shell-free systemsetup setter attempt. A failed attempt
+// returns the fixed setter error and suppresses readback. Only a
+// successful attempt is followed by exactly one existing
+// get_using_network_time query; the result is whether that state equals
+// the requested boolean, so a mismatch is false despite a possible host
+// mutation. Getter errors remain visible as their existing fixed query
+// or invalid-state errors. No retry, rollback, or additional mutation is
+// attempted, and no claim is made that the host remains unchanged after
+// dispatch.
+func (macSetUsingNetworkTimeFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, ok := args.(*macSetUsingNetworkTimeArgs)
+	if !ok || a == nil || a.Enable == nil {
+		return nil, errMacSetterInvalidArgs
+	}
+	enabled, err := macNetworkTimeEnabled(a.Enable)
+	if err != nil {
+		return nil, err
+	}
+	canonical := "off"
+	if enabled {
+		canonical = "on"
+	}
+	if err := macSystemsetupSet(ctx, rt, macSystemsetupSetUsingNetworkTime, canonical); err != nil {
+		return nil, err
+	}
+	actual, err := (macGetUsingNetworkTimeFunc{}).Execute(ctx, rt, &macGetUsingNetworkTimeArgs{})
+	if err != nil {
+		return nil, err
+	}
+	actualEnabled, ok := actual.(bool)
+	if !ok {
+		return nil, ErrMacNetworkTimeStateInvalid
+	}
+	return enabled == actualEnabled, nil
 }
 
 // winZoneCompareArgs is the win_timezone.zone_compare argument
@@ -1992,8 +2084,9 @@ func (setHwclockFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any
 // timezone.get_date, timezone.get_time, timezone.get_using_network_time,
 // and timezone.get_time_server, the Mac date-getter variant of
 // timezone.get_zonecode, and the Mac zone lister timezone.list_zones
-// are darwin-only; the Mac systemsetup setters timezone.set_date and
-// timezone.set_time are darwin-only through their own seam; the Linux
+// are darwin-only; the Mac systemsetup setters timezone.set_date,
+// timezone.set_time, and timezone.set_using_network_time are darwin-only
+// through their own seam; the Linux
 // generic getter timezone.get_zonecode is linux-only; the Windows
 // static-table lister timezone.list is windows-only.
 func Register(reg *runtime.ExecRegistry) error {
@@ -2064,7 +2157,8 @@ func registerMacGettersForGOOS(reg *runtime.ExecRegistry, goos string) error {
 }
 
 // registerMacSettersForGOOS installs the Mac-only systemsetup setters
-// timezone.set_date and timezone.set_time on darwin only, and nothing
+// timezone.set_date, timezone.set_time, and
+// timezone.set_using_network_time on darwin only, and nothing
 // on any other GOOS, where the names stay unregistered rather than
 // registered-but-unsupported (the established
 // registerMacGettersForGOOS pattern, kept as a separate seam so the
@@ -2075,7 +2169,7 @@ func registerMacSettersForGOOS(reg *runtime.ExecRegistry, goos string) error {
 	if goos != "darwin" {
 		return nil
 	}
-	for _, fn := range []runtime.ExecFunction{macSetDateFunc{}, macSetTimeFunc{}} {
+	for _, fn := range []runtime.ExecFunction{macSetDateFunc{}, macSetTimeFunc{}, macSetUsingNetworkTimeFunc{}} {
 		if err := reg.Register(fn); err != nil {
 			return err
 		}

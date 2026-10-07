@@ -1232,11 +1232,11 @@ func TestPortingDebtExecTimezoneZoneCompareWindowsPartialPTD_EXEC_1638(t *testin
 	// every variant host keeps exactly one entry per canonical name —
 	// never a windows alias and never a duplicate. The surface is
 	// GOOS-dependent: seven names on linux (base 5 + zone_compare +
-	// the Linux get_zonecode of PTD-EXEC-1631), fourteen on darwin
+	// the Linux get_zonecode of PTD-EXEC-1631), fifteen on darwin
 	// (base 5 + zone_compare + the four Mac systemsetup getters + the
 	// Mac get_zonecode of PTD-EXEC-1631 + the Mac list_zones of
 	// PTD-EXEC-1633 + the Mac set_date/set_time setters of
-	// PTD-EXEC-1634/1635), seven on
+	// PTD-EXEC-1634/1635 + set_using_network_time of PTD-EXEC-1637), seven on
 	// windows (base 5 + zone_compare + the Windows timezone.list of
 	// PTD-EXEC-1632). The darwin list below is corrected to the
 	// lexicographic order Names() actually returns.
@@ -1274,7 +1274,7 @@ func TestPortingDebtExecTimezoneZoneCompareWindowsPartialPTD_EXEC_1638(t *testin
 			"timezone.get_using_network_time", "timezone.get_zone",
 			"timezone.get_zonecode", "timezone.list_zones",
 			"timezone.set_date", "timezone.set_hwclock", "timezone.set_time",
-			"timezone.set_zone", "timezone.zone_compare",
+			"timezone.set_using_network_time", "timezone.set_zone", "timezone.zone_compare",
 		}
 	}
 	if !reflect.DeepEqual(timezoneNames, want) {

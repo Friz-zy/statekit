@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -951,11 +952,12 @@ func TestZoneCompareRegistrationSelectsPerGOOS(t *testing.T) {
 	}
 
 	// Visible layer: Names filters through SupportsPlatform. The
-	// surface is 14 names on darwin (base 5 + zone_compare + the four
+	// surface is 15 names on darwin (base 5 + zone_compare + the four
 	// Mac systemsetup getters get_date, get_time, get_time_server,
 	// get_using_network_time + the Mac timezone.get_zonecode of
 	// PTD-EXEC-1631 + the Mac timezone.list_zones of PTD-EXEC-1633 +
-	// the Mac timezone.set_date/set_time setters of PTD-EXEC-1634/1635),
+	// the Mac timezone.set_date/set_time setters of PTD-EXEC-1634/1635 +
+	// set_using_network_time of PTD-EXEC-1637),
 	// 7 on linux (base 5 + zone_compare +
 	// get_zonecode), 7 on windows (base 5 + zone_compare + the Windows
 	// timezone.list of PTD-EXEC-1632), and 5 everywhere else (no
@@ -963,7 +965,7 @@ func TestZoneCompareRegistrationSelectsPerGOOS(t *testing.T) {
 	wantTotal := 5
 	switch goos {
 	case "darwin":
-		wantTotal = 14
+		wantTotal = 15
 	case "linux":
 		wantTotal = 7
 	case "windows":
@@ -1665,18 +1667,18 @@ func TestMacZoneCompareNoDuplicateRegistration(t *testing.T) {
 		}
 	}
 	goos := runtime.CurrentGOOS()
-	// The production surface is 14 functions on darwin (base 5 +
+	// The production surface is 15 functions on darwin (base 5 +
 	// zone_compare + the four Mac systemsetup getters get_date,
 	// get_time, get_time_server, get_using_network_time + the Mac
 	// get_zonecode of PTD-EXEC-1631 + the Mac list_zones of
 	// PTD-EXEC-1633 + the Mac set_date/set_time setters of
-	// PTD-EXEC-1634/1635), 7 on linux
+	// PTD-EXEC-1634/1635 + set_using_network_time of PTD-EXEC-1637), 7 on linux
 	// (base 5 + zone_compare + get_zonecode), 7 on windows (base 5 +
 	// zone_compare + the Windows timezone.list), 5 elsewhere.
 	wantLen := 5
 	switch goos {
 	case "darwin":
-		wantLen = 14
+		wantLen = 15
 	case "linux":
 		wantLen = 7
 	case "windows":
@@ -2317,10 +2319,10 @@ func TestMacGettersUnknownEnumRejectedBeforeRunner(t *testing.T) {
 // unexported registerMacGettersForGOOS helper (the Darwin selector
 // seam, exercised from any host): the getters on darwin only, with
 // zero-field args prototypes, no superseded aliases, off-host dispatch
-// rejected as unsupported, and the production Register surface at 14
+// rejected as unsupported, and the production Register surface at 15
 // names on darwin (with the Mac timezone.get_zonecode,
-// timezone.list_zones, and the set_date/set_time setters of
-// PTD-EXEC-1634/1635) / 7 on linux
+// timezone.list_zones, the set_date/set_time setters of PTD-EXEC-1634/1635,
+// and set_using_network_time of PTD-EXEC-1637) / 7 on linux
 // (with the Linux get_zonecode) / 7 on windows / 5 elsewhere (the
 // count includes the network-time getters pinned by MNT-12).
 func TestMacGettersRegistrationSelectsPerGOOS(t *testing.T) {
@@ -2399,11 +2401,11 @@ func TestMacGettersRegistrationSelectsPerGOOS(t *testing.T) {
 		}
 	}
 
-	// Production Register: the surface is 14 names on darwin (base 5 +
+	// Production Register: the surface is 15 names on darwin (base 5 +
 	// zone_compare + the four Mac systemsetup getters + the Mac
 	// get_zonecode of PTD-EXEC-1631 + the Mac list_zones of
 	// PTD-EXEC-1633 + the Mac set_date/set_time setters of
-	// PTD-EXEC-1634/1635), 7 on
+	// PTD-EXEC-1634/1635 + set_using_network_time of PTD-EXEC-1637), 7 on
 	// linux (base 5 + zone_compare + get_zonecode), 7 on windows (base
 	// 5 + zone_compare + the Windows timezone.list), 5 elsewhere; the
 	// getters are visible exactly on darwin; no superseded alias is
@@ -2416,7 +2418,7 @@ func TestMacGettersRegistrationSelectsPerGOOS(t *testing.T) {
 	wantLen := 5
 	switch goos {
 	case "darwin":
-		wantLen = 14
+		wantLen = 15
 	case "linux":
 		wantLen = 7
 	case "windows":
@@ -3085,9 +3087,10 @@ func TestMacNetworkTimeGettersClosedEnumRejectsSettersBeforeRunner(t *testing.T)
 // query functions (the four getters plus list_zones) on darwin only,
 // with zero-field args prototypes matching the catalog's
 // zero parameters, no superseded aliases, off-host dispatch rejected as
-// unsupported, and the production Register surface at 14 names on
-// darwin (with the Mac timezone.get_zonecode, timezone.list_zones, and
-// the set_date/set_time setters of PTD-EXEC-1634/1635) /
+// unsupported, and the production Register surface at 15 names on
+// darwin (with the Mac timezone.get_zonecode, timezone.list_zones, the
+// set_date/set_time setters of PTD-EXEC-1634/1635, and
+// set_using_network_time of PTD-EXEC-1637) /
 // 7 on linux (with the Linux get_zonecode) / 7 on windows (with the
 // Windows timezone.list) /
 // 5 elsewhere.
@@ -3179,11 +3182,11 @@ func TestMacNetworkTimeGettersRegistrationSelectsPerGOOS(t *testing.T) {
 		}
 	}
 
-	// Production Register: the surface is 14 names on darwin (base 5 +
+	// Production Register: the surface is 15 names on darwin (base 5 +
 	// zone_compare + the four Mac systemsetup getters + the Mac
 	// get_zonecode of PTD-EXEC-1631 + the Mac list_zones of
 	// PTD-EXEC-1633 + the Mac set_date/set_time setters of
-	// PTD-EXEC-1634/1635), 7 on
+	// PTD-EXEC-1634/1635 + set_using_network_time of PTD-EXEC-1637), 7 on
 	// linux (base 5 + zone_compare + get_zonecode), 7 on windows (base
 	// 5 + zone_compare + the Windows timezone.list), 5 elsewhere; the
 	// network-time getters are visible exactly on darwin; no superseded
@@ -3197,7 +3200,7 @@ func TestMacNetworkTimeGettersRegistrationSelectsPerGOOS(t *testing.T) {
 	wantLen := 5
 	switch goos {
 	case "darwin":
-		wantLen = 14
+		wantLen = 15
 	case "linux":
 		wantLen = 7
 	case "windows":
@@ -3767,9 +3770,9 @@ func TestZonecodeExecuteFailsSafeOnMalformedInvocation(t *testing.T) {
 // with a zero-field args prototype matching the catalog's zero
 // parameters, no superseded alias, off-host dispatch rejected as
 // unsupported, and the production Register surface at 7 names on
-// linux / 14 on darwin (with the Mac timezone.get_zonecode,
-// timezone.list_zones, and the set_date/set_time setters of
-// PTD-EXEC-1634/1635) / 7 on
+// linux / 15 on darwin (with the Mac timezone.get_zonecode,
+// timezone.list_zones, the set_date/set_time setters of PTD-EXEC-1634/1635,
+// and set_using_network_time of PTD-EXEC-1637) / 7 on
 // windows (with the Windows timezone.list) / 5 elsewhere.
 func TestZonecodeRegistrationSelectsPerGOOS(t *testing.T) {
 	reg := runtime.NewExecRegistry()
@@ -3830,11 +3833,11 @@ func TestZonecodeRegistrationSelectsPerGOOS(t *testing.T) {
 		}
 	}
 
-	// Production Register: the surface is 7 names on linux, 14 on
+	// Production Register: the surface is 7 names on linux, 15 on
 	// darwin (base 5 + zone_compare + the four Mac systemsetup getters
 	// + the Mac get_zonecode of PTD-EXEC-1631 + the Mac list_zones of
 	// PTD-EXEC-1633 + the Mac set_date/set_time setters of
-	// PTD-EXEC-1634/1635),
+	// PTD-EXEC-1634/1635 + set_using_network_time of PTD-EXEC-1637),
 	// 7 on windows (base 5 + zone_compare + the Windows
 	// timezone.list), 5 elsewhere; get_zonecode is visible exactly on
 	// linux and darwin (one variant each); no superseded alias is ever
@@ -3849,7 +3852,7 @@ func TestZonecodeRegistrationSelectsPerGOOS(t *testing.T) {
 	case "linux":
 		wantLen = 7
 	case "darwin":
-		wantLen = 14
+		wantLen = 15
 	case "windows":
 		wantLen = 7
 	}
@@ -4411,10 +4414,11 @@ func TestMacZonecodeRegistrationSelectsPerGOOS(t *testing.T) {
 	}
 }
 
-// MZC-MAC-08: the production Register surface is 14 names on darwin
+// MZC-MAC-08: the production Register surface is 15 names on darwin
 // (base 5 + zone_compare + the four Mac systemsetup getters + the Mac
 // get_zonecode + the Mac list_zones of PTD-EXEC-1633 + the Mac
-// set_date/set_time setters of PTD-EXEC-1634/1635), 7 on linux,
+// set_date/set_time setters of PTD-EXEC-1634/1635 +
+// set_using_network_time of PTD-EXEC-1637), 7 on linux,
 // 7 on windows, 5 elsewhere; exactly one
 // timezone.get_zonecode variant is visible per supported GOOS (the
 // Linux variant on linux, the mac variant on darwin, none on windows
@@ -4430,7 +4434,7 @@ func TestMacZonecodeProductionSurface(t *testing.T) {
 	wantLen := 5
 	switch goos {
 	case "darwin":
-		wantLen = 14
+		wantLen = 15
 	case "linux":
 		wantLen = 7
 	case "windows":
@@ -4732,10 +4736,10 @@ func TestMacListZonesFailsFixedValueFree(t *testing.T) {
 // prototype matching the catalog's zero parameters and distinct from
 // every other Mac getter and the Windows lister prototype, no
 // duplicate entry, nothing on any non-darwin GOOS, and the production
-// Register surface at 14 names on darwin (with the Mac
+// Register surface at 15 names on darwin (with the Mac
 // timezone.get_zonecode of PTD-EXEC-1631, timezone.list_zones of
-// PTD-EXEC-1633, and the set_date/set_time setters of
-// PTD-EXEC-1634/1635) / 7 on linux / 7 on windows / 5 elsewhere with
+// PTD-EXEC-1633, the set_date/set_time setters of PTD-EXEC-1634/1635,
+// and set_using_network_time of PTD-EXEC-1637) / 7 on linux / 7 on windows / 5 elsewhere with
 // list_zones visible exactly on darwin.
 func TestMacListZonesRegistrationSelectsPerGOOS(t *testing.T) {
 	reg := runtime.NewExecRegistry()
@@ -4798,10 +4802,11 @@ func TestMacListZonesRegistrationSelectsPerGOOS(t *testing.T) {
 		}
 	}
 
-	// Production Register: the surface is 14 names on darwin (base 5 +
+	// Production Register: the surface is 15 names on darwin (base 5 +
 	// zone_compare + the four Mac systemsetup getters + the Mac
 	// get_zonecode of PTD-EXEC-1631 + list_zones of PTD-EXEC-1633 +
-	// the Mac set_date/set_time setters of PTD-EXEC-1634/1635),
+	// the Mac set_date/set_time setters of PTD-EXEC-1634/1635 +
+	// set_using_network_time of PTD-EXEC-1637),
 	// 7 on linux (base 5 + zone_compare + get_zonecode), 7 on windows
 	// (base 5 + zone_compare + the Windows timezone.list), 5 elsewhere;
 	// list_zones is visible exactly on darwin; no superseded alias is
@@ -4814,7 +4819,7 @@ func TestMacListZonesRegistrationSelectsPerGOOS(t *testing.T) {
 	wantLen := 5
 	switch goos {
 	case "darwin":
-		wantLen = 14
+		wantLen = 15
 	case "linux":
 		wantLen = 7
 	case "windows":
@@ -4843,7 +4848,7 @@ func TestMacListZonesRegistrationSelectsPerGOOS(t *testing.T) {
 // ---------------------------------------------------------------------------
 // macOS set_date / set_time (PTD-EXEC-1634/1635): MSP-01..02 pin the
 // shared _get_date_time_format parser family and MSD/MST-01..08 pin
-// the two setter contracts hermetically. Every test uses the fake
+// the two date/time setter contracts hermetically. Every test uses the fake
 // macZoneRunner only — never process.NewRunner, never
 // /usr/sbin/systemsetup, never a host filesystem — and the suite
 // makes no native Darwin claim. The mapped Salt tests are the
@@ -4920,13 +4925,13 @@ func requireMacSetterExecError(t *testing.T, err error) {
 	if err == nil || err.Error() != "macOS systemsetup set failed" {
 		t.Fatalf("err text = %v, want macOS systemsetup set failed", err)
 	}
-	for _, other := range []error{ErrMacDateTimeInvalid, ErrMacSystemsetupQuery, ErrCannotDetermineZone} {
+	for _, other := range []error{ErrMacDateTimeInvalid, ErrMacSystemsetupQuery, ErrCannotDetermineZone, ErrMacNetworkTimeStateInvalid} {
 		if errors.Is(err, other) {
 			t.Fatalf("setter exec err %v also matches %v", err, other)
 		}
 	}
 	for _, marker := range []string{
-		"-setdate", "-settime", "2016", "2011", "17:34", "3:14", "13",
+		"-setdate", "-settime", "-setusingnetworktime", "2016", "2011", "17:34", "3:14", "13",
 		"exit", "stdout", "stderr", "timed out", "canceled", "not supported",
 		"no such file",
 	} {
@@ -5536,7 +5541,7 @@ func TestMacSettersExecutionFailureLadder(t *testing.T) {
 }
 
 // MSD-06/MST-06: the closed macSystemsetupSetter enum maps exactly
-// -setdate and -settime; any other value is rejected with the fixed
+// -setdate, -settime, and -setusingnetworktime; any other value is rejected with the fixed
 // unknown-setter error before the Runner is touched, and the
 // read-only getter enum is unchanged (its historically invalid value
 // 4 stays invalid; no getter flag is a setter flag).
@@ -5547,6 +5552,7 @@ func TestMacSystemsetupSetterClosedEnum(t *testing.T) {
 	}{
 		{macSystemsetupSetDate, "-setdate"},
 		{macSystemsetupSetTime, "-settime"},
+		{macSystemsetupSetUsingNetworkTime, "-setusingnetworktime"},
 	} {
 		flag, err := tc.setter.flag()
 		if err != nil || flag != tc.flag {
@@ -5554,7 +5560,7 @@ func TestMacSystemsetupSetterClosedEnum(t *testing.T) {
 		}
 	}
 	rt, runner := newMacZoneRuntime(process.CommandResult{ExitCode: 0})
-	for _, unknown := range []macSystemsetupSetter{macSystemsetupSetter(2), macSystemsetupSetter(-1)} {
+	for _, unknown := range []macSystemsetupSetter{macSystemsetupSetter(3), macSystemsetupSetter(-1), macSystemsetupSetter(99)} {
 		err := macSystemsetupSet(context.Background(), rt, unknown, "01:01:2016")
 		if err == nil || err.Error() != "unknown systemsetup setter" {
 			t.Fatalf("unknown setter %d err = %v, want unknown systemsetup setter", unknown, err)
@@ -5576,7 +5582,7 @@ func TestMacSystemsetupSetterClosedEnum(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if getterFlag == "-setdate" || getterFlag == "-settime" {
+		if getterFlag == "-setdate" || getterFlag == "-settime" || getterFlag == "-setusingnetworktime" {
 			t.Fatalf("getter flag %q collides with a setter flag", getterFlag)
 		}
 	}
@@ -5614,17 +5620,17 @@ func TestMacSettersNeverTouchesFilesystem(t *testing.T) {
 // MSD-08/MST-08: registration selects the Mac setters per GOOS
 // through the unexported registerMacSettersForGOOS helper (a seam
 // separate from the read-only registerMacGettersForGOOS, exercised
-// from any host): exactly the two setters on darwin only, with the
+// from any host): exactly the three setters on darwin only, with the
 // required args prototypes, no superseded aliases, off-host dispatch
-// rejected as unsupported, and the production Register surface at 14
+// rejected as unsupported, and the production Register surface at 15
 // names on darwin / 7 on linux / 7 on windows / 5 elsewhere.
 func TestMacSettersRegistrationSelectsPerGOOS(t *testing.T) {
 	reg := runtime.NewExecRegistry()
 	if err := registerMacSettersForGOOS(reg, "darwin"); err != nil {
 		t.Fatal(err)
 	}
-	if reg.Len() != 2 {
-		t.Fatalf("darwin helper registered %d functions, want 2", reg.Len())
+	if reg.Len() != 3 {
+		t.Fatalf("darwin helper registered %d functions, want 3", reg.Len())
 	}
 	for _, tc := range []struct {
 		name string
@@ -5632,6 +5638,7 @@ func TestMacSettersRegistrationSelectsPerGOOS(t *testing.T) {
 	}{
 		{"timezone.set_date", macSetDateFunc{}},
 		{"timezone.set_time", macSetTimeFunc{}},
+		{"timezone.set_using_network_time", macSetUsingNetworkTimeFunc{}},
 	} {
 		fn, ok := reg.Get(tc.name)
 		if !ok {
@@ -5666,6 +5673,12 @@ func TestMacSettersRegistrationSelectsPerGOOS(t *testing.T) {
 	if err := reg.Register(macSetTimeFunc{}); err == nil {
 		t.Fatal("registering set_time twice must fail as a duplicate")
 	}
+	if err := reg.Register(macSetUsingNetworkTimeFunc{}); err == nil {
+		t.Fatal("registering set_using_network_time twice must fail as a duplicate")
+	}
+	if _, ok := reg.Get("timezone.set_time_server"); ok {
+		t.Fatal("blocked timezone.set_time_server must remain unregistered")
+	}
 
 	// Every non-darwin GOOS registers nothing at all.
 	for _, goos := range []string{"linux", "windows", "freebsd", "openbsd", "netbsd", "solaris", "illumos", "aix", "plan9"} {
@@ -5682,11 +5695,14 @@ func TestMacSettersRegistrationSelectsPerGOOS(t *testing.T) {
 		if _, ok := other.Get("timezone.set_time"); ok {
 			t.Fatalf("setter helper registered set_time for %s", goos)
 		}
+		if _, ok := other.Get("timezone.set_using_network_time"); ok {
+			t.Fatalf("setter helper registered set_using_network_time for %s", goos)
+		}
 	}
 
-	// Production Register: the surface is 14 names on darwin (base 5 +
+	// Production Register: the surface is 15 names on darwin (base 5 +
 	// zone_compare + the four Mac systemsetup getters + the Mac
-	// get_zonecode + list_zones + the two setters), 7 on linux, 7 on
+	// get_zonecode + list_zones + the three setters), 7 on linux, 7 on
 	// windows, 5 elsewhere; the setters are visible exactly on
 	// darwin; no superseded alias is ever registered; the raw alias
 	// lookup fails on every host.
@@ -5698,7 +5714,7 @@ func TestMacSettersRegistrationSelectsPerGOOS(t *testing.T) {
 	wantLen := 5
 	switch goos {
 	case "darwin":
-		wantLen = 14
+		wantLen = 15
 	case "linux", "windows":
 		wantLen = 7
 	}
@@ -5707,20 +5723,20 @@ func TestMacSettersRegistrationSelectsPerGOOS(t *testing.T) {
 	}
 	visible := 0
 	for _, name := range prod.Names() {
-		if name == "timezone.set_date" || name == "timezone.set_time" {
+		if name == "timezone.set_date" || name == "timezone.set_time" || name == "timezone.set_using_network_time" {
 			visible++
 		}
-		if strings.HasPrefix(name, "timezone.set_date_") || strings.HasPrefix(name, "timezone.set_time_") {
+		if strings.HasPrefix(name, "timezone.set_date_") || strings.HasPrefix(name, "timezone.set_time_") || strings.HasPrefix(name, "timezone.set_using_network_time_") {
 			t.Fatalf("superseded alias %q registered on %s", name, goos)
 		}
 	}
-	if goos == "darwin" && visible != 2 {
-		t.Fatalf("setters visible %d times on darwin, want 2", visible)
+	if goos == "darwin" && visible != 3 {
+		t.Fatalf("setters visible %d times on darwin, want 3", visible)
 	}
 	if goos != "darwin" && visible != 0 {
 		t.Fatalf("setters visible %d times on %s, want 0", visible, goos)
 	}
-	for _, alias := range []string{"timezone.set_date_", "timezone.set_time_"} {
+	for _, alias := range []string{"timezone.set_date_", "timezone.set_time_", "timezone.set_using_network_time_", "timezone.set_time_server"} {
 		if _, ok := prod.Get(alias); ok {
 			t.Fatalf("raw alias %q registered on %s", alias, goos)
 		}
@@ -5735,19 +5751,407 @@ func TestMacSettersRegistrationSelectsPerGOOS(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, name := range darwinReg.Names() {
-			if name == "timezone.set_date" || name == "timezone.set_time" {
+			if name == "timezone.set_date" || name == "timezone.set_time" || name == "timezone.set_using_network_time" {
 				t.Fatalf("Names exposed %s for darwin registration on host %s", name, goos)
 			}
 		}
 		rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: runtime.NewMemoryFS(), Runner: &macZoneRunner{}}
 		var unsupported *runtime.UnsupportedError
-		for _, name := range []string{"timezone.set_date", "timezone.set_time"} {
-			if _, err := darwinReg.ResolveArgs(rt, name); !errors.As(err, &unsupported) || unsupported.Kind != "function" {
-				t.Fatalf("ResolveArgs %s on %s = %v, want unsupported function", name, goos, err)
+		for _, tc := range []struct {
+			name string
+			args any
+		}{
+			{"timezone.set_date", &macSetDateArgs{}},
+			{"timezone.set_time", &macSetTimeArgs{}},
+			{"timezone.set_using_network_time", &macSetUsingNetworkTimeArgs{Enable: false}},
+		} {
+			if _, err := darwinReg.ResolveArgs(rt, tc.name); !errors.As(err, &unsupported) || unsupported.Kind != "function" {
+				t.Fatalf("ResolveArgs %s on %s = %v, want unsupported function", tc.name, goos, err)
 			}
-			if _, err := darwinReg.Call(context.Background(), rt, name, &macSetDateArgs{}); !errors.As(err, &unsupported) || unsupported.Kind != "function" {
-				t.Fatalf("Call %s on %s = %v, want unsupported function", name, goos, err)
+			if _, err := darwinReg.Call(context.Background(), rt, tc.name, tc.args); !errors.As(err, &unsupported) || unsupported.Kind != "function" {
+				t.Fatalf("Call %s on %s = %v, want unsupported function", tc.name, goos, err)
 			}
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Mac timezone.set_using_network_time (PTD-EXEC-1637): the source
+// function is a state-changing systemsetup setter. These tests exercise
+// the decoder-to-command mapping only through recording fake Runners and
+// a write-rejecting in-memory filesystem; no systemsetup process, host
+// filesystem, or network is contacted.
+
+type macNetworkTimeSetterRunner struct {
+	replies []process.CommandResult
+	cmds    []process.Command
+	ctxErr  []error
+}
+
+func (r *macNetworkTimeSetterRunner) Run(ctx context.Context, cmd process.Command) process.CommandResult {
+	r.cmds = append(r.cmds, cmd)
+	if ctx == nil {
+		r.ctxErr = append(r.ctxErr, errNoContext)
+	} else {
+		r.ctxErr = append(r.ctxErr, ctx.Err())
+	}
+	if len(r.replies) == 0 {
+		return process.CommandResult{ExitCode: 0}
+	}
+	reply := r.replies[0]
+	r.replies = r.replies[1:]
+	return reply
+}
+
+func newMacNetworkTimeSetterRuntime(replies ...process.CommandResult) (*runtime.Runtime, *zoneRecordingFS, *macNetworkTimeSetterRunner) {
+	fsys := &zoneRecordingFS{FileSystem: runtime.NewMemoryFS()}
+	runner := &macNetworkTimeSetterRunner{replies: append([]process.CommandResult(nil), replies...)}
+	return &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: fsys, Runner: runner}, fsys, runner
+}
+
+func macNetworkTimeReadbackReply(enabled bool) process.CommandResult {
+	state := "off"
+	if enabled {
+		state = "on"
+	}
+	return process.CommandResult{ExitCode: 0, Stdout: []byte("Network Time: " + state + "\n")}
+}
+
+func wantMacSetUsingNetworkTimeCommand(canonical string) process.Command {
+	return process.Command{
+		Name:           "/usr/sbin/systemsetup",
+		Args:           []string{"-setusingnetworktime", canonical},
+		Env:            []string{"LC_ALL=C"},
+		Timeout:        30 * time.Second,
+		MaxStdoutBytes: 64 << 10,
+		MaxStderrBytes: 64 << 10,
+	}
+}
+
+func requireMacNetworkTimeSetAndReadback(t *testing.T, runner *macNetworkTimeSetterRunner, canonical string) {
+	t.Helper()
+	if len(runner.cmds) != 2 {
+		t.Fatalf("network-time setter dispatched %d commands, want setter then one getter", len(runner.cmds))
+	}
+	wantSet := wantMacSetUsingNetworkTimeCommand(canonical)
+	if !reflect.DeepEqual(runner.cmds[0], wantSet) {
+		t.Fatalf("setter command = %#v, want %#v", runner.cmds[0], wantSet)
+	}
+	wantGet := wantMacGetterCommand("-getusingnetworktime")
+	if !reflect.DeepEqual(runner.cmds[1], wantGet) {
+		t.Fatalf("readback command = %#v, want %#v", runner.cmds[1], wantGet)
+	}
+	if !reflect.DeepEqual(runner.ctxErr, []error{nil, nil}) {
+		t.Fatalf("runner context errors = %v, want two live contexts", runner.ctxErr)
+	}
+}
+
+func TestMacSetUsingNetworkTimeRequiredEnableContract(t *testing.T) {
+	names, defaults := macTimezoneCatalogSetterEntry(t, "set_using_network_time")
+	_, hasEnableDefault := defaults["enable"]
+	if !reflect.DeepEqual(names, []string{"enable"}) || hasEnableDefault {
+		t.Fatalf("catalog set_using_network_time parameters = %v %v, want [enable] with no default", names, defaults)
+	}
+
+	rt, fsys, runner := newMacNetworkTimeSetterRuntime(
+		process.CommandResult{ExitCode: 0},
+		macNetworkTimeReadbackReply(false),
+	)
+	argsType := reflect.TypeOf(macSetUsingNetworkTimeArgs{})
+	if argsType.NumField() != 1 {
+		t.Fatalf("args fields = %d, want exactly one", argsType.NumField())
+	}
+	field := argsType.Field(0)
+	if field.Name != "Enable" || field.Type.Kind() != reflect.Interface || field.Tag.Get("statekit") != "required,name=enable" {
+		t.Fatalf("enable field = %s %s tag %q, want required interface Enable named enable", field.Name, field.Type, field.Tag.Get("statekit"))
+	}
+	if names, err := config.ArgumentNames(macSetUsingNetworkTimeArgs{}); err != nil || !reflect.DeepEqual(names, []string{"enable"}) {
+		t.Fatalf("argument names = %v, %v; want [enable]", names, err)
+	}
+
+	// Omitted and structured-null values remain nil and fail the required
+	// gate before Execute can reach the recording Runner.
+	for _, tc := range []struct {
+		name       string
+		structured map[string]any
+	}{
+		{"omitted", nil},
+		{"null", map[string]any{"enable": nil}},
+	} {
+		var missing macSetUsingNetworkTimeArgs
+		err := config.Decode(&missing, tc.structured, nil)
+		if !isMissingRequired(t, err, "enable") {
+			t.Fatalf("%s enable err = %v, want missing required enable", tc.name, err)
+		}
+	}
+	if len(runner.cmds) != 0 {
+		t.Fatalf("missing/null required gates dispatched %d commands, want 0", len(runner.cmds))
+	}
+
+	// Interface-valued required validation is presence-based: a concrete
+	// bool false is non-nil and valid, and dispatches the canonical off
+	// operand followed by one readback.
+	var args macSetUsingNetworkTimeArgs
+	if err := config.Decode(&args, map[string]any{"enable": false}, nil); err != nil {
+		t.Fatalf("decode explicit false: %v", err)
+	}
+	if err := config.ValidateRequired(&args); err != nil {
+		t.Fatalf("explicit false failed required validation: %v", err)
+	}
+	if enabled, ok := args.Enable.(bool); !ok || enabled {
+		t.Fatalf("decoded enable = %#v, want bool false", args.Enable)
+	}
+	value, err := (macSetUsingNetworkTimeFunc{}).Execute(context.Background(), rt, &args)
+	if err != nil || value != true {
+		t.Fatalf("set_using_network_time(false) = %v, %v; want true, nil", value, err)
+	}
+	requireMacNetworkTimeSetAndReadback(t, runner, "off")
+	if len(fsys.calls) != 0 {
+		t.Fatalf("network-time setter touched filesystem: %v", fsys.calls)
+	}
+}
+
+func TestMacSetUsingNetworkTimeRejectsInvalidStringsBeforeDispatch(t *testing.T) {
+	for _, input := range []string{"", "true", "false", " on ", "maybe", "unknown"} {
+		rt, fsys, runner := newMacNetworkTimeSetterRuntime()
+		value, err := (macSetUsingNetworkTimeFunc{}).Execute(context.Background(), rt,
+			&macSetUsingNetworkTimeArgs{Enable: input})
+		requireMacNetworkTimeStateError(t, err)
+		if value != nil {
+			t.Fatalf("invalid input returned value %#v, want nil", value)
+		}
+		if len(runner.cmds) != 0 {
+			t.Fatalf("invalid input dispatched %d commands, want 0", len(runner.cmds))
+		}
+		if len(fsys.calls) != 0 {
+			t.Fatalf("invalid input touched filesystem: %v", fsys.calls)
+		}
+	}
+}
+
+func TestMacSetUsingNetworkTimeStringAliasesCanonicalize(t *testing.T) {
+	for _, tc := range []struct {
+		input     string
+		canonical string
+		enabled   bool
+	}{
+		{"on", "on", true},
+		{"ON", "on", true},
+		{"yes", "on", true},
+		{"YeS", "on", true},
+		{"off", "off", false},
+		{"OFF", "off", false},
+		{"no", "off", false},
+		{"No", "off", false},
+	} {
+		rt, fsys, runner := newMacNetworkTimeSetterRuntime(
+			process.CommandResult{ExitCode: 0},
+			macNetworkTimeReadbackReply(tc.enabled),
+		)
+		var args macSetUsingNetworkTimeArgs
+		if err := config.Decode(&args, map[string]any{"enable": tc.input}, nil); err != nil {
+			t.Fatalf("decode alias %q: %v", tc.input, err)
+		}
+		value, err := (macSetUsingNetworkTimeFunc{}).Execute(context.Background(), rt, &args)
+		if err != nil || value != true {
+			t.Fatalf("set_using_network_time(%q) = %v, %v; want true, nil", tc.input, value, err)
+		}
+		requireMacNetworkTimeSetAndReadback(t, runner, tc.canonical)
+		if len(fsys.calls) != 0 {
+			t.Fatalf("alias %q touched filesystem: %v", tc.input, fsys.calls)
+		}
+	}
+
+	// The scalar flag decoder supplies a string as well; it follows the
+	// same exact alias rules without trimming or passing the raw value.
+	rt, _, runner := newMacNetworkTimeSetterRuntime(
+		process.CommandResult{ExitCode: 0},
+		macNetworkTimeReadbackReply(true),
+	)
+	var args macSetUsingNetworkTimeArgs
+	if err := config.Decode(&args, nil, map[string]string{"enable": "YES"}); err != nil {
+		t.Fatalf("decode flag alias: %v", err)
+	}
+	if value, err := (macSetUsingNetworkTimeFunc{}).Execute(context.Background(), rt, &args); err != nil || value != true {
+		t.Fatalf("flag alias set_using_network_time = %v, %v; want true, nil", value, err)
+	}
+	requireMacNetworkTimeSetAndReadback(t, runner, "on")
+}
+
+func TestMacSetUsingNetworkTimePreservesNonStringTruthiness(t *testing.T) {
+	type truthCase struct {
+		name    string
+		value   any
+		enabled bool
+	}
+	cases := []truthCase{
+		{"bool false", false, false},
+		{"bool true", true, true},
+		{"int zero", int(0), false},
+		{"int negative", int(-2), true},
+		{"int64 zero", int64(0), false},
+		{"int64 nonzero", int64(7), true},
+		{"uint zero", uint(0), false},
+		{"uint64 nonzero", uint64(7), true},
+		{"float zero", float64(0), false},
+		{"negative float zero", math.Copysign(0, -1), false},
+		{"float nonzero", float64(-0.25), true},
+		{"float NaN", math.NaN(), true},
+		{"float32 NaN", float32(math.NaN()), true},
+		{"empty array", [0]int{}, false},
+		{"nonempty array", [1]int{0}, true},
+		{"nil slice", []any(nil), false},
+		{"empty slice", []any{}, false},
+		{"nonempty slice", []any{nil}, true},
+		{"nil map", map[string]any(nil), false},
+		{"empty map", map[string]any{}, false},
+		{"nonempty map with nil value", map[string]any{"x": nil}, true},
+		{"zero complex", complex128(0), false},
+		{"nonzero complex", complex(0, 1), true},
+	}
+	for _, tc := range cases {
+		rt, fsys, runner := newMacNetworkTimeSetterRuntime(
+			process.CommandResult{ExitCode: 0},
+			macNetworkTimeReadbackReply(tc.enabled),
+		)
+		var args macSetUsingNetworkTimeArgs
+		if err := config.Decode(&args, map[string]any{"enable": tc.value}, nil); err != nil {
+			t.Fatalf("%s decode: %v", tc.name, err)
+		}
+		if err := config.ValidateRequired(&args); err != nil {
+			t.Fatalf("%s failed required validation: %v", tc.name, err)
+		}
+		value, err := (macSetUsingNetworkTimeFunc{}).Execute(context.Background(), rt, &args)
+		if err != nil || value != true {
+			t.Fatalf("%s set_using_network_time = %v, %v; want true, nil", tc.name, value, err)
+		}
+		canonical := "off"
+		if tc.enabled {
+			canonical = "on"
+		}
+		requireMacNetworkTimeSetAndReadback(t, runner, canonical)
+		if len(fsys.calls) != 0 {
+			t.Fatalf("%s touched filesystem: %v", tc.name, fsys.calls)
+		}
+	}
+}
+
+func TestMacSetUsingNetworkTimeUnsupportedDirectValuesFailSafe(t *testing.T) {
+	var nilBool *bool
+	for _, args := range []any{
+		nil,
+		(*macSetUsingNetworkTimeArgs)(nil),
+		&macSetUsingNetworkTimeArgs{},
+		&macSetUsingNetworkTimeArgs{Enable: nilBool},
+		&macSetUsingNetworkTimeArgs{Enable: struct{ Value string }{Value: "private-value"}},
+		&macSetUsingNetworkTimeArgs{Enable: func() {}},
+	} {
+		rt, fsys, runner := newMacNetworkTimeSetterRuntime()
+		value, err := (macSetUsingNetworkTimeFunc{}).Execute(context.Background(), rt, args)
+		if !errors.Is(err, errMacSetterInvalidArgs) || err.Error() != "invalid timezone setter arguments" {
+			t.Fatalf("unsupported args %T err = %v, want fixed invalid-args sentinel", args, err)
+		}
+		if value != nil || len(runner.cmds) != 0 || len(fsys.calls) != 0 {
+			t.Fatalf("unsupported args %T did work: value=%#v commands=%d fs=%v", args, value, len(runner.cmds), fsys.calls)
+		}
+	}
+}
+
+func TestMacSetUsingNetworkTimeReadbackMismatchReturnsFalse(t *testing.T) {
+	rt, fsys, runner := newMacNetworkTimeSetterRuntime(
+		process.CommandResult{ExitCode: 0},
+		macNetworkTimeReadbackReply(false),
+	)
+	value, err := (macSetUsingNetworkTimeFunc{}).Execute(context.Background(), rt,
+		&macSetUsingNetworkTimeArgs{Enable: "yes"})
+	if err != nil || value != false {
+		t.Fatalf("mismatched readback = %v, %v; want false, nil", value, err)
+	}
+	requireMacNetworkTimeSetAndReadback(t, runner, "on")
+	if len(fsys.calls) != 0 {
+		t.Fatalf("mismatched readback touched filesystem: %v", fsys.calls)
+	}
+}
+
+func TestMacSetUsingNetworkTimeSetterFailureSuppressesReadback(t *testing.T) {
+	over := bytes.Repeat([]byte("x"), (64<<10)+1)
+	for _, tc := range []struct {
+		name  string
+		reply process.CommandResult
+	}{
+		{"runner error", process.CommandResult{ExitCode: -1, Err: errors.New("private runner detail")}},
+		{"nonzero exit", process.CommandResult{ExitCode: 9, Stderr: []byte("private exit detail")}},
+		{"cancelled", process.CommandResult{ExitCode: -1, Err: context.Canceled}},
+		{"timed out", process.CommandResult{ExitCode: -1, Err: context.DeadlineExceeded}},
+		{"stdout truncated", process.CommandResult{ExitCode: 0, StdoutTruncated: true}},
+		{"stderr truncated", process.CommandResult{ExitCode: 0, StderrTruncated: true}},
+		{"stdout over cap", process.CommandResult{ExitCode: 0, Stdout: over}},
+		{"stderr over cap", process.CommandResult{ExitCode: 0, Stderr: over}},
+		{"unsupported stdout", process.CommandResult{ExitCode: 0, Stdout: []byte("Not supported")}},
+	} {
+		rt, fsys, runner := newMacNetworkTimeSetterRuntime(tc.reply)
+		value, err := (macSetUsingNetworkTimeFunc{}).Execute(context.Background(), rt,
+			&macSetUsingNetworkTimeArgs{Enable: "on"})
+		requireMacSetterExecError(t, err)
+		if value != nil {
+			t.Fatalf("%s failure returned value %#v, want nil", tc.name, value)
+		}
+		if len(runner.cmds) != 1 || !reflect.DeepEqual(runner.cmds[0], wantMacSetUsingNetworkTimeCommand("on")) {
+			t.Fatalf("%s failure commands = %#v, want one fixed setter and no getter/retry", tc.name, runner.cmds)
+		}
+		if len(fsys.calls) != 0 {
+			t.Fatalf("%s failure touched filesystem: %v", tc.name, fsys.calls)
+		}
+	}
+}
+
+func TestMacSetUsingNetworkTimeStderrNotSupportedProceedsToReadback(t *testing.T) {
+	rt, fsys, runner := newMacNetworkTimeSetterRuntime(
+		process.CommandResult{ExitCode: 0, Stderr: []byte("warning: not supported here")},
+		macNetworkTimeReadbackReply(true),
+	)
+	value, err := (macSetUsingNetworkTimeFunc{}).Execute(context.Background(), rt,
+		&macSetUsingNetworkTimeArgs{Enable: true})
+	if err != nil || value != true {
+		t.Fatalf("stderr-only not-supported marker = %v, %v; want true, nil", value, err)
+	}
+	requireMacNetworkTimeSetAndReadback(t, runner, "on")
+	if len(fsys.calls) != 0 {
+		t.Fatalf("stderr-only not-supported path touched filesystem: %v", fsys.calls)
+	}
+}
+
+func TestMacSetUsingNetworkTimeReadbackFailuresDoNotRetryOrRollback(t *testing.T) {
+	over := bytes.Repeat([]byte("x"), (64<<10)+1)
+	for _, tc := range []struct {
+		name  string
+		reply process.CommandResult
+		want  error
+	}{
+		{"runner error", process.CommandResult{ExitCode: -1, Err: errors.New("private getter detail")}, ErrMacSystemsetupQuery},
+		{"nonzero exit", process.CommandResult{ExitCode: 7}, ErrMacSystemsetupQuery},
+		{"truncated output", process.CommandResult{ExitCode: 0, StdoutTruncated: true}, ErrMacSystemsetupQuery},
+		{"over-cap output", process.CommandResult{ExitCode: 0, Stdout: over}, ErrMacSystemsetupQuery},
+		{"unsupported output", process.CommandResult{ExitCode: 0, Stdout: []byte("not supported")}, ErrMacSystemsetupQuery},
+		{"malformed state", process.CommandResult{ExitCode: 0, Stdout: []byte("private-state")}, ErrMacNetworkTimeStateInvalid},
+	} {
+		rt, fsys, runner := newMacNetworkTimeSetterRuntime(process.CommandResult{ExitCode: 0}, tc.reply)
+		value, err := (macSetUsingNetworkTimeFunc{}).Execute(context.Background(), rt,
+			&macSetUsingNetworkTimeArgs{Enable: "yes"})
+		if tc.want == ErrMacNetworkTimeStateInvalid {
+			requireMacNetworkTimeStateError(t, err)
+		} else if !errors.Is(err, tc.want) || err.Error() != tc.want.Error() || errors.Unwrap(err) != nil {
+			t.Fatalf("%s readback err = %v, want fixed %v", tc.name, err, tc.want)
+		}
+		if value != nil {
+			t.Fatalf("%s readback failure returned value %#v, want nil", tc.name, value)
+		}
+		if len(runner.cmds) != 2 || !reflect.DeepEqual(runner.cmds[0], wantMacSetUsingNetworkTimeCommand("on")) ||
+			!reflect.DeepEqual(runner.cmds[1], wantMacGetterCommand("-getusingnetworktime")) {
+			t.Fatalf("%s readback failure commands = %#v, want one setter and one getter only", tc.name, runner.cmds)
+		}
+		if len(fsys.calls) != 0 {
+			t.Fatalf("%s readback failure touched filesystem: %v", tc.name, fsys.calls)
 		}
 	}
 }
