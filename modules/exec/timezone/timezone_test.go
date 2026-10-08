@@ -872,7 +872,9 @@ func TestZoneCompareFailsClosedWithoutBoundedReadSupport(t *testing.T) {
 // TZC-16: zone_compare registration is selected per GOOS at Register
 // time through registerZoneCompareForGOOS(runtime.CurrentGOOS()): the
 // Linux generic filesystem contract on linux, the mac systemsetup
-// contract on darwin, and no entry anywhere else. On supported GOOS
+// contract on darwin, the Solaris timedatectl/TIMEZONE contract on
+// solaris, the Windows tzutil contract on windows, and no entry anywhere
+// else. On supported GOOS
 // the raw entry exists after Register (Get never filters) with its
 // platform constraint intact, while Names visibility and the
 // ResolveArgs/Call dispatch gate follow SupportsPlatform on every
@@ -934,7 +936,7 @@ func TestZoneCompareRegistrationSelectsPerGOOS(t *testing.T) {
 		t.Fatal(err)
 	}
 	goos := runtime.CurrentGOOS()
-	supported := goos == "linux" || goos == "darwin" || goos == "windows"
+	supported := goos == "linux" || goos == "darwin" || goos == "windows" || goos == "solaris"
 
 	// Raw layer: registration happens only on the supported GOOS, so
 	// the entry (with its platform constraint intact) exists there and
@@ -958,10 +960,9 @@ func TestZoneCompareRegistrationSelectsPerGOOS(t *testing.T) {
 	// PTD-EXEC-1631 + the Mac timezone.list_zones of PTD-EXEC-1633 +
 	// the Mac timezone.set_date/set_time setters of PTD-EXEC-1634/1635 +
 	// set_using_network_time of PTD-EXEC-1637),
-	// 7 on linux (base 5 + zone_compare +
-	// get_zonecode), 7 on windows (base 5 + zone_compare + the Windows
-	// timezone.list of PTD-EXEC-1632), and 5 everywhere else (no
-	// getters, no zone_compare).
+	// 7 on linux (base 5 + zone_compare + get_zonecode), 7 on windows
+	// (base 5 + zone_compare + timezone.list), 6 on solaris (base 5 +
+	// zone_compare), and 5 on AIX/other platforms.
 	wantTotal := 5
 	switch goos {
 	case "darwin":
@@ -970,6 +971,8 @@ func TestZoneCompareRegistrationSelectsPerGOOS(t *testing.T) {
 		wantTotal = 7
 	case "windows":
 		wantTotal = 7
+	case "solaris":
+		wantTotal = 6
 	}
 	if got := len(reg.Names()); got != wantTotal {
 		t.Fatalf("module registration exposes %d names on %s, want %d", got, goos, wantTotal)
@@ -1031,6 +1034,19 @@ func TestZoneCompareRegistrationSelectsPerGOOS(t *testing.T) {
 		value, err := reg.Call(context.Background(), rt, "timezone.zone_compare", &winZoneCompareArgs{TimeZone: &denver})
 		if err != nil || value != true {
 			t.Fatalf("Call on windows = %v, %v, want true, nil", value, err)
+		}
+	case "solaris":
+		if err := rt.FS.MkdirAll("/etc", 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := rt.FS.WriteFile("/etc/TIMEZONE", []byte("TZ=UTC\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		rt.Runner = &solarisZoneRunner{available: false}
+		zone := "UTC"
+		value, err := reg.Call(context.Background(), rt, "timezone.zone_compare", &solarisZoneCompareArgs{TimeZone: &zone})
+		if err != nil || value != true {
+			t.Fatalf("Call on solaris = %v, %v, want true, nil", value, err)
 		}
 	default:
 		if _, err := reg.Call(context.Background(), rt, "timezone.zone_compare", &zoneCompareArgs{TimeZone: "UTC"}); !errors.As(err, &unsupported) || unsupported.Kind != "function" {
@@ -1502,8 +1518,8 @@ func TestMacZoneCompareExplicitEmptyTimeZone(t *testing.T) {
 // MZC-15: registerZoneCompareForGOOS selects exactly one variant per
 // supported GOOS — the Linux filesystem contract on linux, the mac
 // systemsetup contract on darwin, the windows tzutil contract on
-// windows (WZC-15/GAP-08 lockstep), nothing anywhere else — with the
-// matching platform constraints and args schema.
+// windows (WZC-15/GAP-08 lockstep), and the Solaris timedatectl/TIMEZONE
+// contract on solaris — with matching platform constraints and schemas.
 func TestMacZoneCompareRegistrationHelperSelectsPerGOOS(t *testing.T) {
 	reg := runtime.NewExecRegistry()
 	if err := registerZoneCompareForGOOS(reg, "linux"); err != nil {
@@ -1587,7 +1603,43 @@ func TestMacZoneCompareRegistrationHelperSelectsPerGOOS(t *testing.T) {
 		t.Fatalf("windows schema field = %s %s tag %q, want *string TimeZone tagged required,name=timezone", winField.Name, winField.Type, winField.Tag.Get("statekit"))
 	}
 
-	for _, goos := range []string{"freebsd", "openbsd", "netbsd", "solaris", "illumos", "aix", "plan9"} {
+	// Solaris gets its own constrained implementation and required-pointer
+	// argument schema; AIX and illumos stay deferred/unregistered.
+	reg = runtime.NewExecRegistry()
+	if err := registerZoneCompareForGOOS(reg, "solaris"); err != nil {
+		t.Fatal(err)
+	}
+	fn, ok = reg.Get("timezone.zone_compare")
+	if !ok {
+		t.Fatal("solaris helper registered nothing")
+	}
+	if _, isSolaris := fn.(solarisZoneCompareFunc); !isSolaris {
+		t.Fatalf("solaris helper registered %T, want solarisZoneCompareFunc", fn)
+	}
+	solarisConstrained, isConstrained := fn.(runtime.PlatformConstrained)
+	if !isConstrained || !reflect.DeepEqual(solarisConstrained.Platforms(), []string{"solaris"}) {
+		t.Fatalf("solaris helper platforms = %v", solarisConstrained.Platforms())
+	}
+	if !runtime.SupportsPlatform(fn, "solaris") || runtime.SupportsPlatform(fn, "linux") || runtime.SupportsPlatform(fn, "darwin") || runtime.SupportsPlatform(fn, "windows") {
+		t.Fatal("solaris helper must support solaris only")
+	}
+	solarisType := reflect.TypeOf(fn.Args())
+	if solarisType.Kind() != reflect.Struct || solarisType.NumField() != 1 {
+		t.Fatalf("solaris schema = %s with %d fields", solarisType, solarisType.NumField())
+	}
+	solarisField := solarisType.Field(0)
+	if solarisField.Name != "TimeZone" || solarisField.Type.Kind() != reflect.Pointer || solarisField.Type.Elem().Kind() != reflect.String || solarisField.Tag.Get("statekit") != "required,name=timezone" {
+		t.Fatalf("solaris schema field = %s %s tag %q, want *string TimeZone tagged required,name=timezone", solarisField.Name, solarisField.Type, solarisField.Tag.Get("statekit"))
+	}
+	if err := config.ValidateRequired(&solarisZoneCompareArgs{}); err == nil || err.Error() != `missing required argument "timezone"` {
+		t.Fatalf("solaris missing timezone err = %v", err)
+	}
+	emptySolarisZone := ""
+	if err := config.ValidateRequired(&solarisZoneCompareArgs{TimeZone: &emptySolarisZone}); err != nil {
+		t.Fatalf("solaris explicit empty timezone err = %v, want nil", err)
+	}
+
+	for _, goos := range []string{"freebsd", "openbsd", "netbsd", "illumos", "aix", "plan9"} {
 		unsupported := runtime.NewExecRegistry()
 		if err := registerZoneCompareForGOOS(unsupported, goos); err != nil {
 			t.Fatal(err)
@@ -1606,7 +1658,7 @@ func TestMacZoneCompareRegistrationHelperSelectsPerGOOS(t *testing.T) {
 // whichever variant is off-host.
 func TestMacZoneCompareUnsupportedCallRejected(t *testing.T) {
 	host := runtime.CurrentGOOS()
-	for _, goos := range []string{"linux", "darwin"} {
+	for _, goos := range []string{"linux", "darwin", "windows", "solaris"} {
 		if goos == host {
 			continue // on-platform dispatch is covered by TZC-16 and MZC-17
 		}
@@ -1637,7 +1689,8 @@ func TestMacZoneCompareUnsupportedCallRejected(t *testing.T) {
 // MZC-17: no duplicate zone_compare entry can exist on any registry:
 // the registry keys by name so a second variant fails, the helper
 // registers at most one variant, and production Register exposes the
-// name exactly once on supported GOOS and not at all elsewhere.
+// name exactly once on linux/darwin/windows/solaris and not at all on
+// AIX/other GOOS.
 func TestMacZoneCompareNoDuplicateRegistration(t *testing.T) {
 	reg := runtime.NewExecRegistry()
 	if err := registerZoneCompareForGOOS(reg, "linux"); err != nil {
@@ -1648,6 +1701,9 @@ func TestMacZoneCompareNoDuplicateRegistration(t *testing.T) {
 	}
 	if err := registerZoneCompareForGOOS(reg, "windows"); err == nil {
 		t.Fatal("registering the windows variant over the linux entry must fail as a duplicate")
+	}
+	if err := registerZoneCompareForGOOS(reg, "solaris"); err == nil {
+		t.Fatal("registering the solaris variant over the linux entry must fail as a duplicate")
 	}
 	if err := reg.Register(macZoneCompareFunc{}); err == nil {
 		t.Fatal("registering the mac variant directly over the linux entry must fail as a duplicate")
@@ -1674,7 +1730,8 @@ func TestMacZoneCompareNoDuplicateRegistration(t *testing.T) {
 	// PTD-EXEC-1633 + the Mac set_date/set_time setters of
 	// PTD-EXEC-1634/1635 + set_using_network_time of PTD-EXEC-1637), 7 on linux
 	// (base 5 + zone_compare + get_zonecode), 7 on windows (base 5 +
-	// zone_compare + the Windows timezone.list), 5 elsewhere.
+	// zone_compare + the Windows timezone.list), 6 on solaris (base 5 +
+	// zone_compare), and 5 on AIX/other platforms.
 	wantLen := 5
 	switch goos {
 	case "darwin":
@@ -1683,8 +1740,10 @@ func TestMacZoneCompareNoDuplicateRegistration(t *testing.T) {
 		wantLen = 7
 	case "windows":
 		wantLen = 7
+	case "solaris":
+		wantLen = 6
 	}
-	if goos == "linux" || goos == "darwin" || goos == "windows" {
+	if goos == "linux" || goos == "darwin" || goos == "windows" || goos == "solaris" {
 		if count != 1 {
 			t.Fatalf("zone_compare visible %d times on %s, want exactly 1", count, goos)
 		}
@@ -6154,4 +6213,742 @@ func TestMacSetUsingNetworkTimeReadbackFailuresDoNotRetryOrRollback(t *testing.T
 			t.Fatalf("%s readback failure touched filesystem: %v", tc.name, fsys.calls)
 		}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Solaris timezone.zone_compare (PTD-EXEC-1638 / PTD-TEST-1673): all
+// behavior below is hermetic. Solaris commands are represented only by
+// solarisZoneRunner and every file fixture lives in MemoryFS.
+
+type solarisZoneRunner struct {
+	available         bool
+	availabilityCall  []string
+	commands          []process.Command
+	result            process.CommandResult
+	afterAvailability func()
+	afterRun          func()
+}
+
+func (s *solarisZoneRunner) CommandAvailable(name string) bool {
+	s.availabilityCall = append(s.availabilityCall, name)
+	if s.afterAvailability != nil {
+		s.afterAvailability()
+	}
+	return s.available
+}
+
+func (s *solarisZoneRunner) Run(_ context.Context, cmd process.Command) process.CommandResult {
+	s.commands = append(s.commands, cmd)
+	if s.afterRun != nil {
+		s.afterRun()
+	}
+	return s.result
+}
+
+type solarisZoneTestContext struct {
+	context.Context
+	err error
+}
+
+func (c *solarisZoneTestContext) Err() error { return c.err }
+
+type solarisBoundedReadFailureFS struct {
+	*zoneRecordingFS
+	err error
+}
+
+func (f *solarisBoundedReadFailureFS) ReadFileBounded(name string, _ int64) ([]byte, error) {
+	f.log("bounded:" + name)
+	return nil, f.err
+}
+
+type solarisCancelAfterReadFS struct {
+	*zoneRecordingFS
+	afterRead func(name string)
+}
+
+func (f *solarisCancelAfterReadFS) ReadFileBounded(name string, limit int64) ([]byte, error) {
+	data, err := f.zoneRecordingFS.ReadFileBounded(name, limit)
+	if f.afterRead != nil {
+		f.afterRead(name)
+	}
+	return data, err
+}
+
+func newSolarisZoneCompareRuntime(t *testing.T, seed func(runtime.FileSystem)) (*zoneRecordingFS, *runtime.Runtime, *solarisZoneRunner) {
+	t.Helper()
+	mem := runtime.NewMemoryFS()
+	if seed != nil {
+		seed(mem)
+	}
+	fsys := &zoneRecordingFS{FileSystem: mem}
+	runner := &solarisZoneRunner{}
+	return fsys, &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: fsys, Runner: runner}, runner
+}
+
+func solarisZoneCompareExecWithContext(ctx context.Context, rt *runtime.Runtime, zone string) (any, error) {
+	return (solarisZoneCompareFunc{}).Execute(ctx, rt, &solarisZoneCompareArgs{TimeZone: &zone})
+}
+
+func solarisZoneCompareExec(t *testing.T, rt *runtime.Runtime, zone string) (any, error) {
+	t.Helper()
+	return solarisZoneCompareExecWithContext(context.Background(), rt, zone)
+}
+
+func wantSolarisTimedatectlCommand() process.Command {
+	return process.Command{
+		Name:           "timedatectl",
+		Args:           nil,
+		Env:            []string{"LC_ALL=C"},
+		Timeout:        30 * time.Second,
+		MaxStdoutBytes: 64 << 10,
+		MaxStderrBytes: 64 << 10,
+	}
+}
+
+func requireSolarisFixedError(t *testing.T, err, want error, text string, markers ...string) {
+	t.Helper()
+	if err == nil || !errors.Is(err, want) {
+		t.Fatalf("err = %v, want errors.Is(_, %v)", err, want)
+	}
+	if err.Error() != text {
+		t.Fatalf("err text = %q, want %q", err.Error(), text)
+	}
+	if errors.Unwrap(err) != nil {
+		t.Fatalf("error unexpectedly wraps an underlying cause: %v", err)
+	}
+	for _, marker := range markers {
+		if strings.Contains(err.Error(), marker) {
+			t.Fatalf("error text %q leaks marker %q", err.Error(), marker)
+		}
+	}
+}
+
+func TestSolarisTimedatectlParserUsesFirstCaseSensitiveSourceMatch(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		output string
+		want   string
+		match  bool
+	}{
+		{"first match and CRLF", "header\r\nTime zone: First/Zone (UTC, +0000)\r\nTime zone: Second/Zone", "First/Zone", true},
+		{"optional space omitted", "Timezone:\tEtc/UTC\n", "Etc/UTC", true},
+		{"leading and trailing CR stripped", "\rTimezone:\tEtc/UTC\r\n", "Etc/UTC", true},
+		{"bare CR does not split records", "noise\rTimezone:\tBare/CR\rTimezone: Later", "", false},
+		{"Python whitespace after colon", "  Time zone:\u00a0Etc/UTC\u00a0(more)  \n", "Etc/UTC", true},
+		{"strict case", "time zone: Etc/UTC\n", "", false},
+		{"exactly zero or one header space", "Time  zone: Etc/UTC\n", "", false},
+		{"requires whitespace after colon", "Time zone:Etc/UTC\n", "", false},
+		{"header must begin stripped line", "prefix junk Timezone: Zone\n", "", false},
+		{"no matching line", "System clock synchronized: yes\n", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := parseSolarisTimedatectlZone([]byte(tc.output))
+			if got != tc.want || ok != tc.match {
+				t.Fatalf("parseSolarisTimedatectlZone(%q) = %q, %v; want %q, %v", tc.output, got, ok, tc.want, tc.match)
+			}
+		})
+	}
+}
+
+func TestSolarisZoneCompareArgsRequirePointerButAllowExplicitEmpty(t *testing.T) {
+	proto := (solarisZoneCompareFunc{}).Args()
+	typ := reflect.TypeOf(proto)
+	if typ.Kind() != reflect.Struct || typ.NumField() != 1 {
+		t.Fatalf("Solaris Args prototype = %T, want one-field struct", proto)
+	}
+	field := typ.Field(0)
+	if field.Name != "TimeZone" || field.Type.Kind() != reflect.Pointer || field.Type.Elem().Kind() != reflect.String || field.Tag.Get("statekit") != "required,name=timezone" {
+		t.Fatalf("Solaris Args field = %s %s tag %q, want *string TimeZone tagged required,name=timezone", field.Name, field.Type, field.Tag.Get("statekit"))
+	}
+	if err := config.ValidateRequired(&solarisZoneCompareArgs{}); err == nil || err.Error() != `missing required argument "timezone"` {
+		t.Fatalf("missing Solaris timezone err = %v", err)
+	}
+	empty := ""
+	if err := config.ValidateRequired(&solarisZoneCompareArgs{TimeZone: &empty}); err != nil {
+		t.Fatalf("explicit empty Solaris timezone err = %v, want nil", err)
+	}
+}
+
+func TestSolarisZoneCompareRequiresCommandAvailabilityBeforeIO(t *testing.T) {
+	fsys := &zoneRecordingFS{FileSystem: runtime.NewMemoryFS()}
+	runner := &scriptRunner{}
+	rt := &runtime.Runtime{Facts: facts.ForTesting(facts.Overrides{}), FS: fsys, Runner: runner}
+	_, err := solarisZoneCompareExec(t, rt, "UTC")
+	requireSolarisFixedError(t, err, ErrCannotDetermineZone, "cannot determine current zone")
+	if len(fsys.calls) != 0 || len(runner.calls) != 0 {
+		t.Fatalf("missing availability capability performed work: filesystem=%v runner=%v", fsys.calls, runner.calls)
+	}
+}
+
+func TestSolarisZoneCompareTimedatectlUsesExactCommandAndSkipsFallbackOnUnequal(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		zone string
+		want bool
+	}{
+		{"first reported zone", "America/Denver", true},
+		{"exact case-sensitive mismatch", "america/denver", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fsys, rt, runner := newSolarisZoneCompareRuntime(t, nil)
+			runner.available = true
+			runner.result = process.CommandResult{
+				Started:  true,
+				ExitCode: 0,
+				Stdout:   []byte("System clock synchronized: yes\nTime zone: America/Denver (MDT, -0600)\nTime zone: Pacific/Wake\n"),
+			}
+			value, err := solarisZoneCompareExec(t, rt, tc.zone)
+			if err != nil || value != tc.want {
+				t.Fatalf("zone_compare = %v, %v; want %v, nil", value, err, tc.want)
+			}
+			if !reflect.DeepEqual(runner.availabilityCall, []string{"timedatectl"}) {
+				t.Fatalf("availability calls = %v, want [timedatectl]", runner.availabilityCall)
+			}
+			if len(runner.commands) != 1 || !reflect.DeepEqual(runner.commands[0], wantSolarisTimedatectlCommand()) {
+				t.Fatalf("commands = %#v, want exactly %#v", runner.commands, wantSolarisTimedatectlCommand())
+			}
+			if len(fsys.calls) != 0 {
+				t.Fatalf("timedatectl success touched filesystem: %v", fsys.calls)
+			}
+		})
+	}
+}
+
+func TestSolarisZoneCompareSuccessfulStringPathDoesNotValidateMismatch(t *testing.T) {
+	for _, zone := range []string{"../Not/A/Zone", ""} {
+		fsys, rt, runner := newSolarisZoneCompareRuntime(t, nil)
+		runner.available = true
+		runner.result = process.CommandResult{Started: true, ExitCode: 0, Stdout: []byte("Time zone: UTC\n")}
+		value, err := solarisZoneCompareExec(t, rt, zone)
+		if err != nil || value != false {
+			t.Fatalf("successful string mismatch for %q = %v, %v; want false, nil", zone, value, err)
+		}
+		if len(fsys.calls) != 0 {
+			t.Fatalf("successful string mismatch for %q touched filesystem: %v", zone, fsys.calls)
+		}
+	}
+}
+
+func TestSolarisZoneCompareConfigParserSourceSemantics(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		data []byte
+		zone string
+	}{
+		{"marker substring and last equals", []byte("COMMENT TZ=discarded='Europe/Paris'\nTZ=Later/Zone\n"), "Europe/Paris"},
+		{"last equals on selected line", []byte("TZ=Earlier/Zone=Final/Zone\n"), "Final/Zone"},
+		{"first marker line wins", []byte("TZ=First/Zone\nPREFIX TZ=Second/Zone\n"), "First/Zone"},
+		{"quote characters stripped at both edges", []byte("TZ=\"''Europe/Paris''\"\n"), "Europe/Paris"},
+		{"empty after quote stripping maps to UTC", []byte("TZ=\"''\n"), "UTC"},
+		{"CRLF terminator CR is preserved", []byte("TZ=UTC\r\nTZ=Later/Zone\n"), "UTC\r"},
+		{"bare CR boundary is preserved in selected value", []byte("OTHER=value\rTZ=UTC\rNEXT=value"), "UTC\r"},
+		{"quote trimming leaves quote before CR", []byte("TZ='Europe/Paris'\r\n"), "Europe/Paris'\r"},
+		{"universal records scan after CR and CRLF", []byte("OTHER=value\rTZ=Europe/Paris\r\nTZ=Later/Zone"), "Europe/Paris\r"},
+		{"spaces are preserved", []byte("TZ= Europe/Paris \n"), " Europe/Paris "},
+		{"POSIX timezone is compared as an exact string", []byte("TZ=CST6CDT,M3.2.0/2:00:00,M11.1.0/2:00:00\n"), "CST6CDT,M3.2.0/2:00:00,M11.1.0/2:00:00"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fsys, rt, runner := newSolarisZoneCompareRuntime(t, func(f runtime.FileSystem) {
+				zoneMustMkdir(f, "/etc")
+				zoneMustWrite(f, "/etc/TIMEZONE", tc.data)
+			})
+			runner.available = false
+			value, err := solarisZoneCompareExec(t, rt, tc.zone)
+			if err != nil || value != true {
+				t.Fatalf("config-derived zone_compare(%q) = %v, %v; want true, nil", tc.zone, value, err)
+			}
+			if !reflect.DeepEqual(fsys.calls, []string{"bounded:/etc/TIMEZONE"}) {
+				t.Fatalf("config branch filesystem calls = %v, want one bounded /etc/TIMEZONE read", fsys.calls)
+			}
+			if len(runner.commands) != 0 || !reflect.DeepEqual(runner.availabilityCall, []string{"timedatectl"}) {
+				t.Fatalf("config branch runner calls: availability=%v commands=%v", runner.availabilityCall, runner.commands)
+			}
+		})
+	}
+
+	// A whitespace-bearing selected value is not trimmed and does not
+	// trigger fallback merely because it is not a valid zoneinfo path.
+	fsys, rt, runner := newSolarisZoneCompareRuntime(t, func(f runtime.FileSystem) {
+		zoneMustMkdir(f, "/etc")
+		zoneMustWrite(f, "/etc/TIMEZONE", []byte("TZ= Europe/Paris \n"))
+	})
+	runner.available = false
+	value, err := solarisZoneCompareExec(t, rt, "Europe/Paris")
+	if err != nil || value != false {
+		t.Fatalf("untrimmed config mismatch = %v, %v; want false, nil", value, err)
+	}
+	if !reflect.DeepEqual(fsys.calls, []string{"bounded:/etc/TIMEZONE"}) {
+		t.Fatalf("untrimmed config mismatch touched fallback paths: %v", fsys.calls)
+	}
+}
+
+func TestSolarisZoneCompareConfigReadFailuresAreFixedAndNeverFallback(t *testing.T) {
+	oversize := make([]byte, solarisConfigReadLimit+1)
+	copy(oversize, []byte("TZ=UTC\n"))
+	for _, tc := range []struct {
+		name string
+		seed func(runtime.FileSystem)
+		wrap func(*zoneRecordingFS) runtime.FileSystem
+	}{
+		{"missing config", func(f runtime.FileSystem) { zoneMustMkdir(f, "/etc") }, nil},
+		{"symlinked config", func(f runtime.FileSystem) {
+			zoneMustMkdir(f, "/etc")
+			zoneMustWrite(f, "/etc/timezone-source", []byte("TZ=UTC\n"))
+			zoneMustSymlink(f, "/etc/timezone-source", "/etc/TIMEZONE")
+		}, nil},
+		{"bounded reader OSError", func(f runtime.FileSystem) { zoneMustMkdir(f, "/etc") }, func(fsys *zoneRecordingFS) runtime.FileSystem {
+			return &solarisBoundedReadFailureFS{zoneRecordingFS: fsys, err: errors.New("private-config-error-marker")}
+		}},
+		{"limit+1 config", func(f runtime.FileSystem) {
+			zoneMustMkdir(f, "/etc")
+			zoneMustWrite(f, "/etc/TIMEZONE", oversize)
+		}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fsys, rt, runner := newSolarisZoneCompareRuntime(t, tc.seed)
+			if tc.wrap != nil {
+				rt.FS = tc.wrap(fsys)
+			}
+			runner.available = false
+			_, err := solarisZoneCompareExec(t, rt, "UTC")
+			requireSolarisFixedError(t, err, ErrZoneConfigRead, ErrZoneConfigRead.Error(), "private-config-error-marker", "TZ=UTC")
+			if !reflect.DeepEqual(fsys.calls, []string{"bounded:/etc/TIMEZONE"}) {
+				t.Fatalf("config read failure filesystem calls = %v, want only the bounded config read", fsys.calls)
+			}
+			if len(runner.commands) != 0 {
+				t.Fatalf("config read failure ran command fallback: %#v", runner.commands)
+			}
+		})
+	}
+}
+
+func TestSolarisZoneCompareConfigReadExactLimitSucceeds(t *testing.T) {
+	firstLine := []byte("TZ=UTC\n")
+	data := append(firstLine, bytes.Repeat([]byte("x"), solarisConfigReadLimit-len(firstLine))...)
+	fsys, rt, runner := newSolarisZoneCompareRuntime(t, func(f runtime.FileSystem) {
+		zoneMustMkdir(f, "/etc")
+		zoneMustWrite(f, "/etc/TIMEZONE", data)
+	})
+	runner.available = false
+	value, err := solarisZoneCompareExec(t, rt, "UTC")
+	if err != nil || value != true {
+		t.Fatalf("exact-limit Solaris config = %v, %v; want true, nil", value, err)
+	}
+	if !reflect.DeepEqual(fsys.calls, []string{"bounded:/etc/TIMEZONE"}) || len(runner.commands) != 0 {
+		t.Fatalf("exact-limit config calls = filesystem %v commands %#v; want one bounded config read only", fsys.calls, runner.commands)
+	}
+}
+
+func TestSolarisZoneCompareNoMarkerUsesByteFallbackAndComparesExactBytes(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		current   []byte
+		requested []byte
+		want      bool
+	}{
+		{"byte equal", []byte("TZDATA\x00A\n"), []byte("TZDATA\x00A\n"), true},
+		{"byte different", []byte("TZDATA-A\n"), []byte("TZDATA-B\n"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fsys, rt, runner := newSolarisZoneCompareRuntime(t, func(f runtime.FileSystem) {
+				zoneMustMkdir(f, "/etc")
+				zoneMustWrite(f, "/etc/TIMEZONE", []byte("OTHER=value\r\n"))
+				zoneMustWrite(f, "/etc/localtime", tc.current)
+				seedZone(f, "Region/City", string(tc.requested))
+			})
+			runner.available = false
+			value, err := solarisZoneCompareExec(t, rt, "Region/City")
+			if err != nil || value != tc.want {
+				t.Fatalf("no-marker byte comparison = %v, %v; want %v, nil", value, err, tc.want)
+			}
+			if runner.availabilityCall == nil || len(runner.commands) != 0 {
+				t.Fatalf("no-marker branch runner calls: availability=%v commands=%v", runner.availabilityCall, runner.commands)
+			}
+			for _, call := range fsys.calls {
+				if strings.HasPrefix(call, "rawread:") {
+					t.Fatalf("no-marker branch used raw read: %v", fsys.calls)
+				}
+			}
+		})
+	}
+}
+
+func TestSolarisZoneCompareInvalidFallbackPathFailsBeforeFallbackReads(t *testing.T) {
+	t.Run("command failure", func(t *testing.T) {
+		fsys, rt, runner := newSolarisZoneCompareRuntime(t, nil)
+		runner.available = true
+		runner.result = process.CommandResult{ExitCode: -1, Err: errors.New("private-command-marker")}
+		_, err := solarisZoneCompareExec(t, rt, "../Outside/Zone")
+		requireSolarisFixedError(t, err, ErrUnknownUnsafeZone, ErrUnknownUnsafeZone.Error(), "private-command-marker", "Outside")
+		if len(fsys.calls) != 0 {
+			t.Fatalf("invalid path fallback reads = %v, want none", fsys.calls)
+		}
+		if len(runner.commands) != 1 {
+			t.Fatalf("invalid path command count = %d, want one query", len(runner.commands))
+		}
+	})
+
+	t.Run("no TZ marker", func(t *testing.T) {
+		fsys, rt, runner := newSolarisZoneCompareRuntime(t, func(f runtime.FileSystem) {
+			zoneMustMkdir(f, "/etc")
+			zoneMustWrite(f, "/etc/TIMEZONE", []byte("OTHER=value\n"))
+		})
+		runner.available = false
+		_, err := solarisZoneCompareExec(t, rt, "../Outside/Zone")
+		requireSolarisFixedError(t, err, ErrUnknownUnsafeZone, ErrUnknownUnsafeZone.Error(), "Outside")
+		if !reflect.DeepEqual(fsys.calls, []string{"bounded:/etc/TIMEZONE"}) {
+			t.Fatalf("invalid no-marker path calls = %v, want config read only", fsys.calls)
+		}
+	})
+}
+
+func TestSolarisZoneCompareCommandFailuresFallbackWithoutLeakingResults(t *testing.T) {
+	over := bytes.Repeat([]byte("x"), (64<<10)+1)
+	for _, tc := range []struct {
+		name   string
+		result process.CommandResult
+	}{
+		{"start failure", process.CommandResult{ExitCode: -1, Err: errors.New("private-start-marker"), Stderr: []byte("private-stderr-marker")}},
+		{"nonzero exit", process.CommandResult{Started: true, ExitCode: 7, Stdout: []byte("Time zone: Not/Used\n"), Stderr: []byte("private-exit-marker")}},
+		{"malformed output", process.CommandResult{Started: true, ExitCode: 0, Stdout: []byte("Time zone:\n")}},
+		{"no matching output", process.CommandResult{Started: true, ExitCode: 0, Stdout: []byte("unrelated output\n")}},
+		{"stdout over cap", process.CommandResult{Started: true, ExitCode: 0, Stdout: over}},
+		{"stderr over cap", process.CommandResult{Started: true, ExitCode: 0, Stdout: []byte("Time zone: Not/Used\n"), Stderr: over}},
+		{"stdout truncated", process.CommandResult{Started: true, ExitCode: 0, Stdout: []byte("Time zone: Not/Used\n"), StdoutTruncated: true}},
+		{"stderr truncated", process.CommandResult{Started: true, ExitCode: 0, Stdout: []byte("Time zone: Not/Used\n"), StderrTruncated: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fsys, rt, runner := newSolarisZoneCompareRuntime(t, func(f runtime.FileSystem) {
+				zoneMustMkdir(f, "/etc")
+				zoneMustWrite(f, "/etc/localtime", []byte("TZDATA-EXACT\x00\n"))
+				seedZone(f, "Region/City", "TZDATA-EXACT\x00\n")
+			})
+			runner.available = true
+			runner.result = tc.result
+			value, err := solarisZoneCompareExec(t, rt, "Region/City")
+			if err != nil || value != true {
+				t.Fatalf("command failure fallback = %v, %v; want true, nil", value, err)
+			}
+			if !reflect.DeepEqual(runner.availabilityCall, []string{"timedatectl"}) || len(runner.commands) != 1 || !reflect.DeepEqual(runner.commands[0], wantSolarisTimedatectlCommand()) {
+				t.Fatalf("command failure dispatches: availability=%v commands=%#v", runner.availabilityCall, runner.commands)
+			}
+			if !strings.Contains(strings.Join(fsys.calls, " "), "bounded:/etc/localtime") || !strings.Contains(strings.Join(fsys.calls, " "), "bounded:/usr/share/zoneinfo/Region/City") {
+				t.Fatalf("command failure did not use bounded fallback: %v", fsys.calls)
+			}
+			requireZoneReadOnly(t, fsys)
+		})
+	}
+
+	// If fallback also fails, the command's private cause and output must
+	// still collapse to the fixed execution-category error.
+	fsys, rt, runner := newSolarisZoneCompareRuntime(t, nil)
+	runner.available = true
+	runner.result = process.CommandResult{ExitCode: -1, Err: errors.New("private-start-marker"), Stderr: []byte("private-output-marker")}
+	_, err := solarisZoneCompareExec(t, rt, "Region/City")
+	requireSolarisFixedError(t, err, ErrCannotDetermineZone, ErrCannotDetermineZone.Error(), "private-start-marker", "private-output-marker")
+	if len(fsys.calls) == 0 || len(runner.commands) != 1 {
+		t.Fatalf("failed fallback work: filesystem=%v commands=%#v", fsys.calls, runner.commands)
+	}
+}
+
+func TestSolarisZoneCompareCallerContextErrorsNeverFallback(t *testing.T) {
+	for _, callerErr := range []error{context.Canceled, context.DeadlineExceeded} {
+		t.Run(callerErr.Error()+" before availability", func(t *testing.T) {
+			fsys, rt, runner := newSolarisZoneCompareRuntime(t, nil)
+			runner.available = false
+			ctx := &solarisZoneTestContext{Context: context.Background(), err: callerErr}
+			_, err := solarisZoneCompareExecWithContext(ctx, rt, "Region/City")
+			requireSolarisFixedError(t, err, callerErr, callerErr.Error())
+			if len(runner.availabilityCall) != 0 || len(runner.commands) != 0 || len(fsys.calls) != 0 {
+				t.Fatalf("pre-canceled context performed work: availability=%v commands=%#v filesystem=%v", runner.availabilityCall, runner.commands, fsys.calls)
+			}
+		})
+
+		t.Run(callerErr.Error()+" after command", func(t *testing.T) {
+			fsys, rt, runner := newSolarisZoneCompareRuntime(t, func(f runtime.FileSystem) {
+				zoneMustMkdir(f, "/etc")
+				zoneMustWrite(f, "/etc/localtime", []byte("TZDATA"))
+				seedZone(f, "Region/City", "TZDATA")
+			})
+			runner.available = true
+			ctx := &solarisZoneTestContext{Context: context.Background()}
+			runner.afterRun = func() { ctx.err = callerErr }
+			runner.result = process.CommandResult{Started: true, ExitCode: 0, Stdout: []byte("Time zone: Region/City\n")}
+			_, err := solarisZoneCompareExecWithContext(ctx, rt, "Region/City")
+			requireSolarisFixedError(t, err, callerErr, callerErr.Error())
+			if len(runner.availabilityCall) != 1 || len(runner.commands) != 1 || len(fsys.calls) != 0 {
+				t.Fatalf("post-command context error did not stop fallback: availability=%v commands=%#v filesystem=%v", runner.availabilityCall, runner.commands, fsys.calls)
+			}
+		})
+	}
+}
+
+func TestSolarisZoneCompareContextErrorsStopConfigReadsAndFallback(t *testing.T) {
+	for _, callerErr := range []error{context.Canceled, context.DeadlineExceeded} {
+		t.Run(callerErr.Error()+" after availability", func(t *testing.T) {
+			fsys, rt, runner := newSolarisZoneCompareRuntime(t, nil)
+			ctx := &solarisZoneTestContext{Context: context.Background()}
+			runner.available = false
+			runner.afterAvailability = func() { ctx.err = callerErr }
+			_, err := solarisZoneCompareExecWithContext(ctx, rt, "Region/City")
+			requireSolarisFixedError(t, err, callerErr, callerErr.Error())
+			if len(runner.availabilityCall) != 1 || len(runner.commands) != 0 || len(fsys.calls) != 0 {
+				t.Fatalf("post-availability context error performed work: availability=%v commands=%#v filesystem=%v", runner.availabilityCall, runner.commands, fsys.calls)
+			}
+		})
+
+		for _, configData := range [][]byte{[]byte("TZ=UTC\n"), []byte("OTHER=value\r\n")} {
+			t.Run(callerErr.Error()+" after config read", func(t *testing.T) {
+				fsys, rt, runner := newSolarisZoneCompareRuntime(t, func(f runtime.FileSystem) {
+					zoneMustMkdir(f, "/etc")
+					zoneMustWrite(f, "/etc/TIMEZONE", configData)
+				})
+				ctx := &solarisZoneTestContext{Context: context.Background()}
+				rt.FS = &solarisCancelAfterReadFS{
+					zoneRecordingFS: fsys,
+					afterRead:       func(string) { ctx.err = callerErr },
+				}
+				runner.available = false
+				_, err := solarisZoneCompareExecWithContext(ctx, rt, "Region/City")
+				requireSolarisFixedError(t, err, callerErr, callerErr.Error())
+				if !reflect.DeepEqual(fsys.calls, []string{"bounded:/etc/TIMEZONE"}) || len(runner.commands) != 0 {
+					t.Fatalf("post-config context error performed fallback: filesystem=%v commands=%#v", fsys.calls, runner.commands)
+				}
+			})
+		}
+	}
+}
+
+func TestSolarisZoneCompareContextErrorAfterCommandFailureSkipsFallback(t *testing.T) {
+	fsys, rt, runner := newSolarisZoneCompareRuntime(t, func(f runtime.FileSystem) {
+		zoneMustMkdir(f, "/etc")
+		zoneMustWrite(f, "/etc/localtime", []byte("TZDATA"))
+		seedZone(f, "Region/City", "TZDATA")
+	})
+	runner.available = true
+	ctx := &solarisZoneTestContext{Context: context.Background()}
+	runner.afterRun = func() { ctx.err = context.Canceled }
+	runner.result = process.CommandResult{ExitCode: -1, Err: errors.New("private-command-marker")}
+	_, err := solarisZoneCompareExecWithContext(ctx, rt, "Region/City")
+	requireSolarisFixedError(t, err, context.Canceled, context.Canceled.Error(), "private-command-marker")
+	if len(runner.commands) != 1 || len(fsys.calls) != 0 {
+		t.Fatalf("cancellation after command failure ran fallback: commands=%#v filesystem=%v", runner.commands, fsys.calls)
+	}
+}
+
+func TestSolarisZoneCompareFallbackReadContextErrorsStopLaterReads(t *testing.T) {
+	for _, callerErr := range []error{context.Canceled, context.DeadlineExceeded} {
+		t.Run(callerErr.Error()+" after current read", func(t *testing.T) {
+			fsys, rt, runner := newSolarisZoneCompareRuntime(t, func(f runtime.FileSystem) {
+				zoneMustMkdir(f, "/etc")
+				zoneMustWrite(f, "/etc/localtime", []byte("TZDATA"))
+				seedZone(f, "Region/City", "TZDATA")
+			})
+			ctx := &solarisZoneTestContext{Context: context.Background()}
+			rt.FS = &solarisCancelAfterReadFS{
+				zoneRecordingFS: fsys,
+				afterRead: func(name string) {
+					if name == "/etc/localtime" {
+						ctx.err = callerErr
+					}
+				},
+			}
+			runner.available = true
+			runner.result = process.CommandResult{Started: true, ExitCode: 1}
+			_, err := solarisZoneCompareExecWithContext(ctx, rt, "Region/City")
+			requireSolarisFixedError(t, err, callerErr, callerErr.Error())
+			if !reflect.DeepEqual(fsys.calls, []string{"lstat:/etc/localtime", "bounded:/etc/localtime"}) {
+				t.Fatalf("current-read context error allowed extra reads: %v", fsys.calls)
+			}
+		})
+	}
+
+	t.Run("deadline after requested read", func(t *testing.T) {
+		fsys, rt, runner := newSolarisZoneCompareRuntime(t, func(f runtime.FileSystem) {
+			zoneMustMkdir(f, "/etc")
+			zoneMustWrite(f, "/etc/localtime", []byte("TZDATA"))
+			seedZone(f, "Region/City", "TZDATA")
+		})
+		ctx := &solarisZoneTestContext{Context: context.Background()}
+		rt.FS = &solarisCancelAfterReadFS{
+			zoneRecordingFS: fsys,
+			afterRead: func(name string) {
+				if name == "/usr/share/zoneinfo/Region/City" {
+					ctx.err = context.DeadlineExceeded
+				}
+			},
+		}
+		runner.available = true
+		runner.result = process.CommandResult{Started: true, ExitCode: 1}
+		_, err := solarisZoneCompareExecWithContext(ctx, rt, "Region/City")
+		requireSolarisFixedError(t, err, context.DeadlineExceeded, context.DeadlineExceeded.Error())
+		if !strings.Contains(strings.Join(fsys.calls, " "), "bounded:/usr/share/zoneinfo/Region/City") {
+			t.Fatalf("expected requested side read before deadline callback: %v", fsys.calls)
+		}
+	})
+}
+
+func TestSolarisZoneCompareTimedatectlTimeoutFallsBackWhileCallerContextLives(t *testing.T) {
+	fsys, rt, runner := newSolarisZoneCompareRuntime(t, func(f runtime.FileSystem) {
+		zoneMustMkdir(f, "/etc")
+		zoneMustWrite(f, "/etc/localtime", []byte("TZDATA"))
+		seedZone(f, "Region/City", "TZDATA")
+	})
+	runner.available = true
+	runner.result = process.CommandResult{ExitCode: -1, Err: context.DeadlineExceeded}
+	value, err := solarisZoneCompareExec(t, rt, "Region/City")
+	if err != nil || value != true {
+		t.Fatalf("command timeout with live caller context = %v, %v; want true, nil", value, err)
+	}
+	if len(runner.commands) != 1 || len(fsys.calls) == 0 {
+		t.Fatalf("command timeout fallback work: commands=%#v filesystem=%v", runner.commands, fsys.calls)
+	}
+}
+
+func TestSolarisZoneCompareNilFilesystemIsSafeAndStringSuccessNeedsNoFilesystem(t *testing.T) {
+	t.Run("configuration branch", func(t *testing.T) {
+		_, rt, runner := newSolarisZoneCompareRuntime(t, nil)
+		rt.FS = nil
+		runner.available = false
+		_, err := solarisZoneCompareExec(t, rt, "UTC")
+		requireSolarisFixedError(t, err, ErrZoneConfigRead, ErrZoneConfigRead.Error())
+		if len(runner.commands) != 0 {
+			t.Fatalf("nil filesystem config branch ran command: %#v", runner.commands)
+		}
+	})
+
+	t.Run("timedatectl string success", func(t *testing.T) {
+		_, rt, runner := newSolarisZoneCompareRuntime(t, nil)
+		rt.FS = nil
+		runner.available = true
+		runner.result = process.CommandResult{Started: true, ExitCode: 0, Stdout: []byte("Time zone: UTC\n")}
+		value, err := solarisZoneCompareExec(t, rt, "UTC")
+		if err != nil || value != true {
+			t.Fatalf("timedatectl success with nil filesystem = %v, %v; want true, nil", value, err)
+		}
+		if len(runner.commands) != 1 {
+			t.Fatalf("nil filesystem timedatectl command count = %d, want one", len(runner.commands))
+		}
+	})
+}
+
+func TestSolarisZoneCompareFallbackReusesBoundedNoFollowZoneHelpers(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		zone          string
+		seed          func(runtime.FileSystem)
+		localtimeMode fs.FileMode
+		want          any
+		wantErr       error
+		forbid        []string
+	}{
+		{"contained symlinks resolve", "Aliases/Zone", func(f runtime.FileSystem) {
+			seedZone(f, "Region/Current", "TZDATA")
+			zoneMustMkdir(f, "/usr/share/zoneinfo/Aliases")
+			zoneMustSymlink(f, "../Region/Current", "/usr/share/zoneinfo/Aliases/Zone")
+			zoneMustMkdir(f, "/etc")
+			zoneMustSymlink(f, "/usr/share/zoneinfo/Region/Current", "/etc/localtime")
+		}, 0, true, nil, nil},
+		{"requested symlink escape rejected", "Evil", func(f runtime.FileSystem) {
+			zoneMustMkdir(f, "/etc")
+			zoneMustWrite(f, "/etc/localtime", []byte("TZDATA"))
+			zoneMustWrite(f, "/etc/outside", []byte("outside-marker"))
+			zoneMustMkdir(f, "/usr/share/zoneinfo")
+			zoneMustSymlink(f, "/etc/outside", "/usr/share/zoneinfo/Evil")
+		}, 0, nil, ErrUnknownUnsafeZone, []string{"bounded:/etc/outside"}},
+		{"requested dangling link rejected", "Dangling", func(f runtime.FileSystem) {
+			zoneMustMkdir(f, "/etc")
+			zoneMustWrite(f, "/etc/localtime", []byte("TZDATA"))
+			zoneMustMkdir(f, "/usr/share/zoneinfo")
+			zoneMustSymlink(f, "No/Such/Zone", "/usr/share/zoneinfo/Dangling")
+		}, 0, nil, ErrUnknownUnsafeZone, nil},
+		{"requested symlink loop rejected", "LoopA", func(f runtime.FileSystem) {
+			zoneMustMkdir(f, "/etc")
+			zoneMustWrite(f, "/etc/localtime", []byte("TZDATA"))
+			zoneMustMkdir(f, "/usr/share/zoneinfo")
+			zoneMustSymlink(f, "LoopB", "/usr/share/zoneinfo/LoopA")
+			zoneMustSymlink(f, "LoopA", "/usr/share/zoneinfo/LoopB")
+		}, 0, nil, ErrUnknownUnsafeZone, nil},
+		{"current dangling link fails first", "Region/City", func(f runtime.FileSystem) {
+			zoneMustMkdir(f, "/etc")
+			zoneMustSymlink(f, "/usr/share/zoneinfo/No/Such/Zone", "/etc/localtime")
+			seedZone(f, "Region/City", "TZDATA")
+		}, 0, nil, ErrCannotDetermineZone, []string{"/usr/share/zoneinfo/Region/City"}},
+		{"current special file fails closed", "Region/City", func(f runtime.FileSystem) {
+			zoneMustMkdir(f, "/etc")
+			zoneMustWrite(f, "/etc/localtime", []byte("TZDATA"))
+			seedZone(f, "Region/City", "TZDATA")
+		}, fs.ModeNamedPipe, nil, ErrCannotDetermineZone, []string{"/usr/share/zoneinfo/Region/City"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fsys, rt, runner := newSolarisZoneCompareRuntime(t, tc.seed)
+			runner.available = true
+			runner.result = process.CommandResult{ExitCode: 2, Stderr: []byte("private-command-marker")}
+			if tc.localtimeMode != 0 {
+				fsys.lstatMode = map[string]fs.FileMode{"/etc/localtime": tc.localtimeMode}
+			}
+			value, err := solarisZoneCompareExec(t, rt, tc.zone)
+			if tc.wantErr != nil {
+				requireSolarisFixedError(t, err, tc.wantErr, tc.wantErr.Error(), "private-command-marker", "outside-marker")
+				if value != nil {
+					t.Fatalf("fallback error returned value %#v, want nil", value)
+				}
+			} else if err != nil || value != tc.want {
+				t.Fatalf("fallback result = %v, %v; want %v, nil", value, err, tc.want)
+			}
+			for _, forbidden := range tc.forbid {
+				for _, call := range fsys.calls {
+					if strings.Contains(call, forbidden) {
+						t.Fatalf("forbidden fallback operation %q appeared in %v", forbidden, fsys.calls)
+					}
+				}
+			}
+			requireZoneReadOnly(t, fsys)
+		})
+	}
+}
+
+func TestSolarisZoneCompareFallbackContentReadsRemainBounded(t *testing.T) {
+	exact := make([]byte, 1<<20)
+	exact[0] = 'A'
+	over := make([]byte, (1<<20)+1)
+	over[0] = 'A'
+
+	fsys, rt, runner := newSolarisZoneCompareRuntime(t, func(f runtime.FileSystem) {
+		zoneMustMkdir(f, "/etc")
+		zoneMustWrite(f, "/etc/localtime", exact)
+		seedZone(f, "Region/City", string(exact))
+	})
+	runner.available = true
+	runner.result = process.CommandResult{ExitCode: 1}
+	value, err := solarisZoneCompareExec(t, rt, "Region/City")
+	if err != nil || value != true {
+		t.Fatalf("exact-limit fallback = %v, %v; want true, nil", value, err)
+	}
+
+	fsys, rt, runner = newSolarisZoneCompareRuntime(t, func(f runtime.FileSystem) {
+		zoneMustMkdir(f, "/etc")
+		zoneMustWrite(f, "/etc/localtime", over)
+		seedZone(f, "Region/City", string(exact))
+	})
+	runner.available = true
+	runner.result = process.CommandResult{ExitCode: 1}
+	_, err = solarisZoneCompareExec(t, rt, "Region/City")
+	requireSolarisFixedError(t, err, ErrCannotDetermineZone, ErrCannotDetermineZone.Error())
+	for _, call := range fsys.calls {
+		if strings.HasPrefix(call, "bounded:/usr/share/zoneinfo") {
+			t.Fatalf("requested zone read after oversized current file: %v", fsys.calls)
+		}
+	}
+
+	fsys, rt, runner = newSolarisZoneCompareRuntime(t, func(f runtime.FileSystem) {
+		zoneMustMkdir(f, "/etc")
+		zoneMustWrite(f, "/etc/localtime", exact)
+		seedZone(f, "Region/City", string(over))
+	})
+	runner.available = true
+	runner.result = process.CommandResult{ExitCode: 1}
+	_, err = solarisZoneCompareExec(t, rt, "Region/City")
+	requireSolarisFixedError(t, err, ErrUnknownUnsafeZone, ErrUnknownUnsafeZone.Error())
 }

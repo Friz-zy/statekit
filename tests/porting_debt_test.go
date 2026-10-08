@@ -928,8 +928,9 @@ func TestWindowsFileMakedirsListsCanonicalAliasOnly(t *testing.T) {
 // test_zone_compare_unequal, test_zone_compare_equal bytes, and the
 // test_zone_compare_nonexistent / test_missing_localtime error
 // categories) over a hermetic MemoryFS without Runner dispatch. The
-// mac/windows partial variants and the Solaris/AIX rows are tracked by
-// their own phase records; this test pins the Linux filesystem
+// mac/windows partial variants and the AIX row are tracked by their own
+// phase records; Solaris behavior is pinned hermetically in the timezone
+// package tests, and this test pins the Linux filesystem
 // contract.
 func TestPortingDebtExecTimezoneZoneCompareCanonicalRegistrationPTD_EXEC_1638(t *testing.T) {
 	if runtime.CurrentGOOS() != "linux" {
@@ -1129,7 +1130,7 @@ func TestPortingDebtExecTimezoneZoneCompareCanonicalRegistrationPTD_EXEC_1638(t 
 // the source signature zone_compare(timezone), and the canonical
 // family registration through BuildRuntime keeps exactly one entry per
 // canonical timezone.* name on every variant host (linux/darwin/
-// windows) with timezone.zone_compare once and no superseded alias. The behavioral
+// windows/solaris) with timezone.zone_compare once and no superseded alias. The behavioral
 // contract of the windows variant — the 134-pair source-parity oracle
 // against pinned saltstack/salt/modules/win_timezone.py, the mapped
 // test_win_timezone.py fixture shapes (India/Calcutta true,
@@ -1138,7 +1139,7 @@ func TestPortingDebtExecTimezoneZoneCompareCanonicalRegistrationPTD_EXEC_1638(t 
 // zero-mutation/single-dispatch invariants — is pinned hermetically in
 // modules/exec/timezone/winzone_test.go, where the unexported variant
 // and its resolver seam are reachable; the aggregate rows stay
-// PARTIAL/OPEN (Solaris/AIX and native/CI validation remain).
+// PARTIAL/OPEN (AIX and native/CI validation remain).
 func TestPortingDebtExecTimezoneZoneCompareWindowsPartialPTD_EXEC_1638(t *testing.T) {
 	// Catalog signature: docs/catalog/exec/win_timezone.yaml declares
 	// zone_compare with exactly one timezone parameter and no default,
@@ -1231,19 +1232,13 @@ func TestPortingDebtExecTimezoneZoneCompareWindowsPartialPTD_EXEC_1638(t *testin
 	// same single timezone.zone_compare name, so the family surface on
 	// every variant host keeps exactly one entry per canonical name —
 	// never a windows alias and never a duplicate. The surface is
-	// GOOS-dependent: seven names on linux (base 5 + zone_compare +
-	// the Linux get_zonecode of PTD-EXEC-1631), fifteen on darwin
-	// (base 5 + zone_compare + the four Mac systemsetup getters + the
-	// Mac get_zonecode of PTD-EXEC-1631 + the Mac list_zones of
-	// PTD-EXEC-1633 + the Mac set_date/set_time setters of
-	// PTD-EXEC-1634/1635 + set_using_network_time of PTD-EXEC-1637), seven on
-	// windows (base 5 + zone_compare + the Windows timezone.list of
-	// PTD-EXEC-1632). The darwin list below is corrected to the
+	// GOOS-dependent: Linux has 7 names, Darwin 15, Windows 7, Solaris
+	// 6, and AIX/other hosts 5. The darwin list below is corrected to the
 	// lexicographic order Names() actually returns.
 	switch runtime.CurrentGOOS() {
-	case "linux", "darwin", "windows":
+	case "linux", "darwin", "windows", "solaris":
 	default:
-		t.Skip("timezone.zone_compare variants register on linux/darwin/windows hosts only")
+		t.Skip("timezone.zone_compare variants register on linux/darwin/windows/solaris hosts only")
 	}
 	rt, err := bootstrap.BuildRuntime()
 	if err != nil {
@@ -1275,6 +1270,11 @@ func TestPortingDebtExecTimezoneZoneCompareWindowsPartialPTD_EXEC_1638(t *testin
 			"timezone.get_zonecode", "timezone.list_zones",
 			"timezone.set_date", "timezone.set_hwclock", "timezone.set_time",
 			"timezone.set_using_network_time", "timezone.set_zone", "timezone.zone_compare",
+		}
+	case "solaris":
+		want = []string{
+			"timezone.get_hwclock", "timezone.get_offset", "timezone.get_zone",
+			"timezone.set_hwclock", "timezone.set_zone", "timezone.zone_compare",
 		}
 	}
 	if !reflect.DeepEqual(timezoneNames, want) {

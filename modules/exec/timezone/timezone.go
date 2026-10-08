@@ -51,6 +51,10 @@ var (
 	// CommandExecutionError analog): the current zone cannot be
 	// detected or its localtime content cannot be read.
 	ErrCannotDetermineZone = errors.New("cannot determine current zone")
+	// ErrZoneConfigRead is the fixed Solaris configuration-read failure.
+	// It is distinct from a readable file that has no TZ= marker, which
+	// follows Solaris zone_compare's command-error byte fallback.
+	ErrZoneConfigRead = errors.New("cannot read Solaris timezone configuration")
 	// ErrInvalidWindowsZone is the Windows execution-category
 	// invalid-requested-name failure (the analog of win_timezone.py's
 	// CommandExecutionError for an unlisted timezone, kept value-free):
@@ -69,9 +73,9 @@ type zoneCompareFunc struct{}
 
 func (zoneCompareFunc) Name() string { return "timezone.zone_compare" }
 
-// Platforms restricts zone_compare to linux: the reviewed contract is
-// the Linux generic filesystem slice only (nilrt, mac, win, Solaris and
-// AIX variants stay open rows).
+// Platforms restricts zone_compare to linux: this type is Linux-only;
+// macOS, Windows, and Solaris have separate GOOS implementations, while
+// AIX and NILinuxRT remain deferred.
 func (zoneCompareFunc) Platforms() []string { return []string{"linux"} }
 
 func (zoneCompareFunc) Args() any { return zoneCompareArgs{} }
@@ -337,6 +341,295 @@ func (zoneCompareFunc) Execute(_ context.Context, rt *runtime.Runtime, args any)
 	return bytes.Equal(current, requested), nil
 }
 
+// solarisZoneCompareArgs is the Solaris timezone.zone_compare argument
+// contract. The required pointer distinguishes an omitted timezone from
+// an explicit empty value, which remains valid for exact string equality.
+type solarisZoneCompareArgs struct {
+	TimeZone *string `statekit:"required,name=timezone"`
+}
+
+// solarisZoneCompareFunc implements the Solaris get_zone order: use
+// timedatectl when available, otherwise parse /etc/TIMEZONE. Only a
+// command-execution failure or a readable config without TZ= reaches the
+// bounded byte fallback; config read failures remain distinct.
+type solarisZoneCompareFunc struct{}
+
+func (solarisZoneCompareFunc) Name() string { return "timezone.zone_compare" }
+
+func (solarisZoneCompareFunc) Platforms() []string { return []string{"solaris"} }
+
+func (solarisZoneCompareFunc) Args() any { return solarisZoneCompareArgs{} }
+
+const (
+	solarisTimezoneFile       = "/etc/TIMEZONE"
+	solarisConfigReadLimit    = 64 << 10
+	solarisTimedatectlTimeout = 30 * time.Second
+	solarisTimedatectlMax     = 64 << 10
+)
+
+var (
+	errSolarisZoneInvalidArgs = errors.New("invalid zone_compare arguments")
+	errSolarisZoneNoMarker    = errors.New("timezone: Solaris configuration has no TZ setting")
+	errSolarisZoneCommand     = errors.New("timezone: timedatectl query failed")
+)
+
+// parseSolarisTimezoneConfig mirrors fopen(..., newline="") record
+// boundaries while preserving each original terminator. Salt then applies
+// line.rstrip("\\n"), which removes LF but leaves CR from CRLF or bare-CR
+// records in the selected value. Only the first TZ= record is used, with
+// quote characters trimmed from the selected value's actual edges.
+func parseSolarisTimezoneConfig(data []byte) (string, bool) {
+	for start := 0; start <= len(data); {
+		end := start
+		for end < len(data) && data[end] != '\n' && data[end] != '\r' {
+			end++
+		}
+		recordEnd := end
+		if end < len(data) {
+			if data[end] == '\r' && end+1 < len(data) && data[end+1] == '\n' {
+				recordEnd = end + 2
+			} else {
+				recordEnd = end + 1
+			}
+		}
+		line := bytes.TrimRight(data[start:recordEnd], "\n")
+		if bytes.Contains(line, []byte("TZ=")) {
+			lastEquals := bytes.LastIndexByte(line, '=')
+			value := strings.Trim(string(line[lastEquals+1:]), `"'`)
+			if value == "" {
+				return "UTC", true
+			}
+			return value, true
+		}
+		if recordEnd == len(data) {
+			break
+		}
+		start = recordEnd
+	}
+	return "", false
+}
+
+// readSolarisConfiguredZone reads only the fixed Solaris configuration
+// through the existing bounded no-follow API. The data buffer is cleared
+// on both parse and no-marker exits; read failures are value-free and are
+// never eligible for the byte fallback.
+func readSolarisConfiguredZone(fsys runtime.FileSystem) (string, error) {
+	if fsys == nil {
+		return "", ErrZoneConfigRead
+	}
+	data, err := runtime.ReadFileBounded(fsys, solarisTimezoneFile, solarisConfigReadLimit)
+	if err != nil {
+		clear(data)
+		return "", ErrZoneConfigRead
+	}
+	defer clear(data)
+	if zone, ok := parseSolarisTimezoneConfig(data); ok {
+		return zone, nil
+	}
+	return "", errSolarisZoneNoMarker
+}
+
+// parseSolarisTimedatectlZone mirrors Salt's literal-LF record splitting,
+// Python strip(), and first case-sensitive anchored `Time ?zone:\s+(\S+)`
+// match. A bare CR inside a record is whitespace for matching but does not
+// create a record boundary; Python whitespace helpers preserve the source
+// semantics rather than Go's ASCII-only regexp \s behavior.
+func parseSolarisTimedatectlZone(stdout []byte) (string, bool) {
+	for _, line := range strings.Split(string(stdout), "\n") {
+		line = pythonStrip(line)
+		headerLength := 0
+		switch {
+		case strings.HasPrefix(line, "Time zone:"):
+			headerLength = len("Time zone:")
+		case strings.HasPrefix(line, "Timezone:"):
+			headerLength = len("Timezone:")
+		default:
+			continue
+		}
+
+		valueStart := headerLength
+		cursor := valueStart
+		for cursor < len(line) {
+			r, size := utf8.DecodeRuneInString(line[cursor:])
+			if !pythonSpace(r) {
+				break
+			}
+			cursor += size
+		}
+		if cursor <= valueStart || cursor == len(line) {
+			continue
+		}
+		valueEnd := cursor
+		for valueEnd < len(line) {
+			r, size := utf8.DecodeRuneInString(line[valueEnd:])
+			if pythonSpace(r) {
+				break
+			}
+			valueEnd += size
+		}
+		if valueEnd > cursor {
+			return line[cursor:valueEnd], true
+		}
+	}
+	return "", false
+}
+
+// runSolarisTimedatectl maps every command or parse failure to one fixed
+// source error, keeping command causes and output private while leaving
+// the caller to decide whether the source failure permits fallback.
+func runSolarisTimedatectl(ctx context.Context, runner process.Runner) (string, error) {
+	res := runner.Run(ctx, process.Command{
+		Name:           "timedatectl",
+		Args:           nil,
+		Env:            []string{"LC_ALL=C"},
+		Timeout:        solarisTimedatectlTimeout,
+		MaxStdoutBytes: solarisTimedatectlMax,
+		MaxStderrBytes: solarisTimedatectlMax,
+	})
+	if res.Err != nil || !res.Started || res.ExitCode != 0 || res.StdoutTruncated || res.StderrTruncated ||
+		len(res.Stdout) > solarisTimedatectlMax || len(res.Stderr) > solarisTimedatectlMax {
+		return "", errSolarisZoneCommand
+	}
+	zone, ok := parseSolarisTimedatectlZone(res.Stdout)
+	if !ok {
+		return "", errSolarisZoneCommand
+	}
+	return zone, nil
+}
+
+// solarisContextBoundedFS checks caller cancellation around each bounded
+// read while preserving the underlying filesystem's no-follow behavior.
+// Context errors are returned without retaining any bytes read meanwhile.
+type solarisContextBoundedFS struct {
+	runtime.FileSystem
+	ctx context.Context
+}
+
+func (f solarisContextBoundedFS) ReadFileBounded(name string, limit int64) ([]byte, error) {
+	if err := f.ctx.Err(); err != nil {
+		return nil, err
+	}
+	data, err := runtime.ReadFileBounded(f.FileSystem, name, limit)
+	if ctxErr := f.ctx.Err(); ctxErr != nil {
+		clear(data)
+		return nil, ctxErr
+	}
+	return data, err
+}
+
+// solarisZoneCompareFallback validates the caller-controlled zone only
+// after current-zone discovery has failed, then preserves the established
+// current-side-first bounded no-follow byte comparison and fixed error
+// categories used by the generic filesystem variant. Context checks before
+// and after each bounded read give caller cancellation precedence over
+// source-file failures and prevent reading the requested side afterward.
+func solarisZoneCompareFallback(ctx context.Context, fsys runtime.FileSystem, zone string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if err := validateZoneName(zone); err != nil {
+		return false, err
+	}
+	if fsys == nil {
+		return false, ErrCannotDetermineZone
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	boundedFS := solarisContextBoundedFS{FileSystem: fsys, ctx: ctx}
+	current, err := currentZoneBytes(boundedFS)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return false, ctxErr
+	}
+	if err != nil {
+		return false, ErrCannotDetermineZone
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	requested, err := zoneinfoZoneBytes(boundedFS, zone)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return false, ctxErr
+	}
+	if err != nil {
+		return false, ErrUnknownUnsafeZone
+	}
+	return bytes.Equal(current, requested), nil
+}
+
+// Execute ports the Solaris timezone.zone_compare source contract. It
+// checks command availability before any filesystem access, executes at
+// most one fixed shell-free timedatectl query, and otherwise reads only
+// the bounded /etc/TIMEZONE file. Successful string discovery compares
+// exactly and never falls back on mismatch. Caller context cancellation
+// and deadlines are preserved as static context errors and never become
+// fallback triggers; command failures use only the bounded, no-follow
+// localtime/zoneinfo byte path. No command output, config bytes, paths,
+// or underlying causes are logged or returned.
+func (solarisZoneCompareFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
+	a, ok := args.(*solarisZoneCompareArgs)
+	if !ok || a == nil {
+		return nil, errSolarisZoneInvalidArgs
+	}
+	if a.TimeZone == nil {
+		if err := config.ValidateRequired(a); err != nil {
+			return nil, err
+		}
+		return nil, errSolarisZoneInvalidArgs
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if rt == nil || rt.Runner == nil {
+		return nil, ErrCannotDetermineZone
+	}
+	availability, ok := rt.Runner.(process.CommandAvailability)
+	if !ok {
+		return nil, ErrCannotDetermineZone
+	}
+	available := availability.CommandAvailable("timedatectl")
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if !available {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		zone, err := readSolarisConfiguredZone(rt.FS)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		if err == nil {
+			return *a.TimeZone == zone, nil
+		}
+		if !errors.Is(err, errSolarisZoneNoMarker) {
+			return nil, ErrZoneConfigRead
+		}
+		matched, fallbackErr := solarisZoneCompareFallback(ctx, rt.FS, *a.TimeZone)
+		if fallbackErr != nil {
+			return nil, fallbackErr
+		}
+		return matched, nil
+	}
+
+	zone, commandErr := runSolarisTimedatectl(ctx, rt.Runner)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if commandErr == nil {
+		return *a.TimeZone == zone, nil
+	}
+
+	matched, err := solarisZoneCompareFallback(ctx, rt.FS, *a.TimeZone)
+	if err != nil {
+		return nil, err
+	}
+	return matched, nil
+}
+
 // macZoneCompareArgs is the mac_timezone.zone_compare argument
 // contract. The required POINTER distinguishes an omitted time_zone
 // (nil, rejected by the required gate before any dispatch) from an
@@ -354,8 +647,8 @@ type macZoneCompareFunc struct{}
 
 func (macZoneCompareFunc) Name() string { return "timezone.zone_compare" }
 
-// Platforms restricts the mac variant to darwin; the Windows, Solaris,
-// AIX, and NILinuxRT rows of PTD-EXEC-1638 stay open.
+// Platforms restricts the mac variant to darwin; the AIX and NILinuxRT
+// rows of PTD-EXEC-1638 stay open.
 func (macZoneCompareFunc) Platforms() []string { return []string{"darwin"} }
 
 func (macZoneCompareFunc) Args() any { return macZoneCompareArgs{} }
@@ -2180,8 +2473,9 @@ func registerMacSettersForGOOS(reg *runtime.ExecRegistry, goos string) error {
 // registerZoneCompareForGOOS installs exactly one
 // timezone.zone_compare implementation for the given GOOS — the Linux
 // generic filesystem contract on linux, the mac systemsetup contract on
-// darwin, the windows tzutil contract on windows — and nothing on any
-// other GOOS, where the name stays unregistered rather than
+// darwin, the windows tzutil contract on windows, or the Solaris
+// timedatectl/TIMEZONE contract on solaris — and nothing on any other
+// GOOS, where the name stays unregistered rather than
 // registered-but-unsupported. The registry keys by name, so registering
 // a second variant onto one registry fails as a duplicate.
 func registerZoneCompareForGOOS(reg *runtime.ExecRegistry, goos string) error {
@@ -2192,6 +2486,8 @@ func registerZoneCompareForGOOS(reg *runtime.ExecRegistry, goos string) error {
 		return reg.Register(macZoneCompareFunc{})
 	case "windows":
 		return reg.Register(winZoneCompareFunc{})
+	case "solaris":
+		return reg.Register(solarisZoneCompareFunc{})
 	}
 	return nil
 }
