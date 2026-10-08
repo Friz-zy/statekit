@@ -3,10 +3,8 @@ package user
 // R8.1 registry matrix for the FreeBSD pw_user surface: every catalog
 // public name registers exactly once through registerFreeBSD, each
 // function is PlatformConstrained to freebsd only, GOOS filtering hides
-// the names on the Linux host, the registry boundary rejects calls on
-// non-freebsd hosts, and the Linux user surface stays canonical on
-// Linux with the freebsd additions (loginclass/GECOS-phone getters)
-// absent.
+// the names on non-FreeBSD hosts, and the registry boundary rejects calls
+// on non-freebsd hosts.
 
 import (
 	"context"
@@ -87,9 +85,10 @@ func TestPwUserRegistryMatrix(t *testing.T) {
 	}
 }
 
-// TestPwUserRegisterKeepsLinuxSurfaceCanonical proves the freebsd file
-// adds no duplicate user.* registration on the Linux host.
-func TestPwUserRegisterKeepsLinuxSurfaceCanonical(t *testing.T) {
+// TestPwUserRegisterKeepsPlatformSurfaceCanonical checks platform-specific
+// user surfaces: Linux keeps the generic surface, OpenBSD adds only the
+// loginclass functions, and FreeBSD keeps its own provider.
+func TestPwUserRegisterKeepsPlatformSurfaceCanonical(t *testing.T) {
 	if runtime.CurrentGOOS() == "freebsd" {
 		t.Skip("freebsd host registers the freebsd surface")
 	}
@@ -97,13 +96,19 @@ func TestPwUserRegisterKeepsLinuxSurfaceCanonical(t *testing.T) {
 	if err := Register(reg); err != nil {
 		t.Fatal(err)
 	}
+	openBSD := runtime.CurrentGOOS() == "openbsd"
 	for _, name := range []string{
-		"user.chhomephone", "user.chloginclass", "user.chroomnumber", "user.chworkphone",
-		"user.get_loginclass", "user.getent", "user.primary_group", "user.rename",
-		"user.chgroups", "user.chfullname",
+		"user.chhomephone", "user.chroomnumber", "user.chworkphone",
+		"user.getent", "user.primary_group", "user.rename", "user.chgroups", "user.chfullname",
 	} {
 		if _, exists := reg.Get(name); exists {
-			t.Fatalf("linux registry unexpectedly carries freebsd-only %s", name)
+			t.Fatalf("%s registry unexpectedly carries FreeBSD-only %s", runtime.CurrentGOOS(), name)
+		}
+	}
+	for _, name := range []string{"user.chloginclass", "user.get_loginclass"} {
+		_, exists := reg.Get(name)
+		if exists != openBSD {
+			t.Fatalf("%s registered on GOOS %s = %t, want %t", name, runtime.CurrentGOOS(), exists, openBSD)
 		}
 	}
 	for _, name := range []string{"user.add", "user.delete", "user.info", "user.list_users"} {
@@ -114,7 +119,7 @@ func TestPwUserRegisterKeepsLinuxSurfaceCanonical(t *testing.T) {
 			}
 		}
 		if count != 1 {
-			t.Fatalf("%s registered %d times on linux", name, count)
+			t.Fatalf("%s registered %d times on %s", name, count, runtime.CurrentGOOS())
 		}
 	}
 }

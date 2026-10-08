@@ -244,20 +244,24 @@ func currentUID(entries []sysfiles.PasswdEntry, name string) (int, bool) {
 
 // Register installs all user-module execution functions.
 func Register(reg *runtime.ExecRegistry) error {
-	if runtime.CurrentGOOS() == "freebsd" {
+	return registerUserForGOOS(reg, runtime.CurrentGOOS())
+}
+
+func registerUserForGOOS(reg *runtime.ExecRegistry, goos string) error {
+	if goos == "freebsd" {
 		return registerFreeBSD(reg)
 	}
 	// Official Go distributions list solaris/amd64 and illumos/amd64 compile
 	// targets. This host has no native Solaris runtime runner; the branch keeps
 	// dispatch exhaustive and registerSolaris is covered by the untagged mock
 	// tests on the Linux host.
-	if runtime.CurrentGOOS() == "solaris" {
+	if goos == "solaris" {
 		return registerSolaris(reg)
 	}
-	if runtime.CurrentGOOS() == "darwin" {
+	if goos == "darwin" {
 		return registerMac(reg)
 	}
-	if runtime.CurrentGOOS() == "windows" {
+	if goos == "windows" {
 		return registerWindows(reg)
 	}
 	for _, fn := range []runtime.ExecFunction{
@@ -267,6 +271,9 @@ func Register(reg *runtime.ExecRegistry) error {
 		if err := reg.Register(fn); err != nil {
 			return err
 		}
+	}
+	if goos == "openbsd" {
+		return registerOpenBSDLoginclass(reg)
 	}
 	return nil
 }
