@@ -542,13 +542,7 @@ func TestWinUserAttributeShortCircuits(t *testing.T) {
 	if got := runner.scripts[len(runner.scripts)-1]; got != `Set-LocalUser -Name 'alice' -HomeDirectory 'C:\New\home'` {
 		t.Fatalf("chhome script = %q", got)
 	}
-	// chprofile/chfullname cmdlets.
-	if _, err := (winChprofileFunc{}).Execute(context.Background(), rt, &winChprofileArgs{Name: "alice", Profile: `C:\Profiles\new`}); err != nil {
-		t.Fatal(err)
-	}
-	if got := runner.scripts[len(runner.scripts)-1]; got != `Set-LocalUser -Name 'alice' -ProfilePath 'C:\Profiles\new'` {
-		t.Fatalf("chprofile script = %q", got)
-	}
+	// chprofile is covered by the common fake-NetAPI tests, not cmdlets.
 	if _, err := (winChfullnameFunc{}).Execute(context.Background(), rt, &winChfullnameArgs{Name: "alice", Fullname: "Alice Example"}); err != nil {
 		t.Fatal(err)
 	}

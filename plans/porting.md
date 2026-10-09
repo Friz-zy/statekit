@@ -6695,7 +6695,7 @@ R8.1 update: after `e6e1ccd` every GOOS in {linux, darwin, windows, freebsd} car
 | [ ] | PTD-EXEC-1649 | `user.chhomephone` | actionable | software-engineer-senior | catalog `docs/catalog/exec/pw_user.yaml#chhomephone`; Salt `saltstack/salt/modules/pw_user.py#chhomephone`; tests saltstack/tests/pytests/unit/modules/test_pw_user.py; catalog `docs/catalog/exec/solaris_user.yaml#chhomephone`; Salt `saltstack/salt/modules/solaris_user.py#chhomephone`; tests none mapped; catalog `docs/catalog/exec/useradd.yaml#chhomephone`; Salt `saltstack/salt/modules/useradd.py#chhomephone`; tests saltstack/tests/unit/modules/test_useradd.py, saltstack/tests/pytests/unit/modules/test_useradd.py | `modules/exec/user` (extend); R8 / E6 VM dependency; dependencies: cmd.retcode, cmd.run, cmd.run_all, file.group_to_gid | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
 | [ ] | PTD-EXEC-1650 | `user.chloginclass` | partial | software-engineer-senior | catalog `docs/catalog/exec/pw_user.yaml#chloginclass`; Salt `saltstack/salt/modules/pw_user.py#chloginclass`; tests `saltstack/tests/pytests/unit/modules/test_pw_user.py`; catalog `docs/catalog/exec/useradd.yaml#chloginclass`; Salt `saltstack/salt/modules/useradd.py#chloginclass`; tests `saltstack/tests/unit/modules/test_useradd.py`, `saltstack/tests/pytests/unit/modules/test_useradd.py::test_chloginclass` lines 160-203 (source-only inspected, never executed) | Existing FreeBSD `get_loginclass/chloginclass` unchanged; OpenBSD module-level FakeRunner/schema/registration tests pass in `modules/exec/user/openbsd_useradd_test.go`; OpenBSD-only registration verified by platform selector in `freebsd_pw_user_registry_test.go`. R8/E6 native validation remains pending; dependencies: cmd.retcode, cmd.run, cmd.run_all, file.group_to_gid | OpenBSD `usermod(8)` has no `-R` and `userinfo(8)` cannot query an alternate root, so any nonnil `root` (including empty) is rejected before dispatch. This remains a documented partial ceiling. `userinfo` may emit a password hash as root; implementation returns only class and clears owned buffers, with no secure-erasure guarantee. |
 | [ ] | PTD-EXEC-1651 | `user.chother` | actionable | software-engineer-senior | catalog `docs/catalog/exec/useradd.yaml#chother`; Salt `saltstack/salt/modules/useradd.py#chother`; tests saltstack/tests/unit/modules/test_useradd.py, saltstack/tests/pytests/unit/modules/test_useradd.py | `modules/exec/user` (extend); unassigned-next-round; round assignment required before implementation; dependencies: cmd.retcode, cmd.run, cmd.run_all, file.group_to_gid | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
-| [ ] | PTD-EXEC-1652 | `user.chprofile` | registered-but-runtime-unproven | software-engineer-senior | catalog `docs/catalog/exec/win_useradd.yaml#chprofile`; Salt `saltstack/salt/modules/win_useradd.py#chprofile`; tests saltstack/tests/pytests/unit/modules/test_win_useradd.py | `modules/exec/user/windows.go#Name`; R7 / native Windows gate; dependencies: cmd.run_all | `docs/differential/R7/report.yaml:4` records cross-build/source evidence without a native runner |
+| [ ] | PTD-EXEC-1652 | `user.chprofile` | partial | software-engineer-senior | catalog `docs/catalog/exec/win_useradd.yaml#chprofile`; Salt `saltstack/salt/modules/win_useradd.py#chprofile`; tests saltstack/tests/pytests/unit/modules/test_win_useradd.py | `modules/exec/user/win_profile.go#Name/Execute`; native adapter `modules/exec/user/win_profile_native_windows.go` and non-Windows `modules/exec/user/win_profile_stub.go`; contract tests `modules/exec/user/win_profile_test.go`, `modules/exec/user/win_profile_stub_test.go`, and layout assertions; R7 / native Windows gate; dependencies: native NetUserGetInfo/NetUserSetInfo | IMPLEMENTATION RECORD: Replaced unsupported PowerShell `Set-LocalUser -ProfilePath` call in `user.chprofile` with private NetUserGetInfo/NetUserSetInfo adapter and fake-API contract tests. `user.update` has a separate PowerShell profile path and is not modified; this is separate scope, not a blocker for `chprofile`. Empty profile checks account existence and returns true without Go calling NetUserSetInfo; Salt's updater performs a redundant unchanged NetUserSetInfo for a falsey profile, a safe no-write divergence that preserves final profile state. Fixed error sentinels replace localized/raw Win32 error strings and errors.Join retains identities. Level-4 NetUserSetInfo is documented server-only; R7 remains pending, with no Windows client or native success claim. `USER_INFO_4.Password` is set NULL and not dereferenced, logged, or returned. After NetUserGetInfo returns a nonnil buffer, the code queries NetApiBufferSize and accepts/clears it only if it is at least USER_INFO_4 size and no greater than 1 MiB before structure access or clearing; the native allocation itself is controlled by NetAPI, not Go, and no resource bound is claimed. NetApiBufferFree is best-effort; no secure-erasure guarantee is made. Cleanup failure after successful SetInfo returns true with an explicit cleanup error, communicates that update may have occurred, and must not be blindly retried or rolled back. Target is local (`servername=NULL`) using caller's current token: no explicit elevation or remote target; Windows may require caller to have appropriate permissions. R7 native server/client matrix and external CI remain pending; row remains partial/open. |
 | [ ] | PTD-EXEC-1653 | `user.chroomnumber` | actionable | software-engineer-senior | catalog `docs/catalog/exec/pw_user.yaml#chroomnumber`; Salt `saltstack/salt/modules/pw_user.py#chroomnumber`; tests saltstack/tests/pytests/unit/modules/test_pw_user.py; catalog `docs/catalog/exec/solaris_user.yaml#chroomnumber`; Salt `saltstack/salt/modules/solaris_user.py#chroomnumber`; tests none mapped; catalog `docs/catalog/exec/useradd.yaml#chroomnumber`; Salt `saltstack/salt/modules/useradd.py#chroomnumber`; tests saltstack/tests/unit/modules/test_useradd.py, saltstack/tests/pytests/unit/modules/test_useradd.py | `modules/exec/user` (extend); R8 / E6 VM dependency; dependencies: cmd.retcode, cmd.run, cmd.run_all, file.group_to_gid | canonical name absent from the actual non-test exec `Name()` inventory and `internal/bootstrap/bootstrap.go#BuildRuntime` |
 | [ ] | PTD-EXEC-1654 | `user.chshell` | registered-but-runtime-unproven | software-engineer-senior | catalog `docs/catalog/exec/mac_user.yaml#chshell`; Salt `saltstack/salt/modules/mac_user.py#chshell`; tests saltstack/tests/pytests/unit/modules/test_mac_user.py; catalog `docs/catalog/exec/pw_user.yaml#chshell`; Salt `saltstack/salt/modules/pw_user.py#chshell`; tests saltstack/tests/pytests/unit/modules/test_pw_user.py; catalog `docs/catalog/exec/solaris_user.yaml#chshell`; Salt `saltstack/salt/modules/solaris_user.py#chshell`; tests none mapped; catalog `docs/catalog/exec/useradd.yaml#chshell`; Salt `saltstack/salt/modules/useradd.py#chshell`; tests saltstack/tests/unit/modules/test_useradd.py, saltstack/tests/pytests/unit/modules/test_useradd.py | `modules/exec/user/mac_darwin.go#Name`; `modules/exec/user/user.go#Name`; R6 / native Darwin gate; dependencies: cmd.retcode, cmd.run, cmd.run_all, file.group_to_gid, file.mkdir, file.remove | `docs/differential/R6/report.yaml:4` records cross-build/source evidence without a native runner |
 | [ ] | PTD-EXEC-1655 | `user.chuid` | registered-but-runtime-unproven | software-engineer-senior | catalog `docs/catalog/exec/mac_user.yaml#chuid`; Salt `saltstack/salt/modules/mac_user.py#chuid`; tests saltstack/tests/pytests/unit/modules/test_mac_user.py; catalog `docs/catalog/exec/pw_user.yaml#chuid`; Salt `saltstack/salt/modules/pw_user.py#chuid`; tests saltstack/tests/pytests/unit/modules/test_pw_user.py; catalog `docs/catalog/exec/solaris_user.yaml#chuid`; Salt `saltstack/salt/modules/solaris_user.py#chuid`; tests none mapped; catalog `docs/catalog/exec/useradd.yaml#chuid`; Salt `saltstack/salt/modules/useradd.py#chuid`; tests saltstack/tests/unit/modules/test_useradd.py, saltstack/tests/pytests/unit/modules/test_useradd.py | `modules/exec/user/mac_darwin.go#Name`; `modules/exec/user/user.go#Name`; R6 / native Darwin gate; dependencies: cmd.retcode, cmd.run, cmd.run_all, file.group_to_gid, file.mkdir, file.remove | `docs/differential/R6/report.yaml:4` records cross-build/source evidence without a native runner |
@@ -9100,7 +9100,7 @@ R8.1 update: after `e6e1ccd` every GOOS in {linux, darwin, windows, freebsd} car
 | [ ] | PTD-TEST-1684 | `TestPortingDebtExecUserChhomephoneCanonicalRegistrationPTD_EXEC_1649` | actionable | qa-engineer-senior | `tests/porting_debt_test.go` (planned) | PTD-EXEC-1649 | contract/registration | `saltstack/salt/modules/pw_user.py#chhomephone`; tests saltstack/tests/pytests/unit/modules/test_pw_user.py; `saltstack/salt/modules/solaris_user.py#chhomephone`; tests none mapped; `saltstack/salt/modules/useradd.py#chhomephone`; tests saltstack/tests/unit/modules/test_useradd.py, saltstack/tests/pytests/unit/modules/test_useradd.py | For `user.chhomephone`, assert canonical registration and rejection of superseded aliases; assert catalog-declared parameters/defaults from `docs/catalog/exec/pw_user.yaml#chhomephone; docs/catalog/exec/solaris_user.yaml#chhomephone; docs/catalog/exec/useradd.yaml#chhomephone` against source signature(s) `saltstack/salt/modules/pw_user.py#chhomephone; saltstack/salt/modules/solaris_user.py#chhomephone; saltstack/salt/modules/useradd.py#chhomephone`; execute mapped Salt fixture(s) saltstack/tests/pytests/unit/modules/test_pw_user.py, none mapped, saltstack/tests/unit/modules/test_useradd.py, saltstack/tests/pytests/unit/modules/test_useradd.py; assert the source-defined success and failure return/error shapes, declared side effects, and no mutation after validation or execution error. |
 | [x] | PTD-TEST-1685 | `TestPortingDebtExecUserChloginclassCanonicalRegistrationPTD_EXEC_1650` | landed (module-level evidence; separate tests/porting_debt integration intentionally not added) | qa-engineer-senior | `modules/exec/user/openbsd_useradd_test.go` (module-level FakeRunner and registration tests; no separate `tests/porting_debt_test.go` integration, per PTD-TEST-1668 precedent) | PTD-EXEC-1650 | contract/registration | `saltstack/salt/modules/pw_user.py#chloginclass`; tests `saltstack/tests/pytests/unit/modules/test_pw_user.py`; `saltstack/salt/modules/useradd.py#chloginclass`; tests `saltstack/tests/unit/modules/test_useradd.py`, `saltstack/tests/pytests/unit/modules/test_useradd.py::test_chloginclass` lines 160-203 (source-only inspected, never executed) | Complete by OpenBSD module-level FakeRunner and registration tests in `modules/exec/user/openbsd_useradd_test.go`, with global platform assertion in `freebsd_pw_user_registry_test.go`. OpenBSD `chloginclass` first calls the current getter; equal class returns true with no `usermod`; otherwise check `usermod` availability then issue shell-disabled `usermod -L loginclass name`. Any nonnil `root` (even empty) safely fails before every Runner call. Reject invalid username (empty/leading-dash/control/NUL), missing required args, and NUL class before dispatch; loginclass is one argv value with no invented ASCII grammar. If `usermod` exits nonzero without Runner error, read back anyway and set bool by equality. Runner error/cancel/timeout or post-get error leaves state unknown; no retry/rollback. The mapped upstream `test_chloginclass` is source-only inspected, never executed. Native OpenBSD R8/E6 remains pending; PTD-EXEC-1650 remains partial/open. |
 | [ ] | PTD-TEST-1686 | `TestPortingDebtExecUserChotherCanonicalRegistrationPTD_EXEC_1651` | actionable | qa-engineer-senior | `tests/porting_debt_test.go` (planned) | PTD-EXEC-1651 | contract/registration | `saltstack/salt/modules/useradd.py#chother`; tests saltstack/tests/unit/modules/test_useradd.py, saltstack/tests/pytests/unit/modules/test_useradd.py | For `user.chother`, assert canonical registration and rejection of superseded aliases; assert catalog-declared parameters/defaults from `docs/catalog/exec/useradd.yaml#chother` against source signature(s) `saltstack/salt/modules/useradd.py#chother`; execute mapped Salt fixture(s) saltstack/tests/unit/modules/test_useradd.py, saltstack/tests/pytests/unit/modules/test_useradd.py; assert the source-defined success and failure return/error shapes, declared side effects, and no mutation after validation or execution error. |
-| [ ] | PTD-TEST-1687 | `TestPortingDebtExecUserChprofileNativeWindowsRuntimePTD_EXEC_1652` | actionable | qa-engineer-senior | `tests/porting_debt_test.go` (planned) | PTD-EXEC-1652 | native runtime contract | `saltstack/salt/modules/win_useradd.py#chprofile`; tests saltstack/tests/pytests/unit/modules/test_win_useradd.py | For `user.chprofile`, On the row-declared native platform, assert canonical registration and rejection of superseded aliases; assert catalog-declared parameters/defaults from `docs/catalog/exec/win_useradd.yaml#chprofile` against source signature(s) `saltstack/salt/modules/win_useradd.py#chprofile`; execute mapped Salt fixture(s) saltstack/tests/pytests/unit/modules/test_win_useradd.py; assert the source-defined success and failure return/error shapes, declared side effects, and no mutation after validation or execution error. |
+| [ ] | PTD-TEST-1687 | `TestPortingDebtExecUserChprofileNativeWindowsRuntimePTD_EXEC_1652` | actionable | qa-engineer-senior | `modules/exec/user/win_profile_test.go`, `modules/exec/user/win_profile_stub_test.go`, and layout assertions (present; not executed) | PTD-EXEC-1652 | native runtime contract | Upstream `saltstack/salt/modules/win_useradd.py#chprofile` delegates to `update` (NetUserGetInfo/SetInfo); no chprofile-specific unit test exists in `saltstack/tests/pytests/unit/modules/test_win_useradd.py`. Functional source fixtures: `saltstack/tests/pytests/functional/modules/test_win_useradd.py::test_chprofile_str` lines 167-172 and `::test_chprofile_int` lines 175-180 (Windows/test-user fixtures; inspect only, never execute). | Go tests use fake NetAPI only; they do not call real NetAPI, PowerShell, or account APIs. Code tests have not been executed at this row-update time and remain `[ ]` actionable until QA sandbox run. No separate tests/porting-debt test is introduced unless a later gate explicitly requires it. Native R7 Windows server/client matrix, actual ABI/account preservation, and external CI remain pending; no native claims. |
 | [ ] | PTD-TEST-1688 | `TestPortingDebtExecUserChroomnumberCanonicalRegistrationPTD_EXEC_1653` | actionable | qa-engineer-senior | `tests/porting_debt_test.go` (planned) | PTD-EXEC-1653 | contract/registration | `saltstack/salt/modules/pw_user.py#chroomnumber`; tests saltstack/tests/pytests/unit/modules/test_pw_user.py; `saltstack/salt/modules/solaris_user.py#chroomnumber`; tests none mapped; `saltstack/salt/modules/useradd.py#chroomnumber`; tests saltstack/tests/unit/modules/test_useradd.py, saltstack/tests/pytests/unit/modules/test_useradd.py | For `user.chroomnumber`, assert canonical registration and rejection of superseded aliases; assert catalog-declared parameters/defaults from `docs/catalog/exec/pw_user.yaml#chroomnumber; docs/catalog/exec/solaris_user.yaml#chroomnumber; docs/catalog/exec/useradd.yaml#chroomnumber` against source signature(s) `saltstack/salt/modules/pw_user.py#chroomnumber; saltstack/salt/modules/solaris_user.py#chroomnumber; saltstack/salt/modules/useradd.py#chroomnumber`; execute mapped Salt fixture(s) saltstack/tests/pytests/unit/modules/test_pw_user.py, none mapped, saltstack/tests/unit/modules/test_useradd.py, saltstack/tests/pytests/unit/modules/test_useradd.py; assert the source-defined success and failure return/error shapes, declared side effects, and no mutation after validation or execution error. |
 | [ ] | PTD-TEST-1689 | `TestPortingDebtExecUserChshellNativeDarwinRuntimePTD_EXEC_1654` | actionable | qa-engineer-senior | `tests/porting_debt_test.go` (planned) | PTD-EXEC-1654 | native runtime contract | `saltstack/salt/modules/mac_user.py#chshell`; tests saltstack/tests/pytests/unit/modules/test_mac_user.py; `saltstack/salt/modules/pw_user.py#chshell`; tests saltstack/tests/pytests/unit/modules/test_pw_user.py; `saltstack/salt/modules/solaris_user.py#chshell`; tests none mapped; `saltstack/salt/modules/useradd.py#chshell`; tests saltstack/tests/unit/modules/test_useradd.py, saltstack/tests/pytests/unit/modules/test_useradd.py | For `user.chshell`, On the row-declared native platform, assert canonical registration and rejection of superseded aliases; assert catalog-declared parameters/defaults from `docs/catalog/exec/mac_user.yaml#chshell; docs/catalog/exec/pw_user.yaml#chshell; docs/catalog/exec/solaris_user.yaml#chshell; docs/catalog/exec/useradd.yaml#chshell` against source signature(s) `saltstack/salt/modules/mac_user.py#chshell; saltstack/salt/modules/pw_user.py#chshell; saltstack/salt/modules/solaris_user.py#chshell; saltstack/salt/modules/useradd.py#chshell`; execute mapped Salt fixture(s) saltstack/tests/pytests/unit/modules/test_mac_user.py, saltstack/tests/pytests/unit/modules/test_pw_user.py, none mapped, saltstack/tests/unit/modules/test_useradd.py, saltstack/tests/pytests/unit/modules/test_useradd.py; assert the source-defined success and failure return/error shapes, declared side effects, and no mutation after validation or execution error. |
 | [ ] | PTD-TEST-1690 | `TestPortingDebtExecUserChuidNativeDarwinRuntimePTD_EXEC_1655` | actionable | qa-engineer-senior | `tests/porting_debt_test.go` (planned) | PTD-EXEC-1655 | native runtime contract | `saltstack/salt/modules/mac_user.py#chuid`; tests saltstack/tests/pytests/unit/modules/test_mac_user.py; `saltstack/salt/modules/pw_user.py#chuid`; tests saltstack/tests/pytests/unit/modules/test_pw_user.py; `saltstack/salt/modules/solaris_user.py#chuid`; tests none mapped; `saltstack/salt/modules/useradd.py#chuid`; tests saltstack/tests/unit/modules/test_useradd.py, saltstack/tests/pytests/unit/modules/test_useradd.py | For `user.chuid`, On the row-declared native platform, assert canonical registration and rejection of superseded aliases; assert catalog-declared parameters/defaults from `docs/catalog/exec/mac_user.yaml#chuid; docs/catalog/exec/pw_user.yaml#chuid; docs/catalog/exec/solaris_user.yaml#chuid; docs/catalog/exec/useradd.yaml#chuid` against source signature(s) `saltstack/salt/modules/mac_user.py#chuid; saltstack/salt/modules/pw_user.py#chuid; saltstack/salt/modules/solaris_user.py#chuid; saltstack/salt/modules/useradd.py#chuid`; execute mapped Salt fixture(s) saltstack/tests/pytests/unit/modules/test_mac_user.py, saltstack/tests/pytests/unit/modules/test_pw_user.py, none mapped, saltstack/tests/unit/modules/test_useradd.py, saltstack/tests/pytests/unit/modules/test_useradd.py; assert the source-defined success and failure return/error shapes, declared side effects, and no mutation after validation or execution error. |
@@ -9938,3 +9938,245 @@ Solaris pre-implementation acceptance clarification (PTD-EXEC-1638/PTD-TEST-1673
 - Security residuals: the bounded 64 KiB `/etc/TIMEZONE` buffer is transient and only the selected value is retained; byte clearing is best-effort, not secure erasure, and raw data must not be logged. Caller/deployment `PATH` trust and the existing bounded-helper ceilings remain explicit limitations.
 
 Supplemental current-status note (PTD-EXEC-1638/PTD-TEST-1673; supersedes preimplementation wording where it conflicts): Solaris `timezone.zone_compare` code is present. MemoryFS/FakeRunner module tests and registration/debt regression passed locally. The earlier “canonical name absent” rationale is baseline history for Solaris, not current. Aggregate EXEC/TEST rows remain unchecked/partial because other platform, native, and CI work is open. R6 is Darwin-native only; AIX is deferred this tranche because safe `runtime.ReadFileBounded` lacks AIX support; NILinuxRT remains separate due to grains/platform detection. Solaris source behavior: timedatectl parses LF-separated records; `/etc/TIMEZONE` opened with `newline=""` preserves CR, and `rstrip("\n")` leaves it. New tests pin CRLF/bare-CR values and the exact 64 KiB boundary. Tests use MemoryFS/FakeRunner only; source fixtures were not executed. Green rootless Podman evidence used Go 1.26.6 cached image `localhost/statekit-r93p-go-deps:20260923@sha256:4230904fd0f3bdac68ac8dfd52d2d33727e56550321b234e006af3542dd844c0`, network=none, nonroot/cap0/NNP1, source and cache RO, scratch tmpfs; GOSUMDB default/GOPROXY off. Before the whitespace-only gofmt alignment, targeted timezone tests/race, porting-debt test, vet, mod verify, Solaris compile-only test binary and package build passed. After alignment, `gofmt -l` on the three changed Go files returned empty; tests were not rerun after that whitespace-only change. Cgroup requests were ineffective (CPU/mem max; `pids.max=28619` instead of requested 256); do not claim resource bounds. No full `./...`, TDD RED, native Solaris, or external CI. This does not complete the whole plan and does not change user.chhomephone status.
+
+Correction note — PTD-EXEC-1652: the row's shorthand that a nonnil
+NetUserGetInfo buffer always triggers NetApiBufferSize is overbroad and
+superseded by this note. The code first checks NET_API_STATUS; on a
+GetInfo error with a nonnil owned buffer, it defers exactly one
+NetApiBufferFree and returns the GetInfo error without calling
+NetApiBufferSize or dereferencing the buffer. Only when GetInfo succeeds
+and owner is nonnil does it query BufferSize and validate
+`[sizeof(USER_INFO_4), 1MiB]` before any structure access or clearing.
+This correction supersedes the row's overbroad buffer-size shorthand;
+this is the current source/code behavior.
+
+Supplemental current-evidence note — PTD-EXEC-1652/PTD-TEST-1687 (after
+DETERMINISTIC VERIFY): This note supersedes only PTD-TEST-1687's stale
+sentence “Code tests have not been executed at this row-update time”; it
+does not change that row's `[ ] actionable` status or PTD-EXEC-1652's
+`partial` status. Under a local rootless, non-remote Podman execution
+using existing cached image `docker.io/library/golang:1.26` (immutable
+image ID `sha256:2166f13e96959cfe4bfe3d2bb208f4e91736a488a1fb7f3a194663dfb5840226`,
+cached digest `sha256:df4a28968e9886230d1dbfb63275c8556cd6a938221c4889942a04275e82e995`),
+Go 1.26.8, `--pull=never`, and `network=none`, the following passed:
+
+```text
+go mod verify
+go test -count=1 -v -timeout=120s -run "^(TestWinChprofile.*|TestWinProfile.*)$" ./modules/exec/user
+GOOS=windows GOARCH=amd64 go test -c -o /tmp/out/user-amd64.test.exe ./modules/exec/user
+GOOS=windows GOARCH=386 go test -c -o /tmp/out/user-386.test.exe ./modules/exec/user
+```
+
+The targeted test run passed 10 top-level tests and 8 named subtests,
+with no skips; it includes the non-Windows unsupported stub. Windows
+amd64 and 386 test binaries were compile-only outputs, ephemeral, and
+never executed. The sandbox used keep-id UID 1000/nonroot, effective
+capability sets all zero, NNP=1, read-only root and source/module-cache
+binds, no host home, credentials, runtime socket, or device, and private
+tmpfs scratch. `GOPROXY=off`; `GOSUMDB` remained default/unset. No
+dependency, manifest, or source changes were made by the verifier, and
+only authorized scratch was used. Resource limits were requested but
+ineffective: observed `cpu.max='max 100000'`, `memory.max='max'`, and
+`pids.max='28619'`; CPU, memory, and PID enforcement must not be claimed.
+Output binaries were not executed. No upstream Salt fixture was run;
+there was no real NetAPI, PowerShell, or account execution, external
+network, native Windows runtime (including the R7 server/client matrix),
+or external/GitHub CI result. Accordingly, this is fake-only test and
+cross-compilation evidence, not native Windows success or completion of
+PTD-EXEC-1652/PTD-TEST-1687; native R7/server-client runtime and external
+CI remain pending.
+
+### Architecture decision — PTD-EXEC-1652
+
+2026-10-08 — `architecture_review_result: reviewed`. Decider/executor of this
+design record: `solution-architect-lead` (lead). Design only; implementation,
+security acceptance, native R7 and CI gates remain open. This note defines the
+next acceptance contract, not a change to any table row/status/count/order or
+prior verification evidence.
+
+**Evidence and boundary.** Salt checkout HEAD matches `references/salt.lock`
+(`8b63e700637e40d76f80a00d95c60471797c73b9`); its module is clean.
+`saltstack/salt/modules/win_useradd.py:662-681` delegates `chprofile` to
+`update`; `:172-187,283-356` reads level 4 with server `None`, substitutes a
+truthy profile, nulls password, and unconditionally writes level 4. Neither
+path checks machine role, local/domain account identity, or profile-path trust;
+the chprofile example explicitly uses UNC. Empty leaves the profile unchanged
+but still writes the account record. Errors can return localized strings,
+despite the docstring's boolean description. Functional fixtures
+`saltstack/tests/pytests/functional/modules/test_win_useradd.py:167-180` assert
+local-path success/readback only; they were inspected, not run, and establish
+no DC/UNC/concurrency guarantee. The unit source has no chprofile/profile match.
+Current `modules/exec/user/win_profile.go:169-250` still round-trips level 4,
+has no role guard, and checks encoding/size, not path trust. Its fake tests
+assert preservation of a snapshot, not concurrent account-field preservation.
+The native adapter, stub and 386/64-bit layout assertions were inspected.
+StateKit `user.update` still has its separate PowerShell profile path in
+`modules/exec/user/windows.go:287-288`; it is outside this slice and receives
+no correctness or security endorsement from this decision.
+
+**Chosen semantics.** Local-account-only `user.chprofile`, using documented
+profile-only `NetUserSetInfo(NULL, name, 1052, USER_INFO_1052, ...)` for a
+nonempty profile; no level-4 read/modify/write, alternate level, cmdlet or ADSI
+fallback. Issue one write even for the same nonempty value, without a pre-read;
+NetUserSetInfo reports missing accounts. Require an unqualified local account
+name (reject domain-qualified/UPN forms rather than resolving them). Before
+any account API, query local `DsRoleGetPrimaryDomainInformation(NULL,
+DsRolePrimaryDomainInfoBasic, ...)`: allow only standalone/member workstation
+and standalone/member server roles. Reject both DC roles (including read-only
+DCs), unknown roles, failed/unavailable probes and successful nil buffers.
+Do not infer safety from domain membership, directory-service flags or NULL
+servername alone. Probe on every invocation, with a fresh check immediately
+before a write; do not cache authorization. This is an intentional safe
+divergence from Salt's unguarded DC behavior. Role probing is not an atomic
+lock against promotion/demotion; operational preflight must confirm a stable,
+non-transitioning target. DC support requires a separately scoped domain/AD
+design and security/HUMAN gates, not an opt-out of this guard.
+
+An explicitly supplied empty profile remains an existence-only success:
+after the role guard, `NetUserGetInfo(NULL, name, 0, ...)`, successful nonnil
+owned buffer, then free; never dereference the returned name or call SetInfo.
+Missing/omitted profile remains invalid. Empty does not clear/reset a profile.
+This preserves Salt's intended final profile state without its redundant
+write. Retain bounded valid Unicode/NUL rejection and fixed value-free errors;
+retain caller-token/Windows ACL enforcement, with no elevation, impersonation,
+credential acquisition or permission changes. A failed write means unknown
+state: no automatic retry/rollback; late cancellation cannot relabel confirmed
+success. Report cleanup failures separately from completed existence checks.
+
+**UNC policy and risk.** Retain Salt-compatible UNC support and local absolute
+profile paths, passing bounded strings verbatim to native validation: no
+StateKit path allowlist, canonicalization, environment expansion, filesystem
+creation, existence/access probe or network connection. Native acceptance is
+not a trust or safe-placement guarantee; Salt does not validate these either.
+UNC may cause later network authentication and remote profile/data placement;
+local paths can also redirect later loading/data placement, and mapped drives
+or filesystem indirection cannot be made safe by a simple UNC-prefix check.
+Caller/deployment policy must authorize the destination and constrain later
+egress/profile access. This decision chooses compatibility, not acceptance of
+those residual risks on behalf of an asset owner. Scoped authorized-HUMAN
+acceptance of residual profile-redirection/UNC risk after independent security
+review remains a policy gate before operational enablement/native mutation;
+the user's architecture direction does not waive it.
+
+**Rationale / rejected alternatives.** SR-001 is addressed in design by the
+fail-closed local-role/account boundary; retaining Salt DC behavior would
+permit AD mutation beyond this slice. SR-002 is addressed in design by 1052:
+no writable flags, expiry, logon-hours or other account fields are replayed.
+NULL password and snapshot equality cannot prevent level-4 lost updates;
+readback/retry adds races, not a transaction. Concurrent profile writes remain
+last-writer behavior; deletion/recreation under the same name is not prevented.
+Reject blanket UNC denial here because Salt explicitly supports it and
+Microsoft documents it; such denial also leaves local redirection risk.
+Reject shell/ADSI fallback and new dependencies as unnecessary scope/trust
+expansion. Microsoft's recommendation is USER_INFO_4 **instead of USER_INFO_3**
+on XP and later, not a mandate to replay a full record for a single field.
+1052 is the documented narrower contract. These findings are not closed in
+current code; security must re-review the implementation.
+
+**Official sources independently retrieved (2026-10-08).**
+- [USER_INFO_1052](https://learn.microsoft.com/en-us/windows/win32/api/lmaccess/ns-lmaccess-user_info_1052): one profile pointer; SetInfo-only; null string/local absolute/UNC allowed; documented client/server minima Windows 2000.
+- [NetUserSetInfo](https://learn.microsoft.com/en-us/windows/win32/api/lmaccess/nf-lmaccess-netusersetinfo): NULL selects the local computer, not a guaranteed local SAM; DC access uses AD user-object ACLs; level 4 server-only wording, 1052 profile-only; caller permissions and NET_API_STATUS.
+- [USER_INFO_4](https://learn.microsoft.com/en-us/windows/win32/api/lmaccess/ns-lmaccess-user_info_4): writable security/account fields and the 4-over-3 recommendation; no concurrency guarantee.
+- [DsRoleGetPrimaryDomainInformation](https://learn.microsoft.com/en-us/windows/win32/api/dsrole/nf-dsrole-dsrolegetprimarydomaininformation), [BASIC structure](https://learn.microsoft.com/en-us/windows/win32/api/dsrole/ns-dsrole-dsrole_primary_domain_info_basic), [machine roles](https://learn.microsoft.com/en-us/windows/win32/api/dsrole/ne-dsrole-dsrole_machine_role): local NULL probe, explicit roles; documented minima Vista/Server 2008. This sets the combined API design floor, not a tested StateKit support claim; older/unavailable systems fail closed.
+- [NetUserGetInfo](https://learn.microsoft.com/en-us/windows/win32/api/lmaccess/nf-lmaccess-netusergetinfo): level 0 and system-buffer ownership via NetApiBufferFree; [DsRoleFreeMemory](https://learn.microsoft.com/en-us/windows/win32/api/dsrole/nf-dsrole-dsrolefreememory): role-buffer allocator's matching free, VOID return (no fabricated cleanup status).
+
+**Implementation and acceptance sequence (future dispatch, not authorization).**
+1. `software-engineer-senior` (senior): replace level-4 mutation with a Go-owned one-pointer 1052 record and live UTF-16 backing through the synchronous call; add the injectable local-role probe/allowlist and unqualified-name boundary. Use existing system-DLL loading and `golang.org/x/sys/windows`; replace obsolete level-4 layout machinery rather than layering another adapter. Empty lookup uses level 0 with exactly one NetApiBufferFree of each nonnil allocation, including error paths, without dereference/clearing of unvalidated storage. Role allocations use exactly one DsRoleFreeMemory, never NetApiBufferFree; read only MachineRole, not domain strings/GUID, and release before account access. Keep Go-owned pointers alive; never free Go memory through native frees. No secure-erasure or interruptible-native-call claim.
+2. `qa-engineer-lead` (lead): define/review fake-only acceptance for every allowed/DC/unknown role, probe failure/nil/unavailable cases, qualified names, empty/missing accounts, 1052-only dispatch, same-value write, Unicode/UNC pass-through, cancellation, fixed errors, lifetimes and matching cleanup. Model concurrent unrelated field changes to show no snapshot is submitted; cover role changes on the immediate pre-write check. Update ABI assertions for pointer-sized 1052 and role layout on declared Windows architectures. Do not confuse fakes/cross-compilation with native proof.
+3. `security-engineer-lead` (lead): independently review SR-001/SR-002 mitigation, role-transition/account-name races, caller-token boundary, destination/UNC residuals and cleanup ownership; record residual HUMAN gate disposition without reducing risk by architecture assertion. Only then may `qa-engineer-lead` (lead) run fake tests/race, vet, dependency verification and Windows cross-compilation in a freshly preflighted conforming sandbox (no credentials/sockets/host devices, nonroot/rootless where supported, source/cache read-only, isolated scratch, denied network; report resource-control gaps).
+4. `technical-writer-senior` (senior), documentation gate: verify the local-only/DC rejection, empty-not-clear, UNC effects, minimum API floor versus tested support, unknown-state/no-retry and remaining gates before acceptance. Preserve ledger rows/evidence until separately authorized updates. `qa-engineer-lead` (lead) plans native R7 client/non-DC-server, permission-denied/missing-account, actual ABI and unrelated-field preservation validation; execution requires separately confirmed disposable targets, scoped HUMAN native-account authorization and runtime isolation/preflight. Do not trigger native Windows, upstream account fixtures or external/GitHub CI from this review.
+
+**Measurable QA acceptance refinements (nonblocking design clarification).**
+Executor: `qa-engineer-lead` (lead); implementation owner:
+`software-engineer-senior` (senior). Use fake call counts/order and synthetic
+allocations for the following criteria; this section records no test execution.
+- Role matrix: exercise all four allowlisted roles, both DC roles (including RODC), unknown role, failed/unavailable probe and successful nil buffer. Denied cases make zero account calls. Nonempty input requires an initial and a fresh immediate pre-write probe; second-probe denial prevents SetInfo. Free every nonnil role allocation exactly once with DsRoleFreeMemory, including error/denial paths, before any account access.
+- Names: reject `DOMAIN\name`, `.\name`, UPN, empty, invalid UTF-8, embedded NUL and over-bound names before any native dispatch. No resolver or alternate backend is permitted.
+- Nonempty: exactly one NULL-server, level-1052 SetInfo; zero GetInfo/BufferSize calls. The submitted record contains only the profile pointer. Same-value input writes once. Simulate a concurrent unrelated account-field change and assert no account snapshot is submitted; no retry or rollback on any outcome.
+- Explicit empty: after the guard, level-0 GetInfo only; zero SetInfo/BufferSize calls and no returned-buffer dereference or clearing. Existence success requires success status plus nonnil buffer. Every nonnil account allocation, including error returns, is freed exactly once with NetApiBufferFree without dereference. Cleanup failure is reported separately while retaining completed existence success.
+- Input/errors/cancellation/ownership: assert exact NUL-terminated UTF-16 local-absolute and UNC pass-through, supplementary Unicode, the existing 32767-code-unit encoding bound and bound+1 rejection (excluding terminator); this bound is not an OS account-name/path acceptance guarantee. No normalization, environment expansion, filesystem/network probe, creation or fallback. Errors contain no input values/native detail. Cancellation during the fresh role probe prevents mutation and still frees its allocation; late cancellation after synchronous success cannot relabel success. Only matching native frees touch native allocations; never free Go memory. Keep the Go-owned record, name and path live through the call.
+- ABI: replace obsolete USER_INFO_4 assertions with USER_INFO_1052 and selected DSROLE_PRIMARY_DOMAIN_INFO_BASIC size/alignment/offset assertions for Windows 386, amd64 and arm64. Compile-time checks/cross-compilation are not native runtime proof.
+
+`security-engineer-lead` (lead) retains independent mitigation/residual-risk
+review; `technical-writer-senior` (senior) retains the documentation gate.
+Native R7 and external CI remain pending and separately authorized. UNC
+compatibility is unchanged; authorized-HUMAN path-risk disposition remains
+open, separately from native-account authorization and operational runtime
+preflight. No CPU, memory, PID or other resource-bound claim is made; future
+validation must report observed control gaps, not infer enforcement from prose.
+
+**Infrastructure / provenance assessment.** No cloud, network topology, IAM,
+CI, container or protected-trust-file change is required. New native role
+queries expand read-only OS interaction, not privileges; profile writes remain
+privileged per Windows ACLs. Existing `go.mod` pins `x/sys v0.47.0` and `go.sum`
+contains module/go.mod checksums; no dependency/lock/source change or fetch is
+proposed. Integrity was not freshly executed/verified here; the previous EOF
+note remains historical fake-only verification evidence. Any dependency
+change invokes provenance/graph, integrity and quarantine gates before fetch,
+and any executable validation requires independent runtime sandbox preflight.
+This review used read-only source/docs inspection plus this EOF append only:
+no tests, project execution, native account operations, staging or commits.
+The two unrelated dirty files named in the request remain untouched.
+
+### Supplemental implementation and final QA record — PTD-EXEC-1652 / PTD-TEST-1687
+
+This authoritative supplement supersedes the PTD table row's historical
+“IMPLEMENTATION RECORD” description of the former level-4 implementation and
+the earlier pre-redesign evidence of 10 tests / 8 subtests. The row's test-run
+sentence meant “not run at row-update time”; it is not the current validation
+result. This supplement does not edit that table row or alter row status,
+summary counts, or ordering.
+
+The selected level-1052 design is implemented: nonempty profile input performs
+exactly one profile-only `NetUserSetInfo` at level 1052, without a read or
+snapshot; fail-closed local DSROLE role checks and an unqualified local-name
+gate apply, with a fresh role check immediately before the write. Explicit
+empty input performs a level-0 existence-only lookup, without dereferencing,
+clearing, or writing the returned account data. Local and UNC path values pass
+through verbatim. Calls use the caller's token; there is no elevation. The
+separate `user.update` PowerShell path is unchanged. The documented API floor
+and source checks are not evidence of native support. Architecture assertions
+cover 386, amd64, and arm64.
+
+**Final QA snapshot (fake/source/compile level only).** Rootless local,
+non-remote Podman ran with `--pull=never`; image ID
+`sha256:2166f13e96959cfe4bfe3d2bb208f4e91736a488a1fb7f3a194663dfb5840226`,
+with repo digest `docker.io/library/golang@sha256:df4a28968e9886230d1dbfb63275c8556cd6a938221c4889942a04275e82e995`
+present; Go was `go1.26.8 linux/amd64`. The run used `network=none`, UID
+1000/keep-id, zero effective/inheritable/permitted/bounding/ambient
+capabilities, NNP=1, read-only root/source/module-cache (`/vscode/go/pkg/mod`
+mounted at `/modules`), no host home, credentials, socket, additional device,
+or privileged mount, and private tmpfs for output and cache. `GOPROXY=off`,
+`GOSUMDB` default/unset, and `-mod=readonly` were used.
+
+Resource controls were not enforced as requested: cgroups were configured
+disabled and actual `cpu.max=max 100000`, `memory.max=max`, and `pids.max=28619`
+despite requested `--cpus=2 --memory=2g --pids-limit=256`. No resource-bound
+claim is made. `go mod verify` passed (“all modules verified”). The exact fake
+test command was:
+
+```text
+CGO_ENABLED=1 go test -race -gcflags=all=-d=checkptr=2 -count=1 -v -timeout=120s -run '^(TestWinChprofile.*|TestWinProfile.*)$' ./modules/exec/user
+```
+
+It exited 0: 13 top-level tests, 19 named subtests, zero failures or skips.
+`go vet ./modules/exec/user` exited 0 with no diagnostics. Each Windows
+compile-only command exited 0:
+
+```text
+CGO_ENABLED=0 GOOS=windows GOARCH=386 go test -c -o /tmp/out/user-386.test.exe ./modules/exec/user
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go test -c -o /tmp/out/user-amd64.test.exe ./modules/exec/user
+CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go test -c -o /tmp/out/user-arm64.test.exe ./modules/exec/user
+```
+
+The binaries were never executed and remained inside tmpfs. QA made no code or
+ledger modification; repository status/diff baseline was unchanged. No Salt
+fixture, native Windows/account API, external CI, or operational action ran.
+
+PTD-EXEC-1652 remains unchecked/partial because native R7 is unverified.
+PTD-TEST-1687 remains unchecked/actionable: native Windows server/client
+account/ABI validation and external CI are pending. The authorized-HUMAN
+UNC/profile-destination risk gate remains open; runtime preflight, native
+account authorization, and native R7 remain separate pending gates. This
+record implies no operational or native approval. No resource-bound claims are
+made.

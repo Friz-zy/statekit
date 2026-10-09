@@ -458,21 +458,6 @@ func (winChhomeFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any)
 	return ok, nil
 }
 
-type winChprofileArgs struct {
-	Name    string `statekit:"required"`
-	Profile string `statekit:"required,name=profile"`
-}
-type winChprofileFunc struct{}
-
-func (winChprofileFunc) Name() string        { return "user.chprofile" }
-func (winChprofileFunc) Args() any           { return winChprofileArgs{} }
-func (winChprofileFunc) Platforms() []string { return []string{"windows"} }
-func (winChprofileFunc) Execute(ctx context.Context, rt *runtime.Runtime, args any) (any, error) {
-	a := args.(*winChprofileArgs)
-	ok, e := windowsUserMutation(ctx, rt, "Set-LocalUser -Name "+psLiteral(a.Name)+" -ProfilePath "+psLiteral(a.Profile), nil)
-	return ok, e
-}
-
 type winChfullnameArgs struct {
 	Name     string `statekit:"required"`
 	Fullname string `statekit:"required,name=fullname"`
