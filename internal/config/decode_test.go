@@ -172,6 +172,214 @@ func TestAnyFieldSupportsScalarFlagsAndStructuredValues(t *testing.T) {
 	}
 }
 
+type pointerAnyArgs struct {
+	Other *any `statekit:"required,name=other"`
+}
+
+type pointerAnyAlias = any
+
+type pointerAnyAliasArgs struct {
+	Value *pointerAnyAlias `statekit:"name=value"`
+}
+
+type definedPointerAny *any
+
+type definedPointerAnyArgs struct {
+	Value definedPointerAny `statekit:"name=value"`
+}
+
+type namedEmptyInterface interface{}
+
+type namedInterfacePointerArgs struct {
+	Value *namedEmptyInterface `statekit:"name=value"`
+}
+
+type nonemptyInterface interface{ String() string }
+
+type nonemptyInterfacePointerArgs struct {
+	Value *nonemptyInterface `statekit:"name=value"`
+}
+
+type nestedPointerAnyArgs struct {
+	Value **any `statekit:"name=value"`
+}
+
+// TestPointerAnyTriStateBinding opts only *any into pointer assignment while
+// preserving nil outer, explicit nil inner, and explicit empty-string states.
+func TestPointerAnyTriStateBinding(t *testing.T) {
+	names, err := ArgumentNames(pointerAnyArgs{})
+	if err != nil || !reflect.DeepEqual(names, []string{"other"}) {
+		t.Fatalf("argument names = %v, err = %v", names, err)
+	}
+	fs, err := NewFlagSet("pointer-any", pointerAnyArgs{})
+	if err != nil || fs.Lookup("other") == nil {
+		t.Fatalf("*any flag = %v, err = %v", fs, err)
+	}
+	if _, err := ArgumentNames(pointerAnyAliasArgs{}); err != nil {
+		t.Fatalf("true alias of any must be accepted: %v", err)
+	}
+	aliasFlags, err := NewFlagSet("pointer-any-alias", pointerAnyAliasArgs{})
+	if err != nil || aliasFlags.Lookup("value") == nil {
+		t.Fatalf("true alias of any flag = %v, err = %v", aliasFlags, err)
+	}
+	flaggedAlias := &pointerAnyAliasArgs{}
+	if err := Decode(flaggedAlias, nil, map[string]string{"value": "alias-flag"}); err != nil ||
+		flaggedAlias.Value == nil || *flaggedAlias.Value != "alias-flag" {
+		t.Fatalf("true alias flag assignment = %#v, err = %v", flaggedAlias.Value, err)
+	}
+	structuredAlias := &pointerAnyAliasArgs{}
+	if err := Decode(structuredAlias, map[string]any{"value": int(7)}, nil); err != nil ||
+		structuredAlias.Value == nil || *structuredAlias.Value != int(7) {
+		t.Fatalf("true alias structured assignment = %#v, err = %v", structuredAlias.Value, err)
+	}
+
+	omitted := &pointerAnyArgs{}
+	if err := Decode(omitted, nil, nil); err == nil {
+		t.Fatal("required nil outer *any must fail")
+	} else if missing, ok := err.(*MissingRequiredError); !ok || missing.Name != "other" {
+		t.Fatalf("missing error = %#v, want MissingRequiredError{other}", err)
+	}
+
+	var innerNil any
+	explicitNull := &pointerAnyArgs{}
+	if err := Decode(explicitNull, map[string]any{"other": nil}, nil); err != nil {
+		t.Fatalf("decode explicit null: %v", err)
+	}
+	if explicitNull.Other == nil || *explicitNull.Other != nil {
+		t.Fatalf("null must be nonnil outer/nil inner, got %#v", explicitNull.Other)
+	}
+	if err := Decode(&pointerAnyArgs{Other: &innerNil}, map[string]any{"other": nil}, nil); err != nil {
+		t.Fatalf("null over reused target: %v", err)
+	}
+
+	empty := &pointerAnyArgs{}
+	if err := Decode(empty, map[string]any{"other": ""}, nil); err != nil {
+		t.Fatalf("decode explicit empty: %v", err)
+	}
+	if empty.Other == nil || *empty.Other != "" {
+		t.Fatalf("empty string must remain a nonnil pointer value, got %#v", empty.Other)
+	}
+
+	var retained any = "keep"
+	reused := &pointerAnyArgs{Other: &retained}
+	prior := reused.Other
+	if err := Decode(reused, map[string]any{}, nil); err != nil || reused.Other != prior || *reused.Other != "keep" {
+		t.Fatalf("omission on reused target = %#v, err=%v", reused.Other, err)
+	}
+	if err := Decode(reused, map[string]any{"other": nil}, nil); err != nil {
+		t.Fatalf("null on reused target: %v", err)
+	}
+	if reused.Other == nil || reused.Other == prior || *reused.Other != nil {
+		t.Fatalf("null must replace reused pointer with fresh nil interface: %#v", reused.Other)
+	}
+
+	flagged := &pointerAnyArgs{}
+	if err := Decode(flagged, map[string]any{"other": nil}, map[string]string{"other": "0007"}); err != nil {
+		t.Fatalf("flag over structured null: %v", err)
+	}
+	if flagged.Other == nil || *flagged.Other != "0007" {
+		t.Fatalf("flag precedence value = %#v", flagged.Other)
+	}
+	flagged = &pointerAnyArgs{}
+	if err := Decode(flagged, map[string]any{"other": 7}, map[string]string{"other": ""}); err != nil {
+		t.Fatalf("empty flag over structured value: %v", err)
+	}
+	if flagged.Other == nil || *flagged.Other != "" {
+		t.Fatalf("empty flag must stay an explicit string: %#v", flagged.Other)
+	}
+
+	for _, value := range []any{false, int(0), float64(1.5)} {
+		args := &pointerAnyArgs{}
+		if err := Decode(args, map[string]any{"other": value}, nil); err != nil {
+			t.Fatalf("decode %#v: %v", value, err)
+		}
+		if args.Other == nil || reflect.TypeOf(*args.Other) != reflect.TypeOf(value) || !reflect.DeepEqual(*args.Other, value) {
+			t.Fatalf("dynamic value changed: got %#v, want %#v", args.Other, value)
+		}
+	}
+	var typedNil any = (*int)(nil)
+	args := &pointerAnyArgs{}
+	if err := Decode(args, map[string]any{"other": typedNil}, nil); err != nil {
+		t.Fatalf("decode typed nil: %v", err)
+	}
+	if args.Other == nil || reflect.TypeOf(*args.Other) != reflect.TypeOf((*int)(nil)) || *args.Other == nil {
+		t.Fatalf("typed nil dynamic type was flattened: %#v", args.Other)
+	}
+}
+
+func TestPointerAnyRejectsOtherPointerShapes(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		target any
+	}{
+		{"pointer to named empty interface", namedInterfacePointerArgs{}},
+		{"pointer to nonempty interface", nonemptyInterfacePointerArgs{}},
+		{"nested pointer", nestedPointerAnyArgs{}},
+		{"defined pointer to any", definedPointerAnyArgs{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := ArgumentNames(tc.target); err == nil {
+				t.Fatalf("unsupported pointer shape accepted: %T", tc.target)
+			}
+			if _, err := NewFlagSet("unsupported", tc.target); err == nil {
+				t.Fatalf("unsupported pointer shape generated flags: %T", tc.target)
+			}
+		})
+	}
+}
+
+func TestDecodeRejectsDefinedPointerAnyWithoutMutation(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		structured map[string]any
+		provided   map[string]string
+	}{
+		{"structured map", map[string]any{"value": "replacement"}, nil},
+		{"flag input", nil, map[string]string{"value": "replacement"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			prior := any("preserved")
+			initial := definedPointerAny(&prior)
+			target := &definedPointerAnyArgs{Value: initial}
+			err := Decode(target, tc.structured, tc.provided)
+			if err == nil || !strings.Contains(err.Error(), "unsupported pointer type") {
+				t.Fatalf("Decode error = %v, want unsupported pointer type", err)
+			}
+			if target.Value != initial || *target.Value != "preserved" {
+				t.Fatalf("Decode mutated defined pointer destination: got %#v, value=%#v", target.Value, *target.Value)
+			}
+		})
+	}
+}
+
+type plainAnyRegressionArgs struct {
+	Value any `statekit:"required,name=value"`
+}
+
+// TestPlainAnyBindingRemainsUnchanged protects the existing non-pointer any
+// semantics independently of the new opt-in *any presence representation.
+func TestPlainAnyBindingRemainsUnchanged(t *testing.T) {
+	var typedNil any = (*int)(nil)
+	for _, value := range []any{
+		map[string]any{"x": true}, int(3), float64(3), true, typedNil, "text",
+	} {
+		args := &plainAnyRegressionArgs{}
+		if err := Decode(args, map[string]any{"value": value}, nil); err != nil {
+			t.Fatalf("plain any decode %#v: %v", value, err)
+		}
+		if !reflect.DeepEqual(args.Value, value) || reflect.TypeOf(args.Value) != reflect.TypeOf(value) {
+			t.Fatalf("plain any value = %#v (%T), want %#v (%T)", args.Value, args.Value, value, value)
+		}
+	}
+	args := &plainAnyRegressionArgs{Value: "prior"}
+	if err := Decode(args, map[string]any{"value": nil}, nil); err == nil || args.Value != nil {
+		t.Fatalf("required plain any null = %#v, err=%v; null must reset then fail required", args.Value, err)
+	}
+	if err := Decode(&plainAnyRegressionArgs{}, nil, nil); err == nil {
+		t.Fatal("required plain any nil must remain missing")
+	}
+}
+
 func TestMapFieldsFromStructuredInput(t *testing.T) {
 	args := &mapArgs{}
 	structured := map[string]any{

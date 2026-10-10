@@ -7,3 +7,9 @@ package process
 func resolveTrustedDig() (string, error) {
 	return "", ErrTrustedCommandUnsupported
 }
+
+// resolveTrustedUsermod fails closed where unix ownership metadata is
+// unavailable; the caller additionally restricts this helper to Linux.
+func resolveTrustedUsermod() (string, error) {
+	return "", ErrTrustedCommandUnsupported
+}

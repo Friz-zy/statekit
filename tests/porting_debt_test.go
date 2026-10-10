@@ -23,6 +23,7 @@ import (
 	execfile "github.com/friz-zy/statekit/modules/exec/file"
 	execlogrotate "github.com/friz-zy/statekit/modules/exec/logrotate"
 	executimezone "github.com/friz-zy/statekit/modules/exec/timezone"
+	execuser "github.com/friz-zy/statekit/modules/exec/user"
 
 	"gopkg.in/yaml.v3"
 )
@@ -45,6 +46,60 @@ func countName(names []string, name string) int {
 		}
 	}
 	return n
+}
+
+// TestPortingDebtExecUserChotherCanonicalRegistrationPTD_EXEC_1651 pins the
+// canonical raw registry key and exact required *any prototype using only an
+// in-memory registry. It does not construct host facts, filesystem, or Runner.
+func TestPortingDebtExecUserChotherCanonicalRegistrationPTD_EXEC_1651(t *testing.T) {
+	rt := &runtime.Runtime{Exec: runtime.NewExecRegistry()}
+	if err := execuser.Register(rt.Exec); err != nil {
+		t.Fatal(err)
+	}
+
+	fn, registered := rt.Exec.Get("user.chother")
+	wantRegistered := runtime.CurrentGOOS() == "linux"
+	if registered != wantRegistered {
+		t.Fatalf("raw user.chother registration = %v on %s, want %v", registered, runtime.CurrentGOOS(), wantRegistered)
+	}
+	if !registered {
+		return
+	}
+	if fn.Name() != "user.chother" || !runtime.SupportsPlatform(fn, "linux") ||
+		!runtime.SupportsPlatform(fn, runtime.CurrentGOOS()) {
+		t.Fatalf("registered function name/platform support = %q/%v", fn.Name(), runtime.SupportsPlatform(fn, runtime.CurrentGOOS()))
+	}
+	platform, ok := fn.(runtime.PlatformConstrained)
+	if !ok || !reflect.DeepEqual(platform.Platforms(), []string{"linux"}) {
+		t.Fatalf("user.chother Platforms = %v, want [linux]", platform)
+	}
+
+	proto := fn.Args()
+	argsType := reflect.TypeOf(proto)
+	if argsType == nil {
+		t.Fatal("user.chother args prototype is nil")
+	}
+	if argsType != reflect.TypeOf(execuser.ChOtherArgs{}) || argsType.Kind() != reflect.Struct || argsType.NumField() != 3 {
+		t.Fatalf("user.chother args prototype = %T, type %v with %d fields", proto, argsType, argsType.NumField())
+	}
+	otherField, ok := argsType.FieldByName("Other")
+	if !ok || otherField.Type != reflect.TypeOf((*any)(nil)) || otherField.Tag.Get("statekit") != "required,name=other" {
+		t.Fatalf("user.chother Other field = %+v, want required *any", otherField)
+	}
+
+	args := &execuser.ChOtherArgs{Name: "synthetic"}
+	if err := config.Decode(args, map[string]any{"name": "synthetic", "other": nil}, nil); err != nil {
+		t.Fatalf("decode explicit null *any: %v", err)
+	}
+	if args.Other == nil || *args.Other != nil {
+		t.Fatalf("explicit null did not retain nonnil outer pointer: %#v", args.Other)
+	}
+	if err := config.Decode(args, map[string]any{"name": "synthetic", "other": float64(0)}, nil); err != nil {
+		t.Fatalf("decode JSON-first raw float64: %v", err)
+	}
+	if args.Other == nil || reflect.TypeOf(*args.Other) != reflect.TypeOf(float64(0)) {
+		t.Fatalf("JSON-first dynamic type changed before module validation: %#v", args.Other)
+	}
 }
 
 // TestBuildRuntimeRegistersSystemPowerFunctions is the PTD-TEST-0001

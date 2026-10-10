@@ -102,6 +102,21 @@ func resolveTrustedDigOn(fsys trustedFS, owner trustedOwner) (string, error) {
 	return "", ErrTrustedCommandUnavailable
 }
 
+// resolveTrustedUsermod resolves exactly the Linux usermod candidate. It
+// reuses the existing full-chain ownership, mode, symlink, and containment
+// checks without expanding the candidate list or trusted roots.
+func resolveTrustedUsermod() (string, error) {
+	return resolveTrustedUsermodOn(osTrustedFS{}, unixOwner)
+}
+
+func resolveTrustedUsermodOn(fsys trustedFS, owner trustedOwner) (string, error) {
+	resolved, err := trustedChainPath(fsys, owner, "/usr/sbin/usermod", trustedDigRoots)
+	if err != nil {
+		return "", ErrTrustedCommandUnavailable
+	}
+	return resolved, nil
+}
+
 // trustedChainPath resolves one absolute candidate path component by
 // component with Lstat (R102-SEC-01 full symlink-chain verification):
 //

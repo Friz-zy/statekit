@@ -10180,3 +10180,1337 @@ UNC/profile-destination risk gate remains open; runtime preflight, native
 account authorization, and native R7 remain separate pending gates. This
 record implies no operational or native approval. No resource-bound claims are
 made.
+
+### Next migration round decision — R4.USER-CHOTHER (2026-10-09)
+
+**Status:** architecture scope/behavior decision recorded under delegated user
+authority; independent design, security and QA gates pending. Not an
+implementation or operational approval. Baseline: `b67ec2d`.
+Revised after independent review findings; the revisions below require fresh
+independent re-gating. Earlier reviews do not constitute approval of this edit.
+
+**Decision and assignment.** Explicitly assign the previously
+`unassigned-next-round` PTD-EXEC-1651 (`user.chother`) and its contract obligation
+PTD-TEST-1686 (`TestPortingDebtExecUserChotherCanonicalRegistrationPTD_EXEC_1651`)
+to **R4.USER-CHOTHER**, a bounded Linux-local account/GECOS subround of R4's
+miscellaneous Linux track, not a new top-level R12 and not R11. Include the
+existing-account `user.present(other=...)` companion described below to honor
+§3's states-mirror-exec rule. Do not port sibling GECOS setters, add remote/NSS
+account management, or change Windows profile behavior. This section assigns
+scope without changing PTD row statuses, counts, or ordering; it does not claim
+either obligation complete.
+This is an **additive Linux scope extension after the historical R4 baseline**,
+not a reopening/invalidation of its historical accepted scope. Existing R10
+work and the §3 sequencing DAG/priority remain unchanged; the new scope has its
+own fresh R4 close gates and may not inherit a green baseline as acceptance.
+
+**ADR disposition.** §2 R11 and §3's DAG require a formal ADR before starting
+the network-device/plugin round, not before every subsequent subround. This
+Linux slice introduces neither protocol plugins nor a dependency-policy
+exception, so this EOF decision is sufficient; **no new formal ADR is required
+solely for this R4 assignment**. This does not waive §0's separate ADR requirement
+for dependency-policy exceptions. R11 remains last and ADR-gated, unopened. The ADR filename
+inventory was checked (0001–0004); the unrelated modified 0004 content was not
+read. A later dependency exception, remote-account boundary, or R11 start must
+receive its own decision/ADR rather than borrowing this assignment.
+
+**Options and rationale.**
+- Selected: one Linux-local chother slice plus its bounded state companion.
+  The pinned function and tests exist, the canonical Go function is absent,
+  and MemoryFS/Runner/registration seams already exist. The cost is a narrow
+  trusted-helper extension and explicit local-only compatibility ceiling.
+- Rejected: a multi-platform GECOS family sweep. The source loader permits
+  Linux/OpenBSD/NetBSD/AIX, but that is not native validation or uniform
+  usermod support. BSD/Solaris/Windows adapters are separate contracts; this
+  would expand platform, root and mutation risks without evidence for this slice.
+- Not selected: counting native/platform/CI closure of already-present timezone
+  or Windows profile code as another implementation slice, starting R11 early,
+  or absorbing separately human-gated `user.chhomephone`/`timezone.set_time_server`.
+  Their gates remain separate; this decision neither clears nor schedules them.
+
+**Evidence inspected (read-only; fixture sources never executed).**
+- `references/salt.lock:1-3` pins Salt to
+  `8b63e700637e40d76f80a00d95c60471797c73b9`; read-only submodule HEAD agrees.
+- This plan §0, §2:50-51, §2 R4/R11, §3:162-174 and rows at
+  `:6697,9102` establish contract-first entry, fixture mapping, round-close
+  regeneration/differential/green gates, state counterpart and assignment debt.
+- `docs/catalog/exec/useradd.yaml:373-392` declares canonical module `user`,
+  required `name, other`, `root=None` and both mapped test files. Its dependency
+  list is module-accumulated evidence, not proof chother calls every entry.
+- `saltstack/salt/modules/useradd.py:38-49,62-138,706-725,939-953` defines the
+  loader, five-field GECOS split/build, update, wrapper and alternate-root lookup.
+  The actual mutation path calls `cmd.run`, not group lookup or cmd.retcode.
+- `saltstack/tests/pytests/unit/modules/test_useradd.py:245-284,594-629`
+  supplies command absence/no-dispatch, false pre-info, unchanged true,
+  changed/post-mismatch false and exact shell-free argv vectors.
+  `saltstack/tests/unit/modules/test_useradd.py:132-150` supplies intermediate
+  empty-field and trailing-comma builder vectors. The chother mismatch tests
+  patch `info`, but `_update_gecos` reads `_get_gecos`; do not treat these as
+  proof of successful changed-value readback or all error paths.
+- `modules/exec/user/user.go:21-27,54-75,91-106,250-279` has unbounded,
+  error-suppressing passwd reads, raw `gecos`, error-detail-forwarding mutation
+  helpers and platform registration; no chother. Bootstrap calls exec/state
+  user registration (`internal/bootstrap/bootstrap.go:216,316`).
+  `modules/exec/user/freebsd_pw_user.go:652-693` has a distinct four-field pw
+  updater, not a Linux five-field implementation to reuse blindly.
+- `modules/state/user/user.go:17-118` lacks `other`; source companion
+  `saltstack/salt/states/user.py:269-273` compares it only when chother exists
+  and other is non-None. `docs/catalog/states/user.yaml:117-165,225-227`
+  maps present/default/test provenance. Targeted inspection of its mapped
+  `saltstack/tests/pytests/unit/states/test_user.py` found no chother/other-field
+  vector (the matches were group names); add derived synthetic state tests.
+- Revision verification: `saltstack/salt/states/user.py:707-721,727,818-841`
+  returns an empty Changes dict in test mode while putting proposed values in
+  Comment; applied Changes contains changed fields' **new** post-info values,
+  not old/new complete GECOS. `useradd.py:832-855` exposes five separate GECOS
+  fields in info. Mapped state test `test_user.py:274-317` pins new-value
+  homephone/fullname output but not chother; it was inspected, not executed.
+  `modules/state/user/user.go:33-35,43-105` instead uses unbounded user.info and
+  old/new maps for existing attributes; `internal/result/result.go:35-56`
+  establishes empty failure Changes and tri-state pending results. The selected
+  other-managed branch must not inherit that unbounded lookup or raw-data output.
+- Revision verification: `internal/process/trusted_unix.go:40-44,105-205`
+  permits `/bin`, `/usr`, `/usr/local`, **not `/sbin`**; containment is checked
+  before chain traversal and at each normalized symlink target. Existing
+  `internal/sysfiles/sysfiles.go:35-53` trims/skips malformed lines and does not
+  validate UID/GID; it is not the required strict local-reader contract.
+  `internal/process/runner.go:82-105` exposes the explicit env, shell,
+  timeout/capture and redaction controls used by the acceptance matrix below.
+- `internal/runtime/runtime.go:428-449,474-475` provides bounded reads with
+  no unbounded fallback; `internal/process/trusted.go:29-62` currently resolves
+  **dig only**. `trusted_unix.go:14-100` supplies fixed candidates, full-chain
+  ownership/mode/symlink checks and synthetic filesystem seams. Extending this
+  narrowly is an implementation prerequisite, not an already-working usermod
+  capability. `modules/exec/user/user_test.go:23-48` supplies fake/MemoryFS seams.
+- Original maintainer documentation retrieved 2026-10-09:
+  [shadow-utils usermod manual](https://raw.githubusercontent.com/shadow-maint/shadow/master/man/usermod.8.xml),
+  DESCRIPTION and OPTIONS `-c`/`-R`: usermod modifies system account files,
+  `-c` replaces the passwd comment field, `-R` changes root/config scope.
+  This moving upstream manual corroborates boundaries only; pinned Salt
+  remains the behavior authority, and no installed-version/native claim follows.
+  Context7 search had no matching shadow-utils library; unrelated results were
+  not used.
+
+**Source contract versus chosen safe boundaries.**
+1. Source: `chother(name, other, root=None)` delegates to `_update_gecos`.
+   None becomes empty; nonstrings use Python `str`; split GECOS at at most four
+   commas, pad missing fields to five, preserve the first four fields, replace
+   the fifth, and strip *all* trailing commas when building. Same value returns
+   true before resolving/launching usermod. A false pre-info returns false;
+   actual missing passwd lookup can raise KeyError, so it is not universally
+   a false return. Changed input runs `[resolved-usermod, '-c', full-gecos, name]`
+   without a shell, then compares readback `other` to the normalized request.
+   cmd.run output/retcode is not itself its success predicate. Trailing commas
+   in requested other can be lost by the builder and therefore yield false.
+2. Selected subset: Linux registration and dispatch only; local `/etc/passwd`
+   record only, no NSS/network discovery. Preserve required argument presence:
+   omitted other is invalid, explicit null clears, empty clears, strings and
+   integer scalar inputs are supported under this exact normalization contract:
+   accept dynamic built-in `string`, `int`, `int8`, `int16`, `int32`, `int64`,
+   `uint`, `uint8`, `uint16`, `uint32`, `uint64`, and a nil interface value when
+   explicitly present. Signed integers use `strconv.FormatInt(int64(v), 10)`;
+   unsigned integers must first be <=9223372036854775807, then use
+   `strconv.FormatUint(uint64(v), 10)`. The chosen numeric domain is
+   -9223372036854775808..9223372036854775807 inclusive, a bounded subset of
+   Python's integer stringification, not an account UID/GID range. No truncation,
+   wrap, float conversion or architecture-width parsing. Decimal output has no
+   plus sign, prefix, grouping or leading zeros; zero is `"0"`, negatives have
+   one leading minus. String inputs stay byte-for-byte unchanged, never parsed,
+   trimmed or canonicalized; numeric-looking strings outside the numeric domain
+   are still strings, subject to the separate UTF-8/content/4096-byte limits.
+   True aliases (`type Count = int64`, `byte`, `rune`) have the underlying
+   dynamic type and are accepted accordingly. Distinct defined/named types
+   (`type Count int64`, `type Text string`) are rejected, even with accepted
+   underlying kinds; no reflection or Stringer/fmt conversion. Reject `uintptr`,
+   `json.Number` (a distinct named string), float32/float64 including integral
+   values/NaN/infinity, bool, complex types, pointers (including typed nil),
+   slices/maps/structs and every other dynamic type. Use a small explicit type
+   switch and standard strconv formatting, shared by exec and managed state;
+   state nil remains unmanaged, whereas explicitly present exec nil clears.
+   Built-in int/uint have platform-dependent representability before this API
+   receives a value; every representable in-domain value formats identically
+   on 32/64-bit targets. Use int64/uint64 for portable boundary vectors, never
+   cast an out-of-range literal to int/uint to simulate a boundary.
+
+   Binding evidence: `config.Decode(target any, structured map[string]any,
+   provided map[string]string)` (`internal/config/decode.go:321-364`) routes
+   flags before structured values; interface fields receive flag text as string
+   (`:435-436`) and preserve structured dynamic types (`:565-575`). Registry
+   `ExecRegistry.Call(..., args any)` (`internal/runtime/runtime.go:159-179`)
+   does not itself decode/coerce this scalar. CLI decodeArgs/decodeStructured
+   (`internal/cli/cli.go:587-612`, `internal/cli/apply.go:197-216`) call that
+   binder. Ordinary CLI exec/state structured channels use
+   `internal/config/input.go:142-156` ParseStructured, which first uses
+   json.Unmarshal into map[string]any, without UseNumber: **on that JSON-first
+   path** numeric tokens arrive as float64 and are rejected, even `0` or `-1`.
+   CLI Apply uses `loadOperations` (`internal/cli/apply.go:21-47,118-157`):
+   yaml.Unmarshal decodes both YAML and JSON-shaped operation documents into
+   Args maps, then decodeStructured passes the maps to config.Decode without
+   scalar flags. **JSON-shaped Apply is not the JSON-first ParseStructured
+   decoder.** StateRegistry.Apply (`internal/runtime/runtime.go:203-210`) itself
+   only delegates typed args; it does not parse documents. Direct/registry typed
+   values and ordinary CLI scalar flags are separate entry paths. Quoted values
+   and CLI `--other=0007` stay strings; `--other=null` is literal text, not null.
+   YAML fallback is accepted only if its resulting
+   dynamic type is in the switch; do not widen acceptance based on token spelling.
+   This transport ceiling is deliberate: do not change global JSON/YAML decoding
+   or add json.Number parsing to manufacture Python-object parity. Salt
+   `_update_gecos` (`useradd.py:117-122`) uses None-to-empty and otherwise str;
+   its broader arbitrary-object behavior is outside this selected subset.
+
+   **Binding decision — opt-in pointer-to-any (2026-10-09).** Accept the senior
+   trace's representation, amended to make the absent current support and local
+   validation explicit. Exec argument field: `Other *any` with
+   `statekit:"required,name=other"`; state companion field: `Other *any` with
+   `statekit:"name=other"` (not required). Nil outer pointer denotes omitted;
+   nonnil outer pointer to a nil interface denotes supplied null; nonnil outer
+   pointer to string `""` denotes supplied empty. Required means *presence*,
+   not truthiness of the inner value. Numeric/type/content validation remains
+   the module normalizer's job, not the generic binder's. The accepted/rejected
+   dynamic types above refer to the **inner value**, not this outer *any wrapper.
+
+   Verified current gaps: `checkSupportedKind` (`decode.go:136-161`) rejects
+   *any; `assignFromFlag` (`:392-470`) and `assignFromValue` (`:529-625`) have no
+   pointer-to-interface branch. Thus the proposal describes a minimal future
+   extension, not current working support. `ValidateRequired` (`:366-385`)
+   already uses outer field IsZero: once *any is supported, nil pointer fails,
+   nonnil pointer passes even if its inner interface is nil/false/zero/empty.
+   `NewFlagSet` (`:205-245`) already falls back to string flags for non-bool
+   pointer fields; `ProvidedValues` (`:249-253`) visits only explicit flags.
+   `Decode` (`:348-360`) assigns only present keys with flags taking precedence.
+   CLI and apply allocate fresh zero args structs; no transport rewrite is needed.
+
+   Narrow binder extension: support **exact *any** (true aliases have the same
+   type), not pointers to distinct named interfaces, nonempty-method interfaces,
+   or arbitrary nested pointers. In both assignment functions allocate a fresh
+   pointer to the field's interface type using the existing reflect machinery;
+   its Elem is a valid zero/nil interface initially. For structured nil keep that
+   zero interface, then assign the nonnil pointer to the field. For nonnil raw
+   values set Elem from reflect.ValueOf(raw), preserving the dynamic type;
+   for explicit flags use the raw string. Never call reflect.ValueOf(nil) as a
+   Set source, dereference a raw typed-nil pointer, flatten interfaces, stringify
+   objects or rescue floats. No key means no assignment: a fresh target stays
+   nil; a reused target retains its existing pointer, preserving Decode's
+   existing omission semantics. Supplied null always replaces a reused value
+   with a fresh nonnil pointer to nil, not a nil outer pointer.
+
+   | Entry/input (with valid name) | Outer / inner representation | Exec result before effects | State other behavior |
+   |---|---|---|---|
+   | Direct/registry args with Other=nil; CLI omitted; ParseStructured JSON `{}`; YAML name-only map | nil outer | missing required other | unmanaged |
+   | Direct/registry pointer to nil interface; ParseStructured JSON `{"other":null}`; YAML `other: null` or `other:` | nonnil / nil | normalized empty, clear | unmanaged |
+   | Direct/registry pointer to string `""`; CLI `--other=`; ParseStructured JSON `{"other":""}`; YAML `other: ""` | nonnil / empty string | normalized empty, clear | managed clear |
+   | CLI `--other=null` or `--other=0007`; quoted JSON/YAML equivalents | nonnil / exact string | preserve literal string | manage literal string |
+   | Direct/registry/structured-map accepted integer; YAML fallback integer within approved dynamic type/range | nonnil / original integer | approved decimal normalization | manage normalized value |
+   | ParseStructured JSON `{"other":0}`/`{"other":-1}`; YAML floating scalar | nonnil / float64 | invalid other type | invalid other type |
+   | YAML bool/container, or direct/registry bool/container/named type/json.Number | nonnil / original dynamic value | invalid other type | invalid other type |
+   | Raw typed nil, e.g. `var v any = (*int)(nil)` with Other=&v | nonnil / typed-nil *int, not nil interface | invalid other type | invalid other type, not unmanaged |
+   | Structured null plus explicit CLI `--other=0007` | nonnil / string `"0007"` | flag wins; preserve string | flag wins; manage string |
+
+   The rows describe the chosen binding after implementation, not runtime proof.
+   JSON-first numeric rejection above is specific to ParseStructured, not Apply.
+   Accept only the enumerated normalizer types/range; no global UseNumber/YAML
+   schema change. The following parser-level expectations fix BIND-01.
+
+   **Pinned decoder evidence (static, no execution):** `go.mod:7` selects
+   gopkg.in/yaml.v3 v3.0.1 and `go.sum:29-30` contains its checksums. Inspected
+   that version's cached `resolve.go:47-65,124,191-208` and
+   `decode.go:224-249,554-619,729-764,789-814,847-850`: quoted scalars are strings;
+   null resolution creates nil but mapping insertion retains the key; interface
+   scalars retain resolved types; decimal integers first ParseInt(64), using int
+   iff its round-trip to int64 preserves the value, otherwise int64; then
+   ParseUint(64) yields uint64; failed integer parses for these decimal tokens
+   fall through to ParseFloat(64). Sequences are []any and string-key mappings
+   are map[string]any. Cached source/checksum presence is not fresh integrity
+   verification; the existing dependency-verification gate remains required.
+
+   In the table, P = ordinary ParseStructured with valid JSON object
+   `{"name":"synthetic","other":TOKEN}`; Y = ParseStructured's YAML fallback
+   with `name: synthetic` and `other: TOKEN`, **or** Apply loadOperations with
+   either YAML args or JSON-shaped `[{"state":"user.present","args":...}]`
+   (also test the operations-object form). The TOKEN column is scalar spelling,
+   not a CLI flag. All supplied rows have raw `other` map-key presence=true;
+   omitted row has presence=false. Types describe raw values before *any binding.
+   int64-extreme rows are int on 64-bit Go and int64 on 32-bit Go; the normalized
+   strings/results are architecture-independent for these vectors.
+
+   | TOKEN / key | P raw type | Y raw type | Approved normalizer/state outcome |
+   |---|---|---|---|
+   | omitted other | no key | no key | Exec missing-required before effects; state unmanaged |
+   | `null` (Y also empty `other:`) | nil interface | nil interface | Exec empty/clear; state unmanaged |
+   | `""` | string empty | string empty | empty/clear; state managed clear |
+   | `"0007"` | string `0007` | string `0007` | preserve `0007` |
+   | `0`, `-1` | float64 | int | P invalid-type; Y decimal `0` / `-1` |
+   | `-9223372036854775808` | float64 | int (64-bit) / int64 (32-bit) | P invalid-type; Y exact minimum decimal string |
+   | `9223372036854775807` | float64 | int (64-bit) / int64 (32-bit) | P invalid-type; Y exact maximum decimal string |
+   | `9223372036854775808`, `18446744073709551615` | float64 | uint64 | P invalid-type; Y integer-out-of-range |
+   | `-9223372036854775809`, `18446744073709551616` | float64 | float64 | invalid-type, never accept a rounded integer |
+   | `1.5`, `1.0` | float64 | float64 | invalid-type even for integral float |
+   | `true`, `false` | bool | bool | invalid-type |
+   | `[0]` | []any containing float64 | []any containing int | invalid-type/container |
+   | `{"x":0}` | map[string]any with float64 value | map[string]any with int value | invalid-type/container |
+
+   These finite decimal spellings are statically established; no unknown-type
+   expectation remains for this matrix. Other YAML tags/spellings are not made
+   new accepted types by this decision. Source-grounded expectations still need
+   independent parser-observation tests, not invented runtime evidence. Apply
+   is state-only: its omitted/null cases exercise unmanaged state behavior, not
+   an exec dispatch. Direct/registry values bypass both parsers and retain the
+   previously approved dynamic-type contract. An explicit ordinary CLI flag
+   overrides its structured-channel value as text; Apply has no per-argument
+   --other flag/precedence path. Preserve the existing Apply global --test rules.
+   All table outcomes still undergo the existing platform/name/byte/content and
+   operational gates. Clear/manage means desired semantics, not mutation approval.
+
+   Direct Execute must first reject wrong or typed-nil args pointers with a
+   fixed `user.chother: invalid arguments` error, then apply required validation
+   (missing other returns `config.MissingRequiredError{Name:"other"}`, as in
+   Decode), then unwrap Other exactly once and normalize before **any** FS,
+   resolver or Runner work. Empty/invalid name is also rejected before effects.
+   Registry Call delegates to Execute (`runtime.go:159-180`), not required
+   validation: the local guard is mandatory, with no generic registry change.
+   Typed nil *any as the outer field is omission; typed nil inside the interface
+   is an unsupported input. State omitted/inner-nil is unmanaged; an inner typed
+   nil is invalid and cannot bypass validation into its legacy path. Presence
+   success in Decode does not authorize dispatch of unsupported dynamic values;
+   the normalizer returns the fixed type/range errors already specified.
+
+   Alternatives: plain required any cannot preserve omitted versus null; a
+   separate presence wrapper/hook would add a type, special flag/assignment
+   support and caller conversion without improving these three states. Choose
+   *any as the smaller opt-in extension to existing pointer-option conventions.
+   The tradeoff is explicit pointer construction for Go callers and two nil
+   layers to test; no changes to plain any, existing pointer types, precedence,
+   public binder signatures or global JSON/YAML decoding are permitted.
+
+   Minimal future files/interfaces: `internal/config/decode.go` adds exact-*any
+   supported-kind and two assignment branches, retaining ValidateRequired and
+   NewFlagSet behavior; `internal/config/decode_test.go` adds binder regressions.
+   `modules/exec/user` adds the typed args/entry guard; `modules/state/user/user.go`
+   adopts the optional field; their existing module tests and the already-planned
+   `internal/cli/cli_test.go` and `tests/porting_debt_test.go` tests verify
+   transport paths. `input.go`, `cli.go`, `apply.go` and
+   `runtime.go` need no production signature/semantic change. Implementation
+   owner: `software-engineer-senior` (senior); architecture contract owner:
+   `solution-architect-lead` (lead). The earlier unresolved-design blocker is
+   superseded by this chosen design; implementation entry remains blocked until
+   fresh `security-engineer-lead` (lead) binding/trust review,
+   `qa-engineer-lead` (lead) contract/test review and `technical-writer-senior`
+   (senior) wording gate. Afterwards the established code review/sandbox/test/
+   documentation close sequence still applies. No implementation or test pass
+   is asserted; prior gates do not cover this extension. Existing native/HUMAN,
+   data-owner/retention, identity/lost-update, runtime and external-CI gates stay
+   distinct and unchanged.
+
+   Accept omitted/null root only; reject every nonnull root,
+   including empty and `/`, before filesystem/resolver/Runner access. This
+   deliberately defers alternate-root and non-Linux loader parity.
+3. Architect-selected safety limits (not Salt or native limits): 1 MiB
+   (1048576-byte) passwd read cap; separately, 4096 bytes each for account name,
+   raw supplied string `other` **before** comma stripping/building, normalized
+   other after integer/null conversion, existing complete GECOS, and final
+   complete-built-GECOS after stripping. These are UTF-8 byte counts, not rune,
+   character or UTF-16 units. Validate raw other before FS/resolver/Runner work;
+   a 4097-byte comma-only input fails even if stripping would yield empty.
+   Validate existing and built GECOS before no-op success or any state action.
+   Validate UTF-8 before field parsing;
+   reject NUL, colon, ASCII control characters/DEL in names and GECOS, empty
+   names and leading-hyphen names. Commas are allowed in other; preserve exact
+   split/build semantics, including trailing-comma mismatch. Reject malformed
+   or duplicate target records; report missing account as a fixed error,
+   matching the source error category rather than the mocked false-pre-info.
+   Strict reader: bounded `/etc/passwd` only, LF-separated lines (optional final
+   LF); ignore empty lines and lines whose first byte is `#`, no whitespace
+   trimming or CRLF normalization. Every other line must have exactly seven
+   colon-delimited fields, nonempty validated name, and UID/GID matching ASCII
+   `[0-9]+` with numeric range 0..4294967294 inclusive (selected unsigned-32-bit
+   subset, not an OS acceptance guarantee). Leading zeros are accepted and
+   preserved; signs, spaces, fractions, non-ASCII digits, empty values,
+   4294967295 and overflow fail. Reject control/DEL bytes anywhere in a record;
+   never return/store its password field. Match target name byte-for-byte, no
+   normalization/case folding; inspect the entire bounded file so a later
+   duplicate exact target cannot be missed. A malformed non-target record also
+   fails closed; missing target, duplicate target, malformed/over-limit data,
+   read error and unsupported bounded FS have distinct fixed value-free error
+   categories, no line/record/path values or wrapped causes. Reuse this strict
+   reader for exec pre/readback and every other-managed state read; never
+   silently use readPasswd/ParsePasswd's suppressed errors/unbounded fallback.
+4. Resolve only fixed Linux `/usr/sbin/usermod`, using the existing full-chain
+   checks with the unchanged existing roots `/bin`, `/usr`, `/usr/local`.
+   No `/sbin` candidate or root is added: even a `/sbin` symlink is outside this
+   tranche's initial-path boundary. Installations exposing only `/sbin/usermod`
+   are unsupported; a separately reviewed helper-specific trust-boundary design
+   is the upgrade path, not automatic fallback. Check root ownership of `/`,
+   every ancestor and symlink, no group/world-writable directories or final
+   binary, normalized containment of every target, bounded symlink traversal,
+   and a root-owned regular executable final file, using the existing chain
+   implementation. Resolving this new helper still needs fresh independent
+   security review; dig candidates/roots/behavior stay unchanged.
+   Never PATH, caller-supplied binaries, shell, sudo/doas,
+   elevation or dependency download; preserve existing dig policy unchanged.
+   Missing/unsupported/untrusted resolver means zero launches and fixed error.
+   One central Runner launch with exact argv `[resolved-usermod, '-c',
+   full-gecos, name]`, Shell=false, Dir=`/` (the process namespace root, not
+   inherited caller cwd), explicit environment containing exactly
+   `PATH=/usr/sbin:/usr/bin:/bin`, `LANG=C`, `LC_ALL=C` in that order, no inherited
+   variables, empty Stdin and PreserveStdout=false. No raw stdout/stderr, input
+   values or wrapped native/FS errors in diagnostics. Use the existing Command
+   redaction for nonempty name/request/built-comment values (no PreserveStdout),
+   a 30-second command timeout and 4096-byte per-stream capture caps; these are
+   selected resource ceilings, not native guarantees. Redaction is not secrecy
+   from OS process inspection: `-c` carries the full comment in argv, and passwd
+   comments are account metadata, not a secret store. Do not use real PII or
+   confidential GECOS data in fixtures; operational disclosure suitability
+   remains subject to the independent security/asset-owner gate.
+5. After successful command execution, bounded readback decides true/false;
+   execution error/nonzero exit yields a fixed error and no further mutation,
+   an intentional fail-closed divergence from Salt's unchecked cmd.run result.
+   Check cancellation before dispatch; no retry, rollback or false guarantee
+   of cancellation interrupting a completed mutation. Readback failure after
+   launch means unconfirmed state, not rollback. Compare success only for other;
+   do not claim that the snapshot preserved concurrent edits to the first four
+   fields. Replaying the full comment has a lost-update race, and account-name
+   deletion/recreation and resolver-check/launch races remain residual risks.
+   **Native execution is blocked** until an accountable operational control
+   serializes account creation/deletion/recreation/renames and all competing
+   GECOS writers across precheck, dispatch and readback, or an authorized human
+   explicitly accepts both same-name identity-retargeting and full-comment
+   lost-update risk for scoped targets after independent security review.
+   The evidence must identify control owner, scope, enforcement/participants and
+   validity window, or human approver/scope/expiry and these specific residuals.
+   A second read or UID comparison is not atomic and is not a substitute;
+   post-other equality proves neither account identity nor unrelated-field
+   preservation. Fake-only planning/testing can proceed after design gates
+   without pretending these operational conditions are satisfied.
+6. Companion state subset: optional `other` on existing Linux `user.present`;
+   omitted/null means unmanaged (distinct from exec null-clear), empty means
+   clear. With other requested, validate platform/name/other and all requested
+   UID/GID/home/shell values, then use the strict bounded local reader before
+   *any* action or lookup. Requested UID/GID use the decimal/range rule above;
+   requested home/shell are valid UTF-8, at most 4096 bytes, no NUL/control/DEL;
+   preserve existing empty-means-unmanaged behavior for these sibling options.
+   Consume UID/GID/home/shell/other from that bounded record; **never call or
+   fall through to user.info in the other-managed branch**, even on errors.
+   Validate existing/built GECOS before planning any sibling mutation. Derive
+   changes from this record; test mode plans all differences with zero resolver,
+   Runner, add or setter calls. Applied differences retain the existing sibling
+   order UID, GID, home, shell, then chother; omit equal/unmanaged actions. Each
+   failed action stops later actions. chother performs its own strict pre/readback
+   and only launches for a remaining difference. Treat `(false, nil)` as state
+   failure, not success. Fixed cause-free failure comments, no raw sibling
+   error forwarding on this branch; failure Changes stays empty by existing
+   result.Failure convention, which does not assert earlier actions were undone.
+   Reject non-Linux or missing-local-account other management
+   before account creation or any sibling action: creation-time other and NSS
+   parity are deferred, not silently ignored. Existing behavior with other
+   unmanaged stays unchanged. Do not widen public user.info or user.add here.
+7. State output decision: no old/new **complete GECOS** and no raw fifth-field
+   values in Changes, Comment, logs or additional metadata. On an applied other
+   difference confirmed true, return `Changes["other"] = {"changed": true}`;
+   on a planned test-mode difference use the same metadata with Result=null;
+   equal other contributes no Changes entry. Ordinary successful sibling changes
+   retain their existing old/new schema; failure uses the empty Changes described
+   above. This metadata-only other output and value-free Comment deliberately
+   diverge from Salt's new-value applied output and proposed-value test Comment,
+   and from StateKit's sibling old/new maps; there is no raw-value opt-in here.
+   Result.Name and existing sibling changes still contain account metadata;
+   CLI inputs, argv/process inspection and passwd storage can disclose GECOS.
+   Runner redaction hides neither argv from OS observers nor state/CLI input
+   capture. Before native/operational use, an authorized data/asset owner must
+   approve input suitability, allowed recipients/log sinks, retention and
+   deletion policy (including existing account metadata and argv exposure).
+   Record owner/scope/approval/expiry and retention decision without data values;
+   absent approval blocks operation. This data-owner gate is distinct from
+   native-account authorization and identity/lost-update risk disposition.
+
+**Sequenced execution vision / acceptance gates (future actions only).**
+1. `security-engineer-lead` (lead) independently reviews this design's local
+   account/trusted-helper boundary, snapshot races, disclosure and native/HUMAN
+   conditions; `qa-engineer-lead` (lead) independently approves the acceptance
+   matrix; `technical-writer-senior` (senior) checks scope/divergence clarity.
+   These are blocking preimplementation gates; architecture self-review is not
+   their replacement. Material disagreement returns to
+   `solution-architect-lead` (lead); no agent can waive a HUMAN boundary.
+   Acceptance artifacts: revised-design review findings/dispositions from those
+   roles and a scope/contract signoff by `solution-architect-lead` (lead), without
+   representing it as independent approval. All must refer to this revision;
+   the earlier reviews cannot be reused as a post-edit pass.
+2. `qa-engineer-lead` (lead) authors the independent synthetic test plan from
+   the cited fixtures/source, never executing upstream fixtures. Acceptance
+   artifact: source-to-synthetic-case matrix tied to PTD-TEST-1686, module tests
+   and `tests/porting_debt_test.go` registration/binding coverage. Required
+   measurable assertions (planned, not run):
+   - Direct/registry/CLI: canonical name on Linux only, missing name/other
+     rejected, null/empty name rejected, omitted root=null default, every
+     nonnull root rejected before FS/resolution/launch; exec null/empty other
+     clears versus omitted invalid, integer conversion versus unsupported
+     scalar/composite values; state omitted/null other unmanaged versus empty
+     managed-clear. Negative registration for darwin/windows/freebsd/openbsd/
+     netbsd/solaris/aix and other platform selectors, plus non-Linux Execute
+     rejection; no aliases/sibling registration changes.
+   - Integer normalization vectors (synthetic only; owner `qa-engineer-lead`
+     (lead), implementation owner `software-engineer-senior` (senior)):
+     `int(0)`, every fixed-width signed/unsigned zero, `uint(0)` -> `"0"`;
+     `int(-1)` -> `"-1"`; `int8(-128)` -> `"-128"`;
+     `int16(-32768)` -> `"-32768"`; `int32(-2147483648)` -> `"-2147483648"`;
+     `int64(-9223372036854775808)` -> `"-9223372036854775808"`;
+     `int64(9223372036854775807)` and `uint64(9223372036854775807)` both ->
+     `"9223372036854775807"`; `uint8(255)` -> `"255"`, `uint16(65535)` ->
+     `"65535"`, `uint32(4294967295)` -> `"4294967295"` (other is not UID/GID).
+     `uint64(9223372036854775808)` and `uint64(18446744073709551615)` reject
+     with fixed `user.chother: other integer out of range` errors and zero
+     FS/resolver/Runner calls; unsupported types use the distinct fixed
+     `user.chother: invalid other type` error, without values or wrapped causes.
+     No accepted signed built-in can represent MinInt64-1; do not overflow to
+     construct it. String `"-9223372036854775809"` remains that exact string;
+     strings `"0007"`, `"+7"`, `"9223372036854775808"`, `" 7 "` and `"é7"`
+     remain exact bytes; all still undergo the independent content/byte cap.
+     Alias Count=int64 with -1 and byte/rune zero accept; defined Count int64,
+     defined Text string, uintptr(0), json.Number("0"), float32(0), float64(0),
+     float64(-1), NaN/infinity, true/false, complex64(0), complex128(0),
+     *int(nil), []byte("7"), []any{1}, map[string]any{}, and struct{}{} reject.
+     Run the same switch cases through direct/registry arguments and structured
+     binder maps; CLI `--other=0007` and JSON `{"other":"0007"}` preserve
+     string, **ParseStructured** JSON `{"other":0}` / `{"other":-1}` reject float64. Explicit JSON
+     null-clear versus omitted-invalid is a required acceptance case for the
+     chosen *any design, pending fresh independent gates. No float-to-integer rescue. Pair
+     raw string limits of exactly 4096/4097 UTF-8 bytes with these numeric tests;
+     numeric range rejection and byte-cap rejection are separate categories.
+   - Opt-in binding regressions (owner `qa-engineer-lead` (lead), implementation
+     `software-engineer-senior` (senior)): exercise every presence-table row
+     through fresh direct/registry args, Decode maps, explicit flags and actual
+     JSON/YAML ParseStructured paths, with valid name and instrumented zero
+     effects on missing/type/range failures. Test ArgumentNames/NewFlagSet
+     acceptance of exact *any, rejection of *named-interface and nested/nonempty
+     interface pointers, and required nil-outer failure versus nonnil-inner-nil/
+     empty/zero/false pointer success at **binder** level (false still fails in
+     module normalization). Assert omission on reused targets retains pointer,
+     supplied null resets it to nonnil/nil, explicit empty stays nonnil/string,
+     flags override structured null/numbers, and typed-nil inner retains its
+     dynamic type until module rejection. Wrong/nil args pointers and missing
+     required values reject in both direct Execute and registry calls before
+     FS/resolver/Runner. State nil/null unmanaged, empty clear and typed-nil
+     invalid need separate cases. Keep `TestAnyFieldSupportsScalarFlagsAndStructuredValues`
+     (`decode_test.go:151-172`) unchanged; add plain-any preservation of map,
+     integer/float/bool/typed-nil/string values, plain-any explicit null resetting
+     to nil and required-any nil still failing (no new presence semantics).
+     Existing *string/*bool/*int/*int64/*[]string behavior/required/precedence
+     must remain unchanged. Cover transport-specific numeric outcomes and YAML
+     scalar types against the approved switch without coercion. These are
+     planned synthetic tests, not executed fixture/runtime evidence.
+   - BIND-01 parser/transport gates: `qa-engineer-lead` (lead) owns independent
+     acceptance; `software-engineer-senior` (senior) adds assertions in existing
+     files only. Extend `internal/config/input_test.go::TestParseStructured`
+     with every P/Y row above: assert comma-ok map lookup presence independently
+     of value, exact dynamic type (including int-vs-int64 by architecture),
+     exact integer/string value, and float64 **type**, not rounded numeric
+     equivalence as integer acceptance. Extend
+     `internal/cli/apply_test.go::TestApplyDocumentParsing` with both list and
+     operations-object YAML/JSON-shaped documents and assert each Args raw key/
+     type/value before binding; add decodeStructured assertions in that same
+     file for optional state *any and paired required exec template using those
+     parsed maps. Test missing exec fails binding with zero dispatch, while
+     Apply omitted/null state other is unmanaged and explicit empty is managed
+     clear. Numeric validation fails in module entry, not merely the binder;
+     FakeRunner/MemoryFS spies establish zero effects for type/range failure.
+     Extend existing `internal/cli/cli_test.go` with in-process ordinary
+     exec/state --config/channel cases: JSON zero fails, YAML integer zero
+     normalizes, --other=0007 overrides structured null/numeric values,
+     --other=null stays string text, and --other= overrides structured values
+     with empty. Apply end-to-end fake-runtime cases belong in existing
+     apply_test.go; do not substitute ordinary CLI JSON tests for its YAML path.
+     Existing decode_test.go plain-any/required-pointer regressions and all
+     pre-effect module guards remain mandatory. No parser/test ran here and
+     no new test file, decoder option or production transport change is needed.
+   - GECOS: five-field padding/split at four commas, intermediate empty fields,
+     preserved first four fields, Unicode and embedded commas, all-trailing-comma
+     stripping with resulting readback mismatch false. Name/raw-other/normalized-
+     other/existing-GECOS/built-GECOS each tested at 4096 and 4097 UTF-8 bytes;
+     multibyte vectors distinguish byte from rune count. A 4097-comma raw input
+     rejects before any FS even if the built result would be empty. Build-limit
+     rejection can occur with individually in-limit components. File vectors at
+     exactly 1048576 bytes and +1; invalid UTF-8/NUL/colon/control/DEL rejection
+     and no truncation. Synthetic fixtures contain no real account/PII data.
+   - Reader: seven fields exactly (six/eight reject), LF/optional final LF,
+     CRLF rejected, no trim, exact case-sensitive names, ignored empty/# lines,
+     missing target, duplicate target after a valid first match, malformed
+     unrelated record, bounded-FS absence/read faults; UID/GID empty/sign/space/
+     fraction/non-ASCII/overflow failures; 0, leading zeros and 4294967294 accepted,
+     4294967295 rejected. Assert fixed categories with zero resolver/Runner calls.
+   - Exec no-op: one bounded pre-read, true, zero resolver and Runner calls.
+     Changed success: one pre-read, one resolver request for usermod, exactly
+     one launch, one bounded readback, true only if other matches. Assert Command
+     Name is the resolved absolute path and Args exactly `['-c', built, name]`,
+     Shell=false, Dir=`/`, empty Stdin, Env exactly the three specified entries (no
+     inheritance), Timeout=30 seconds, both capture caps=4096 bytes,
+     PreserveStdout=false, and Redact contains each nonempty name/request/built
+     value (duplicates need not repeat). Differing stdout/stderr with identical
+     successful status/readback must not change the result; never return either.
+   - Helper: missing resolver/helper, nonroot-owned or writable ancestors/final
+     file, untrusted symlink/normalized escape/loop/nonregular/nonexecutable
+     target, PATH bait and `/sbin`-only installation produce zero launches;
+     PATH bait is never consulted. Existing dig resolution tests remain valid.
+     Changed post mismatch yields false; command error/nonzero/timeout stops
+     with fixed error and zero post-read; post-read failure reports unconfirmed
+     state. Marker-bearing errors/output never escape or get wrapped. Cancellation
+     before launch prevents it; after launch, no retry/rollback or claimed undo.
+   - State order: instrument FS/registry/resolver/Runner. With other managed,
+     platform/input validation and bounded precheck precede every action, and
+     user.info is never called (make it panic in fakes). Missing/malformed/bounds
+     failure with simultaneous creation/UID/GID/home/shell requests calls no
+     user.add and no setter; test mode likewise makes zero mutation/resolver
+     calls. Existing valid account plus combined differences orders UID, GID,
+     home, shell, chother; each failure prevents all later actions. Only-other
+     difference totals state pre-read plus exec pre/readback; equal other
+     creates no chother action. Repeat for empty/null/unmanaged and test mode.
+   - State Changes: successful other difference and pending other difference
+     have exactly `other: {changed: true}` for that attribute, not complete GECOS
+     or raw old/new other; no-op has no other key. Pending Result=null, success
+     Result=true; false/error Result=false and empty Changes. Combined successful
+     sibling changes keep their old/new schema; comments/errors/log renderings
+     never contain GECOS markers. Partial failure cannot imply rollback.
+   - Synthetic interleavings expose competing first-four-field overwrite and
+     same-name account recreation even when final other matches. A UID reread
+     is not asserted to close either race. Native eligibility must fail closed
+     in the acceptance checklist without operational-control evidence or scoped
+     human risk acceptance, separately from the other gates.
+3. `software-engineer-senior` (senior, account/security-sensitive) writes failing
+   Go tests, then the minimum implementation in `modules/exec/user` and its
+   Linux-only registration, narrow resolver changes/tests in
+   `internal/process/trusted*.go`, companion `modules/state/user/user.go` and
+   its tests, opt-in binder changes/tests in `internal/config/decode.go` and
+   `internal/config/decode_test.go`, CLI transport regression in
+   `internal/cli/cli_test.go`, and debt regression above. Reuse the bounded runtime and Runner;
+   do not change protected trust files or refactor sibling account operations.
+   `software-engineer-middle` (middle) may prepare routine synthetic fixture
+   data/test wiring only under that senior owner's review, not account logic
+   or executable-trust decisions. Separate failing-test observation from
+   implementation and passing-test observation; no invented RED evidence.
+   Acceptance artifact: bounded code/test diff and source-contract/divergence
+   checklist; nothing in this design marks implementation or fixture work done.
+4. `security-engineer-lead` (lead) independently reviews the implementation
+   before executable acceptance. `qa-engineer-lead` (lead) then runs focused
+   user/state/process/debt tests, race, vet, binding/bootstrap regression,
+   `go mod verify`, configured static/vulnerability checks and full applicable
+   suite in a freshly preflighted conforming sandbox. Verify nonroot/rootless,
+   no credentials/runtime sockets/host devices, denied network, RO source/cache,
+   isolated scratch, no-new-privileges and dropped capabilities. Report actual
+   resource gaps; fail closed on unverifiable critical isolation. Test fakes
+   never launch usermod or read real account databases. Cross-build/registration
+   negative tests protect non-Linux surfaces but are not native proof.
+   Acceptance artifacts: fresh security findings/disposition, observed sandbox
+   preflight, exact commands/outcomes and test-case matrix results, with native
+   and CI gaps labeled. No test execution is recorded by this design revision.
+5. `software-engineer-senior` (senior) appends one narrowly scoped
+   `TestR4UserChotherSyntheticContract` to existing `tests/differential/r4_test.go`,
+   using static source-derived expectations and in-memory exec/state seams.
+   No new test file, report writer, JSON sidecar, generator refactor or manifest
+   expansion. `security-engineer-lead` (lead) statically reviews the changed test
+   and reachable initialization before `qa-engineer-lead` (lead) executes only
+   that exact test in Podman; the EOF continuation below specifies commands.
+   The historical `TestR4DifferentialReport` calls BuildRuntime and is prohibited:
+   do not run it, set UPDATE_DIFFERENTIAL=1 or rewrite its historical report.
+   QA adds one focused user exec/state coverage profile and the minimal declared
+   compile-only checks, not whole-repository generation or a platform cross-product.
+   `technical-writer-senior` (senior) records/re-gates actual outcomes only here;
+   `qa-engineer-lead` (lead) independently reviews the final evidence. These can
+   satisfy the bounded synthetic subround acceptance after all listed gates,
+   not §2/§3/§5 full R4 closure. Broader catalog regeneration, historical report
+   consistency, lagged/runtime differential and native/CI requirements remain
+   separately open. Go statement coverage is not catalog coverage; no Salt runtime
+   parity, inferred green baseline or row completion. Preserve historical R4/R10
+   evidence and PTD status/count/order; later ledger edits/commit require separate
+   authorization. No Salt fixture execution in this tranche.
+6. `qa-engineer-lead` (lead) plans native Linux validation on separately confirmed
+   disposable, local-account targets: actual comment readback, native rejection,
+   permission denial, missing account and no changes to other account fields.
+   **Not actionable in this design task:** native mutation needs independent
+   security review, scoped authorized-HUMAN target/account authorization and
+   runtime preflight; native execution additionally requires the separately
+   evidenced lifecycle/rename/GECOS-writer serialization control **or** scoped
+   authorized-HUMAN acceptance of identity-retargeting and lost-update risks,
+   plus separate data-owner/output/retention approval as specified above.
+   `security-engineer-lead` (lead) reviews those evidence records;
+   `qa-engineer-lead` (lead) checks each gate independently before requesting
+   scoped approval from the authorized human/data owner, who cannot be replaced
+   by an agent. Missing operational evidence is a native blocker, not a blocker
+   to synthetic-only work after design gates. No root host
+   account tests, privileged container default, real data, or upstream fixture
+   execution. External CI is a separate validation gate, not implementation
+   work; `qa-engineer-lead` (lead) may request it only in a separately authorized
+   context. Protected CI configuration changes additionally require scoped
+   HUMAN approval and `security-engineer-lead` (lead) review.
+   Acceptance artifacts: native target/account authorization; serialization
+   ownership/control evidence or specific risk acceptance; data-owner retention/
+   disclosure disposition; runtime preflight and native results; external-CI
+   authorization/results as a distinct record. Do not combine these into a
+   blanket approval or infer them from the user's architecture delegation.
+
+**Architecture review / self-check.** One exec function and its bounded state
+consumer, no new public siblings/dependencies/infrastructure. Existing seams
+are sufficient except **two future missing seams**: the `/usr/sbin/usermod`
+trusted-helper resolver extension and the narrow exact-*any supported-kind/
+assignment extension in `internal/config/decode.go`. Neither is implemented by
+this design note; both require fresh independent review and tests. The BIND-01
+transport correction above has statically established expectations, but
+implementation entry remains pending fresh `qa-engineer-lead` (lead) parser/
+acceptance re-gate, `security-engineer-lead` (lead) input-validation-boundary
+re-gate and `technical-writer-senior` (senior) transport/self-check wording
+re-gate. `solution-architect-lead` (lead) owns disposition of any new mismatch;
+earlier approvals do not cover this edit, and no parser/test result is claimed.
+Root/NSS/non-Linux/create-time ceilings have explicit rejection and an upgrade
+path: a separately reviewed platform/root/NSS/create contract, source fixtures
+and native gates, not a fallback. No cloud/IAM/topology/container/CI changes are
+needed. Privilege remains the caller's; prose does not enforce sandbox isolation
+or authorize native mutation. Dependency manifests/locks were neither changed
+nor freshly verified in this pass; no fetch/resolution is proposed. Future
+changes require provenance/graph/checksum and 168-hour quarantine controls;
+fresh dependency integrity verification remains an executable acceptance gate.
+Universal plus Go/Python/shell/container/CI rules were loaded; their applicable
+human, static, prompt and runtime controls remain cumulative. This self-check
+finds the design ready for independent review, **not independently approved**.
+
+Only this EOF section was changed. No tests/builds/generators/fixtures, host
+operations, external CI, staging or commit ran. The unrelated dirty ADR and
+MySQL build-container contents were not read or changed. Prior Windows native,
+UNC-risk/HUMAN and external-CI gates remain open and are not prerequisites to
+fake-only design review of this independent Linux slice.
+
+### Current-status / assignment override — PTD-EXEC-1651 / PTD-TEST-1686
+
+Authoritative for **R4.USER-CHOTHER only** (2026-10-09, revised design awaiting
+fresh independent re-gating): this supplement explicitly supersedes
+PTD-EXEC-1651's historical `unassigned-next-round; round assignment required
+before implementation` entry text. Its current assignment is the additive
+Linux-local R4.USER-CHOTHER scope above. Assignment does **not** mean design
+approval, implementation entry clearance, implemented coverage or native proof.
+PTD-EXEC-1651 remains `[ ]` actionable; PTD-TEST-1686 remains `[ ]` actionable.
+All historical rows, statuses, counts, ordering and evidence remain unchanged;
+other partial rows remain partial/open.
+
+For this tranche, this supplement also supersedes PTD-TEST-1686's literal
+instruction to **execute mapped Salt fixtures**: the mapped Python files are
+source-only references, never executed. Contract evidence will be synthetic
+Go MemoryFS/FakeRunner/registry/CLI cases derived from pinned source and mapped
+fixture assertions, with explicit safe-divergence coverage. It must not be
+labeled upstream-fixture runtime parity or a Salt runtime differential.
+No implementation/tests/generation ran in this revision; no fresh coverage,
+differential completion or round-close status is claimed. New scope closes
+only after fresh R4 generator/coverage regeneration, additive differential
+scope/consistency, declared green gates and independent documentation review;
+native and external-CI boundaries remain separately visible. Historical R4
+baseline and later R10 work retain their evidence; no DAG priority is changed.
+`user.chhomephone` and `timezone.set_time_server` HUMAN gates are unchanged.
+
+**Verified review disposition / re-gate checklist.** Executor for architecture
+disposition: `solution-architect-lead` (lead); implementation has not started.
+- ARCH-01 accepted after checking `trusted_unix.go:40-44,130-177`: removed
+  `/sbin` candidate/root, specified `/usr/sbin`-only ceiling with existing
+  chain/containment checks, preserved dig rules, required fresh security review.
+- ARCH-02 accepted from pinned read/modify/write source: native blocked until
+  accountable lifecycle/rename/GECOS serialization or scoped specific HUMAN
+  identity-retargeting/lost-update acceptance; no second-read atomicity claim.
+- ARCH-05 accepted after checking `_build_gecos` trailing stripping: separate
+  raw/normalized/existing/built UTF-8 byte limits and comma-heavy +1 rejection.
+- QA/local-record clarification accepted against current permissive parser and
+  unbounded state lookup: exact fields/names/UID/GID/ranges/errors and bounded
+  other-managed branch before all actions; measurable command/order/result/
+  platform/binding/output/fault cases in the acceptance matrix.
+- QA/disclosure clarification refined against `states/user.py:707-721,832-841`,
+  `useradd.py:832-855` and mapped state test `:274-317`: Salt does **not** return
+  old/new complete GECOS; selected metadata-only other Changes is an explicit
+  safe divergence, not source parity. Added process/output/retention boundaries.
+- Compliance/documentation/tech-lead ledger and ADR findings accepted against
+  PTD rows and §0/§2/§3: operative overrides without row edits; additive R4 scope,
+  no retroactive R10 invalidation; R11 start and dependency exceptions retain
+  their separate ADR gates; no new ADR solely for this assignment.
+- Gate-separation clarification accepted against universal security rules:
+  fresh independent design/code/security/QA/docs review, native account HUMAN
+  authorization, operational identity/lost-update disposition, data-owner
+  retention/disclosure approval, runtime preflight and external CI stay distinct.
+  `security-engineer-lead` (lead), `qa-engineer-lead` (lead) and
+  `technical-writer-senior` (senior) must re-gate this revision; no post-edit
+  independent approval is asserted.
+
+### R4.USER-CHOTHER design gate status — 2026-10-09
+
+**Current status: preimplementation design clearance only.** Verified the
+current note through its prior true EOF and the latest independent result
+summaries: `security-architect-lead` (lead) reviewed BIND-01/transport distinction,
+with no blocking finding; `security-engineer-lead` (lead) preimplementation
+security design reviewed, including the focused binding/transport re-gates;
+`qa-engineer-lead` (lead) acceptance/parser transport matrix PASS;
+`compliance-officer-senior` (senior) PASS, prior disposition applicable with no
+new data/HUMAN gate; `technical-writer-senior` (senior) documentation PASS through
+the prior EOF; `tech-lead-senior` (senior) round-assignment/ledger gate PASS.
+These independent design/acceptance/documentation/round gates now pass. This
+current-status supplement supersedes earlier wording in this note that those
+preimplementation reviews remained pending, including the self-check and
+assignment/re-gate supplement. Their scopes and residual conditions are retained,
+not converted into implementation, execution, completion or operational approval.
+
+**Next execution order (future actions, not actions performed here):**
+1. `software-engineer-senior` (senior) may start only the bounded fake-only
+   implementation and author its synthetic tests: exact-*any binder support,
+   local entry/normalization guards, the scoped usermod resolver extension and
+   existing-account state companion. Preserve the approved transport matrix,
+   plain-any/pointer behavior, `/usr/sbin` restriction, caps, numeric domain,
+   metadata-only Changes, open PTD status and additive R4 sequencing. No tests,
+   builds, generators, real account reads, native launches or account operations
+   before the required static implementation review; test authorship is not
+   test execution. This ordering controls any earlier implied test-run sequence.
+2. After code is written, `security-engineer-lead` (lead) performs a **fresh
+   static implementation review before QA executes code**, covering both future
+   missing seams, account/state boundaries, disclosure, fixed errors and affected
+   regressions. Design PASS cannot substitute for this review; blocking findings
+   require remediation and fresh review before executable acceptance.
+3. Only after that review and specifically authorized execution scope,
+   `qa-engineer-lead` (lead) uses a freshly preflighted, fail-closed rootless/
+   nonroot offline sandbox for parser/binder/module/state fake tests, race/checkptr,
+   vet, module integrity, and R4 generator/coverage/differential checks as
+   specifically authorized. Retain denied network, no credentials/runtime sockets/
+   host account paths/devices, read-only source/cache and isolated scratch;
+   report actual resource gaps. Synthetic fakes never launch usermod or read real
+   account databases. Runtime preflight is mandatory and not replaced by approval.
+4. `technical-writer-senior` (senior) updates and re-gates the resulting evidence,
+   separating observed outcomes from static expectations, unrun tests and native/
+   CI gaps. Final independent security, QA, documentation and applicable close
+   gates remain cumulative; `solution-architect-lead` (lead) owns disposition of
+   any scope/contract disagreement. No historical gate is inherited by new scope.
+
+No R4.USER-CHOTHER implementation or new synthetic test implementation/execution
+currently exists or is claimed by this record. No native/user-account operation
+or operational use is approved; no upstream fixture execution/runtime-parity or
+external-CI claim is made. Separately **open**: native target/account/action HUMAN
+authorization; accountable account lifecycle/rename/GECOS-writer serialization
+or scoped HUMAN acceptance of identity-retargeting and lost-update risks;
+data-owner disclosure/access/retention/deletion approval; fresh runtime sandbox
+preflight; and external-CI authorization/validation. Compliance's no-new-gate
+disposition clears none of those existing conditions. PTD rows, counts, statuses,
+ordering, historical R4/R10 evidence and the current assignment override remain
+unchanged. This append records design clearance only—not completion or
+operational approval. No code/tests/builds/generators/fixtures/account operations,
+staging or commits occurred; unrelated dirty contents were not read or changed.
+
+### R4.USER-CHOTHER architecture amendment — R4-SEC-05 / R4-SEC-06 (2026-10-09)
+
+**Status: decisions selected; fresh independent re-gates pending before code
+remediation.** Prior design/doc clearance is historical, not approval of this
+amendment or the present patch. The existing accepted project policy recorded in
+plans/porting.md §7 (`2170-2179`) permits caller-PATH invocation in scope without
+executable-identity validation. This previously recorded project-level PATH
+boundary does not authorize any account operation or certify executable identity;
+the current request does not grant caller-PATH security-risk acceptance. No
+global PATH policy change.
+
+**Inspected evidence / guidance.** Present patch:
+`modules/exec/user/user.go:177-190,300-363` rejects empty/leading-hyphen names,
+invalid UTF-8/control/DEL/colon and >4096 bytes, dispatches Args
+`['-c', built, name]` with Shell=false, but currently leaves Dir unset.
+`internal/process/runner.go:477-494` sets cwd only for nonempty Dir and otherwise
+inherits it; ordinary helpers inherit environment when Env is nil.
+`modules/state/user/user.go:50-117,132-148` bounded-prechecks then invokes UID,
+GID, home, shell setters before chother.
+`modules/exec/user/user.go:503-511,590-640` sends those setters to bare `usermod`
+through the ordinary Runner; they do not resolve the trusted chother helper.
+Pinned `saltstack/salt/modules/useradd.py:131-138` uses exactly `-c`, built
+comment, name and python_shell=False, with no end-of-options token. The original
+shadow-utils maintainer manual previously retrieved and recorded in this note
+(`:10285-10291`, DESCRIPTION and `-c`) specifies replacement of the passwd
+comment field, with LOGIN as the operand. That existing vendor guidance was
+reused; no new fetch, installed-version verification or native execution occurred.
+No assertion about an uninspected vendor version's `--` support is necessary
+for the selected vector; source compatibility is not executable authenticity.
+
+**R4-SEC-05 — retain three Args, require safe explicit cwd.** Select
+Command.Name=resolved absolute usermod path, Args=`['-c', built, name]`,
+Shell=false, **Dir=`/`**, with the unchanged exact env/caps/timeout/redaction.
+Do not add `--` in this slice: `-c` consumes the next single argv element as the
+comment, and the exact-name final operand cannot start with `-`; shell-free
+dispatch does not split embedded spaces or reinterpret comment/name text as
+options. Keep the existing name validation before account FS/resolver/Runner,
+not just at CLI binding. In particular names `-`, `--`, `-R/tmp` and `--uid=0`
+are invalid; do not weaken validation because another separator was proposed.
+The alternative `['-c', built, '--', name]` would deliberately alter the pinned
+fixture vector without removing the needed name validation or identity races;
+it is unnecessary for this bounded contract. Dir=`/` removes caller-cwd influence
+for this command only, is a deliberate safety divergence from Salt/inherited
+cwd, and denotes the root inside the executing namespace, never authorization
+to access host root. A cwd/launch failure is a fixed command error, with no
+fallback to inherited cwd, retry, post-error readback or rollback claim. Neither
+Dir nor argv validation establishes binary identity or native validity of every
+syntactically admitted login. The current unset Dir needs code remediation;
+retaining Args does not claim R4-SEC-05 implemented or independently closed.
+
+**R4-SEC-06 — preserve mixed trust boundaries, no sibling refactor.** The
+previously recorded project-level PATH boundary permits existing UID/GID/home/shell
+setter invocation in scope, including combined existing-account other-managed state
+requests. Retain those combinations and their established order; do not reject
+them solely for lacking trusted executable resolution, and do not route/refactor
+siblings through the chother resolver. Exact trust precondition: the authorized
+caller/deployment intentionally supplies and trusts the launching process's PATH
+search order and reachable candidates, inherited environment and cwd, and the
+selected CLI's behavior under the caller's account privileges. StateKit does
+not inspect or certify their identity/ownership/provenance, PATH contents,
+environment or cwd. When that precondition cannot be established, operational
+use of those sibling actions must not proceed; no new scanner or inferred
+executable-authenticity guarantee is supplied. Execution permission is not
+derived from having passed module argument validation.
+
+Chother alone keeps its narrower `/usr/sbin/usermod` trusted-chain/absolute-path,
+explicit env/cwd and bounded Runner envelope. Those controls do **not** transfer
+to siblings, to the entire state, or to the legacy unmanaged-other branch.
+An unavailable chother helper discovered after sibling success can leave partial
+mutation; an already-equal other may dispatch only siblings and never resolve
+chother. Fixed state failure/empty Changes must not imply undo. Before any native
+combined use, scoped target/account/action HUMAN authorization must cover each
+requested sibling action (including UID/GID privilege consequences), explicitly
+acknowledge its caller-PATH/inherited-env/cwd boundary, and satisfy the separately
+open operational conditions below. This is an authorization scope requirement,
+not executable-identity validation and not a new global PATH restriction.
+
+**Acceptance and executor order (future, synthetic-only).**
+1. `security-architect-lead` (lead) reviews both architecture dispositions;
+   `security-engineer-lead` (lead) re-gates the command/combined-state trust
+   boundaries; `qa-engineer-lead` (lead) re-gates the acceptance consequences;
+   `technical-writer-senior` (senior) re-gates boundary/divergence wording.
+   `solution-architect-lead` (lead) owns disputed scope/contract disposition.
+   Prior gates do not cover this amendment; none is self-certified here.
+2. After those design gates, `software-engineer-senior` (senior) performs only
+   targeted remediation and synthetic-test authorship in the already-scoped
+   user exec/state test files. Preserve exact three Args/no `--`, assert
+   Shell=false and Dir=`/` plus the existing complete command envelope. Test
+   all listed option-like invalid names with zero account reads/resolution/
+   launch; a synthetic comment beginning `-u0` remains one `-c` value, not an
+   option. Use fake cwd/Runner failures to assert fixed marker-free error and
+   no inherited-cwd fallback/retry/post-error readback. No real cwd/account probe.
+3. `qa-engineer-lead` (lead) requires fake combined-state cases recording bounded
+   precheck then unchanged sibling order, bare usermod Names/flags and absence
+   of trusted resolver calls for siblings; only changed chother uses the trusted
+   absolute helper/Dir/env envelope. Simulate helper failure after a successful
+   sibling, sibling failure stopping later actions, equal-other sibling-only,
+   test mode/no-op zero launches and invalid precheck zero sibling dispatch.
+   PATH-bait fakes demonstrate *no identity validation* for siblings, not a
+   promised rejection; never execute any bait/helper. Retain sanitized failures,
+   metadata-only other Changes and disclosure/partial-mutation assertions.
+4. `security-engineer-lead` (lead) performs fresh static review of the remediated
+   patch before any tests/builds/generators; only then may `qa-engineer-lead`
+   (lead) execute specifically authorized fake acceptance in the fresh fail-closed
+   rootless/offline sandbox. `technical-writer-senior` (senior) records and
+   re-gates actual evidence afterward. R4-SEC-01..04 remain separate code/test
+   defects for `software-engineer-senior` (senior) targeted revision; neither
+   disposition here fixes or closes them. R4-SEC-05/06 design disposition is not
+   static patch acceptance, test PASS, native parity or round closure.
+
+All native-account authorization, account lifecycle/deletion-recreation/rename
+and competing-GECOS serialization **or specific scoped HUMAN acceptance of both
+identity-retargeting and lost-update risks**, data-owner disclosure/access/
+retention approval, runtime sandbox preflight, and external-CI gates remain
+separately open. No operational-use approval, upstream fixture execution or
+external CI claim. This task changed only this architecture note; no code,
+tests/builds/generators, account operations, fetches, staging or commits occurred;
+historical rows/statuses/count/order and unrelated dirty contents are untouched.
+
+### R4.USER-CHOTHER minimal synthetic continuation — 2026-10-09
+
+**Proposed revised gate; independent re-gates required before implementation.**
+This replaces the earlier proposal for a new test file/persistent JSON sidecar,
+two coverage profiles and an eight-target/package cross-product. User-reported
+focused QA evidence is 44 top-level tests/482 subtests, zero failures/skips,
+race/checkptr, focused vet and offline module verification PASS. Those results
+remain scoped evidence, not full R4 closure or a pass of the additions below.
+No code or executable gate is run by this documentation revision.
+
+**Why existing tooling suffices.** Inspected `tests/differential/r4_test.go`:
+its family/manifest (`:23-88`) excludes user and its legacy report test
+(`:90-151`) calls BuildRuntime and reads/compares the historical report by
+default; it writes/updates that report only with UPDATE_DIFFERENTIAL=1. Neither runs
+when selecting only the new exact test name. Package search found no TestMain;
+the two explicit init functions (`r9_test.go:1171-1178`,
+`r10_test.go:720-725`) only sort in-memory scenario lists. Bootstrap has no
+explicit init/test-main hook in the inspected source. Test selection does not
+disable package/dependency initialization: fresh static review of reachable
+initializers is still mandatory, not a claim that -run alone proves isolation.
+
+**R4-SYNTH-INIT-01 scope clarification:** based on the supplied static review,
+pinned modernc.org/libc initialization calls os.Executable() and os.Getpagesize()
+once at process startup. Permit only this bounded process-local executable-name
+and page-size metadata initialization in the already-reviewed rootless Podman
+container, subject to fresh runtime preflight. It is not account data, an
+external process launch, host `/etc` reading, network or OS fact detection,
+and does not authorize real host/account/filesystem/facts probes or operations.
+Continue to prohibit bootstrap.BuildRuntime, facts.Detect, NewRunner,
+OSFileSystem, actual `/etc/passwd`, usermod/useradd, Salt fixture execution,
+network/live services and external CI. Do not expose/persist initializer
+metadata or raw output beyond the existing private capture policy. No further
+dependency/kernel/module exploration, new test file, manifest, build-tag
+refactor or sidecar is required or authorized. All native/HUMAN/operational
+gates remain open. `security-engineer-lead` (lead) must perform a fresh
+read-only focused scope re-gate; this clarification is not execution approval.
+
+No broad bootstrap refactor, new build tag or package split is justified by
+these findings. CI is a read-only target reference, never an execution request.
+
+**One minimal sequence; exact executors and acceptance.**
+1. `solution-architect-lead` (lead) owns this bounded contract; independent
+   `security-engineer-lead` (lead), `qa-engineer-lead` (lead) and
+   `technical-writer-senior` (senior) re-gate this revised scope, expected cases
+   and evidence labels. No prior gate covers the new harness/commands.
+2. After those gates, `software-engineer-senior` (senior) appends one test and
+   only necessary local fake helpers in `tests/differential/r4_test.go`.
+   Use fresh registries/public user registrations, MemoryFS and a scripted fake
+   Runner/resolver; leave detected facts/providers absent. A static table cites
+   pinned Salt `useradd.py:62-138,706-725` and mapped fixture assertions, but does
+   not read/execute Salt at runtime or derive expected values from Go helpers.
+   Cover no-op, changed/clear readback, intermediate empties/trailing-comma
+   mismatch, null/omitted/type boundaries, helper/command failure, and state
+   unmanaged/test/change/partial-failure behavior. Assert exact command/Dir/env
+   and dispatch/read order with independently scripted post-records. Keep fake
+   fixture values synthetic and failures marker-free; no real OS/account reads,
+   NewRunner, OSFileSystem, facts.Detect, BuildRuntime or real helper execution.
+   Fail rather than skip for an unexpected non-Linux execution target. Do not
+   change r4Families/r4ScenarioManifest or add runtime report generation.
+   Any synthetic summary must contain only fixed scenario/outcome/reference IDs
+   and non-sensitive booleans/counts, never input values, argv, GECOS, raw errors
+   or diagnostics. Use fixed subtest names, not value-derived names. The expected
+   scenario IDs for this one test are: noop, changed-readback, clear-readback,
+   intermediate-empty, trailing-comma-mismatch, exec-null-clear,
+   exec-omitted-rejected, type-rejected, helper-rejected, command-failed,
+   state-unmanaged, state-test, state-changed, state-partial-failure. Freeze this
+   reviewed list before execution; no additional test/platform scope is implied.
+3. `security-engineer-lead` (lead) performs fresh static implementation review,
+   including imports/initialization and all fake/output paths, before any build/
+   test execution. `qa-engineer-lead` (lead) confirms exact-name selection and
+   uses the approved cached immutable image in rootless local Podman only.
+   Repeat fail-closed UID/caps/NNP/read-only source/cache/private scratch and
+   network=none/no-forwarded-proxy preflight. Keep offline Go settings and
+   explicitly set both TMPDIR=/scratch and GOTMPDIR=/scratch; leave host XDG
+   configuration as previously approved. Require private `/scratch` tmpfs with
+   size=2g (2147483648-byte maximum), mode=1777 and nosuid,nodev, without tmpfs
+   uid/gid options; keep --userns=keep-id and --user 1000:1000;
+   verify effective tmpfs capacity is bounded at or below that maximum and the
+   approved UID can write. Use umask 077; build/cache/profile/binaries stay here,
+   never raw command logs. This scratch capacity is not a per-log bound or a cgroup/memory guarantee; ENOSPC
+   is a gate failure, never grounds for an automatic size increase.
+   No pulls, host fallback, credential/socket/device mounts, unnecessary kernel/
+   route/library investigation or new tooling. Report actual cgroup gaps, not
+   resource guarantees. All commands below are future commands **inside** that
+   sandbox, working directory `/workspace`, after specifically scoped approval.
+   **R4-SYNTH-CAPTURE-03 / OUTPUT-01/02 — runtime-argument capture gate.**
+   Replace the earlier Bash/ulimit/cat pipeline entirely; no custom signal trap,
+   RLIMIT_FSIZE, JSON-parser dependency or new repository helper. Add these
+   arguments to the otherwise unchanged approved Podman launch:
+
+   ```text
+   --tmpfs /scratch:rw,nosuid,nodev,mode=1777,size=2g
+   --tmpfs /logs:rw,nosuid,nodev,noexec,mode=1777,size=2m
+   --ulimit=core=0:0
+   --env TMPDIR=/scratch --env GOTMPDIR=/scratch
+   ```
+
+   `/logs` is a dedicated private tmpfs, not a bind mount or a shared build/cache
+   directory. Its hard capacity must be exactly 2097152 bytes; only one regular
+   command log `/logs/command.log` may exist there at a time, with mode 0600.
+   **Tmpfs argument correction:** supplied QA preflight found Podman 5.7.1
+   rejects uid=1000/gid=1000 in --tmpfs options; no container was created and no
+   project command ran. Remove those options, do not invent substitutes or
+   change host ownership. Mode1777 permits the selected UID1000 to write without
+   assuming tmpfs-directory ownership. Both mounts are container-private, not
+   mode0700 directories and not multi-user security boundaries: the approved
+   container launches only UID1000, with caps dropped/NNP/rootless/private
+   namespaces, no other user contexts or host-user home/credential/socket/device
+   mounts. Only the reviewed source/module-cache read-only binds and empty masks
+    remain. The data boundary is that single-user/container isolation plus
+    restrictive file permissions, not the world-writable directory mode itself.
+    The host administrator and authorized Podman launcher remain trusted; this
+    container setup does not protect tmpfs contents or process memory from them.
+    Under these conditions this is the smallest sufficient synthetic-data design;
+   if preflight cannot establish them, stop blocked rather than changing flags.
+   Set umask 077 in the inert preflight and **every** later QA exec shell (umask
+   is process-local, not inherited from a separate earlier exec). Fresh redirected
+   logs/ordinary data files created from mode0666 must be mode0600 owned by
+   UID1000/GID1000; verify actual log owner/mode after each producer. This is not
+   a claim that every Go artifact is mode0600: owner-executable build/test binaries
+   may retain owner execute permission under that mask and remain in /scratch.
+   This mode1777/single-user correction requires fresh read-only
+   `security-engineer-lead` (lead), `qa-engineer-lead` (lead) and
+   `technical-writer-senior` (senior) re-gates before the next runtime attempt;
+   no argument acceptance, effective permissions or runtime PASS is claimed here.
+   **Fresh create/inspect acceptance, not documentation inference.** Supplied
+   read-only DevOps evidence identifies Podman 5.7.1 and the relevant flag names,
+   but local help does not establish value grammar, podman-run's man page is
+   absent and Context7 quota is exhausted. Do not fetch more documentation or
+   claim syntax confirmed by that help/man page. `qa-engineer-lead` (lead) must
+   create a fresh **unstarted** container with the exact proposed arguments,
+   `--pull=never` and the approved cached immutable image, then inspect it before
+   any start or project command. The following is the proposed sequence, not
+   commands executed in this design task:
+
+   ```text
+   image='localhost/statekit-r93p-go-deps:20260923@sha256:4230904fd0f3bdac68ac8dfd52d2d33727e56550321b234e006af3542dd844c0'
+   gate='r4-user-chother-gate'
+   podman --remote=false create --name "$gate" --interactive --pull=never --http-proxy=false --network=none --log-driver=none --userns=keep-id --user 1000:1000 --cap-drop=ALL --security-opt=no-new-privileges --read-only --pid=private --ipc=private --uts=private --cpus=2 --memory=2g --pids-limit=256 --volume "$PWD:/workspace:ro" --volume /vscode/go/pkg/mod:/modules:ro --tmpfs /scratch:rw,nosuid,nodev,mode=1777,size=2g --tmpfs /logs:rw,nosuid,nodev,noexec,mode=1777,size=2m --mount=type=tmpfs,destination=/workspace/.git,ro=true,tmpfs-mode=0555,notmpcopyup --mount=type=tmpfs,destination=/workspace/.gotmp,ro=true,tmpfs-mode=0555,notmpcopyup --ulimit=core=0:0 --workdir /workspace --env PATH=/usr/local/go/bin:/usr/bin:/bin --env HOME=/scratch --env GOCACHE=/scratch/cache --env TMPDIR=/scratch --env GOTMPDIR=/scratch --env GOMODCACHE=/modules --env GOPROXY=off --env GOTOOLCHAIN=local --env GOENV=off --env GOWORK=off --env GOFLAGS=-mod=readonly --entrypoint /bin/cat "$image" -
+   podman --remote=false inspect --format '{{.State.Status}} {{.State.Running}} {{.Image}} {{.ImageDigest}} {{.Config.User}} {{.HostConfig.Privileged}} {{.HostConfig.NetworkMode}} {{.HostConfig.ReadonlyRootfs}} {{.HostConfig.PublishAllPorts}} {{json .HostConfig.PortBindings}} {{json .HostConfig.Tmpfs}} {{json .HostConfig.Ulimits}} {{json .HostConfig.CapDrop}} {{json .HostConfig.CapAdd}} {{json .HostConfig.SecurityOpt}} {{.HostConfig.LogConfig.Type}}' "$gate"
+   podman --remote=false inspect --format '{{range .Mounts}}{{printf "%s %v " .Destination .RW}}{{end}}' "$gate"
+   ```
+
+   This example keeps an inert cat waiting on unused stdin; it runs no project
+   code. Before start require create/inspect success, State=created/not running,
+   the approved image ID/digest, UID1000, nonprivileged/rootless local execution,
+   network=none/no ports, zero capabilities/NNP, private namespaces, read-only
+   root/source/modules, only approved mount destinations, empty read-only mask
+   configurations, `/logs` size=2m/mode1777/nosuid,nodev,noexec and `/scratch`
+   size=2g/mode1777/nosuid,nodev, no tmpfs uid/gid options, the explicitly selected
+   process UID/GID1000, log-driver=none and core soft=hard=0.
+   QA checks any remaining required identity/capability/mask metadata with
+   selected inspect fields only, never an unfiltered environment/credential dump.
+   Do not start if parsing or inspection rejects/misrepresents any required
+   control. No fallback flags, upgrades, installs or host configuration changes.
+
+   Only after that acceptance may QA perform the **inert start**:
+
+   ```text
+   podman --remote=false start "$gate"
+   ```
+
+   Before any Go/project command, existing safe in-container preflight must
+   confirm effective UID/caps/NNP, read-only mounts/empty masks, `/logs` is empty
+   container-private tmpfs with effective mode1777/nosuid,nodev,noexec and exactly
+   2048 one-KiB blocks (`df -Pk /logs`), `/scratch` separately bounded at or below
+   2 GiB with effective mode1777/nosuid,nodev, and TMPDIR/GOTMPDIR both `/scratch`.
+   Do not require either mount directory to be owned by UID1000; record observed
+   mount ownership without treating it as a multi-user confidentiality control.
+   Set umask 077, verify its effective value and an inert UID1000 write/remove
+   probe in **both** mounts; probe files must be UID/GID1000 mode0600. Recheck
+   `/logs` emptiness and confirm shell core limit zero. Return
+   only fixed preflight outcomes/metadata, never raw directory/environment dumps.
+   Argument acceptance does not establish effective mount behavior; inert
+   verification is mandatory. If anything is absent/unsupported/unverifiable,
+   stop blocked with its fixed missing-check ID before project execution.
+   Cleanup only the container created by this attempt; a name collision is not
+   permission to remove a preexisting container. Preserve accepted cgroup-gap
+   reporting without new kernel/modules investigation or resource-bound claims.
+
+   **Core boundary:** core=0:0 is defense-in-depth for ordinary core files, not a
+   universal guarantee against host piped core handlers. This design neither
+   uses RLIMIT_FSIZE nor intentionally raises SIGXFSZ; do not investigate host
+   kernel/core_pattern or claim host crash-handler suppression. Mount no real
+   account files, PII, credentials, host homes/sockets/devices; reviewed fixtures
+   contain fixed synthetic data only. If a non-project container/tool crash
+   occurs, do not return/persist dumps or raw logs: stop, clean up this ephemeral
+   container and report only a fixed crash failure class. No runtime argument,
+   effective bound, preflight PASS or test evidence is claimed here. Fresh
+   `security-engineer-lead` (lead), `qa-engineer-lead` (lead) and
+   `technical-writer-senior` (senior) re-gates must cover this revised sequence.
+
+   Redirect **both** producer stdout/stderr directly to `/logs/command.log`;
+   never use tee, Podman output streaming, a host-side parser or container/host
+   durable logs for raw output. Preserve producer exit immediately, not through
+   a pipeline. Success requires exit 0, exactly that one non-symlink regular log
+   owned by UID/GID1000 with actual mode0600 after umask077 in that command shell,
+   length >0 and **strictly less than 2097152**, remaining mount free space and
+   complete expected test/package status records. A full mount, missing/corrupt/
+   incomplete log or ignored write failure is failure even if Go returns zero.
+   Overflow is ENOSPC/full capacity on `/logs`, not a deliberate SIGXFSZ; no
+   file-size signal handler or RLIMIT_FSIZE is used. Raw stdout/stderr may contain
+   bounded synthetic test values only and remains solely in this ephemeral log;
+   never return/persist it, even on failure. The dedicated empty mount's capacity bounds
+   the one log, unlike shared `/scratch`; it is not a cgroup/memory guarantee.
+
+   Process records in-container only. Use `go test -v` and already-present POSIX
+   shell/awk/wc/df tools, not a newly installed JSON parser/library or helper file.
+   QA may read/emit only allowlisted, fully anchored Go framework run/pass/fail/
+   skip records with fixed test/scenario names and numeric counts/statuses;
+   never dump/grep raw payloads to a tool return. Match names exactly, not substrings
+   in diagnostics. Static review must ensure the test/fake helpers do not emit
+   spoofed framework-status records; ambiguous/malformed/duplicate status records
+   fail closed. Freeze expected inventories before execution and require terminal
+   `PASS` plus `ok` for each expected package. Arbitrary output/diagnostic lines
+   remain private and are not evidence of counts. No JSON parsing is needed.
+
+   For each command below, capture its exit, perform size/free-space/completeness
+   and allowlist validation before proceeding, retain only sanitized aggregates
+   in QA memory, then remove `/logs/command.log` and verify `/logs` empty before
+   the next command. This includes coverage-summary and compile commands: they
+   need producer exit 0 and valid command-specific completion (parsed numeric
+   coverage summary, or the intended nonempty binary), not test-event counts.
+   If any command/check fails, stop without the next producer and return only
+   fixed failure class/exit/count metadata. Never disclose raw failure output;
+   keep it private until container teardown. Shell capture/control errors are
+   suppressed rather than forwarded as arbitrary diagnostics: use umask 077,
+   disable shell tracing and `exec 2>/dev/null` before producer commands (their
+   explicit `2>&1` still directs producer stderr into the private log). Detailed profile
+   and binaries remain under `/scratch`, never `/logs`, and no binary is run.
+   Command listings below are separate invocations, **not a batch script**:
+   capture `$?` immediately for each producer, validate/aggregate/remove its log
+   and verify `/logs` empty before the next listed command. Never overwrite an
+   unvalidated log. This plan changes no test inventory or compile target.
+4. `qa-engineer-lead` (lead) runs the synthetic comparison separately:
+
+   ```text
+   go test -v -count=1 -race -gcflags=all=-d=checkptr=2 -run '^TestR4UserChotherSyntheticContract$' ./tests/differential > /logs/command.log 2>&1
+   ```
+
+   Require exactly one top-level run/pass for TestR4UserChotherSyntheticContract,
+   positive subtest counts, run/pass for **every** expected fixed scenario ID,
+   zero failures/skips and matching package pass/exit 0. An absent expected
+   scenario/test, zero-test exit 0, unexpected test, cap violation or incomplete
+   record sequence fails closed. Validate only exact allowlisted framework-status lines;
+   returning only aggregate counts cannot replace the internal ID reconciliation.
+   Require zero real probes. Label it **source-derived synthetic contract evidence**, not a Salt
+   runtime differential. Never broaden the regex, run the whole package suite,
+    enable dns_contract. TestR4DifferentialReport invokes BuildRuntime and, by
+    default, reads and compares the historical report; it writes/updates only
+    when UPDATE_DIFFERENTIAL=1. Do not run it or set UPDATE_DIFFERENTIAL.
+5. `qa-engineer-lead` (lead) obtains **one** coverage profile for the two affected
+   user packages, using only their already-approved fake tests:
+
+   ```text
+   go test -v -count=1 -race -gcflags=all=-d=checkptr=2 -covermode=atomic -coverprofile=/scratch/r4-user-chother.cover.out -run '^(TestChother.*|TestPresentOther.*)$' ./modules/exec/user ./modules/state/user > /logs/command.log 2>&1
+   go tool cover -func=/scratch/r4-user-chother.cover.out > /logs/command.log 2>&1
+   ```
+
+   Before the run, QA freezes the exact expected top-level test names from the
+   reviewed TestChother*/TestPresentOther* source; reconcile every expected name
+   with exact framework run/pass records. Require positive top-level **and subtest** counts
+   separately for each of the two coverage packages, every expected test present,
+   both package passes, zero failures/skips and producer exit 0 with all log checks passed. A missing
+   package/test or zero-match success fails. Keep raw/dynamic names private;
+   report only aggregate counts and allowlisted fixed test names. Inspect actual
+   function/statement coverage internally, return only reviewed numeric coverage/
+   uncovered-branch aggregates, and invent no threshold, profile summation or
+   catalog-total claim. No raw coverage text is emitted or persisted.
+   Synthetic differential evidence stays separate from coverage. Existing focused
+   config/CLI/process/PTD, vet and module-verify PASS need not be gratuitously rerun
+   when their code is unchanged; final QA determines affected regression scope.
+6. `qa-engineer-lead` (lead) performs only these four compile-only commands:
+
+   ```text
+   CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go test -c -vet=off -o /scratch/r4-user-chother-darwin-amd64.test ./modules/exec/user > /logs/command.log 2>&1
+   CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go test -c -vet=off -o /scratch/r4-user-chother-windows-amd64.test.exe ./modules/exec/user > /logs/command.log 2>&1
+   CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 go test -c -vet=off -o /scratch/r4-user-chother-freebsd-amd64.test ./modules/exec/user > /logs/command.log 2>&1
+   CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go test -c -vet=off -o /scratch/r4-user-state-windows-amd64.test.exe ./modules/state/user > /logs/command.log 2>&1
+   ```
+
+   Basis: `.github/workflows/ci.yml:123-146` declares those target pairs;
+   exec user has Darwin/Windows alternate files, FreeBSD registration and shared
+   code importing the unix/!unix resolver branches. The single Windows state
+   compile checks the shared optional-*any consumer on a non-unix target, not
+   every state/target combination. Native Linux/amd64 compilation accompanies
+   the focused tests. No new R4 ABI/architecture-specific layout change justifies
+   repeating the independent R7 Windows 386/arm64 matrix or adding all CI arm64
+   targets here; those broader obligations are not claimed complete. All binaries
+   stay in /scratch and are **never executed**, on any platform. Stop on a failed
+   command/capture/size check and return only fixed class/numeric statuses for
+   review rather than expanding scope. Successful compile commands may emit
+   no output: for **compile-only** commands, permit a zero-length existing log
+   after exit 0, intended binary existence and all mount/cap/privacy checks;
+   do not apply that exception to either test command. Keep raw output private in tmpfs;
+   do not emit it to obtain troubleshooting help or execute a compiled binary.
+7. `technical-writer-senior` (senior) records exact commands/outcomes, observed
+   counts/skips, coverage, compile targets and residual gaps **only in
+   plans/porting.md**, under separately authorized evidence update, then re-gates
+   that text. `qa-engineer-lead` (lead) independently reviews final evidence.
+   Private `/logs` command output and `/scratch` profile/binaries are transient; never export/persist
+   raw logs, raw coverage text, fixture inputs or diagnostics. Durable results
+   contain only reviewed counts/exits/coverage aggregates, fixed test/scenario/
+   reference IDs and non-sensitive booleans. No durable sidecar/new report
+   file. Retain the scoped sanitized textual evidence under §3's retention
+   requirement; do not overwrite docs/differential/R4/report.yaml.
+
+**Acceptance ceiling / continuation.** With all fresh scoped gates green, these
+steps can satisfy the **bounded fake-only subround acceptance**: implemented
+Linux-local exec/state contract, additive source-derived synthetic comparison,
+observed statement coverage and the declared compile-only regressions. They do
+not complete full R4's §2/§3/§5 catalog-generation/report/runtime-parity-potential
+    and platform requirements. Overall R4 remains **partial**. PTD-EXEC-1651 and
+    PTD-TEST-1686 remain `[ ]` open/actionable; this note made no table-row,
+    status, count, or order edit. Broader generator/catalog and lagged/runtime differential obligations stay
+open, not waived by the source-only PTD-TEST-1686 override. Preserve historical
+R4/R10 evidence, DAG priority and separate R7/UNC/native-platform gates. Further
+bounded fake-only migration may be independently assigned without calling full
+R4 closed. Native target/account/action HUMAN authorization, lifecycle/deletion-
+recreation/rename and GECOS-writer serialization or specific HUMAN acceptance of
+identity-retargeting/lost-update, data-owner disclosure/retention, runtime
+preflight and external CI remain separately open; no operational approval.
+
+Only this plan prose was revised. No code/tests/builds/generator/fixtures/account
+operations, staging or commits occurred; unrelated dirty contents were not read.
+
+### R4.USER-CHOTHER bounded synthetic QA result — 2026-10-10
+
+Final `qa-engineer-lead` QA passed under the approved rootless local, nonremote
+Podman preflight. The pinned image was
+`localhost/statekit-r93p-go-deps:20260923@sha256:4230904fd0f3bdac68ac8dfd52d2d33727e56550321b234e006af3542dd844c0`
+(image ID `sha256:773f51501996a1306927f6f82901ead658720977369a1ffd198692912cd8be6a`);
+Go was `1.26.6 linux/amd64`. `XDG_RUNTIME_DIR` was unset. Execution used
+`network=none`, no ports or proxies, UID 1000/keep-id, capability sets zero,
+NNP=1, read-only root/source/module cache, tmpfs masks with no-copyup, and
+mode-1777 scratch/log tmpfs. Per-log caps applied; files were UID/GID 1000,
+mode 0600 under umask 077. `core=0:0` was defense only. No native/host account
+or fixtures were used. Cgroup limits were ineffective (`cpu.max=max`,
+`memory.max=max`, `pids.max=28619`); this is explicitly **not** a
+resource-bound claim.
+
+The source-derived synthetic contract command passed:
+`go test -v -count=1 -race -gcflags=all=-d=checkptr=2 -run '^TestR4UserChotherSyntheticContract$' ./tests/differential`
+— 1 top-level test, 14 scenario subtests, zero failures/skips. This is a
+source-derived synthetic contract only, not Salt runtime parity. The historical
+generator and `UPDATE_DIFFERENTIAL` were not run.
+
+The exact coverage command from the plan passed:
+`go test -v -count=1 -race -gcflags=all=-d=checkptr=2 -covermode=atomic -coverprofile=/scratch/r4-user-chother.cover.out -run '^(TestChother.*|TestPresentOther.*)$' ./modules/exec/user ./modules/state/user`
+— exec: 19 top-level tests/355 subtests; state: 13/16; combined: 32/371,
+zero failures/skips. `go tool cover -func=/scratch/r4-user-chother.cover.out`
+passed with exactly one valid `total` record: 22.9% statement coverage for the
+combined two-package profile. No threshold, branch, or catalog-coverage claim.
+
+Four compile-only commands passed; their binaries were never executed:
+Darwin/amd64 `modules/exec/user`, Windows/amd64 `modules/exec/user`,
+FreeBSD/amd64 `modules/exec/user`, and Windows/amd64 `modules/state/user`.
+Exact `go test -c -vet=off -o /scratch/...` commands are specified in the
+architecture plan above. There was no native runtime validation.
+
+Historical focused package results (44/482), `go vet`, and offline `go mod
+verify` were not rerun in this final container and are not combined with these
+results as one run. Only synthetic fake tests ran: no Salt fixture, usermod or
+useradd, real `/etc/passwd`, host account operation, live service, native
+platform, external GitHub CI, or operational action. The QA run made no
+source/doc edits; container scratch/logs were destroyed, and no raw logs,
+coverage profile, or binaries were persisted or exported.
+
+Overall R4 remains **partial**. PTD-EXEC-1651 and PTD-TEST-1686 remain `[ ]`
+open/actionable. Native, HUMAN data-owner/account identity/lost-update,
+PATH/runtime, and CI gates remain open. This supplemental record is outside
+the PTD table; table rows/statuses/counts/order and
+`user.chhomephone`/timezone gates remain unchanged.
+
+### R4.USER-CHOTHER final QA clarification — 2026-10-10
+
+Authoritative final-run clarification for the bounded QA above: the only permitted
+OS interaction was the process-local `modernc.org/libc` initializer
+(`os.Executable`/`os.Getpagesize`); this is not a zero-OS-interaction claim.
+The synthetic test and atomic-profile coverage results above are the final-run
+results. The combined profile's 22.9% is statement coverage only—not branch
+coverage, a threshold, or full R4/catalog coverage. Historical focused package
+tests (44 top-level/482 subtests, zero skips), focused `go vet`, and offline
+`go mod verify` passed earlier but were not rerun in the final container.
+
+The four previously listed compile-only commands passed: Darwin/amd64 exec,
+Windows/amd64 exec, FreeBSD/amd64 exec, and Windows/amd64 state; no generated
+binary was executed. The pinned rootless Podman image, Go version, UID, network,
+mount, capability, NNP, tmpfs/log permissions and ineffective cgroup values are
+as recorded in the preceding QA note; in particular, `core=0:0` was only an
+ordinary-core defense-in-depth setting. Logs were private, capped and transient;
+umask was 077 and created log files were mode 0600. No resource-bound claim is
+made.
+
+No upstream Salt fixture, `TestR4DifferentialReport`, `UPDATE_DIFFERENTIAL`,
+actual BuildRuntime/facts probe other than the initializer above, native/account
+command, real passwd access, live service, network, external CI, or operational
+action ran. No source changed; scratch was cleaned and no raw logs, coverage
+profile, or binaries were persisted. Overall R4 remains **partial**; the
+canonical historical differential, broader catalog/round, native/account/data-
+owner/HUMAN/PATH/lifecycle/CI gates remain open. PTD-EXEC-1651 and PTD-TEST-1686
+remain `[ ]` actionable. No R4 closure, release approval, or user-risk approval
+is recorded. This prose is outside the PTD table: no table row, status, count,
+or order changed, and all human/native/CI gates remain in force.

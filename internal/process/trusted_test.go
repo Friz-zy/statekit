@@ -98,6 +98,82 @@ func newTrustedDigTree() *fakeTrustedFS {
 	}
 }
 
+func newTrustedUsermodTree() *fakeTrustedFS {
+	return &fakeTrustedFS{
+		files: map[string]fakeFileInfo{
+			"/":                 {name: "/", mode: fs.ModeDir | 0o755, uid: 0},
+			"/usr":              {name: "usr", mode: fs.ModeDir | 0o755, uid: 0},
+			"/usr/sbin":         {name: "sbin", mode: fs.ModeDir | 0o755, uid: 0},
+			"/usr/sbin/usermod": {name: "usermod", mode: 0o755, uid: 0},
+		},
+	}
+}
+
+func TestTrustedUsermodResolvesOnlyUsrSbinCandidate(t *testing.T) {
+	fsys := newTrustedUsermodTree()
+	path, err := resolveTrustedUsermodOn(fsys, fakeOwner)
+	if err != nil || path != "/usr/sbin/usermod" {
+		t.Fatalf("usermod resolve = %q, %v; want /usr/sbin/usermod", path, err)
+	}
+	for _, path := range fsys.lstats {
+		if path != "/" && path != "/usr" && path != "/usr/sbin" && path != "/usr/sbin/usermod" {
+			t.Fatalf("usermod resolver inspected unexpected path %q", path)
+		}
+	}
+}
+
+func TestTrustedUsermodResolverRejectsHostileAndAlternateTrees(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(*fakeTrustedFS)
+	}{
+		{"missing usermod; sbin-only bait", func(f *fakeTrustedFS) {
+			delete(f.files, "/usr/sbin/usermod")
+			f.files["/sbin"] = fakeFileInfo{name: "sbin", mode: fs.ModeDir | 0o755, uid: 0}
+			f.files["/sbin/usermod"] = fakeFileInfo{name: "usermod", mode: 0o755, uid: 0}
+		}},
+		{"writable usr ancestor", func(f *fakeTrustedFS) {
+			f.files["/usr"] = fakeFileInfo{name: "usr", mode: fs.ModeDir | 0o777, uid: 0}
+		}},
+		{"user-owned sbin ancestor", func(f *fakeTrustedFS) {
+			f.files["/usr/sbin"] = fakeFileInfo{name: "sbin", mode: fs.ModeDir | 0o755, uid: 1000}
+		}},
+		{"user-owned final helper", func(f *fakeTrustedFS) {
+			f.files["/usr/sbin/usermod"] = fakeFileInfo{name: "usermod", mode: 0o755, uid: 1000}
+		}},
+		{"writable final helper", func(f *fakeTrustedFS) {
+			f.files["/usr/sbin/usermod"] = fakeFileInfo{name: "usermod", mode: 0o777, uid: 0}
+		}},
+		{"non-executable final helper", func(f *fakeTrustedFS) {
+			f.files["/usr/sbin/usermod"] = fakeFileInfo{name: "usermod", mode: 0o644, uid: 0}
+		}},
+		{"untrusted escape symlink", func(f *fakeTrustedFS) {
+			delete(f.files, "/usr/sbin/usermod")
+			f.links = map[string]string{"/usr/sbin/usermod": "/opt/usermod"}
+		}},
+		{"normalized escape symlink", func(f *fakeTrustedFS) {
+			delete(f.files, "/usr/sbin/usermod")
+			f.links = map[string]string{"/usr/sbin/usermod": "/usr/../opt/usermod"}
+		}},
+		{"symlink loop", func(f *fakeTrustedFS) {
+			delete(f.files, "/usr/sbin/usermod")
+			f.links = map[string]string{"/usr/sbin/usermod": "/usr/sbin/usermod"}
+		}},
+		{"nonregular final helper", func(f *fakeTrustedFS) {
+			f.files["/usr/sbin/usermod"] = fakeFileInfo{name: "usermod", mode: fs.ModeSocket, uid: 0}
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fsys := newTrustedUsermodTree()
+			tc.mutate(fsys)
+			if path, err := resolveTrustedUsermodOn(fsys, fakeOwner); !errors.Is(err, ErrTrustedCommandUnavailable) || path != "" {
+				t.Fatalf("resolve = %q, %v; want fail-closed unavailable", path, err)
+			}
+		})
+	}
+}
+
 func TestTrustedDigResolvesCanonicalCandidate(t *testing.T) {
 	fsys := newTrustedDigTree()
 	path, err := resolveTrustedDigOn(fsys, fakeOwner)
@@ -271,7 +347,7 @@ func TestTrustedDigUserOwnedSymlinkRejected(t *testing.T) {
 	}
 }
 
-func TestTrustedCommandNameAllowlistIsDigOnly(t *testing.T) {
+func TestTrustedCommandRejectsNamesOutsideFixedAllowlist(t *testing.T) {
 	runner := DefaultRunner{}
 	for _, name := range []string{"ps", "mysql", "dig.sh", "", "./dig", "/usr/bin/dig"} {
 		if _, err := runner.ResolveTrustedCommand(name); !errors.Is(err, ErrTrustedCommandUnsupported) {

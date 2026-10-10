@@ -5,14 +5,16 @@
 // writable binary would then be executed verbatim. TrustedCommandResolver
 // is the narrow opt-in capability that resolves a fixed helper name to a
 // trusted absolute executable path before any launch, so callers dispatch
-// the resolved path instead of a PATH lookup. The DefaultRunner
-// implementation is deliberately scoped to the single `dig` helper and the
-// canonical system locations; every other name, and every platform without
-// the required filesystem metadata, fails closed.
+// the resolved path instead of a PATH lookup. DefaultRunner resolves the
+// canonical dig candidates and, on Linux only, the fixed /usr/sbin/usermod
+// candidate. Every other name and unsupported platform fails closed.
 
 package process
 
-import "errors"
+import (
+	"errors"
+	goruntime "runtime"
+)
 
 var (
 	// ErrTrustedCommandUnsupported reports a helper name outside the fixed
@@ -37,27 +39,26 @@ type TrustedCommandResolver interface {
 	ResolveTrustedCommand(name string) (string, error)
 }
 
-// trustedDigName is the single helper name this implementation resolves.
+// These helper names are the complete fixed resolver allowlist.
 const trustedDigName = "dig"
 
+const trustedUsermodName = "usermod"
+
 // ResolveTrustedCommand implements TrustedCommandResolver for the default
-// Runner. Only the fixed `dig` helper is resolvable: candidates come from
-// the canonical system dig locations, and each one is resolved with full
-// symlink-chain verification — every component is Lstat'd, every
-// directory and symlink on the chain (including each symlink target's
-// chain) is root-owned with no group/world write on directories and the
-// final binary, every symlink target stays inside the approved system
-// roots, symlink hops are bounded against loops, and the final target is
-// an absolute regular executable that is root-owned and non-writable. An
-// unsupported name or platform fails closed with
-// ErrTrustedCommandUnsupported; a missing or untrusted binary fails
-// closed with ErrTrustedCommandUnavailable. A user-installed binary
-// outside the canonical candidates and approved roots is unsupported:
-// resolution never falls back to PATH, the working directory, or any
-// caller-controlled location, and no process is started.
+// Runner. It supports dig's canonical candidate set and, on Linux only, the
+// single /usr/sbin/usermod candidate. Unix candidates use full symlink-chain
+// verification; unsupported names/platforms and missing or untrusted helpers
+// fail closed. Resolution never falls back to PATH, the working directory,
+// or a caller-controlled location, and no process is started.
 func (DefaultRunner) ResolveTrustedCommand(name string) (string, error) {
-	if name != trustedDigName {
-		return "", ErrTrustedCommandUnsupported
+	if name == trustedDigName {
+		return resolveTrustedDig()
 	}
-	return resolveTrustedDig()
+	if name == trustedUsermodName {
+		if goruntime.GOOS != "linux" {
+			return "", ErrTrustedCommandUnsupported
+		}
+		return resolveTrustedUsermod()
+	}
+	return "", ErrTrustedCommandUnsupported
 }

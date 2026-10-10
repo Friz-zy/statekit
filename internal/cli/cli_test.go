@@ -15,8 +15,10 @@ import (
 	"github.com/friz-zy/statekit/internal/runtime"
 	pkgs "github.com/friz-zy/statekit/modules/exec/pkg"
 	exectest "github.com/friz-zy/statekit/modules/exec/test"
+	execuser "github.com/friz-zy/statekit/modules/exec/user"
 	statefile "github.com/friz-zy/statekit/modules/state/file"
 	statetest "github.com/friz-zy/statekit/modules/state/test"
+	stateuser "github.com/friz-zy/statekit/modules/state/user"
 	pkgprovider "github.com/friz-zy/statekit/providers/pkg"
 )
 
@@ -530,6 +532,160 @@ func TestExecEchoChannels(t *testing.T) {
 	code, _, errS := runApp(t, "exec", "test.echo")
 	if code != ExitInvalidInput || !strings.Contains(errS, "required") {
 		t.Fatalf("missing required text: code=%d err=%q", code, errS)
+	}
+}
+
+type cliUserFS struct {
+	runtime.FileSystem
+	boundedReads  int
+	unboundedRead int
+}
+
+func (f *cliUserFS) ReadFile(name string) ([]byte, error) {
+	f.unboundedRead++
+	return f.FileSystem.ReadFile(name)
+}
+
+func (f *cliUserFS) ReadFileBounded(name string, limit int64) ([]byte, error) {
+	f.boundedReads++
+	return runtime.ReadFileBounded(f.FileSystem, name, limit)
+}
+
+type cliUserRunner struct {
+	commands     []process.Command
+	resolveCalls []string
+	fs           runtime.FileSystem
+}
+
+func (r *cliUserRunner) Run(_ context.Context, cmd process.Command) process.CommandResult {
+	r.commands = append(r.commands, cmd)
+	if cmd.Name == "/usr/sbin/usermod" && len(cmd.Args) == 3 && cmd.Args[0] == "-c" {
+		data, err := r.fs.ReadFile("/etc/passwd")
+		if err == nil {
+			lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+			for i, line := range lines {
+				fields := strings.SplitN(line, ":", 7)
+				if len(fields) == 7 && fields[0] == cmd.Args[2] {
+					fields[4] = cmd.Args[1]
+					lines[i] = strings.Join(fields, ":")
+				}
+			}
+			_ = r.fs.WriteFile("/etc/passwd", []byte(strings.Join(lines, "\n")+"\n"), 0o644)
+		}
+	}
+	return process.CommandResult{ExitCode: 0}
+}
+
+func (r *cliUserRunner) ResolveTrustedCommand(name string) (string, error) {
+	r.resolveCalls = append(r.resolveCalls, name)
+	if name != "usermod" {
+		return "", process.ErrTrustedCommandUnsupported
+	}
+	return "/usr/sbin/usermod", nil
+}
+
+func newCLIUserApp(t *testing.T) (*App, *cliUserRunner, *cliUserFS) {
+	t.Helper()
+	mem := runtime.NewMemoryFS()
+	if err := mem.MkdirAll("/etc", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.WriteFile("/etc/passwd", []byte("synthetic:x:1000:1000:first,last,room,work,old:/home/synthetic:/bin/false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fsys := &cliUserFS{FileSystem: mem}
+	runner := &cliUserRunner{fs: mem}
+	rt := &runtime.Runtime{
+		Exec: runtime.NewExecRegistry(), States: runtime.NewStateRegistry(),
+		Facts: facts.ForTesting(facts.Overrides{}), Providers: runtime.NewProviderRegistry(),
+		Runner: runner, FS: fsys,
+	}
+	if err := execuser.Register(rt.Exec); err != nil {
+		t.Fatal(err)
+	}
+	if err := stateuser.Register(rt.States); err != nil {
+		t.Fatal(err)
+	}
+	return NewApp("test-version", func() (*runtime.Runtime, error) { return rt, nil }), runner, fsys
+}
+
+func TestChotherOrdinaryCLIJSONYAMLAndFlagTransport(t *testing.T) {
+	app, runner, fsys := newCLIUserApp(t)
+	code, _, errText := captureCode(t, app, "exec", "user.chother", "--config", `{"name":"synthetic"}`)
+	if code != ExitInvalidInput || !strings.Contains(errText, `missing required argument "other"`) || len(runner.commands) != 0 || fsys.boundedReads != 0 || fsys.unboundedRead != 0 {
+		t.Fatalf("missing other binding effects: code=%d err=%q commands=%v reads=%d/%d", code, errText, runner.commands, fsys.boundedReads, fsys.unboundedRead)
+	}
+
+	app, runner, fsys = newCLIUserApp(t)
+	code, _, errText = captureCode(t, app, "exec", "user.chother", "--config", `{"name":"synthetic","other":0}`)
+	if code != ExitFailed || !strings.Contains(errText, "user.chother: invalid other type") || len(runner.commands) != 0 || fsys.boundedReads != 0 {
+		t.Fatalf("JSON-first float64 must fail before effects: code=%d err=%q commands=%v reads=%d", code, errText, runner.commands, fsys.boundedReads)
+	}
+
+	app, runner, fsys = newCLIUserApp(t)
+	code, _, errText = captureCode(t, app, "exec", "user.chother", "--config", "name: synthetic\nother: 0\n")
+	if code != ExitOK || errText != "" || len(runner.commands) != 1 || !strings.HasSuffix(runner.commands[0].Args[1], ",0") {
+		t.Fatalf("YAML integer transport: code=%d err=%q commands=%+v", code, errText, runner.commands)
+	}
+	if fsys.boundedReads != 2 || fsys.unboundedRead != 0 {
+		t.Fatalf("YAML integer reads=%d/%d", fsys.boundedReads, fsys.unboundedRead)
+	}
+
+	app, runner, fsys = newCLIUserApp(t)
+	code, _, errText = captureCode(t, app, "exec", "user.chother", "--config", `{"name":"synthetic","other":-1}`)
+	if code != ExitFailed || !strings.Contains(errText, "user.chother: invalid other type") || len(runner.commands) != 0 || fsys.boundedReads != 0 {
+		t.Fatalf("JSON negative integer must remain float64 and fail: code=%d err=%q commands=%v reads=%d", code, errText, runner.commands, fsys.boundedReads)
+	}
+
+	app, runner, _ = newCLIUserApp(t)
+	code, _, errText = captureCode(t, app, "exec", "user.chother", "--config", `{"name":"synthetic","other":null}`)
+	if code != ExitOK || errText != "" || len(runner.commands) != 1 || runner.commands[0].Args[1] != "first,last,room,work" {
+		t.Fatalf("JSON null must clear other: code=%d err=%q commands=%+v", code, errText, runner.commands)
+	}
+
+	for _, structured := range []string{
+		`{"name":"synthetic","other":null}`,
+		`{"name":"synthetic","other":7}`,
+	} {
+		app, runner, _ = newCLIUserApp(t)
+		code, _, errText = captureCode(t, app, "exec", "user.chother", "--config", structured, "--other=0007")
+		if code != ExitOK || errText != "" || len(runner.commands) != 1 || !strings.HasSuffix(runner.commands[0].Args[1], ",0007") {
+			t.Fatalf("flag override config=%s: code=%d err=%q commands=%+v", structured, code, errText, runner.commands)
+		}
+	}
+
+	app, runner, _ = newCLIUserApp(t)
+	code, _, errText = captureCode(t, app, "exec", "user.chother", "--config", `{"name":"synthetic","other":"old"}`, "--other=null")
+	if code != ExitOK || errText != "" || len(runner.commands) != 1 || !strings.HasSuffix(runner.commands[0].Args[1], ",null") {
+		t.Fatalf("--other=null must be literal text: code=%d err=%q commands=%+v", code, errText, runner.commands)
+	}
+
+	app, runner, _ = newCLIUserApp(t)
+	code, _, errText = captureCode(t, app, "exec", "user.chother", "--config", `{"name":"synthetic","other":"old"}`, "--other=")
+	if code != ExitOK || errText != "" || len(runner.commands) != 1 || strings.HasSuffix(runner.commands[0].Args[1], ",") {
+		t.Fatalf("empty flag must override with clear: code=%d err=%q commands=%+v", code, errText, runner.commands)
+	}
+}
+
+func TestUserPresentOtherOrdinaryCLIStateTransport(t *testing.T) {
+	app, runner, fsys := newCLIUserApp(t)
+	code, out, errText := captureCode(t, app, "state", "user.present", "--config", `{"name":"synthetic","other":null}`, "-o", "json")
+	if code != ExitOK || errText != "" || len(runner.commands) != 0 || fsys.boundedReads != 0 || fsys.unboundedRead != 2 {
+		t.Fatalf("state null must remain unmanaged: code=%d out=%q err=%q commands=%v reads=%d/%d", code, out, errText, runner.commands, fsys.boundedReads, fsys.unboundedRead)
+	}
+
+	app, runner, fsys = newCLIUserApp(t)
+	code, out, errText = captureCode(t, app, "state", "user.present", "--config", `{"name":"synthetic","other":""}`, "-o", "json")
+	if code != ExitOK || errText != "" || len(runner.commands) != 1 || fsys.boundedReads != 3 || fsys.unboundedRead != 0 {
+		t.Fatalf("state empty must clear: code=%d out=%q err=%q commands=%v reads=%d/%d", code, out, errText, runner.commands, fsys.boundedReads, fsys.unboundedRead)
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("decode state output: %v", err)
+	}
+	changes, ok := result["changes"].(map[string]any)
+	if !ok || !reflect.DeepEqual(changes["other"], map[string]any{"changed": true}) || strings.Contains(out, "first,last,room,work") {
+		t.Fatalf("state output is not metadata-only: %s", out)
 	}
 }
 

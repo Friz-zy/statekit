@@ -147,6 +147,9 @@ func checkSupportedKind(t reflect.Type) error {
 		}
 		return fmt.Errorf("unsupported interface type %s (only any)", t)
 	case reflect.Pointer:
+		if isAnyPointer(t) {
+			return nil
+		}
 		// Pointer fields carry tri-state options: nil keeps the Salt
 		// function default when the caller omits the argument entirely.
 		// *[]string additionally distinguishes an explicitly empty list
@@ -158,7 +161,7 @@ func checkSupportedKind(t reflect.Type) error {
 		if t.Elem().Kind() == reflect.Slice && t.Elem().Elem().Kind() == reflect.String {
 			return nil
 		}
-		return fmt.Errorf("unsupported pointer type *%s (only *bool, *string, *int, *int64, *[]string)", t.Elem())
+		return fmt.Errorf("unsupported pointer type *%s (only *bool, *string, *int, *int64, *[]string, *any)", t.Elem())
 	case reflect.Slice:
 		switch t.Elem().Kind() {
 		case reflect.String:
@@ -178,6 +181,13 @@ func checkSupportedKind(t reflect.Type) error {
 	default:
 		return fmt.Errorf("unsupported argument type %s (supported: string, bool, int, int64, float64, []string)", t)
 	}
+}
+
+// isAnyPointer recognizes only the exact *any pointer shape. Other pointer
+// kinds, including pointers to named or nonempty interfaces, retain the
+// existing closed type allowlist.
+func isAnyPointer(t reflect.Type) bool {
+	return t == reflect.TypeOf((*any)(nil))
 }
 
 func specNames(specs []fieldSpec) []string {
@@ -393,6 +403,11 @@ func assignFromFlag(field reflect.Value, spec fieldSpec, raw string) error {
 	name := spec.name
 	if field.Kind() != reflect.Pointer {
 		// non-pointer path below
+	} else if isAnyPointer(field.Type()) {
+		ptr := reflect.New(field.Type().Elem())
+		ptr.Elem().Set(reflect.ValueOf(raw))
+		field.Set(ptr)
+		return nil
 	} else if isStringSliceType(field.Type().Elem()) {
 		// CLI list syntax follows the shared comma-list convention; an
 		// explicitly empty value stays a nonnil empty list. Declared
@@ -528,6 +543,17 @@ func boundedCLIList(raw string, limits *listLimits) ([]string, bool) {
 
 func assignFromValue(field reflect.Value, spec fieldSpec, v any) error {
 	name := spec.name
+	if isAnyPointer(field.Type()) {
+		ptr := reflect.New(field.Type().Elem())
+		if v != nil {
+			// Set the concrete raw value directly into the interface. This
+			// preserves typed nils and parser-specific dynamic types for the
+			// consuming module to validate without generic coercion.
+			ptr.Elem().Set(reflect.ValueOf(v))
+		}
+		field.Set(ptr)
+		return nil
+	}
 	if field.Kind() == reflect.Pointer && isStringSliceType(field.Type().Elem()) {
 		if v == nil {
 			// Structured null is an explicit unset on reused targets too:

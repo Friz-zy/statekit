@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -53,6 +54,101 @@ func TestParseStructured(t *testing.T) {
 	}
 	if _, err := ParseStructured([]byte("just a scalar")); err == nil {
 		t.Fatal("top-level scalar must be rejected")
+	}
+}
+
+// TestParseStructuredOtherNumericTransportMatrix pins the distinct raw
+// dynamic types produced by JSON-first input and YAML fallback. Binding is
+// intentionally not allowed to rescue JSON float64 numbers into integers.
+func TestParseStructuredOtherNumericTransportMatrix(t *testing.T) {
+	type parserRow struct {
+		name      string
+		token     string
+		jsonType  reflect.Type
+		jsonValue any
+		yamlType  reflect.Type
+		yamlValue any
+	}
+	typeOf := func(v any) reflect.Type { return reflect.TypeOf(v) }
+	rows := []parserRow{
+		{name: "null", token: "null", jsonValue: nil, yamlValue: nil},
+		{name: "empty string", token: `""`, jsonType: typeOf(""), jsonValue: "", yamlType: typeOf(""), yamlValue: ""},
+		{name: "quoted digits", token: `"0007"`, jsonType: typeOf(""), jsonValue: "0007", yamlType: typeOf(""), yamlValue: "0007"},
+		{name: "zero", token: "0", jsonType: typeOf(float64(0)), jsonValue: float64(0), yamlType: typeOf(int(0)), yamlValue: int(0)},
+		{name: "negative one", token: "-1", jsonType: typeOf(float64(0)), jsonValue: float64(-1), yamlType: typeOf(int(0)), yamlValue: int(-1)},
+		{name: "minimum signed 64", token: "-9223372036854775808", jsonType: typeOf(float64(0)), jsonValue: float64(-9223372036854775808)},
+		{name: "maximum signed 64", token: "9223372036854775807", jsonType: typeOf(float64(0)), jsonValue: float64(9223372036854775807)},
+		{name: "signed maximum plus one", token: "9223372036854775808", jsonType: typeOf(float64(0)), jsonValue: float64(9223372036854775808), yamlType: typeOf(uint64(0)), yamlValue: uint64(9223372036854775808)},
+		{name: "uint64 maximum", token: "18446744073709551615", jsonType: typeOf(float64(0)), jsonValue: float64(18446744073709551615), yamlType: typeOf(uint64(0)), yamlValue: uint64(18446744073709551615)},
+		{name: "below signed minimum", token: "-9223372036854775809", jsonType: typeOf(float64(0)), jsonValue: float64(-9223372036854775809), yamlType: typeOf(float64(0)), yamlValue: float64(-9223372036854775809)},
+		{name: "above unsigned maximum", token: "18446744073709551616", jsonType: typeOf(float64(0)), jsonValue: float64(18446744073709551616), yamlType: typeOf(float64(0)), yamlValue: float64(18446744073709551616)},
+		{name: "fraction", token: "1.5", jsonType: typeOf(float64(0)), jsonValue: float64(1.5), yamlType: typeOf(float64(0)), yamlValue: float64(1.5)},
+		{name: "decimal point", token: "1.0", jsonType: typeOf(float64(0)), jsonValue: float64(1), yamlType: typeOf(float64(0)), yamlValue: float64(1)},
+		{name: "true", token: "true", jsonType: typeOf(true), jsonValue: true, yamlType: typeOf(true), yamlValue: true},
+		{name: "false", token: "false", jsonType: typeOf(false), jsonValue: false, yamlType: typeOf(false), yamlValue: false},
+		{name: "array", token: "[0]", jsonType: typeOf([]any{}), jsonValue: []any{float64(0)}, yamlType: typeOf([]any{}), yamlValue: []any{int(0)}},
+		{name: "object", token: `{"x":0}`, jsonType: typeOf(map[string]any{}), jsonValue: map[string]any{"x": float64(0)}, yamlType: typeOf(map[string]any{}), yamlValue: map[string]any{"x": int(0)}},
+	}
+
+	min64, max64 := int64(-9223372036854775808), int64(9223372036854775807)
+	for i := range rows {
+		switch rows[i].name {
+		case "minimum signed 64":
+			rows[i].yamlValue = min64
+			if reflect.TypeOf(int(0)).Bits() == 64 {
+				rows[i].yamlType = typeOf(int(0))
+				rows[i].yamlValue = int(min64)
+			} else {
+				rows[i].yamlType = typeOf(int64(0))
+			}
+		case "maximum signed 64":
+			rows[i].yamlValue = max64
+			if reflect.TypeOf(int(0)).Bits() == 64 {
+				rows[i].yamlType = typeOf(int(0))
+				rows[i].yamlValue = int(max64)
+			} else {
+				rows[i].yamlType = typeOf(int64(0))
+			}
+		}
+	}
+
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			jsonInput := []byte(`{"name":"synthetic","other":` + row.token + `}`)
+			parsedJSON, err := ParseStructured(jsonInput)
+			if err != nil {
+				t.Fatalf("JSON parse: %v", err)
+			}
+			jsonValue, jsonPresent := parsedJSON["other"]
+			if !jsonPresent || (row.jsonType == nil && jsonValue != nil) ||
+				(row.jsonType != nil && reflect.TypeOf(jsonValue) != row.jsonType) ||
+				!reflect.DeepEqual(jsonValue, row.jsonValue) {
+				t.Fatalf("JSON raw other = %#v (%T), present=%v; want %#v (%v), present=true", jsonValue, jsonValue, jsonPresent, row.jsonValue, row.jsonType)
+			}
+
+			yamlInput := []byte("name: synthetic\nother: " + row.token + "\n")
+			if row.name == "null" {
+				yamlInput = []byte("name: synthetic\nother:\n")
+			}
+			parsedYAML, err := ParseStructured(yamlInput)
+			if err != nil {
+				t.Fatalf("YAML fallback parse: %v", err)
+			}
+			yamlValue, yamlPresent := parsedYAML["other"]
+			if !yamlPresent || (row.yamlType == nil && yamlValue != nil) ||
+				(row.yamlType != nil && reflect.TypeOf(yamlValue) != row.yamlType) ||
+				!reflect.DeepEqual(yamlValue, row.yamlValue) {
+				t.Fatalf("YAML raw other = %#v (%T), present=%v; want %#v (%v), present=true", yamlValue, yamlValue, yamlPresent, row.yamlValue, row.yamlType)
+			}
+		})
+	}
+
+	missing, err := ParseStructured([]byte(`{"name":"synthetic"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := missing["other"]; ok {
+		t.Fatal("omitted other must remain absent from the parsed map")
 	}
 }
 
