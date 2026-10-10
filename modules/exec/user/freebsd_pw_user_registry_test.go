@@ -98,7 +98,7 @@ func TestPwUserRegisterKeepsPlatformSurfaceCanonical(t *testing.T) {
 	}
 	openBSD := runtime.CurrentGOOS() == "openbsd"
 	for _, name := range []string{
-		"user.chhomephone", "user.chroomnumber", "user.chworkphone",
+		"user.chhomephone", "user.chworkphone",
 		"user.getent", "user.primary_group", "user.rename", "user.chgroups", "user.chfullname",
 	} {
 		if _, exists := reg.Get(name); exists {

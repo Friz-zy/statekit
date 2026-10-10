@@ -833,6 +833,505 @@ func TestChotherGecosSplitBuildAndTrailingCommaReadback(t *testing.T) {
 	}
 }
 
+func TestChroomnumberGecosIndexPreservationAndNoop(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		existing string
+		room     string
+		built    string
+		wantErr  string
+		wantBool bool
+	}{
+		{"field-one-change", "first,last,room,work,old", "42", "first,42,room,work,old", "", true},
+		{"intermediate-empty-fields", "Testing,old,,,other", "42", "Testing,42,,,other", "", true},
+		{"padded-empty-fields", "Testing,old,,,", "42", "Testing,42", "", true},
+		{"unchanged-with-trailing-other-commas", "first,last,room,work,old,,", "last", "", "", true},
+		{"changed-would-trim-unmanaged-other", "first,last,room,work,old,,", "42", "", "user.chroomnumber: room update would alter unmanaged GECOS fields", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, fsys, runner := newChotherRuntime(t)
+			setSyntheticGecos(t, fsys, tc.existing)
+			room := any(tc.room)
+			value, err := (chRoomNumberFunc{}).Execute(context.Background(), rt, &ChRoomNumberArgs{Name: "synthetic", RoomNumber: &room})
+			if tc.wantErr != "" {
+				if err == nil || err.Error() != tc.wantErr {
+					t.Fatalf("%s: fixed rejection mismatch", tc.name)
+				}
+			} else if err != nil {
+				t.Fatalf("%s: unexpected fixed error", tc.name)
+			}
+			got, ok := value.(bool)
+			if tc.wantErr != "" || !ok || got != tc.wantBool {
+				if tc.wantErr == "" {
+					t.Fatalf("%s: execution result mismatch", tc.name)
+				}
+			}
+			if tc.built == "" {
+				if fsys.boundedReads != 1 || len(runner.resolveCalls) != 0 || len(runner.commands) != 0 {
+					t.Fatalf("%s: no-op/rejection effects mismatch", tc.name)
+				}
+				return
+			}
+			if fsys.boundedReads != 2 || fsys.unboundedRead != 0 || !reflect.DeepEqual(runner.resolveCalls, []string{"usermod"}) || len(runner.commands) != 1 {
+				t.Fatalf("%s: changed-command effects mismatch", tc.name)
+			}
+			command := runner.commands[0]
+			if command.Name != "/usr/sbin/usermod" || !reflect.DeepEqual(command.Args, []string{"-c", tc.built, "synthetic"}) ||
+				command.Dir != "/" || !reflect.DeepEqual(command.Env, []string{"PATH=/usr/sbin:/usr/bin:/bin", "LANG=C", "LC_ALL=C"}) ||
+				command.Shell || command.Timeout != 30*time.Second || len(command.Stdin) != 0 || command.PreserveStdout ||
+				command.MaxStdoutBytes != 4096 || command.MaxStderrBytes != 4096 ||
+				!reflect.DeepEqual(command.Redact, []string{tc.built, "synthetic", tc.room}) {
+				t.Fatalf("%s: command contract mismatch", tc.name)
+			}
+		})
+	}
+}
+
+func TestValidateProspectiveGecosComposesActualRoomThenOtherChanges(t *testing.T) {
+	stringPointer := func(value string) *string { return &value }
+	for _, tc := range []struct {
+		name     string
+		existing string
+		room     *string
+		other    *string
+		wantErr  bool
+	}{
+		{"unmanaged", "N,a,W,H,O", nil, nil, false},
+		{"room-only", "N,a,W,H,O", stringPointer("b"), nil, false},
+		{"other-only", "N,a,W,H,O", nil, stringPointer("Z"), false},
+		{"room-then-other", "N,a,W,H,O", stringPointer("b"), stringPointer("Z"), false},
+		{"empty-room", "N,a,W,H,O", stringPointer(""), nil, false},
+		{"empty-other", "N,a,W,H,O", nil, stringPointer(""), false},
+		{"both-empty", "N,a,W,H,O", stringPointer(""), stringPointer(""), false},
+		{"equal-trailing-other-is-not-rebuilt", "N,a,W,H,O,,", stringPointer("a"), stringPointer("O,,"), false},
+		{"room-change-rejects-unmanaged-trailing-other", "N,a,W,H,O,,", stringPointer("b"), nil, true},
+		{"room-change-rejects-before-managed-other-replacement", "N,a,W,H,O,,", stringPointer("b"), stringPointer("Z"), true},
+		{"other-change-can-replace-trailing-other-without-room-change", "N,a,W,H,O,,", nil, stringPointer("Z"), false},
+		{"equal-room-does-not-normalize-before-other-change", "N,a,W,H,O,,", stringPointer("a"), stringPointer("Z"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			entry, err := parseLocalPasswd([]byte("synthetic:x:1000:1000:"+tc.existing+":/home/synthetic:/bin/false\n"), "synthetic")
+			if err != nil {
+				t.Fatal("synthetic passwd setup failed")
+			}
+			err = entry.ValidateProspectiveGecos(tc.room, tc.other)
+			if (err != nil) != tc.wantErr {
+				t.Fatal("prospective GECOS validation outcome mismatch")
+			}
+			if err != nil && (strings.Contains(err.Error(), "synthetic") || strings.Contains(err.Error(), "N,")) {
+				t.Fatal("prospective GECOS validation exposed account data")
+			}
+		})
+	}
+}
+
+func TestValidateProspectiveGecosRejectsOnlyCombinedOversize(t *testing.T) {
+	entry, err := parseLocalPasswd([]byte("synthetic:x:1000:1000:N,a,W,H,O:/home/synthetic:/bin/false\n"), "synthetic")
+	if err != nil {
+		t.Fatal("synthetic passwd setup failed")
+	}
+	for _, tc := range []struct {
+		name       string
+		roomBytes  int
+		otherBytes int
+		wantErr    bool
+	}{
+		{"combined-4097", 2045, 2045, true},
+		{"combined-4095", 2044, 2044, false},
+		{"combined-4096", 2045, 2044, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			room := strings.Repeat("r", tc.roomBytes)
+			other := strings.Repeat("o", tc.otherBytes)
+			if err := entry.ValidateRoomNumberBuild(room); err != nil {
+				t.Fatal("room-only full-build control was unexpectedly rejected")
+			}
+			if err := entry.ValidateOtherBuild(other); err != nil {
+				t.Fatal("other-only full-build control was unexpectedly rejected")
+			}
+			err := entry.ValidateProspectiveGecos(&room, &other)
+			if (err != nil) != tc.wantErr {
+				t.Fatal("combined full-build boundary mismatch")
+			}
+		})
+	}
+}
+
+func TestChroomnumberNormalizationBoundsAndC1(t *testing.T) {
+	type roomAlias = int64
+	type namedRoom string
+	var typedNil any = (*int)(nil)
+	valid := []struct {
+		value any
+		want  string
+	}{
+		{"0007", "0007"}, {int(0), "0"}, {int(-1), "-1"}, {int8(-2), "-2"},
+		{int16(3), "3"}, {int32(4), "4"}, {uint(5), "5"}, {uint8(6), "6"}, {uint16(7), "7"}, {uint32(8), "8"},
+		{int64(-9223372036854775808), "-9223372036854775808"},
+		{int64(9223372036854775807), "9223372036854775807"},
+		{uint64(9223372036854775807), "9223372036854775807"},
+		{roomAlias(7), "7"}, {"\u0085\u009f", "\u0085\u009f"},
+		{strings.Repeat("x", 4096), strings.Repeat("x", 4096)},
+		{strings.Repeat("é", 2048), strings.Repeat("é", 2048)},
+	}
+	for _, tc := range valid {
+		got, err := NormalizeRoomNumber(tc.value)
+		if err != nil || got != tc.want {
+			t.Fatal("roomnumber scalar normalization mismatch")
+		}
+	}
+	invalid := []struct {
+		value any
+		want  string
+	}{
+		{float64(1), "user.chroomnumber: invalid roomnumber type"},
+		{true, "user.chroomnumber: invalid roomnumber type"},
+		{complex64(1), "user.chroomnumber: invalid roomnumber type"},
+		{uintptr(1), "user.chroomnumber: invalid roomnumber type"},
+		{json.Number("7"), "user.chroomnumber: invalid roomnumber type"},
+		{namedRoom("7"), "user.chroomnumber: invalid roomnumber type"},
+		{typedNil, "user.chroomnumber: invalid roomnumber type"},
+		{uint64(9223372036854775808), "user.chroomnumber: roomnumber integer out of range"},
+		{"42,extra", "user.chroomnumber: comma in roomnumber is not allowed"},
+		{"bad:value", "user.chroomnumber: invalid roomnumber"},
+		{"bad\x00value", "user.chroomnumber: invalid roomnumber"},
+		{"bad\tvalue", "user.chroomnumber: invalid roomnumber"},
+		{"bad\nvalue", "user.chroomnumber: invalid roomnumber"},
+		{"bad\rvalue", "user.chroomnumber: invalid roomnumber"},
+		{"bad\x1fvalue", "user.chroomnumber: invalid roomnumber"},
+		{"bad\x7fvalue", "user.chroomnumber: invalid roomnumber"},
+		{string([]byte{0xff}), "user.chroomnumber: invalid roomnumber"},
+		{strings.Repeat("x", 4097), "user.chroomnumber: roomnumber exceeds limit"},
+		{strings.Repeat("é", 2049), "user.chroomnumber: roomnumber exceeds limit"},
+	}
+	for _, tc := range invalid {
+		_, err := NormalizeRoomNumber(tc.value)
+		if err == nil || err.Error() != tc.want {
+			t.Fatal("roomnumber scalar rejection mismatch")
+		}
+	}
+}
+
+func TestChroomnumberNameAndGecosByteLimits(t *testing.T) {
+	maxName := strings.Repeat("n", 4096)
+	rt, fsys, runner := newChotherRuntime(t)
+	room := any("42")
+	_, err := (chRoomNumberFunc{}).Execute(context.Background(), rt, &ChRoomNumberArgs{Name: maxName, RoomNumber: &room})
+	if err == nil || err.Error() != "user.chroomnumber: account not found" || fsys.boundedReads != 1 || len(runner.resolveCalls) != 0 || len(runner.commands) != 0 {
+		t.Fatal("4096-byte roomnumber account name boundary mismatch")
+	}
+
+	rt, fsys, runner = newChotherRuntime(t)
+	room = any("42")
+	_, err = (chRoomNumberFunc{}).Execute(context.Background(), rt, &ChRoomNumberArgs{Name: strings.Repeat("n", 4097), RoomNumber: &room})
+	if err == nil || err.Error() != "user.chroomnumber: invalid name" || fsys.boundedReads != 0 || len(runner.resolveCalls) != 0 || len(runner.commands) != 0 {
+		t.Fatal("4097-byte roomnumber account name boundary mismatch")
+	}
+
+	const builtLimit = 4096
+	const roomSeparator = ","
+	const otherFields = ",W,H,O"
+	roomAtLimit := "42"
+	firstFieldBytes := builtLimit - len(roomSeparator) - len("99") - len(otherFields)
+	firstField := strings.Repeat("a", firstFieldBytes)
+	existing := firstField + ",99,W,H,O"
+	expectedAtLimit := firstField + ",42,W,H,O"
+	if len(existing) != builtLimit || len(expectedAtLimit) != builtLimit {
+		t.Fatal("4096-byte roomnumber GECOS fixture construction mismatch")
+	}
+	rt, fsys, runner = newChotherRuntime(t)
+	setSyntheticGecos(t, fsys, existing)
+	room = any(roomAtLimit)
+	value, err := (chRoomNumberFunc{}).Execute(context.Background(), rt, &ChRoomNumberArgs{Name: "synthetic", RoomNumber: &room})
+	if err != nil || value != true || fsys.boundedReads != 2 || len(runner.commands) != 1 || runner.commands[0].Args[1] != expectedAtLimit || len(runner.commands[0].Args[1]) != builtLimit {
+		t.Fatal("4096-byte roomnumber GECOS boundary mismatch")
+	}
+
+	roomOverLimit := "420"
+	expectedOverLimit := firstField + "," + roomOverLimit + otherFields
+	if len(expectedOverLimit) != builtLimit+1 {
+		t.Fatal("4097-byte roomnumber GECOS fixture construction mismatch")
+	}
+	rt, fsys, runner = newChotherRuntime(t)
+	setSyntheticGecos(t, fsys, existing)
+	room = any(roomOverLimit)
+	_, err = (chRoomNumberFunc{}).Execute(context.Background(), rt, &ChRoomNumberArgs{Name: "synthetic", RoomNumber: &room})
+	if err == nil || err.Error() != "user.chroomnumber: built GECOS exceeds limit" || fsys.boundedReads != 1 || len(runner.resolveCalls) != 0 || len(runner.commands) != 0 {
+		t.Fatal("4097-byte roomnumber GECOS boundary mismatch")
+	}
+}
+
+func TestChroomnumberC1NameAndExistingGecosRemainValid(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		account string
+		gecos   string
+		built   string
+	}{
+		{"c1-name", "r4\u0085", "N,old,W,H,O", "N,42,W,H,O"},
+		{"c1-existing-gecos", "synthetic", "N,old,\u009f,H,O", "N,42,\u009f,H,O"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, fsys, runner := newChotherRuntime(t)
+			fixture := tc.account + ":x:1000:1000:" + tc.gecos + ":/home/synthetic:/bin/false\n"
+			if err := fsys.FileSystem.WriteFile(passwdPath, []byte(fixture), 0o644); err != nil {
+				t.Fatal("C1 synthetic passwd setup failed")
+			}
+			runner.afterRun = func(cmd process.Command) {
+				if cmd.Name != "/usr/sbin/usermod" || len(cmd.Args) != 3 || cmd.Args[0] != "-c" {
+					return
+				}
+				data, err := fsys.FileSystem.ReadFile(passwdPath)
+				if err != nil {
+					return
+				}
+				fields := strings.Split(strings.TrimSuffix(string(data), "\n"), ":")
+				if len(fields) == 7 && fields[0] == cmd.Args[2] {
+					fields[4] = cmd.Args[1]
+					_ = fsys.FileSystem.WriteFile(passwdPath, []byte(strings.Join(fields, ":")+"\n"), 0o644)
+				}
+			}
+			room := any("42")
+			value, err := (chRoomNumberFunc{}).Execute(context.Background(), rt, &ChRoomNumberArgs{Name: tc.account, RoomNumber: &room})
+			if err != nil || value != true || fsys.boundedReads != 2 || len(runner.commands) != 1 ||
+				!reflect.DeepEqual(runner.commands[0].Args, []string{"-c", tc.built, tc.account}) {
+				t.Fatal("valid C1 roomnumber/name/GECOS vector mismatch")
+			}
+		})
+	}
+}
+
+func TestChroomnumberPasswdFileByteLimit(t *testing.T) {
+	record := "synthetic:x:1:2:g:h:s\n"
+	padding := strings.Repeat("#", (1<<20)-len(record)-1) + "\n"
+	if len(padding)+len(record) != 1<<20 {
+		t.Fatal("one-MiB roomnumber fixture construction mismatch")
+	}
+	rt, fsys, _ := newChotherRuntime(t)
+	if err := fsys.FileSystem.WriteFile(passwdPath, []byte(padding+record), 0o644); err != nil {
+		t.Fatal("one-MiB roomnumber fixture setup failed")
+	}
+	if _, err := readLocalPasswdForRoomNumber(rt, "synthetic"); err != nil || fsys.boundedReads != 1 {
+		t.Fatal("one-MiB roomnumber passwd input was not accepted")
+	}
+	if err := fsys.FileSystem.WriteFile(passwdPath, []byte(padding+record+"#"), 0o644); err != nil {
+		t.Fatal("over-limit roomnumber fixture setup failed")
+	}
+	if _, err := readLocalPasswdForRoomNumber(rt, "synthetic"); err == nil || err.Error() != "user.chroomnumber: passwd exceeds limit" || fsys.boundedReads != 2 {
+		t.Fatal("one-byte-over roomnumber passwd input was not rejected by the bounded reader")
+	}
+}
+
+func TestChroomnumberRejectsUnsafeInputsBeforeEffects(t *testing.T) {
+	var typedNilRoot any = (*int)(nil)
+	for _, tc := range []struct {
+		name    string
+		args    any
+		goos    string
+		missing string
+		want    string
+	}{
+		{"nil-args", nil, "linux", "", "user.chroomnumber: invalid arguments"},
+		{"typed-nil-args", (*ChRoomNumberArgs)(nil), "linux", "", "user.chroomnumber: invalid arguments"},
+		{"missing-roomnumber", &ChRoomNumberArgs{Name: "synthetic"}, "linux", "roomnumber", ""},
+		{"missing-name", &ChRoomNumberArgs{RoomNumber: anyValue("42")}, "linux", "name", ""},
+		{"empty-root", &ChRoomNumberArgs{Name: "synthetic", RoomNumber: anyValue("42"), Root: ""}, "linux", "", "user.chroomnumber: unsupported root"},
+		{"slash-root", &ChRoomNumberArgs{Name: "synthetic", RoomNumber: anyValue("42"), Root: "/"}, "linux", "", "user.chroomnumber: unsupported root"},
+		{"alternate-root", &ChRoomNumberArgs{Name: "synthetic", RoomNumber: anyValue("42"), Root: "/image"}, "linux", "", "user.chroomnumber: unsupported root"},
+		{"typed-nil-root", &ChRoomNumberArgs{Name: "synthetic", RoomNumber: anyValue("42"), Root: typedNilRoot}, "linux", "", "user.chroomnumber: unsupported root"},
+		{"leading-hyphen-name", &ChRoomNumberArgs{Name: "-synthetic", RoomNumber: anyValue("42")}, "linux", "", "user.chroomnumber: invalid name"},
+		{"invalid-name-control", &ChRoomNumberArgs{Name: "bad\nname", RoomNumber: anyValue("42")}, "linux", "", "user.chroomnumber: invalid name"},
+		{"invalid-name-utf8", &ChRoomNumberArgs{Name: string([]byte{0xff}), RoomNumber: anyValue("42")}, "linux", "", "user.chroomnumber: invalid name"},
+		{"comma-room", &ChRoomNumberArgs{Name: "synthetic", RoomNumber: anyValue("ROOM_ECHO_MARKER,extra")}, "linux", "", "user.chroomnumber: comma in roomnumber is not allowed"},
+		{"wrong-type", &ChRoomNumberArgs{Name: "synthetic", RoomNumber: anyValue(float64(42))}, "linux", "", "user.chroomnumber: invalid roomnumber type"},
+		{"non-linux", &ChRoomNumberArgs{Name: "synthetic", RoomNumber: anyValue("42")}, "darwin", "", "user.chroomnumber: unsupported platform"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, fsys, runner := newChotherRuntime(t)
+			_, err := executeChroomnumberForGOOS(context.Background(), rt, tc.args, tc.goos)
+			if tc.missing != "" {
+				var missing *config.MissingRequiredError
+				if !errors.As(err, &missing) || missing.Name != tc.missing {
+					t.Fatalf("%s: required argument category mismatch", tc.name)
+				}
+			} else if err == nil || err.Error() != tc.want {
+				t.Fatalf("%s: fixed error mismatch", tc.name)
+			}
+			if fsys.boundedReads != 0 || fsys.unboundedRead != 0 || len(runner.resolveCalls) != 0 || len(runner.commands) != 0 {
+				t.Fatalf("%s: rejected input caused account effects", tc.name)
+			}
+		})
+	}
+}
+
+func TestChroomnumberReadbackAndRunnerFailuresAreFixed(t *testing.T) {
+	t.Run("command-success", func(t *testing.T) {
+		rt, fsys, runner := newChotherRuntime(t)
+		setSyntheticGecos(t, fsys, "N,old,W,H,O")
+		room := any("42")
+		value, err := (chRoomNumberFunc{}).Execute(context.Background(), rt, &ChRoomNumberArgs{Name: "synthetic", RoomNumber: &room})
+		if err != nil || value != true || fsys.boundedReads != 2 || len(runner.commands) != 1 || !reflect.DeepEqual(runner.resolveCalls, []string{"usermod"}) {
+			t.Fatal("roomnumber changed-readback contract mismatch")
+		}
+		command := runner.commands[0]
+		if command.Name != "/usr/sbin/usermod" || !reflect.DeepEqual(command.Args, []string{"-c", "N,42,W,H,O", "synthetic"}) ||
+			command.Dir != "/" || !reflect.DeepEqual(command.Env, []string{"PATH=/usr/sbin:/usr/bin:/bin", "LANG=C", "LC_ALL=C"}) || command.Shell ||
+			command.Timeout != 30*time.Second || len(command.Stdin) != 0 || command.PreserveStdout || command.MaxStdoutBytes != 4096 || command.MaxStderrBytes != 4096 ||
+			!reflect.DeepEqual(command.Redact, []string{"N,42,W,H,O", "synthetic", "42"}) {
+			t.Fatal("roomnumber command boundary mismatch")
+		}
+	})
+
+	t.Run("readback-mismatch", func(t *testing.T) {
+		rt, fsys, runner := newChotherRuntime(t)
+		setSyntheticGecos(t, fsys, "N,old,W,H,O")
+		runner.afterRun = func(_ process.Command) { setSyntheticGecos(t, fsys, "N,wrong,W,H,O") }
+		room := any("42")
+		value, err := (chRoomNumberFunc{}).Execute(context.Background(), rt, &ChRoomNumberArgs{Name: "synthetic", RoomNumber: &room})
+		if err != nil || value != false || fsys.boundedReads != 2 || len(runner.commands) != 1 {
+			t.Fatal("roomnumber mismatch readback contract mismatch")
+		}
+	})
+
+	t.Run("readback-error", func(t *testing.T) {
+		rt, fsys, runner := newChotherRuntime(t)
+		setSyntheticGecos(t, fsys, "N,old,W,H,O")
+		runner.afterRun = func(process.Command) { fsys.readErr = errors.New("synthetic readback failure") }
+		room := any("42")
+		_, err := (chRoomNumberFunc{}).Execute(context.Background(), rt, &ChRoomNumberArgs{Name: "synthetic", RoomNumber: &room})
+		if err == nil || err.Error() != "user.chroomnumber: state unconfirmed" || fsys.boundedReads != 2 || len(runner.commands) != 1 {
+			t.Fatal("roomnumber readback error boundary mismatch")
+		}
+	})
+
+	for _, tc := range []struct {
+		name        string
+		configure   func(*runtime.Runtime, *trackedUserFS, *usermodTestRunner, context.CancelFunc)
+		wantError   string
+		wantResolve int
+		wantRun     int
+	}{
+		{"resolver-failure", func(_ *runtime.Runtime, _ *trackedUserFS, runner *usermodTestRunner, _ context.CancelFunc) {
+			runner.resolveErr = errors.New("synthetic resolver failure")
+		}, "user.chroomnumber: trusted helper unavailable", 1, 0},
+		{"untrusted-path", func(_ *runtime.Runtime, _ *trackedUserFS, runner *usermodTestRunner, _ context.CancelFunc) {
+			runner.path = "/sbin/usermod"
+		}, "user.chroomnumber: trusted helper unavailable", 1, 0},
+		{"command-error", func(_ *runtime.Runtime, _ *trackedUserFS, runner *usermodTestRunner, _ context.CancelFunc) {
+			runner.afterRun = nil
+			runner.result.Err = errors.New("synthetic runner failure")
+		}, "user.chroomnumber: command failed", 1, 1},
+		{"command-timeout", func(_ *runtime.Runtime, _ *trackedUserFS, runner *usermodTestRunner, _ context.CancelFunc) {
+			runner.afterRun = nil
+			runner.result.Err = context.DeadlineExceeded
+		}, "user.chroomnumber: command timed out", 1, 1},
+		{"output-truncated", func(_ *runtime.Runtime, _ *trackedUserFS, runner *usermodTestRunner, _ context.CancelFunc) {
+			runner.afterRun = nil
+			runner.result.StdoutTruncated = true
+		}, "user.chroomnumber: command output limit exceeded", 1, 1},
+		{"stderr-truncated", func(_ *runtime.Runtime, _ *trackedUserFS, runner *usermodTestRunner, _ context.CancelFunc) {
+			runner.afterRun = nil
+			runner.result.StderrTruncated = true
+		}, "user.chroomnumber: command output limit exceeded", 1, 1},
+		{"output-over-cap", func(_ *runtime.Runtime, _ *trackedUserFS, runner *usermodTestRunner, _ context.CancelFunc) {
+			runner.afterRun = nil
+			runner.result.Stdout = make([]byte, 4097)
+		}, "user.chroomnumber: command output limit exceeded", 1, 1},
+		{"stderr-over-cap", func(_ *runtime.Runtime, _ *trackedUserFS, runner *usermodTestRunner, _ context.CancelFunc) {
+			runner.afterRun = nil
+			runner.result.Stderr = make([]byte, 4097)
+		}, "user.chroomnumber: command output limit exceeded", 1, 1},
+		{"runner-output-limit", func(_ *runtime.Runtime, _ *trackedUserFS, runner *usermodTestRunner, _ context.CancelFunc) {
+			runner.afterRun = nil
+			runner.result.Err = process.ErrOutputLimit
+		}, "user.chroomnumber: command output limit exceeded", 1, 1},
+		{"cwd-failure", func(_ *runtime.Runtime, _ *trackedUserFS, runner *usermodTestRunner, _ context.CancelFunc) {
+			runner.afterRun = nil
+			runner.result.Err = errors.New("synthetic cwd failure")
+			runner.beforeRun = func(command process.Command) {
+				if command.Dir != "/" {
+					t.Fatal("roomnumber cwd was not explicitly pinned")
+				}
+			}
+		}, "user.chroomnumber: command failed", 1, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, fsys, runner := newChotherRuntime(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			tc.configure(rt, fsys, runner, cancel)
+			room := any("42")
+			_, err := (chRoomNumberFunc{}).Execute(ctx, rt, &ChRoomNumberArgs{Name: "synthetic", RoomNumber: &room})
+			if err == nil || err.Error() != tc.wantError || fsys.boundedReads != 1 || len(runner.resolveCalls) != tc.wantResolve || len(runner.commands) != tc.wantRun {
+				t.Fatalf("%s: fixed failure boundary mismatch", tc.name)
+			}
+		})
+	}
+
+	for _, cancelAtResolve := range []bool{false, true} {
+		t.Run(map[bool]string{false: "cancel-before-resolve", true: "cancel-after-resolve"}[cancelAtResolve], func(t *testing.T) {
+			rt, fsys, runner := newChotherRuntime(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if cancelAtResolve {
+				runner.onResolve = func(string) { cancel() }
+			} else {
+				cancel()
+			}
+			room := any("42")
+			_, err := (chRoomNumberFunc{}).Execute(ctx, rt, &ChRoomNumberArgs{Name: "synthetic", RoomNumber: &room})
+			if err == nil || err.Error() != "user.chroomnumber: command canceled" || fsys.boundedReads != 1 ||
+				len(runner.commands) != 0 || len(runner.resolveCalls) != map[bool]int{false: 0, true: 1}[cancelAtResolve] {
+				t.Fatal("roomnumber cancellation boundary mismatch")
+			}
+		})
+	}
+}
+
+func TestChroomnumberPasswdErrorsUseBoundedRoomSpecificCategories(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		setup     func(*runtime.Runtime, *trackedUserFS)
+		want      string
+		readCount int
+	}{
+		{"missing-account", func(_ *runtime.Runtime, fsys *trackedUserFS) {
+			_ = fsys.FileSystem.WriteFile(passwdPath, []byte("other:x:1:2:g:h:s\n"), 0o644)
+		}, "user.chroomnumber: account not found", 1},
+		{"malformed-record", func(_ *runtime.Runtime, fsys *trackedUserFS) {
+			_ = fsys.FileSystem.WriteFile(passwdPath, []byte("synthetic:x:1:2:g:h:s:extra\n"), 0o644)
+		}, "user.chroomnumber: malformed passwd data", 1},
+		{"invalid-uid", func(_ *runtime.Runtime, fsys *trackedUserFS) {
+			_ = fsys.FileSystem.WriteFile(passwdPath, []byte("synthetic:x:+1:2:g:h:s\n"), 0o644)
+		}, "user.chroomnumber: malformed passwd data", 1},
+		{"invalid-gid", func(_ *runtime.Runtime, fsys *trackedUserFS) {
+			_ = fsys.FileSystem.WriteFile(passwdPath, []byte("synthetic:x:1:4294967295:g:h:s\n"), 0o644)
+		}, "user.chroomnumber: malformed passwd data", 1},
+		{"duplicate-account", func(_ *runtime.Runtime, fsys *trackedUserFS) {
+			_ = fsys.FileSystem.WriteFile(passwdPath, []byte("synthetic:x:1:2:g:h:s\nsynthetic:x:2:3:g:h:s\n"), 0o644)
+		}, "user.chroomnumber: duplicate account", 1},
+		{"oversized-gecos", func(_ *runtime.Runtime, fsys *trackedUserFS) {
+			_ = fsys.FileSystem.WriteFile(passwdPath, []byte("synthetic:x:1:2:"+strings.Repeat("g", 4097)+":h:s\n"), 0o644)
+		}, "user.chroomnumber: existing GECOS exceeds limit", 1},
+		{"unbounded-filesystem", func(rt *runtime.Runtime, fsys *trackedUserFS) {
+			rt.FS = unboundedOnlyUserFS{FileSystem: fsys.FileSystem}
+		}, "user.chroomnumber: bounded passwd reads unsupported", 0},
+		{"read-error", func(_ *runtime.Runtime, fsys *trackedUserFS) {
+			fsys.readErr = errors.New("synthetic filesystem failure")
+		}, "user.chroomnumber: passwd read failed", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt, fsys, runner := newChotherRuntime(t)
+			tc.setup(rt, fsys)
+			room := any("42")
+			_, err := (chRoomNumberFunc{}).Execute(context.Background(), rt, &ChRoomNumberArgs{Name: "synthetic", RoomNumber: &room})
+			if err == nil || err.Error() != tc.want || fsys.boundedReads != tc.readCount || len(runner.resolveCalls) != 0 || len(runner.commands) != 0 {
+				t.Fatalf("%s: fixed bounded-read failure mismatch", tc.name)
+			}
+		})
+	}
+}
+
 func TestChotherStrictLocalPasswdParser(t *testing.T) {
 	const valid = "synthetic:x:000:4294967294:first,last,room,work,old:/home/synthetic:/bin/false"
 	entry, err := parseLocalPasswd([]byte("\n# synthetic fixture\n"+valid+"\n\n"), "synthetic")
@@ -1050,6 +1549,48 @@ func TestChotherLinuxRegistrationOnly(t *testing.T) {
 			otherField, ok := argsType.FieldByName("Other")
 			if !ok || otherField.Type != reflect.TypeOf((*any)(nil)) || otherField.Tag.Get("statekit") != "required,name=other" {
 				t.Fatalf("Linux Chother Other field = %+v, want required *any", otherField)
+			}
+		})
+	}
+}
+
+func TestChroomnumberLinuxRegistrationOnly(t *testing.T) {
+	for _, goos := range []string{"linux", "darwin", "windows", "freebsd", "openbsd", "netbsd", "solaris", "aix", "unknown"} {
+		t.Run(goos, func(t *testing.T) {
+			reg := runtime.NewExecRegistry()
+			if err := registerUserForGOOS(reg, goos); err != nil {
+				t.Fatal("synthetic user registration failed")
+			}
+			fn, registered := reg.Get("user.chroomnumber")
+			wantRegistered := goos == "linux" || goos == "freebsd" || goos == "solaris"
+			if registered != wantRegistered {
+				t.Fatal("roomnumber platform registration mismatch")
+			}
+			if !registered {
+				return
+			}
+			platform, ok := fn.(runtime.PlatformConstrained)
+			if !ok || !reflect.DeepEqual(platform.Platforms(), []string{goos}) || !runtime.SupportsPlatform(fn, goos) {
+				t.Fatal("roomnumber platform constraint mismatch")
+			}
+			prototype := reflect.TypeOf(fn.Args())
+			switch goos {
+			case "linux":
+				if prototype != reflect.TypeOf(ChRoomNumberArgs{}) || fn.Name() != "user.chroomnumber" {
+					t.Fatal("Linux roomnumber canonical prototype mismatch")
+				}
+				field, exists := prototype.FieldByName("RoomNumber")
+				if !exists || field.Type != reflect.TypeOf((*any)(nil)) || field.Tag.Get("statekit") != "required,name=roomnumber" {
+					t.Fatal("Linux roomnumber required *any binding mismatch")
+				}
+			case "freebsd":
+				if prototype != reflect.TypeOf(pwChroomnumberArgs{}) {
+					t.Fatal("FreeBSD roomnumber prototype changed")
+				}
+			case "solaris":
+				if prototype != reflect.TypeOf(sunChroomnumberArgs{}) {
+					t.Fatal("Solaris roomnumber prototype changed")
+				}
 			}
 		})
 	}

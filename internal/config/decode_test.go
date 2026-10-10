@@ -61,6 +61,21 @@ func TestUnknownArgumentRejected(t *testing.T) {
 	}
 }
 
+func TestDecodeRoomnumberUnknownKeyEchoBoundary(t *testing.T) {
+	type roomnumberArgs struct {
+		Name       string `statekit:"required"`
+		RoomNumber *any   `statekit:"required,name=roomnumber"`
+	}
+	args := &roomnumberArgs{}
+	err := Decode(args, map[string]any{
+		"name": "synthetic", "roomnumber": "42",
+		"ROOM_ECHO_MARKER": "DIFFERENT_VALUE_MARKER",
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "ROOM_ECHO_MARKER") || strings.Contains(err.Error(), "DIFFERENT_VALUE_MARKER") {
+		t.Fatal("unknown roomnumber structured key echo boundary mismatch")
+	}
+}
+
 func TestRequiredValidation(t *testing.T) {
 	args := &sampleArgs{}
 	err := Decode(args, map[string]any{"version": "1"}, nil)

@@ -689,6 +689,122 @@ func TestUserPresentOtherOrdinaryCLIStateTransport(t *testing.T) {
 	}
 }
 
+func TestChroomnumberCLIParseEchoBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"malformed-bool-value", []string{"exec", "user.chroomnumber", "--name=synthetic", "--roomnumber=42", "--stdin=ROOM_ECHO_MARKER"}},
+		{"undeclared-flag-name", []string{"exec", "user.chroomnumber", "--name=synthetic", "--roomnumber=42", "--ROOM_ECHO_MARKER"}},
+		{"unexpected-positional", []string{"exec", "user.chroomnumber", "--name=synthetic", "--roomnumber=42", "ROOM_ECHO_MARKER"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app, runner, fsys := newCLIUserApp(t)
+			code, output, errText := captureCode(t, app, tc.args...)
+			if code != ExitInvalidInput || !strings.Contains(errText, "ROOM_ECHO_MARKER") || strings.Contains(output, "ROOM_ECHO_MARKER") ||
+				len(runner.commands) != 0 || len(runner.resolveCalls) != 0 || fsys.boundedReads != 0 || fsys.unboundedRead != 0 {
+				t.Fatal("roomnumber parser echo boundary/effects mismatch")
+			}
+		})
+	}
+}
+
+func TestChroomnumberCLIUnknownKeyEchoBoundary(t *testing.T) {
+	app, runner, fsys := newCLIUserApp(t)
+	code, output, errText := captureCode(t, app, "exec", "user.chroomnumber", "--config",
+		`{"name":"synthetic","roomnumber":"42","ROOM_ECHO_MARKER":"DIFFERENT_VALUE_MARKER"}`)
+	if code != ExitInvalidInput || !strings.Contains(errText, "ROOM_ECHO_MARKER") || strings.Contains(errText, "DIFFERENT_VALUE_MARKER") ||
+		strings.Contains(output, "DIFFERENT_VALUE_MARKER") || fsys.boundedReads != 0 || fsys.unboundedRead != 0 ||
+		len(runner.commands) != 0 || len(runner.resolveCalls) != 0 {
+		t.Fatal("ordinary CLI roomnumber unknown-key echo/effect boundary mismatch")
+	}
+}
+
+func TestChroomnumberOrdinaryCLIJSONYAMLAndFlagTransport(t *testing.T) {
+	app, runner, fsys := newCLIUserApp(t)
+	code, _, errText := captureCode(t, app, "exec", "user.chroomnumber", "--config", `{"name":"synthetic"}`)
+	if code != ExitInvalidInput || !strings.Contains(errText, `missing required argument "roomnumber"`) || len(runner.commands) != 0 || fsys.boundedReads != 0 {
+		t.Fatal("missing required roomnumber did not fail before effects")
+	}
+
+	app, runner, fsys = newCLIUserApp(t)
+	code, _, errText = captureCode(t, app, "exec", "user.chroomnumber", "--config", `{"name":"synthetic","roomnumber":0}`)
+	if code != ExitFailed || !strings.Contains(errText, "user.chroomnumber: invalid roomnumber type") || len(runner.commands) != 0 || fsys.boundedReads != 0 {
+		t.Fatal("JSON-first roomnumber scalar was not rejected before effects")
+	}
+
+	app, runner, fsys = newCLIUserApp(t)
+	code, _, errText = captureCode(t, app, "exec", "user.chroomnumber", "--config", "name: synthetic\nroomnumber: 0\n")
+	if code != ExitOK || errText != "" || len(runner.commands) != 1 || runner.commands[0].Args[1] != "first,0,room,work,old" || fsys.boundedReads != 2 {
+		t.Fatal("YAML integer roomnumber transport mismatch")
+	}
+
+	app, runner, _ = newCLIUserApp(t)
+	code, _, errText = captureCode(t, app, "exec", "user.chroomnumber", "--config", `{"name":"synthetic","roomnumber":null}`)
+	if code != ExitOK || errText != "" || len(runner.commands) != 1 || runner.commands[0].Args[1] != "first,,room,work,old" {
+		t.Fatal("structured null roomnumber clear mismatch")
+	}
+
+	for _, structured := range []string{
+		`{"name":"synthetic","roomnumber":null}`,
+		`{"name":"synthetic","roomnumber":7}`,
+	} {
+		app, runner, _ = newCLIUserApp(t)
+		code, _, errText = captureCode(t, app, "exec", "user.chroomnumber", "--config", structured, "--roomnumber=0007")
+		if code != ExitOK || errText != "" || len(runner.commands) != 1 || runner.commands[0].Args[1] != "first,0007,room,work,old" {
+			t.Fatal("roomnumber flag did not override structured channel")
+		}
+	}
+
+	app, runner, _ = newCLIUserApp(t)
+	code, _, errText = captureCode(t, app, "exec", "user.chroomnumber", "--config", `{"name":"synthetic","roomnumber":"old"}`, "--roomnumber=null")
+	if code != ExitOK || errText != "" || len(runner.commands) != 1 || runner.commands[0].Args[1] != "first,null,room,work,old" {
+		t.Fatal("literal null roomnumber flag mismatch")
+	}
+
+	app, runner, _ = newCLIUserApp(t)
+	code, _, errText = captureCode(t, app, "exec", "user.chroomnumber", "--config", `{"name":"synthetic","roomnumber":"old"}`, "--roomnumber=")
+	if code != ExitOK || errText != "" || len(runner.commands) != 1 || runner.commands[0].Args[1] != "first,,room,work,old" {
+		t.Fatal("empty roomnumber flag did not clear")
+	}
+
+	app, runner, fsys = newCLIUserApp(t)
+	code, _, errText = captureCode(t, app, "exec", "user.chroomnumber", "--config", `{"name":"synthetic","roomnumber":"ROOM_ECHO_MARKER,extra"}`)
+	if code != ExitFailed || !strings.Contains(errText, "comma in roomnumber") || strings.Contains(errText, "ROOM_ECHO_MARKER") ||
+		len(runner.commands) != 0 || len(runner.resolveCalls) != 0 || fsys.boundedReads != 0 || fsys.unboundedRead != 0 {
+		t.Fatal("invalid marked roomnumber leaked or caused account effects")
+	}
+}
+
+func TestUserPresentRoomnumberOrdinaryCLIStateTransport(t *testing.T) {
+	app, runner, fsys := newCLIUserApp(t)
+	code, _, errText := captureCode(t, app, "state", "user.present", "--config", `{"name":"synthetic","roomnumber":null}`, "-o", "json")
+	if code != ExitOK || errText != "" || len(runner.commands) != 0 || len(runner.resolveCalls) != 0 || fsys.boundedReads != 0 || fsys.unboundedRead != 2 {
+		t.Fatal("state null roomnumber did not remain unmanaged")
+	}
+
+	app, runner, fsys = newCLIUserApp(t)
+	code, output, errText := captureCode(t, app, "state", "user.present", "--config", `{"name":"synthetic","roomnumber":""}`, "-o", "json")
+	if code != ExitOK || errText != "" || len(runner.commands) != 1 || len(runner.resolveCalls) != 1 || fsys.boundedReads != 3 || fsys.unboundedRead != 0 ||
+		runner.commands[0].Args[1] != "first,,room,work,old" || strings.Contains(output, "first,last,room,work") {
+		t.Fatal("state empty roomnumber clear contract mismatch")
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatal("state roomnumber output was not valid JSON")
+	}
+	changes, ok := result["changes"].(map[string]any)
+	if !ok || !reflect.DeepEqual(changes["roomnumber"], map[string]any{"changed": true}) {
+		t.Fatal("state roomnumber Changes was not metadata-only")
+	}
+
+	app, runner, _ = newCLIUserApp(t)
+	code, _, errText = captureCode(t, app, "state", "user.present", "--config", `{"name":"synthetic","roomnumber":"old"}`, "--roomnumber=0007", "-o", "json")
+	if code != ExitOK || errText != "" || len(runner.commands) != 1 || runner.commands[0].Args[1] != "first,0007,room,work,old" {
+		t.Fatal("state roomnumber flag override mismatch")
+	}
+}
+
 func TestExecUnknownFunctionExitThree(t *testing.T) {
 	code, _, errS := runApp(t, "exec", "nosuchmod.nofun", "--name", "curl")
 	if code != ExitUnsupported || !strings.Contains(errS, "unsupported") {

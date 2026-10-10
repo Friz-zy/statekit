@@ -11514,3 +11514,388 @@ owner/HUMAN/PATH/lifecycle/CI gates remain open. PTD-EXEC-1651 and PTD-TEST-1686
 remain `[ ]` actionable. No R4 closure, release approval, or user-risk approval
 is recorded. This prose is outside the PTD table: no table row, status, count,
 or order changed, and all human/native/CI gates remain in force.
+
+### Next migration decision — R4.USER-CHROOMNUMBER (2026-10-10)
+
+**Status: proposed bounded assignment; fresh independent gates pending.**
+Baseline `bd745fe` follows `b67ec2d`. Assign the **Linux-local subset only** of
+PTD-EXEC-1653 and PTD-TEST-1688 to additive **R4.USER-CHROOMNUMBER**, with an
+existing-account `user.present(roomnumber=...)` companion. This supplements R4's
+misc-Linux track after its historical baseline, not a new top-level round or a
+reassignment/closure of aggregate R8/E6. Keep both rows `[ ]` actionable, all
+counts/order/statuses unchanged, and R4 partial. No change to the §3 DAG/R10
+evidence, R7/native gates or R11-last ADR gate. No new dependency/policy exception
+or network-device boundary: no formal ADR solely for this assignment; separate
+dependency-exception and R11-start ADR requirements remain applicable.
+
+**Evidence and options.** `references/salt.lock:1-3` pins
+`8b63e700637e40d76f80a00d95c60471797c73b9`. Rows `:6699,9104`, §2 R4/R8,
+§3:162-174 and §5 establish the aggregate obligation, state counterpart and
+close limits. Select Linux now using committed bounded-read/binder/Runner seams;
+reject a simultaneous BSD/Solaris sweep because its contracts differ and E6/native
+proof remains separate; deferring all Linux work until R8 would unnecessarily
+couple this fake-only gap to those platform gates. Source/catalog/test inspection:
+- Linux `useradd.py:62-138,649-659`; catalog `exec/useradd.yaml:313-332` requires
+  name/roomnumber, root=None. Module-wide catalog dependencies are not proof the
+  function calls cmd.retcode/group lookup: its mutation calls cmd.run.
+- Mapped `tests/pytests/unit/modules/test_useradd.py:482-517` covers missing helper
+  with zero command call, false mocked pre-info, integer no-op and mismatch.
+  Its info mocks do not supply _get_gecos readback and its final block has no
+  assertion; do not infer successful changed-value proof. Mapped
+  `tests/unit/modules/test_useradd.py:132-150` pins intermediate empties and trim.
+- Aggregate references `exec/pw_user.yaml:199-212`, `exec/solaris_user.yaml:161-171`;
+  pinned `pw_user.py:71-122,368-378` and `solaris_user.py:47-95,349-359` use four
+  fields/no root/no trailing trim, str(None) rather than Linux None-clear, and
+  respectively pw usermod and bare usermod. `test_pw_user.py:195-225` adds Unicode/
+  integer/mismatch vectors; Solaris has no mapped fixture. All are source-only.
+- State `states/user.py:254-258,320,588-589,610-614,707-721,818-841` and catalog
+  `states/user.yaml:117-159,225-227`: None is unmanaged, supplied integers become
+  strings, comma is rejected, test Comment exposes proposed values, applied
+  Changes exposes changed fields' new values. Mapped state tests have no explicit
+  roomnumber vector; derive synthetic tests from source, never execute fixtures.
+- Current Go `user.go:204-378,659-695` has Linux chother but no Linux room setter;
+  state `user.go:19-65,109-148` lacks RoomNumber and only Other triggers bounded
+  management. **Correct the historical absence interpretation, not the row:**
+  `freebsd_pw_user.go:26-35,718-730` and `solaris_user.go:29-37,747-759` already
+  implement/register canonical user.chroomnumber. Preserve their prototypes and
+  Platforms. Registry tests at `freebsd_pw_user_registry_test.go:91-105` and
+  `solaris_user_registry_test.go:88-102` need only their obsolete Linux-room
+  absence assertions adjusted; do not relax unrelated assertions or claim those
+  existing backends absent/unimplemented/native-approved.
+
+**Derived Linux behavior and selected safety ceiling.**
+1. Source chroomnumber delegates with key roomnumber, **index 1 (second field)**,
+   not fifth-field other. Split at four commas/pad to five; deep-copy fields,
+   replace room, join five and strip all trailing commas. None/empty clears;
+   nonstring uses Python str, including integers. False pre-info returns false,
+   equal room returns true without helper launch, changed room runs
+   `[resolved-usermod, '-c', built, name]` shell-free and compares room readback.
+   Missing actual passwd lookup can raise, and cmd.run's output/exit is not its
+   success predicate. Non-AIX nonnull root adds -R/alternate lookup; AIX ignores
+   root. These are source semantics, not claims of native validation here.
+2. Selected Linux-only function uses required Name and `RoomNumber *any` tagged
+   `required,name=roomnumber`, Root any/default nil. Missing room is invalid;
+   explicit nil/empty clears. Reuse the committed exact scalar subset: built-in
+   string/int/int8/int16/int32/int64/uint/uint8/uint16/uint32/uint64; numeric range
+   -9223372036854775808..9223372036854775807, decimal strconv formatting, no wrap.
+   True aliases accepted; distinct named types, uintptr, json.Number, floats,
+   bool, containers and inner typed nil rejected. Strings preserve bytes, no
+   numeric parsing; 32/64-bit int representability is not an extra conversion.
+   Every nonnil root, including empty, `/` or typed nil, rejects before FS.
+   Wrong/nil args, missing required, invalid name/type/platform reject before
+   any account read/resolver/Runner; existing *any binder behavior stays unchanged.
+   Ordinary JSON-first numbers remain float64/rejected; Apply's YAML decoder
+   (even JSON-shaped documents) can yield accepted int/int64 or range-rejected
+   uint64. CLI --roomnumber=null is text; only structured null is null.
+3. Unlike other, room cannot safely contain comma: source direct exec permits
+   it and can shift other fields/read back false; source state rejects it.
+   **Reject commas in exec and state before FS** as an intentional safe divergence.
+   Validate UTF-8, name/raw-room/normalized-room/existing/built GECOS separately
+   at 4096 **UTF-8 bytes**. **ROOM-SEC-02 decision:** retain the committed
+   bytewise validLocalText boundary: reject ASCII C0 U+0000..U+001F (including
+   NUL, LF U+000A and CR U+000D), DEL U+007F and colon U+003A; reject comma
+   separately for requested room, and empty/leading-hyphen names independently.
+   Do not claim all Unicode controls are rejected: valid UTF-8 C1 U+0080..U+009F,
+   including U+0085/U+009F, is accepted subject to the other bounds/field rules.
+   No unicode.IsControl change or tightening of chother/the shared reader here.
+   Pinned useradd.py:117-122 does not impose a Unicode-Cc filter; its string
+   normalization and state comma check do not justify inventing one. ASCII
+   delimiter/control rejection remains the selected source-safe divergence;
+   broader terminal-safe/native acceptance is not claimed. Retain
+   strict 1048576-byte local passwd reads, exact seven fields/target match,
+   ASCII decimal UID/GID 0..4294967294, duplicate/missing/malformed/unsupported-FS
+   fixed failures. No NSS, unbounded user.info fallback, shadow or host database.
+4. Preserve decoded non-room fields 0/2/3/4 from the current snapshot. Source's
+   trailing trim can change an unmanaged fifth field ending in commas: for a
+   **changed room**, reject before dispatch if build-then-split changes any
+   non-room field. This safety divergence may reject such existing records,
+   even when Other is requested in the same state; do not silently normalize
+   it or reorder to bypass the guard. An unchanged valid room remains a no-op.
+   This is snapshot preservation, not atomic/concurrent identity protection.
+5. Reuse the trusted `/usr/sbin/usermod`-only chain policy (no /sbin/PATH fallback),
+   Args `['-c', built, name]`, Shell=false, Dir=/, exact Env
+   PATH=/usr/sbin:/usr/bin:/bin, LANG=C, LC_ALL=C; no inherited env. Timeout30s,
+   4096-byte per-stream caps, PreserveStdout=false, whole-built-first redaction.
+   No-op: bounded pre-read, zero resolver/launch. Change: one resolution/launch,
+   then bounded readback only after successful, untruncated/in-budget command;
+   true on exact room match, false on mismatch, fixed error on command failure/
+   cancellation/overflow or unconfirmed readback. No raw output/wrapped causes,
+   retry/rollback or claimed undo. Use room-specific fixed error categories.
+
+**ROOM-SEC-01 — module/state guarantee, not shared CLI secrecy.** Choose the
+smallest truthful boundary: no chroomnumber-specific CLI handler or broad parser
+change. Room/full-GECOS values must not enter module-generated errors, state
+comments or room Changes; fixed categories and Runner redaction remain. This
+does **not** promise value-free CLI/config parsing or all output: State.Name and
+existing sibling metadata retain their documented account-data schemas.
+Inspected `internal/cli/cli.go:447-455,493,537-547,592-610`: only slack targets
+select value-free parse errors. For ordinary exec user.chroomnumber and state
+user.present, malformed bool flags can quote their rejected value, unknown/
+missing flags can quote caller-supplied flag names, and unexpected positional
+errors quote the offending token. These reach CLI stderr/ExitInvalidInput before
+module execution. `config/decode.go:42-51,347-355` returns UnknownArgumentError
+quoting an unknown structured/provided **key**, plus the known-name list, not its
+associated value. Ordinary CLI decoding forwards it; Apply decodeStructured
+(`apply.go:197-214`) likewise reports that key through CLI stderr. Direct callers
+of config.Decode can expose the same error string; typed registry/module calls
+do not invoke this parse-echo path. Required/scalar conversion errors are not
+reclassified as value-bearing when the inspected decoder uses fixed names/classes.
+Channel/load/outer CLI diagnostics are outside this narrow module guarantee too;
+no whole-CLI confidentiality assertion or source-parser parity is made. Salt's
+state comma error (`states/user.py:610-614`) itself exposes the offending value;
+the selected room state deliberately does not reproduce that disclosure.
+
+**State and minimal code boundary.** Add optional RoomNumber *any to existing
+user.present; omitted/inner nil unmanaged, empty clear, inner typed nil invalid.
+Either managed RoomNumber or Other must enter the bounded Linux-local branch,
+validate all requested values and the **combined prospective final GECOS from
+one bounded snapshot** before any sibling action (ROOM-STATIC-02 below), and never call
+user.info or create a missing account. Keep legacy behavior only when neither
+field is managed. Order actual differences UID, GID, home, shell, roomnumber,
+other; each setter re-reads its current record, preserving a prior setter's
+result. Stop on error/false; partial failure is not rollback. No-op/test mode
+launch nothing. Changes.roomnumber is only `{changed: true}` for planned/applied
+differences; no old/new/full GECOS in output. Existing Other metadata and sibling
+schemas remain unchanged. This diverges from Salt's value-exposing state output.
+Permit only a narrow two-field private builder/update reuse in existing exec/state
+files, plus necessary room matcher/normalizer interfaces; no account framework,
+global binder/bootstrap change or sibling backend refactor. Bare sibling setters
+retain §7's recorded project PATH/inherited-env/cwd boundary, not chroomnumber's
+trusted identity; combined actions need intentional caller/deployment trust and
+separate operational authorization, not inferred risk acceptance.
+
+**Fake-only acceptance and sequence (future roles, no work completed here).**
+1. `security-engineer-lead` (lead) independently reviews the field/serialization,
+   scalar/error and data boundaries; `qa-engineer-lead` (lead) reviews the source
+   matrix; `technical-writer-senior` (senior) gates assignment/divergence wording.
+   `solution-architect-lead` (lead) owns disagreements. All are preimplementation
+   gates; prior chother passes do not approve this slice.
+2. `software-engineer-senior` (senior) authors code/tests only in existing user
+   exec/state files, their tests/registry tests, CLI/apply tests, debt test and
+   r4_test.go. PTD-TEST-1688's named canonical test uses pure registrations and
+   prototype/binding, never BuildRuntime. Preserve FreeBSD/Solaris registrations;
+   reject this Linux function elsewhere, not those platform functions wholesale.
+   Add one TestR4UserChroomnumberSyntheticContract to existing r4_test.go with
+   fixed scenario IDs/independent source expectations, MemoryFS/scripted fakes.
+   No new test file, manifest/report writer, sidecar or dependency.
+3. `qa-engineer-lead` (lead) acceptance matrix: all five positions distinguish
+   second-field update from fifth, intermediate empties/empty clearing, Unicode,
+   zero/-1/MinInt64/MaxInt64/unsigned-over-range, numeric-string preservation,
+   omitted/null/empty/typed-nil through direct/registry/ordinary CLI/Apply, comma
+   rejection, non-room trailing-comma preservation failure, exact 4096/+1 field
+   and 1048576/+1 file limits, malformed UID/GID/records, and helper/PATH-bait/
+   cwd/output/truncation/cancellation/readback failures with fixed marker-free
+   errors. Assert exact command/env/budgets and launch/read counts. State cases
+   cover test/no-op/null/create rejection, combined ordering/failure stopping,
+   no user.info fallback, metadata-only Changes, room+other sequential preservation,
+   and synthetic lost-update/same-name recreation without an atomicity claim.
+   Every frozen test/scenario must run/pass, counts positive and no skips.
+   ROOM-SEC-01 disclosure tests use fixed artificial ROOM_ECHO_MARKER only:
+   in-process fake-runtime CLI --stdin=ROOM_ECHO_MARKER pins malformed-bool value
+   echo; an undeclared --ROOM_ECHO_MARKER pins flag-name echo; a positional marker
+   pins positional echo. Ordinary CLI/Apply/direct config.Decode with unknown
+   key ROOM_ECHO_MARKER and value DIFFERENT_VALUE_MARKER must expose the key but
+   not that associated value. Assert invalid-input status and zero account FS/
+   resolver/Runner dispatch. Separately reject marked invalid room input at module/
+   managed-state entry and assert marker absence in their errors/comments/room
+   Changes. These pin known disclosure, not mitigation; use only existing CLI/
+   config/module tests and private capped logs, never return captured raw stderr.
+   ROOM-SEC-02 tests reject NUL, tab U+0009, LF, CR, U+001F, DEL and colon; accept
+   U+0085 and U+009F unchanged in otherwise-valid room/name/existing-GECOS vectors
+   with fixed synthetic records, and verify exact fake argv/readback. C1 acceptance
+   does not imply a real native helper accepts those values. Keep comma rejection,
+   UTF-8 invalid-byte cases and 4096/+1 byte limits independent of this rule.
+   Exact synthetic examples: existing `N,old,W,H,O`, desired `42` builds
+   `N,42,W,H,O`; empty/nil builds `N,,W,H,O`. Existing `N,old,,,` with desired
+   `42` builds `N,42` and pads readback empties; existing `N,old,W,H,O,,` with
+   a changed room rejects before launch because unmanaged other would lose
+   trailing commas. Requested `42,extra` rejects before FS; string `0007`
+   stays `0007`, int64(-9223372036854775808) and int64(9223372036854775807)
+   format exactly, uint64(9223372036854775808) rejects. No-op room comparison
+   reads index1, never index4; these fixed values are artificial fixture data.
+4. After authorship, `security-engineer-lead` (lead) performs fresh static code/
+   import/initializer review **before any test/build**. Then specifically approved
+   `qa-engineer-lead` (lead) execution uses the existing pinned rootless offline
+   Podman create/inspect/inert preflight and private mode1777 scratch/log mounts,
+   UID1000/umask077/0600 logs, one /logs log <2 MiB, no raw output export. Only the
+   already-reviewed process-local libc executable-name/page-size initializer is
+   permitted; no further dependency/kernel exploration, OS facts/account probes,
+   Salt fixture, native helper, network/live service, historical generator,
+   UPDATE_DIFFERENTIAL or external CI. Run focused new room tests plus affected
+   chother/state/registry/CLI/debt regressions with race/checkptr, scoped vet and
+   offline integrity gate; final QA freezes exact selections before execution.
+   Synthetic: exact -run '^TestR4UserChroomnumberSyntheticContract$' only. One
+   two-user-package atomic profile `/scratch/r4-user-chroomnumber.cover.out`,
+   -run '^(TestChother.*|TestChroomnumber.*|TestPresentOther.*|TestPresentRoomnumber.*)$';
+   report actual statement coverage, not a threshold/branch/catalog metric.
+   Retain only the four prior compile-only checks (exec darwin/windows/freebsd
+   amd64, state windows/amd64), never run binaries; no new platform matrix.
+5. `technical-writer-senior` (senior) records/re-gates only sanitized observed
+   evidence in this plan, then `qa-engineer-lead` (lead) independently closes
+   scoped fake acceptance. No whole-R4, aggregate-R8/E6 or runtime parity claim.
+   Before implementation, these ROOM-SEC-01/02 amendments require fresh
+   `security-engineer-lead` (lead), `qa-engineer-lead` (lead),
+   `technical-writer-senior` (senior) and `compliance-officer-senior` (senior)
+   focused re-gates; earlier reviews do not cover the amended boundaries.
+
+**Personal/location and residual HUMAN boundary.** A room identifier can link a
+person to a physical location; do not assume all values are PII or harmless.
+Before real room/location data or operational use, require **room/location-specific
+authorized data-owner HUMAN classification/disclosure/retention approval**, including
+the full GECOS carried in argv and OS process-list visibility. Prior chother
+approval also does not cover the shared CLI/config parse-echo boundary described
+above. Real use requires explicit owner classification and approved diagnostic
+recipients/sinks/retention, including malformed-input/key/positional disclosure;
+no user-specific risk acceptance is inferred by choosing this design. Do not
+submit confidential/secret values to echoable interfaces; if the required use
+cannot satisfy that boundary, block operation and separately review a narrow
+value-free CLI design rather than claiming this gate hides parser output. Prior chother
+data approval cannot be presumed to cover this field/target. Record scope/owner/
+approver/expiry and permitted recipients/sinks/retention without actual values;
+none is requested or disclosed here. Redaction is not process-list secrecy.
+Fixed synthetic fixtures do not cross that data gate. Native target/account/action
+HUMAN authorization remains distinct, as do lifecycle/deletion-recreation/rename
+and competing-GECOS serialization **or** specific scoped HUMAN identity-retargeting/
+lost-update acceptance, runtime preflight, BSD/Solaris E6/native/R8, R7/UNC and
+external CI. R4 catalog/generator/lagged broader differential stays open.
+
+**Current-status override / self-review.** For this Linux tranche only, supersede
+the aggregate row's historical blanket canonical-absence/implementation-entry
+interpretation with the explicit assignment and observed backend distinction;
+supersede PTD-TEST-1688's upstream-fixture execution instruction with source-derived
+synthetic evidence, never Salt runtime parity. Leave aggregate rows open/actionable
+and all historical evidence untouched. No infrastructure/IAM/privilege, dependency
+manifest/lock, policy exception or trust-file change is needed; existing seams
+are sufficient with the narrow room extension. This is architect self-review,
+not independent approval. Only this EOF prose changed; no code/tests/builds/
+fixtures/accounts/dependency operations, staging or commits ran. Both unrelated
+dirty files were preserved without reading their contents.
+
+#### ROOM-STATIC-02 — combined prospective prevalidation (2026-10-10)
+
+**Decision: proposed remediation contract; security/QA/docs re-gates pending.**
+Inspected `modules/state/user/user.go:79-92`: ValidateRoomNumberBuild and
+ValidateOtherBuild each use the original entry, so valid individual builds do
+not prove a valid combined record. This is a pre-action validation defect, not
+only test arithmetic; no code fix or test PASS is claimed here.
+
+Choose one small **pure** method in existing `modules/exec/user/user.go`:
+`LocalPasswdEntry.ValidateProspectiveGecos(room, other *string) error`.
+Nil pointers mean unmanaged; nonnil normalized strings, including empty, mean
+managed. Keep raw GECOS private and return only a fixed error category, never
+the constructed record. Reuse existing limits/split/build/room-preservation
+functions (`user.go:94-123,382-424`), rather than duplicating serialization in a
+state-local helper or adding an exported raw-GECOS getter/new package/file.
+
+Required method behavior: validate both managed normalized values/4096-byte
+field limits, the existing record and the complete prospective record from
+the **same** bounded snapshot. Start with that snapshot, compose actual room
+change first using the existing room builder, then actual other change using
+the existing other builder on the room-updated prospective value, not on the
+original. Equal/unmanaged fields are retained without a fictitious mutation;
+source no-op semantics must not normalize them. Enforce complete-build valid
+UTF-8/content and **<=4096 bytes**, including intermediate room-only build
+because it is the first real GECOS action. This composes the full final five-field
+record with the committed source trimming rules; it performs no FS read, NSS,
+user.info, resolver/executable-helper or Runner call. Pure function calls are
+not executable-helper dispatch. Existing scalar/control/comma rules are unchanged.
+
+Preservation: final fields 0/2/3 always match the snapshot; field1 matches when
+room is unchanged/unmanaged; field4 matches when other is unchanged/unmanaged.
+Managed changing other may intentionally replace field4, not fields0/2/3.
+**Do not weaken the earlier room intermediate guard:** changed room still
+preserves all non-room fields, including snapshot field4, even if other is
+managed later. Thus trailing-comma drift in existing other rejects before any
+action; do not reorder other first or excuse the drift by its later replacement.
+The final precheck does not change direct-other trimming/readback semantics or
+promise every accepted action succeeds; setter-time failures remain possible.
+
+In the state, normalize/validate requested inputs, make one bounded local read,
+then call this method **before constructing/dispatching any action**, including
+UID/GID/home/shell and test-mode planning. Replace the two independent original-
+record checks with this combined check. Invalid input/build yields fixed
+`user.present: account update failed`, Result=false, empty Changes and zero
+resolver/Runner/registry sibling dispatch. Preserve action order UID, GID, home,
+shell, roomnumber, other. Direct room/other setters stay independently guarded
+and re-read their then-current local records sequentially; no unbounded fallback.
+
+**QA-GECOS-BOUNDARY-01 — required state-mode acceptance matrix.** Each row
+starts with synthetic UID1000 and GECOS `N,a,W,H,O`, requests UID1001, and uses
+room=`r`/other=`o` repeated the stated byte lengths. GID/home/shell are unchanged.
+All totals below are **complete serialized GECOS bytes**, not field lengths:
+individual builds include four preserved one-byte fields plus four commas
+(field length+8); combined builds include preserved N/W/H plus four commas
+(room+other+7). Every row must be exercised separately in **both** state modes;
+pure-validator controls alone cannot satisfy either accepted row.
+
+| Room / other bytes | Individual room / other full builds | Final full build | Test-only state | Applied state |
+|---|---|---|---|---|
+| 2045 / 2045 | 2053 / 2053, each valid | 4097, invalid | Fixed failure before planning/dispatch | Same fixed failure before every action |
+| 2044 / 2044 | 2052 / 2052, each valid | 4095, valid | Planned UID/room/other changes, no dispatch | UID then room then other; actual GECOS args 2052 then4095 bytes |
+| 2045 / 2044 | 2053 / 2052, each valid | 4096, valid | Planned UID/room/other changes, no dispatch | UID then room then other; actual GECOS args 2053 then4096 bytes |
+
+For **both invalid-mode runs**, assert one bounded snapshot read, zero UID/GID/
+home/shell/room/other registry calls, zero resolver/Runner calls, Result=false,
+empty Changes and exact fixed comment `user.present: account update failed`,
+without input/error markers. Assert valid individual controls and invalid
+composition so the test cannot pass by rejecting either field independently.
+For **each accepted test-mode run**, assert Result=null, planned UID old1000/
+new1001 plus `roomnumber:{changed:true}` and `other:{changed:true}`, no raw GECOS,
+zero registry/resolver/Runner dispatch, no MemoryFS writes and unchanged record.
+For **each accepted applied-mode run**, require successful scripted UID, room,
+other actions only, two trusted GECOS resolutions/three Runner calls, verified
+room and other readbacks, Result=true and exactly the same three Changes keys/
+schemas. Assert actual `-c` argument byte lengths above, full intermediate
+`N,<room>,W,H,O`, full final `N,<room>,W,H,<other>` and the exact five-field
+readback. N/W/H, GID/home/shell remain unchanged; UID becomes1001, and the other
+setter must retain the room setter's result. No retries or extra actions.
+
+Use existing **afterRun** hooks to update MemoryFS from each expected command,
+checking its independently constructed expected argv before writing: exec-test
+`usermodTestRunner.afterRun` (`modules/exec/user/user_test.go:149-167`) and the
+state harness's `fakeRunner.afterRun` (`modules/state/user/user_test.go:29-39`).
+Neither has a postRecord field; do not add/use one or invent a cross-package
+helper. In applied controls the UID callback updates only UID, and each -c
+callback stores that command's complete GECOS so the next setter really re-reads
+it. Test-mode callbacks must never run. The reported draft callback-field
+correction is **not compilation success**; fresh static security/QA acceptance
+is still pending, and this task did not compile or execute anything.
+
+Add the following existing-file state permutations, checking both modes for
+changed cases and zero-effect no-op behavior for unchanged cases:
+- Room-only `b` -> `N,b,W,H,O`; other-only `Z` -> `N,a,W,H,Z`; both -> `N,b,W,H,Z`.
+  Verify exact fields/action order and only requested GECOS metadata Changes.
+- Omitted/inner-null room preserves room while other changes; omitted/inner-null
+  other preserves field4 while room changes; both unmanaged/null cause no GECOS
+  dispatch. Equal managed values remain no-op, not fictitious normalization.
+- Explicit empty room -> `N,,W,H,O`; explicit empty other -> `N,a,W,H` (readback
+  pads empty field4); both empty -> `N,,W,H` (empty room/other on five-field
+  readback). Never confuse explicit empty with unmanaged or replace field4 with
+  the room value.
+- Snapshot `N,a,W,H,O,,`: changed room rejects before every action whether other
+  is unmanaged or requests `Z`; its later replacement cannot excuse intermediate
+  drift. With room equal/unmanaged, explicit other=`Z` may produce `N,a,W,H,Z`;
+  equal managed other=`O,,` leaves the original record unchanged with no GECOS
+  dispatch. This pins preservation versus intentionally managed field4 change.
+No new test file, platform, native operation or result artifact is required.
+
+`security-engineer-lead` (lead), `qa-engineer-lead` (lead) and
+`technical-writer-senior` (senior) independently re-gate this contract before
+`software-engineer-senior` (senior) updates the helper/state/tests. Fresh static
+implementation security review precedes QA's specifically authorized Podman
+execution; documentation and final independent QA evidence follow. No extra
+test/platform matrix, generator, sidecar or dependency. This snapshot precheck
+is not atomic, does not prevent concurrent growth/writes or same-name recreation,
+and does not undo partial changes if a later setter fails. All room-specific
+data-owner/HUMAN, native authorization, lifecycle/lost-update, runtime and CI
+gates remain separate; aggregate R8/E6/rows stay open and R4 partial. Only this
+plan was revised; no implementation/tests/builds/fixtures/accounts/staging/commit
+or unrelated dirty-content reads occurred.
+
+### R4.USER-CHROOMNUMBER synthetic QA validation note (2026-10-10)
+
+This is source-derived synthetic evidence for the room-number QA stage only; its scoped fake, coverage, and compile commands passed, but it proves neither native/runtime behavior, Salt runtime differential, nor overall round closure. In rootless local nonremote Podman 5.7.1, the run used image `localhost/statekit-r93p-go-deps:20260923@sha256:4230904fd0f3bdac68ac8dfd52d2d33727e56550321b234e006af3542dd844c0` (image ID `773f51501996a1306927f6f82901ead658720977369a1ffd198692912cd8be6a`) and Go 1.26.6 linux/amd64. `XDG_RUNTIME_DIR` was unset; network was none, with no ports or proxies; UID 1000, zero capabilities, NNP, read-only root/source/module cache, empty no-copyup masks, and mode-1777 `/scratch` and `/logs` tmpfs were used, with umask 077 and log files mode 0600. `core=0:0` was ordinary core-file defense only; the host administrator and Podman launcher remained trusted. Observed cgroups were `cpu.max=max 100000`, `memory.max=max`, `pids.max=28619`; the requested CPU, memory, and PID limits were ineffective, so no resource-bound claim is made.
+
+`TestR4UserChroomnumberSyntheticContract`: 1 top-level test and 16 scenario subtests passed, with zero failures or skips. This is source-derived synthetic evidence, not Salt runtime differential. The coverage invocation passed with exec user 28 top-level / 408 subtests and state user 20 / 23, zero failures or skips. These are separate invocation records, not a unique suite total. Combined statement coverage was 28.1% (exec 23.6%, state 67.5%); 282 function records, 188 zero-coverage and 204 below-full records. No coverage threshold, branch coverage, or catalog coverage is claimed. The additional combined-boundary/registry invocation passed exec 6 top-level / 15 subtests and state 2 / 29, zero failures or skips; direct-boundary values 4095 and 4096 were accepted in both state modes, while 4097 was rejected before effects. Parser/CLI/PTD checks passed: config 10 / 6, CLI 6 / 6, PTD registration test 1 / 0, zero failures or skips. Compile-only checks exited 0 for Darwin/amd64 exec, Windows/amd64 exec, FreeBSD/amd64 exec, and Windows/amd64 state; binaries were never executed.
+
+In the room-number QA session, `go vet ./modules/exec/user ./modules/state/user ./internal/config ./internal/cli ./tests ./tests/differential` exited 0 (6 packages, no diagnostics), and `go mod verify` exited 0 (“all modules verified”). Coverage/log profiles and binaries remained in container tmpfs and were removed; no repository edits resulted, and no raw logs, argv, or GECOS were exposed or persisted. No usermod/useradd or native account access, real `/etc/passwd`, Salt fixture, BuildRuntime/OS fact probe other than the approved process-local modernc initializer, live/network/CI/account operation occurred. Remaining HUMAN gates are room/location data-owner classification, disclosure and retention (including full-GECOS argv and CLI echo); native target/account/action authorization; account lifecycle/name-recreation and competing-GECOS serialization or scoped acceptance; PATH sibling boundary; and external CI/R8/E6/R7/overall R4 closure. Aggregate R8/E6 gates/obligations remain open; overall R4 remains partial. The Linux `user.chroomnumber` implementation is partial, while the canonical PTD-EXEC-1653 table row remains `[ ]` actionable; PTD-TEST-1688 remains `[ ]` actionable. Final independent QA review/documentation gate is still pending. This note is outside the PTD tables and changes no PTD row, status, count, or order.

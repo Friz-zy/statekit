@@ -199,6 +199,7 @@ type r4UserChotherRunner struct {
 	resolverFailure    bool
 	runResult          process.CommandResult
 	postRecord         string
+	postRecords        []string
 	postWriteAttempted bool
 	postWriteSucceeded bool
 }
@@ -219,9 +220,14 @@ func (runner *r4UserChotherRunner) Run(_ context.Context, command process.Comman
 	command.Stdin = append([]byte(nil), command.Stdin...)
 	command.Redact = append([]string(nil), command.Redact...)
 	runner.commands = append(runner.commands, command)
-	if runner.postRecord != "" {
+	postRecord := runner.postRecord
+	if len(runner.postRecords) > 0 {
+		postRecord = runner.postRecords[0]
+		runner.postRecords = runner.postRecords[1:]
+	}
+	if postRecord != "" {
 		runner.postWriteAttempted = true
-		runner.postWriteSucceeded = runner.memory.WriteFile("/etc/passwd", []byte(runner.postRecord), 0o644) == nil
+		runner.postWriteSucceeded = runner.memory.WriteFile("/etc/passwd", []byte(postRecord), 0o644) == nil
 	}
 	return runner.runResult
 }
@@ -607,6 +613,423 @@ func TestR4UserChotherSyntheticContract(t *testing.T) {
 	for _, scenario := range scenarios {
 		if scenario.source == "" || scenario.fixture == "" {
 			t.Fatal("R4 synthetic scenario reference missing")
+		}
+		t.Run(scenario.id, scenario.run)
+	}
+}
+
+func TestR4UserChroomnumberSyntheticContract(t *testing.T) {
+	const accountName = "r4synthetic"
+	if runtime.CurrentGOOS() != "linux" {
+		t.Fatal("R4 roomnumber synthetic contract requires the Linux test target")
+	}
+	newHarness := func(t *testing.T, passwdRecord string) (*runtime.Runtime, *r4UserChotherFS, *r4UserChotherRunner, *r4UserChotherTrace) {
+		memory := runtime.NewMemoryFS()
+		if err := memory.MkdirAll("/etc", 0o755); err != nil {
+			t.Fatal("R4 roomnumber filesystem setup failed")
+		}
+		if err := memory.WriteFile("/etc/passwd", []byte(passwdRecord), 0o644); err != nil {
+			t.Fatal("R4 roomnumber passwd setup failed")
+		}
+		if err := memory.WriteFile("/etc/group", []byte("r4synthetic:x:1000:\n"), 0o644); err != nil {
+			t.Fatal("R4 roomnumber group setup failed")
+		}
+		trace := &r4UserChotherTrace{}
+		fsys := &r4UserChotherFS{MemoryFS: memory, trace: trace}
+		runner := &r4UserChotherRunner{memory: memory, trace: trace}
+		rt := &runtime.Runtime{
+			Exec:      runtime.NewExecRegistry(),
+			States:    runtime.NewStateRegistry(),
+			Facts:     nil,
+			Providers: nil,
+			Runner:    runner,
+			FS:        fsys,
+		}
+		if err := execuser.Register(rt.Exec); err != nil {
+			t.Fatal("R4 roomnumber execution registration failed")
+		}
+		if err := stateuser.Register(rt.States); err != nil {
+			t.Fatal("R4 roomnumber state registration failed")
+		}
+		return rt, fsys, runner, trace
+	}
+	callExec := func(rt *runtime.Runtime, args *execuser.ChRoomNumberArgs) (any, error) {
+		return rt.Exec.Call(context.Background(), rt, "user.chroomnumber", args)
+	}
+	stateArgs := func(t *testing.T, rt *runtime.Runtime, values map[string]any) any {
+		fn, ok := rt.States.Get("user.present")
+		if !ok {
+			t.Fatal("R4 roomnumber state registration missing")
+		}
+		prototypeType := reflect.TypeOf(fn.Args())
+		if prototypeType == nil || prototypeType.Kind() != reflect.Struct {
+			t.Fatal("R4 roomnumber state prototype invalid")
+		}
+		args := reflect.New(prototypeType).Interface()
+		if err := config.Decode(args, values, nil); err != nil {
+			t.Fatal("R4 roomnumber state argument decode failed")
+		}
+		return args
+	}
+	applyState := func(t *testing.T, rt *runtime.Runtime, values map[string]any) result.StateResult {
+		got, err := rt.States.Apply(context.Background(), rt, "user.present", stateArgs(t, rt, values))
+		if err != nil {
+			t.Fatal("R4 roomnumber state apply failed")
+		}
+		return got
+	}
+	assertTrace := func(t *testing.T, id string, trace *r4UserChotherTrace, want []string) {
+		if !reflect.DeepEqual(trace.events, want) {
+			t.Fatalf("%s: bounded-read/dispatch order mismatch", id)
+		}
+	}
+	assertResolver := func(t *testing.T, id string, runner *r4UserChotherRunner, want []string) {
+		if !reflect.DeepEqual(runner.resolverNames, want) {
+			t.Fatalf("%s: resolver order mismatch", id)
+		}
+	}
+	assertRoomCommand := func(t *testing.T, id string, runner *r4UserChotherRunner, built, desired string) {
+		if len(runner.commands) != 1 {
+			t.Fatalf("%s: command count mismatch", id)
+		}
+		command := runner.commands[0]
+		wantRedact := []string{built, accountName}
+		if desired != "" {
+			wantRedact = append(wantRedact, desired)
+		}
+		if command.Name != "/usr/sbin/usermod" || !reflect.DeepEqual(command.Args, []string{"-c", built, accountName}) ||
+			command.Dir != "/" || !reflect.DeepEqual(command.Env, []string{"PATH=/usr/sbin:/usr/bin:/bin", "LANG=C", "LC_ALL=C"}) ||
+			command.Shell || command.Timeout != 30*time.Second || len(command.Stdin) != 0 || command.PreserveStdout ||
+			command.MaxStdoutBytes != 4096 || command.MaxStderrBytes != 4096 || !reflect.DeepEqual(command.Redact, wantRedact) {
+			t.Fatalf("%s: usermod command contract mismatch", id)
+		}
+	}
+	assertState := func(t *testing.T, id string, got result.StateResult, wantResult *bool, wantComment string, wantChanges map[string]any) {
+		if got.Name != accountName || got.Result == nil && wantResult != nil || got.Result != nil && wantResult == nil ||
+			got.Result != nil && wantResult != nil && *got.Result != *wantResult || got.Comment != wantComment ||
+			!reflect.DeepEqual(got.Changes, wantChanges) || got.Meta != nil {
+			t.Fatalf("%s: state metadata contract mismatch", id)
+		}
+	}
+	assertBool := func(t *testing.T, id string, value any, err error, want bool) {
+		got, ok := value.(bool)
+		if err != nil || !ok || got != want {
+			t.Fatalf("%s: execution result mismatch", id)
+		}
+	}
+	success := true
+	failure := false
+
+	// These static references are source/fixture citations only; expected GECOS
+	// strings and post-records are independent literals and no Salt code or
+	// fixture is loaded or executed. The mapped chother mismatch fixture patches
+	// info rather than _get_gecos, so it is not used as a successful readback oracle.
+	scenarios := []struct {
+		id      string
+		source  string
+		fixture string
+		run     func(*testing.T)
+	}{
+		{
+			id:      "room-noop",
+			source:  "saltstack/salt/modules/useradd.py:123-127,649-659",
+			fixture: "saltstack/tests/pytests/unit/modules/test_useradd.py:482-517",
+			run: func(t *testing.T) {
+				rt, _, runner, trace := newHarness(t, "r4synthetic:x:1000:1000:N,42,W,H,O:/home/r4synthetic:/bin/sh\n")
+				room := any("42")
+				value, err := callExec(rt, &execuser.ChRoomNumberArgs{Name: accountName, RoomNumber: &room})
+				assertBool(t, "room-noop", value, err, true)
+				assertTrace(t, "room-noop", trace, []string{"bounded-passwd-read"})
+				assertResolver(t, "room-noop", runner, nil)
+				if len(runner.commands) != 0 {
+					t.Fatal("room-noop: unexpected usermod dispatch")
+				}
+			},
+		},
+		{
+			id:      "room-changed-readback",
+			source:  "saltstack/salt/modules/useradd.py:123-138,649-659",
+			fixture: "saltstack/tests/pytests/unit/modules/test_useradd.py:482-517 (mismatch fixture only)",
+			run: func(t *testing.T) {
+				rt, _, runner, trace := newHarness(t, "r4synthetic:x:1000:1000:N,old,W,H,O:/home/r4synthetic:/bin/sh\n")
+				runner.postRecord = "r4synthetic:x:1000:1000:N,42,W,H,O:/home/r4synthetic:/bin/sh\n"
+				room := any("42")
+				value, err := callExec(rt, &execuser.ChRoomNumberArgs{Name: accountName, RoomNumber: &room})
+				assertBool(t, "room-changed-readback", value, err, true)
+				assertTrace(t, "room-changed-readback", trace, []string{"bounded-passwd-read", "trusted-resolve", "runner-dispatch", "bounded-passwd-read"})
+				assertResolver(t, "room-changed-readback", runner, []string{"usermod"})
+				assertRoomCommand(t, "room-changed-readback", runner, "N,42,W,H,O", "42")
+				if !runner.postWriteAttempted || !runner.postWriteSucceeded {
+					t.Fatal("room-changed-readback: scripted record missing")
+				}
+			},
+		},
+		{
+			id:      "room-clear-readback",
+			source:  "saltstack/salt/modules/useradd.py:89-100,117-127",
+			fixture: "saltstack/tests/unit/modules/test_useradd.py:132-150",
+			run: func(t *testing.T) {
+				rt, _, runner, trace := newHarness(t, "r4synthetic:x:1000:1000:N,old,W,H,O:/home/r4synthetic:/bin/sh\n")
+				runner.postRecord = "r4synthetic:x:1000:1000:N,,W,H,O:/home/r4synthetic:/bin/sh\n"
+				room := any("")
+				value, err := callExec(rt, &execuser.ChRoomNumberArgs{Name: accountName, RoomNumber: &room})
+				assertBool(t, "room-clear-readback", value, err, true)
+				assertTrace(t, "room-clear-readback", trace, []string{"bounded-passwd-read", "trusted-resolve", "runner-dispatch", "bounded-passwd-read"})
+				assertRoomCommand(t, "room-clear-readback", runner, "N,,W,H,O", "")
+			},
+		},
+		{
+			id:      "room-intermediate-empty",
+			source:  "saltstack/salt/modules/useradd.py:72-100",
+			fixture: "saltstack/tests/unit/modules/test_useradd.py:132-150",
+			run: func(t *testing.T) {
+				rt, _, runner, trace := newHarness(t, "r4synthetic:x:1000:1000:Testing,old,,,O:/home/r4synthetic:/bin/sh\n")
+				runner.postRecord = "r4synthetic:x:1000:1000:Testing,42,,,O:/home/r4synthetic:/bin/sh\n"
+				room := any("42")
+				value, err := callExec(rt, &execuser.ChRoomNumberArgs{Name: accountName, RoomNumber: &room})
+				assertBool(t, "room-intermediate-empty", value, err, true)
+				assertRoomCommand(t, "room-intermediate-empty", runner, "Testing,42,,,O", "42")
+				assertTrace(t, "room-intermediate-empty", trace, []string{"bounded-passwd-read", "trusted-resolve", "runner-dispatch", "bounded-passwd-read"})
+			},
+		},
+		{
+			id:      "room-trailing-other-rejected",
+			source:  "saltstack/salt/modules/useradd.py:89-100,649-659",
+			fixture: "saltstack/tests/unit/modules/test_useradd.py:148-150",
+			run: func(t *testing.T) {
+				rt, _, runner, trace := newHarness(t, "r4synthetic:x:1000:1000:N,old,W,H,O,,:/home/r4synthetic:/bin/sh\n")
+				room := any("42")
+				_, err := callExec(rt, &execuser.ChRoomNumberArgs{Name: accountName, RoomNumber: &room})
+				if err == nil || err.Error() != "user.chroomnumber: room update would alter unmanaged GECOS fields" {
+					t.Fatal("room-trailing-other-rejected: fixed preservation error mismatch")
+				}
+				assertTrace(t, "room-trailing-other-rejected", trace, []string{"bounded-passwd-read"})
+				assertResolver(t, "room-trailing-other-rejected", runner, nil)
+				if len(runner.commands) != 0 {
+					t.Fatal("room-trailing-other-rejected: unexpected usermod dispatch")
+				}
+			},
+		},
+		{
+			id:      "room-c1-readback",
+			source:  "saltstack/salt/modules/useradd.py:117-138,649-659",
+			fixture: "saltstack/tests/pytests/unit/modules/test_useradd.py:482-517 (source-only C1 vector)",
+			run: func(t *testing.T) {
+				rt, _, runner, trace := newHarness(t, "r4synthetic:x:1000:1000:N,old,W,H,O:/home/r4synthetic:/bin/sh\n")
+				runner.postRecord = "r4synthetic:x:1000:1000:N,\u0085\u009f,W,H,O:/home/r4synthetic:/bin/sh\n"
+				room := any("\u0085\u009f")
+				value, err := callExec(rt, &execuser.ChRoomNumberArgs{Name: accountName, RoomNumber: &room})
+				assertBool(t, "room-c1-readback", value, err, true)
+				assertRoomCommand(t, "room-c1-readback", runner, "N,\u0085\u009f,W,H,O", "\u0085\u009f")
+				assertTrace(t, "room-c1-readback", trace, []string{"bounded-passwd-read", "trusted-resolve", "runner-dispatch", "bounded-passwd-read"})
+			},
+		},
+		{
+			id:      "exec-null-clear",
+			source:  "saltstack/salt/modules/useradd.py:117-127,649-659",
+			fixture: "saltstack/tests/pytests/unit/modules/test_useradd.py:482-517",
+			run: func(t *testing.T) {
+				rt, _, runner, trace := newHarness(t, "r4synthetic:x:1000:1000:N,old,W,H,O:/home/r4synthetic:/bin/sh\n")
+				runner.postRecord = "r4synthetic:x:1000:1000:N,,W,H,O:/home/r4synthetic:/bin/sh\n"
+				var room any
+				value, err := callExec(rt, &execuser.ChRoomNumberArgs{Name: accountName, RoomNumber: &room})
+				assertBool(t, "exec-null-clear", value, err, true)
+				assertRoomCommand(t, "exec-null-clear", runner, "N,,W,H,O", "")
+				assertTrace(t, "exec-null-clear", trace, []string{"bounded-passwd-read", "trusted-resolve", "runner-dispatch", "bounded-passwd-read"})
+			},
+		},
+		{
+			id:      "exec-omitted-rejected",
+			source:  "saltstack/salt/modules/useradd.py:649-659,706-725",
+			fixture: "no mapped omitted-room fixture; required Go binding contract",
+			run: func(t *testing.T) {
+				rt, _, runner, trace := newHarness(t, "r4synthetic:x:1000:1000:N,old,W,H,O:/home/r4synthetic:/bin/sh\n")
+				_, err := callExec(rt, &execuser.ChRoomNumberArgs{Name: accountName})
+				var missing *config.MissingRequiredError
+				if !errors.As(err, &missing) || missing.Name != "roomnumber" {
+					t.Fatal("exec-omitted-rejected: required argument category mismatch")
+				}
+				assertTrace(t, "exec-omitted-rejected", trace, nil)
+				assertResolver(t, "exec-omitted-rejected", runner, nil)
+				if len(runner.commands) != 0 {
+					t.Fatal("exec-omitted-rejected: unexpected usermod dispatch")
+				}
+			},
+		},
+		{
+			id:      "type-rejected",
+			source:  "saltstack/salt/modules/useradd.py:117-122 (Python str subset is wider)",
+			fixture: "no mapped float-rejection fixture; selected Go scalar subset",
+			run: func(t *testing.T) {
+				rt, _, runner, trace := newHarness(t, "r4synthetic:x:1000:1000:N,old,W,H,O:/home/r4synthetic:/bin/sh\n")
+				room := any(float64(42))
+				_, err := callExec(rt, &execuser.ChRoomNumberArgs{Name: accountName, RoomNumber: &room})
+				if err == nil || err.Error() != "user.chroomnumber: invalid roomnumber type" {
+					t.Fatal("type-rejected: fixed scalar error mismatch")
+				}
+				assertTrace(t, "type-rejected", trace, nil)
+				assertResolver(t, "type-rejected", runner, nil)
+				if len(runner.commands) != 0 {
+					t.Fatal("type-rejected: unexpected usermod dispatch")
+				}
+			},
+		},
+		{
+			id:      "comma-rejected",
+			source:  "saltstack/salt/modules/useradd.py:72-100; states/user.py:610-614",
+			fixture: "no mapped Go comma fixture; source-derived safe divergence",
+			run: func(t *testing.T) {
+				rt, _, runner, trace := newHarness(t, "r4synthetic:x:1000:1000:N,old,W,H,O:/home/r4synthetic:/bin/sh\n")
+				room := any("42,extra")
+				_, err := callExec(rt, &execuser.ChRoomNumberArgs{Name: accountName, RoomNumber: &room})
+				if err == nil || err.Error() != "user.chroomnumber: comma in roomnumber is not allowed" {
+					t.Fatal("comma-rejected: fixed comma error mismatch")
+				}
+				assertTrace(t, "comma-rejected", trace, nil)
+				assertResolver(t, "comma-rejected", runner, nil)
+				if len(runner.commands) != 0 {
+					t.Fatal("comma-rejected: unexpected usermod dispatch")
+				}
+			},
+		},
+		{
+			id:      "helper-rejected",
+			source:  "saltstack/salt/modules/useradd.py:131-138,649-659",
+			fixture: "saltstack/tests/pytests/unit/modules/test_useradd.py:482-517",
+			run: func(t *testing.T) {
+				rt, _, runner, trace := newHarness(t, "r4synthetic:x:1000:1000:N,old,W,H,O:/home/r4synthetic:/bin/sh\n")
+				runner.resolverFailure = true
+				room := any("42")
+				_, err := callExec(rt, &execuser.ChRoomNumberArgs{Name: accountName, RoomNumber: &room})
+				if err == nil || err.Error() != "user.chroomnumber: trusted helper unavailable" {
+					t.Fatal("helper-rejected: fixed helper error mismatch")
+				}
+				assertTrace(t, "helper-rejected", trace, []string{"bounded-passwd-read", "trusted-resolve"})
+				assertResolver(t, "helper-rejected", runner, []string{"usermod"})
+				if len(runner.commands) != 0 {
+					t.Fatal("helper-rejected: unexpected usermod dispatch")
+				}
+			},
+		},
+		{
+			id:      "command-failed",
+			source:  "saltstack/salt/modules/useradd.py:131-138",
+			fixture: "saltstack/tests/pytests/unit/modules/test_useradd.py:482-517",
+			run: func(t *testing.T) {
+				rt, _, runner, trace := newHarness(t, "r4synthetic:x:1000:1000:N,old,W,H,O:/home/r4synthetic:/bin/sh\n")
+				runner.runResult = process.CommandResult{Err: errors.New("synthetic command failure")}
+				room := any("42")
+				_, err := callExec(rt, &execuser.ChRoomNumberArgs{Name: accountName, RoomNumber: &room})
+				if err == nil || err.Error() != "user.chroomnumber: command failed" {
+					t.Fatal("command-failed: fixed command error mismatch")
+				}
+				assertTrace(t, "command-failed", trace, []string{"bounded-passwd-read", "trusted-resolve", "runner-dispatch"})
+				assertResolver(t, "command-failed", runner, []string{"usermod"})
+				assertRoomCommand(t, "command-failed", runner, "N,42,W,H,O", "42")
+			},
+		},
+		{
+			id:      "state-unmanaged",
+			source:  "saltstack/salt/states/user.py:254-258,320",
+			fixture: "no mapped roomnumber state fixture; legacy unmanaged behavior",
+			run: func(t *testing.T) {
+				rt, _, runner, trace := newHarness(t, "r4synthetic:x:1000:1000:N,old,W,H,O:/home/r4synthetic:/bin/sh\n")
+				got := applyState(t, rt, map[string]any{"name": accountName})
+				assertState(t, "state-unmanaged", got, &success, "User r4synthetic is present and up to date", map[string]any{})
+				assertTrace(t, "state-unmanaged", trace, []string{"unbounded-passwd-read", "unbounded-group-read"})
+				assertResolver(t, "state-unmanaged", runner, nil)
+				if len(runner.commands) != 0 {
+					t.Fatal("state-unmanaged: unexpected usermod dispatch")
+				}
+			},
+		},
+		{
+			id:      "state-test",
+			source:  "saltstack/salt/states/user.py:254-258,320; selected metadata-only state contract",
+			fixture: "no mapped roomnumber state fixture; source-derived synthetic case",
+			run: func(t *testing.T) {
+				rt, _, runner, trace := newHarness(t, "r4synthetic:x:1000:1000:N,old,W,H,O:/home/r4synthetic:/bin/sh\n")
+				got := applyState(t, rt, map[string]any{"name": accountName, "roomnumber": "42", "test": true})
+				assertState(t, "state-test", got, nil, "User r4synthetic would be updated", map[string]any{"roomnumber": map[string]any{"changed": true}})
+				assertTrace(t, "state-test", trace, []string{"bounded-passwd-read"})
+				assertResolver(t, "state-test", runner, nil)
+				if len(runner.commands) != 0 {
+					t.Fatal("state-test: unexpected usermod dispatch")
+				}
+			},
+		},
+		{
+			id:      "state-changed-room-other",
+			source:  "saltstack/salt/modules/useradd.py:123-138,649-659; states/user.py:254-258,320",
+			fixture: "no mapped roomnumber state fixture; sequential preservation synthetic case",
+			run: func(t *testing.T) {
+				rt, _, runner, trace := newHarness(t, "r4synthetic:x:1000:1000:N,old,W,H,O:/home/r4synthetic:/bin/sh\n")
+				runner.postRecords = []string{
+					"r4synthetic:x:1000:1000:N,42,W,H,O:/home/r4synthetic:/bin/sh\n",
+					"r4synthetic:x:1000:1000:N,42,W,H,new:/home/r4synthetic:/bin/sh\n",
+				}
+				got := applyState(t, rt, map[string]any{"name": accountName, "roomnumber": "42", "other": "new"})
+				wantChanges := map[string]any{
+					"roomnumber": map[string]any{"changed": true},
+					"other":      map[string]any{"changed": true},
+				}
+				assertState(t, "state-changed-room-other", got, &success, "", wantChanges)
+				assertTrace(t, "state-changed-room-other", trace, []string{
+					"bounded-passwd-read", "bounded-passwd-read", "trusted-resolve", "runner-dispatch", "bounded-passwd-read",
+					"bounded-passwd-read", "trusted-resolve", "runner-dispatch", "bounded-passwd-read",
+				})
+				assertResolver(t, "state-changed-room-other", runner, []string{"usermod", "usermod"})
+				if len(runner.commands) != 2 {
+					t.Fatal("state-changed-room-other: sequential dispatch count mismatch")
+				}
+				first := runner.commands[0]
+				second := runner.commands[1]
+				wantEnv := []string{"PATH=/usr/sbin:/usr/bin:/bin", "LANG=C", "LC_ALL=C"}
+				if first.Name != "/usr/sbin/usermod" || !reflect.DeepEqual(first.Args, []string{"-c", "N,42,W,H,O", accountName}) ||
+					!reflect.DeepEqual(first.Env, wantEnv) || first.Dir != "/" || first.Shell || first.Timeout != 30*time.Second ||
+					first.PreserveStdout || len(first.Stdin) != 0 || first.MaxStdoutBytes != 4096 || first.MaxStderrBytes != 4096 ||
+					!reflect.DeepEqual(first.Redact, []string{"N,42,W,H,O", accountName, "42"}) ||
+					second.Name != "/usr/sbin/usermod" || !reflect.DeepEqual(second.Args, []string{"-c", "N,42,W,H,new", accountName}) ||
+					!reflect.DeepEqual(second.Env, wantEnv) || second.Dir != "/" || second.Shell || second.Timeout != 30*time.Second ||
+					second.PreserveStdout || len(second.Stdin) != 0 || second.MaxStdoutBytes != 4096 || second.MaxStderrBytes != 4096 ||
+					!reflect.DeepEqual(second.Redact, []string{"N,42,W,H,new", accountName, "new"}) {
+					t.Fatal("state-changed-room-other: room/other sequential GECOS preservation mismatch")
+				}
+				if !runner.postWriteSucceeded {
+					t.Fatal("state-changed-room-other: scripted readback records were not applied")
+				}
+			},
+		},
+		{
+			id:      "state-partial-failure",
+			source:  "saltstack/salt/states/user.py:254-258,320; selected action-stop contract",
+			fixture: "no mapped roomnumber state fixture; synthetic partial-effect case",
+			run: func(t *testing.T) {
+				rt, fsys, runner, trace := newHarness(t, "r4synthetic:x:1000:1000:N,old,W,H,O:/home/r4synthetic:/bin/sh\n")
+				runner.resolverFailure = true
+				runner.postRecord = "r4synthetic:x:1001:1000:N,old,W,H,O:/home/r4synthetic:/bin/sh\n"
+				got := applyState(t, rt, map[string]any{"name": accountName, "uid": "1001", "roomnumber": "42", "other": "new"})
+				assertState(t, "state-partial-failure", got, &failure, "user.present: account update failed", map[string]any{})
+				assertTrace(t, "state-partial-failure", trace, []string{"bounded-passwd-read", "runner-dispatch", "bounded-passwd-read", "trusted-resolve"})
+				assertResolver(t, "state-partial-failure", runner, []string{"usermod"})
+				if len(runner.commands) != 1 || runner.commands[0].Name != "usermod" ||
+					!reflect.DeepEqual(runner.commands[0].Args, []string{"-u", "1001", accountName}) ||
+					runner.commands[0].Dir != "" || runner.commands[0].Env != nil {
+					t.Fatal("state-partial-failure: sibling command boundary mismatch")
+				}
+				postRecord, err := fsys.MemoryFS.ReadFile("/etc/passwd")
+				if err != nil || string(postRecord) != "r4synthetic:x:1001:1000:N,old,W,H,O:/home/r4synthetic:/bin/sh\n" {
+					t.Fatal("state-partial-failure: scripted sibling effect was not retained")
+				}
+			},
+		},
+	}
+	if len(scenarios) != 16 {
+		t.Fatal("R4 roomnumber scenario inventory mismatch")
+	}
+	for _, scenario := range scenarios {
+		if scenario.source == "" || scenario.fixture == "" {
+			t.Fatal("R4 roomnumber static source/fixture reference missing")
 		}
 		t.Run(scenario.id, scenario.run)
 	}

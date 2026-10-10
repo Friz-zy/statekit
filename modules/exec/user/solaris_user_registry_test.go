@@ -94,7 +94,7 @@ func TestSunUserRegisterKeepsLinuxSurfaceCanonical(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, name := range []string{
-		"user.chfullname", "user.chgroups", "user.chhomephone", "user.chroomnumber",
+		"user.chfullname", "user.chgroups", "user.chhomephone",
 		"user.chworkphone", "user.getent", "user.list_groups", "user.rename",
 	} {
 		if _, exists := reg.Get(name); exists {

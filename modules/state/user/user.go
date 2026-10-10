@@ -17,13 +17,14 @@ import (
 )
 
 type presentArgs struct {
-	Name  string `statekit:"required"`
-	UID   string `statekit:"name=uid"`
-	GID   string `statekit:"name=gid"`
-	Home  string `statekit:"name=home"`
-	Shell string `statekit:"name=shell"`
-	Other *any   `statekit:"name=other"`
-	Test  bool   `statekit:"name=test"`
+	Name       string `statekit:"required"`
+	UID        string `statekit:"name=uid"`
+	GID        string `statekit:"name=gid"`
+	Home       string `statekit:"name=home"`
+	Shell      string `statekit:"name=shell"`
+	RoomNumber *any   `statekit:"name=roomnumber"`
+	Other      *any   `statekit:"name=other"`
+	Test       bool   `statekit:"name=test"`
 }
 
 type presentFunc struct{}
@@ -32,18 +33,20 @@ func (presentFunc) Name() string { return "user.present" }
 func (presentFunc) Args() any    { return presentArgs{} }
 func (presentFunc) Apply(ctx context.Context, rt *runtime.Runtime, args any) result.StateResult {
 	a := args.(*presentArgs)
-	if a.Other == nil || *a.Other == nil {
+	if !managedAny(a.RoomNumber) && !managedAny(a.Other) {
 		return applyPresentLegacy(ctx, rt, a)
 	}
 	return applyPresentForGOOS(ctx, rt, a, runtime.CurrentGOOS())
 }
 
 func applyPresentForGOOS(ctx context.Context, rt *runtime.Runtime, a *presentArgs, goos string) result.StateResult {
-	if a.Other != nil && *a.Other != nil {
+	if managedAny(a.RoomNumber) || managedAny(a.Other) {
 		return applyPresentWithOther(ctx, rt, a, goos)
 	}
 	return applyPresentLegacy(ctx, rt, a)
 }
+
+func managedAny(value *any) bool { return value != nil && *value != nil }
 
 const otherManagedFailure = "user.present: account update failed"
 
@@ -51,8 +54,25 @@ func applyPresentWithOther(ctx context.Context, rt *runtime.Runtime, a *presentA
 	if goos != "linux" {
 		return result.Failure(a.Name, otherManagedFailure)
 	}
-	other, err := execuser.NormalizeOther(*a.Other)
-	if err != nil || !validPresentID(a.UID) || !validPresentID(a.GID) ||
+	managedRoom := managedAny(a.RoomNumber)
+	managedOther := managedAny(a.Other)
+	var room string
+	if managedRoom {
+		var err error
+		room, err = execuser.NormalizeRoomNumber(*a.RoomNumber)
+		if err != nil {
+			return result.Failure(a.Name, otherManagedFailure)
+		}
+	}
+	var other string
+	if managedOther {
+		var err error
+		other, err = execuser.NormalizeOther(*a.Other)
+		if err != nil {
+			return result.Failure(a.Name, otherManagedFailure)
+		}
+	}
+	if !validPresentID(a.UID) || !validPresentID(a.GID) ||
 		!validPresentText(a.Home) || !validPresentText(a.Shell) {
 		return result.Failure(a.Name, otherManagedFailure)
 	}
@@ -60,7 +80,15 @@ func applyPresentWithOther(ctx context.Context, rt *runtime.Runtime, a *presentA
 	if err != nil {
 		return result.Failure(a.Name, otherManagedFailure)
 	}
-	if err := entry.ValidateOtherBuild(other); err != nil {
+	var prospectiveRoom *string
+	if managedRoom {
+		prospectiveRoom = &room
+	}
+	var prospectiveOther *string
+	if managedOther {
+		prospectiveOther = &other
+	}
+	if err := entry.ValidateProspectiveGecos(prospectiveRoom, prospectiveOther); err != nil {
 		return result.Failure(a.Name, otherManagedFailure)
 	}
 
@@ -106,7 +134,18 @@ func applyPresentWithOther(ctx context.Context, rt *runtime.Runtime, a *presentA
 			},
 		})
 	}
-	if !entry.OtherMatches(other) {
+	if managedRoom && !entry.RoomNumberMatches(room) {
+		value := room
+		roomValue := any(value)
+		actions = append(actions, changeAction{
+			change: map[string]any{"roomnumber": map[string]any{"changed": true}},
+			apply: func(ctx context.Context, rt *runtime.Runtime) (any, error) {
+				return rt.Exec.Call(ctx, rt, "user.chroomnumber", &execuser.ChRoomNumberArgs{Name: a.Name, RoomNumber: &roomValue})
+			},
+			verify: true,
+		})
+	}
+	if managedOther && !entry.OtherMatches(other) {
 		var value any = other
 		actions = append(actions, changeAction{
 			change: map[string]any{"other": map[string]any{"changed": true}},

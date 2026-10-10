@@ -102,6 +102,46 @@ func TestPortingDebtExecUserChotherCanonicalRegistrationPTD_EXEC_1651(t *testing
 	}
 }
 
+func TestPortingDebtExecUserChroomnumberCanonicalRegistrationPTD_EXEC_1653(t *testing.T) {
+	if runtime.CurrentGOOS() != "linux" {
+		t.Fatal("PTD-EXEC-1653 requires the Linux test target")
+	}
+	rt := &runtime.Runtime{Exec: runtime.NewExecRegistry()}
+	if err := execuser.Register(rt.Exec); err != nil {
+		t.Fatal("PTD-EXEC-1653 synthetic registration failed")
+	}
+	fn, registered := rt.Exec.Get("user.chroomnumber")
+	if !registered || fn.Name() != "user.chroomnumber" || !runtime.SupportsPlatform(fn, "linux") {
+		t.Fatal("PTD-EXEC-1653 canonical Linux registration mismatch")
+	}
+	platform, ok := fn.(runtime.PlatformConstrained)
+	if !ok || !reflect.DeepEqual(platform.Platforms(), []string{"linux"}) {
+		t.Fatal("PTD-EXEC-1653 Linux platform constraint mismatch")
+	}
+	prototype := reflect.TypeOf(fn.Args())
+	if prototype != reflect.TypeOf(execuser.ChRoomNumberArgs{}) || prototype.NumField() != 3 {
+		t.Fatal("PTD-EXEC-1653 argument prototype mismatch")
+	}
+	roomField, ok := prototype.FieldByName("RoomNumber")
+	if !ok || roomField.Type != reflect.TypeOf((*any)(nil)) || roomField.Tag.Get("statekit") != "required,name=roomnumber" {
+		t.Fatal("PTD-EXEC-1653 required *any roomnumber binding mismatch")
+	}
+
+	missing := &execuser.ChRoomNumberArgs{}
+	err := config.Decode(missing, map[string]any{"name": "synthetic"}, nil)
+	var required *config.MissingRequiredError
+	if !errors.As(err, &required) || required.Name != "roomnumber" {
+		t.Fatal("PTD-EXEC-1653 omitted required roomnumber binding mismatch")
+	}
+	args := &execuser.ChRoomNumberArgs{Name: "synthetic"}
+	if err := config.Decode(args, map[string]any{"name": "synthetic", "roomnumber": nil}, nil); err != nil || args.RoomNumber == nil || *args.RoomNumber != nil {
+		t.Fatal("PTD-EXEC-1653 explicit null binding mismatch")
+	}
+	if err := config.Decode(args, map[string]any{"name": "synthetic", "roomnumber": ""}, nil); err != nil || args.RoomNumber == nil || *args.RoomNumber != "" {
+		t.Fatal("PTD-EXEC-1653 explicit empty binding mismatch")
+	}
+}
+
 // TestBuildRuntimeRegistersSystemPowerFunctions is the PTD-TEST-0001
 // regression: BuildRuntime Names contains exactly the five system.*
 // functions from system.Register, lookup-only enumeration spawns no

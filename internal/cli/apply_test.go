@@ -222,11 +222,98 @@ func TestApplyOtherStructuredBindingAndStatePresence(t *testing.T) {
 	}
 }
 
+func TestApplyRoomnumberUnknownKeyEchoBoundary(t *testing.T) {
+	app, runner, fsys := newCLIUserApp(t)
+	path := writeOps(t, `[{"state":"user.present","args":{"name":"synthetic","roomnumber":"42","ROOM_ECHO_MARKER":"DIFFERENT_VALUE_MARKER"}}]`)
+	code, output, errText := captureCode(t, app, "apply", path)
+	if code != ExitInvalidInput || !strings.Contains(errText, "ROOM_ECHO_MARKER") || strings.Contains(errText, "DIFFERENT_VALUE_MARKER") ||
+		strings.Contains(output, "DIFFERENT_VALUE_MARKER") || fsys.boundedReads != 0 || fsys.unboundedRead != 0 || len(runner.commands) != 0 || len(runner.resolveCalls) != 0 {
+		t.Fatal("Apply roomnumber unknown-key echo/effect boundary mismatch")
+	}
+}
+
+func TestApplyRoomnumberStructuredBindingAndStatePresence(t *testing.T) {
+	missing := map[string]any{"name": "synthetic"}
+	args, code := decodeStructured("user.chroomnumber", execuser.ChRoomNumberArgs{}, missing)
+	if args != nil || code != ExitInvalidInput {
+		t.Fatal("missing required exec roomnumber binding mismatch")
+	}
+	for _, tc := range []struct {
+		name      string
+		value     any
+		wantInner any
+	}{
+		{"null", nil, nil},
+		{"empty", "", ""},
+		{"integer", int(7), int(7)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bound, code := decodeStructured("user.chroomnumber", execuser.ChRoomNumberArgs{}, map[string]any{
+				"name": "synthetic", "roomnumber": tc.value,
+			})
+			if code != ExitOK {
+				t.Fatal("explicit exec roomnumber binding failed")
+			}
+			value := bound.(*execuser.ChRoomNumberArgs).RoomNumber
+			if value == nil || !reflect.DeepEqual(*value, tc.wantInner) {
+				t.Fatal("explicit exec roomnumber presence mismatch")
+			}
+			stateArgs, stateCode := decodeStructured("user.present", statePresentArgsForTest{}, map[string]any{
+				"name": "synthetic", "roomnumber": tc.value,
+			})
+			if stateCode != ExitOK {
+				t.Fatal("explicit state roomnumber binding failed")
+			}
+			stateValue := reflect.ValueOf(stateArgs).Elem().FieldByName("RoomNumber")
+			if stateValue.IsNil() || !reflect.DeepEqual(stateValue.Elem().Interface(), tc.wantInner) {
+				t.Fatal("explicit state roomnumber presence mismatch")
+			}
+		})
+	}
+
+	// Apply accepts JSON-shaped documents through its YAML decoder. Null stays
+	// unmanaged, while empty is a managed clear reported as metadata only.
+	app, runner, fsys := newCLIUserApp(t)
+	path := writeOps(t, `[{"state":"user.present","args":{"name":"synthetic","roomnumber":null}}]`)
+	code, _, errText := captureCode(t, app, "apply", path, "-o", "json")
+	if code != ExitOK || errText != "" || len(runner.commands) != 0 || len(runner.resolveCalls) != 0 || fsys.boundedReads != 0 || fsys.unboundedRead != 2 {
+		t.Fatal("Apply null roomnumber did not remain unmanaged")
+	}
+
+	app, runner, fsys = newCLIUserApp(t)
+	path = writeOps(t, `[{"state":"user.present","args":{"name":"synthetic","roomnumber":""}}]`)
+	code, output, errText := captureCode(t, app, "apply", path, "-o", "json")
+	if code != ExitOK || errText != "" || len(runner.commands) != 1 || len(runner.resolveCalls) != 1 || fsys.boundedReads != 3 || fsys.unboundedRead != 0 {
+		t.Fatal("Apply empty roomnumber did not dispatch one managed clear")
+	}
+	if !reflect.DeepEqual(runner.commands[0].Args, []string{"-c", "first,,room,work,old", "synthetic"}) ||
+		strings.Contains(output, "first,last,room,work") || strings.Contains(output, "old") {
+		t.Fatal("Apply roomnumber output or command was not metadata-only")
+	}
+	var results []map[string]any
+	if err := json.Unmarshal([]byte(output), &results); err != nil || len(results) != 1 {
+		t.Fatal("Apply roomnumber result was not valid JSON")
+	}
+	changes, ok := results[0]["changes"].(map[string]any)
+	if !ok || !reflect.DeepEqual(changes["roomnumber"], map[string]any{"changed": true}) {
+		t.Fatal("Apply roomnumber Changes contract mismatch")
+	}
+
+	app, runner, fsys = newCLIUserApp(t)
+	path = writeOps(t, `[{"state":"user.present","args":{"name":"synthetic","roomnumber":0}}]`)
+	code, _, errText = captureCode(t, app, "apply", path, "-o", "json")
+	if code != ExitOK || errText != "" || len(runner.commands) != 1 || len(runner.resolveCalls) != 1 ||
+		fsys.boundedReads != 3 || fsys.unboundedRead != 0 || runner.commands[0].Args[1] != "first,0,room,work,old" {
+		t.Fatal("Apply YAML-decoded integer roomnumber transport mismatch")
+	}
+}
+
 // Test-only state prototype used to exercise decodeStructured's optional
 // pointer-to-any presence in the Apply argument path.
 type statePresentArgsForTest struct {
-	Name  string `statekit:"required"`
-	Other *any   `statekit:"name=other"`
+	Name       string `statekit:"required"`
+	Other      *any   `statekit:"name=other"`
+	RoomNumber *any   `statekit:"name=roomnumber"`
 }
 
 func TestApplyEndToEndViaApp(t *testing.T) {
