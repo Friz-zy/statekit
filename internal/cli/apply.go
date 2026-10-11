@@ -189,7 +189,10 @@ func (a *App) cmdApply(argv []string) int {
 		io.WriteString(os.Stdout, b.String())
 		return exitCode
 	}
-	return encodeOr(os.Stdout, format, results)
+	if code := encodeOr(os.Stdout, format, results); code != ExitOK {
+		return code
+	}
+	return exitCode
 }
 
 // decodeStructured decodes pre-resolved structured arguments into the

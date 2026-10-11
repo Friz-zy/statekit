@@ -1,14 +1,20 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/friz-zy/statekit/internal/output"
+	"github.com/friz-zy/statekit/internal/result"
+	"github.com/friz-zy/statekit/internal/runtime"
 	execuser "github.com/friz-zy/statekit/modules/exec/user"
+	"gopkg.in/yaml.v3"
 )
 
 func writeOps(t *testing.T, content string) string {
@@ -348,5 +354,328 @@ func TestApplyTestModeGlobal(t *testing.T) {
 	code, out, _ := runApp(t, "apply", path, "--test", "-o", "json")
 	if code != ExitOK || !strings.Contains(out, `"result": true`) {
 		t.Fatalf("global test mode: code=%d out=%q", code, out)
+	}
+}
+
+type applyOutcomeArgs struct {
+	Name string `statekit:"required"`
+	Test bool   `statekit:"name=test"`
+}
+
+type applyOutcomeCall struct {
+	State string
+	Name  string
+	Test  bool
+}
+
+type applyOutcomeState struct {
+	state  string
+	result result.StateResult
+	calls  *[]applyOutcomeCall
+}
+
+func (s *applyOutcomeState) Name() string { return s.state }
+
+func (s *applyOutcomeState) Args() any { return applyOutcomeArgs{} }
+
+func (s *applyOutcomeState) Apply(_ context.Context, _ *runtime.Runtime, args any) result.StateResult {
+	a := args.(*applyOutcomeArgs)
+	*s.calls = append(*s.calls, applyOutcomeCall{State: s.state, Name: a.Name, Test: a.Test})
+	res := s.result
+	res.Name = a.Name
+	return res
+}
+
+type applyOutcomeStep struct {
+	state  string
+	result result.StateResult
+}
+
+func newApplyOutcomeStep(state, name string, value *bool) applyOutcomeStep {
+	return applyOutcomeStep{
+		state: state,
+		result: result.New(name, "comment:"+name, value, map[string]any{
+			"marker": map[string]any{"step": name},
+		}),
+	}
+}
+
+func newApplyOutcomeApp(t *testing.T, steps []applyOutcomeStep) (*App, *[]applyOutcomeCall) {
+	t.Helper()
+	states := runtime.NewStateRegistry()
+	calls := []applyOutcomeCall{}
+	for _, step := range steps {
+		state := &applyOutcomeState{state: step.state, result: step.result, calls: &calls}
+		if err := states.Register(state); err != nil {
+			t.Fatal("register synthetic Apply state failed")
+		}
+	}
+	rt := &runtime.Runtime{States: states}
+	return NewApp("test-version", func() (*runtime.Runtime, error) { return rt, nil }), &calls
+}
+
+func applyOutcomeDocument(steps []applyOutcomeStep) string {
+	var document strings.Builder
+	for _, step := range steps {
+		fmt.Fprintf(&document, "- state: %q\n  args: {name: %q}\n", step.state, step.result.Name)
+	}
+	return document.String()
+}
+
+func assertApplyOutcomeResults(t *testing.T, format, rendered string, want []result.StateResult) {
+	t.Helper()
+	if format == "text" {
+		var expected strings.Builder
+		for _, res := range want {
+			expected.WriteString(output.StateResultText(res))
+			expected.WriteString("---\n")
+		}
+		if rendered != expected.String() {
+			t.Fatalf("text result payload/order mismatch: got %q", rendered)
+		}
+		return
+	}
+
+	var got []result.StateResult
+	var err error
+	if format == "json" {
+		err = json.Unmarshal([]byte(rendered), &got)
+	} else {
+		err = yaml.Unmarshal([]byte(rendered), &got)
+	}
+	if err != nil || len(got) != len(want) {
+		t.Fatalf("%s result list decode/length mismatch: len=%d err=%v", format, len(got), err)
+	}
+	for i := range want {
+		resultMatches := (got[i].Result == nil) == (want[i].Result == nil)
+		if resultMatches && got[i].Result != nil {
+			resultMatches = *got[i].Result == *want[i].Result
+		}
+		if got[i].Name != want[i].Name || !resultMatches || got[i].Comment != want[i].Comment ||
+			!reflect.DeepEqual(got[i].Changes, want[i].Changes) {
+			t.Fatalf("%s result %d payload/order mismatch", format, i)
+		}
+	}
+}
+
+func TestApplyOutcomeExitContract(t *testing.T) {
+	trueResult := result.Bool(true)
+	falseResult := result.Bool(false)
+	cases := []struct {
+		name      string
+		format    string
+		onFailure string
+		testMode  bool
+		steps     []applyOutcomeStep
+		executed  []int
+		wantExit  int
+	}{
+		{
+			name: "single-true-json", format: "json", wantExit: ExitOK,
+			steps: []applyOutcomeStep{newApplyOutcomeStep("test.first", "first", trueResult)}, executed: []int{0},
+		},
+		{
+			name: "single-true-yaml", format: "yaml", wantExit: ExitOK,
+			steps: []applyOutcomeStep{newApplyOutcomeStep("test.first", "first", trueResult)}, executed: []int{0},
+		},
+		{
+			name: "single-true-text", format: "text", wantExit: ExitOK,
+			steps: []applyOutcomeStep{newApplyOutcomeStep("test.first", "first", trueResult)}, executed: []int{0},
+		},
+		{
+			name: "single-false-json", format: "json", wantExit: ExitFailed,
+			steps: []applyOutcomeStep{newApplyOutcomeStep("test.first", "first", falseResult)}, executed: []int{0},
+		},
+		{
+			name: "single-false-yaml", format: "yaml", wantExit: ExitFailed,
+			steps: []applyOutcomeStep{newApplyOutcomeStep("test.first", "first", falseResult)}, executed: []int{0},
+		},
+		{
+			name: "single-false-text", format: "text", wantExit: ExitFailed,
+			steps: []applyOutcomeStep{newApplyOutcomeStep("test.first", "first", falseResult)}, executed: []int{0},
+		},
+		{
+			name: "pending-only", format: "json", wantExit: ExitOK,
+			steps: []applyOutcomeStep{newApplyOutcomeStep("test.pending", "pending", nil)}, executed: []int{0},
+		},
+		{
+			name: "pending-only-yaml", format: "yaml", wantExit: ExitOK,
+			steps: []applyOutcomeStep{newApplyOutcomeStep("test.pending", "pending", nil)}, executed: []int{0},
+		},
+		{
+			name: "pending-only-text", format: "text", wantExit: ExitOK,
+			steps: []applyOutcomeStep{newApplyOutcomeStep("test.pending", "pending", nil)}, executed: []int{0},
+		},
+		{
+			name: "pending-global-test-json", format: "json", testMode: true, wantExit: ExitOK,
+			steps: []applyOutcomeStep{newApplyOutcomeStep("test.pending", "pending", nil)}, executed: []int{0},
+		},
+		{
+			name: "continue-true-then-false", format: "json", onFailure: "continue", wantExit: ExitFailed,
+			steps: []applyOutcomeStep{
+				newApplyOutcomeStep("test.first", "first", trueResult),
+				newApplyOutcomeStep("test.second", "second", falseResult),
+			}, executed: []int{0, 1},
+		},
+		{
+			name: "continue-false-then-true", format: "yaml", onFailure: "continue", wantExit: ExitFailed,
+			steps: []applyOutcomeStep{
+				newApplyOutcomeStep("test.first", "first", falseResult),
+				newApplyOutcomeStep("test.second", "second", trueResult),
+			}, executed: []int{0, 1},
+		},
+		{
+			name: "continue-all-true", format: "json", onFailure: "continue", wantExit: ExitOK,
+			steps: []applyOutcomeStep{
+				newApplyOutcomeStep("test.first", "first", trueResult),
+				newApplyOutcomeStep("test.second", "second", trueResult),
+			}, executed: []int{0, 1},
+		},
+		{
+			name: "continue-false-then-pending", format: "json", onFailure: "continue", wantExit: ExitFailed,
+			steps: []applyOutcomeStep{
+				newApplyOutcomeStep("test.first", "first", falseResult),
+				newApplyOutcomeStep("test.pending", "pending", nil),
+			}, executed: []int{0, 1},
+		},
+		{
+			name: "continue-pending-then-true", format: "json", onFailure: "continue", wantExit: ExitOK,
+			steps: []applyOutcomeStep{
+				newApplyOutcomeStep("test.pending", "pending", nil),
+				newApplyOutcomeStep("test.second", "second", trueResult),
+			}, executed: []int{0, 1},
+		},
+		{
+			name: "stop-false-then-true", format: "json", wantExit: ExitFailed,
+			steps: []applyOutcomeStep{
+				newApplyOutcomeStep("test.first", "first", falseResult),
+				newApplyOutcomeStep("test.second", "second", trueResult),
+			}, executed: []int{0},
+		},
+		{
+			name: "stop-pending-then-true", format: "yaml", wantExit: ExitOK,
+			steps: []applyOutcomeStep{
+				newApplyOutcomeStep("test.pending", "pending", nil),
+				newApplyOutcomeStep("test.second", "second", trueResult),
+			}, executed: []int{0, 1},
+		},
+		{
+			name: "test-mode-false", format: "json", testMode: true, wantExit: ExitFailed,
+			steps: []applyOutcomeStep{newApplyOutcomeStep("test.first", "first", falseResult)}, executed: []int{0},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			app, calls := newApplyOutcomeApp(t, tc.steps)
+			path := writeOps(t, applyOutcomeDocument(tc.steps))
+			argv := []string{"apply", path}
+			if tc.onFailure != "" {
+				argv = append(argv, "--on-failure="+tc.onFailure)
+			}
+			if tc.testMode {
+				argv = append(argv, "--test")
+			}
+			argv = append(argv, "-o", tc.format)
+			code, rendered, errText := captureCode(t, app, argv...)
+			if code != tc.wantExit || errText != "" {
+				t.Fatalf("Apply exit=%d stderr=%q, want exit=%d", code, errText, tc.wantExit)
+			}
+
+			wantCalls := make([]applyOutcomeCall, 0, len(tc.executed))
+			wantResults := make([]result.StateResult, 0, len(tc.executed))
+			for _, index := range tc.executed {
+				step := tc.steps[index]
+				wantCalls = append(wantCalls, applyOutcomeCall{
+					State: step.state, Name: step.result.Name, Test: tc.testMode,
+				})
+				wantResults = append(wantResults, step.result)
+			}
+			if !reflect.DeepEqual(*calls, wantCalls) {
+				t.Fatalf("Apply state calls/order = %#v, want %#v", *calls, wantCalls)
+			}
+			assertApplyOutcomeResults(t, tc.format, rendered, wantResults)
+		})
+	}
+}
+
+// TestApplyEncodingFailurePrecedesStateOutcome is intentionally non-parallel:
+// it swaps os.Stdout for a read-only temporary file to force an actual write error.
+func TestApplyEncodingFailurePrecedesStateOutcome(t *testing.T) {
+	trueResult := result.Bool(true)
+	falseResult := result.Bool(false)
+	for _, tc := range []struct {
+		format string
+		name   string
+		result *bool
+	}{
+		{format: "json", name: "true", result: trueResult},
+		{format: "json", name: "false", result: falseResult},
+		{format: "yaml", name: "true", result: trueResult},
+		{format: "yaml", name: "false", result: falseResult},
+	} {
+		t.Run(tc.format+"/"+tc.name, func(t *testing.T) {
+			step := newApplyOutcomeStep("test.first", "first", tc.result)
+			app, calls := newApplyOutcomeApp(t, []applyOutcomeStep{step})
+			path := writeOps(t, applyOutcomeDocument([]applyOutcomeStep{step}))
+
+			sinkPath := filepath.Join(t.TempDir(), "read-only-output")
+			if err := os.WriteFile(sinkPath, nil, 0o600); err != nil {
+				t.Fatal("create output sink failed")
+			}
+			sink, err := os.Open(sinkPath)
+			if err != nil {
+				t.Fatal("open read-only output sink failed")
+			}
+			originalStdout := os.Stdout
+			t.Cleanup(func() {
+				os.Stdout = originalStdout
+				_ = sink.Close()
+			})
+			var code int
+			_, stderr := capture(t, func() {
+				capturedStdout := os.Stdout
+				os.Stdout = sink
+				defer func() { os.Stdout = capturedStdout }()
+				code = app.Run([]string{"apply", path, "-o", tc.format})
+			})
+			if code != ExitInternal || !strings.HasPrefix(stderr, "statekit: ") ||
+				strings.TrimSpace(strings.TrimPrefix(stderr, "statekit:")) == "" || strings.Contains(stderr, "internal failure:") {
+				t.Fatalf("Apply write error did not return through the encoder path (exit=%d)", code)
+			}
+			if !reflect.DeepEqual(*calls, []applyOutcomeCall{{State: step.state, Name: step.result.Name}}) {
+				t.Fatalf("state calls after output failure = %#v, want one invocation", *calls)
+			}
+		})
+	}
+}
+
+type applySyntheticEncodingError struct{}
+
+func (applySyntheticEncodingError) MarshalJSON() ([]byte, error) {
+	return nil, fmt.Errorf("synthetic JSON serialization failure")
+}
+
+func (applySyntheticEncodingError) MarshalYAML() (any, error) {
+	return nil, fmt.Errorf("synthetic YAML serialization failure")
+}
+
+func TestApplySerializationFailurePrecedesStateOutcome(t *testing.T) {
+	falseResult := result.Bool(false)
+	for _, format := range []string{"json", "yaml"} {
+		t.Run(format+"-false", func(t *testing.T) {
+			step := newApplyOutcomeStep("test.first", "first", falseResult)
+			step.result.Changes = map[string]any{"opaque": applySyntheticEncodingError{}}
+			app, calls := newApplyOutcomeApp(t, []applyOutcomeStep{step})
+			path := writeOps(t, applyOutcomeDocument([]applyOutcomeStep{step}))
+
+			code, _, errText := captureCode(t, app, "apply", path, "-o", format)
+			if code != ExitInternal || !strings.HasPrefix(errText, "statekit: ") || strings.Contains(errText, "internal failure:") {
+				t.Fatalf("%s serialization error did not take precedence over false state result (exit=%d)", format, code)
+			}
+			if !reflect.DeepEqual(*calls, []applyOutcomeCall{{State: step.state, Name: step.result.Name}}) {
+				t.Fatalf("state calls after serialization failure = %#v, want one invocation", *calls)
+			}
+		})
 	}
 }

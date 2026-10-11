@@ -11899,3 +11899,159 @@ This is source-derived synthetic evidence for the room-number QA stage only; its
 `TestR4UserChroomnumberSyntheticContract`: 1 top-level test and 16 scenario subtests passed, with zero failures or skips. This is source-derived synthetic evidence, not Salt runtime differential. The coverage invocation passed with exec user 28 top-level / 408 subtests and state user 20 / 23, zero failures or skips. These are separate invocation records, not a unique suite total. Combined statement coverage was 28.1% (exec 23.6%, state 67.5%); 282 function records, 188 zero-coverage and 204 below-full records. No coverage threshold, branch coverage, or catalog coverage is claimed. The additional combined-boundary/registry invocation passed exec 6 top-level / 15 subtests and state 2 / 29, zero failures or skips; direct-boundary values 4095 and 4096 were accepted in both state modes, while 4097 was rejected before effects. Parser/CLI/PTD checks passed: config 10 / 6, CLI 6 / 6, PTD registration test 1 / 0, zero failures or skips. Compile-only checks exited 0 for Darwin/amd64 exec, Windows/amd64 exec, FreeBSD/amd64 exec, and Windows/amd64 state; binaries were never executed.
 
 In the room-number QA session, `go vet ./modules/exec/user ./modules/state/user ./internal/config ./internal/cli ./tests ./tests/differential` exited 0 (6 packages, no diagnostics), and `go mod verify` exited 0 (“all modules verified”). Coverage/log profiles and binaries remained in container tmpfs and were removed; no repository edits resulted, and no raw logs, argv, or GECOS were exposed or persisted. No usermod/useradd or native account access, real `/etc/passwd`, Salt fixture, BuildRuntime/OS fact probe other than the approved process-local modernc initializer, live/network/CI/account operation occurred. Remaining HUMAN gates are room/location data-owner classification, disclosure and retention (including full-GECOS argv and CLI echo); native target/account/action authorization; account lifecycle/name-recreation and competing-GECOS serialization or scoped acceptance; PATH sibling boundary; and external CI/R8/E6/R7/overall R4 closure. Aggregate R8/E6 gates/obligations remain open; overall R4 remains partial. The Linux `user.chroomnumber` implementation is partial, while the canonical PTD-EXEC-1653 table row remains `[ ]` actionable; PTD-TEST-1688 remains `[ ]` actionable. The scoped final independent QA review and technical-writer-senior documentation gates passed for this bounded R4.USER-CHROOMNUMBER subround; overall R4 remains partial, aggregate R8/E6 and PTD rows remain open, and all native, HUMAN, data-owner, CI, and operational gates remain separate and open. This note is outside the PTD tables and changes no PTD row, status, count, or order.
+
+#### ARCH-APPLY-EXIT-01 — preserve state failure after structured output (2026-10-11)
+
+**Status at proposal approval (2026-10-11T14:02Z): architect-reviewed proposal;
+explicit scoped user approval recorded (see Approval record below).** At that
+point, independent security/QA review, implementation and tests were pending;
+they were subsequently completed for bounded ARCH-APPLY-EXIT-01 only, as
+recorded in the Verification record below. This does not close WorkPhone or
+operational gates. This resolves the WorkPhone Apply exit-oracle question, not a
+WorkPhone-specific dispatcher branch or a new porting round.
+Select global Apply semantics: after successful JSON/YAML encoding, return
+ExitFailed(1) if **any executed StateResult.Result is explicitly false**,
+otherwise ExitOK(0), while still emitting the collected state results. Nil
+test-pending results alone do not set failure. A returned encoding/write error
+must win as ExitInternal(4), even if a state already failed; never replace that
+error with ExitFailed or success. Early invocation/lookup/registry errors retain
+their existing codes and control flow. No account/state action is retried or
+rolled back because rendering or the overall exit status fails.
+
+**Proposal-time evidence/options.** `plans/init.md:1479-1493` defines 1 as operation/state
+failed and places detailed errors in JSON/YAML; `plans/testing.md:79-84` maps
+those codes. `internal/cli/cli.go:374-382` already applies the selected precedence
+to state single; encodeOr at :148-153 returns 4 on encoding error, 0 on success.
+Apply at `apply.go:157-192` collects normalized results, retains a sticky failed
+flag, and returns the outcome for text but accidentally returns encoding success
+alone for structured output. Existing `TestApplyEndToEndViaApp`,
+`TestApplyStopsOnFailureByDefault` and `TestApplyTestModeGlobal` cover success,
+unsupported lookup and test output; they do not establish an intentional
+false-state/structured-output ExitOK contract. Pinned Salt `modules/state.py:100-112`
+sets context failure from state.check_result, separately from rendering; this
+supports outcome/render separation, not identical Salt CLI numbers/options or
+full Salt orchestration parity. No Salt source was executed.
+
+Prefer this contract-consistency correction over preserving serialization-only
+ExitOK (would hide failed Apply operations from shell automation and contradict
+text/state-single behavior). Reject a WorkPhone-only special case and do not
+change the WorkPhone false-state oracle to ExitOK just to make drafts pass.
+The three reported failures are investigator evidence, not reproduced results
+here. WorkPhone Apply documents use the YAML decoder even when JSON-shaped;
+do not relabel them ordinary JSON-first numeric paths. Their invalid uint64/
+float/type inputs still return false, fixed comment and zero account effects;
+ordinary JSON-first float64 rejection remains a separate exec/state-single case.
+
+**Compatibility and scope gate.** This changes the observable exit status of
+**all** JSON/YAML Apply modules on false states, not their emitted result schema,
+execution order or on-failure policy. Consumers relying on exit0 despite false
+results may change behavior; document this bug-fix compatibility impact. Keep
+the existing default stop after the first false result and continue mode's sticky
+failure across later successes, rendering only executed operations. Do not
+hoist helpers, broaden renderer diagnostics, redesign stdout, or fix unrelated
+text-write error handling (currently unchecked) in this slice. **Explicit
+scoped user/maintainer approval for ARCH-APPLY-EXIT-01 was recorded
+2026-10-11T14:02Z** (see Approval record below). That approval resolves this
+scope gate only; fresh independent security/QA review remains a prerequisite
+before implementation and is not satisfied or replaced by user approval.
+
+**Approval record (2026-10-11T14:02Z).** The user explicitly approved
+ARCH-APPLY-EXIT-01, stating StateKit must fail if any tool call fails,
+including JSON/YAML Apply. The approved scope is exactly the
+architect-reviewed contract specified above and nothing broader: globally,
+after successful rendering, any executed state `Result=false` yields
+ExitFailed(1) across text/JSON/YAML; nil/test-pending results alone yield
+ExitOK(0); false is sticky; default-stop/continue behavior and ordered result
+outputs remain unchanged; returned encode/write errors take ExitInternal(4)
+precedence; emitted payloads/diagnostics are unchanged; a failed exit is not
+rollback or atomicity; and the documented cross-cutting compatibility impact
+is scoped and approved for this exit-behavior change only. This approval does
+NOT waive native/account, HUMAN/data-owner, runtime preflight, external CI,
+dependencies, or other project gates. It is user approval only: not an
+automated or independent security/QA review result, not an
+implementation/test status, and no code/test pass is claimed; implementation,
+tests, builds and commands remain future gates.
+
+**Bounded test/role plan approved before implementation (historical; current
+execution status is in the Verification record below).**
+- `software-engineer-senior` (senior), only after that scope/design gate: amend
+  existing `internal/cli/apply.go` structured-output return composition using
+  existing encodeOr/outcome variables; no new abstraction/dependency or per-module
+  branch. Amend only existing `internal/cli/apply_test.go` / necessary existing
+  CLI encoder tests; preserve existing WorkPhone module/state contracts.
+- `qa-engineer-lead` (lead): freeze a pure fake-state, table-driven
+  `TestApplyOutcomeExitContract` in the existing Apply test file. Text/JSON/YAML
+  success ->0; false ->1 with the false result still present; nil test-pending
+  ->0. Two-operation continue vectors true->false and false->true ->1 with
+  both ordered results; default-stop false->true ->1 with exactly one state
+  call/result (no later operation). Include all-success continue ->0. Assert
+  exact state call counts/order, structured Result/Changes/comment and no
+  extra effects; never use BuildRuntime/native account or Salt fixtures.
+  Reuse existing success/test/lookup cases where adequate, avoiding duplicate
+  matrices. WorkPhone failing Apply rows keep ExitFailed expectations after
+  correction, fixed false-state payload and exact zero account/resolver/launch.
+- `qa-engineer-lead` (lead): freeze `TestApplyEncodingFailurePrecedesStateOutcome`
+  in the existing test file, JSON/YAML error injection with both true and false
+  fake outcomes ->4, not0/1; no further state action/retry/rollback. Use existing
+  encoder/controlled writer seams and fixed synthetic data only; verify actual
+  returned encoding/write errors, not just a panic or normal successful encode.
+  Encoding can leave incomplete output; do not promise valid complete results
+  on encode failure or duplicate output by retrying. If no bounded existing seam
+  can test composition, stop for a narrow architect-reviewed seam proposal,
+  not an unrelated output-framework expansion.
+- `security-engineer-lead` (lead): fresh scope/error/output and code/import review;
+  `qa-engineer-lead` (lead): independent acceptance/selector review;
+  `technical-writer-senior` (senior): contract/backwards-compatibility wording and
+  sanitized evidence re-gate. Prior WorkPhone approvals do not cover this global
+  change. Future focused selection adds only
+  `^(TestApplyOutcomeExitContract|TestApplyEncodingFailurePrecedesStateOutcome|TestApplySerializationFailurePrecedesStateOutcome|TestApplyEndToEndViaApp|TestApplyStopsOnFailureByDefault|TestApplyTestModeGlobal|TestApplyWorkPhone.*)$`
+  for `./internal/cli`; freeze positive IDs and reject missing/zero selection.
+  At proposal time no command had run; authorization and fail-closed sandbox
+  preflight remain prerequisites even for listing/build/testing. Existing
+  WorkPhone synthetic selection remains once.
+
+All prior native/HUMAN/data-owner/disclosure/retention/caller-PATH/runtime,
+dependency-provenance, external CI, R8/E6 and overall R4 gates remain open.
+No infrastructure/IAM/sandbox/dependency change is needed; runtime isolation
+or dependency integrity is not verified by this read-only architecture review.
+At proposal time, only this existing plan was amended; no PTD
+tables/status/count/order, code, tests/builds/fixtures/commands/accounts/CI/
+staging/commit or unrelated dirty contents were changed or executed, and no
+acceptance/implementation/pass was claimed. The Verification record below
+supersedes that status for the bounded Apply implementation only.
+
+**Verification record (2026-10-11, appended after the approval record above;
+documentation-only append).** Implementation, independent security review and
+focused QA for this global Apply exit slice are complete, and the following is
+recorded exactly as reported; no test, build or command was executed while
+writing this record. `CGO_ENABLED` need not be specified. Exact focused
+command: `go test -json -count=1 -race -gcflags=all=-d=checkptr=2 -timeout=120s -run '^(TestApplyOutcomeExitContract|TestApplyEncodingFailurePrecedesStateOutcome|TestApplySerializationFailurePrecedesStateOutcome|TestApplyEndToEndViaApp|TestApplyStopsOnFailureByDefault|TestApplyTestModeGlobal|TestApplyWorkPhone.*)$' ./internal/cli`
+exited 0 with 8 top-level tests / 33 subtests, zero failures and zero skips.
+Focused `go vet ./internal/cli` exited 0 with no diagnostics; offline
+`go mod verify` exited 0 with all modules verified. Coverage: text/JSON/YAML
+true/false/pending exits, sticky continue and default stop, test mode,
+read-only stdout writer errors plus actual `MarshalJSON`/`MarshalYAML`
+returned errors, and WorkPhone synthetic inputs; fake state only, no
+account/native/CLI invocation.
+
+Sandbox evidence: rootless non-remote Podman, `XDG_RUNTIME_DIR` unset; exact
+cached image `localhost/statekit-r93p-go-deps:20260923@sha256:4230904fd0f3bdac68ac8dfd52d2d33727e56550321b234e006af3542dd844c0`
+(image ID `773f51501996a1306927f6f82901ead658720977369a1ffd198692912cd8be6a`),
+Go 1.26.6 linux/amd64; network=none, no ports/proxy; UID 1000/keep-id, all
+capabilities dropped, no-new-privileges, read-only root/source/module cache,
+no host home/credential/socket/device/privileged mount, private tmpfs
+scratch/logs, `--log-driver=none`, `--ulimit core=0:0` as defense-in-depth
+only; GOPROXY=off, GOSUMDB default/unset, module cache read-only; cgroups
+cpu.max=max 100000, memory.max=max, pids.max=28619 — requested limits were
+ineffective and no resource-bound claim is made. Raw logs remained only in
+the `/logs` tmpfs; sanitized aggregate only, no GECOS/argv/raw errors
+persisted.
+
+Limitations: no full repository suite, no cross-platform compile, no external
+GitHub CI, no native Windows/Linux account/user mutation, no Salt fixture
+execution. This record validates the global Apply exit slice only; it does
+not close R4/R8/E6, native/HUMAN/data-owner/PATH/lifecycle/runtime/CI gates,
+or imply release, and the 2026-10-11T14:02Z approval remains scoped to exit
+semantics only. Branch/worktree status stays uncommitted unless explicitly
+committed later. This append changed only this existing file, as prose
+outside all tables; no PTD row, status, count or order was modified.
