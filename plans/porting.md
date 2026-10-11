@@ -11900,6 +11900,552 @@ This is source-derived synthetic evidence for the room-number QA stage only; its
 
 In the room-number QA session, `go vet ./modules/exec/user ./modules/state/user ./internal/config ./internal/cli ./tests ./tests/differential` exited 0 (6 packages, no diagnostics), and `go mod verify` exited 0 (“all modules verified”). Coverage/log profiles and binaries remained in container tmpfs and were removed; no repository edits resulted, and no raw logs, argv, or GECOS were exposed or persisted. No usermod/useradd or native account access, real `/etc/passwd`, Salt fixture, BuildRuntime/OS fact probe other than the approved process-local modernc initializer, live/network/CI/account operation occurred. Remaining HUMAN gates are room/location data-owner classification, disclosure and retention (including full-GECOS argv and CLI echo); native target/account/action authorization; account lifecycle/name-recreation and competing-GECOS serialization or scoped acceptance; PATH sibling boundary; and external CI/R8/E6/R7/overall R4 closure. Aggregate R8/E6 gates/obligations remain open; overall R4 remains partial. The Linux `user.chroomnumber` implementation is partial, while the canonical PTD-EXEC-1653 table row remains `[ ]` actionable; PTD-TEST-1688 remains `[ ]` actionable. The scoped final independent QA review and technical-writer-senior documentation gates passed for this bounded R4.USER-CHROOMNUMBER subround; overall R4 remains partial, aggregate R8/E6 and PTD rows remain open, and all native, HUMAN, data-owner, CI, and operational gates remain separate and open. This note is outside the PTD tables and changes no PTD row, status, count, or order.
 
+### Next migration decision — R4.USER-CHWORKPHONE (2026-10-10)
+
+**Status: architect-reviewed bounded proposal; independent design gates pending.**
+Baseline `7f0f8e1` follows `a917cef`, `bd745fe`, `b67ec2d`. Select the
+**Linux-local subset** of PTD-EXEC-1656 and PTD-TEST-1691 for additive
+**R4.USER-CHWORKPHONE**, together with existing-account
+`user.present(workphone=...)`. No implementation/execution assignment starts here.
+The actual PTD-EXEC-1656 row at :6702 names aggregate R8/E6, not literally
+`unassigned-next-round`; that triage label describes the newly proposed Linux
+slice. PTD-TEST-1691 at :9107 remains aggregate. Both rows stay `[ ]` actionable;
+no table/status/count/order edits or aggregate canonical-absence claims.
+
+**Round decision/options.** R4 misc Linux (§2:74-89), the state-counterpart DoD
+(:162-174), and the existing Linux bounded reader/binder/trusted Runner permit
+this additive local subround. Prefer this over deferring all Linux work to R8;
+reject a combined BSD/Solaris port because its contracts and E6/native evidence
+are different. Preserve §3's R4/R10 DAG and historical evidence, R4 partial,
+R8/E6 open, R7/native boundaries and R11-last ADR gate. No new top-level round,
+ADR, dependency, infrastructure, IAM or policy exception is needed for this
+bounded proposal. A future wider backend/privacy/atomic-account boundary needs
+its own architecture decision; this entry does not approve it.
+
+**Independent source evidence (read only).** `references/salt.lock:1-3` pins
+`8b63e700637e40d76f80a00d95c60471797c73b9`.
+- `saltstack/salt/modules/useradd.py:62-138,662-681` and
+  `docs/catalog/exec/useradd.yaml:333-352`: required name/workphone, root=None;
+  chworkphone delegates specifically to key workphone. Catalog module-wide
+  dependencies do not imply this function calls cmd.retcode/group lookup.
+- Mapped `saltstack/tests/pytests/unit/modules/test_useradd.py:518-553` pins
+  missing helper with zero command call, mocked false pre-info, integer no-op,
+  and changed-value mismatch. Its `info` mocks do not drive Linux `_get_gecos`
+  readback; no successful changed-value proof follows from them. Mapped
+  `tests/unit/modules/test_useradd.py:132-150` pins intermediate empties and
+  trailing-comma trimming. Use independent source-derived success vectors.
+- `states/user.py:259-263,321,590-614,707-721,818-841` and catalog
+  `states/user.yaml:160-161` establish optional/unmanaged None, integer-to-string,
+  comma rejection, test-mode proposed-value disclosure, generic ch dispatch and
+  post-info new-value Changes. The mapped unit state test has no workphone vector
+  found; this is a coverage gap, not permission to execute functional fixtures.
+- Aggregate catalogs `exec/pw_user.yaml:213-226`,
+  `exec/solaris_user.yaml:172-182`; source `pw_user.py:71-122,381-391` and
+  `solaris_user.py:47-95,362-372` instead use four fields, no root, no trailing
+  trim and str(None) (pw usermod vs bare usermod). Both call `info(name)` but
+  discard its result; authoritative success is a fresh
+  `_get_gecos(name).get('workphone') == value` after that unused call
+  (`pw_user.py:119-122`, `solaris_user.py:92-95`). Do not treat the unused
+  `post_info` assignment as the success readback or alter existing Go backends.
+  `test_pw_user.py:228-258` pins integer/Unicode/no-op/mismatch; Solaris has no
+  mapped fixture. Existing Go FreeBSD/Solaris canonical workphone registrations
+  at `freebsd_pw_user.go:740-744` / `solaris_user.go:769-773` must be preserved.
+- Current Linux `modules/exec/user/user.go:85-175,375-475,590-669,949-975`
+  lacks this setter; `modules/state/user/user.go:19-187` lacks WorkPhone.
+  Extend those contracts narrowly, not an account framework or global binder.
+
+**Exact Linux source behavior and selected safe divergences.** Workphone is
+**index 2, third field**, not room index1 or other index4. Split at four commas,
+pad to five, deep-copy/replace workphone, join five and strip all trailing commas.
+None and empty clear; strings preserve their text; nonstrings use Python str.
+False pre-info returns false, equality returns true without helper lookup/launch,
+otherwise resolve usermod, run shell-free `[-c, built, name]`, and return exact
+`_get_gecos(...).get('workphone') == normalized` readback. cmd.run output/exit
+is not the source success predicate. Lookup/missing-helper/command exceptions
+can escape; an actual missing passwd lookup is not the mocked-false case.
+Nonnull root on non-AIX changes lookup and adds `-R root`; AIX ignores root.
+Direct source permits comma in workphone (can shift fields/read back false);
+source state rejects it. These facts are not native validation claims.
+
+Choose Linux-only `ChWorkPhoneArgs`: Name string required, WorkPhone *any tagged
+`required,name=workphone`, Root any/default nil. Missing pointer is invalid;
+explicit pointer-to-nil and empty string clear. State WorkPhone *any is optional:
+omitted/inner nil unmanaged, empty managed clear. Inner typed nil is invalid.
+Reuse the exact built-in string/integer subset (int/int8/int16/int32/int64 and
+uint/uint8/uint16/uint32/uint64), decimal range MinInt64..MaxInt64 without wrap;
+true aliases accepted, distinct named types/uintptr/json.Number/float/bool/
+containers rejected. Numeric strings (including leading zeroes) remain strings.
+Every nonnil root, even empty, `/` or typed nil, rejects before FS. Wrong/nil
+args, missing fields, invalid name/value/platform reject before reads/resolver.
+Existing *any binder stays unchanged (`internal/config/decode.go:186-190,
+402-409,544-555`): CLI `--workphone=null` is text, structured null is nil;
+ordinary JSON-first numbers are float64/rejected while Apply YAML decoding,
+including JSON-shaped documents, can yield accepted integers or range-rejected
+uint64. Freeze direct/registry/CLI/Apply distinctions in tests.
+
+Reject requested commas in exec/state before FS (intentional direct-source
+divergence). Keep existing bytewise validLocalText: valid UTF-8, 4096-byte
+name/raw/normalized/existing/built ceilings; reject ASCII C0, DEL and colon,
+empty/leading-hyphen name; do not claim all Unicode controls rejected (C1 remains
+accepted). Keep strict 1048576-byte bounded local passwd, seven fields, exact
+target, ASCII decimal UID/GID 0..4294967294, fixed duplicate/missing/malformed/
+unsupported-FS failures; no NSS/user.info/shadow/unbounded fallback. Changed
+workphone builds must preserve decoded fields **0/1/3/4**; reject before dispatch
+if trailing trim changes any non-workphone field, even with Other managed in the
+same state. Valid equality remains a no-op. Synthetic `N,R,old,H,O` ->
+`N,R,42,H,O`, clear -> `N,R,,H,O`; `N,R,old,,` -> `N,R,42` with padded readback;
+`N,R,old,H,O,,` changed workphone rejects rather than losing other-tail commas.
+
+Reuse trusted `/usr/sbin/usermod` candidate/full-chain policy
+(`internal/process/trusted_unix.go:105-117`), no PATH or /sbin fallback.
+One resolution/launch for change; Args `['-c', built, name]`, Shell=false,
+Dir=/, exact Env PATH=/usr/sbin:/usr/bin:/bin, LANG=C, LC_ALL=C, no inherited
+env, timeout30s, 4096-byte per-stream caps, PreserveStdout=false, redact complete
+built GECOS first. Read back only after successful/untruncated/in-budget command:
+true for exact third-field match, false/nil for mismatch, fixed workphone-specific
+errors/nil result for validation/read/helper/command/cancellation/timeout/overflow/
+unconfirmed-readback. Drop raw output and wrapped causes. Stricter command-failure
+handling is a safe divergence; no retry, rollback, undo or atomicity claim.
+Pre-cancelled context must reject before the first account read, resolution or
+launch, including managed state/test mode. Recheck cancellation after resolution
+before launch. These are explicit selected safety requirements, not claims that
+the current sibling code already provides this ordering.
+
+**State boundary/order.** Any managed RoomNumber/WorkPhone/Other enters existing
+bounded Linux-local management. Validate all requested scalars/siblings and the
+**combined prospective GECOS in actual order against one bounded snapshot before
+any action**. **ARCH-WORKPHONE-001:** proposed architect-approved method contract
+is `ValidateProspectiveGecos(room, workphone, other *string) error`, retaining
+private GECOS storage and nil meaning unmanaged. The present two-field method
+cannot represent WorkPhone; implementation entry remains blocked until this
+three-field method change and its callers receive the independent focused gates
+below. This is a proposal for future code, not an implemented method change.
+Validate every actual ordered intermediate record and the final record for text,
+length and unmanaged-field preservation. In addition, split the final record and
+require **exact equality of every managed room/workphone/other field to its
+normalized desired value**, even when the request matched the initial snapshot.
+Reject any discrepancy before every action in both test and applied mode; never
+silently trim/normalize the request. In particular, an Other request ending in
+commas can be altered by source serialization despite being managed: preservation
+alone is insufficient. Keep Other's existing comma acceptance/normalization
+semantics; this is prospective-build rejection, not a new comma input ban.
+No reordering to evade intermediate preservation/size checks, and no atomicity
+claim. Order UID, GID, home, shell, roomnumber,
+workphone, other; setters re-read current records to preserve earlier updates.
+No create/user.info fallback when any of these fields is managed. Keep legacy
+branch only when all three are unmanaged. Stop on error/false; prior mutations
+are not rolled back. Test/no-op launches nothing; test result pending only for
+differences. WorkPhone Changes only `{changed: true}`, fixed comments/errors
+without workphone/full-GECOS values; retain current sibling/account-name schemas.
+Salt exposes values and dispatches generic changes without this verified-stop
+contract; selected ordering/safety is not full Salt state parity. Bare UID/GID/
+home/shell siblings retain their PATH/inherited-env/cwd ceiling, not trusted
+workphone identity; do not silently broaden their contracts.
+On **every non-Linux platform**, any managed RoomNumber/WorkPhone/Other must
+reject before account reads or sibling actions, including test mode. Omitted
+or inner-null fields remain unmanaged; when all three are unmanaged, retain the
+legacy path (which may read user.info). Preserve shared `user.present` registration
+on non-Linux and existing BSD/Solaris Exec code/prototypes. Shared registration
+does not imply cross-platform availability of these managed state fields.
+
+**Future roles and fake-only acceptance sequence (none executed here).**
+1. `security-engineer-lead` (lead), `qa-engineer-lead` (lead),
+   `technical-writer-senior` (senior), `compliance-officer-senior` (senior) each
+   independently gate this workphone design before authorship; prior room,
+   chother or chhomephone reviews/approvals do not cover it.
+2. `software-engineer-senior` (senior) authors only the narrow existing exec/state
+   extension and existing user tests, platform registry tests, config/CLI/Apply
+   tests, `tests/porting_debt_test.go` and `tests/differential/r4_test.go`.
+   Implement `TestPortingDebtExecUserChworkphoneCanonicalRegistrationPTD_EXEC_1656`
+   with pure registration/prototypes/binding, never BuildRuntime; adjust only
+   obsolete Linux-workphone absence assertions in existing FreeBSD/Solaris registry
+   tests. Preserve platform prototypes and reject superseded aliases. Add
+   the workphone synthetic contract selected below with fixed scenario IDs/source-derived
+   independent expectations, MemoryFS/scripted fakes; no new files/dependencies,
+   report writer, generator or Salt oracle. Linux subset supersedes the aggregate
+   PTD-TEST fixture-execution instruction, not its broader obligations.
+3. `qa-engineer-lead` (lead) freezes positive test/scenario counts and selections:
+   distinguish all five fields; nil/empty/Unicode/zero/-1/MinInt64/MaxInt64/
+   unsigned-overflow/numeric strings/type aliases vs named types; omission vs
+   null vs typed nil across four entry channels; commas, C0/DEL/colon/invalid
+   UTF-8 and accepted C1; exact 4096/+1 and 1048576/+1 limits; malformed/duplicate/
+   missing records/UID/GID; no-op zero resolver/launch; exact argv/env/budgets;
+   helper/PATH bait/context/output/truncation/readback errors and false/nil mismatch.
+   State covers null/test/no-op/create refusal, room+work+other combinations,
+   combined prospective overflow and unmanaged-tail rejection **before UID action**,
+   sequential preservation, action order/failure stopping, fixed metadata-only
+   output; fake lost-update/same-name recreation pins the non-atomic ceiling.
+   Every frozen case must run/pass, no skips; no native or fixture execution.
+   **QA-GECOS-WORKPHONE explicit additions (fake-only, both test/applied mode):**
+   - Complete five-field boundary vectors use ASCII `w^k` to mean exactly k
+     repetitions of `w`, not a literal caret token. Initial serialized record
+     `N,R,old,H,O`; desired workphone `w^4087`, `w^4088`, `w^4089`; final records
+     respectively `N,R,w^4087,H,O` (4095 bytes), `N,R,w^4088,H,O` (4096 bytes),
+     `N,R,w^4089,H,O` (4097 bytes). Four preserved one-byte fields plus four
+     one-byte separators contribute **8 bytes**; desired values themselves
+     remain below 4096. Accept the first two in test and applied mode, reject
+     the third before UID/GID/home/shell/room/work/other actions. Test accepts
+     with pending metadata/no launches; applied fake setters/readback must
+     preserve fields 0/1/3/4 and exactly match the complete desired third field.
+   - Check individual intermediates, not just a fitting final record. From
+     `N,R,old,H,O`, desired room `r^4086`, workphone `42`, other `O` produces
+     intermediate `N,r^4086,old,H,O` (4096 bytes) then final
+     `N,r^4086,42,H,O` (4095 bytes): accept. Desired room `r^4087` instead
+     produces intermediate `N,r^4087,old,H,O` (4097 bytes) although final
+     `N,r^4087,42,H,O` is 4096: reject before all actions. Also isolate each
+     room/work/other intermediate cap and every managed final-field equality;
+     assert normalized requests and parsed final values byte-for-byte, never
+     merely length/absence of error. Run both modes with a differing UID sentinel
+     to prove rejection occurs before that first sibling action.
+   - Current complete record `N,R,W,H,O,,`, desired Other `X,`, unchanged room
+     `R`/workphone `W`: source builder would serialize `N,R,W,H,X`, not preserve
+     desired `X,`; exact managed-final equality must reject before all actions.
+     Repeat with room/work omitted, each managed individually, and both managed;
+     also request changed room `Q` and workphone `42` together with Other `X,`:
+     reject at the earlier unmanaged-tail preservation guard, never reorder
+     Other first to bypass it. Independently test `N,R,W,H,O` with desired Other
+     `X,` to isolate requested-value equality from current-tail preservation.
+   - Non-Linux fake state vectors cover room-only, work-only, other-only and
+     combinations, test and applied modes: zero account reads/resolver/launch/
+     sibling actions. Omitted and pointer-to-inner-null fields follow the legacy
+     unmanaged branch; pin retained registration and legacy behavior separately,
+     without claiming managed workphone availability on BSD/Solaris or elsewhere.
+   - **Frozen failure matrix:** counts are ordered **(bounded account reads,
+     trusted resolutions, Runner launches)**. Trace symbols: S = initial managed
+     state snapshot read plus pure combined precheck; P = setter bounded pre-read;
+     R = one trusted usermod resolution; L = one workphone Runner launch;
+     B = one bounded post-command readback attempt. Pure validation is not another
+     read; each B counts once even when it fails. These are changed-workphone
+     cases, not no-ops, with valid precheck/input and no earlier sibling actions.
+     Direct traces omit S; workphone-only applied-state traces include it:
+     - Pre-cancel: direct/state trace empty, both `(0,0,0)`, including state test
+       mode. This retains the proposed early-context gate; existing room setter
+       checks context after P (`user.go:612-627`), so zero-read pre-cancel is a
+       required workphone design behavior, not an observed existing-code claim.
+     - Missing/untrusted helper: direct P->R(fail), `(1,1,0)`;
+       state S->P->R(fail), `(2,1,0)`; fixed helper-unavailable error, no L/B.
+       Exact results and the later-Other stop oracle are frozen below under
+       QA-WORKPHONE-HELPER-COUNT-01, not left to future test interpretation.
+     - Cancellation during a successful resolver return: direct P->R->cancel
+       check, `(1,1,0)`; state S->P->R->cancel check, `(2,1,0)`; no L/B.
+     - Unsuccessful command: direct P->R->L(fail), `(1,1,1)`;
+       state S->P->R->L(fail), `(2,1,1)`; no B/second account lookup. Includes
+       Runner error, nonzero exit, cancellation/timeout and output-limit failure.
+     - False readback: direct P->R->L(success)->B(mismatch), `(2,1,1)`;
+       state S->P->R->L(success)->B(mismatch), `(3,1,1)`; direct returns false/nil.
+     - Failed readback: direct P->R->L(success)->B(fail), `(2,1,1)`;
+       state S->P->R->L(success)->B(fail), `(3,1,1)`; fixed state-unconfirmed error.
+     Every direct error is nil result plus the fixed value-free workphone category,
+     never raw Runner/resolver/FS causes. Every failed state result is Result=false,
+     fixed Comment=`user.present: account update failed`; completed-action Changes
+     follow the explicitly selected accumulator contract below, not intended actions.
+     With later Other differences, every failure/mismatch stops before Other
+     dispatch; no retry/rollback/compensating launch. A scripted synchronous L may
+     complete a mutation before B mismatch/failure: assert that mutation remains;
+     false/error is not proof of no side effect. Pre-action combined-validation
+     rejection instead has state trace S(reject), `(1,0,0)`, no setters/siblings,
+     Changes=`{}` and no mutation (invalid scalars rejected before S have zero reads).
+   - **QA-WORKPHONE-HELPER-COUNT-01 — frozen helper/PATH failure acceptance.**
+     With valid changed workphone and a fake trusted resolver failing the sole
+     `/usr/sbin/usermod` candidate, direct exec trace is bounded passwd read ->
+     `ResolveTrustedCommand("usermod")` failure; tuple `(1,1,0)`, zero post-command
+     readbacks, nil result and fixed `user.chworkphone: trusted helper unavailable`
+     error, no wrapped resolver cause. Repeat with PATH and `/sbin` bait: neither
+     is inspected/launched as a fallback. Workphone-only applied state trace is
+     combined-validation snapshot -> setter bounded read -> same resolver failure;
+     tuple `(2,1,0)`, zero readbacks, Name equal to the requested synthetic account,
+     Result=false, Comment=`user.present: account update failed`, Changes=`{}`,
+     Meta=nil at direct state entry. No completed action exists in this case.
+     These counts are module-visible trusted-resolution calls, not hidden syscalls.
+   - Ordered applied-state vector: synthetic account `qa_user`, initial UID string
+     `1000`, GECOS `N,R,W,H,O`, supplied `{uid:1001, workphone:"synthetic",
+     other:"synthetic"}` (UID bound to existing string `"1001"`), valid snapshot
+     and successful fake UID mutation. Freeze exact trace: (1) bounded snapshot
+     read and pure combined validation; (2) dispatch user.chuid, one Runner call
+     with bare `usermod -u 1001 qa_user`, returning success and changing fake UID;
+     (3) append UID metadata to the state accumulator; (4) dispatch workphone,
+     one fresh bounded setter read observing UID1001; (5) one trusted resolver
+     failure. Total tuple `(2,1,1)`; the sole launch is UID, **zero workphone
+     launches/readbacks**, zero Other dispatch/read/resolve/launch. No retry,
+     rollback, compensating action or extra verification/account lookup.
+     Selected workphone-failure result: Name=`qa_user`, Result=false,
+     Comment=`user.present: account update failed`,
+     Changes=`{"uid":{"old":"1000","new":"1001"}}`, Meta=nil at direct entry;
+     no workphone/other Changes. Assert the fake UID remains1001 and GECOS unchanged.
+   - **Source/implementation distinction and partial-result decision:** current
+     `modules/state/user/user.go:171-185` accumulates successful actions, but its
+     `result.Failure` exits discard them (`internal/result/result.go:37-51`).
+     Thus retained UID Changes above is an explicit narrow proposed divergence
+     for workphone failure, not a claim of current behavior or observed rollback.
+     Require a failure result retaining only the completed-action accumulator;
+     do not populate intended/later actions or infer native UID verification.
+     Salt `states/user.py:818-841` dispatches setters then computes Changes from
+     post-info; an exception before post-info does not supply this accumulator
+     contract. Linux `_update_gecos:123-138` resolves only after pre-read/change
+     detection; mapped `test_useradd.py:518-527` proves missing-helper zero launch,
+     not state partial-result semantics. Keep existing BSD/Solaris contracts.
+   - Keep approved UID-before-workphone order: helper resolution remains in the
+     workphone setter, not hoisted before siblings. Hoisting could avoid this UID
+     partial mutation but changes the selected ordering; do not silently do it.
+     This is an **intentional partial mutation boundary**. Real combined use
+     requires existing native target/action HUMAN authorization, sibling PATH
+     trust, data-owner gates and fresh runtime preflight, plus scoped acceptance
+     of this partial-update/no-rollback risk; none is granted by fake acceptance.
+     `qa-engineer-lead` (lead) and `technical-writer-senior` (senior) must re-gate
+     these tuples, trace and Changes wording; `security-engineer-lead` (lead)
+     must re-gate the partial-mutation boundary before implementation. Existing
+     compliance/HUMAN/R8/E6/runtime/CI gates and all assignments remain unchanged.
+   **R4-WORKPHONE-001..004 focused QA amendment — future work only.** Read-only
+   inspection now finds Linux WorkPhone code and draft tests in existing files;
+   their presence is not compile/test/QA approval. This amendment supersedes the
+   earlier historical absence/two-field/current-failure descriptions only as
+   current-code observations: state `user.go:208-224` now retains accumulated
+   Changes when WorkPhone is managed. Earlier design rationale remains provenance.
+   All following edits/tests are future `software-engineer-senior` (senior) work,
+   independently frozen/validated by `qa-engineer-lead` (lead), not executed here.
+   - **R4-WORKPHONE-001 / minimal state failures:** extend existing
+     TestPresentWorkPhoneOnlyFailureMatrix, reuse its helper/cancel-at-resolve/
+     Runner-error/nonzero/readback/pre-cancel cases rather than duplicate them.
+     Add separate context.Canceled and DeadlineExceeded Runner results, stdout
+     and stderr truncation flags, and stdout/stderr 4097-byte returns. Every such
+     launched failure has S->P->R->L, tuple `(2,1,1)`, no B. Helper-unavailable
+     and cancel-during-resolve are `(2,1,0)`; false/failed B are `(3,1,1)`;
+     pre-cancel `(0,0,0)`. Fixed state failure Comment/Result; Changes empty only
+     when no earlier completed sibling. Failed B must first script a WorkPhone
+     mutation then make the bounded read fail; retain that fake record/operation.
+     False B scripts a different third field; retain it, not a no-mutation claim.
+     Keep Other omitted for these workphone-only cases. Reuse existing UID partial
+     failure test for retained UID Changes. For each distinct failure branch,
+     one additional Other="X" discriminator asserts zero subsequent Other
+     dispatch/read/resolve/launch with identical tuple; reuse existing equal branch
+     coverage and do not cross-product earlier UID over every fault. No retry/
+     rollback. Remove the duplicate cancel-after-resolve-workphone-state case;
+     keep one cancellation hook case. Direct Runner tests already cover these
+     categories; strengthen assertions there only if a required count is absent.
+     Distinguish a resolver call returning unavailable `(2,1,0)` from a Runner
+     with no TrustedCommandResolver capability: S->P->capability rejection
+     `(2,0,0)`, fixed state failure, no fallback. Add the latter only if absent.
+   - **R4-WORKPHONE-002 / WorkPhone interleavings:** add one table-driven
+     TestPresentWorkPhoneSyntheticLostUpdateAndSameNameRetargeting in the existing
+     state test file, WorkPhone-only changed request "42", initial
+     `synthetic:x:1000:1000:N,R,W,H,O:/home/old:/bin/false`.
+     After S/P, resolver hook either changes Other to `concurrent`, or replaces
+     the same name with UID2000/GID2001/home `/home/recreated` and the same GECOS.
+     Callback applies the **captured** expected argv `['-c','N,R,42,H,O','synthetic']`
+     to the then-current fake record, preserving that record's UID/GID/home.
+     Assert S->P->R(hook)->L(callback)->B, `(3,1,1)`, true result and only
+     workphone changed metadata. First row loses `concurrent` back to O; second
+     applies WorkPhone to recreated UID2000/GID2001/home. Assert those outcomes,
+     not prevention. These demonstrate lost-update/retargeting ceilings, never
+     safety/atomicity. Room/Other interleaving tests are not substitutes.
+   - **R4-WORKPHONE-003 / existing Other commas:** extend the existing trailing
+     comma matrix, initial `N,R,W,H,O,,`. Use room/work pairs (omitted,omitted),
+     (R,omitted), (omitted,W), (R,W), (Q,omitted), (omitted,42), (Q,42), crossed
+     only with desired Other=`O,,` (equal) and `X,` (different, would trim).
+     First four equal rows accept unchanged GECOS/no launch; last three equal
+     rows reject at intermediate preservation. Every X, row rejects before any
+     action (final equality or earlier preservation). One extra omitted/omitted
+     Other=`X` row accepts an intentional managed replacement `N,R,W,H,X`;
+     do not ban Other commas or reject a safe no-op just because current Other
+     contains them. Both test/applied modes; all rejected rows supply differing
+     UID1001 and assert S only `(1,0,0)`, empty Changes, unchanged fake UID/GECOS,
+     no sibling effects. Accepted equal rows omit UID to isolate no-op; accepted
+     X test mode S only/pending, applied S->P->R->L->B `(3,1,1)`/Other metadata.
+     Reuse existing non-comma-record X, equality vector, no duplicate standalone.
+   - **R4-WORKPHONE-004 / proven numeric transport product:** extend existing
+     CLI/Apply WorkPhone transport tests with one shared table of decimal tokens:
+     `0`, `-9223372036854775808`, `9223372036854775807`, `9223372036854775808`,
+     `18446744073709551615`, `18446744073709551616`, `-9223372036854775809`,
+     `1.0`, `1.5`, and quoted `"0007"`. **QA-JSON-01:** ordinary JSON-first
+     acceptance must be channel-specific: only the quoted string row accepts;
+     never reuse YAML/Apply `tc.accept` for JSON 0/MinInt64/MaxInt64. Current
+     cli_test.go:874-889 incorrectly shares that acceptance column; future test
+     edits must fix its oracle, not change production coercion. ParseStructured
+     (`input.go:142-155`) returns successful json.Unmarshal values unchanged:
+     every unquoted JSON number is float64 and rejects before account reads,
+     resolution or launch, even if integer-looking or exactly representable.
+     Strings retain leading zeroes. YAML fallback requires a non-JSON object
+     document; JSON-shaped ordinary config does not reach that fallback.
+     YAML/Apply 0 is int; signed min/max are int on
+     linux/amd64 (int64 on 32-bit, do not execute a new platform matrix), accepted
+     exact decimal strings. Lower unsigned-only bound MaxInt64+1 and MaxUint64
+     yield uint64/range reject; MaxUint64+1 and MinInt64-1 yield float64/type
+     reject. 1.0/1.5 yield float64/type reject; quoted 0007 yields string/accept
+     unchanged on all paths. Raw flags are strings, never manufactured uint64:
+     reuse existing flag precedence/0007 tests, not the entire numeric table.
+     Validate dynamic types with existing config parser matrix expectations
+     (`input_test.go:63-113`) and *any binding, then fake exec/state effects;
+     no json.Number/int64 claims for ordinary JSON. Reuse equal existing rows.
+     Rejections have zero account/resolver/Runner use and value-free module/state
+     errors; keep documented parser-echo ceiling unchanged.
+     **Minimum document inventory, superseding the ambiguous 10x3 description:**
+     current drafts contain 12 tokens (the ten above plus true/false) x four
+     document shapes = **48 subtests**, not 30 and not execution evidence. Future
+     minimum is the ten tokens x ordinary JSON-first/YAML fallback = **20**;
+     Apply YAML-list covers only 0, MaxInt64+1, 1.5, quoted 0007 (**4**), and
+     JSON-shaped Apply covers only 0 and MaxInt64+1 (**2**) to discriminate it
+     from ordinary JSON. Total **26 document subtests**: JSON 1 accept/9 reject,
+     YAML 4 accept/6 reject, Apply-list 2 accept/2 reject, JSON-Apply 1 accept/
+     1 reject. Both Apply shapes use yaml.Unmarshal into operation Args; reuse
+     TestApplyOtherRawTypeMatrixForYAMLAndJSONShapedDocuments for shape/type
+     coverage and TestParseStructuredOtherNumericTransportMatrix
+     for all dynamic-type boundaries rather than repeat all ten Apply tokens.
+     Reuse direct TestChworkphoneNormalizationAndByteControls for typed integer/
+     uint range/type rules and existing bool rejection; do not keep bool true/
+     false in every document shape just to inflate counts. Reuse
+     TestPointerAnyTriStateBinding and TestApplyWorkPhoneStructuredBindingAndStatePresence
+     for required *any omission/null/empty/typed value, and existing flag precedence.
+     This is a future minimal selection, not a claim that current draft loops
+     already contain 26 cases or that shared JSON expectations pass.
+   - **Draft compile/coverage corrections (future, not code edits here):** in
+     existing r4_test.go workphone-null-clear and workphone-c1, retain observable
+     trace locals and add exactly
+     `assertTrace(t, "workphone-null-clear", trace, []string{"bounded-passwd-read", "trusted-resolve", "runner-dispatch", "bounded-passwd-read"})`
+     and
+     `assertTrace(t, "workphone-c1", trace, []string{"bounded-passwd-read", "trusted-resolve", "runner-dispatch", "bounded-passwd-read"})`.
+     Do not hide the unused trace via underscore. In exec TestChworkphonePasswdErrorsAreBoundedAndFixed
+     **QA-GID-01:** current rows are already distinct reserved-top-value and +2
+     syntax vectors, not duplicate invalid-gid rows. Grammar in current
+     `user.go:283-328` is nonempty ASCII digits only (leading zeroes allowed),
+     ParseUint base10/32 bits, then explicit cap **0..4294967294** for UID/GID.
+     Thus local max4294967294 accepts, local max+1=4294967295 parses as uint32
+     but rejects the explicit cap, 4294967296 overflows uint32, and `+2` rejects
+     digit grammar independently of range. Freeze these four distinct vectors
+     in existing reader tests: accepted max with unchanged WorkPhone `(1,0,0)`/
+     true; three rejected rows `(1,0,0)`/fixed malformed-passwd error. Reuse any
+     already adequate accepted-max/overflow vectors; no duplicate row by label.
+     Pinned Salt `_getpwnam:939-952` converts UID/GID using Python int and
+     pwd.struct_passwd; `_get_gecos:62-85` uses pwd fields. It does **not** impose
+     this decimal grammar/top-value exclusion or establish a portable POSIX
+     gid_t width/sentinel rule. Retain the already-approved stricter local cap
+     as an explicit safe compatibility ceiling (top uint32 value reserved by
+     this parser's policy), not a claim that 4294967295 is invalid in all POSIX
+     passwd sources. No source/runtime/native validation or parser change here;
+     broader native-ID support requires separate architecture/security review.
+4. `security-engineer-lead` (lead) fresh code/import/initializer review precedes
+   any test/build. Only separately authorized `qa-engineer-lead` (lead) execution
+   after fail-closed runtime preflight: pinned rootless offline sandbox, nonroot,
+   denied network, RO source/cache, ephemeral writable scratch, no credentials/
+   host accounts/runtime socket/devices, cap-drop/no-new-privileges. Verify rather
+   than inherit previous preflight; permit only the separately reviewed process-
+   local modernc initializer, no OS-fact/account probes. Private capped logs,
+   umask077/0600, no raw output export. Freeze focused new/affected user exec/state/
+   registry/config/CLI/debt tests plus exact synthetic selection above; run
+   race/checkptr, scoped vet and offline go mod verify. Then one two-user-package
+   atomic coverage profile with exact selection
+   `^(TestChother.*|TestChroomnumber.*|TestChworkphone.*|TestValidateProspectiveGecosChecksWorkphoneIntermediateAndFinalLimits|TestPresentOther.*|TestPresentRoomnumber.*|TestPresentWorkPhone.*)$`;
+   report actual statement coverage and counts, not invented thresholds/branch/
+   catalog coverage. Compile-only checks remain exec darwin/windows/freebsd amd64
+   and state windows/amd64; never run binaries. No historical generator,
+   UPDATE_DIFFERENTIAL, external CI or expanded matrix in this fake-only gate.
+   Future sandbox-only commands: `go test -list '^(TestChworkphone.*|TestValidateProspectiveGecosChecksWorkphoneIntermediateAndFinalLimits)$' ./modules/exec/user`
+   and `go test -list '^TestPresentWorkPhone' ./modules/state/user`, then the focused
+   user command `go test -count=1 -race -gcflags=all=-d=checkptr=2 -run '^(TestChworkphone.*|TestValidateProspectiveGecosChecksWorkphoneIntermediateAndFinalLimits|TestPresentWorkPhone.*)$' ./modules/exec/user ./modules/state/user`.
+   Synthetic command (one selection only):
+   `go test -count=1 -run '^TestR4UserChworkphoneSyntheticContract$' ./tests/differential`.
+   Transport command: `go test -count=1 -run '^(TestChworkphone.*|TestUserPresentWorkPhone.*|TestApplyWorkPhone.*|TestApplyOtherRawTypeMatrixForYAMLAndJSONShapedDocuments|TestParseStructuredOtherNumericTransportMatrix|TestPointerAnyTriStateBinding|TestDecodeWorkPhoneUnknownKeyEchoBoundary)$' ./internal/cli ./internal/config`.
+   Positive current inventory is **10 exec / 10 state tests**, not execution counts:
+   exec suffixes after TestChworkphone: LinuxRegistrationOnly,
+   GecosIndexPreservationAndNoop, NormalizationAndByteControls, NameAndGecosByteLimits,
+   PasswdErrorsAreBoundedAndFixed, RunnerFailuresReadbackAndCancellation,
+   RejectsUnsafeInputsBeforeEffects, C1AccountNameAndExistingGecosRemainValid,
+   PasswdFileByteLimit; the tenth exec function is
+   TestValidateProspectiveGecosChecksWorkphoneIntermediateAndFinalLimits, included
+   in both focused execution and the two-user-package coverage selection.
+   Required config transport inventory is TestParseStructuredOtherNumericTransportMatrix
+   plus TestDecodeWorkPhoneUnknownKeyEchoBoundary (existing decode_test.go:79),
+   and TestPointerAnyTriStateBinding; reuse
+   TestApplyOtherRawTypeMatrixForYAMLAndJSONShapedDocuments in internal/cli
+   for Apply shape decoding, all selected above; no config coverage expansion.
+   State suffixes after TestPresentWorkPhone:
+   UnmanagedEmptyClearAndNoop, InvalidNonLinuxPrecancelAndMissingAccount,
+   TestModeAndOrderedAppliedMetadata, ByteBoundariesInTestAndAppliedModes,
+   RoomIntermediateBoundariesBothModes, OtherTrailingCommaPreflightBothModesMatrix,
+   PartialChangesAfterUIDFailures, OnlyFailureMatrix,
+   SyntheticLostUpdateAndSameNameRetargeting, NonLinuxManagedFieldMatrix;
+   all ten now exist in the inspected tree, including the interleaving function
+   at state/user_test.go:1778. Presence is not execution or approval evidence.
+   **QA-INVENTORY-01 current matrix arithmetic:** OnlyFailureMatrix has 13 fault
+   rows x Other omitted/X plus 2 pre-cancel modes = **28 negative subtests**;
+   comma matrix has 4 non-comma-record equality rows x2 modes plus 15 existing-
+   tail rows x2 modes = **38 subtests (10 accept/28 reject)**. Final byte matrix
+   is 3x2 = **6 (4 accept/2 reject)**; room-intermediate matrix 2x2 = **4
+   (2 accept/2 reject)**. Invalid-input table has **6 negative named subtests**,
+   plus three separate non-Linux/pre-cancel/missing-account assertions (not
+   invented named subtests). Interleavings have **2 named ceiling scenarios**.
+   Retain these observed counts and earlier exact tuples; do not equate parent
+   function count, case count or intended future document count with passed tests.
+   QA must freeze the final explicit inventory/scenario IDs after authorship,
+   verify every listed selection is positive, fail on zero selected tests/subtests,
+   skip or missing expected ID, and report actual counts. Listing itself executes
+   initializers: it too requires the preceding authorization/preflight. No pass
+   based on regex success alone; no duplicate synthetic execution in this gate.
+   **QA-SELECT-01:** these are existing functions, not additional tests. Fresh
+   `qa-engineer-lead` (lead) and `technical-writer-senior` (senior) re-gates must
+   verify both exact names in the positive package inventories/selectors and the
+   exec coverage inventory, including failure on either missing/zero-matched ID.
+   Fresh `qa-engineer-lead` (lead), `security-engineer-lead` (lead) and
+   `technical-writer-senior` (senior) re-gates must cover QA-JSON-01, QA-GID-01
+   and QA-INVENTORY-01 before future test edits/execution: channel-specific
+   acceptance, explicit local ID safe divergence, distinct range/syntax vectors,
+   48-current/26-future document arithmetic and exact positive inventory.
+5. `technical-writer-senior` (senior) records sanitized observed evidence and
+   limitations only; `qa-engineer-lead` (lead) independently closes scoped fake
+   acceptance after security re-gate. `compliance-officer-senior` (senior) verifies
+   distinct data-owner gates remain open. No scoped pass closes aggregate debt.
+
+**Amendment re-gates before implementation.** `security-engineer-lead` (lead),
+`qa-engineer-lead` (lead), `technical-writer-senior` (senior) and
+`compliance-officer-senior` (senior) must freshly review ARCH-WORKPHONE-001 and
+all QA-GECOS-WORKPHONE additions, including readback correction, three-field
+validator equality/intermediate sizes, non-Linux availability and cancellation/
+partial-mutation claims. Earlier gates do not cover this amendment.
+Fresh `security-engineer-lead` (lead), `qa-engineer-lead` (lead) and
+`technical-writer-senior` (senior) re-gates additionally cover R4-WORKPHONE-001..004,
+the WorkPhone-specific interleavings, minimal transport/fault products, trace/gid
+draft corrections and case-sensitive positive inventory before future test edits
+or execution. Existing draft code is not accepted by this plan revision.
+`solution-architect-lead` (lead) resolves any method-contract disagreement before
+`software-engineer-senior` (senior) authors code; fresh post-authorship static
+security review and independently authorized sandboxed QA remain separate.
+
+**WORKPHONE disclosure gate, separate from module safety.** A work phone may link
+a person to an employer/contact/location; do not assume either harmless public
+data or universal PII classification. Require **room/workphone-specific authorized
+data-owner HUMAN classification/disclosure/retention approval before real data or
+use**, covering complete preserved GECOS in helper argv/OS process lists and CLI
+input history/diagnostics. Record scope/owner/approver/expiry, recipients/sinks and
+retention without values. Prior chhomephone/room/chother approval is not coverage.
+Runner redaction is not process-list secrecy. No broad CLI-parser change selected:
+`internal/cli/cli.go:447-455,493,537-547,592-610`, config Decode unknown-key errors
+(:42-51,347-355), and Apply (:197-214) can echo malformed bool values, unknown/
+missing flag names, positional tokens and unknown structured keys (not that key's
+associated value) before module dispatch. Channel/load/outer diagnostics remain
+outside module confidentiality. Fake marker tests must pin each echo with zero
+FS/resolver/Runner, and separately assert no marker in module/state errors/comments/
+workphone Changes; private logs only, never export captured raw stderr. Do not
+submit confidential values to echoable interfaces; if required operational use
+cannot satisfy this ceiling, block that use and separately review a value-free
+interface rather than claim this plan mitigates parser/process-list disclosure.
+
+**Separate gates retained.** R8 platform differential/native and E6 VM promotion
+stay open; Linux compile/fake evidence does not satisfy them. Native account
+target/action HUMAN authorization is independent of the data gate and runtime
+preflight. Account deletion/recreation/rename and competing GECOS writes require
+serialization/lifecycle controls or explicit scoped HUMAN residual-risk acceptance;
+snapshot preservation is not transaction/identity protection. Operational sibling
+PATH trust, R7, external CI/protected workflow review, dependency provenance and
+broader R4 catalog/lagged differential closure remain separate. No CI launch or
+protected-file change authorized. Existing dependencies/images must still pass
+integrity/provenance preflight before future execution; no new version resolved.
+
+**Self-review/current-status override.** Evidence supports this Linux slice only;
+architecture reviewed, not independently security/compliance-approved. This EOF
+entry provides its assignment without changing PTD tables, counts or sequence.
+Only this plan was edited; no code/test/build/fixture/host/account/dependency
+execution, staging or commit. The two unrelated dirty paths were not read or
+modified. Implementation and every operational approval remain future gates.
+
 #### ARCH-APPLY-EXIT-01 — preserve state failure after structured output (2026-10-11)
 
 **Status at proposal approval (2026-10-11T14:02Z): architect-reviewed proposal;
@@ -12055,3 +12601,426 @@ or imply release, and the 2026-10-11T14:02Z approval remains scoped to exit
 semantics only. Branch/worktree status stays uncommitted unless explicitly
 committed later. This append changed only this existing file, as prose
 outside all tables; no PTD row, status, count or order was modified.
+
+#### R4-WORKPHONE-RETRO-01 — prospective-validator final-error attribution and QA-selector amendment (2026-10-11; documentation-only draft; status `pending_independent_review`)
+
+**Status and provenance.** This entry is a documentation-only draft plan
+amendment authored by a middle technical writer from the escalated
+retrospective design review in which `solution-architect-lead` selected this
+bounded direction and QA identified test selector/oracle gaps. It records the
+exact proposed contract, its required gates, chronology, and boundaries as a
+prospective amendment proposal with status `pending_independent_review`; it
+approves nothing and accepts nothing. Context verified read-only: HEAD is
+`5c7a88a` "fix(cli): preserve Apply failure exit status" (the committed
+Apply-only slice), while the WorkPhone/combined-GECOS implementation and tests
+remain dirty, draft, and unaccepted in the working tree. All historical text
+above is preserved; no PTD row, status, count, or order is modified; no gate
+is backdated. No project mutation is authorized beyond this specification
+update.
+
+**Amended contract (proposal; do not broaden).**
+
+1. **Validator signature and input.** Keep
+   `ValidateProspectiveGecos(room, workphone, other *string) error` over the
+   private read-only bounded snapshot, with no new request/record abstraction;
+   nil means unmanaged, an explicit empty string means managed clear.
+2. **Actual serialized sequence validation.** Validate the actual serialized
+   mutation sequence room -> WorkPhone -> Other: skip no-op setters, enforce
+   the intermediate textual and 4096-byte record ceilings and each builder's
+   preservation, then require exact final managed-field equality (including
+   the Other-only case) — without changing direct `chother` comma semantics.
+   Keep the current room/WorkPhone/Other ordering and the state
+   failure/partial-Changes policy unchanged.
+3. **Narrow shared final-error attribution fix.** Restore the current legacy
+   final invalid-text/oversize errors (`errLocalPasswdMalformed` /
+   `errChotherBuiltTooLong`); introduce field-neutral, fixed, value-free
+   sentinels only for the two shared final categories — shared unmanaged-field
+   preservation and shared managed-field mismatch — while preserving the
+   individual predicates and their order. Keep scalar normalization and
+   per-setter build errors unchanged. Remove
+   `errChworkphoneProspectiveMismatch` once it has no uses. Keep the fixed
+   `user.present` mapping unchanged. Do not add an exported sentinel or
+   framework, and do not remap initial snapshot errors.
+
+**Required test amendments (future `software-engineer-senior` work; none
+performed here).** Retain all room/Other behavior. In the existing
+prospective-validator test, replace the WorkPhone-sentinel assertion for the
+Other-only final mismatch row (`other-trailing-request-mismatch`,
+`user_test.go:916`) with the neutral shared mismatch sentinel; restore five
+distinct nil-WorkPhone room/Other rows named `room-then-other`, `both-empty`,
+`room-change-rejects-before-managed-other-replacement`,
+`other-change-can-replace-trailing-other-without-room-change`, and
+`equal-room-does-not-normalize-before-other-change`; add the equivalent
+trailing-Other mismatch expectation with WorkPhone managed while retaining the
+nil variant. Keep the exact per-builder sentinel checks for intermediate
+builder failures. Do not alter direct setter behavior.
+
+**QA minimum validation-debt requirements (recorded for a future execution
+plan only; these are pending requirements, not completed tests and not
+evidence of passing).** Focused selectors must include both existing
+prospective-validator rows
+(`TestValidateProspectiveGecosComposesActualRoomThenOtherChanges`,
+`TestValidateProspectiveGecosRejectsOnlyCombinedOversize`),
+`TestPresentRoomOtherManagedPermutationsAndIntermediatePreservation`, both
+FreeBSD/Solaris registration tests, and the PTD debt test; the shared coverage
+regex must include `TestPresentRoomOther.*`, not only
+`TestPresentRoomnumber.*` (the selector recorded at the R4-WORKPHONE-001..004
+amendment above names only the WorkPhone validator row). Require: a nil result
+asserted on each direct-error branch and synthetic error scenario; exact
+`[]string{"usermod"}` counts on success and readback-error paths;
+`assertResolver` sequences on synthetic success cases; WorkPhone-visible GID
+maximum `4294967294` acceptance and overflow `4294967296` rejection vectors
+with explicit outcomes/effects; and checking fixture write errors. QA freezes
+the final selector and positive inventory before any execution; no numeric
+test run is recorded or claimed by this amendment.
+
+**Chronology and required gates.** The draft implementation predates closure
+of the required pre-authorship design gates; this amendment cannot backdate or
+satisfy them, and the current implementation/tests remain unaccepted. Before
+any further code/test edits, require fresh independent re-gates on this exact
+amended design by `security-engineer-lead` (lead), `qa-engineer-lead` (lead),
+`technical-writer-senior` (senior), and `compliance-officer-senior` (senior).
+Then require a new post-authorship static security review and a separate
+scoped QA execution approval with a fresh rootless offline Podman preflight
+before any Go tests, listing, or build (listing executes initializers and is
+not exempt from that preflight). No test, listing, build, or result claim is
+made or authorized by this amendment.
+
+**Separate/open gates (unchanged by this record).** Data-owner
+classification/disclosure/recipients/sinks/retention (room/workphone GECOS in
+helper argv and OS process lists) and native account target/action HUMAN
+gates, partial-mutation/race disposition, sibling PATH trust, R4/R8/E6,
+dependency provenance, and external CI remain separate and open. Nothing here
+authorizes tests, real data or accounts, system commands, Salt fixtures, CI,
+native platforms, or commits.
+
+**Documentation-only scope.** This entry appends prose to this existing file
+only, outside all PTD tables; no historical text was rewritten. Validation was
+read-only (`git diff --check` over `plans/porting.md`). The unrelated dirty
+protected paths `docs/adr/0004-cloud-provider-boundary.md` and
+`tests/live/mysql/Containerfile.go-build` were neither read nor modified.
+
+#### R4-WORKPHONE-RETRO-02 — v2 correction: row naming, final-check precedence, concrete PROPOSED selectors and oracle debts (2026-10-11; documentation-only draft; status `pending_independent_review`)
+
+**Status and supersession scope.** This v2 note supersedes
+R4-WORKPHONE-RETRO-01 (retained verbatim above at plans/porting.md:12605-12701)
+only for wording, selector concreteness, and clarity; all other RETRO-01
+content stays in force. It changes no source or tests, no PTD table row,
+status, count, or order; it waives or backdates nothing, and the WorkPhone
+source/tests remain dirty, draft, and unaccepted. Every name, line, and
+scenario ID below was independently re-verified read-only against the working
+tree on 2026-10-11; current source presence is inventory, never execution
+evidence. One re-review finding did not verify and is corrected in item 2
+rather than recorded as fact. Status remains `pending_independent_review`.
+
+**1. Naming and precedence (corrects RETRO-01 wording).**
+- RETRO-01's phrase "both existing prospective-validator rows" is replaced by
+  "both existing room/Other prospective-validator tests":
+  `TestValidateProspectiveGecosComposesActualRoomThenOtherChanges`
+  (`modules/exec/user/user_test.go:890`) and
+  `TestValidateProspectiveGecosRejectsOnlyCombinedOversize` (`:935`). The
+  WorkPhone-specific
+  `TestValidateProspectiveGecosChecksWorkphoneIntermediateAndFinalLimits`
+  (`:967`) stays explicitly in the frozen inventory.
+- Shared-validator final-check precedence, verified against draft source
+  (`modules/exec/user/user.go:214-233`) and normative for this proposal: after
+  the initial snapshot errors (`:169-174`), the per-field scalar
+  normalizations (`:175-189`), and the per-setter intermediate builds with
+  their existing errors (`:191-213`), the final combined checks run in this
+  order: (a) serialized complete-GECOS size before invalid text (`:214-216`);
+  (b) shared unmanaged-field preservation (`:218-224`); (c) managed-field
+  equality in order room, WorkPhone, Other (`:225-233`). Existing per-setter
+  and initial-snapshot errors are preserved; the sentinel mapping is exactly
+  RETRO-01 item 3 (restore `errLocalPasswdMalformed`/`errChotherBuiltTooLong`
+  at the final size/text check; field-neutral sentinels for the shared
+  preservation and mismatch categories; remove
+  `errChworkphoneProspectiveMismatch` once it has no uses).
+- Ceiling precision: the 4096-byte ceiling applies to the **serialized
+  complete GECOS record** (the built prospective string), not to the whole
+  passwd line; the separate bounded local passwd file read ceiling
+  (1048576 bytes) is unchanged wherever referenced.
+
+**2. PROPOSED selectors (pending QA freeze; not execution authorization).**
+These regexes are proposals only. Listing (`go test -list`) also executes
+package initializers and requires the same fresh authorization and Podman
+preflight as any run; no execution, count, or pass is reported or authorized
+here, and a zero-matched selector must fail the gate.
+- `./modules/exec/user`:
+  `^(TestChworkphone.*|TestValidateProspectiveGecosComposesActualRoomThenOtherChanges|TestValidateProspectiveGecosRejectsOnlyCombinedOversize|TestValidateProspectiveGecosChecksWorkphoneIntermediateAndFinalLimits|TestPwUserRegisterKeepsPlatformSurfaceCanonical|TestSunUserRegisterKeepsLinuxSurfaceCanonical)$`
+  — all named forms verified present (`user_test.go:890/935/967`;
+  `freebsd_pw_user_registry_test.go:91`;
+  `solaris_user_registry_test.go:88`).
+- `./modules/state/user`: `^(TestPresentWorkPhone.*|TestPresentRoomOther.*)$`
+  — covers the ten `TestPresentWorkPhone*` functions already inventoried at
+  the R4-WORKPHONE-001..004 amendment plus the two verified
+  `TestPresentRoomOther*` functions:
+  `TestPresentRoomOtherCombinedGecosBoundaries` (`user_test.go:781`) and
+  `TestPresentRoomOtherManagedPermutationsAndIntermediatePreservation`
+  (`:1539`).
+- Shared atomic user regression/coverage across both packages:
+  `^(TestChother.*|TestChroomnumber.*|TestChworkphone.*|TestValidateProspectiveGecosComposesActualRoomThenOtherChanges|TestValidateProspectiveGecosRejectsOnlyCombinedOversize|TestValidateProspectiveGecosChecksWorkphoneIntermediateAndFinalLimits|TestPresentOther.*|TestPresentRoomnumber.*|TestPresentRoomOther.*|TestPresentWorkPhone.*|TestPwUserRegisterKeepsPlatformSurfaceCanonical|TestSunUserRegisterKeepsLinuxSurfaceCanonical)$`
+  — this adds `TestPresentRoomOther.*` and the two room/Other validator tests
+  to the selector previously recorded in the R4-WORKPHONE-001..004 amendment.
+- `./tests`:
+  `^TestPortingDebtExecUserChworkphoneCanonicalRegistrationPTD_EXEC_1656$`
+  (verified `tests/porting_debt_test.go:145`).
+- `./internal/cli ./internal/config` (transport):
+  `^(TestUserPresentWorkPhone.*|TestApplyWorkPhone.*|TestApplyOtherRawTypeMatrixForYAMLAndJSONShapedDocuments|TestParseStructuredOtherNumericTransportMatrix|TestPointerAnyTriStateBinding|TestDecodeWorkPhoneUnknownKeyEchoBoundary)$`
+  — every name verified (`cli_test.go:923`; `apply_test.go:46/317/433`;
+  `input_test.go:63`; `decode_test.go:79/239`). **Correction of the re-review
+  finding:** the claim that `TestChworkphone.*` is inert in these packages is
+  inaccurate — it selects three existing tests in `./internal/cli`
+  (`TestChworkphoneOrdinaryCLIJSONYAMLAndFlagTransport` `:814`,
+  `TestChworkphoneCLIParseEchoBoundaries` `:952`,
+  `TestChworkphoneCLIUnknownKeyEchoBoundary` `:972`) and none in
+  `./internal/config`. The v2 proposal therefore names those three tests
+  explicitly for QA's freeze decision instead of reusing the broad prefix;
+  dropping or retaining them is a QA-freeze decision recorded against this
+  verified inventory, not against the inaccurate inertness rationale.
+- `./tests/differential`: `^TestR4UserChworkphoneSyntheticContract$`
+  (`r4_test.go:1043`) with sixteen expected positive subtest IDs, all
+  verified present: `workphone-noop`, `workphone-changed-readback`,
+  `workphone-empty-clear`, `workphone-null-clear`,
+  `workphone-intermediate-empty`, `workphone-c1`, `workphone-comma-preflight`,
+  `workphone-omitted`, `workphone-type-rejected`, `workphone-helper-failure`,
+  `workphone-command-failure`, `state-unmanaged`, `state-test`,
+  `state-room-workphone-other-order`,
+  `state-partial-uid-workphone-helper-failure`,
+  `state-workphone-other-trailing-equality`.
+- The expected source-selection inventory above is recorded separately from
+  any observed run counts; nothing here reports an execution result.
+
+**3. Pending test-oracle debts (future `software-engineer-senior` edits,
+frozen by `qa-engineer-lead`; none executed here).**
+- Every direct-error branch and the five synthetic exec error rows
+  (`workphone-comma-preflight`, `workphone-omitted`,
+  `workphone-type-rejected`, `workphone-helper-failure`,
+  `workphone-command-failure`) assert a nil result plus the exact
+  error/effect tuple.
+- StateResult explicit false stays distinct from test-pending nil in every
+  state assertion.
+- Exact `[]string{"usermod"}` resolver/launch counts on each changed direct
+  single-setter success and readback-error path (verified draft anchors:
+  `:1192`, `:1334`, `:1353` of `r4_test.go`).
+- `assertResolver` on the four synthetic success cases that currently lack it
+  — `workphone-empty-clear`, `workphone-null-clear`,
+  `workphone-intermediate-empty`, `workphone-c1` (each dispatches usermod per
+  its existing trace/command assertions) — while retaining nil-resolver
+  expectations on the no-op/preflight/omitted/type rows and the
+  three-resolver `["usermod","usermod","usermod"]` expectation on the
+  three-setter success `state-room-workphone-other-order` (`:1410`).
+- GID vectors (extends the recorded QA-GID-01): the WorkPhone-visible local
+  GID maximum `4294967294` is accepted with true result, nil error, and effect
+  tuple `(1,0,0)`; overflow `4294967296` is rejected with nil result, the
+  fixed malformed-passwd category, and `(1,0,0)`; the reserved `4294967295`
+  row and the `+2` digit-grammar row stay distinct rows with distinct
+  rationales; no parser change is proposed.
+- Fixture/setup/callback write failures are checked errors, never ignored.
+
+**4. Still-open data/security/operations boundaries (unchanged; no observed
+deployment facts).** The single trusted `/usr/sbin/usermod` helper argv
+carries the **complete preserved GECOS**, including unmanaged sibling fields,
+not only the requested room/workphone/other value; Runner redaction and
+Shell=false do not remove arguments from OS process lists. Candidate
+disclosure sinks to inventory — candidates only, existence not claimed —
+include shell/CLI input history, structured decoder/error paths, process
+telemetry, runner/diagnostic traces, audit/monitoring, support exports, and
+stored records/backups. For each sink an inventory confirms, record access,
+recipients, purpose, location, retention, and deletion/backup expiry with a
+named responsible data/operations owner. These remain separately OPEN with
+their owners: partial/non-atomic later-failure behavior, lost concurrent
+update, same-name account retarget, failed-action may-have-mutated, residual
+legacy sibling PATH trust, native account target/action HUMAN approval,
+runtime preflight, R4/R8/E6, dependency provenance, and external CI. No
+jurisdiction or legal conclusion is made before scope is established; no
+actual values and no data-owner approval are recorded or requested here.
+
+**5. Scope and gates.** This v2 changes no source/tests and supersedes
+RETRO-01 only for wording/selectors/clarity; nothing is waived or backdated,
+and the WorkPhone source/tests remain unaccepted. Fresh independent
+`security-engineer-lead` (lead), `qa-engineer-lead` (lead),
+`technical-writer-senior` (senior), and `compliance-officer-senior` (senior)
+re-gates must review this v2 before any further source/test edits; then a new
+post-authorship static security review and a separate scoped QA execution
+authorization with a fresh rootless offline Podman preflight precede any
+tests/listing/build. No staging or commit is authorized by this proposal.
+Documentation-only scope: this entry appends prose to this existing file only,
+outside all PTD tables; RETRO-01 (plans/porting.md:12605-12701) and all older
+ledger material are preserved unchanged; validation was read-only
+(`git diff --check` over `plans/porting.md`); the protected paths
+`docs/adr/0004-cloud-provider-boundary.md` and
+`tests/live/mysql/Containerfile.go-build` were neither read nor modified.
+
+#### R4-WORKPHONE-RETRO-03 — v3 correction: QA transport selector, direct-vs-synthetic oracle anchors, owner-evidence disposition (2026-10-11; documentation-only draft; status `pending_independent_review`)
+
+**Status and supersession scope.** This note supersedes RETRO-02 (retained
+verbatim above at plans/porting.md:12703-12852) only for: (a) the QA transport
+selector, (b) direct-vs-synthetic evidence anchors and outcome-oracle
+precision, (c) accountable-owner evidence clarification, and (d) two senior-
+writer wording corrections to RETRO-02's selector inventory (item 4). All
+other RETRO-02 content stands. No source or test file changed, no PTD table
+row/status/count/order changed, nothing waived or backdated; WorkPhone
+source/tests remain dirty, draft, and unaccepted; all selectors remain
+proposals pending a new QA freeze. Every name and line below was re-verified
+read-only against the working tree on 2026-10-11. Status
+`pending_independent_review`.
+
+**1. Transport selector replaced (QA's exact selector; PROPOSED).** The
+RETRO-02 transport selection for `./internal/cli ./internal/config` is
+replaced by:
+`^(TestChworkphoneOrdinaryCLIJSONYAMLAndFlagTransport|TestChworkphoneCLIParseEchoBoundaries|TestChworkphoneCLIUnknownKeyEchoBoundary|TestUserPresentWorkPhone.*|TestApplyWorkPhone.*|TestApplyOtherRawTypeMatrixForYAMLAndJSONShapedDocuments|TestParseStructuredOtherNumericTransportMatrix|TestPointerAnyTriStateBinding|TestDecodeWorkPhoneUnknownKeyEchoBoundary)$`
+Expected source-selection inventory only, zero observed passes: 7 CLI
+functions (`TestChworkphoneOrdinaryCLIJSONYAMLAndFlagTransport` `cli_test.go:814`,
+`TestChworkphoneCLIParseEchoBoundaries` `:952`,
+`TestChworkphoneCLIUnknownKeyEchoBoundary` `:972`,
+`TestUserPresentWorkPhoneOrdinaryCLIStateTransport` `:923`,
+`TestApplyWorkPhoneStructuredBindingAndStatePresence` `apply_test.go:317`,
+`TestApplyWorkPhoneUnknownKeyEchoBoundary` `:433`,
+`TestApplyOtherRawTypeMatrixForYAMLAndJSONShapedDocuments` `:46`) and 3 config
+functions (`input_test.go:63`; `decode_test.go:79`, `:239`). These 3 CLI tests
+are not covered by the exec-user selector (different package).
+
+**2. Direct vs synthetic evidence anchors (corrected precision).**
+Direct exec anchors (`modules/exec/user/user_test.go`): built-4096 changed
+one-setter success at `:1859` inside
+`TestChworkphoneNameAndGecosByteLimits` (`:1805`); readback matrix at `:1918`
+(mismatch) and `:1922-1930` (readback error, exact fixed text
+"user.chworkphone: state unconfirmed") inside
+`TestChworkphoneRunnerFailuresReadbackAndCancellation` (`:1911`); C1 success
+at `:2065-2067` inside
+`TestChworkphoneC1AccountNameAndExistingGecosRemainValid` (`:2034`).
+Synthetic references only, never direct tests
+(`tests/differential/r4_test.go`): changed-readback success `:1192`,
+helper-resolution failure `:1334`, command failure `:1353`.
+
+**3. Expanded outcome-oracle debt per QA (pending; none executed here).**
+- Direct changed one-setter success, including the built-4096 and C1 rows:
+  true result, nil error, effect tuple `(2,1,1)`, exact
+  `[]string{"usermod"}` resolver-request sequence (the trusted-resolution
+  request, not native process argv; complete-GECOS helper-argv disclosure
+  remains the separate open boundary recorded above).
+- Direct no-op: true, nil, `(1,0,0)`.
+- Direct readback mismatch: false, nil, `(2,1,1)`; direct readback error: nil
+  result, fixed "user.chworkphone: state unconfirmed" category, `(2,1,1)`.
+- Every direct error branch asserts a nil result plus the expected
+  error/effect tuple.
+- Synthetic error rows: `workphone-comma-preflight`, `workphone-omitted`,
+  `workphone-type-rejected` = nil result, exact fixed error or
+  MissingRequiredError, `(0,0,0)`; `workphone-helper-failure` = nil / fixed
+  unavailable, `(1,1,0)`; `workphone-command-failure` = nil / fixed failed,
+  `(1,1,1)`.
+- Exact resolver sequences on the four synthetic success cases; nil-resolver
+  expectations retained on the no-op/preflight rows; three `usermod`
+  resolutions for the three-setter state success
+  (`state-room-workphone-other-order`).
+- State assertions keep explicit false distinct from test-pending nil and
+  preserve partial UID effects.
+- GID: `4294967294` maximum accepted only on the equal-WorkPhone no-op fixture
+  = true, nil, `(1,0,0)`; `4294967296` overflow = nil result, fixed
+  malformed-passwd category, `(1,0,0)`; the reserved `4294967295` and
+  nondecimal `+2` rows keep separate rationales.
+- Fixture/setup/callback write errors are checked AND callback read errors
+  must fail rather than silently return (verified current draft gap: the C1
+  callback returns silently on its read error and ignores its WriteFile
+  result, `user_test.go:2055-2061`).
+
+**4. RETRO-02 wording corrections (senior-writer).**
+- The RETRO-02 shared-selector delta note ("adds `TestPresentRoomOther.*` and
+  the two room/Other validator tests") is corrected to also name the two
+  platform registration tests — `TestPwUserRegisterKeepsPlatformSurfaceCanonical`
+  and `TestSunUserRegisterKeepsLinuxSurfaceCanonical` — so the shared selector
+  adds those three groups versus the selector recorded in the
+  R4-WORKPHONE-001..004 amendment.
+- RETRO-02's "sixteen expected positive subtest IDs" is corrected to
+  "sixteen expected enumerated subtest IDs (including failure cases)";
+  enumeration implies no successful outcome.
+
+**5. Owner evidence and synthetic-authoring disposition.** The privacy/legal
+caveats of RETRO-01/RETRO-02 are unchanged. Actual accountable data/operations
+sink owners are NOT evidenced or assigned anywhere in this plan; before any
+real-data or native use, an authorized human must assign and record an
+accountable owner for each confirmed sink/risk, with scope and approval. No
+owner names, actual sinks, jurisdiction, HUMAN approval, or data are invented
+or claimed here. Per the compliance review, this missing owner evidence does
+not by itself block code-only authoring with wholly synthetic fixtures,
+subject to the remaining independent design re-gates.
+
+**6. Gates.** A fresh independent QA freeze must review exact names and
+inventories before code. Fresh `security-engineer-lead` (lead),
+`qa-engineer-lead` (lead), `technical-writer-senior` (senior), and
+`compliance-officer-senior` (senior) re-gates must review this RETRO-03
+before any further source/test edit; then a new post-authorship static
+security review and a separate scoped QA execution authorization with a fresh
+rootless offline Podman preflight precede any tests/listing/build. Nothing
+here claims a test or pass, real data/account use, HUMAN approval, native
+operation, a commit, or any PTD-table change. Documentation-only scope: this
+entry appends prose at EOF only; RETRO-01 (plans/porting.md:12605-12701),
+RETRO-02 (plans/porting.md:12703-12852), and all older ledger material are
+preserved unchanged; validation was read-only (`git diff --check`); the
+protected `docs/adr/0004-cloud-provider-boundary.md` and
+`tests/live/mysql/Containerfile.go-build` paths were neither read nor
+modified.
+
+#### R4-WORKPHONE-RETRO-04 — independent design re-gate record (2026-10-11; documentation-only record; gates closed for the bounded proposed design only — WorkPhone source/tests remain unaccepted, execution pending)
+
+**Provenance and status.** This record, written 2026-10-11 by a middle
+technical writer from the re-gate cycle results relayed for this ledger,
+documents the completed independent design re-gates for the bounded WorkPhone
+prospective-validator amendment (RETRO-01/02/03). These are review results
+about the proposed design and documentation, not pre-authorship approvals of
+the existing draft: the WorkPhone draft source/tests predate the re-gates,
+the missed pre-authorship gates cannot be backdated, and the current draft
+source/tests remain unaccepted. No test run or pass is claimed anywhere in
+this record.
+
+**Re-gate results (scope-bounded, as reported in the cycle).**
+- `solution-architect-lead` (lead): PASS — bounded architecture review of the
+  proposed RETRO-01/02/03 design direction.
+- `security-engineer-lead` (lead): PASS — security design of the proposed
+  contract only; not a code review of the unaccepted draft.
+- `qa-engineer-lead` (lead): completed the QA selector/oracle design freeze —
+  the RETRO-03 (v3) per-package selectors and outcome-oracle debts are
+  design-frozen for the current source tree; a refreshed positive inventory
+  must be produced after authorship and before any execution, and a
+  zero-matched selector still fails the gate.
+- `technical-writer-senior` (senior): PASS — the RETRO-03 record as written;
+  this ledger update additionally applies one terminology correction to
+  RETRO-03 (the `[]string{"usermod"}` expectation is the exact
+  resolver-request sequence, not native process argv), directed by this
+  update itself.
+- `compliance-officer-senior` (senior): PASS — privacy-plan scope of
+  RETRO-01/02/03 and wholly synthetic code-only authoring; accountable owner
+  assignments and all real/native gates explicitly remain open.
+
+**Collective effect (bounded).** These decisions together permit exactly one
+future step: a bounded synthetic code-authoring correction by
+`software-engineer-senior` (senior) implementing the exact RETRO-01/02/03
+contract (shared final-error attribution with restored legacy final
+size/text errors and field-neutral shared sentinels, the five restored
+nil-WorkPhone room/Other rows, the neutral shared mismatch for the
+Other-only case, and the design-frozen selectors/oracle debts). They do NOT
+permit test execution, code or test acceptance, real data or native
+accounts, external CI, or any commit.
+
+**Remaining prerequisites (unchanged).** After authorship: a fresh static
+security review of the actual edits, then a separate scoped QA execution
+authorization with a fresh rootless offline Podman preflight before any
+test, listing, or build (listing executes package initializers and is not
+exempt). QA freezes a refreshed inventory against the authored tree before
+any execution.
+
+**Still open (unchanged).** Accountable data/operations sink-owner
+assignment; the full-GECOS sink
+inventory/access/recipients/purpose/location/retention/deletion record;
+native account target/action HUMAN authorization; partial-mutation/race
+disposition; sibling PATH trust; dependency provenance; R4/R8/E6; external
+CI. No PTD table row, status, count, or order is changed by this record.
+
+**Documentation-only scope.** This entry appends prose at EOF and applies one
+phrase correction inside RETRO-03 (exact resolver-request sequence replacing
+"argv", at the former plans/porting.md:12897-12899); RETRO-01, RETRO-02, and
+all older ledger material are otherwise preserved unchanged; validation was
+read-only (`git diff --check` over `plans/porting.md`); the protected
+`docs/adr/0004-cloud-provider-boundary.md` and
+`tests/live/mysql/Containerfile.go-build` paths were neither read nor
+modified; no staging or commit was performed or authorized.
