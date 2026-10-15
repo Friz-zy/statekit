@@ -68,6 +68,10 @@ var globalFlagNames = map[string]bool{"output": true, "o": true, "config": true,
 type App struct {
 	Version      string
 	BuildRuntime func() (*runtime.Runtime, error)
+
+	// CloudCollect optionally overrides the cloud metadata collector
+	// with an offline fake for tests; nil uses cloudmeta.Collect.
+	CloudCollect cloudCollectFunc
 }
 
 // NewApp creates a CLI application bound to the given runtime factory.
@@ -187,8 +191,42 @@ func (a *App) cmdFacts(argv []string) int {
 	fs := flag.NewFlagSet("facts", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	addOutputFlags(fs)
+	cloud := fs.Bool("cloud", false, "collect cloud machine metadata (requires --provider)")
+	provider := fs.String("provider", "", "cloud provider enum (requires --cloud)")
 	if !parseOr(fs, argv) {
 		return ExitInvalidInput
+	}
+	// Cloud flags are detected by explicit presence (fs.Visit), so
+	// `--provider=` alone is still a usage error; dispatch additionally
+	// requires the parsed --cloud VALUE to be true — an explicit
+	// `--cloud=false` (or a repeated flag ending false) with --provider
+	// never reaches the collector.
+	cloudSet, providerSet := false, false
+	fs.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "cloud":
+			cloudSet = true
+		case "provider":
+			providerSet = true
+		}
+	})
+	if cloudSet || providerSet {
+		if !cloudSet || !providerSet {
+			return failf(ExitInvalidInput, "--cloud and --provider must be used together")
+		}
+		if !*cloud {
+			return failf(ExitInvalidInput, "--cloud must be true to collect cloud metadata")
+		}
+		if *provider == "" {
+			return failf(ExitInvalidInput, "--provider must not be empty")
+		}
+		if len(fs.Args()) > 0 {
+			return failf(ExitInvalidInput, "cloud facts accept no positional arguments")
+		}
+		if _, ferr := formatFrom(fs); ferr != nil {
+			return failf(ExitInvalidInput, "%v", ferr)
+		}
+		return a.runFactsCloud(*provider)
 	}
 	format, err := formatFrom(fs)
 	if err != nil {
