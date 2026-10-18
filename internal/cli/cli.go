@@ -43,10 +43,12 @@ const usageText = `statekit — portable local SaltStack-compatible execution an
 Usage:
   statekit exec <module>.<function> [args] [-o json|yaml|text]
   statekit state <module>.<function> [args] [-o json|yaml|text]
+  statekit exec cloud.secret.get (--source-uri URI | --provider aws --backend secretsmanager|ssm --region REGION --resource RESOURCE) [--format raw|text|json|yaml] [--sink stdout|stderr|unix --target PATH]
 
 Commands:
   exec <mod>.<fun>   run an execution function
   state <mod>.<fun>  apply a single state function
+  exec cloud.secret.get  read one AWS secret or parameter value to one sink
   facts              show detected system facts
   version            show the StateKit version
 
@@ -72,6 +74,10 @@ type App struct {
 	// CloudCollect optionally overrides the cloud metadata collector
 	// with an offline fake for tests; nil uses cloudmeta.Collect.
 	CloudCollect cloudCollectFunc
+
+	// secretFetch injects a synthetic reader in tests; production uses the
+	// dedicated AWS instance-profile path.
+	secretFetch secretFetchFunc
 }
 
 // NewApp creates a CLI application bound to the given runtime factory.
@@ -85,6 +91,13 @@ func (a *App) Run(argv []string) int {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
+				if args, ok := secretInvocationArgs(argv); ok {
+					if secretSinkHint(args) != "stderr" {
+						_, _ = io.WriteString(os.Stderr, "statekit: secret operation failed\n")
+					}
+					code = ExitFailed
+					return
+				}
 				fmt.Fprintf(os.Stderr, "statekit: internal failure: %v\n", r)
 				code = ExitInternal
 			}
@@ -105,6 +118,9 @@ func (a *App) dispatch(argv []string) int {
 	case "facts":
 		return a.cmdFacts(argv[1:])
 	case "exec":
+		if args, ok := extractSecretGetArgs(argv[1:]); ok {
+			return a.cmdCloudSecretGet(args)
+		}
 		return a.cmdFunction("exec", argv[1:])
 	case "state":
 		return a.cmdFunction("state", argv[1:])
