@@ -21,6 +21,29 @@ unverified provider claims. This addendum records the position as of
 2026-10-15 and supersedes the dated 2026-10-14 not-implemented and
 no-test-result statements above; all earlier text is retained unchanged as
 history.
+Status addendum (2026-10-19): the active user instruction dated 2026-10-19
+authorizes continuation only for the two GCP reads in [Amendment
+2026-10-19](#amendment-2026-10-19-bounded-gcp-secret-manager-and-parameter-manager-reads)
+and the task-authorized dependency versions recorded there. This narrowly
+supersedes the 2026-10-14 metadata-only/no-SDK boundary only for those reads
+and that package scope; it is not a generic SDK or dependency pre-approval.
+Implementation source and tests are present as uncommitted worktree changes.
+The reported offline validation passed `go mod verify`, a GCP-enabled build
+with AWS excluded, and focused tests under `statekit_no_sdk_aws` and
+`statekit_no_sdks`, in rootless Podman with `--network=none`. A final offline
+check also passed `go mod verify`, plus `go build` and focused tests run with
+`-mod=readonly` and
+`-tags=statekit_no_sdk_gcp,statekit_no_sdk_aws`, in rootless Podman with
+`--network=none`. This combined-tag profile exercises the GCP-disabled stubs
+while excluding AWS source dependencies; it does not prove the per-GCP-only
+profile with AWS enabled. The full
+default/AWS-enabled profile was not tested; an earlier full CLI-package run
+failed at the unrelated `TestFreeBSDTrackCLIGOOSGating`. No live cloud calls,
+production credentials, IAM changes, or live provider validation occurred.
+No live validation or IAM mutation is authorized by this amendment, and
+independent security/runtime gates remain in force. The dated 2026-10-13/14/15
+statements above remain historical except where this amendment expressly
+supersedes them.
 Date: 2026-10-13 (decision recorded)
 Decision authority: project owner, explicit approval supplied in the active
 user request; individual identity or title is not recorded or invented
@@ -57,17 +80,23 @@ text is preserved and annotated with a supersession notice, not rewritten.
 This record accepts the replacement policy. As of the base 2026-10-13
 policy, acceptance is a policy decision only: it is not implementation
 approval, it selects no provider, operation, SDK or dependency version, and
-it does not claim that any supported SDK integration or build tag exists
-today. Separately, on 2026-10-13 the user fixed the R10 evaluation cohort
+it did not claim that any supported SDK integration or build tag existed as
+of 2026-10-13; the base decision itself created none. Separately, on
+2026-10-13 the user fixed the R10 evaluation cohort
 for research scope only; it is listed in `plans/porting.md` and makes those
 names candidates for research and evaluation, not support or implementation
 selections. All other provider and tool names appearing in plans or in this
-record remain candidates or examples, not selections. The sole carve-out is
+record remain candidates or examples, not selections. The sole carve-out as
+of 2026-10-14 was
 the six-provider HTTP machine-metadata subset in
 [Amendment 2026-10-14](#amendment-2026-10-14-narrow-http-machine-metadata-exception)
-— the current authorized implementation scope, whose code is not implemented
-yet; beyond that subset, no broad provider support, SDK package/version or
-other API-operation approval exists.
+— the authorized implementation scope as of 2026-10-14, whose code was not
+implemented as of that date. The 2026-10-15 status addendum records its
+subsequent implementation. The [2026-10-19 amendment](#amendment-2026-10-19-bounded-gcp-secret-manager-and-parameter-manager-reads)
+adds only the two GCP reads and task-authorized dependency versions stated
+there. These later records supersede that date-scoped scope/status only
+within their stated boundaries; beyond them, no broad provider support, SDK
+package/version or other API-operation approval exists.
 
 ## Evidence and constraints
 
@@ -209,6 +238,181 @@ the unchanged IAM/security, human and runtime-preflight gates apply in full.
   runtime preflight and NOT EXECUTED; no passing build or test is claimed
   by this amendment.
 
+## Amendment 2026-10-19: bounded GCP Secret Manager and Parameter Manager reads
+
+Decision authority: active user instruction dated 2026-10-19; no individual
+name or title is recorded or inferred. This amendment authorizes only the two
+GCP API reads below and the task-authorized dependency versions recorded here.
+It narrowly supersedes the 2026-10-14 metadata-only/no-SDK boundary for these
+operations and this dependency scope only. It is not a general SDK or
+dependency pre-approval. Any other GCP API operation, provider SDK integration
+or dependency addition/version change requires separate explicit approval.
+Historical 2026-10-13/14/15 decision wording and authority remain intact
+except for this explicitly bounded supersession.
+
+- **Secret Manager — `AccessSecretVersion` only.** Read only from the global
+  `projects/{project}/secrets/{secret}/versions/{selector}` resource
+  contract. The request uses the current workload identity obtained through
+  the fixed GCP metadata-token flow from `metadata.google.internal`; there is
+  no ADC, profile, static-credential or environment-credential fallback. The
+  application validates the response against the requested
+  global secret resource and selected version (requiring a concrete numeric
+  version when `latest` is selected) and verifies payload CRC32C before
+  accepting bytes. An omitted selector reads mutable `latest`;
+  `--version-id` selects a numeric version to pin the content, while
+  `--version-alias latest` remains an explicit selector. No Secret Manager
+  write or IAM methods are in scope. Payloads stay on the
+  dedicated sensitive-value path and are not logged or serialized into
+  ordinary StateKit results.
+- **Parameter Manager — `GetParameterVersion` only.** Accept only the
+  `param://gcp/parametermanager/{location}/{percent-encoded-resource}` global
+  or regional resource contract. The operation retrieves only the stored raw
+  payload; it does not render a parameter, evaluate templates, or resolve
+  Secret Manager references. `RenderParameterVersion`, writes,
+  list operations and IAM methods are out of scope. An omitted selector reads
+  mutable `latest`. Project-wide IAM is an external permission ceiling and
+  residual blast radius, is not changed by StateKit, and remains subject to
+  least-privilege configuration. The project-scoped IAM risk is accepted only
+  as pre-existing task context, not as authorization to change IAM.
+- **Shared runtime and build limits.** Both operations are opt-in and inert at
+  startup and help. They use bounded official GCP SDK/RPC endpoints and
+  validate resource/version and payloads under payload-size and time limits
+  (1 MiB payload maximum; 15-second operation deadline; 2-second metadata
+  token deadline). Secret Manager RPCs use the fixed
+  `secretmanager.googleapis.com:443` authority; Parameter Manager uses the
+  fixed `parametermanager.googleapis.com:443` global authority or
+  `parametermanager.<location>.rep.googleapis.com:443` regional authority.
+  The requested sink is preflighted before provider construction; file sinks
+  are denied. There is no application-level retry or fallback; the transport
+  may retry or reconnect the same RPC. The negative build tags
+  `statekit_no_sdk_gcp` and
+  `statekit_no_sdks` gate the GCP imports and implementation. Tags do not
+  remove module manifest or checksum entries or guarantee removal from the
+  selected dependency graph when another retained import edge exists.
+- **Task-authorized dependency versions.** The direct SDK pins are
+  `cloud.google.com/go/secretmanager v1.22.0` and
+  `cloud.google.com/go/parametermanager v1.1.0`. Relevant graph pins recorded
+  in `go.mod`/`go.sum` include `cloud.google.com/go/iam v1.11.0`,
+  `google.golang.org/grpc v1.83.2`,
+  `google.golang.org/genproto v0.0.0-20260319201613-d00831a3d3e7`,
+  `google.golang.org/genproto/googleapis/api
+  v0.0.0-20260630182238-925bb5da69e7`,
+  `google.golang.org/genproto/googleapis/rpc
+  v0.0.0-20260928230214-8a89bd6388cc`,
+  `google.golang.org/protobuf v1.36.12`,
+  `go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc
+  v0.72.0`,
+  `go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.72.0`,
+  and `go.opentelemetry.io/otel` plus its `log`, `metric` and `trace` modules
+  at `v1.47.0`. The additional graph pins `golang.org/x/crypto v0.57.0`,
+  `golang.org/x/net v0.60.0`, `golang.org/x/sys v0.48.0` and
+  `golang.org/x/text v0.42.0` are also allowed ZIP artifacts in the list
+  below. The available integrity evidence is the recorded module checksums
+  and passing `go mod verify`; this does not assert a complete
+  transitive-closure provenance, license or vulnerability review.
+### Approved module ZIP identity boundary
+
+The task-approved allowlist
+  contains exactly these 35 permitted module ZIP acquisition identities.
+  They are acquisition identities only—not proof that every item is in the
+  compiled runtime closure or that provenance, licensing or vulnerability
+  clearance is complete:
+
+  ```text
+  cloud.google.com/go/auth@v0.20.0
+  cloud.google.com/go/auth/oauth2adapt@v0.2.8
+  cloud.google.com/go/compute/metadata@v0.9.0
+  cloud.google.com/go/iam@v1.11.0
+  cloud.google.com/go/secretmanager@v1.22.0
+  github.com/cespare/xxhash/v2@v2.3.0
+  github.com/felixge/httpsnoop@v1.1.0
+  github.com/go-logr/logr@v1.4.4
+  github.com/go-logr/stdr@v1.2.2
+  github.com/google/s2a-go@v0.1.9
+  github.com/googleapis/enterprise-certificate-proxy@v0.3.17
+  github.com/googleapis/gax-go/v2@v2.23.0
+  go.opentelemetry.io/auto/sdk@v1.2.1
+  go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc@v0.72.0
+  go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp@v0.72.0
+  go.opentelemetry.io/otel@v1.47.0
+  go.opentelemetry.io/otel/log@v1.47.0
+  go.opentelemetry.io/otel/metric@v1.47.0
+  go.opentelemetry.io/otel/trace@v1.47.0
+  golang.org/x/crypto@v0.57.0
+  golang.org/x/net@v0.60.0
+  golang.org/x/oauth2@v0.36.0
+  golang.org/x/sys@v0.48.0
+  golang.org/x/text@v0.42.0
+  golang.org/x/time@v0.15.0
+  google.golang.org/api@v0.287.1
+  google.golang.org/genproto@v0.0.0-20260319201613-d00831a3d3e7
+  google.golang.org/genproto/googleapis/api@v0.0.0-20260630182238-925bb5da69e7
+  google.golang.org/genproto/googleapis/rpc@v0.0.0-20260928230214-8a89bd6388cc
+  google.golang.org/grpc@v1.83.2
+  google.golang.org/protobuf@v1.36.12
+  golang.org/x/mod@v0.40.0
+  golang.org/x/term@v0.46.0
+  golang.org/x/tools@v0.49.0
+  cloud.google.com/go/parametermanager@v1.1.0
+  ```
+
+  These five T-only identities are explicitly excluded and are not authorized
+  for module ZIP fetch:
+
+  ```text
+  github.com/google/go-cmp@v0.7.0
+  github.com/stretchr/testify@v1.12.1
+  go.opentelemetry.io/otel/sdk@v1.47.0
+  go.opentelemetry.io/otel/sdk/metric@v1.47.0
+  go.yaml.in/yaml/v3@v3.0.5
+  ```
+
+  This list is from the approved ZIP manifest independently read by the
+  coordinator. The recorded `standard_fetch` `profile.json` invokes
+  `go mod download -json` for exactly these 35 identities, and its
+  `result.json` lists 35 successful results. `cache-validation.json` reports
+  `approved_archives=35`, `excluded_archives_in_staging=0`, and
+  `archive_and_mod_h1_verified=35`. These results describe that invocation and
+  staging set; they do not establish the provenance of all material in the
+  shared module cache or checksum file.
+
+  The later SumDB proof refresh for the allowlisted
+  `google.golang.org/genproto/googleapis/api@v0.0.0-20260630182238-925bb5da69e7`
+  records eight lookup/tile requests, copies one SumDB tile file, and fetches
+  no module ZIP. The final offline builds and tests used `GOPROXY=off`.
+
+  Current shared state also contains out-of-allowlist material: the module
+  cache has `golang.org/x/text/@v/v0.41.0.zip`; `go.sum` has entries for
+  `golang.org/x/mod v0.41.0` (h1 only), `golang.org/x/net v0.58.0` (h1 and
+  `/go.mod`), `golang.org/x/sync v0.23.0` (h1 only), and
+  `golang.org/x/text v0.41.0` (h1 and `/go.mod`). The package profile selected
+  `golang.org/x/text v0.42.0`. The acquisition time and source of this older
+  cache/checksum material are not established; current records do not
+  attribute the cached ZIP to this task or establish that it was executed.
+  This is a release-assurance gap, not evidence of a current-task download or
+  execution, and no provenance is asserted for the older artifacts.
+### Implementation and verification status
+
+The implementation and tests
+  are present as uncommitted worktree changes. Package-scoped offline
+  validation passed `go mod verify`, a GCP-enabled build with AWS excluded,
+  and focused tests under `statekit_no_sdk_aws` and `statekit_no_sdks` in
+  rootless Podman with `--network=none`. A final package-scoped offline check
+  also passed `go mod verify`, plus `go build` and focused tests run with
+  `-mod=readonly` and
+  `-tags=statekit_no_sdk_gcp,statekit_no_sdk_aws`, in rootless Podman with
+  `--network=none`. This combined-tag profile exercises the GCP-disabled stubs
+  while excluding AWS source dependencies; it does not prove the per-GCP-only
+  profile with AWS enabled. The full default/AWS-enabled profile
+  was not tested. The full `go list -m all` did not complete: the module graph
+  query remains unsuccessful with 20 unavailable metadata entries. The
+  existing vulnerability snapshot was unreadable/corrupt; no clean scan is
+  claimed. An earlier full CLI-package run failed at the unrelated
+  `TestFreeBSDTrackCLIGOOSGating`. No live credentials, cloud endpoint
+  validation or IAM mutation occurred or is authorized. This amendment does
+  not waive independent security or runtime-preflight gates; human approval
+  never substitutes for runtime preflight.
+
 ## Superseded ADR-0004 sections
 
 Only the following parts of [ADR 0004](0004-cloud-provider-boundary.md) are
@@ -247,10 +451,12 @@ Build-feature mechanism options:
 
 ## Consequences
 
-- No supported SDK integration and no `statekit_no_sdk_*` build tag exists
-  today. This record creates none; each future integration starts from an
-  explicit scoped approval, and tag naming/pattern is settled at
-  implementation within the proposed convention.
+- As of the 2026-10-13 base-record date, no supported SDK integration and no
+  `statekit_no_sdk_*` build tag existed; the base record itself created none.
+  Later dated amendments/addenda authorize or record only their stated
+  exceptions; they do not establish general SDK support. Each additional future
+  integration starts from explicit scoped approval, and tag naming/pattern
+  is settled at implementation within the proposed convention.
 - The active plan sections now reference this policy: `plans/porting.md` §0
   (dependency policy), §2 R10 (cloud/SaaS transport), §2 R11 (network
   devices), §4 (risk table) and §5 (acceptance), plus a future test-plan
@@ -317,31 +523,48 @@ Sequential and gated; no step is dispatched or scheduled by this record.
 
 ## Unselected scope and non-authorizations
 
+Historical-scope clarification (2026-10-19): the base-policy and
+2026-10-14 statements in the bullets below preserve the decision as recorded
+at those dates. The later, narrow exception is the GCP read scope and
+task-authorized dependency set in [Amendment
+2026-10-19](#amendment-2026-10-19-bounded-gcp-secret-manager-and-parameter-manager-reads).
+It supersedes earlier “sole exception,” “no API-operation approval,”
+“no SDK dependency,” and “not implemented” statements only within that exact
+scope. No broader provider/API approval or live-access/IAM authorization
+follows.
+
 - As of the base 2026-10-13 policy, no provider implementation or support
   list is approved. The R10 evaluation cohort is selected for research
   scope only by user direction (2026-10-13) and is listed in
   `plans/porting.md`; that selection is not a provider implementation or
   support choice, approves no API operation list, and pins no exact SDK
   package/version. AWS, Azure, GCP and other names outside that dated
-  cohort entry remain candidates/examples only, and no SDK or dependency
-  version is pinned. Sole exception: the six-provider HTTP machine-metadata
-  subset authorized by Amendment 2026-10-14 — the current implementation
-  scope, still unimplemented; beyond it, no broad provider support, SDK
-  package/version or other API-operation approval exists.
-- No operation list is approved beyond the read-only categories in
-  Decision 3 and the amendment's bounded metadata subset; selection happens
-  per integration under scoped review.
-- No implementation, build, test, dependency or live cloud/CI operation has
-  been performed by this record. Implementation is authorized solely by the
-  2026-10-14 user request and only for the bounded HTTP machine-metadata
-  subset, which remains unimplemented; the unchanged runtime-preflight,
-  security and test gates must pass first. No credentials, live cloud access
-  or SDK dependencies are authorized, and no test or build is authorized or
-  completed by this record; human approval never substitutes for runtime
-  preflight.
-- Policy acceptance is distinct from implementation approval: nothing here
-  dispatches work, selects executors for implementation, or implies that any
-  integration, tag or feature already exists.
+  cohort entry remain candidates/examples only; the 2026-10-13 base decision
+  pinned no SDK or dependency version. Sole exception as of 2026-10-14: the
+  six-provider HTTP machine-metadata subset authorized by Amendment
+  2026-10-14; it remained unimplemented as of that date. The 2026-10-15
+  status addendum records its subsequent implementation. The 2026-10-19
+  amendment authorizes only the two GCP reads and task-authorized dependency
+  versions stated there. Beyond these dated exceptions, no broad provider
+  support, SDK package/version or other API-operation approval exists.
+- As of the 2026-10-14 amendment, no operation list was approved beyond the
+  read-only categories in Decision 3 and that amendment's bounded metadata
+  subset. The 2026-10-19 amendment adds only its two GCP read operations;
+  other selections remain subject to per-integration scoped review.
+- This record itself did not perform implementation, build, test, dependency
+  or live cloud/CI operations. Under the 2026-10-14 user request, only the
+  bounded HTTP machine-metadata subset was authorized and it was unimplemented
+  as of that date; the 2026-10-15 status addendum records its subsequent
+  implementation. The 2026-10-19 amendment authorizes only the two GCP reads
+  and task-authorized dependency versions stated there. The unchanged
+  runtime-preflight, security and test gates remain applicable; the reported
+  offline validation is status evidence, not broader build/test authority.
+  No broader provider/API support, credentials, live cloud access or IAM
+  mutation is authorized; no dependency beyond the task-authorized versions
+  is approved. Human approval never substitutes for runtime preflight.
+- Policy acceptance is distinct from implementation approval: the 2026-10-13
+  base policy itself did not dispatch work or select executors. Current
+  implementation status is recorded in the dated addenda above.
 
 ## Sources
 

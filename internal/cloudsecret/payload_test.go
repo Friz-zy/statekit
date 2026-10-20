@@ -27,6 +27,36 @@ func TestFormatPayloadRawAndTextAreByteExact(t *testing.T) {
 	}
 }
 
+func TestFormatPayloadRawAndTextRetainPrivateOutputOwnership(t *testing.T) {
+	for _, format := range []Format{FormatRaw, FormatText} {
+		input := []byte("synthetic")
+		output, err := FormatPayload(input, format, "")
+		if err != nil || !bytes.Equal(output, input) {
+			t.Fatal("raw or text format changed the payload")
+		}
+		output[0] = 'X'
+		if input[0] != 's' {
+			t.Fatal("formatted output aliases provider-owned payload bytes")
+		}
+		input[1] = 'Y'
+		if output[1] != 'y' {
+			t.Fatal("provider mutation changed the private formatted output")
+		}
+	}
+}
+
+func TestFormatPayloadStructuredEncodingOwnsOutputWithoutSourceCopy(t *testing.T) {
+	input := []byte(`{"value":"synthetic"}`)
+	output, err := FormatPayload(input, FormatJSON, "")
+	if err != nil || !bytes.Equal(output, input) {
+		t.Fatal("structured format changed its logical payload")
+	}
+	output[2] = 'X'
+	if string(input) != `{"value":"synthetic"}` {
+		t.Fatal("structured output aliases the provider payload")
+	}
+}
+
 func TestFormatPayloadPreservesStructuredJSONTypes(t *testing.T) {
 	doc := []byte(`{"s":"value","n":27,"b":true,"z":null,"o":{"x":1},"a":[false]}`)
 	for _, test := range []struct {

@@ -15,7 +15,8 @@ import (
 type parseBudget struct{ nodes int }
 
 // FormatPayload validates and formats the provider bytes completely before a
-// caller may write to a sink. It returns only a private output buffer.
+// caller may write to a sink. Raw and text output is privately copied; structured
+// output is newly encoded and owned by the caller.
 func FormatPayload(payload []byte, format Format, keyPath string) ([]byte, error) {
 	if len(payload) > MaxPayloadBytes {
 		return nil, ErrInvalidPayload
@@ -30,7 +31,7 @@ func FormatPayload(payload []byte, format Format, keyPath string) ([]byte, error
 		if keyPath != "" {
 			return nil, ErrInvalidRequest
 		}
-		if !utf8.Valid(payload) || strings.ContainsAny(string(payload), "\r\n\u0085\u2028\u2029") {
+		if !utf8.Valid(payload) || containsLineBreak(payload) {
 			return nil, ErrInvalidPayload
 		}
 		return append([]byte(nil), payload...), nil
@@ -83,7 +84,18 @@ func FormatPayload(payload []byte, format Format, keyPath string) ([]byte, error
 	if len(encoded) > MaxPayloadBytes {
 		return nil, ErrInvalidPayload
 	}
-	return append([]byte(nil), encoded...), nil
+	return encoded, nil
+}
+
+func containsLineBreak(payload []byte) bool {
+	for len(payload) > 0 {
+		r, size := utf8.DecodeRune(payload)
+		if r == '\r' || r == '\n' || r == '\u0085' || r == '\u2028' || r == '\u2029' {
+			return true
+		}
+		payload = payload[size:]
+	}
+	return false
 }
 
 // ValidateKeyPath checks RFC 6901 syntax without needing the payload document.

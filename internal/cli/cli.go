@@ -43,14 +43,38 @@ const usageText = `statekit — portable local SaltStack-compatible execution an
 Usage:
   statekit exec <module>.<function> [args] [-o json|yaml|text]
   statekit state <module>.<function> [args] [-o json|yaml|text]
-  statekit exec cloud.secret.get (--source-uri URI | --provider aws --backend secretsmanager|ssm --region REGION --resource RESOURCE) [--format raw|text|json|yaml] [--sink stdout|stderr|unix --target PATH]
+  statekit exec cloud.secret.get (--source-uri URI | --provider aws --backend secretsmanager|ssm --region REGION --resource RESOURCE | --provider gcp --backend secretmanager --region global --resource projects/PROJECT/secrets/SECRET) [--version-id ID | --version-alias ALIAS] [--format raw|text|json|yaml] [--sink stdout|stderr|unix --target PATH]
 
 Commands:
   exec <mod>.<fun>   run an execution function
   state <mod>.<fun>  apply a single state function
-  exec cloud.secret.get  read one AWS secret or parameter value to one sink
+  exec cloud.secret.get  read one AWS or GCP secret value to one sink
+  exec cloud.param.get   read raw GCP Parameter Manager configuration (sensitive)
   facts              show detected system facts
   version            show the StateKit version
+
+Parameter Manager: canonical URI is param://gcp/parametermanager/LOCATION/RESOURCE
+(percent-encode the complete provider-native resource
+projects/{project}/locations/{location}/parameters/{parameter} as exactly one
+path segment; literal slash-expanded resource paths are rejected), or all four structured
+fields --provider gcp --backend parametermanager --region LOCATION --resource
+projects/PROJECT/locations/LOCATION/parameters/PARAMETER. LOCATION is global or
+a regional location. Select --version-id ID or --version-alias latest; omitted
+selection means mutable latest. There is no application-level retry or fallback
+to another secret/parameter version; gRPC may transparently retry/reconnect the same call
+at the transport layer.
+GCP Secret Manager reads use mutable latest when neither --version-id nor
+--version-alias is supplied. Set a numeric --version-id when stable content is needed.
+Formats: --format raw|text|json|yaml (default raw); --key-path is RFC6901 and
+only valid for JSON/YAML. Sinks: stdout, stderr, or unix with --target PATH;
+file sinks are deferred. All parameter payload is sensitive. Only raw
+GetParameterVersion is used: no rendering, templates, or __REF__ resolution.
+IAM is external and project-scoped: prefer an externally provisioned custom
+role containing parametermanager.parameterversions.get where supported;
+otherwise roles/parametermanager.parameterViewer also exposes listing and
+project-wide reads. StateKit never creates or changes IAM. Rendering/reference
+support requires a separate security design; this command supports only raw
+global/regional reads using the fixed official endpoints and GCE identity.
 
 Common options:
   --list             list available functions (optionally module.<prefix>)
@@ -77,7 +101,8 @@ type App struct {
 
 	// secretFetch injects a synthetic reader in tests; production uses the
 	// dedicated AWS instance-profile path.
-	secretFetch secretFetchFunc
+	secretFetch    secretFetchFunc
+	parameterFetch secretFetchFunc
 }
 
 // NewApp creates a CLI application bound to the given runtime factory.
@@ -118,6 +143,9 @@ func (a *App) dispatch(argv []string) int {
 	case "facts":
 		return a.cmdFacts(argv[1:])
 	case "exec":
+		if args, ok := extractSensitiveGetArgs(argv[1:], "cloud.param.get"); ok {
+			return a.cmdCloudParameterGet(args)
+		}
 		if args, ok := extractSecretGetArgs(argv[1:]); ok {
 			return a.cmdCloudSecretGet(args)
 		}

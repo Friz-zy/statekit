@@ -58,10 +58,14 @@ const (
 // ParseSourceURI accepts only the canonical secret://provider/backend/region/resource
 // form. The resource is one raw path segment; percent escapes are decoded once.
 func ParseSourceURI(value string) (Source, error) {
-	if len(value) == 0 || len(value) > maxSourceBytes || !strings.HasPrefix(value, "secret://") || strings.ContainsAny(value, "?#") {
+	return parseSourceURI(value, "secret://", ValidateSource)
+}
+
+func parseSourceURI(value, scheme string, validate func(Source) error) (Source, error) {
+	if len(value) == 0 || len(value) > maxSourceBytes || !strings.HasPrefix(value, scheme) || strings.ContainsAny(value, "?#") {
 		return Source{}, ErrInvalidSource
 	}
-	parts := strings.Split(strings.TrimPrefix(value, "secret://"), "/")
+	parts := strings.Split(strings.TrimPrefix(value, scheme), "/")
 	if len(parts) != 4 || parts[0] == "" || parts[1] == "" || parts[2] == "" || parts[3] == "" {
 		return Source{}, ErrInvalidSource
 	}
@@ -76,7 +80,7 @@ func ParseSourceURI(value string) (Source, error) {
 		return Source{}, ErrInvalidSource
 	}
 	source := Source{Provider: parts[0], Backend: parts[1], Region: parts[2], Resource: resource}
-	if err := ValidateSource(source); err != nil {
+	if err := validate(source); err != nil {
 		return Source{}, err
 	}
 	return source, nil
@@ -118,12 +122,33 @@ func ParseStructuredRequest(data []byte) (map[string]string, error) {
 	return result, nil
 }
 
-// ValidateSource enforces the currently implemented AWS-only service contract.
+// ValidateSource enforces the provider-specific service contract.
 func ValidateSource(source Source) error {
 	if !validToken(source.Provider) || !validToken(source.Backend) || !validToken(source.Region) || !validResource(source.Resource) {
 		return ErrInvalidSource
 	}
-	if source.Provider != "aws" {
+	switch source.Provider {
+	case "gcp":
+		// This slice deliberately supports global resources only. Regional
+		// Secret Manager needs a separately reviewed endpoint and identity scope.
+		if source.Backend != "secretmanager" {
+			return ErrUnsupported
+		}
+		if source.Region != "global" || isGCPRegionalSecretParent(source.Resource) {
+			return ErrUnsupported
+		}
+		if !validGCPSecretParent(source.Resource) {
+			return ErrInvalidSource
+		}
+		if source.VersionID != "" && source.VersionAlias != "" || !validVersionSelector(source.VersionID) || !validVersionSelector(source.VersionAlias) {
+			return ErrInvalidSource
+		}
+		if source.VersionID != "" && !validGCPVersionID(source.VersionID) || source.VersionAlias != "" && !validGCPVersionAlias(source.VersionAlias) {
+			return ErrInvalidSource
+		}
+		return nil
+	case "aws":
+	default:
 		return ErrUnsupported
 	}
 	if source.Backend != "secretsmanager" && source.Backend != "ssm" {
@@ -159,6 +184,72 @@ func ValidateSource(source Source) error {
 		return ErrInvalidSource
 	}
 	return nil
+}
+
+func isGCPRegionalSecretParent(value string) bool {
+	parts := strings.Split(value, "/")
+	return len(parts) == 6 && parts[0] == "projects" && parts[2] == "locations" && parts[4] == "secrets"
+}
+
+func validGCPSecretParent(value string) bool {
+	parts := strings.Split(value, "/")
+	if len(parts) != 4 || parts[0] != "projects" || parts[2] != "secrets" || !validGCPProject(parts[1]) {
+		return false
+	}
+	secret := parts[3]
+	if len(secret) == 0 || len(secret) > 255 {
+		return false
+	}
+	for i := 0; i < len(secret); i++ {
+		c := secret[i]
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '-') {
+			return false
+		}
+	}
+	return true
+}
+
+func validGCPProject(value string) bool {
+	numeric := true
+	for i := 0; i < len(value); i++ {
+		if value[i] < '0' || value[i] > '9' {
+			numeric = false
+			break
+		}
+	}
+	if numeric {
+		return len(value) >= 6 && len(value) <= 20
+	}
+	if len(value) < 6 || len(value) > 30 {
+		return false
+	}
+	if value[0] < 'a' || value[0] > 'z' {
+		return false
+	}
+	for i := 1; i < len(value); i++ {
+		c := value[i]
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-') {
+			return false
+		}
+	}
+	return value[len(value)-1] != '-'
+}
+
+func validGCPVersionID(value string) bool {
+	if value == "" || len(value) > 19 || value[0] == '0' {
+		return false
+	}
+	for i := range value {
+		if value[i] < '0' || value[i] > '9' {
+			return false
+		}
+	}
+	n, err := strconv.ParseInt(value, 10, 64)
+	return err == nil && n > 0
+}
+
+func validGCPVersionAlias(value string) bool {
+	return value == "latest"
 }
 
 func canonicalEscapes(value string) bool {

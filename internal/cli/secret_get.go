@@ -36,6 +36,14 @@ type parsedSecretArgs struct {
 }
 
 func (a *App) cmdCloudSecretGet(argv []string) (code int) {
+	return a.cmdSensitiveGet(argv, false)
+}
+
+func (a *App) cmdCloudParameterGet(argv []string) int {
+	return a.cmdSensitiveGet(argv, true)
+}
+
+func (a *App) cmdSensitiveGet(argv []string, parameter bool) (code int) {
 	sink := secretSinkHint(argv)
 	defer func() {
 		if recover() != nil {
@@ -53,7 +61,7 @@ func (a *App) cmdCloudSecretGet(argv []string) (code int) {
 	if err != nil {
 		return secretFailure(err, sink)
 	}
-	request, err := makeSecretRequest(parsed)
+	request, err := makeSensitiveRequest(parsed, parameter)
 	if err != nil {
 		return secretFailure(err, sink)
 	}
@@ -61,7 +69,7 @@ func (a *App) cmdCloudSecretGet(argv []string) (code int) {
 	if request.sink == "file" {
 		return secretFailure(cloudsecret.ErrDeferredFile, sink)
 	}
-	if !cloudsecret.AWSAvailable() {
+	if request.source.Provider == "aws" && !cloudsecret.AWSAvailable() || request.source.Provider == "gcp" && !cloudsecret.GCPAvailable() {
 		return secretFailure(cloudsecret.ErrUnsupported, sink)
 	}
 	switch request.sink {
@@ -93,8 +101,22 @@ func (a *App) cmdCloudSecretGet(argv []string) (code int) {
 	}
 
 	fetch := a.secretFetch
+	if parameter {
+		fetch = a.parameterFetch
+	}
 	if fetch == nil {
-		fetch = cloudsecret.FetchAWS
+		if parameter {
+			fetch = cloudsecret.FetchGCPParameter
+		} else {
+			switch request.source.Provider {
+			case "aws":
+				fetch = cloudsecret.FetchAWS
+			case "gcp":
+				fetch = cloudsecret.FetchGCP
+			default:
+				return secretFailure(cloudsecret.ErrUnsupported, sink)
+			}
+		}
 	}
 	payload, err := fetch(ctx, request.source)
 	if err != nil {
@@ -270,6 +292,14 @@ func readSecretRequest(reader io.Reader) ([]byte, error) {
 }
 
 func makeSecretRequest(parsed parsedSecretArgs) (secretRequest, error) {
+	return makeSensitiveRequest(parsed, false)
+}
+
+func makeSensitiveRequest(parsed parsedSecretArgs, parameter bool) (secretRequest, error) {
+	parseURI, validate := cloudsecret.ParseSourceURI, cloudsecret.ValidateSource
+	if parameter {
+		parseURI, validate = cloudsecret.ParseParameterSourceURI, cloudsecret.ValidateParameterSource
+	}
 	values := parsed.values
 	uriPresent := parsed.present["source_uri"]
 	structuredSourceCount := 0
@@ -285,7 +315,7 @@ func makeSecretRequest(parsed parsedSecretArgs) (secretRequest, error) {
 	var source cloudsecret.Source
 	var err error
 	if uriPresent {
-		source, err = cloudsecret.ParseSourceURI(values["source_uri"])
+		source, err = parseURI(values["source_uri"])
 		if err != nil {
 			return secretRequest{}, err
 		}
@@ -307,7 +337,7 @@ func makeSecretRequest(parsed parsedSecretArgs) (secretRequest, error) {
 		}
 		source.VersionAlias = values["version_alias"]
 	}
-	if err := cloudsecret.ValidateSource(source); err != nil {
+	if err := validate(source); err != nil {
 		return secretRequest{}, err
 	}
 
@@ -447,14 +477,21 @@ func secretInvocationArgs(argv []string) ([]string, bool) {
 	if len(argv) < 2 || argv[0] != "exec" {
 		return nil, false
 	}
-	return extractSecretGetArgs(argv[1:])
+	if args, ok := extractSecretGetArgs(argv[1:]); ok {
+		return args, true
+	}
+	return extractSensitiveGetArgs(argv[1:], "cloud.param.get")
 }
 
 func extractSecretGetArgs(argv []string) ([]string, bool) {
+	return extractSensitiveGetArgs(argv, "cloud.secret.get")
+}
+
+func extractSensitiveGetArgs(argv []string, command string) ([]string, bool) {
 	var prefix []string
 	for i := 0; i < len(argv); i++ {
 		arg := argv[i]
-		if arg == "cloud.secret.get" {
+		if arg == command {
 			return append(prefix, argv[i+1:]...), true
 		}
 		if arg == "--stdin" || arg == "-" {
