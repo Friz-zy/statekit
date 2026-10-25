@@ -1,15 +1,17 @@
 ARG GO_DEPS_IMAGE=statekit-e51-go-deps:ci
-FROM ${GO_DEPS_IMAGE}
+FROM ${GO_DEPS_IMAGE} AS build
 
 WORKDIR /workspace
-USER 0:0
-COPY . .
-RUN mkdir -p /out /tmp/home /tmp/go /tmp/go-cache && \
-    chown -R 65532:65532 /out /tmp/home /tmp/go /tmp/go-cache
+COPY --chown=65532:65532 . .
 USER 65532:65532
+ENV GOENV=off GOTOOLCHAIN=local GOWORK=off GOPROXY=off GOSUMDB=sum.golang.org \
+    GOPRIVATE="" GONOPROXY="" GONOSUMDB=""
 
-# The workflow invokes this Containerfile with --network=none.  The module
-# cache was populated by the separate dependency-fetch image.
-RUN CGO_ENABLED=0 GOTOOLCHAIN=local go build -trimpath \
+# The rootless OCI build is network-denied; only the separate fixed fetch stage
+# can access Go modules. Build as the non-root user and write the artifact in /tmp.
+RUN CGO_ENABLED=0 go build -trimpath \
     -ldflags "-s -w -X main.version=live-e5.1" \
-    -o /out/statekit ./cmd/statekit
+    -o /tmp/statekit ./cmd/statekit
+
+FROM ${GO_DEPS_IMAGE}
+COPY --from=build --chown=65532:65532 /tmp/statekit /out/statekit
