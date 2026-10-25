@@ -35,15 +35,61 @@ type parsedSecretArgs struct {
 	sinkExplicit bool
 }
 
-func (a *App) cmdCloudSecretGet(argv []string) (code int) {
-	return a.cmdSensitiveGet(argv, false)
+// secretGetRoute is one hierarchical provider.service.get CLI root. The
+// parameter flag selects the GCP Parameter Manager request and reader
+// contract instead of the secret-service contract.
+type secretGetRoute struct {
+	command   string
+	provider  string
+	backend   string
+	parameter bool
 }
 
-func (a *App) cmdCloudParameterGet(argv []string) int {
-	return a.cmdSensitiveGet(argv, true)
+// secretGetRoutes registers the fixed hierarchical provider.service.get
+// roots. Each root pins exactly one provider and backend and dispatches
+// before generic exec; no generic cloud.* root remains and the grammar is
+// not generalized to arbitrary nested module paths.
+var secretGetRoutes = []secretGetRoute{
+	{"aws.secretsmanager.get", "aws", "secretsmanager", false},
+	{"aws.ssm.get", "aws", "ssm", false},
+	{"gcp.secretmanager.get", "gcp", "secretmanager", false},
+	{"gcp.parametermanager.get", "gcp", "parametermanager", true},
+	{"azure.keyvault.get", "azure", "keyvault", false},
+	{"azure.appconfiguration.get", "azure", "appconfiguration", false},
 }
 
-func (a *App) cmdSensitiveGet(argv []string, parameter bool) (code int) {
+// retiredSecretGetCommands lists the former one-dot route tokens. They
+// are matched with the same prefix extraction as live routes and
+// rejected before generic exec dispatch so they can never resolve to an
+// aws or gcp execution module, read an input channel, consult
+// credentials, or fetch. There is no alias or tombstone route.
+var retiredSecretGetCommands = []string{
+	"aws.secretsmanager_get",
+	"aws.ssm_get",
+	"gcp.secretmanager_get",
+	"gcp.parametermanager_get",
+}
+
+// retiredSecretInvocation reports whether argv dispatches a retired
+// one-dot route token and returns that fixed token for the diagnostic.
+func retiredSecretInvocation(argv []string) (string, bool) {
+	for _, command := range retiredSecretGetCommands {
+		if _, ok := extractSensitiveGetArgs(argv, command); ok {
+			return command, true
+		}
+	}
+	return "", false
+}
+
+// cmdRoutedSecretGet runs the dedicated sensitive-value path for one
+// hierarchical provider.service.get route. The route pins the provider and
+// backend; region, resource, version selection, format, and sink come
+// from the request.
+func (a *App) cmdRoutedSecretGet(argv []string, route secretGetRoute) (code int) {
+	return a.cmdSensitiveGet(argv, route.parameter, route.provider, route.backend)
+}
+
+func (a *App) cmdSensitiveGet(argv []string, parameter bool, routeProvider, routeBackend string) (code int) {
 	sink := secretSinkHint(argv)
 	defer func() {
 		if recover() != nil {
@@ -61,7 +107,12 @@ func (a *App) cmdSensitiveGet(argv []string, parameter bool) (code int) {
 	if err != nil {
 		return secretFailure(err, sink)
 	}
-	request, err := makeSensitiveRequest(parsed, parameter)
+	var request secretRequest
+	if parameter {
+		request, err = makeParameterRequest(parsed)
+	} else {
+		request, err = makeRoutedSecretRequest(parsed, routeProvider, routeBackend)
+	}
 	if err != nil {
 		return secretFailure(err, sink)
 	}
@@ -69,7 +120,13 @@ func (a *App) cmdSensitiveGet(argv []string, parameter bool) (code int) {
 	if request.sink == "file" {
 		return secretFailure(cloudsecret.ErrDeferredFile, sink)
 	}
-	if request.source.Provider == "aws" && !cloudsecret.AWSAvailable() || request.source.Provider == "gcp" && !cloudsecret.GCPAvailable() {
+	if request.source.Provider == "azure" && (request.sink == "unix" || request.format == cloudsecret.FormatText) {
+		// Azure delivery is authorized only for raw or structured JSON/YAML
+		// payloads on stdout or stderr. Other providers keep their sinks and
+		// formats; this gate runs before any dial, credential, or fetch.
+		return secretFailure(cloudsecret.ErrUnsupported, sink)
+	}
+	if request.source.Provider == "aws" && !cloudsecret.AWSAvailable() || request.source.Provider == "gcp" && !cloudsecret.GCPAvailable() || request.source.Provider == "azure" && !cloudsecret.AzureAvailable() {
 		return secretFailure(cloudsecret.ErrUnsupported, sink)
 	}
 	switch request.sink {
@@ -113,6 +170,18 @@ func (a *App) cmdSensitiveGet(argv []string, parameter bool) (code int) {
 				fetch = cloudsecret.FetchAWS
 			case "gcp":
 				fetch = cloudsecret.FetchGCP
+			case "azure":
+				// Both Azure routes share the secret request contract; the
+				// backend selects the adapter, which never consults another
+				// provider's reader.
+				switch request.source.Backend {
+				case "keyvault":
+					fetch = cloudsecret.FetchAzureKeyVault
+				case "appconfiguration":
+					fetch = cloudsecret.FetchAzureAppConfiguration
+				default:
+					return secretFailure(cloudsecret.ErrUnsupported, sink)
+				}
 			default:
 				return secretFailure(cloudsecret.ErrUnsupported, sink)
 			}
@@ -266,7 +335,7 @@ func secretFlag(arg string) (name, value string, inline, ok bool) {
 	}
 	key, value, inline := strings.Cut(strings.TrimPrefix(arg, "--"), "=")
 	switch key {
-	case "source-uri", "provider", "backend", "region", "resource", "version-id", "version-alias", "format", "output", "key-path", "sink", "target", "config", "file":
+	case "source-uri", "provider", "backend", "region", "resource", "version-id", "version-alias", "label", "format", "output", "key-path", "sink", "target", "config", "file":
 	default:
 		return "", "", false, false
 	}
@@ -291,15 +360,10 @@ func readSecretRequest(reader io.Reader) ([]byte, error) {
 	return data, nil
 }
 
-func makeSecretRequest(parsed parsedSecretArgs) (secretRequest, error) {
-	return makeSensitiveRequest(parsed, false)
-}
-
-func makeSensitiveRequest(parsed parsedSecretArgs, parameter bool) (secretRequest, error) {
-	parseURI, validate := cloudsecret.ParseSourceURI, cloudsecret.ValidateSource
-	if parameter {
-		parseURI, validate = cloudsecret.ParseParameterSourceURI, cloudsecret.ValidateParameterSource
-	}
+// makeParameterRequest builds the gcp.parametermanager.get request from
+// the parsed input channels. The URI form excludes every structured source
+// field; the structured form requires all four fields.
+func makeParameterRequest(parsed parsedSecretArgs) (secretRequest, error) {
 	values := parsed.values
 	uriPresent := parsed.present["source_uri"]
 	structuredSourceCount := 0
@@ -315,7 +379,7 @@ func makeSensitiveRequest(parsed parsedSecretArgs, parameter bool) (secretReques
 	var source cloudsecret.Source
 	var err error
 	if uriPresent {
-		source, err = parseURI(values["source_uri"])
+		source, err = cloudsecret.ParseParameterSourceURI(values["source_uri"])
 		if err != nil {
 			return secretRequest{}, err
 		}
@@ -325,22 +389,98 @@ func makeSensitiveRequest(parsed parsedSecretArgs, parameter bool) (secretReques
 			Region: values["region"], Resource: values["resource"],
 		}
 	}
-	if parsed.present["version_id"] {
-		if values["version_id"] == "" {
-			return secretRequest{}, cloudsecret.ErrInvalidSource
-		}
-		source.VersionID = values["version_id"]
-	}
-	if parsed.present["version_alias"] {
-		if values["version_alias"] == "" {
-			return secretRequest{}, cloudsecret.ErrInvalidSource
-		}
-		source.VersionAlias = values["version_alias"]
-	}
-	if err := validate(source); err != nil {
+	if err := applySensitiveVersionSelector(&source, parsed); err != nil {
 		return secretRequest{}, err
 	}
+	// The label is the App Configuration selector and is not part of the
+	// Parameter Manager grammar: its presence is rejected, never ignored.
+	if parsed.present["label"] {
+		return secretRequest{}, cloudsecret.ErrInvalidSource
+	}
+	if err := cloudsecret.ValidateParameterSource(source); err != nil {
+		return secretRequest{}, err
+	}
+	return finishSensitiveRequest(parsed, source)
+}
 
+// makeRoutedSecretRequest builds the request for a hierarchical
+// provider.service.get route. The route pins provider and backend, so
+// explicit provider or backend values and a source URI naming another
+// provider or service are rejected before any credential or fetch
+// activity; values matching the route are redundant but accepted. AWS
+// and GCP version and resource semantics are validated unchanged.
+func makeRoutedSecretRequest(parsed parsedSecretArgs, provider, backend string) (secretRequest, error) {
+	if parsed.present["provider"] && parsed.values["provider"] != provider ||
+		parsed.present["backend"] && parsed.values["backend"] != backend {
+		return secretRequest{}, cloudsecret.ErrInvalidSource
+	}
+	uriPresent := parsed.present["source_uri"]
+	structuredSourceCount := 0
+	for _, name := range []string{"region", "resource"} {
+		if parsed.present[name] {
+			structuredSourceCount++
+		}
+	}
+	if uriPresent && structuredSourceCount != 0 || !uriPresent && structuredSourceCount != 2 {
+		return secretRequest{}, cloudsecret.ErrInvalidSource
+	}
+
+	var source cloudsecret.Source
+	var err error
+	if uriPresent {
+		source, err = cloudsecret.ParseSourceURI(parsed.values["source_uri"])
+		if err != nil {
+			return secretRequest{}, err
+		}
+		if source.Provider != provider || source.Backend != backend {
+			return secretRequest{}, cloudsecret.ErrInvalidSource
+		}
+	} else {
+		source = cloudsecret.Source{
+			Provider: provider, Backend: backend,
+			Region: parsed.values["region"], Resource: parsed.values["resource"],
+		}
+	}
+	if err := applySensitiveVersionSelector(&source, parsed); err != nil {
+		return secretRequest{}, err
+	}
+	// The explicit label completes a URI-parsed or structured App
+	// Configuration identity; it is validated with the composed source,
+	// exactly once, before any credential or client activity.
+	if parsed.present["label"] {
+		if parsed.values["label"] == "" {
+			return secretRequest{}, cloudsecret.ErrInvalidSource
+		}
+		source.Label = parsed.values["label"]
+	}
+	if err := cloudsecret.ValidateSource(source); err != nil {
+		return secretRequest{}, err
+	}
+	return finishSensitiveRequest(parsed, source)
+}
+
+// applySensitiveVersionSelector copies an exclusive version selector
+// onto the source before validation.
+func applySensitiveVersionSelector(source *cloudsecret.Source, parsed parsedSecretArgs) error {
+	if parsed.present["version_id"] {
+		if parsed.values["version_id"] == "" {
+			return cloudsecret.ErrInvalidSource
+		}
+		source.VersionID = parsed.values["version_id"]
+	}
+	if parsed.present["version_alias"] {
+		if parsed.values["version_alias"] == "" {
+			return cloudsecret.ErrInvalidSource
+		}
+		source.VersionAlias = parsed.values["version_alias"]
+	}
+	return nil
+}
+
+// finishSensitiveRequest applies the format, key-path, and sink
+// validation shared by the parameter and routed-secret request forms.
+func finishSensitiveRequest(parsed parsedSecretArgs, source cloudsecret.Source) (secretRequest, error) {
+	values := parsed.values
 	format := cloudsecret.FormatRaw
 	if parsed.present["format"] {
 		switch values["format"] {
@@ -477,14 +617,12 @@ func secretInvocationArgs(argv []string) ([]string, bool) {
 	if len(argv) < 2 || argv[0] != "exec" {
 		return nil, false
 	}
-	if args, ok := extractSecretGetArgs(argv[1:]); ok {
-		return args, true
+	for _, route := range secretGetRoutes {
+		if args, ok := extractSensitiveGetArgs(argv[1:], route.command); ok {
+			return args, true
+		}
 	}
-	return extractSensitiveGetArgs(argv[1:], "cloud.param.get")
-}
-
-func extractSecretGetArgs(argv []string) ([]string, bool) {
-	return extractSensitiveGetArgs(argv, "cloud.secret.get")
+	return nil, false
 }
 
 func extractSensitiveGetArgs(argv []string, command string) ([]string, bool) {

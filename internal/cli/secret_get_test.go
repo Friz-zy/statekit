@@ -24,22 +24,43 @@ func secretTestApp(fetch secretFetchFunc) *App {
 	return app
 }
 
-func TestCloudSecretGetRoutesToDedicatedByteSink(t *testing.T) {
+func TestSecretManagerGetRouteDeliversByteExactPayload(t *testing.T) {
 	calls := 0
 	app := secretTestApp(func(_ context.Context, source cloudsecret.Source) ([]byte, error) {
 		calls++
 		if source.Provider != "aws" || source.Backend != "secretsmanager" || source.Region != "us-east-1" || source.Resource != "db" {
-			t.Fatal("dedicated command passed an unexpected source")
+			t.Fatal("secretsmanager route passed an unexpected source")
 		}
 		return []byte(secretCanary), nil
 	})
-	code, stdout, stderr := captureCode(t, app, "exec", "cloud.secret.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db")
+	code, stdout, stderr := captureCode(t, app, "exec", "aws.secretsmanager.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db")
 	if code != ExitOK || stdout != secretCanary || stderr != "" || calls != 1 {
-		t.Fatal("dedicated secret command did not deliver exactly one byte-exact payload")
+		t.Fatal("secretsmanager route did not deliver exactly one byte-exact payload")
+	}
+	code, stdout, stderr = captureCode(t, app, "exec", "aws.secretsmanager.get", "--region", "us-east-1", "--resource", "db")
+	if code != ExitOK || stdout != secretCanary || stderr != "" || calls != 2 {
+		t.Fatal("secretsmanager route did not infer provider and backend from structured input")
+	}
+	code, stdout, stderr = captureCode(t, app, "exec", "aws.secretsmanager.get", "--provider", "aws", "--backend", "secretsmanager", "--region", "us-east-1", "--resource", "db")
+	if code != ExitOK || stdout != secretCanary || stderr != "" || calls != 3 {
+		t.Fatal("secretsmanager route did not accept explicit source fields matching the route")
 	}
 }
 
-func TestCloudSecretGetAcceptsOneCompleteStructuredSource(t *testing.T) {
+func TestSecretManagerGetRoutePassesVersionAliasToFetcher(t *testing.T) {
+	app := secretTestApp(func(_ context.Context, source cloudsecret.Source) ([]byte, error) {
+		if source.Provider != "aws" || source.Backend != "secretsmanager" || source.Region != "us-east-1" || source.Resource != "db" || source.VersionID != "" || source.VersionAlias != "AWSCURRENT" {
+			t.Fatal("secretsmanager route did not pass --version-alias as the source version alias")
+		}
+		return []byte(secretCanary), nil
+	})
+	code, stdout, stderr := captureCode(t, app, "exec", "aws.secretsmanager.get", "--region", "us-east-1", "--resource", "db", "--version-alias", "AWSCURRENT")
+	if code != ExitOK || stdout != secretCanary || stderr != "" {
+		t.Fatal("secretsmanager route did not deliver the byte-exact payload for the version-alias request")
+	}
+}
+
+func TestSSMGetRouteAcceptsOneCompleteStructuredSource(t *testing.T) {
 	calls := 0
 	app := secretTestApp(func(_ context.Context, source cloudsecret.Source) ([]byte, error) {
 		calls++
@@ -48,45 +69,57 @@ func TestCloudSecretGetAcceptsOneCompleteStructuredSource(t *testing.T) {
 		}
 		return []byte("synthetic"), nil
 	})
-	code, stdout, stderr := captureCode(t, app, "exec", "cloud.secret.get", "--config", "provider: aws\nbackend: ssm\nregion: us-east-1\nresource: /prod/key\nversion_id: '7'\n")
+	code, stdout, stderr := captureCode(t, app, "exec", "aws.ssm.get", "--config", "region: us-east-1\nresource: /prod/key\nversion_id: '7'\n")
 	if code != ExitOK || stdout != "synthetic" || stderr != "" || calls != 1 {
 		t.Fatal("complete structured source was not accepted")
 	}
 	calls = 0
-	code, stdout, stderr = captureCode(t, app, "exec", "cloud.secret.get", "--config", `{"provider":"aws","provider":"aws","backend":"ssm","region":"us-east-1","resource":"/prod/key"}`)
+	code, stdout, stderr = captureCode(t, app, "exec", "aws.ssm.get", "--config", `{"region":"us-east-1","region":"us-east-1","resource":"/prod/key"}`)
 	if code != ExitInvalidInput || stdout != "" || strings.Contains(stderr, secretCanary) || calls != 0 {
 		t.Fatal("duplicate structured source field reached the reader")
 	}
-	code, stdout, stderr = captureCode(t, app, "exec", "cloud.secret.get", "--config", `{"source_uri":"secret://aws/ssm/us-east-1/%2Fprod%2Fkey","provider":"aws","backend":"ssm","region":"us-east-1","resource":"/prod/key"}`)
+	code, stdout, stderr = captureCode(t, app, "exec", "aws.ssm.get", "--config", `{"source_uri":"secret://aws/ssm/us-east-1/%2Fprod%2Fkey","region":"us-east-1","resource":"/prod/key"}`)
 	if code != ExitInvalidInput || stdout != "" || stderr == "" || calls != 0 {
 		t.Fatal("URI and structured source fields were accepted together")
 	}
+	app.secretFetch = func(_ context.Context, source cloudsecret.Source) ([]byte, error) {
+		calls++
+		if source.Provider != "aws" || source.Backend != "ssm" || source.Region != "us-east-1" || source.Resource != "/prod/key" || source.VersionID != "" || source.VersionAlias != "" {
+			t.Fatal("SSM URI request did not map to the route-pinned source")
+		}
+		return []byte("synthetic"), nil
+	}
+	code, stdout, stderr = captureCode(t, app, "exec", "aws.ssm.get", "--source-uri", "secret://aws/ssm/us-east-1/%2Fprod%2Fkey")
+	if code != ExitOK || stdout != "synthetic" || stderr != "" || calls != 1 {
+		t.Fatal("percent-encoded SSM URI was not accepted by the route")
+	}
 }
 
-func TestCloudSecretGetValidatesBeforeFetchAndFileSinkIsDeferred(t *testing.T) {
+func TestSecretRoutesValidateBeforeFetchAndFileSinkIsDeferred(t *testing.T) {
 	calls := 0
 	app := secretTestApp(func(context.Context, cloudsecret.Source) ([]byte, error) {
 		calls++
 		return []byte(secretCanary), nil
 	})
 	for _, args := range [][]string{
-		{"exec", "cloud.secret.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db", "--source-uri", "secret://aws/secretsmanager/us-east-1/other"},
-		{"exec", "cloud.secret.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db", "--unknown", secretCanary},
-		{"exec", "cloud.secret.get", "--provider", "aws", "--backend", "ssm", "--region", "us-east-1"},
-		{"exec", "cloud.secret.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db", "--format", "json", "--key-path", "/bad~2pointer"},
-		{"exec", "cloud.secret.get", "--provider", "aws", "--backend", "ssm", "--region", "us-east-1", "--resource", "/prod/key", "--version-id", "+1"},
+		{"exec", "aws.secretsmanager.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db", "--source-uri", "secret://aws/secretsmanager/us-east-1/other"},
+		{"exec", "aws.secretsmanager.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db", "--unknown", secretCanary},
+		{"exec", "aws.ssm.get", "--region", "us-east-1"},
+		{"exec", "aws.secretsmanager.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db", "--format", "json", "--key-path", "/bad~2pointer"},
+		{"exec", "aws.ssm.get", "--region", "us-east-1", "--resource", "/prod/key", "--version-id", "+1"},
+		{"exec", "aws.secretsmanager.get", "--region", "us-east-1", "--resource", "db", "--version-id", "too-short"},
 	} {
 		code, stdout, stderr := captureCode(t, app, args...)
 		if code != ExitInvalidInput || stdout != "" || strings.Contains(stderr, secretCanary) || calls != 0 {
 			t.Fatal("invalid secret request reached the reader or leaked an input value")
 		}
 	}
-	code, stdout, stderr := captureCode(t, app, "exec", "cloud.secret.get", "--provider", "azure", "--backend", "keyvault", "--region", "us-east-1", "--resource", "item")
+	code, stdout, stderr := captureCode(t, app, "exec", "aws.secretsmanager.get", "--region", "us-east-1", "--resource", "db", "--sink", "bogus")
 	if code != ExitUnsupported || stdout != "" || stderr == "" || calls != 0 {
-		t.Fatal("deferred provider was not rejected before provider retrieval")
+		t.Fatal("unsupported sink was not rejected before provider retrieval")
 	}
 	path := filepath.Join(t.TempDir(), "secret-output")
-	code, stdout, stderr = captureCode(t, app, "exec", "cloud.secret.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db", "--sink", "file", "--target", path)
+	code, stdout, stderr = captureCode(t, app, "exec", "aws.secretsmanager.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db", "--sink", "file", "--target", path)
 	if code != ExitUnsupported || stdout != "" || !strings.Contains(stderr, "file sink deferred by policy") || calls != 0 {
 		t.Fatal("file sink was not rejected before retrieval with a clear policy diagnostic")
 	}
@@ -95,7 +128,7 @@ func TestCloudSecretGetValidatesBeforeFetchAndFileSinkIsDeferred(t *testing.T) {
 	}
 }
 
-func TestCloudSecretGetAuthenticatesUDSSinkBeforeFetch(t *testing.T) {
+func TestSecretRouteAuthenticatesUDSSinkBeforeFetch(t *testing.T) {
 	if goruntime.GOOS != "linux" {
 		t.Skip("peer credential enforcement is enabled on Linux only")
 	}
@@ -104,7 +137,7 @@ func TestCloudSecretGetAuthenticatesUDSSinkBeforeFetch(t *testing.T) {
 		calls++
 		return []byte(secretCanary), nil
 	})
-	code, stdout, stderr := captureCode(t, app, "exec", "cloud.secret.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db", "--sink", "unix", "--target", filepath.Join(t.TempDir(), "missing.sock"))
+	code, stdout, stderr := captureCode(t, app, "exec", "aws.secretsmanager.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db", "--sink", "unix", "--target", filepath.Join(t.TempDir(), "missing.sock"))
 	if code != ExitFailed || stdout != "" || calls != 0 || !strings.Contains(stderr, "secret sink failed") {
 		t.Fatal("UDS sink failure was not detected before provider retrieval")
 	}
@@ -160,7 +193,7 @@ func TestClosedAndReadOnlyStdoutStderrFailBeforeFetch(t *testing.T) {
 					stderr = descriptor
 				}
 				code := runWithStdio(stdout, stderr, func() int {
-					return app.Run([]string{"exec", "cloud.secret.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db", "--sink", sink})
+					return app.Run([]string{"exec", "aws.secretsmanager.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db", "--sink", sink})
 				})
 				if code != ExitFailed || calls != 0 {
 					t.Fatal("invalid selected descriptor reached the secret fetch")
@@ -183,35 +216,35 @@ func runWithStdio(stdout, stderr *os.File, run func() int) int {
 	return run()
 }
 
-func TestCloudSecretGetStderrSinkSuppressesDiagnostics(t *testing.T) {
+func TestSecretRouteStderrSinkSuppressesDiagnostics(t *testing.T) {
 	app := secretTestApp(func(context.Context, cloudsecret.Source) ([]byte, error) {
 		return []byte(secretCanary), nil
 	})
-	code, stdout, stderr := captureCode(t, app, "exec", "cloud.secret.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db", "--sink", "stderr")
+	code, stdout, stderr := captureCode(t, app, "exec", "aws.secretsmanager.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db", "--sink", "stderr")
 	if code != ExitOK || stdout != "" || stderr != secretCanary {
 		t.Fatal("stderr sink was not payload-only")
 	}
 	app.secretFetch = func(context.Context, cloudsecret.Source) ([]byte, error) {
 		return nil, errors.New(secretCanary)
 	}
-	code, stdout, stderr = captureCode(t, app, "exec", "cloud.secret.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db", "--sink", "stderr")
+	code, stdout, stderr = captureCode(t, app, "exec", "aws.secretsmanager.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db", "--sink", "stderr")
 	if code != ExitFailed || stdout != "" || stderr != "" {
 		t.Fatal("stderr-sink failure emitted diagnostics to a data descriptor")
 	}
 	app.secretFetch = func(context.Context, cloudsecret.Source) ([]byte, error) {
 		panic(secretCanary)
 	}
-	code, stdout, stderr = captureCode(t, app, "exec", "cloud.secret.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db", "--sink", "stderr")
+	code, stdout, stderr = captureCode(t, app, "exec", "aws.secretsmanager.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db", "--sink", "stderr")
 	if code != ExitFailed || stdout != "" || stderr != "" {
 		t.Fatal("stderr-sink panic leaked a diagnostic")
 	}
 }
 
-func TestCloudSecretGetMapsProviderErrorsAndPanicsWithoutValues(t *testing.T) {
+func TestSecretRouteMapsProviderErrorsAndPanicsWithoutValues(t *testing.T) {
 	app := secretTestApp(func(context.Context, cloudsecret.Source) ([]byte, error) {
 		return nil, errors.New(secretCanary)
 	})
-	args := []string{"exec", "cloud.secret.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db"}
+	args := []string{"exec", "aws.secretsmanager.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db"}
 	code, stdout, stderr := captureCode(t, app, args...)
 	if code != ExitFailed || stdout != "" || stderr == "" || strings.Contains(stderr, secretCanary) {
 		t.Fatal("provider error leaked through ordinary CLI output")
@@ -232,24 +265,28 @@ func TestCloudSecretGetMapsProviderErrorsAndPanicsWithoutValues(t *testing.T) {
 	}
 }
 
-func TestCloudSecretGetFormatFlagUsesDedicatedSerializer(t *testing.T) {
+func TestSecretRouteFormatFlagUsesDedicatedSerializer(t *testing.T) {
 	app := secretTestApp(func(context.Context, cloudsecret.Source) ([]byte, error) {
 		return []byte(`{"value":"synthetic"}`), nil
 	})
-	code, stdout, stderr := captureCode(t, app, "exec", "cloud.secret.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db", "--format", "json", "--key-path", "/value")
+	code, stdout, stderr := captureCode(t, app, "exec", "aws.secretsmanager.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db", "--format", "json", "--key-path", "/value")
 	if code != ExitOK || stdout != `"synthetic"` || stderr != "" {
-		t.Fatal("--format did not use the dedicated structured serializer")
+		t.Fatal("--format json did not use the dedicated structured serializer")
+	}
+	code, stdout, stderr = captureCode(t, app, "exec", "aws.secretsmanager.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db", "--format", "yaml", "--key-path", "/value")
+	if code != ExitOK || stdout != "synthetic\n" || stderr != "" {
+		t.Fatal("--format yaml did not use the dedicated structured serializer")
 	}
 	app.secretFetch = func(context.Context, cloudsecret.Source) ([]byte, error) {
 		return []byte("plain"), nil
 	}
-	code, stdout, stderr = captureCode(t, app, "exec", "cloud.secret.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db", "--format", "text")
+	code, stdout, stderr = captureCode(t, app, "exec", "aws.secretsmanager.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db", "--format", "text")
 	if code != ExitOK || stdout != "plain" || stderr != "" {
 		t.Fatal("--format text did not preserve the dedicated byte contract")
 	}
 }
 
-func TestCloudSecretGetRejectsGenericOutputAliasesBeforeFetchAndSink(t *testing.T) {
+func TestSecretRouteRejectsGenericOutputAliasesBeforeFetchAndSink(t *testing.T) {
 	if goruntime.GOOS != "linux" {
 		t.Skip("UDS connection preflight assertion is enabled on Linux")
 	}
@@ -282,7 +319,7 @@ func TestCloudSecretGetRejectsGenericOutputAliasesBeforeFetchAndSink(t *testing.
 				return []byte(secretCanary), nil
 			})
 			args := []string{
-				"exec", "cloud.secret.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/" + secretCanary,
+				"exec", "aws.secretsmanager.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/" + secretCanary,
 				"--sink", "unix", "--target", path,
 			}
 			args = append(args, alias.flags...)
@@ -302,7 +339,7 @@ func TestCloudSecretGetRejectsGenericOutputAliasesBeforeFetchAndSink(t *testing.
 	}
 }
 
-func TestCloudSecretGetRejectsGenericOutputAliasesOnStdout(t *testing.T) {
+func TestSecretRouteRejectsGenericOutputAliasesOnStdout(t *testing.T) {
 	aliases := [][]string{
 		{"-o", "text"},
 		{"-o=text"},
@@ -317,7 +354,7 @@ func TestCloudSecretGetRejectsGenericOutputAliasesOnStdout(t *testing.T) {
 			calls++
 			return []byte(secretCanary), nil
 		})
-		args := []string{"exec", "cloud.secret.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/" + secretCanary}
+		args := []string{"exec", "aws.secretsmanager.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/" + secretCanary}
 		args = append(args, flags...)
 		code, stdout, stderr := captureCode(t, app, args...)
 		if code != ExitInvalidInput || stdout != "" || stderr != "statekit: invalid secret request\n" || strings.Contains(stdout, secretCanary) || strings.Contains(stderr, secretCanary) || calls != 0 {
@@ -326,7 +363,7 @@ func TestCloudSecretGetRejectsGenericOutputAliasesOnStdout(t *testing.T) {
 	}
 }
 
-func TestCloudSecretGetRejectsGenericOutputAliasesWithStderrSink(t *testing.T) {
+func TestSecretRouteRejectsGenericOutputAliasesWithStderrSink(t *testing.T) {
 	aliases := []struct {
 		name  string
 		flags []string
@@ -350,7 +387,7 @@ func TestCloudSecretGetRejectsGenericOutputAliasesWithStderrSink(t *testing.T) {
 					calls++
 					return []byte(secretCanary), nil
 				})
-				args := []string{"exec", "cloud.secret.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/" + secretCanary}
+				args := []string{"exec", "aws.secretsmanager.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/" + secretCanary}
 				if sinkFirst {
 					args = append(args, "--sink", "stderr")
 				}
@@ -367,7 +404,7 @@ func TestCloudSecretGetRejectsGenericOutputAliasesWithStderrSink(t *testing.T) {
 	}
 }
 
-func TestCloudSecretGetGenericOutputAliasBeforeStderrSinkDoesNotPreflight(t *testing.T) {
+func TestSecretRouteGenericOutputAliasBeforeStderrSinkDoesNotPreflight(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "closed-stderr")
 	closed, err := os.Create(path)
 	if err != nil {
@@ -389,7 +426,7 @@ func TestCloudSecretGetGenericOutputAliasBeforeStderrSinkDoesNotPreflight(t *tes
 	})
 	code := runWithStdio(diagnostic, closed, func() int {
 		return app.Run([]string{
-			"exec", "cloud.secret.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/" + secretCanary,
+			"exec", "aws.secretsmanager.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/" + secretCanary,
 			"-o", "text", "--sink", "stderr",
 		})
 	})

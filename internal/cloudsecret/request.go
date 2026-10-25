@@ -1,6 +1,6 @@
 // Package cloudsecret implements the bounded, sensitive-value path used by
-// the dedicated cloud.secret.get CLI command. Its errors are closed sentinels
-// so source data and provider diagnostics never become error text.
+// the provider-specific secret and parameter routes. Its errors are closed
+// sentinels so source data and provider diagnostics never become error text.
 package cloudsecret
 
 import (
@@ -36,6 +36,8 @@ const (
 
 // Source selects one exact provider service resource. VersionID and
 // VersionAlias are mutually exclusive and have backend-specific meanings.
+// Label is the explicit App Configuration setting version selector; it is
+// valid only for the azure appconfiguration backend.
 type Source struct {
 	Provider     string
 	Backend      string
@@ -43,6 +45,7 @@ type Source struct {
 	Resource     string
 	VersionID    string
 	VersionAlias string
+	Label        string
 }
 
 // Format selects the explicit byte transformation applied before delivery.
@@ -57,8 +60,11 @@ const (
 
 // ParseSourceURI accepts only the canonical secret://provider/backend/region/resource
 // form. The resource is one raw path segment; percent escapes are decoded once.
+// The URI carries the source identity only: selectors that live outside the
+// URI (the App Configuration label) are validated after the request is
+// composed, by ValidateSource.
 func ParseSourceURI(value string) (Source, error) {
-	return parseSourceURI(value, "secret://", ValidateSource)
+	return parseSourceURI(value, "secret://", ValidateSourceIdentity)
 }
 
 func parseSourceURI(value, scheme string, validate func(Source) error) (Source, error) {
@@ -106,7 +112,7 @@ func ParseStructuredRequest(data []byte) (map[string]string, error) {
 	allowed := map[string]bool{
 		"source_uri": true, "provider": true, "backend": true, "region": true, "resource": true,
 		"version_id": true, "version_alias": true, "format": true, "key_path": true,
-		"sink": true, "target": true,
+		"sink": true, "target": true, "label": true,
 	}
 	result := make(map[string]string, len(fields))
 	for name, raw := range fields {
@@ -122,8 +128,30 @@ func ParseStructuredRequest(data []byte) (map[string]string, error) {
 	return result, nil
 }
 
-// ValidateSource enforces the provider-specific service contract.
+// ValidateSource enforces the complete provider-specific service contract
+// for a composed request. It must be the last check before any credential
+// or fetch activity: it adds the cross-field selector requirements (the
+// explicit App Configuration label, and Label rejection everywhere else)
+// to the identity grammar below.
 func ValidateSource(source Source) error {
+	if err := ValidateSourceIdentity(source); err != nil {
+		return err
+	}
+	if source.Label != "" && (source.Provider != "azure" || source.Backend != "appconfiguration") {
+		return ErrInvalidSource
+	}
+	if source.Provider == "azure" && source.Backend == "appconfiguration" && !validAzureLabel(source.Label) {
+		return ErrInvalidSource
+	}
+	return nil
+}
+
+// ValidateSourceIdentity enforces the provider-native grammar that a
+// secret:// URI can carry alone. Selector fields that arrive as separate
+// request fields rather than URI components are checked only at the
+// ValidateSource level after composition, so a parsed identity can be
+// completed with an explicit label before being validated exactly once.
+func ValidateSourceIdentity(source Source) error {
 	if !validToken(source.Provider) || !validToken(source.Backend) || !validToken(source.Region) || !validResource(source.Resource) {
 		return ErrInvalidSource
 	}
@@ -145,6 +173,31 @@ func ValidateSource(source Source) error {
 		}
 		if source.VersionID != "" && !validGCPVersionID(source.VersionID) || source.VersionAlias != "" && !validGCPVersionAlias(source.VersionAlias) {
 			return ErrInvalidSource
+		}
+		return nil
+	case "azure":
+		// Two exact public-cloud services only. Key Vault selects a version
+		// by 32-hex ID or latest and has no alias concept; App Configuration
+		// versions are selected only by the explicit Label request field,
+		// which no other Azure backend accepts.
+		if source.Backend != "keyvault" && source.Backend != "appconfiguration" {
+			return ErrUnsupported
+		}
+		switch source.Backend {
+		case "keyvault":
+			if !validAzureVaultName(source.Region) || !validAzureSecretName(source.Resource) {
+				return ErrInvalidSource
+			}
+			if source.VersionAlias != "" || source.VersionID != "" && !validAzureSecretVersion(source.VersionID) {
+				return ErrInvalidSource
+			}
+		case "appconfiguration":
+			if !validAzureConfigStore(source.Region) || !validAzureSettingKey(source.Resource) {
+				return ErrInvalidSource
+			}
+			if source.VersionID != "" || source.VersionAlias != "" {
+				return ErrInvalidSource
+			}
 		}
 		return nil
 	case "aws":
@@ -251,6 +304,102 @@ func validGCPVersionID(value string) bool {
 func validGCPVersionAlias(value string) bool {
 	return value == "latest"
 }
+
+// The Azure service names admit only the two public-cloud authorities the
+// adapters derive from them: <name>.vault.azure.net and <name>.azconfig.io.
+// The name grammars exclude dots, colons, and slashes, so custom hosts,
+// ports, userinfo, private endpoints, and sovereign suffixes are impossible
+// before any credential activity.
+
+func validAzureVaultName(value string) bool {
+	if len(value) < 3 || len(value) > 24 || value[0] == '-' || value[len(value)-1] == '-' {
+		return false
+	}
+	lastDash := false
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if c == '-' {
+			if lastDash {
+				return false
+			}
+			lastDash = true
+			continue
+		}
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9') {
+			return false
+		}
+		lastDash = false
+	}
+	return true
+}
+
+func validAzureConfigStore(value string) bool {
+	if len(value) < 5 || len(value) > 50 || value[0] == '-' || value[len(value)-1] == '-' {
+		return false
+	}
+	lastDash := false
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if c == '-' {
+			if lastDash {
+				return false
+			}
+			lastDash = true
+			continue
+		}
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9') {
+			return false
+		}
+		lastDash = false
+	}
+	return true
+}
+
+func validAzureSecretName(value string) bool {
+	if len(value) == 0 || len(value) > 127 {
+		return false
+	}
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-') {
+			return false
+		}
+	}
+	return true
+}
+
+func validAzureSecretVersion(value string) bool {
+	if len(value) != 32 {
+		return false
+	}
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// validAzureSettingToken bounds the shared key/label grammar: App
+// Configuration reserves the dot as a reserved-character prefix/suffix and
+// permits only alphanumerics, ".", "-", and "_" inside.
+func validAzureSettingToken(value string) bool {
+	if len(value) == 0 || len(value) > 255 || value[0] == '.' || value[len(value)-1] == '.' {
+		return false
+	}
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_' || c == '.') {
+			return false
+		}
+	}
+	return true
+}
+
+func validAzureSettingKey(value string) bool { return validAzureSettingToken(value) }
+
+func validAzureLabel(value string) bool { return validAzureSettingToken(value) }
 
 func canonicalEscapes(value string) bool {
 	for i := 0; i < len(value); i++ {

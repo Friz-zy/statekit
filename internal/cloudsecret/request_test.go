@@ -39,7 +39,7 @@ func TestValidateSourceRequiresExplicitSourceAndSupportedSelectors(t *testing.T)
 	}{
 		{name: "empty", want: ErrInvalidSource},
 		{name: "partial", source: Source{Provider: "aws", Backend: "ssm", Region: "us-east-1"}, want: ErrInvalidSource},
-		{name: "deferred provider", source: Source{Provider: "azure", Backend: "keyvault", Region: "us-east-1", Resource: "item"}, want: ErrUnsupported},
+		{name: "deferred provider", source: Source{Provider: "oci", Backend: "keyvault", Region: "us-east-1", Resource: "item"}, want: ErrUnsupported},
 		{name: "deferred backend", source: Source{Provider: "aws", Backend: "appconfig", Region: "us-east-1", Resource: "app"}, want: ErrUnsupported},
 		{name: "aws unsupported backend precedes invalid selector", source: Source{Provider: "aws", Backend: "unknown", Region: "us-east-1", Resource: "/item", VersionID: "bad selector"}, want: ErrUnsupported},
 		{name: "two secret selectors", source: Source{Provider: "aws", Backend: "secretsmanager", Region: "us-east-1", Resource: "item", VersionID: "id", VersionAlias: "AWSCURRENT"}, want: ErrInvalidSource},

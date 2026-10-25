@@ -12,7 +12,7 @@ import (
 	"github.com/friz-zy/statekit/internal/cloudsecret"
 )
 
-func TestDisabledAWSDoesNotConnectUnixSinkOrFetch(t *testing.T) {
+func TestDisabledAWSRouteDoesNotConnectUnixSinkOrFetch(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "consumer.sock")
 	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
 	if err != nil {
@@ -30,16 +30,16 @@ func TestDisabledAWSDoesNotConnectUnixSinkOrFetch(t *testing.T) {
 		return []byte("synthetic"), nil
 	}
 	code, stdout, stderr := captureCode(t, app,
-		"exec", "cloud.secret.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db",
+		"exec", "aws.secretsmanager.get", "--source-uri", "secret://aws/secretsmanager/us-east-1/db",
 		"--sink", "unix", "--target", path,
 	)
 	if code != ExitUnsupported || stdout != "" || stderr == "" || calls != 0 {
-		t.Fatal("disabled AWS request reached the fetcher or opened the UDS sink")
+		t.Fatal("disabled AWS route reached the fetcher or opened the UDS sink")
 	}
 	connection, err := listener.AcceptUnix()
 	if err == nil {
 		_ = connection.Close()
-		t.Fatal("disabled AWS request connected to the UDS sink")
+		t.Fatal("disabled AWS route connected to the UDS sink")
 	}
 	if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
 		t.Fatal("UDS listener did not time out while waiting for the disabled request")

@@ -17,7 +17,7 @@ func TestParameterGetDisabledProfileFailsBeforeFetch(t *testing.T) {
 		fetched = true
 		return []byte("unexpected"), nil
 	}
-	code, stdout, stderr := captureCode(t, app, "exec", "cloud.param.get", "--provider", "gcp", "--backend", "parametermanager", "--region", "global", "--resource", "projects/project-123/locations/global/parameters/config", "--version-alias", "latest")
+	code, stdout, stderr := captureCode(t, app, "exec", "gcp.parametermanager.get", "--provider", "gcp", "--backend", "parametermanager", "--region", "global", "--resource", "projects/project-123/locations/global/parameters/config", "--version-alias", "latest")
 	if code != ExitUnsupported || stdout != "" || fetched || strings.Contains(stderr, "project-123") {
 		t.Fatal("disabled GCP profile must fail unsupported before fetch")
 	}
@@ -30,7 +30,7 @@ func TestParameterGetDisabledProfilePreservesInvalidInputPreflight(t *testing.T)
 		fetched = true
 		return nil, nil
 	}
-	code, stdout, _ := captureCode(t, app, "exec", "cloud.param.get", "--provider", "gcp", "--backend", "parametermanager", "--region", "global", "--resource", "projects/project-123/locations/global/parameters/config", "--version-alias", "invalid")
+	code, stdout, _ := captureCode(t, app, "exec", "gcp.parametermanager.get", "--provider", "gcp", "--backend", "parametermanager", "--region", "global", "--resource", "projects/project-123/locations/global/parameters/config", "--version-alias", "invalid")
 	if code == ExitUnsupported || code == ExitOK || stdout != "" || fetched {
 		t.Fatal("invalid input must be rejected during preflight before runtime")
 	}

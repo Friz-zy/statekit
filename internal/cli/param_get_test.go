@@ -23,7 +23,7 @@ func TestParameterGetRejectsFileBeforeRuntime(t *testing.T) {
 		t.Fatal("file sink fetched")
 		return nil, nil
 	}
-	code, stdout, stderr := captureCode(t, app, "exec", "cloud.param.get", "--source-uri", "param://gcp/parametermanager/global/projects%2Fproject-123%2Flocations%2Fglobal%2Fparameters%2Fconfig", "--sink", "file")
+	code, stdout, stderr := captureCode(t, app, "exec", "gcp.parametermanager.get", "--source-uri", "param://gcp/parametermanager/global/projects%2Fproject-123%2Flocations%2Fglobal%2Fparameters%2Fconfig", "--sink", "file")
 	if code != ExitUnsupported || stdout != "" || strings.Contains(stderr, "project-123") {
 		t.Fatal("parameter file sink must fail closed before runtime or identity")
 	}
@@ -37,7 +37,7 @@ func TestParameterRequestRejectsMixedUnknownDuplicate(t *testing.T) {
 	} {
 		parsed, err := parseSecretArgs(argv, strings.NewReader(""))
 		if err == nil {
-			_, err = makeSensitiveRequest(parsed, true)
+			_, err = makeParameterRequest(parsed)
 		}
 		if err == nil {
 			t.Fatal("invalid parameter request accepted")
@@ -57,7 +57,7 @@ func TestParameterFormatsAndRedaction(t *testing.T) {
 	} {
 		app := NewApp("test", nil)
 		app.parameterFetch = func(context.Context, cloudsecret.Source) ([]byte, error) { return []byte(tc.payload), nil }
-		args := []string{"exec", "cloud.param.get", "--provider", "gcp", "--backend", "parametermanager", "--region", "global", "--resource", "projects/project-123/locations/global/parameters/config", "--format", tc.format}
+		args := []string{"exec", "gcp.parametermanager.get", "--provider", "gcp", "--backend", "parametermanager", "--region", "global", "--resource", "projects/project-123/locations/global/parameters/config", "--format", tc.format}
 		if tc.key != "" {
 			args = append(args, "--key-path", tc.key)
 		}
@@ -75,9 +75,9 @@ func TestParameterFormatsAndRedaction(t *testing.T) {
 
 func TestParameterGetRejectsSecretBackend(t *testing.T) {
 	app := NewApp("test", nil)
-	code, stdout, stderr := captureCode(t, app, "exec", "cloud.param.get", "--provider", "gcp", "--backend", "secretmanager", "--region", "global", "--resource", "projects/project-123/secrets/config")
+	code, stdout, stderr := captureCode(t, app, "exec", "gcp.parametermanager.get", "--provider", "gcp", "--backend", "secretmanager", "--region", "global", "--resource", "projects/project-123/secrets/config")
 	if code != ExitUnsupported || stdout != "" || strings.Contains(stderr, "project-123") {
-		t.Fatal("parameter command must not dispatch to a secret backend")
+		t.Fatal("parameter route must not dispatch to a secret backend")
 	}
 }
 
@@ -89,8 +89,43 @@ func TestParameterGetPassesExplicitLatestAliasToReader(t *testing.T) {
 		}
 		return []byte("synthetic"), nil
 	}
-	code, stdout, stderr := captureCode(t, app, "exec", "cloud.param.get", "--provider", "gcp", "--backend", "parametermanager", "--region", "global", "--resource", "projects/project-123/locations/global/parameters/config", "--version-alias", "latest")
+	code, stdout, stderr := captureCode(t, app, "exec", "gcp.parametermanager.get", "--provider", "gcp", "--backend", "parametermanager", "--region", "global", "--resource", "projects/project-123/locations/global/parameters/config", "--version-alias", "latest")
 	if code != ExitOK || stdout != "synthetic" || stderr != "" {
 		t.Fatal("explicit latest alias request failed")
+	}
+}
+
+// TestParameterManagerGetRouteMapsURIAndStructuredSourcesToReader pins that
+// the provider-specific parameter route reaches the existing GCP Parameter
+// Manager reader with the identical source for both request forms.
+func TestParameterManagerGetRouteMapsURIAndStructuredSourcesToReader(t *testing.T) {
+	want := cloudsecret.Source{
+		Provider: "gcp", Backend: "parametermanager", Region: "global",
+		Resource: "projects/project-123/locations/global/parameters/config",
+	}
+	app := NewApp("test", nil)
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "uri",
+			args: []string{"exec", "gcp.parametermanager.get", "--source-uri", "param://gcp/parametermanager/global/projects%2Fproject-123%2Flocations%2Fglobal%2Fparameters%2Fconfig"},
+		},
+		{
+			name: "structured",
+			args: []string{"exec", "gcp.parametermanager.get", "--provider", "gcp", "--backend", "parametermanager", "--region", "global", "--resource", "projects/project-123/locations/global/parameters/config"},
+		},
+	} {
+		app.parameterFetch = func(_ context.Context, source cloudsecret.Source) ([]byte, error) {
+			if source != want || source.VersionID != "" || source.VersionAlias != "" {
+				t.Fatal("gcp.parametermanager.get did not reach the Parameter Manager reader unchanged")
+			}
+			return []byte("synthetic"), nil
+		}
+		code, stdout, stderr := captureCode(t, app, tc.args...)
+		if code != ExitOK || stdout != "synthetic" || stderr != "" {
+			t.Fatal("parameter route mapping changed for the " + tc.name + " request form")
+		}
 	}
 }

@@ -10,7 +10,12 @@ func ParseParameterSourceURI(value string) (Source, error) {
 }
 
 // ValidateParameterSource is separate from the secret-service contract.
+// The App Configuration label selector is not part of the Parameter
+// Manager request grammar and its presence is rejected.
 func ValidateParameterSource(source Source) error {
+	if source.Label != "" {
+		return ErrInvalidSource
+	}
 	if !validToken(source.Provider) || !validToken(source.Backend) || !validToken(source.Region) || !validResource(source.Resource) {
 		return ErrInvalidSource
 	}

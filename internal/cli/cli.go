@@ -43,15 +43,28 @@ const usageText = `statekit — portable local SaltStack-compatible execution an
 Usage:
   statekit exec <module>.<function> [args] [-o json|yaml|text]
   statekit state <module>.<function> [args] [-o json|yaml|text]
-  statekit exec cloud.secret.get (--source-uri URI | --provider aws --backend secretsmanager|ssm --region REGION --resource RESOURCE | --provider gcp --backend secretmanager --region global --resource projects/PROJECT/secrets/SECRET) [--version-id ID | --version-alias ALIAS] [--format raw|text|json|yaml] [--sink stdout|stderr|unix --target PATH]
+  statekit exec aws.secretsmanager.get (--source-uri URI | --region REGION --resource RESOURCE) [--version-id ID | --version-alias ALIAS] [--format raw|text|json|yaml] [--sink stdout|stderr|unix --target PATH]
+  statekit exec aws.ssm.get (--source-uri URI | --region REGION --resource RESOURCE) [--version-id ID] [--format raw|text|json|yaml] [--sink stdout|stderr|unix --target PATH]
+  statekit exec gcp.secretmanager.get (--source-uri URI | --region global --resource projects/PROJECT/secrets/SECRET) [--version-id ID | --version-alias latest] [--format raw|text|json|yaml] [--sink stdout|stderr|unix --target PATH]
+  statekit exec gcp.parametermanager.get (--source-uri URI | --provider gcp --backend parametermanager --region LOCATION --resource projects/PROJECT/locations/LOCATION/parameters/PARAMETER) [--version-id ID | --version-alias latest] [--format raw|text|json|yaml] [--sink stdout|stderr|unix --target PATH]
+  statekit exec azure.keyvault.get (--source-uri URI | --region VAULT --resource SECRET) [--version-id VERSION] [--format raw|json|yaml] [--sink stdout|stderr]
+  statekit exec azure.appconfiguration.get (--source-uri URI | --region STORE --resource KEY) --label LABEL [--format raw|json|yaml] [--sink stdout|stderr]
 
 Commands:
   exec <mod>.<fun>   run an execution function
   state <mod>.<fun>  apply a single state function
-  exec cloud.secret.get  read one AWS or GCP secret value to one sink
-  exec cloud.param.get   read raw GCP Parameter Manager configuration (sensitive)
+  exec aws.secretsmanager.get | aws.ssm.get | gcp.secretmanager.get
+                     read one AWS or GCP secret value to one sink
+  exec gcp.parametermanager.get
+                     read raw GCP Parameter Manager configuration (sensitive)
+  exec azure.keyvault.get | azure.appconfiguration.get
+                     read one Azure secret or explicitly labeled setting (sensitive)
   facts              show detected system facts
   version            show the StateKit version
+
+Each route pins its provider and service: explicit --provider, --backend,
+or --source-uri values must match the selected route or the request is
+rejected before any credential resolution or fetch.
 
 Parameter Manager: canonical URI is param://gcp/parametermanager/LOCATION/RESOURCE
 (percent-encode the complete provider-native resource
@@ -73,8 +86,27 @@ IAM is external and project-scoped: prefer an externally provisioned custom
 role containing parametermanager.parameterversions.get where supported;
 otherwise roles/parametermanager.parameterViewer also exposes listing and
 project-wide reads. StateKit never creates or changes IAM. Rendering/reference
-support requires a separate security design; this command supports only raw
+support requires a separate security design; this route supports only raw
 global/regional reads using the fixed official endpoints and GCE identity.
+
+Azure routes use managed identity only, through the fixed IMDS endpoint with
+the 2018-02-01 API; there is no azidentity chain and no environment, CLI,
+profile, or token-file source, and only the Key Vault and App Configuration
+audiences are permitted. Only the public authorities <vault>.vault.azure.net
+and <store>.azconfig.io are accepted: custom hosts, ports, userinfo, paths,
+and private endpoints are rejected, every resolved service address must be
+public, proxies and redirects are refused, and TLS hostname verification
+always uses the service authority even though the dial targets the validated
+IP. Each read builds one per-operation SDK client; Key Vault challenge
+resource verification stays enabled and the exact audience is enforced again
+at the credential. A Key Vault version may be omitted for latest, and the
+concrete version is validated from the response; azure.appconfiguration.get
+requires the explicit non-empty --label (or structured label field) naming
+the exact setting version, never falls back to an unlabeled setting, and
+never resolves Key Vault references. Azure delivery is authorized only for
+raw or structured JSON/YAML payloads on the stdout or stderr sinks; the
+text format and the unix sink are rejected before any connection,
+credential, or fetch.
 
 Common options:
   --list             list available functions (optionally module.<prefix>)
@@ -143,11 +175,16 @@ func (a *App) dispatch(argv []string) int {
 	case "facts":
 		return a.cmdFacts(argv[1:])
 	case "exec":
-		if args, ok := extractSensitiveGetArgs(argv[1:], "cloud.param.get"); ok {
-			return a.cmdCloudParameterGet(args)
+		for _, route := range secretGetRoutes {
+			if args, ok := extractSensitiveGetArgs(argv[1:], route.command); ok {
+				return a.cmdRoutedSecretGet(args, route)
+			}
 		}
-		if args, ok := extractSecretGetArgs(argv[1:]); ok {
-			return a.cmdCloudSecretGet(args)
+		if command, ok := retiredSecretInvocation(argv[1:]); ok {
+			// The retired token is matched from the fixed table, so
+			// echoing it carries no caller value; rejection precedes
+			// every input channel, the runtime, credentials, and fetch.
+			return failf(ExitInvalidInput, "retired command %q; use the <provider>.<service>.get form", command)
 		}
 		return a.cmdFunction("exec", argv[1:])
 	case "state":
