@@ -64,8 +64,7 @@ func TestFreeBSDTrackCLIGOOSGating(t *testing.T) {
 		"pkg.lock", "pkg.unlock", "pkg.locked", "pkg.list_locked",
 		"pkg.stats", "pkg.restore", "pkg.parse_config", "pkg.update_package_site",
 		"pkg.updating",
-		"user.chloginclass", "user.get_loginclass", "user.chroomnumber",
-		"user.chworkphone", "user.chhomephone",
+		"user.chloginclass", "user.get_loginclass", "user.chhomephone",
 		"group.members", "group.adduser", "group.deluser", "group.getent",
 	}
 	for _, name := range freebsdOnly {
