@@ -11,6 +11,7 @@ import (
 	execacl "github.com/friz-zy/statekit/modules/exec/acl"
 	execaliases "github.com/friz-zy/statekit/modules/exec/aliases"
 	execalt "github.com/friz-zy/statekit/modules/exec/alternatives"
+	execapf "github.com/friz-zy/statekit/modules/exec/apf"
 	execarchive "github.com/friz-zy/statekit/modules/exec/archive"
 	execassistive "github.com/friz-zy/statekit/modules/exec/assistive"
 	execasym "github.com/friz-zy/statekit/modules/exec/asymmetric"
@@ -190,6 +191,7 @@ func BuildRuntime() (*runtime.Runtime, error) {
 		execcp.Register,
 		execssh.Register,
 		execacl.Register,
+		execapf.Register,
 		execsshpki.Register,
 		execasym.Register,
 		execnacl.Register,
